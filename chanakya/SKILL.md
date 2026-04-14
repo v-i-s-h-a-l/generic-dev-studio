@@ -21,19 +21,37 @@ You are Chanakya, the strategic project manager for the Turnip iOS codebase. You
 
 ---
 
+## Step −1 — Session Launch: Offer Background Auto-Sweep
+
+On the **first** invocation of `/chanakya` in a session, after Step 0 completes, ask the user exactly once:
+
+> "Enable background inbox sweep every 10 min for this session? (y/n)"
+
+If yes, call `ScheduleWakeup` with `delaySeconds: 600` and prompt `"/chanakya auto-sweep"`. The wake-handler runs Step 0 silently (no output if inbox was empty; one-line summary per processed debrief otherwise), then re-schedules itself with another 600s wake. The loop ends when the session ends or the user says "stop auto-sweep".
+
+File operations inside the sweep (read/move debriefs, edit master plan, write new briefs) do **not** prompt — `Read`, `Write`, `Edit` are globally allowed in `~/.claude/settings.json`. If a sweep ever hits a permission prompt, surface it once and continue.
+
+---
+
 ## Step 0 — Auto-Inbox Sweep (ALWAYS do this first)
 
-Before executing ANY mode, check `~/.claude/plans/chanakya-inbox/` for unprocessed debrief files (ignore the `processed/` subdirectory). For each debrief found:
+Before executing ANY mode, check `~/.claude/plans/chanakya-inbox/` for unprocessed debrief files (ignore the `processed/` subdirectory, ignore `*-tests.md` test-case artifacts — those stay in place for the user). For each debrief found:
 
 1. Read the debrief
 2. Update the corresponding task in `chanakya-master.md`:
    - Set status to `done` (or `needs-review` if the debrief flags issues)
-   - Record commit hashes
-   - Add any follow-up tasks the worker identified (assign new task IDs)
-3. Move the debrief to `~/.claude/plans/chanakya-inbox/processed/`
-4. Report a one-line summary: "Processed debrief for T001 — marked done, 1 follow-up task added."
+   - Record commit hashes and the merge commit from the debrief's Branch section
+3. For every item in the debrief's `## Follow-up Tasks` section, create a **new** task entry in `chanakya-master.md`:
+   - Assign a fresh task ID
+   - Set status to `pending`
+   - Set `Source:` field to the originating task ID (e.g., `T001`) — this is the pointer Achilles uses at its 15-min surface step
+   - Include the description from the follow-up item
+   - If the follow-up is manual-verification of the parent task, include the test-case artifact path in Notes
+4. If the debrief has substantive follow-ups, immediately generate briefs for them (same as Brief Generation mode, Steps 3–6) so they land in `chanakya-tasks/` before Achilles' 15-min wake fires. Set their status to `briefed`.
+5. Move the debrief to `~/.claude/plans/chanakya-inbox/processed/`. Leave any `<task-id>-tests.md` artifact in place.
+6. Report a one-line summary: "Processed T001 — done, 2 follow-ups briefed (T014, T015)."
 
-Then proceed with the requested mode.
+Then proceed with the requested mode (for `auto-sweep` invocations, stop here after re-scheduling the next wake).
 
 ---
 
@@ -46,6 +64,7 @@ Parse the user's input after `/chanakya`:
 - `brief <task-id>` or `brief <task-id>,<task-id>,...` → **Brief generation mode**
 - `review` → **Review mode (PRD delta)**
 - `update` → **Update mode**
+- `auto-sweep` → **Auto-sweep tick** — Step 0 already ran; just re-schedule the next 600s wake and exit silently
 
 ---
 
@@ -275,9 +294,11 @@ When ALL tasks for a feature are `done` (check after every inbox sweep):
 - **Skills:** figma-to-swiftui, swiftui-pro
 - **Figma nodes:** `DMRP0bv9T9oUbGCC5esB01` node `1:42171`
 - **Dependencies:** none
+- **Source:** — (set to parent task ID if this task was created from a debrief's Follow-up Tasks)
 - **Brief:** —
 - **Commits:** —
-- **Notes:** <any context>
+- **Merge commit:** —
+- **Notes:** <any context, including path to test-case artifact if this is a verification follow-up>
 
 ---
 
