@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chanakya + Achilles — Documentation</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-hover: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #f0883e;
+    --accent-subtle: rgba(240, 136, 62, 0.15);
+    --blue: #58a6ff;
+    --green: #3fb950;
+    --purple: #bc8cff;
+    --red: #f85149;
+    --code-bg: #0d1117;
+    --chanakya: #f0883e;
+    --achilles: #58a6ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Header */
+  .hero {
+    background: linear-gradient(135deg, #161b22 0%, #0d1117 50%, #1a1208 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 80px 0 60px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 60% 40%, rgba(240, 136, 62, 0.06) 0%, transparent 50%),
+                radial-gradient(circle at 30% 70%, rgba(88, 166, 255, 0.04) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  .hero h1 {
+    font-size: 3rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 12px;
+    position: relative;
+  }
+
+  .hero h1 .chanakya-name { color: var(--chanakya); }
+  .hero h1 .plus { color: var(--text-muted); font-weight: 300; margin: 0 8px; }
+  .hero h1 .achilles-name { color: var(--achilles); }
+
+  .hero .tagline {
+    font-size: 1.2rem;
+    color: var(--text-muted);
+    position: relative;
+  }
+
+  /* Layout */
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* Nav */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(13, 17, 23, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+
+  .nav-inner {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nav-inner::-webkit-scrollbar { display: none; }
+
+  .nav a {
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 14px 16px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .nav a:hover { color: var(--text); border-bottom-color: var(--border); }
+
+  /* Sections */
+  section { padding: 56px 0; }
+  section + section { border-top: 1px solid var(--border); }
+
+  h2 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 24px;
+  }
+
+  h3 {
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin: 32px 0 12px;
+    color: var(--text);
+  }
+
+  h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 24px 0 8px;
+    color: var(--text-muted);
+  }
+
+  p { margin-bottom: 16px; color: var(--text-muted); }
+  p strong { color: var(--text); }
+
+  /* Command reference cards */
+  .cmd-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 24px 0;
+  }
+
+  @media (max-width: 640px) { .cmd-grid { grid-template-columns: 1fr; } }
+
+  .cmd-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .cmd-card:hover { border-color: var(--accent); background: var(--surface-hover); }
+
+  .cmd-card code {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .cmd-card.achilles code { color: var(--achilles); }
+
+  .cmd-card span {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  /* Flow diagram */
+  .flow {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    margin: 24px 0;
+    text-align: center;
+  }
+
+  .flow-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0;
+  }
+
+  .flow-node {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .flow-node.chanakya-node { border-color: var(--chanakya); color: var(--chanakya); }
+  .flow-node.achilles-node { border-color: var(--achilles); color: var(--achilles); }
+  .flow-node.user-node { border-color: var(--green); color: var(--green); }
+
+  .flow-arrow {
+    color: var(--text-muted);
+    font-size: 1.2rem;
+  }
+
+  .flow-row { margin: 12px 0; }
+
+  /* Decision table */
+  .decision-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 0.9rem;
+  }
+
+  .decision-table th {
+    text-align: left;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .decision-table td {
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+
+  .decision-table td:last-child { font-weight: 500; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .badge-chanakya { background: var(--accent-subtle); color: var(--chanakya); }
+  .badge-achilles { background: rgba(88, 166, 255, 0.15); color: var(--achilles); }
+  .badge-both { background: rgba(188, 140, 255, 0.15); color: var(--purple); }
+
+  /* Example blocks */
+  .example {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin: 24px 0;
+    overflow: hidden;
+  }
+
+  .example-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .example-number {
+    background: var(--accent-subtle);
+    color: var(--chanakya);
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .example-title { font-weight: 600; font-size: 1rem; }
+  .example-subtitle { color: var(--text-muted); font-size: 0.85rem; margin-left: auto; }
+
+  .example-body { padding: 0; }
+
+  .session-block { border-bottom: 1px solid var(--border); }
+  .session-block:last-child { border-bottom: none; }
+
+  .session-label {
+    padding: 12px 24px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.02);
+  }
+
+  .session-label.chanakya-label { color: var(--chanakya); }
+  .session-label.achilles-label { color: var(--achilles); }
+
+  .dialogue { padding: 16px 24px; }
+
+  .dialogue .line {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 12px;
+    margin: 8px 0;
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  .dialogue .speaker {
+    font-weight: 600;
+    text-align: right;
+    padding-top: 1px;
+  }
+
+  .dialogue .speaker.you { color: var(--green); }
+  .dialogue .speaker.chanakya-speaker { color: var(--chanakya); }
+  .dialogue .speaker.achilles-speaker { color: var(--achilles); }
+
+  .dialogue .content { color: var(--text-muted); }
+  .dialogue .content em { color: var(--text-muted); font-style: italic; opacity: 0.7; }
+  .dialogue .content code {
+    font-family: 'SF Mono', monospace;
+    font-size: 0.825rem;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  /* File tree */
+  .file-tree {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 20px 0;
+    font-family: 'SF Mono', monospace;
+    font-size: 0.85rem;
+    line-height: 1.8;
+    color: var(--text-muted);
+  }
+
+  .file-tree .dir { color: var(--blue); }
+  .file-tree .file { color: var(--text-muted); }
+  .file-tree .comment { color: #484f58; }
+
+  /* Tips */
+  .tip-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 24px 0;
+  }
+
+  @media (max-width: 640px) { .tip-grid { grid-template-columns: 1fr; } }
+
+  .tip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .tip-num {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .tip-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+
+  .tip-desc {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  /* Callout */
+  .callout {
+    background: var(--accent-subtle);
+    border-left: 3px solid var(--chanakya);
+    border-radius: 0 8px 8px 0;
+    padding: 16px 20px;
+    margin: 20px 0;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+
+  .callout strong { color: var(--chanakya); }
+
+  /* Footer */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 0;
+    text-align: center;
+    color: #484f58;
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="container">
+    <h1>
+      <span class="chanakya-name">Chanakya</span><span class="plus">+</span><span class="achilles-name">Achilles</span>
+    </h1>
+    <p class="tagline">A two-agent system for managing iOS development</p>
+  </div>
+</div>
+
+<!-- Nav -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#commands">Commands</a>
+    <a href="#flow">How It Works</a>
+    <a href="#when">When to Use</a>
+    <a href="#examples">Examples</a>
+    <a href="#files">File System</a>
+    <a href="#tips">Tips</a>
+  </div>
+</nav>
+
+<main class="container">
+
+<!-- Commands -->
+<section id="commands">
+  <h2>Quick Reference</h2>
+  <h3 style="color: var(--chanakya); margin-top: 0;">Chanakya — The Strategist</h3>
+  <div class="cmd-grid">
+    <div class="cmd-card">
+      <code>/chanakya</code>
+      <span>Start planning — describe your tasks, get them organized with priorities</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya status</code>
+      <span>See all tasks, their status, blockers, and what's next</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya brief T001</code>
+      <span>Generate a self-contained brief with Figma context for a task</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya review</code>
+      <span>Diff an updated PRD against existing tasks and flag impact</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya update</code>
+      <span>Sync the master plan with current git and worktree state</span>
+    </div>
+  </div>
+
+  <h3 style="color: var(--achilles);">Achilles — The Warrior</h3>
+  <div class="cmd-grid">
+    <div class="cmd-card achilles">
+      <code>/achilles T001</code>
+      <span>Pick up a briefed task — reads the brief, implements, reports back</span>
+    </div>
+    <div class="cmd-card achilles">
+      <code>/achilles</code>
+      <span>Direct mode — describe any task and Achilles executes it immediately</span>
+    </div>
+  </div>
+</section>
+
+<!-- Flow -->
+<section id="flow">
+  <h2>How It Works</h2>
+  <div class="flow">
+    <div class="flow-row">
+      <span class="flow-node user-node">You describe work</span>
+    </div>
+    <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
+    <div class="flow-row">
+      <span class="flow-node chanakya-node">/chanakya — organizes tasks, assigns priorities</span>
+    </div>
+    <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
+    <div class="flow-row">
+      <span class="flow-node chanakya-node">/chanakya brief — fetches Figma, scans code, writes brief</span>
+    </div>
+    <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
+    <div class="flow-row">
+      <span class="flow-node achilles-node">/achilles T001 — reads brief, implements, asks for feedback</span>
+    </div>
+    <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
+    <div class="flow-row">
+      <span class="flow-node" style="border-color: var(--purple); color: var(--purple);">Achilles writes debrief to inbox</span>
+    </div>
+    <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
+    <div class="flow-row">
+      <span class="flow-node chanakya-node">/chanakya status — processes inbox, updates plan, suggests next</span>
+    </div>
+  </div>
+  <p>Both agents are <strong>proactive</strong> — they always suggest the next step. You just say "yes", "no", or redirect.</p>
+</section>
+
+<!-- When to Use -->
+<section id="when">
+  <h2>When to Use What</h2>
+  <table class="decision-table">
+    <thead>
+      <tr><th>Situation</th><th>Use</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>New feature with Figma designs</td><td><span class="badge badge-both">Chanakya + Achilles</span></td></tr>
+      <tr><td>Multi-file refactor</td><td><span class="badge badge-chanakya">Chanakya plans</span></td></tr>
+      <tr><td>Simple bug fix</td><td><span class="badge badge-achilles">Achilles direct</span></td></tr>
+      <tr><td>One-file UI tweak</td><td><span class="badge badge-achilles">Achilles direct</span></td></tr>
+      <tr><td>Crash fix</td><td><span class="badge badge-achilles">Achilles direct</span></td></tr>
+      <tr><td>PRD changed mid-feature</td><td><span class="badge badge-chanakya">/chanakya review</span></td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <strong>Rule of thumb:</strong> If you'd spend more than 2 minutes explaining the task to a worker, use Chanakya to write a brief. Otherwise, go direct.
+  </div>
+</section>
+
+<!-- Examples -->
+<section id="examples">
+  <h2>Examples</h2>
+
+  <!-- Example 1 -->
+  <div class="example">
+    <div class="example-header">
+      <span class="example-number">1</span>
+      <span class="example-title">Quick Bug Fix</span>
+      <span class="example-subtitle">Direct to Achilles, no planning</span>
+    </div>
+    <div class="example-body">
+      <div class="session-block">
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles</code><br>The app crashes when tapping "Compare" after selecting a sticker. Fix it.</span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[reads files, finds the bug, fixes it]</em><br>Fixed. The compare button's hit area was under the sticker overlay. Added <code>allowsHitTesting(false)</code> to stickers during comparison mode. Commit: <code>abc1234</code>. Any feedback?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content">Looks good.</span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[writes debrief to inbox]</em><br>No briefed tasks in the master plan. Want me to look at something else?</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Example 2 -->
+  <div class="example">
+    <div class="example-header">
+      <span class="example-number">2</span>
+      <span class="example-title">Single Feature with Figma</span>
+      <span class="example-subtitle">Chanakya plans, Achilles implements</span>
+    </div>
+    <div class="example-body">
+      <div class="session-block">
+        <div class="session-label chanakya-label">Session 1 — Planning</div>
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya</code><br>I need to build the new FAB for the home screen. Figma: <code>node-id=1:42171</code></span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">One task: <strong>T001 — Home screen FAB redesign</strong> (P1, M). Skills: figma-to-swiftui, swiftui-pro. Master plan written. Shall I generate the brief?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content">Yes</span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[fetches Figma, scans code, inlines specs]</em><br>Brief ready. Includes: collapsed/expanded states, screenshot, design tokens, files to modify, acceptance criteria. Ready to launch a worker?</span></div>
+        </div>
+      </div>
+      <div class="session-block">
+        <div class="session-label achilles-label">Session 2 — Implementation</div>
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles T001</code></span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[reads brief, marks in-progress, implements]</em><br>Done. Replaced CreateNewFABView with new design. 3 commits. Any feedback?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content">The background should be more translucent.</span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content">Updated. Material opacity 0.7 &#8594; 0.5. Any other feedback?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content">Good, ship it.</span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[writes debrief, marks done]</em> All tasks complete.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Example 3 -->
+  <div class="example">
+    <div class="example-header">
+      <span class="example-number">3</span>
+      <span class="example-title">Multi-Task Feature with Dependencies</span>
+      <span class="example-subtitle">Full workflow + mid-flight PRD change</span>
+    </div>
+    <div class="example-body">
+      <div class="session-block">
+        <div class="session-label chanakya-label">Session 1 — Planning</div>
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya</code><br>New feature: photo editor export. Export settings panel, format selection, share sheet, progress indicator, watermark overlay.</span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">Organized into 5 tasks:<br><strong>T001</strong> — Export settings panel (P0, L) &mdash; no deps<br><strong>T002</strong> — Format selection (P0, M) &mdash; depends on T001<br><strong>T003</strong> — Share sheet (P1, S) &mdash; depends on T001<br><strong>T004</strong> — Progress indicator (P1, S) &mdash; depends on T001<br><strong>T005</strong> — Watermark overlay (P2, M) &mdash; depends on T001<br><br>T001 is the foundation. Shall I brief it?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content">Yes, and add swiftui-liquid-glass — the panel should use glass effects.</span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[fetches Figma, writes brief]</em> T001 briefed. T002 can't be briefed yet. Brief T003 and T004?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content">Yes</span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">T003 and T004 briefed. Start T001 now, then T002–T004 in parallel after.</span></div>
+        </div>
+      </div>
+      <div class="session-block">
+        <div class="session-label achilles-label">Session 2 — Worker on T001</div>
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles T001</code></span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[implements export settings panel]</em><br>Done. 4 commits. Key finding: NavBar uses different glass material than Figma — I matched Figma. Any feedback?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content">Looks great.</span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[writes debrief with glass material gotcha]</em><br>T003 and T004 are unblocked. Pick up T003?</span></div>
+        </div>
+      </div>
+      <div class="session-block">
+        <div class="session-label chanakya-label">Session 1 — PRD Change</div>
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya review</code><br>Product team changed: HEIF + alpha, watermark always on for free users, new export history feature.</span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[processes T001 debrief first]</em><br>PRD Delta:<br>&bull; T002 affected — HEIF needs alpha channel<br>&bull; T005 changed — watermark now mandatory, bumped to P1<br>&bull; NEW: T006 — Export history<br>Update the plan?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content">Yes</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Example 4 -->
+  <div class="example">
+    <div class="example-header">
+      <span class="example-number">4</span>
+      <span class="example-title">Parallel Workers</span>
+      <span class="example-subtitle">Three terminal tabs, three tasks</span>
+    </div>
+    <div class="example-body">
+      <div class="session-block">
+        <div class="dialogue">
+          <div class="line"><span class="speaker" style="color: var(--text-muted);">Tab 1</span><span class="content"><code>/achilles T002</code> — format selection</span></div>
+          <div class="line"><span class="speaker" style="color: var(--text-muted);">Tab 2</span><span class="content"><code>/achilles T003</code> — share sheet</span></div>
+          <div class="line"><span class="speaker" style="color: var(--text-muted);">Tab 3</span><span class="content"><code>/achilles T004</code> — progress indicator</span></div>
+        </div>
+      </div>
+      <div class="session-block">
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya status</code> <em>(later)</em></span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[sweeps inbox — 3 debriefs]</em><br>T002, T003, T004 all done. Learnings compiled. T005 unblocked. Brief it?</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Example 5 -->
+  <div class="example">
+    <div class="example-header">
+      <span class="example-number">5</span>
+      <span class="example-title">Next-Day Resume</span>
+      <span class="example-subtitle">Picking up where you left off</span>
+    </div>
+    <div class="example-body">
+      <div class="session-block">
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya status</code></span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">T001 done. T002 in-progress but stale (18h, no commits). T003/T004 briefed. T005 pending.<br>Did T002's worker finish?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content">T002 is done, worker didn't debrief. Mark it done.</span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">Done. T003/T004 ready. Brief T005 while you start a worker?</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Example 6 -->
+  <div class="example">
+    <div class="example-header">
+      <span class="example-number">6</span>
+      <span class="example-title">Ad-Hoc Fix Feeds Back</span>
+      <span class="example-subtitle">Unplanned bug fix gets tracked</span>
+    </div>
+    <div class="example-body">
+      <div class="session-block">
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles</code><br>Crash in CollageEditorView when rotating text past 360&deg;. Angle overflows.</span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[fixes it]</em><br>Wrapped with <code>.truncatingRemainder(dividingBy: 360)</code>. Commit: <code>xyz7890</code>. Feedback?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content">Good.</span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[writes debrief to inbox]</em><br>T003 is briefed and available. Pick it up?</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Example 7 -->
+  <div class="example">
+    <div class="example-header">
+      <span class="example-number">7</span>
+      <span class="example-title">Full PRD + Figma &mdash; Large Feature</span>
+      <span class="example-subtitle">20-page PRD, 5 Figma screens, phased rollout</span>
+    </div>
+    <div class="example-body">
+
+      <div class="session-block">
+        <div class="session-label chanakya-label">Session 1 &mdash; Feeding the PRD</div>
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya</code><br>New feature: Collage Templates V2.<br><br><strong>PRD:</strong> <code>~/Downloads/Collage Templates V2 - Product Spec.md</code><br><strong>Figma:</strong> <code>DMRP0bv9T9oUbGCC5esB01</code><br>&bull; Template browser: <code>node 1:60100</code><br>&bull; Template preview: <code>node 1:60250</code><br>&bull; Category filter: <code>node 1:60400</code><br>&bull; Template customizer: <code>node 1:60550</code><br>&bull; Save/share flow: <code>node 1:60700</code><br><br>This replaces the old template picker. BE shipping new endpoints next week. Category filter is highest priority.</span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[reads PRD &mdash; 47 requirements across 8 sections]</em><br><em>[fetches all 5 Figma screens]</em><br><em>[scans codebase &mdash; finds existing TemplateBrowserView, API layer]</em><br><br><strong>PHASE 1 &mdash; No BE dependency:</strong><br><strong>T001</strong> &mdash; Category filter UI (P0, L) &mdash; PRD 2.1-2.3, Figma 1:60400<br><strong>T002</strong> &mdash; Template browser grid (P0, XL) &mdash; PRD 3.1-3.6, Figma 1:60100<br><strong>T003</strong> &mdash; Template preview sheet (P0, M) &mdash; PRD 4.1-4.3, Figma 1:60250<br><br><strong>PHASE 2 &mdash; Requires BE:</strong><br><strong>T004</strong> &mdash; API layer for /v2/templates (P0, M) &mdash; PRD 7.1<br><strong>T005</strong> &mdash; Template customizer (P1, XL) &mdash; PRD 5.1-5.8, Figma 1:60550<br><strong>T006</strong> &mdash; Save/share flow (P1, M) &mdash; PRD 6.1-6.4, Figma 1:60700<br><br><strong>PHASE 3 &mdash; Polish:</strong><br><strong>T007</strong> &mdash; Old picker removal (P2, S)<br><strong>T008</strong> &mdash; Analytics events (P2, S)<br><strong>DIRECT:</strong> T009 &mdash; Mock fixtures, T010 &mdash; Feature flag<br><br>3 PRD gaps flagged:<br>&bull; PRD 3.4: 'Smart sort' &mdash; algorithm undefined<br>&bull; PRD 5.6: 'Custom color picker' &mdash; build or system?<br>&bull; PRD 6.2: 'Share to Stories' &mdash; which platforms?<br><br>Shall I brief T001 (category filter)?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content">PRD 5.6: use system color picker. Other two I'll check with product. Brief T001, and also T004 since it can run in parallel.</span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[briefs T001 and T004 in parallel]</em></span></div>
+        </div>
+      </div>
+
+      <div class="session-block">
+        <div class="session-label chanakya-label">What's in the T001 brief</div>
+        <div class="dialogue">
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">T001 brief generated. Contains:<br><br><strong>FROM PRD:</strong><br>&bull; 6 category types with icons (PRD 2.1)<br>&bull; Horizontal scroll, 'All' default (PRD 2.2)<br>&bull; Count badges update real-time (PRD 2.3)<br>&bull; VoiceOver labels (PRD 2.3.1)<br><br><strong>FROM FIGMA (1:60400):</strong><br>&bull; Pill chips, 36pt height<br>&bull; Selected: filled orange #FF4C24, white text<br>&bull; Unselected: glass material, gray text<br>&bull; 16pt spacing, count badge 12pt circle<br>&bull; Screenshot inlined<br><br><strong>FROM CODEBASE:</strong><br>&bull; Replaces TemplateBrowserView.swift lines 45-89<br>&bull; Reuse existing CategoryModel<br>&bull; Pattern: PhotoEditorModuleTabBar.swift<br><br><strong>ACCEPTANCE CRITERIA (PRD + Figma merged):</strong><br>7 criteria covering functional + visual requirements<br><br>T004 also ready. Launch a worker for T001?</span></div>
+        </div>
+      </div>
+
+      <div class="session-block">
+        <div class="session-label achilles-label">Session 2 &mdash; Worker on T001</div>
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles T001</code></span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[reads brief &mdash; PRD + Figma + code paths all in one place]</em><br><em>[invokes /figma-to-swiftui, /swiftui-liquid-glass]</em><br><em>[reuses existing CategoryModel]</em><br><br>Done. Category filter bar with glass chips, count badges, VoiceOver labels. 3 commits.<br><br>Note: PRD says 'Smart sort' but doesn't define it. Used alphabetical. Flag for product?<br><br>Any feedback?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content">Yes flag it. Rest looks good.</span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[writes debrief &mdash; 'Smart sort' in Follow-ups, CategoryModel reuse in Key Learnings]</em><br>T004 (API layer) is briefed and independent. Pick it up?</span></div>
+        </div>
+      </div>
+
+      <div class="session-block">
+        <div class="session-label chanakya-label">Session 1 &mdash; Continuing</div>
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya brief T002</code></span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[auto-sweeps inbox &mdash; processes T001 debrief]</em><br><em>[reads T001's completed code for integration point]</em><br><em>[fetches Figma 1:60100, cross-refs PRD 3.1-3.6]</em><br><br>File overlap check: clean &mdash; T001 is done.<br><br>T002 brief includes:<br>&bull; Infinite scroll with 20-item pages (PRD 3.2)<br>&bull; 2-column grid, 8pt spacing, 180pt cards (Figma)<br>&bull; LazyVGrid performance guidance (500+ items, PRD 3.5)<br>&bull; Reads selected category from T001's filter<br><br>Launch a worker?</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top: 32px;">
+    <strong>PRD workflow tips:</strong><br>
+    &bull; Give Chanakya the PRD file path &mdash; it reads the whole doc and extracts requirements per task<br>
+    &bull; Give all Figma nodes upfront &mdash; Chanakya maps them to tasks and fetches during brief generation<br>
+    &bull; Chanakya catches PRD gaps &mdash; ambiguous requirements get flagged before workers hit them<br>
+    &bull; PRD section refs travel into briefs &mdash; workers can trace every decision back to the spec<br>
+    &bull; Acceptance criteria merge Figma (visual) + PRD (functional) &mdash; workers don't cross-reference two sources
+  </div>
+</section>
+
+<!-- File System -->
+<section id="files">
+  <h2>File System</h2>
+  <p>After a typical feature lifecycle:</p>
+  <div class="file-tree">
+    <span class="dir">~/.claude/plans/</span><br>
+    &nbsp;&nbsp;<span class="file">chanakya-master.md</span> <span class="comment"># The master plan</span><br>
+    &nbsp;&nbsp;<span class="dir">chanakya-tasks/</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-export-settings.md</span> <span class="comment"># Brief (by Chanakya)</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T002-format-selection.md</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T003-share-sheet.md</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T004-progress-indicator.md</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T005-watermark.md</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T006-export-history.md</span><br>
+    &nbsp;&nbsp;<span class="dir">chanakya-inbox/</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">direct-xyz7890-debrief.md</span> <span class="comment"># Unprocessed</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">processed/</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-debrief.md</span> <span class="comment"># Processed by Chanakya</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T002-debrief.md</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T003-debrief.md</span>
+  </div>
+</section>
+
+<!-- Tips -->
+<section id="tips">
+  <h2>Tips</h2>
+  <div class="tip-grid">
+    <div class="tip">
+      <div class="tip-num">01</div>
+      <div class="tip-title">Start small</div>
+      <div class="tip-desc">Try <code>/achilles</code> on a bug fix first. Then <code>/chanakya</code> on a small feature. Scale up as you get comfortable.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">02</div>
+      <div class="tip-title">Just say "yes"</div>
+      <div class="tip-desc">Chanakya always suggests next steps. Say "yes" to keep moving, "do T003 instead" to redirect, "I'm done" to stop.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">03</div>
+      <div class="tip-title">Self-selecting workers</div>
+      <div class="tip-desc">Achilles reads the master plan after each task and suggests the next one. You don't need to remember task IDs.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">04</div>
+      <div class="tip-title">Briefs are snapshots</div>
+      <div class="tip-desc">If the codebase changes between briefing and execution, regenerate with <code>/chanakya brief T001</code>.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">05</div>
+      <div class="tip-title">Debriefs are knowledge</div>
+      <div class="tip-desc">Key Learnings in debriefs feed into project memory. Be generous with feedback about what was surprising or tricky.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">06</div>
+      <div class="tip-title">Go parallel</div>
+      <div class="tip-desc">Independent briefed tasks can run in separate terminal tabs simultaneously. They won't conflict.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">07</div>
+      <div class="tip-title">PRD changes are normal</div>
+      <div class="tip-desc"><code>/chanakya review</code> diffs changes against existing tasks and tells you exactly what's affected.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">08</div>
+      <div class="tip-title">Skip when trivial</div>
+      <div class="tip-desc">A one-line crash fix doesn't need Chanakya. Just <code>/achilles</code> and describe the bug.</div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="container">
+    Chanakya + Achilles &mdash; built for the Turnip iOS project
+  </div>
+</footer>
+
+</body>
+</html>
