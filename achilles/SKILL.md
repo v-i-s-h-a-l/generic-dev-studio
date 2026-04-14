@@ -74,9 +74,47 @@ Before asking the user to look, review your own diff. Invoke the `simplify` skil
 
 Fix what you find. This is **one** iteration — don't spiral.
 
-### Step 6 — Build must go green
+### Step 6 — Build must go green (serialized across Achilles instances)
 
-Run the project's build (`xcodebuild` for the primary scheme). If it fails, fix and rebuild. Do not proceed until the build is clean. If you hit a failure you can't resolve, stop here and surface it to the user — do **not** merge.
+With 6–10 Achilles instances potentially running in parallel, `xcodebuild` invocations **must** be serialized. Parallel builds race on the shared SPM cache (`~/Library/Caches/org.swift.swiftpm`), the Clang module cache, and simulator locks — producing flaky "module cache locked" / "couldn't resolve package" failures.
+
+Use an atomic `mkdir`-based file lock (portable on macOS, no `flock` needed). The lock is held only while `xcodebuild` runs — not during code edits or self-review — so instances serialize at the build step and otherwise work in parallel.
+
+```bash
+LOCK_DIR=~/.claude/locks
+LOCK=$LOCK_DIR/turnip-xcodebuild.lock
+mkdir -p "$LOCK_DIR"
+
+# Acquire: mkdir is atomic — succeeds only for the first caller.
+# Stale-lock guard: if the lock is older than 45 min, assume the holder died and reclaim.
+while true; do
+  if mkdir "$LOCK" 2>/dev/null; then
+    echo $$ > "$LOCK/pid"
+    break
+  fi
+  if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +45 2>/dev/null)" ]; then
+    echo "Stale xcodebuild lock (>45min), reclaiming" >&2
+    rm -rf "$LOCK"
+    continue
+  fi
+  sleep 10
+done
+trap 'rm -rf "$LOCK"' EXIT INT TERM
+
+xcodebuild -scheme <scheme> -destination <dest> build
+BUILD_STATUS=$?
+
+rm -rf "$LOCK"
+trap - EXIT INT TERM
+
+[ $BUILD_STATUS -eq 0 ] || { echo "Build failed"; exit $BUILD_STATUS; }
+```
+
+**Rules:**
+- Acquire the lock **only** around `xcodebuild`. Do not hold it during implementation, self-review, or test-writing — that would starve siblings.
+- If the build fails, release the lock before fixing, then re-acquire for the retry.
+- If you can't resolve a build failure, release the lock, stop, and surface to the user — do **not** merge.
+- Never bypass the lock, even for "a quick build check."
 
 ### Step 7 — Write test cases and request user verification
 
