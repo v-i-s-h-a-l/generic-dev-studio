@@ -64,6 +64,13 @@ All subsequent work runs inside `~/.claude/worktrees/turnip-ios/<task-id>/`. Rec
 
 Work methodically through the brief's acceptance criteria (or the user's direct-mode description). Small logical commits. Check off criteria as you complete them.
 
+**Build discipline by task size:**
+
+- **Small tasks** (≤2 files, ≤~50 lines changed, no type/async/boundary changes — or a brief explicitly tagged `size: small`): **do NOT run `xcodebuild` during implementation.** Rely on the `swift-lsp` plugin (already enabled) for syntax/type diagnostics as you go. The single build happens at Step 6.
+- **Medium / Large tasks** (or anything touching concurrency boundaries, protocols, generics, or multiple modules — or briefs tagged `size: medium`/`large`): build opportunistically during implementation is **allowed** to catch issues early. Each such build must still go through the Step 6 lock (same `mkdir` gate). Expect the Step 6 build to still be the authoritative gate.
+
+If task size is ambiguous, **treat it as medium** — err toward more compiler feedback, not less.
+
 ### Step 5 — Self-review pass
 
 Before asking the user to look, review your own diff. Invoke the `simplify` skill on the changed files. Target:
