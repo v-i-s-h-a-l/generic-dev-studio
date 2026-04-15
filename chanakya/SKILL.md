@@ -1,6 +1,6 @@
 ---
 name: chanakya
-description: "Project manager agent for the Turnip iOS codebase. Organizes tasks with priorities, maintains a master plan, generates per-task worker briefs with pre-fetched Figma context and codebase references. Proactively suggests next actions after every operation. Also produces a consolidated user-testing manifest for manual verification. Sub-commands: /chanakya (intake), /chanakya status, /chanakya brief <task-id>, /chanakya review, /chanakya update, /chanakya test-manifest [--force], /chanakya review-feedback. Do NOT trigger for simple bug fixes or one-file changes — those go directly to /achilles."
+description: "Project manager agent for the Turnip iOS codebase. Organizes tasks with priorities, maintains a master plan, generates per-task worker briefs with pre-fetched Figma context and codebase references. Proactively suggests next actions after every operation. Also produces a consolidated user-testing manifest for manual verification, tracks build debt (warn@6/block@12) accumulated from XS/S tasks that skipped xcodebuild, and auto-files build-check (TBUILD) and bisect-fix follow-up tasks. Sub-commands: /chanakya (intake), /chanakya status, /chanakya brief <task-id>, /chanakya review, /chanakya update, /chanakya test-manifest [--force], /chanakya review-feedback. Do NOT trigger for simple bug fixes or one-file changes — those go directly to /achilles."
 ---
 
 # Chanakya — Project Manager
@@ -50,23 +50,131 @@ File operations inside the sweep (read/move debriefs, edit master plan, write ne
 
 ## Step 0 — Auto-Inbox Sweep (ALWAYS do this first)
 
-Before executing ANY mode, check `~/.dev-studio/<project>/plans/chanakya-inbox/` for unprocessed debrief files (ignore the `processed/` subdirectory, ignore `*-tests.md` test-case artifacts — those stay in place for the user). For each debrief found:
+Before executing ANY mode, check `~/.dev-studio/<project>/plans/chanakya-inbox/` for unprocessed files. Handle two types: regular task debriefs (`<task-id>-debrief.md`) and manual-build-check debriefs (`build-*-debrief.md`, identified by `Type: manual-build-check` header). Ignore `processed/` and `*-tests.md`.
 
-1. Read the debrief
+### 0A — Process each regular task debrief
+
+1. Read the debrief.
 2. Update the corresponding task in `chanakya-master.md`:
-   - Set status to `done` (or `needs-review` if the debrief flags issues)
-   - Record commit hashes and the merge commit from the debrief's Branch section
-3. For every item in the debrief's `## Follow-up Tasks` section, create a **new** task entry in `chanakya-master.md`:
-   - Assign a fresh task ID
-   - Set status to `pending`
-   - Set `Source:` field to the originating task ID (e.g., `T001`) — this is the pointer Achilles uses at its 15-min surface step
-   - Include the description from the follow-up item
-   - If the follow-up is manual-verification of the parent task, include the test-case artifact path in Notes
-4. If the debrief has substantive follow-ups, immediately generate briefs for them (same as Brief Generation mode, Steps 3–6) so they land in `chanakya-tasks/` before Achilles' 15-min wake fires. Set their status to `briefed`.
-5. Move the debrief to `~/.dev-studio/<project>/plans/chanakya-inbox/processed/`. Leave any `<task-id>-tests.md` artifact in place.
-6. Report a one-line summary: "Processed T001 — done, 2 follow-ups briefed (T014, T015)."
+   - Set status to `done` (or `needs-review` if the debrief flags issues).
+   - Record commit hashes and the merge commit from the Branch section.
+3. **Update the Build Debt block** (see Build Debt Tracking below) using the debrief's `build_gate:` field.
+4. For every item in the debrief's `## Follow-up Tasks` section, create a **new** task entry:
+   - Fresh task ID, `Source:` = originating task ID, status `pending`.
+   - If the follow-up is manual-verification of the parent, include the test-case artifact path in Notes.
+5. If the debrief has substantive follow-ups, immediately generate briefs for them (same as Brief Generation mode, Steps 3–6). Set their status to `briefed`.
+6. Move the debrief to `processed/`. Leave `*-tests.md` in place.
+7. Report: "Processed T001 — done, 2 follow-ups briefed (T014, T015). Build debt: 7/12."
 
-Then proceed with the requested mode (for `auto-sweep` invocations, stop here after re-scheduling the next wake).
+### 0B — Process each manual-build-check debrief
+
+1. Read the debrief. Note `HEAD:`, `Covers:`, `result:`, and (if red) the `## Bisect Result` block.
+2. **Green result** (`result: pass`):
+   - Reset the Build Debt counter to 0.
+   - Update `Last green: build-<stamp> (<timestamp>)` and set `HEAD SHA: <sha>`.
+   - Clear `Unverified since:` to `[]`.
+   - Close any open `TBUILD-<n>` task: set status to `verified` with note "covered by manual build check `build-<stamp>`".
+   - Close any open `TBISECT-<n>` task if it covered the same range: set status `verified`, note the pass.
+   - If the debt block was in `block` state (≥12 before), clear it — new briefs/runs are unblocked.
+3. **Red result** (`result: fail`):
+   - Do **not** reset the counter. Keep the block state active regardless of counter value — a confirmed-red main always blocks.
+   - Auto-file a P0 fix task:
+     - ID: next free `T<nnn>` (not a T-prefix tasks — just the normal sequence).
+     - Title: `"Fix red build — <breaking-commit-subject>"`.
+     - Priority: `P0` (blocker).
+     - Type: `bugfix`.
+     - `Source:` = `build-<stamp>`.
+     - Description: quote the full `## Bisect Result` from the debrief. List suspect files, breaking commit SHA, error excerpt.
+     - Status: `briefed` — the debrief already contains enough context; the task entry doubles as a mini-brief.
+   - Tag the Build Debt block with `blocked_by: T<nnn>` so subsequent `/chanakya brief` calls refuse with a useful pointer.
+4. **Inconclusive bisect** (`bisect_inconclusive: true`):
+   - File a P0 manual-investigation task covering the same range, rather than a specific-commit fix task.
+   - Keep block state active.
+5. Move the debrief to `processed/`.
+6. Report: "Processed manual build check `build-20260415-143200` — green. Debt reset. TBUILD-3 closed." (or red variant with fix-task ID.)
+
+### 0C — Threshold actions
+
+After 0A and 0B run, evaluate the current Build Debt counter:
+
+- **Counter crosses from 5 → 6** (first time reaching warn threshold, and no open `TBUILD-<n>` exists):
+  - Auto-file a new `TBUILD-<n>` task:
+    - ID: `TBUILD-<n>` where `<n>` is the next free integer (track via Changelog or a dedicated counter in the Build Debt block).
+    - Title: `"Build verification checkpoint"`.
+    - Priority: `P0`.
+    - Type: `build-check`.
+    - `Source:` = `build-debt`.
+    - Complexity: `S`.
+    - Description: "Run `/achilles build` to verify HEAD is green. Covers: [T015..T020]."
+    - Status: `briefed`.
+- **Counter in [6, 11], TBUILD-<n> already open**: update its Covers list in-place with the newly added task IDs. Do not file a second TBUILD.
+- **Counter crosses 12** (block threshold): no new TBUILD needed (existing one stays P0). Mark Build Debt block state as `block`. The banner on future `/chanakya` and `/chanakya brief` will refuse new work.
+- **Counter after reset to 0**: clear block state, close open TBUILD as above.
+
+### 0D — Stale-artifact janitor
+
+Scan `~/.dev-studio/<project>/worktrees/` and `~/.dev-studio/<project>/derived-data/` for directories matching `build-*` (lowercase, timestamp-stamped):
+
+- If older than 48h AND no open P0 fix task references them in its Source field → remove the directory.
+- Otherwise leave in place.
+
+This prevents indefinite accumulation of red-build artifacts while preserving anything the user is actively using.
+
+### 0E — Proceed to the requested mode
+
+For `auto-sweep` invocations, stop here after re-scheduling the next wake.
+
+---
+
+## Build Debt Tracking
+
+The master plan's top-level `## Build Debt` block is the source of truth. Schema:
+
+```markdown
+## Build Debt
+- Counter: 8 / warn@6 / block@12
+- State: warn            <!-- silent | warn | block -->
+- Last green: build-20260414-093200 (2026-04-14 09:32)
+- Last green SHA: a1b2c3d
+- Unverified since: [T015, T016, T017, T018, T019, T020, T021, T022]
+- Open check task: TBUILD-3
+- Blocked by: —          <!-- only set when a manual-build-check came back red; points to the P0 fix task -->
+- Next TBUILD n: 4
+```
+
+### Counter update rules (applied during Step 0A per debrief)
+
+| Debrief's `build_gate` | Debrief's `build_debt_override` | Action |
+|---|---|---|
+| `full-green` | false | Counter → 0; `State: silent`; update `Last green`; clear `Unverified since`; close open TBUILD. |
+| `lsp-only` | false | Counter += 1; append task-id to `Unverified since`. |
+| `lsp-only` | true | Counter += 1; append `<task-id>[overridden]` to `Unverified since`. |
+| `full-green` | true | Counter → 0; ignore override flag (a real full-green has cleared the debt regardless). |
+
+Transitions after counter update:
+
+- `Counter = 0` → `State: silent`.
+- `Counter ∈ [1, 5]` → `State: silent`.
+- `Counter ∈ [6, 11]` → `State: warn`. File TBUILD on the 5→6 transition (0C).
+- `Counter ≥ 12` → `State: block`.
+- `Blocked by: T<nnn>` (red-build fix outstanding) → `State: block` regardless of counter. Cleared only when the fix task lands and a subsequent manual build check passes.
+
+### Banner rules
+
+Before executing any mode (including intake, status, brief, review, update, test-manifest, review-feedback), inspect `State:`:
+
+- `silent` → no banner.
+- `warn` → print once at the top:
+  > "⚠️ Build debt: `<n>` tasks merged without a full build (`<id-list>`). Open check: `TBUILD-<n>`. Block at 12 — `<12-n>` more until new work is refused."
+- `block` → print once at the top:
+  > "⛔ Build debt BLOCKED (counter=`<n>`, or red-build outstanding via `<T-fix-id>`). Run `/achilles build` (or complete `<T-fix-id>`) to unblock. New briefs refused; overrides are via `/achilles <id> --ignore-build-debt`."
+
+### Brief-mode refusal under `block`
+
+In Brief Generation mode (`/chanakya brief <task-id>`), if `State: block`:
+
+- If the task-id is a `TBUILD-*` or the P0 fix referenced by `Blocked by:`, proceed — these are the unblocking tasks.
+- Otherwise refuse, print the block banner, and exit without writing.
 
 ---
 
@@ -435,6 +543,21 @@ When ALL tasks for a feature are `verified` (check after every inbox sweep and a
 
 ---
 
+## Build Debt
+
+- Counter: 0 / warn@6 / block@12
+- State: silent
+- Last green: —
+- Last green SHA: —
+- Unverified since: []
+- Open check task: —
+- Blocked by: —
+- Next TBUILD n: 1
+
+<!-- Thresholds are configurable. Do not hand-edit Counter/State — Chanakya's Step 0 owns them. -->
+
+---
+
 ## Tasks
 
 ### T001 — <Title>
@@ -493,7 +616,7 @@ When ALL tasks for a feature are `verified` (check after every inbox sweep and a
 
 - **Priority:** P0
 - **Complexity:** L
-- **Size:** small | medium | large   <!-- drives Achilles' Step 4 build discipline -->
+- **Size:** XS | S | M | L   <!-- drives Achilles' Step 6 gate: XS/S → lsp-only, M/L → full-green. Escalation triggers in Achilles override this to full-green regardless. -->
 
 ## Branch
 
@@ -559,6 +682,10 @@ Completed: <timestamp>
 ## Files Changed
 - <list>
 
+## Build Verification
+build_gate: lsp-only | full-green
+build_debt_override: false
+
 ## Decisions Made
 - <deviations from brief and why>
 
@@ -591,3 +718,5 @@ Then update `~/.dev-studio/<project>/plans/chanakya-master.md`: set this task's 
 7. **Learnings compound.** Worker debriefs feed into project memory. Knowledge accumulates across features.
 8. **`done` ≠ `verified`.** Never close a feature until the user has signed off via `review-feedback`. Surface `done` tasks in status reports.
 9. **Never auto-regenerate the test manifest.** It is user-driven; `test-manifest` runs only on explicit command, and refuses to clobber unreviewed edits unless `--force` is passed.
+10. **Build debt is automatic.** Step 0 updates the counter from every debrief, auto-files TBUILD at warn@6, blocks at warn@12, files P0 fix tasks from red build checks. No user confirmation needed; the banner keeps the user informed.
+11. **Fully automated.** Build-debt actions (counter updates, TBUILD filing, threshold transitions, janitor cleanup, closing TBUILD on green) never prompt the user. The banner is informational only.

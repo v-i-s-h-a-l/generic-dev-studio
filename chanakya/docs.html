@@ -427,7 +427,7 @@
     <h1>
       <span class="chanakya-name">Chanakya</span><span class="plus">+</span><span class="achilles-name">Achilles</span>
     </h1>
-    <p class="tagline">A two-agent system for managing iOS development</p>
+    <p class="tagline">Plan, execute in isolated worktrees, gate on green builds, debrief — all without ever touching your uncommitted changes</p>
   </div>
 </div>
 
@@ -436,6 +436,8 @@
   <div class="nav-inner">
     <a href="#commands">Commands</a>
     <a href="#flow">How It Works</a>
+    <a href="#safety">Safety</a>
+    <a href="#build-debt">Build Debt</a>
     <a href="#when">When to Use</a>
     <a href="#examples">Examples</a>
     <a href="#files">File System</a>
@@ -470,18 +472,48 @@
       <code>/chanakya update</code>
       <span>Sync the master plan with current git and worktree state</span>
     </div>
+    <div class="cmd-card">
+      <code>/chanakya test-manifest</code>
+      <span>Consolidate every done-but-unverified task's cases into <code>user-testing.md</code></span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya review-feedback</code>
+      <span>Promote passing tasks to <code>verified</code>; turn failures into follow-up tasks</span>
+    </div>
   </div>
 
   <h3 style="color: var(--achilles);">Achilles — The Warrior</h3>
   <div class="cmd-grid">
     <div class="cmd-card achilles">
       <code>/achilles T001</code>
-      <span>Pick up a briefed task — reads the brief, implements, reports back</span>
+      <span>Pick up a briefed task in an isolated worktree, self-review, gate on green build, merge locally (default: no wait)</span>
+    </div>
+    <div class="cmd-card achilles">
+      <code>/achilles T001 --wait</code>
+      <span>Same pipeline, but pauses up to 10 min for your test feedback before merging</span>
+    </div>
+    <div class="cmd-card achilles">
+      <code>/achilles T001 --force-build</code>
+      <span>Force a full <code>xcodebuild</code> even for XS/S tasks (escape hatch)</span>
+    </div>
+    <div class="cmd-card achilles">
+      <code>/achilles T001 --ignore-build-debt</code>
+      <span>Override the build-debt block. Recorded in the debrief; use sparingly</span>
     </div>
     <div class="cmd-card achilles">
       <code>/achilles</code>
-      <span>Direct mode — describe any task and Achilles executes it immediately</span>
+      <span>Direct mode — free-form task, no brief required</span>
     </div>
+    <div class="cmd-card achilles">
+      <code>/achilles build</code>
+      <span>On-demand build check at HEAD. Green resets debt; red auto-bisects and files a P0 fix</span>
+    </div>
+  </div>
+  <div class="callout" style="margin-top: 20px;">
+    <strong>Default is merge-immediately.</strong> Achilles logs a "manual verification" follow-up for every task and surfaces Chanakya-created follow-ups 15 min after merge. Batch-test with <code>/chanakya test-manifest</code> when you're ready.
+  </div>
+  <div class="callout" style="margin-top: 12px;">
+    <strong>Build debt tracking.</strong> XS/S tasks skip <code>xcodebuild</code> and rely on <code>swift-lsp</code>. A counter in the master plan tracks skipped builds: <strong>warn@6</strong> surfaces a banner and auto-files <code>TBUILD-&lt;n&gt;</code>; <strong>block@12</strong> refuses new briefs until resolved. Run <code>/achilles build</code> any time to verify HEAD — green resets, red auto-bisects.
   </div>
 </section>
 
@@ -498,22 +530,132 @@
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node chanakya-node">/chanakya brief — fetches Figma, scans code, writes brief</span>
+      <span class="flow-node chanakya-node">/chanakya brief — fetches Figma, scans code, writes self-contained brief</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node achilles-node">/achilles T001 — reads brief, implements, asks for feedback</span>
+      <span class="flow-node achilles-node">/achilles T001 — branches into ~/.dev-studio/&lt;project&gt;/worktrees/T001/ from committed HEAD</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node" style="border-color: var(--purple); color: var(--purple);">Achilles writes debrief to inbox</span>
+      <span class="flow-node achilles-node">implement → self-review (simplify) → green-build gate (serialized xcodebuild)</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node chanakya-node">/chanakya status — processes inbox, updates plan, suggests next</span>
+      <span class="flow-node achilles-node">write test cases → optional --wait (auto-merge after 600s) → merge --no-ff (serialized)</span>
+    </div>
+    <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
+    <div class="flow-row">
+      <span class="flow-node" style="border-color: var(--purple); color: var(--purple);">worktree + per-task DerivedData cleaned up; debrief dropped to inbox</span>
+    </div>
+    <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
+    <div class="flow-row">
+      <span class="flow-node chanakya-node">Chanakya sweeps inbox — marks done, briefs follow-ups, surfaces them 15 min later</span>
+    </div>
+    <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
+    <div class="flow-row">
+      <span class="flow-node chanakya-node">/chanakya test-manifest → you tick boxes → /chanakya review-feedback → verified</span>
     </div>
   </div>
-  <p>Both agents are <strong>proactive</strong> — they always suggest the next step. You just say "yes", "no", or redirect.</p>
+  <p>The full Achilles pipeline is <strong>11 steps</strong>: load spec → claim → isolate → implement → self-review → green build → write tests → optional wait → commit &amp; merge → debrief → surface follow-ups. Both agents are proactive — they always suggest the next step.</p>
+</section>
+
+<!-- Safety -->
+<section id="safety">
+  <h2>Safety Guarantees</h2>
+  <div class="tip-grid">
+    <div class="tip">
+      <div class="tip-num">01</div>
+      <div class="tip-title">Uncommitted changes are never touched</div>
+      <div class="tip-desc">Achilles branches from <em>committed</em> HEAD into an isolated worktree. Your main checkout is left alone.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">02</div>
+      <div class="tip-title">Red builds never merge</div>
+      <div class="tip-desc">Step 6 gates on <code>xcodebuild</code> success. On failure the branch and per-task DerivedData are retained for inspection.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">03</div>
+      <div class="tip-title">Merge conflicts are never force-resolved</div>
+      <div class="tip-desc">Achilles stops and surfaces them. Branch + DerivedData stay alive so you can resolve manually.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">04</div>
+      <div class="tip-title">Parallel-safe: builds serialized</div>
+      <div class="tip-desc">Per-project <code>mkdir</code> lock prevents SPM-cache and module-cache races across 6–10 parallel Achilles instances.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">05</div>
+      <div class="tip-title">Parallel-safe: merges serialized</div>
+      <div class="tip-desc">A second lock handles <code>.git/index.lock</code> contention, checkout races, and <code>$ORIG_BRANCH</code> tip movement.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">06</div>
+      <div class="tip-title">Per-task DerivedData</div>
+      <div class="tip-desc">Each task builds into <code>~/.dev-studio/&lt;project&gt;/derived-data/&lt;task-id&gt;/</code>. Cleaned on clean merge, retained on failure.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">07</div>
+      <div class="tip-title">--wait never hangs</div>
+      <div class="tip-desc">A <code>ScheduleWakeup(600s)</code> fires even if you're idle. Achilles stamps "no reply within window" and auto-merges.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">08</div>
+      <div class="tip-title">Achilles never self-picks</div>
+      <div class="tip-desc">Control returns to the user (or Chanakya) after every completion. No runaway fleets.</div>
+    </div>
+  </div>
+</section>
+
+<!-- Build Debt -->
+<section id="build-debt">
+  <h2>Build Debt &mdash; Automated</h2>
+  <p>XS/S tasks skip <code>xcodebuild</code> (LSP-only) to keep the fleet fast. Chanakya counts every skipped build as "debt" and forces a full verification at threshold.</p>
+
+  <h3>State machine</h3>
+  <table class="decision-table">
+    <thead><tr><th>Counter</th><th>State</th><th>Behavior</th></tr></thead>
+    <tbody>
+      <tr><td>0 – 5</td><td>silent</td><td>Normal operation. No banner. No action.</td></tr>
+      <tr><td>6 – 11</td><td>warn</td><td>Banner on every Chanakya invocation. <code>TBUILD-&lt;n&gt;</code> auto-filed as P0 at the 5→6 transition. New work still allowed.</td></tr>
+      <tr><td>≥ 12</td><td>block</td><td>Banner + refuse new <code>/chanakya brief</code>. Achilles refuses to claim non-TBUILD tasks unless <code>--ignore-build-debt</code>. Override tasks are tracked.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Size → gate</h3>
+  <table class="decision-table">
+    <thead><tr><th>Task size</th><th>Gate</th><th>Debt impact</th></tr></thead>
+    <tbody>
+      <tr><td>XS / S (≤2 files, ≤50 lines, no triggers)</td><td><code>lsp-only</code></td><td>+1 per merge</td></tr>
+      <tr><td>M / L, or escalation triggers</td><td><code>full-green</code> (xcodebuild)</td><td>Resets counter to 0</td></tr>
+      <tr><td>Direct mode</td><td><code>full-green</code></td><td>Resets counter to 0</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Escalation triggers</strong> (force <code>full-green</code> regardless of declared size): any <code>import</code>, <code>public</code>/<code>open</code>, <code>protocol</code>, <code>actor</code>/<code>async</code>/<code>@MainActor</code>, generics, <code>Package.swift</code>/<code>.xcconfig</code>/<code>project.pbxproj</code>, or new/deleted/renamed files.</p>
+
+  <h3><code>/achilles build</code> &mdash; the reset button</h3>
+  <ul>
+    <li><strong>Green:</strong> counter → 0, <code>TBUILD-&lt;n&gt;</code> closes, block clears. One short debrief.</li>
+    <li><strong>Red:</strong> <code>git bisect &lt;last-green&gt;..HEAD</code> runs automatically (capped at 6 bisect steps, DerivedData retained between steps). Debrief names the breaking commit and lists suspect files. Chanakya auto-files a P0 fix task on the next sweep. Block stays active until the fix lands and a subsequent green check runs.</li>
+    <li><strong>Fast-path no-op:</strong> if HEAD equals the last-green SHA, the command exits instantly without running xcodebuild.</li>
+  </ul>
+
+  <h3>Master-plan header</h3>
+  <p>The <code>## Build Debt</code> block at the top of <code>chanakya-master.md</code> is the source of truth:</p>
+  <div class="file-tree">
+    ## Build Debt<br>
+    - Counter: 8 / warn@6 / block@12<br>
+    - State: warn<br>
+    - Last green: build-20260414-093200 (2026-04-14 09:32)<br>
+    - Last green SHA: a1b2c3d<br>
+    - Unverified since: [T015, T016, T017, T018, T019, T020, T021, T022]<br>
+    - Open check task: TBUILD-3<br>
+    - Blocked by: &mdash;<br>
+    - Next TBUILD n: 4
+  </div>
+  <div class="callout" style="margin-top: 16px;">
+    <strong>Fully automated.</strong> No prompts. Counter updates on every inbox sweep. TBUILD is auto-filed, auto-closed. Stale <code>build-*</code> artifacts older than 48h are janitored away if no fix task references them.
+  </div>
 </section>
 
 <!-- When to Use -->
@@ -526,9 +668,12 @@
     <tbody>
       <tr><td>New feature with Figma designs</td><td><span class="badge badge-both">Chanakya + Achilles</span></td></tr>
       <tr><td>Multi-file refactor</td><td><span class="badge badge-chanakya">Chanakya plans</span></td></tr>
-      <tr><td>Simple bug fix</td><td><span class="badge badge-achilles">Achilles direct</span></td></tr>
-      <tr><td>One-file UI tweak</td><td><span class="badge badge-achilles">Achilles direct</span></td></tr>
-      <tr><td>Crash fix</td><td><span class="badge badge-achilles">Achilles direct</span></td></tr>
+      <tr><td>Simple bug fix / crash / one-file tweak</td><td><span class="badge badge-achilles">Achilles direct</span></td></tr>
+      <tr><td>Running 6–10 tasks in parallel</td><td><span class="badge badge-achilles">/achilles T00X &times; N (default no-wait)</span></td></tr>
+      <tr><td>Want to watch a single task merge</td><td><span class="badge badge-achilles">/achilles T001 --wait</span></td></tr>
+      <tr><td>Verify main is green on demand</td><td><span class="badge badge-achilles">/achilles build</span></td></tr>
+      <tr><td>Force full build on a small task</td><td><span class="badge badge-achilles">/achilles T001 --force-build</span></td></tr>
+      <tr><td>Batch-test completed work</td><td><span class="badge badge-chanakya">/chanakya test-manifest → review-feedback</span></td></tr>
       <tr><td>PRD changed mid-feature</td><td><span class="badge badge-chanakya">/chanakya review</span></td></tr>
     </tbody>
   </table>
@@ -754,23 +899,27 @@
   <h2>File System</h2>
   <p>After a typical feature lifecycle:</p>
   <div class="file-tree">
-    <span class="dir">~/.dev-studio/&lt;project&gt;/plans/</span><br>
-    &nbsp;&nbsp;<span class="file">chanakya-master.md</span> <span class="comment"># The master plan</span><br>
-    &nbsp;&nbsp;<span class="file">user-testing.md</span> <span class="comment"># Consolidated manual-test file (on demand)</span><br>
-    &nbsp;&nbsp;<span class="dir">chanakya-tasks/</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-export-settings.md</span> <span class="comment"># Brief (by Chanakya)</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T002-format-selection.md</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T003-share-sheet.md</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T004-progress-indicator.md</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T005-watermark.md</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T006-export-history.md</span><br>
-    &nbsp;&nbsp;<span class="dir">chanakya-inbox/</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">direct-xyz7890-debrief.md</span> <span class="comment"># Unprocessed</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">processed/</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-debrief.md</span> <span class="comment"># Processed by Chanakya</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T002-debrief.md</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T003-debrief.md</span>
+    <span class="dir">~/.dev-studio/&lt;project&gt;/</span> <span class="comment"># slug = basename of git toplevel</span><br>
+    &nbsp;&nbsp;<span class="dir">plans/</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">chanakya-master.md</span> <span class="comment"># The master plan</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">user-testing.md</span> <span class="comment"># Consolidated manual-test file (on demand)</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">chanakya-tasks/</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-export-settings.md</span> <span class="comment"># Self-contained brief</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-tests.md</span> <span class="comment"># Test cases (by Achilles)</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T002-format-selection.md</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">chanakya-inbox/</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">direct-xyz7890-debrief.md</span> <span class="comment"># Unprocessed</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">processed/</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-debrief.md</span> <span class="comment"># Processed by Chanakya</span><br>
+    &nbsp;&nbsp;<span class="dir">worktrees/</span> <span class="comment"># Per-task isolated checkouts</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">T001/</span> <span class="comment"># branch achilles/T001 — removed on clean merge</span><br>
+    &nbsp;&nbsp;<span class="dir">derived-data/</span> <span class="comment"># Per-task xcodebuild output</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">T001/</span> <span class="comment"># cleaned on clean merge, retained on failure</span><br>
+    &nbsp;&nbsp;<span class="dir">locks/</span> <span class="comment"># mkdir locks — serialize builds &amp; merges across instances</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">build.lock/</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">merge.lock/</span>
   </div>
+  <p style="margin-top: 16px;"><strong>Why outside <code>~/.claude/</code>?</strong> Keeps both agents clear of Claude Code's self-mod permission guard, so they can read/write their own artifacts unattended.</p>
 </section>
 
 <!-- Tips -->
@@ -789,8 +938,8 @@
     </div>
     <div class="tip">
       <div class="tip-num">03</div>
-      <div class="tip-title">Self-selecting workers</div>
-      <div class="tip-desc">Achilles reads the master plan after each task and suggests the next one. You don't need to remember task IDs.</div>
+      <div class="tip-title">Default is no-wait</div>
+      <div class="tip-desc">Plain <code>/achilles T001</code> merges as soon as the build goes green and logs a manual-verification follow-up. Add <code>--wait</code> only when you want to test before merge.</div>
     </div>
     <div class="tip">
       <div class="tip-num">04</div>
@@ -804,8 +953,8 @@
     </div>
     <div class="tip">
       <div class="tip-num">06</div>
-      <div class="tip-title">Go parallel</div>
-      <div class="tip-desc">Independent briefed tasks can run in separate terminal tabs simultaneously. They won't conflict.</div>
+      <div class="tip-title">Go parallel — aggressively</div>
+      <div class="tip-desc">Fire 6–10 <code>/achilles T00X</code> in separate tabs. Each runs in its own worktree with its own DerivedData; builds and merges serialize automatically via <code>~/.dev-studio/&lt;project&gt;/locks/</code>.</div>
     </div>
     <div class="tip">
       <div class="tip-num">07</div>
@@ -815,7 +964,17 @@
     <div class="tip">
       <div class="tip-num">08</div>
       <div class="tip-title">Skip when trivial</div>
-      <div class="tip-desc">A one-line crash fix doesn't need Chanakya. Just <code>/achilles</code> and describe the bug.</div>
+      <div class="tip-desc">A one-line crash fix doesn't need Chanakya. Just <code>/achilles</code> and describe the bug — direct mode runs the same safety pipeline.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">09</div>
+      <div class="tip-title">Batch-test on your schedule</div>
+      <div class="tip-desc">Run <code>/chanakya test-manifest</code> when you're ready. Tick boxes in <code>user-testing.md</code>, note failures, then <code>/chanakya review-feedback</code> promotes passes and files follow-ups for failures.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">10</div>
+      <div class="tip-title">Red builds don't merge</div>
+      <div class="tip-desc">If Step 6 fails, Achilles stops and retains the branch + DerivedData. Inspect under <code>~/.dev-studio/&lt;project&gt;/worktrees/&lt;id&gt;/</code>.</div>
     </div>
   </div>
 </section>

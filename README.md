@@ -13,15 +13,17 @@ All per-project artifacts live under `~/.dev-studio/<project>/` — outside `~/.
 ```
 /chanakya                       # describe features → get a master plan
 /chanakya brief T001            # generate a self-contained worker brief
-/achilles T001                  # execute (default: merge immediately)
+/achilles T001                  # execute (XS/S: lsp-only, M/L: full build; merges immediately)
 /achilles T001 --wait           # execute, block up to 10 min for user feedback
+/achilles T001 --force-build    # override size-driven gate; run full xcodebuild
 /achilles                       # direct mode — free-form task, no brief required
-/chanakya status                # see what's in flight + what awaits verification
+/achilles build                 # on-demand build check at HEAD; auto-bisects on red
+/chanakya status                # see what's in flight + what awaits verification + build debt
 /chanakya test-manifest         # consolidate all done-but-unverified tasks into a testable file
 /chanakya review-feedback       # apply your edits to the test manifest back to the master plan
 ```
 
-Default Achilles run merges immediately and logs a "manual verification" follow-up. Run `/chanakya test-manifest` whenever you're ready to batch-test; tick boxes, add notes, then `/chanakya review-feedback`. Achilles never self-selects the next task — the user (or Chanakya) always drives.
+Default Achilles run merges immediately and logs a "manual verification" follow-up. XS/S tasks skip `xcodebuild` (LSP-only) and accumulate **build debt** — at counter=6 Chanakya files a `TBUILD` P0 check; at 12 new briefs are refused. Run `/achilles build` any time: green resets the counter, red auto-bisects to name the breaking commit and files a P0 fix. Achilles never self-selects the next task — the user (or Chanakya) always drives.
 
 ---
 
@@ -100,38 +102,66 @@ Add to `~/.claude/settings.json` under `permissions.allow`:
 3. **Inbox sweep** — every invocation (and optionally every 10 min in the background) processes debriefs from `chanakya-inbox/`: marks tasks `done`, records commit hashes, auto-creates and briefs any follow-up tasks, stamps each with a `Source:` pointer to its parent.
 4. **PRD delta** — `/chanakya review` diffs an updated PRD against the master plan and flags which tasks need rework.
 5. **Test manifest** — `/chanakya test-manifest` consolidates every `done` (not yet `verified`) task's test cases into one editable file (`user-testing.md`). You tick boxes and add notes; `/chanakya review-feedback` promotes passing tasks to `verified` and creates follow-up tasks from failures.
-6. **Retrospective** — when all tasks for a feature are `verified`, Chanakya compiles a feature memory into `~/.claude/projects/.../memory/` so the knowledge survives across sessions.
+6. **Build-debt tracking** — every inbox sweep updates the `## Build Debt` counter in the master plan using each debrief's `build_gate:` field. Warn@6 auto-files `TBUILD-<n>` (P0 check task); block@12 refuses new briefs. A passing manual build check (green) resets the counter to 0; a failing one files a P0 fix task naming the bisected breaking commit.
+7. **Retrospective** — when all tasks for a feature are `verified`, Chanakya compiles a feature memory into `~/.claude/projects/.../memory/` so the knowledge survives across sessions.
 
 ### Achilles — the worker
 
 Achilles runs an 11-step pipeline. The flow is the same whether the task comes from a Chanakya brief or from a direct-mode instruction:
 
 ```
-1. Load spec                — read brief or ask the user; parse --wait flag
+1. Load spec                — read brief or ask the user; parse --wait /
+                              --force-build / --ignore-build-debt flags
+1.5 Build-debt gate         — read ## Build Debt from master plan.
+                              silent ≤5 / warn 6-11 / block ≥12 (or red-
+                              build outstanding). Block refuses the task
+                              unless --ignore-build-debt or it's a TBUILD.
 2. Claim the task           — set master plan status to in-progress
 3. Isolate                  — compute PROJECT slug from git toplevel;
                               git worktree add from committed HEAD
                               (uncommitted changes stay untouched)
 4. Implement                — small logical commits against the brief
-                              (small tasks rely on swift-lsp, skip xcodebuild)
 5. Self-review              — one iteration via the `simplify` skill
-6. Green build gate         — xcodebuild must pass with per-task
-                              -derivedDataPath; serialized via mkdir lock
-                              across all parallel Achilles instances
+6. Build gate (size-driven) — XS/S (size from brief, no escalation
+                              triggers) → swift-lsp diagnostics only,
+                              emit build_gate=lsp-only.
+                              M/L or escalation triggers (import/public/
+                              protocol/async/generics/Package.swift/
+                              new-or-deleted files) → full xcodebuild,
+                              serialized via mkdir lock, per-task
+                              -derivedDataPath. --force-build escapes
+                              size-selection up to full-green.
 7. Write test cases         — standalone artifact + debrief section
-                              (always written, regardless of --wait)
-8. Optional wait            — default: no wait, proceed immediately with
-                              "manual verification" follow-up logged.
-                              --wait: prompt user; auto-merge after 600s
-                              even if no reply (wake guarantees no hang)
+8. Optional wait            — default: no wait, "manual verification"
+                              follow-up logged. --wait: prompt; auto-
+                              merge after 600s via ScheduleWakeup.
 9. Commit + merge --no-ff   — merge into ORIG_BRANCH locally, serialized
    + worktree remove          via a second mkdir lock. Clean merges also
    + derived-data cleanup     rm -rf the per-task DerivedData. Failures
                               preserve branch + DerivedData for debugging
-10. Debrief + short summary — drop debrief for Chanakya, tell the user
+10. Debrief + short summary — debrief includes ## Build Verification
+                              block (build_gate value). Chanakya's Step 0
+                              updates the debt counter from this field.
 11. (+900s) surface follow-ups — on wake, scan master plan for every
                                  task whose Source: is this task, list
                                  them with acceptance criteria, then idle
+```
+
+### Build mode (`/achilles build`)
+
+On-demand verification, one command, fully automatic:
+
+```
+B1. Compute Covers: range from ## Build Debt (last-green SHA → HEAD).
+    Fast-path no-op if HEAD == last-green SHA.
+B2. Isolate detached-HEAD worktree at build-<timestamp>/.
+B3. Full xcodebuild at HEAD (same lock as normal Step 6).
+B4a. GREEN → write manual-build-check debrief, cleanup worktree +
+     DerivedData, print summary. Chanakya's next sweep resets counter.
+B4b. RED  → git bisect <last-green>..HEAD, re-acquiring lock per step,
+     reusing DerivedData to keep SPM warm. Capped at 6 bisect steps.
+     Debrief names the breaking commit + suspect files. Artifacts
+     retained. Chanakya's next sweep files the P0 fix task.
 ```
 
 Key guarantees:
@@ -276,18 +306,22 @@ chanakya: Will sweep every 600s. [silent unless something processed]
 
 ## When to Use What
 
-| Situation                          | Tool                                  |
-|------------------------------------|---------------------------------------|
-| New feature with Figma             | `/chanakya` → `/achilles`             |
-| Multi-file refactor                | `/chanakya` → `/achilles`             |
-| Bug fix / crash                    | `/achilles` (direct mode)             |
-| One-file UI tweak                  | `/achilles` (direct mode)             |
-| Running 6–10 tasks in parallel     | `/achilles T00X` × N (default no-wait)|
-| Want to watch a single task merge  | `/achilles T001 --wait`               |
-| PRD changed mid-feature            | `/chanakya review`                    |
-| Check what's in flight             | `/chanakya status`                    |
-| Batch-test completed work          | `/chanakya test-manifest` → edit → `/chanakya review-feedback` |
-| Nudge Chanakya to re-scan inbox    | `/chanakya` (Step 0 runs on entry)    |
+| Situation                                 | Tool                                  |
+|-------------------------------------------|---------------------------------------|
+| New feature with Figma                    | `/chanakya` → `/achilles`             |
+| Multi-file refactor                       | `/chanakya` → `/achilles`             |
+| Bug fix / crash                           | `/achilles` (direct mode)             |
+| One-file UI tweak                         | `/achilles` (direct mode)             |
+| Running 6–10 tasks in parallel            | `/achilles T00X` × N (default no-wait)|
+| Want to watch a single task merge         | `/achilles T001 --wait`               |
+| Force full build on a small task          | `/achilles T001 --force-build`        |
+| Verify main is green on demand            | `/achilles build`                     |
+| Build debt blocked you (counter ≥ 12)     | `/achilles build` (or complete the red-build fix task) |
+| Must ship despite block (rare, risky)     | `/achilles T001 --ignore-build-debt`  |
+| PRD changed mid-feature                   | `/chanakya review`                    |
+| Check what's in flight (+ debt state)     | `/chanakya status`                    |
+| Batch-test completed work                 | `/chanakya test-manifest` → edit → `/chanakya review-feedback` |
+| Nudge Chanakya to re-scan inbox           | `/chanakya` (Step 0 runs on entry)    |
 
 ---
 

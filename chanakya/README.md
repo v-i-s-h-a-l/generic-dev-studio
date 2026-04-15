@@ -1,6 +1,8 @@
 # Chanakya + Achilles
 
-A two-agent system for managing iOS development. Chanakya plans the work, Achilles executes it.
+A two-agent system for managing iOS development. Chanakya plans the work; Achilles executes it in an isolated git worktree, self-reviews, gates on a green build, and merges back without ever touching your uncommitted changes.
+
+All per-project artifacts live under `~/.dev-studio/<project>/` (outside `~/.claude/` so the agents don't trip the self-mod permission guard).
 
 ---
 
@@ -13,8 +15,14 @@ A two-agent system for managing iOS development. Chanakya plans the work, Achill
 | `/chanakya brief T001` | Generate a self-contained brief for a task |
 | `/chanakya review` | Diff updated PRD against existing tasks |
 | `/chanakya update` | Sync master plan with git state |
-| `/achilles T001` | Pick up a briefed task and implement it |
-| `/achilles` | Direct mode — describe a task, Achilles does it |
+| `/chanakya test-manifest` | Consolidate every done-but-unverified task's cases into `user-testing.md` |
+| `/chanakya review-feedback` | Apply ticks/notes from `user-testing.md` — promote passes to `verified`, file follow-ups for failures |
+| `/achilles T001` | Execute a briefed task. XS/S → LSP-only gate; M/L → full xcodebuild. Merges immediately on green. |
+| `/achilles T001 --wait` | Same pipeline but pauses up to 10 min for test feedback before merging |
+| `/achilles T001 --force-build` | Force full `xcodebuild` even for XS/S tasks |
+| `/achilles T001 --ignore-build-debt` | Override build-debt block (discouraged; logged in debrief) |
+| `/achilles` | Direct mode — free-form task, no brief required |
+| `/achilles build` | On-demand build check at HEAD. Green resets debt; red auto-bisects and files a P0 fix. |
 
 ---
 
@@ -24,24 +32,41 @@ A two-agent system for managing iOS development. Chanakya plans the work, Achill
 You describe work
         |
         v
-   /chanakya
-   (organizes into tasks, assigns priorities)
+   /chanakya                         (organizes into tasks, assigns priorities)
         |
         v
-   /chanakya brief T001
-   (fetches Figma, scans code, writes self-contained brief)
+   /chanakya brief T001              (fetches Figma, scans code, writes self-contained brief)
         |
         v
-   /achilles T001          (new session or same session)
-   (reads brief, implements, asks for feedback)
+   /achilles T001                    (branches from committed HEAD into
+                                      ~/.dev-studio/<project>/worktrees/T001/)
         |
         v
-   Achilles writes debrief to inbox
+   implement → self-review (simplify) → green-build gate (serialized xcodebuild)
         |
         v
-   /chanakya status        (auto-processes inbox)
-   (updates master plan, suggests next task)
+   write test cases → [optional --wait, auto-merge after 600s] → merge --no-ff (serialized)
+        |
+        v
+   worktree + per-task DerivedData cleaned up; debrief dropped to inbox
+        |
+        v
+   Chanakya sweeps inbox — marks done, briefs any follow-ups, surfaces them ~15 min later
+        |
+        v
+   /chanakya test-manifest → you tick boxes → /chanakya review-feedback → verified
 ```
+
+Default behavior is **merge immediately** and log a "manual verification" follow-up. Batch-test whenever with `/chanakya test-manifest`. Achilles never self-selects the next task — the user (or Chanakya) always drives.
+
+### Safety guarantees
+
+- Uncommitted changes in the main checkout are **never** touched — Achilles branches from committed HEAD.
+- A red `xcodebuild` **never** merges. Branch + per-task DerivedData stay alive for inspection.
+- Merge conflicts are **never** force-resolved — Achilles surfaces them and stops.
+- Builds and merges are **serialized across parallel Achilles instances** via `mkdir` locks in `~/.dev-studio/<project>/locks/` — designed for 6–10 parallel workers.
+- `--wait` never hangs: a `ScheduleWakeup(600s)` auto-merges even if you're idle.
+- **Build debt is tracked, not hidden.** Every XS/S task that skips `xcodebuild` increments a counter. Warn banner at 6, block at 12. `/achilles build` runs a full check on demand — green resets, red auto-bisects and files a P0 fix. The debt counter and state live at the top of `chanakya-master.md`.
 
 Both agents are **proactive** — they always suggest the next step. You just say "yes", "no", or redirect.
 
@@ -53,9 +78,10 @@ Both agents are **proactive** — they always suggest the next step. You just sa
 |-----------|-----|
 | New feature with Figma designs | `/chanakya` to plan, then `/achilles` to implement |
 | Multi-file refactor | `/chanakya` to plan |
-| Simple bug fix | `/achilles` directly |
-| One-file UI tweak | `/achilles` directly |
-| Crash fix | `/achilles` directly |
+| Simple bug fix / crash / one-file tweak | `/achilles` directly |
+| Running 6–10 tasks in parallel | `/achilles T00X` × N (default no-wait) |
+| Want to watch one merge | `/achilles T001 --wait` |
+| Batch-test completed work | `/chanakya test-manifest` → edit → `/chanakya review-feedback` |
 | PRD changed mid-feature | `/chanakya review` |
 
 **Rule of thumb:** If you'd spend more than 2 minutes explaining the task to a worker, use Chanakya to write a brief. Otherwise, go direct.
@@ -657,24 +683,30 @@ Chanakya: [auto-sweeps inbox — finds T001 debrief]
 After a typical feature lifecycle, here's what the file tree looks like:
 
 ```
-~/.dev-studio/<project>/plans/
-  chanakya-master.md                          # The master plan
-  user-testing.md                             # Consolidated manual-test file (on demand)
-  user-testing-archive/                       # Past manifests after review-feedback
-  chanakya-tasks/
-    T001-export-settings.md                   # Brief (written by Chanakya)
-    T002-format-selection.md
-    T003-share-sheet.md
-    T004-progress-indicator.md
-    T005-watermark.md
-    T006-export-history.md
-  chanakya-inbox/
-    direct-xyz7890-debrief.md                 # Unprocessed ad-hoc debrief
-    processed/
-      T001-debrief.md                         # Processed by Chanakya
-      T002-debrief.md
-      T003-debrief.md
+~/.dev-studio/<project>/                      # slug = basename of git toplevel
+  plans/
+    chanakya-master.md                        # The master plan
+    user-testing.md                           # Consolidated manual-test file (on demand)
+    user-testing-archive/                     # Past manifests after review-feedback
+    chanakya-tasks/
+      T001-export-settings.md                 # Brief (written by Chanakya)
+      T001-tests.md                           # Test cases (written by Achilles)
+      T002-format-selection.md
       ...
+    chanakya-inbox/
+      direct-xyz7890-debrief.md               # Unprocessed ad-hoc debrief
+      processed/
+        T001-debrief.md                       # Processed by Chanakya
+        T002-debrief.md
+  worktrees/                                  # Per-task isolated checkouts
+    T001/                                     # branch achilles/T001 — removed on clean merge
+    build-20260415-143200/                    # /achilles build — detached HEAD, retained on red
+  derived-data/                               # Per-task xcodebuild output
+    T001/                                     # cleaned on clean merge, retained on failure
+    build-20260415-143200/                    # /achilles build — retained on red
+  locks/                                      # mkdir locks — serialize xcodebuild & merges
+    xcodebuild.lock/
+    git-merge.lock/
 ```
 
 ---
@@ -685,14 +717,26 @@ After a typical feature lifecycle, here's what the file tree looks like:
 
 2. **Chanakya always suggests next steps.** Just say "yes" to keep moving. Say "do T003 instead" to redirect. Say "I'm done for now" to stop.
 
-3. **Achilles picks its own next task.** After finishing work, it reads the master plan and suggests what to do next. You don't need to remember task IDs.
+3. **Default is no-wait.** Plain `/achilles T001` merges as soon as the build goes green and logs a manual-verification follow-up. Add `--wait` only when you want to test before the merge.
 
-4. **Briefs are snapshots.** If the codebase changes significantly between briefing and execution, Achilles may flag stale references. Just regenerate the brief with `/chanakya brief T001`.
+4. **Achilles never self-picks.** Control returns to you (or Chanakya) after every completion. Follow-ups surface ~15 min later via a scheduled wake.
 
-5. **Debriefs are where knowledge lives.** The Key Learnings section in debriefs feeds into project memory. Be generous with feedback — tell Achilles what was tricky, what was surprising, what future sessions should know.
+5. **Briefs are snapshots.** If the codebase changes significantly between briefing and execution, Achilles may flag stale references. Just regenerate the brief with `/chanakya brief T001`.
 
-6. **Use parallel workers for independent tasks.** If T003, T004, and T005 are all briefed and independent, run three Achilles sessions in three terminal tabs. They won't conflict.
+6. **Debriefs are where knowledge lives.** The Key Learnings section in debriefs feeds into project memory. Be generous with feedback — tell Achilles what was tricky, what was surprising, what future sessions should know.
 
-7. **PRD changes mid-flight are normal.** Use `/chanakya review` to diff the changes against existing tasks. Chanakya tells you exactly what's affected and what needs re-briefing.
+7. **Go parallel aggressively.** Fire 6–10 `/achilles T00X` in separate tabs. Each runs in its own worktree with its own DerivedData; builds and merges serialize automatically via `~/.dev-studio/<project>/locks/`.
+
+8. **PRD changes mid-flight are normal.** Use `/chanakya review` to diff the changes against existing tasks. Chanakya tells you exactly what's affected and what needs re-briefing.
+
+9. **Batch-test on your schedule.** Run `/chanakya test-manifest` when you're ready. Tick boxes in `user-testing.md`, note failures, then `/chanakya review-feedback` promotes passes to `verified` and files follow-ups for failures.
+
+10. **Red builds don't merge.** If the build gate fails, Achilles stops. Inspect under `~/.dev-studio/<project>/worktrees/<id>/` — the branch and DerivedData are preserved.
+
+11. **Run `/achilles build` when you feel like it.** No task ID needed — it builds HEAD in a detached worktree, auto-bisects on red, and Chanakya resets the debt counter on its next sweep. Fast-path no-op if HEAD is already the last known green.
+
+12. **Escalation triggers protect you.** Even if a task is declared XS/S, Achilles forces a full build whenever the diff touches `import`, `public`, `protocol`, `actor`, `async`, generics, `Package.swift`, or any file-level rename/add/delete. The skip is only for the cases where it's obviously safe.
+
+13. **Build debt banner is informational.** Warn@6 prints on every Chanakya invocation until you run `/achilles build`. Block@12 also refuses new briefs — override with `/achilles T0XX --ignore-build-debt` (recorded in the debrief).
 
 8. **Not everything needs a plan.** A one-line crash fix doesn't need Chanakya. Just `/achilles` and describe the bug. The debrief still gets logged for tracking.
