@@ -139,26 +139,57 @@ Call `ScheduleWakeup` with `delaySeconds: 600` and a prompt that resumes Step 8 
 - **User approved:** proceed to Step 9.
 - **10-min wake fired with no feedback:** the test-case artifact already exists. Add a `## Follow-up Tasks` entry to the debrief asking Chanakya to track "Manual verification of T001". Proceed to Step 9.
 
-### Step 9 — Commit, merge back, clean up
+### Step 9 — Commit, merge back, clean up (serialized across Achilles instances)
 
 Only if Step 6 is green and the user hasn't rejected the work.
 
+The merge happens in the **shared main checkout**, so concurrent Achilles instances race on `.git/index.lock`, the branch checkout, and `$ORIG_BRANCH`'s tip. Serialize this section with a second `mkdir`-based lock — same pattern as Step 6 but a different lock file. The critical section is short (seconds), so contention is negligible even at 10 workers.
+
+The committing inside the worktree is safe to run unlocked (each worktree has its own index). Acquire the lock **only** for the main-checkout block.
+
 ```bash
-# inside the worktree
+# 1. Inside the worktree — safe to run unlocked
 git add -A && git commit -m "<task-id>: <summary>"   # or several small commits
 
-# back in the main checkout
+# 2. Acquire the merge lock before touching the main checkout
+LOCK_DIR=~/.claude/locks
+MERGE_LOCK=$LOCK_DIR/turnip-git-merge.lock
+mkdir -p "$LOCK_DIR"
+while true; do
+  if mkdir "$MERGE_LOCK" 2>/dev/null; then
+    echo $$ > "$MERGE_LOCK/pid"
+    break
+  fi
+  if [ -n "$(find "$MERGE_LOCK" -maxdepth 0 -mmin +45 2>/dev/null)" ]; then
+    echo "Stale merge lock (>45min), reclaiming" >&2
+    rm -rf "$MERGE_LOCK"
+    continue
+  fi
+  sleep 5
+done
+trap 'rm -rf "$MERGE_LOCK"' EXIT INT TERM
+
+# 3. Inside the lock — checkout, refresh tip, merge, cleanup
 cd <repo-root>
 git checkout "$ORIG_BRANCH"
+git fetch origin "$ORIG_BRANCH" 2>/dev/null || true   # refresh in case a sibling advanced it
 git merge --no-ff achilles/<task-id> -m "Merge <task-id> into $ORIG_BRANCH"
+MERGE_STATUS=$?
 
-# clean up the worktree
 git worktree remove ~/.claude/worktrees/turnip-ios/<task-id>
+
+# 4. Release
+rm -rf "$MERGE_LOCK"
+trap - EXIT INT TERM
+
+[ $MERGE_STATUS -eq 0 ] || { echo "Merge failed (likely conflict) — branch left intact"; exit $MERGE_STATUS; }
 ```
 
-If the merge has conflicts (possible if the user committed to `ORIG_BRANCH` while you worked): stop, leave the branch intact, and surface it. **Do not force-resolve.**
-
-If the build was not green, do **not** merge. Leave `achilles/<task-id>` alive for the user to inspect.
+**Rules:**
+- Acquire the merge lock **only** around the main-checkout block. Do not hold it during commit-in-worktree, debrief writing, or anything else.
+- If the merge has conflicts (a sibling Achilles or the user committed to `$ORIG_BRANCH` while you worked): release the lock, leave the branch intact, surface it. **Do not force-resolve.**
+- If the build was not green (Step 6), do **not** merge. Leave `achilles/<task-id>` alive for the user to inspect.
+- Never bypass the merge lock — `.git/index.lock` failures from siblings are silent corruption risks.
 
 ### Step 10 — Debrief + short user summary + idle
 
