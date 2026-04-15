@@ -657,8 +657,10 @@ Chanakya: [auto-sweeps inbox — finds T001 debrief]
 After a typical feature lifecycle, here's what the file tree looks like:
 
 ```
-~/.claude/plans/
+~/.dev-studio/<project>/plans/
   chanakya-master.md                          # The master plan
+  user-testing.md                             # Consolidated manual-test file (on demand)
+  user-testing-archive/                       # Past manifests after review-feedback
   chanakya-tasks/
     T001-export-settings.md                   # Brief (written by Chanakya)
     T002-format-selection.md

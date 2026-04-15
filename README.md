@@ -4,19 +4,24 @@ A two-agent system for Claude Code. **Chanakya** plans the work; **Achilles** ex
 
 Built around an iOS/SwiftUI project (Turnip) but the orchestration layer is codebase-agnostic.
 
+All per-project artifacts live under `~/.dev-studio/<project>/` — outside `~/.claude/` so neither agent trips self-mod permission prompts.
+
 ---
 
 ## TL;DR
 
 ```
-/chanakya                 # describe features → get a master plan
-/chanakya brief T001      # generate a self-contained worker brief for T001
-/achilles T001            # execute the brief on an isolated worktree
-/achilles                 # direct mode — free-form task, no brief required
-/chanakya status          # see what's in flight
+/chanakya                       # describe features → get a master plan
+/chanakya brief T001            # generate a self-contained worker brief
+/achilles T001                  # execute (default: merge immediately)
+/achilles T001 --wait           # execute, block up to 10 min for user feedback
+/achilles                       # direct mode — free-form task, no brief required
+/chanakya status                # see what's in flight + what awaits verification
+/chanakya test-manifest         # consolidate all done-but-unverified tasks into a testable file
+/chanakya review-feedback       # apply your edits to the test manifest back to the master plan
 ```
 
-Achilles never self-selects the next task. Once a task is done and the debrief is handed off, it sits idle. The user (or Chanakya) drives the next move.
+Default Achilles run merges immediately and logs a "manual verification" follow-up. Run `/chanakya test-manifest` whenever you're ready to batch-test; tick boxes, add notes, then `/chanakya review-feedback`. Achilles never self-selects the next task — the user (or Chanakya) always drives.
 
 ---
 
@@ -24,7 +29,8 @@ Achilles never self-selects the next task. Once a task is done and the debrief i
 
 ```
 chanakya/
-  SKILL.md      # manager agent — intake, briefing, status, PRD review, inbox sweep
+  SKILL.md      # manager agent — intake, briefing, status, PRD review, inbox sweep,
+                #                  test-manifest, review-feedback
   README.md     # long-form manager docs with examples
   docs.html     # interactive docs page (rendered in browser)
 
@@ -55,17 +61,33 @@ cp -r achilles/ ~/.claude/skills/achilles/
 cp commands/chanakya-help.md ~/.claude/commands/
 ```
 
-### One-time directories
+### One-time directories (per project)
+
+Achilles auto-creates `~/.dev-studio/<project>/{worktrees,locks,derived-data}` on first run. The plans folder is typically created by your first `/chanakya` invocation. If you want them up front:
 
 ```bash
-mkdir -p ~/.claude/plans/chanakya-tasks
-mkdir -p ~/.claude/plans/chanakya-inbox/processed
-mkdir -p ~/.claude/worktrees/turnip-ios
+PROJECT=$(basename "$(git rev-parse --show-toplevel)")
+mkdir -p ~/.dev-studio/$PROJECT/plans/chanakya-tasks
+mkdir -p ~/.dev-studio/$PROJECT/plans/chanakya-inbox/processed
+mkdir -p ~/.dev-studio/$PROJECT/worktrees
+mkdir -p ~/.dev-studio/$PROJECT/locks
+mkdir -p ~/.dev-studio/$PROJECT/derived-data
 ```
 
 ### Permissions
 
-Achilles and Chanakya need `Read`, `Write`, `Edit`, and `Bash(git *)` to run unattended (worktree creation, merges, inbox moves). These are typically already allowed in `~/.claude/settings.json`.
+Add to `~/.claude/settings.json` under `permissions.allow`:
+
+```
+"Read(~/.dev-studio/**)",
+"Write(~/.dev-studio/**)",
+"Edit(~/.dev-studio/**)",
+"Bash(git *)",
+"Bash(xcodebuild:*)",
+"Bash(mkdir:*)"
+```
+
+`~/.dev-studio/` sits outside `~/.claude/` on purpose — it sidesteps the self-mod permission guard so Achilles and Chanakya can read/write their artifacts unattended.
 
 ---
 
@@ -73,29 +95,39 @@ Achilles and Chanakya need `Read`, `Write`, `Edit`, and `Bash(git *)` to run una
 
 ### Chanakya — the manager
 
-1. **Intake** — you paste features, Figma links, PRD bullets, or crash logs. Chanakya turns them into tasks with IDs (`T001`, `T002`, …), priorities (P0/P1/P2), complexity, and skill assignments.
-2. **Brief generation** — for plan-worthy tasks, Chanakya writes a **self-contained** brief that inlines Figma specs, codebase pointers, acceptance criteria, and architectural constraints. A worker reads *only* that brief — no extra spelunking.
-3. **Inbox sweep** — every invocation (and optionally every 10 min in the background) processes debriefs from `chanakya-inbox/`: marks tasks done, records commit hashes, auto-creates and briefs any follow-up tasks, and stamps each follow-up with a `Source:` pointer to its parent.
+1. **Intake** — paste features, Figma links, PRD bullets, or crash logs. Chanakya turns them into tasks with IDs (`T001`, `T002`, …), priorities (P0/P1/P2), complexity, and skill assignments.
+2. **Brief generation** — for plan-worthy tasks, Chanakya writes a **self-contained** brief that inlines Figma specs, codebase pointers, acceptance criteria, and architectural constraints. A worker reads *only* that brief.
+3. **Inbox sweep** — every invocation (and optionally every 10 min in the background) processes debriefs from `chanakya-inbox/`: marks tasks `done`, records commit hashes, auto-creates and briefs any follow-up tasks, stamps each with a `Source:` pointer to its parent.
 4. **PRD delta** — `/chanakya review` diffs an updated PRD against the master plan and flags which tasks need rework.
-5. **Retrospective** — when all tasks for a feature are done, Chanakya compiles a feature memory into `~/.claude/projects/.../memory/` so the knowledge survives across sessions.
+5. **Test manifest** — `/chanakya test-manifest` consolidates every `done` (not yet `verified`) task's test cases into one editable file (`user-testing.md`). You tick boxes and add notes; `/chanakya review-feedback` promotes passing tasks to `verified` and creates follow-up tasks from failures.
+6. **Retrospective** — when all tasks for a feature are `verified`, Chanakya compiles a feature memory into `~/.claude/projects/.../memory/` so the knowledge survives across sessions.
 
 ### Achilles — the worker
 
-Achilles runs a strict 10-step pipeline. The flow is the same whether the task comes from a Chanakya brief or from a direct-mode instruction:
+Achilles runs an 11-step pipeline. The flow is the same whether the task comes from a Chanakya brief or from a direct-mode instruction:
 
 ```
-1. Load spec                — read brief or ask the user
+1. Load spec                — read brief or ask the user; parse --wait flag
 2. Claim the task           — set master plan status to in-progress
-3. Isolate                  — git worktree add from committed HEAD
+3. Isolate                  — compute PROJECT slug from git toplevel;
+                              git worktree add from committed HEAD
                               (uncommitted changes stay untouched)
 4. Implement                — small logical commits against the brief
+                              (small tasks rely on swift-lsp, skip xcodebuild)
 5. Self-review              — one iteration via the `simplify` skill
-6. Green build gate         — xcodebuild must pass; no merge otherwise
-7. Write test cases         — standalone artifact + prompt user;
-                              ScheduleWakeup(600s) as timeout
-8. Process feedback         — iterate, or time out gracefully
-9. Commit + merge --no-ff   — merge into ORIG_BRANCH locally, then
-   + worktree remove          delete the worktree
+6. Green build gate         — xcodebuild must pass with per-task
+                              -derivedDataPath; serialized via mkdir lock
+                              across all parallel Achilles instances
+7. Write test cases         — standalone artifact + debrief section
+                              (always written, regardless of --wait)
+8. Optional wait            — default: no wait, proceed immediately with
+                              "manual verification" follow-up logged.
+                              --wait: prompt user; auto-merge after 600s
+                              even if no reply (wake guarantees no hang)
+9. Commit + merge --no-ff   — merge into ORIG_BRANCH locally, serialized
+   + worktree remove          via a second mkdir lock. Clean merges also
+   + derived-data cleanup     rm -rf the per-task DerivedData. Failures
+                              preserve branch + DerivedData for debugging
 10. Debrief + short summary — drop debrief for Chanakya, tell the user
 11. (+900s) surface follow-ups — on wake, scan master plan for every
                                  task whose Source: is this task, list
@@ -104,16 +136,19 @@ Achilles runs a strict 10-step pipeline. The flow is the same whether the task c
 
 Key guarantees:
 
-- Your uncommitted working-tree changes in the main checkout are **never** disturbed — Achilles always branches from the committed HEAD into `~/.claude/worktrees/turnip-ios/<task-id>/`.
-- A red build is **never** merged. The branch is left alive for inspection.
-- Merge conflicts are **never** force-resolved. Achilles stops and surfaces them.
+- Your uncommitted working-tree changes in the main checkout are **never** disturbed — Achilles always branches from committed HEAD into `~/.dev-studio/<project>/worktrees/<task-id>/`.
+- A red build is **never** merged. Branch + DerivedData are left alive for inspection.
+- Merge conflicts are **never** force-resolved. Achilles stops and surfaces them; branch + DerivedData retained.
+- **Builds are serialized across parallel Achilles instances** via a per-project `mkdir` lock. Designed for 6–10 workers running in parallel without SPM-cache / module-cache races.
+- **Merges are serialized too** via a second per-project lock — `.git/index.lock` contention, branch-checkout races, and `$ORIG_BRANCH` tip movement are all handled.
+- **DerivedData lives per-task** at `~/.dev-studio/<project>/derived-data/<task-id>/` (explicit `-derivedDataPath`). Cleaned up on clean merge, retained on any failure.
 - Achilles never self-picks the next task. Control returns to the user after each completion.
 
 ---
 
 ## Examples
 
-### Example 1 — Full feature loop
+### Example 1 — Full feature loop (default: batch-friendly, no wait)
 
 ```
 you: /chanakya
@@ -128,40 +163,56 @@ chanakya: Drafted 3 tasks.
   T003 — CollageGridView empty-state crash (direct — send to Achilles)
   Start briefing T001?
 
-you: yes
+you: yes, brief T001 and T002
 
-chanakya: Brief saved to chanakya-tasks/T001-export-flow.md.
-          Figma tokens inlined, 4 files identified, AC has 7 items.
-          T002 is independent — brief it next, or kick off T001?
+chanakya: Briefs saved to chanakya-tasks/. Kick off both in parallel?
 
 you: /achilles T001
+you: /achilles T002     (separate session / background)
 
-achilles: Branching achilles/T001 from main@3c239a5.
-          Worktree at ~/.claude/worktrees/turnip-ios/T001/.
-          [implements through AC, runs simplify pass, builds green]
+achilles[T001]: Branching achilles/T001 from main@3c239a5.
+                Worktree at ~/.dev-studio/turnip-ios/worktrees/T001/.
+                [implements → simplify → serialized build → green]
+                Merged achilles/T001 into main (local, --no-ff, b41f2aa).
+                Worktree + DerivedData cleaned up. Debrief dropped.
+                **T001 done.** Test cases at T001-tests.md.
+                [15 min later] Follow-ups from T001 ready. Chanakya
+                created T014 — Verify HEIF export in low-storage scenario.
 
-          T001 implementation is done and the build is green.
-          Test cases are at chanakya-inbox/T001-tests.md.
-          Please run through them and share any feedback — I'll wait
-          up to 10 minutes.
+you: /chanakya test-manifest
+chanakya: Generated user-testing.md — 3 tasks awaiting verification
+          (T001, T002, T003). Tick the boxes when you've tested.
 
-you: [runs the test plan] looks good, HEIF toggle works, ship it
+you: [opens user-testing.md in your editor, runs through cases]
+     [checks all boxes for T001 and T003; T002 fails case 2 —
+      writes "FAB overlaps status bar on iPhone SE"]
 
-achilles: Merged achilles/T001 into main (local, --no-ff, commit b41f2aa).
-          Worktree removed. Debrief dropped for Chanakya.
-
-          **T001 done.** Branched from main@3c239a5, implemented,
-          self-reviewed, build green, merged back. Test cases at
-          T001-tests.md. Debrief dropped for Chanakya.
-
-          [15 min later, on wake]
-
-          **Follow-ups from T001 are ready.** Chanakya created T014.
-          - T014 — Verify HEIF export in low-storage scenario:
-            [criteria]
+you: /chanakya review-feedback
+chanakya: Processed user-testing.md:
+          - T001 → verified
+          - T002 → 1 follow-up created (T004 — Fix FAB status-bar overlap)
+          - T003 → verified
+          Archived. Generate a fresh manifest when more tasks complete.
 ```
 
-### Example 2 — Direct-mode bug fix
+### Example 2 — Interactive single-task (opt into wait)
+
+```
+you: /achilles T005 --wait
+
+achilles: [implements, self-reviews, builds green]
+          T005 implementation is done and the build is green.
+          Test cases at T005-tests.md. Reply within 10 min with
+          feedback, or I'll auto-merge.
+
+you: [runs through cases] looks good, ship it
+
+achilles: Merged. **T005 done.**
+```
+
+If you don't reply within 10 min, the `ScheduleWakeup(600s)` wake fires, Achilles stamps "no reply within window" into the debrief, and merges anyway. The wait never hangs forever.
+
+### Example 3 — Direct-mode bug fix
 
 ```
 you: /achilles
@@ -170,21 +221,10 @@ you: The CollageGridView crashes when the user opens an empty album.
 
 achilles: Reproduced from the trace. Guard against empty sections
           before the stride call.
-          [patches, self-reviews, builds green, writes test cases]
-
+          [patches, self-reviews, builds green, writes test cases,
+           merges immediately — default no-wait]
           Done. 1 commit, 1 file changed. Test cases at
-          direct-a1b2c3d-tests.md.
-```
-
-### Example 3 — User doesn't respond to test request
-
-```
-achilles: Please run through [test cases] — I'll wait up to 10 minutes.
-          [no reply; 600s wake fires]
-
-achilles: 10 min elapsed. Logged a manual-verification follow-up in the
-          debrief. Merging and cleaning up.
-          **T007 done.** …
+          direct-a1b2c3d-tests.md. Debrief dropped for Chanakya.
 ```
 
 ### Example 4 — Red build blocks merge
@@ -193,23 +233,43 @@ achilles: 10 min elapsed. Logged a manual-verification follow-up in the
 achilles: [Step 6] xcodebuild failed — missing symbol `ExportHEIFOptions`.
           Fix attempt 1: added import → still fails, SPM package not listed.
           Surfacing: this looks like a missing dependency. Not merging.
-          Branch achilles/T009 is left in place for you to inspect at
-          ~/.claude/worktrees/turnip-ios/T009/.
+          Branch achilles/T009 is left in place. DerivedData retained at
+          ~/.dev-studio/turnip-ios/derived-data/T009/ for inspection.
 ```
 
-### Example 5 — Background sweep
+### Example 5 — Parallel fleet + test manifest rhythm
+
+```
+you: /achilles T010      (5 more in other sessions...)
+     /achilles T011
+     /achilles T012
+     /achilles T013
+     /achilles T014
+     /achilles T015
+
+[all 6 run in parallel; each acquires the build lock in turn;
+ each acquires the merge lock in turn; each cleans up its
+ DerivedData after its own clean merge]
+
+chanakya: [background sweep] Processed T010..T015 — 6 done.
+          2 follow-ups briefed (T020, T021).
+
+you: /chanakya test-manifest
+chanakya: Generated user-testing.md — 6 tasks awaiting verification.
+
+[you test, edit, run /chanakya review-feedback — 5 verified,
+ 1 failure becomes T022]
+```
+
+### Example 6 — Background sweep
 
 ```
 you: /chanakya
 chanakya: Enable background inbox sweep every 10 min for this session?
           (y/n)
 you: y
-chanakya: Will sweep every 600s. [sweep runs silently unless
-          something was processed]
-
-          [10 min later, silent tick — inbox empty]
-          [20 min later]
-chanakya: Processed T005 — done, 1 follow-up briefed (T018).
+chanakya: Will sweep every 600s. [silent unless something processed]
+          [10 min later] Processed T005 — done, 1 follow-up briefed (T018).
 ```
 
 ---
@@ -222,23 +282,27 @@ chanakya: Processed T005 — done, 1 follow-up briefed (T018).
 | Multi-file refactor                | `/chanakya` → `/achilles`             |
 | Bug fix / crash                    | `/achilles` (direct mode)             |
 | One-file UI tweak                  | `/achilles` (direct mode)             |
+| Running 6–10 tasks in parallel     | `/achilles T00X` × N (default no-wait)|
+| Want to watch a single task merge  | `/achilles T001 --wait`               |
 | PRD changed mid-feature            | `/chanakya review`                    |
 | Check what's in flight             | `/chanakya status`                    |
+| Batch-test completed work          | `/chanakya test-manifest` → edit → `/chanakya review-feedback` |
 | Nudge Chanakya to re-scan inbox    | `/chanakya` (Step 0 runs on entry)    |
 
 ---
 
 ## Adapting to Other Projects
 
-The core orchestration is project-agnostic. To port:
+The core orchestration is project-agnostic — `<project>` slug is derived automatically from the basename of the main repo's git toplevel.
+
+To port to a non-iOS stack:
 
 1. **Swap the skill registry** in `chanakya/SKILL.md` — replace the Swift/SwiftUI skill table with your stack's equivalents.
-2. **Swap the build command** in `achilles/SKILL.md` Step 6 — replace `xcodebuild` with `cargo build`, `pnpm build`, `go build`, whatever applies.
-3. **Swap the worktree root** — default is `~/.claude/worktrees/turnip-ios/`; pick a name per repo.
-4. **Drop Figma if unused** — remove the MCP calls from Brief Generation Step 3.
-5. **Update project memory path** in both SKILL.md files.
+2. **Swap the build command** in `achilles/SKILL.md` Step 6 — replace `xcodebuild -derivedDataPath ...` with `cargo build --target-dir ...`, `pnpm build --dist ...`, `go build -o ...`, whatever applies. Keep the per-task output-dir convention so cleanup stays trivial.
+3. **Drop Figma if unused** — remove the MCP calls from Brief Generation Step 3.
+4. **Update project memory path** in both SKILL.md files (`~/.claude/projects/.../memory/`).
 
-The pipeline (isolate → implement → self-review → green build → user feedback → merge-back → debrief → surface follow-ups) is the same everywhere.
+The pipeline (isolate → implement → self-review → green build → optional wait → merge-back → debrief → surface follow-ups) is the same everywhere.
 
 ---
 
