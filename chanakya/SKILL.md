@@ -1,6 +1,6 @@
 ---
 name: chanakya
-description: "Project manager agent for the Turnip iOS codebase. Organizes tasks with priorities, maintains a master plan, generates per-task worker briefs with pre-fetched Figma context and codebase references. Proactively suggests next actions after every operation. Also produces a consolidated user-testing manifest for manual verification, and a journey-ordered single-sitting test-flow with round tracking, performance checkpoints, and cross-round regression diffing. Tracks build debt (warn@6/block@12) accumulated from XS/S tasks that skipped xcodebuild, and auto-files build-check (TBUILD) and bisect-fix follow-up tasks. Sub-commands: /chanakya (intake), /chanakya status, /chanakya brief <task-id>, /chanakya review, /chanakya update, /chanakya test-manifest [--force], /chanakya test-flow [--force] [--round N] [--scope new|full|module <name>] [--smoke] [--diff N] [--promote], /chanakya review-feedback. Do NOT trigger for simple bug fixes or one-file changes — those go directly to /achilles."
+description: "Project manager agent for the Turnip iOS codebase. Organizes tasks with priorities, maintains a master plan, generates per-task worker briefs with pre-fetched Figma context and codebase references. Proactively suggests next actions after every operation. Also produces a consolidated user-testing manifest for manual verification, and a journey-ordered single-sitting test-flow with round tracking, performance checkpoints, and cross-round regression diffing. Tracks build debt (warn@6/block@12) accumulated from XS/S tasks that skipped xcodebuild, and auto-files build-check (TBUILD) and bisect-fix follow-up tasks. Sub-commands: /chanakya (intake), /chanakya status, /chanakya brief <task-id>, /chanakya review, /chanakya update, /chanakya test-manifest [--force], /chanakya test-flow [--force] [--round N] [--scope new|full|module <name>] [--smoke] [--diff N] [--promote], /chanakya review-feedback, /chanakya sync-slack [--list <id>] [--build <number>]. Do NOT trigger for simple bug fixes or one-file changes — those go directly to /achilles."
 ---
 
 # Chanakya — Project Manager
@@ -118,6 +118,12 @@ Handle `Type: testflight-release` and `Type: appstore-release` debriefs:
    - If the field already has entries, comma-separate: `TF-3028, TF-3031, AS-3031`
 4. Move the debrief to `processed/`.
 5. Report: "Processed TestFlight release 3031 — 5 tasks tagged (T015, T016, T017, T018, T019)."
+6. **Auto-trigger Slack sync.** After processing a TestFlight release debrief:
+   a. Read the project memory file `project_slack_list_sync.md` to check if a Slack list is configured.
+   b. If yes, automatically run Sync-Slack mode (Steps 1–7) with `--build <BUILD_NUMBER>` from the debrief.
+   c. **Before writing to Slack (Step 6),** present the summary table to the user and ask: "Sync these updates to the Slack bug list? (y/n)".
+   d. On confirmation, write. On rejection, skip the write but keep the computed data for manual review.
+   e. This is NOT a suggestion — Chanakya proactively runs the sync computation. The only user gate is the write confirmation.
 
 ### 0C — Threshold actions
 
@@ -339,6 +345,141 @@ Parse the user's input after `/chanakya`:
 - `sweep-debt` → **Sweep-debt mode** — identify and dispatch all pending test sub-tasks and build checks to reduce debt
 - `verify [--round N]` → **Verify mode** — generate test-flow → (user tests) → promote → review-feedback, guided single-sitting sequence
 - `migrate` → **Migrate mode** — upgrade an existing master plan to the task-group + test-debt structure
+- `sync-slack [--list <id>] [--build <number>]` → **Sync-Slack mode** — sync Slack bug list statuses, Dev Notes, and Fixed in Build with master plan
+
+---
+
+## Mode: Sync-Slack (`/chanakya sync-slack [--list <id>] [--build <number>]`)
+
+Sync a Slack Lists bug tracker with the Chanakya master plan. Reads task statuses from the plan, writes Status + Dev Notes + Fixed in Build back to the Slack list. Designed to run after every TestFlight build upload.
+
+### Configuration
+
+All constants are in the project memory file `project_slack_list_sync.md`. Read it at mode entry for:
+- Bot token (from `~/.claude/skills/postSlackTesting/SKILL.md`)
+- List ID (default: `F0ASZ6B22SZ`)
+- Column IDs for Status, Dev Notes (`Col0ATE60G2RG`), Fixed in Build (`Col0ASYN4SEAK`), Reported in Build (`Col0AU11C81T2`)
+- Status option IDs (Not started, In progress, Blocked, Done)
+- GitHub repo URL for commit links (`https://github.com/turnip-ios/turnip-zaps/commit`)
+
+### Flags
+
+| Flag | Purpose |
+|------|---------|
+| `--list <id>` | Override default list ID. Schema discovery runs fresh for new lists. |
+| `--build <number>` | Current TestFlight build number. Used for "Fixed in Build" column and Dev Notes entries. If omitted, read from latest `Bump build number` commit in git log. |
+
+### Step 1 — Read current state
+
+1. Fetch all rows: `GET slackLists.items.list?list_id=<id>&limit=50`
+2. Read `chanakya-master.md` — collect all tasks with a `Slack row:` field.
+3. Parse each row: extract Issue text, current Status, current Dev Notes content, current Fixed in Build, Reported in Build, row_id.
+
+### Step 2 — Determine build number
+
+If `--build` provided, use it. Otherwise:
+```bash
+git log --oneline --grep="Bump build number" -1
+```
+Extract the number from the commit message.
+
+### Step 3 — Cross-reference and compute updates
+
+For each Slack row with a linked Chanakya task:
+
+**Status mapping:**
+
+| Task status | Slack Status |
+|-------------|-------------|
+| `verified` | Done (`OptTR35W8NA`) |
+| `done` (all acceptance cases pass in latest round) | Done |
+| `done` (partial — some cases still fail) | In progress (`OptXBPNOYKC`) |
+| `in-progress` or `briefed` | In progress |
+| `pending` with no brief | Not started (`Opt7MNHB19N`) |
+| blocked on dependency/PRD | Blocked (`OptEY5M00J3`) |
+
+**Dev Notes (append-only):**
+
+1. Read existing Dev Notes rich_text from the row.
+2. Build a new `rich_text_section` for the current build:
+   ```
+   Build <NUMBER>: <status summary>. <commit link if fixed>
+   ```
+   - Bold the `Build <NUMBER>:` prefix via `{"style": {"bold": true}}`
+   - If the task has fix commits AND they're in this build (check via `git branch --contains <sha>`), append commit links as `{"type": "link", "url": "<github_url>", "text": "<sha[:7]>"}`
+   - Status summary is one sentence: what changed since last sync. Examples:
+     - "Fixed. Verified round 3." + commit link
+     - "Core fix landed. Edge case pending — module re-entry loses selection (T184, P1)."
+     - "No fix yet. Pending clarification from product team."
+     - "Regressed by T027 crop overlay. Re-investigation needed (P0)."
+3. Append the new section to existing elements. Never overwrite previous entries.
+
+**Fixed in Build:**
+- Set to `<build number>` when status transitions to Done for the first time.
+- Once set, never overwrite (first-fix build is the reference).
+
+### Step 4 — Guard: detect manual edits
+
+Before writing each row, compare:
+- Slack's current Status vs. what Chanakya last wrote (tracked via `Slack status (last synced):` in the task's master plan entry).
+- If they differ (daksh@ manually changed it), skip the Status write and report: "Row <id> status diverged: Chanakya expected 'In progress', Slack shows 'Done'. Skipping — daksh@ may have verified independently."
+- Still write Dev Notes (append-only is safe regardless).
+
+### Step 5 — Reverse sweep: ingest new rows
+
+For any row in the Slack list that does NOT have a matching task in the master plan:
+1. File a new T-task (same logic as Intake Step 1).
+2. Set `Slack row: <list_id> / <row_id>` on the new task.
+3. Report: "New row from daksh@: '<issue text>' — filed as T186."
+
+### Step 6 — Write updates
+
+Batch all cell updates into a single `slackLists.items.update` call (or split into chunks of 20 cells if >20).
+
+API shape per cell:
+```json
+{
+  "row_id": "<row_id>",
+  "column_id": "<col_id>",
+  "select": ["<option_id>"]       // for Status
+  // OR
+  "rich_text": [...]              // for Dev Notes, Fixed in Build
+}
+```
+
+### Step 7 — Update master plan
+
+For each synced row, update the task's `Slack status (last synced):` field with the new status and timestamp.
+
+### Step 8 — Report
+
+Print a summary table:
+
+```
+Slack List F0ASZ6B22SZ — Sync for Build 3137
+
+| Bug                              | Status       | Fixed in | Dev Notes update |
+|----------------------------------|-------------|----------|-----------------|
+| Compare white screen after flip  | ✅ Done      | 3135     | (no change)     |
+| Undo shows stale selection       | 🔄 In prog  | —        | Build 3137: T184 fix landed. |
+| Text doesn't get added           | ✅ Done      | 3137     | Build 3137: Fixed. abc123f |
+
+New rows ingested: 0
+Manual edits detected: 0
+```
+
+### Integration with push-tf
+
+When Chanakya processes a TestFlight release debrief (Step 0B2), after tagging tasks with `TF-<build>`, Chanakya **auto-runs** the full Sync-Slack computation (Steps 1–5) without waiting for user input. The only user gate is a confirmation prompt before the Slack write (Step 6):
+
+> "Slack sync ready for build <N>:
+> - 2 rows → Done (T129, T126)
+> - 5 rows → In progress (T110, T124, ...)
+> - 1 new row ingested as T186
+> 
+> Write to Slack? (y/n)"
+
+This ensures daksh@ sees updated statuses as soon as a TestFlight goes out, without the user needing to remember to run `/chanakya sync-slack`.
 
 ---
 
