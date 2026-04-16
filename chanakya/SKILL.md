@@ -52,7 +52,7 @@ File operations inside the sweep (read/move debriefs, edit master plan, write ne
 
 ## Step 0 — Auto-Inbox Sweep (ALWAYS do this first)
 
-Before executing ANY mode, check `~/.dev-studio/<project>/plans/chanakya-inbox/` for unprocessed files. Handle two types: regular task debriefs (`<task-id>-debrief.md`) and manual-build-check debriefs (`build-*-debrief.md`, identified by `Type: manual-build-check` header). Ignore `processed/` and `*-tests.md`.
+Before executing ANY mode, check `~/.dev-studio/<project>/plans/chanakya-inbox/` for unprocessed files. Handle three categories: regular task debriefs (`<task-id>-debrief.md`), manual-build-check debriefs (`build-*-debrief.md`, identified by `Type: manual-build-check` header), and release debriefs (`tf-*-debrief.md` with `Type: testflight-release`, `release-*-debrief.md` with `Type: appstore-release`). Ignore `processed/` and `*-tests.md`.
 
 ### 0A — Process each regular task debrief
 
@@ -98,6 +98,26 @@ Before executing ANY mode, check `~/.dev-studio/<project>/plans/chanakya-inbox/`
    - Keep block state active.
 5. Move the debrief to `processed/`.
 6. Report: "Processed manual build check `build-20260415-143200` — green. Debt reset. TBUILD-3 closed." (or red variant with fix-task ID.)
+
+### 0B2 — Process each release debrief
+
+Handle `Type: testflight-release` and `Type: appstore-release` debriefs:
+
+1. Read the debrief. Extract `Build number`, `Version`, `Distribution`, `Git tag` (if App Store), `HEAD`, and the `Covers:` task list.
+2. **Add a row to `## Release Log`** in the master plan:
+   - Build: `<BUILD_NUMBER>`
+   - Version: `<VERSION>`
+   - Type: `TestFlight` or `App Store`
+   - Date: debrief's `Completed` timestamp
+   - Tag: git tag (App Store) or `—` (TestFlight)
+   - HEAD: `<HEAD_SHA>`
+   - Tasks Included: the `Covers:` list
+3. **Tag each task** in the `Covers:` list: append to the task's `Released in:` field:
+   - TestFlight: `TF-<BUILD_NUMBER>`
+   - App Store: `AS-<BUILD_NUMBER>`
+   - If the field already has entries, comma-separate: `TF-3028, TF-3031, AS-3031`
+4. Move the debrief to `processed/`.
+5. Report: "Processed TestFlight release 3031 — 5 tasks tagged (T015, T016, T017, T018, T019)."
 
 ### 0C — Threshold actions
 
@@ -462,6 +482,16 @@ Scan `~/.dev-studio/<project>/plans/user-testing-rounds/` for existing round fil
 - Report total rounds and when the latest was generated (from the `Generated:` header).
 - If the latest round has unchecked cases (some `[ ] pass` remaining), report: "Round N is partially completed (K/M cases checked)."
 - If the latest round is fully completed (all cases checked), report: "Round N completed — consider `--promote` to feed into review-feedback, or generate a new round."
+
+### Step 3C — Release status
+
+Read the `## Release Log` from the master plan:
+- Report the latest TestFlight and App Store releases (build number, version, date).
+- Count tasks with status `done` or `verified` whose `Released in:` field does NOT contain a `TF-` entry — these have merged since the last TestFlight build.
+- If the count is > 0, suggest: "N tasks merged since last TestFlight (build <LAST_BUILD>). Run `/achilles push-tf` when ready."
+
+Example output:
+> "Latest TestFlight: build 3031 (v26.3.1, 2026-04-16). Latest App Store: build 3028 (v26.2.0, 2026-04-10). 3 tasks merged since last TestFlight — consider `/achilles push-tf`."
 
 ### Step 4 — Suggest next action
 
@@ -1356,6 +1386,7 @@ When ALL tasks for a feature are `verified` (check after every inbox sweep and a
 - **Commits:** —
 - **Merge commit:** —
 - **Test coverage:** —   <!-- for implementation tasks: list sub-task IDs, e.g., "T001a (unit), T001c (UI)" -->
+- **Released in:** —   <!-- e.g., "TF-3031, AS-3031" — filled by Chanakya on release debrief processing -->
 - **Verified at:** —   <!-- timestamp when user signed off via review-feedback -->
 - **Notes:** <any context, including path to test-case artifact if this is a verification follow-up>
 
@@ -1399,6 +1430,15 @@ When ALL tasks for a feature are `verified` (check after every inbox sweep and a
 
 | ID | Title | Completed | Verified | Commits | Branch |
 |----|-------|-----------|----------|---------|--------|
+
+---
+
+## Release Log
+
+| Build | Version | Type | Date | Tag | HEAD | Tasks Included |
+|-------|---------|------|------|-----|------|---------------|
+
+<!-- Populated by Chanakya's Step 0B2 when processing release debriefs from /achilles push-tf and /achilles app-store -->
 
 ---
 

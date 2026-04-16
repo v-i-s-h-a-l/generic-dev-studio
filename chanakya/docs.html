@@ -531,6 +531,7 @@
     <a href="#safety">Safety</a>
     <a href="#debt">Debt Tracking</a>
     <a href="#test-flow">Test Flow</a>
+    <a href="#releases">Releases</a>
     <a href="#when">When to Use</a>
     <a href="#examples">Examples</a>
     <a href="#files">File System</a>
@@ -604,6 +605,14 @@
     <div class="cmd-card achilles">
       <code>/achilles build</code>
       <span>On-demand build check at HEAD. Green resets debt; red auto-bisects and files a P0 fix</span>
+    </div>
+    <div class="cmd-card achilles">
+      <code>/achilles push-tf</code>
+      <span>Wraps <code>/pushTFBuild</code> &mdash; archives, uploads to TestFlight, then debriefs Chanakya with task-to-build mapping</span>
+    </div>
+    <div class="cmd-card achilles">
+      <code>/achilles app-store</code>
+      <span>Wraps <code>/fullSendToAppStore</code> &mdash; submits to App Store, then debriefs Chanakya with release tracking data</span>
     </div>
   </div>
   <div class="callout" style="margin-top: 20px;">
@@ -1001,6 +1010,57 @@
   <p>Drop a <code>journey-map.md</code> file in <code>~/.dev-studio/&lt;project&gt;/</code> to define your preferred section ordering. Without it, Chanakya auto-infers sections from file paths, skill tags, and brief titles.</p>
 </section>
 
+<!-- Release Tracking -->
+<section id="releases">
+  <h2>Release Tracking</h2>
+  <p>Achilles wraps your existing build skills (<code>/pushTFBuild</code>, <code>/fullSendToAppStore</code>) without modifying them. It adds a debrief layer that maps builds to tasks.</p>
+
+  <h3>How it works</h3>
+  <ol>
+    <li><strong>Pre-flight:</strong> Achilles reads the master plan, collects all tasks merged since the last release of that type</li>
+    <li><strong>Build:</strong> Your existing skill runs exactly as-is &mdash; you interact with it normally</li>
+    <li><strong>Debrief:</strong> Achilles writes a release debrief to Chanakya's inbox with the build number, version, and task list</li>
+    <li><strong>Tracking:</strong> Chanakya processes the debrief, adds a row to the Release Log, and tags each task with <code>Released in: TF-3031</code></li>
+  </ol>
+
+  <h3>What this enables</h3>
+  <div class="tip-grid">
+    <div class="tip">
+      <div class="tip-num">01</div>
+      <div class="tip-title">Which tasks shipped in build 3031?</div>
+      <div class="tip-desc">Read the <code>## Release Log</code> table in the master plan. Each row lists the tasks included.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">02</div>
+      <div class="tip-title">Which build broke feature X?</div>
+      <div class="tip-desc">Check the <code>Released in:</code> field on the task. Compare with the build where the regression appeared.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">03</div>
+      <div class="tip-title">Time for a new TestFlight?</div>
+      <div class="tip-desc"><code>/chanakya status</code> shows tasks merged since the last TestFlight and suggests <code>/achilles push-tf</code> when the count is &gt; 0.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">04</div>
+      <div class="tip-title">Release notes from task history</div>
+      <div class="tip-desc">The Release Log + task titles give you a structured changelist for any build, independent of commit messages.</div>
+    </div>
+  </div>
+
+  <h3>Release Log (in master plan)</h3>
+  <div class="file-tree">
+    ## Release Log<br><br>
+    | Build | Version | Type | Date | Tag | Tasks Included |<br>
+    |-------|---------|------|------|-----|---------------|<br>
+    | 3031 &nbsp;| 26.3.1 &nbsp;| TestFlight | 2026-04-16 | &mdash; | T015, T016, T017 |<br>
+    | 3031 &nbsp;| 26.3.1 &nbsp;| App Store &nbsp;| 2026-04-16 | 3031-zaps | T015, T016, T017 |
+  </div>
+
+  <div class="callout blue">
+    <strong>Existing skills are untouched.</strong> <code>/pushTFBuild</code> and <code>/fullSendToAppStore</code> run exactly as before. Achilles only adds pre-flight task collection and post-flight debrief. Use <code>--skip-debrief</code> to bypass the debrief if needed.
+  </div>
+</section>
+
 <!-- When to Use -->
 <section id="when">
   <h2>When to Use What</h2>
@@ -1029,6 +1089,8 @@
       <tr><td>Clear all debt to unblock</td><td><span class="badge badge-both">/chanakya sweep-debt &rarr; run tabs</span></td></tr>
       <tr><td>Run whatever task is next</td><td><span class="badge badge-achilles">/achilles next</span></td></tr>
       <tr><td>Run full unit/UI test suite</td><td><span class="badge badge-achilles">/achilles test-suite all</span></td></tr>
+      <tr><td>Push a TestFlight build</td><td><span class="badge badge-achilles">/achilles push-tf</span></td></tr>
+      <tr><td>Submit to App Store</td><td><span class="badge badge-achilles">/achilles app-store</span></td></tr>
     </tbody>
   </table>
   <div class="callout">
