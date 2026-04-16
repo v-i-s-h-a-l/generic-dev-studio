@@ -18,6 +18,7 @@
     --green: #3fb950;
     --purple: #bc8cff;
     --red: #f85149;
+    --yellow: #d29922;
     --code-bg: #0d1117;
     --chanakya: #f0883e;
     --achilles: #58a6ff;
@@ -143,6 +144,9 @@
 
   p { margin-bottom: 16px; color: var(--text-muted); }
   p strong { color: var(--text); }
+  ul, ol { margin-bottom: 16px; padding-left: 20px; color: var(--text-muted); }
+  li { margin-bottom: 6px; }
+  li strong { color: var(--text); }
 
   /* Command reference cards */
   .cmd-grid {
@@ -210,6 +214,7 @@
   .flow-node.chanakya-node { border-color: var(--chanakya); color: var(--chanakya); }
   .flow-node.achilles-node { border-color: var(--achilles); color: var(--achilles); }
   .flow-node.user-node { border-color: var(--green); color: var(--green); }
+  .flow-node.test-node { border-color: var(--purple); color: var(--purple); }
 
   .flow-arrow {
     color: var(--text-muted);
@@ -409,6 +414,90 @@
 
   .callout strong { color: var(--chanakya); }
 
+  .callout.blue {
+    background: rgba(88, 166, 255, 0.1);
+    border-left-color: var(--blue);
+  }
+  .callout.blue strong { color: var(--blue); }
+
+  .callout.purple {
+    background: rgba(188, 140, 255, 0.1);
+    border-left-color: var(--purple);
+  }
+  .callout.purple strong { color: var(--purple); }
+
+  .callout.yellow {
+    background: rgba(210, 153, 34, 0.1);
+    border-left-color: var(--yellow);
+  }
+  .callout.yellow strong { color: var(--yellow); }
+
+  /* Debt gauge */
+  .debt-gauges {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin: 24px 0;
+  }
+  @media (max-width: 640px) { .debt-gauges { grid-template-columns: 1fr; } }
+
+  .debt-gauge {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+  }
+
+  .debt-gauge .gauge-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 12px;
+  }
+
+  .debt-gauge .gauge-bar {
+    height: 8px;
+    background: var(--bg);
+    border-radius: 4px;
+    margin: 12px 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .debt-gauge .gauge-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s;
+  }
+
+  .debt-gauge .gauge-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: #484f58;
+  }
+
+  /* Task group visual */
+  .task-group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 20px 0;
+    font-family: 'SF Mono', monospace;
+    font-size: 0.85rem;
+    line-height: 2;
+  }
+
+  .task-group .impl { color: var(--blue); }
+  .task-group .test-unit { color: var(--green); }
+  .task-group .test-int { color: var(--yellow); }
+  .task-group .test-ui { color: var(--purple); }
+  .task-group .arrow { color: var(--text-muted); }
+  .task-group .label { color: #484f58; }
+
   /* Footer */
   footer {
     border-top: 1px solid var(--border);
@@ -427,7 +516,7 @@
     <h1>
       <span class="chanakya-name">Chanakya</span><span class="plus">+</span><span class="achilles-name">Achilles</span>
     </h1>
-    <p class="tagline">Plan, execute in isolated worktrees, gate on green builds, debrief — all without ever touching your uncommitted changes</p>
+    <p class="tagline">Plan, execute, test, gate on green builds &mdash; all without ever touching your uncommitted changes</p>
   </div>
 </div>
 
@@ -435,9 +524,13 @@
 <nav class="nav">
   <div class="nav-inner">
     <a href="#commands">Commands</a>
+    <a href="#composites">Composites</a>
     <a href="#flow">How It Works</a>
+    <a href="#task-groups">Task Groups</a>
+    <a href="#testing">Testing</a>
     <a href="#safety">Safety</a>
-    <a href="#build-debt">Build Debt</a>
+    <a href="#debt">Debt Tracking</a>
+    <a href="#test-flow">Test Flow</a>
     <a href="#when">When to Use</a>
     <a href="#examples">Examples</a>
     <a href="#files">File System</a>
@@ -450,19 +543,19 @@
 <!-- Commands -->
 <section id="commands">
   <h2>Quick Reference</h2>
-  <h3 style="color: var(--chanakya); margin-top: 0;">Chanakya — The Strategist</h3>
+  <h3 style="color: var(--chanakya); margin-top: 0;">Chanakya &mdash; The Strategist</h3>
   <div class="cmd-grid">
     <div class="cmd-card">
       <code>/chanakya</code>
-      <span>Start planning — describe your tasks, get them organized with priorities</span>
+      <span>Start planning &mdash; describe tasks, get them organized into task groups with priorities</span>
     </div>
     <div class="cmd-card">
       <code>/chanakya status</code>
-      <span>See all tasks, their status, blockers, and what's next</span>
+      <span>See all tasks, their status, debt gauges, blockers, test rounds, and what's next</span>
     </div>
     <div class="cmd-card">
       <code>/chanakya brief T001</code>
-      <span>Generate a self-contained brief with Figma context for a task</span>
+      <span>Generate a self-contained brief (implementation or test brief) with Figma context</span>
     </div>
     <div class="cmd-card">
       <code>/chanakya review</code>
@@ -474,7 +567,11 @@
     </div>
     <div class="cmd-card">
       <code>/chanakya test-manifest</code>
-      <span>Consolidate every done-but-unverified task's cases into <code>user-testing.md</code></span>
+      <span>Per-task verification checklist &rarr; <code>user-testing.md</code>. Feeds into <code>review-feedback</code></span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya test-flow</code>
+      <span>Journey-ordered single-sitting walkthrough &rarr; numbered round files. Human companion to test-manifest</span>
     </div>
     <div class="cmd-card">
       <code>/chanakya review-feedback</code>
@@ -482,11 +579,11 @@
     </div>
   </div>
 
-  <h3 style="color: var(--achilles);">Achilles — The Warrior</h3>
+  <h3 style="color: var(--achilles);">Achilles &mdash; The Warrior</h3>
   <div class="cmd-grid">
     <div class="cmd-card achilles">
       <code>/achilles T001</code>
-      <span>Pick up a briefed task in an isolated worktree, self-review, gate on green build, merge locally (default: no wait)</span>
+      <span>Pick up a briefed task (implementation or test) in an isolated worktree, self-review, gate on green build, merge locally</span>
     </div>
     <div class="cmd-card achilles">
       <code>/achilles T001 --wait</code>
@@ -502,7 +599,7 @@
     </div>
     <div class="cmd-card achilles">
       <code>/achilles</code>
-      <span>Direct mode — free-form task, no brief required</span>
+      <span>Direct mode &mdash; free-form task, no brief required</span>
     </div>
     <div class="cmd-card achilles">
       <code>/achilles build</code>
@@ -510,11 +607,100 @@
     </div>
   </div>
   <div class="callout" style="margin-top: 20px;">
-    <strong>Default is merge-immediately.</strong> Achilles logs a "manual verification" follow-up for every task and surfaces Chanakya-created follow-ups 15 min after merge. Batch-test with <code>/chanakya test-manifest</code> when you're ready.
+    <strong>Default is merge-immediately.</strong> Achilles logs a "manual verification" follow-up for every task and surfaces Chanakya-created follow-ups 15 min after merge. Batch-test with <code>/chanakya test-manifest</code> or <code>/chanakya test-flow</code> when you're ready.
   </div>
-  <div class="callout" style="margin-top: 12px;">
-    <strong>Build debt tracking.</strong> XS/S tasks skip <code>xcodebuild</code> and rely on <code>swift-lsp</code>. A counter in the master plan tracks skipped builds: <strong>warn@6</strong> surfaces a banner and auto-files <code>TBUILD-&lt;n&gt;</code>; <strong>block@12</strong> refuses new briefs until resolved. Run <code>/achilles build</code> any time to verify HEAD — green resets, red auto-bisects.
+</section>
+
+<!-- Composites -->
+<section id="composites">
+  <h2>Composite Commands</h2>
+  <p>Multi-step sequences that chain existing modes. One command, minimal manual involvement.</p>
+
+  <h3 style="color: var(--chanakya); margin-top: 0;">Chanakya Composites</h3>
+  <div class="cmd-grid">
+    <div class="cmd-card">
+      <code>/chanakya brief-all</code>
+      <span>Brief every <code>pending</code> task in priority order. Skips implementation briefs if debt is blocked.</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya ship T001,T002</code>
+      <span>Brief + generate phased dispatch plan for Achilles. <code>ship next</code>, <code>ship next 3</code>, <code>ship all</code> also work.</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya sweep-debt</code>
+      <span>Identify all pending test sub-tasks and build checks. Brief them, generate dispatch plan to get back to green.</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya verify</code>
+      <span>Guided flow: generate test-flow &rarr; you test &rarr; promote &rarr; review-feedback &rarr; verified. All in one session.</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya migrate</code>
+      <span>Upgrade an existing master plan: add test sub-tasks for all implementation tasks, initialize test debt counters.</span>
+    </div>
   </div>
+
+  <h3 style="color: var(--achilles);">Achilles Composites</h3>
+  <div class="cmd-grid">
+    <div class="cmd-card achilles">
+      <code>/achilles group T015</code>
+      <span>Execute implementation + unit tests + UI tests sequentially in one session. Stops on first failure.</span>
+    </div>
+    <div class="cmd-card achilles">
+      <code>/achilles next</code>
+      <span>Pick the highest-priority ready task and execute it. <code>next 3</code> generates a dispatch plan for parallel tabs.</span>
+    </div>
+    <div class="cmd-card achilles">
+      <code>/achilles test-suite unit</code>
+      <span>Run the full unit test suite at HEAD. Green resets unit test debt. Also: <code>ui</code>, <code>all</code>.</span>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>The hands-off workflow:</strong> <code>/chanakya ship all</code> &rarr; run the printed commands in parallel tabs &rarr; <code>/chanakya verify</code> when done. Three user actions for a full feature cycle.
+  </div>
+
+  <h3>Typical composite sequences</h3>
+  <table class="decision-table">
+    <thead><tr><th>Goal</th><th>Commands</th><th>User actions</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Ship a feature end-to-end</td>
+        <td><code>/chanakya ship all</code> &rarr; run dispatch &rarr; <code>/chanakya verify</code></td>
+        <td>3 (ship, run tabs, verify)</td>
+      </tr>
+      <tr>
+        <td>Clear all debt</td>
+        <td><code>/chanakya sweep-debt</code> &rarr; run dispatch</td>
+        <td>2 (sweep, run tabs)</td>
+      </tr>
+      <tr>
+        <td>Implement + test one task</td>
+        <td><code>/achilles group T015</code></td>
+        <td>1 (single command)</td>
+      </tr>
+      <tr>
+        <td>Run whatever's next</td>
+        <td><code>/achilles next</code></td>
+        <td>1 (single command)</td>
+      </tr>
+      <tr>
+        <td>Full regression suite</td>
+        <td><code>/achilles test-suite all</code></td>
+        <td>1 (single command)</td>
+      </tr>
+      <tr>
+        <td>Brief everything, then ship</td>
+        <td><code>/chanakya brief-all</code> &rarr; <code>/chanakya ship all</code></td>
+        <td>2 (brief, ship)</td>
+      </tr>
+      <tr>
+        <td>Adopt new testing structure</td>
+        <td><code>/chanakya migrate</code> &rarr; <code>/chanakya sweep-debt</code></td>
+        <td>2 (migrate, sweep)</td>
+      </tr>
+    </tbody>
+  </table>
 </section>
 
 <!-- Flow -->
@@ -526,38 +712,125 @@
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node chanakya-node">/chanakya — organizes tasks, assigns priorities</span>
+      <span class="flow-node chanakya-node">/chanakya &mdash; organizes into task groups (impl + unit + integration + UI tests)</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node chanakya-node">/chanakya brief — fetches Figma, scans code, writes self-contained brief</span>
+      <span class="flow-node chanakya-node">/chanakya brief &mdash; writes implementation brief (with testability requirements) + test briefs</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node achilles-node">/achilles T001 — branches into ~/.dev-studio/&lt;project&gt;/worktrees/T001/ from committed HEAD</span>
+      <span class="flow-node achilles-node">/achilles T001 &mdash; implement with SOLID, accessibility IDs, test seams</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node achilles-node">implement → self-review (simplify) → green-build gate (serialized xcodebuild)</span>
+      <span class="flow-node achilles-node">self-review (+ testability check) &rarr; green-build gate &rarr; merge &rarr; debrief</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node achilles-node">write test cases → optional --wait (auto-merge after 600s) → merge --no-ff (serialized)</span>
+      <span class="flow-node test-node">/achilles T001a &mdash; unit tests | /achilles T001c &mdash; UI tests (parallel)</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node" style="border-color: var(--purple); color: var(--purple);">worktree + per-task DerivedData cleaned up; debrief dropped to inbox</span>
+      <span class="flow-node chanakya-node">Chanakya sweeps inbox &mdash; updates build debt + test debt counters</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node chanakya-node">Chanakya sweeps inbox — marks done, briefs follow-ups, surfaces them 15 min later</span>
-    </div>
-    <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
-    <div class="flow-row">
-      <span class="flow-node chanakya-node">/chanakya test-manifest → you tick boxes → /chanakya review-feedback → verified</span>
+      <span class="flow-node chanakya-node">/chanakya test-flow &rarr; manual walkthrough &rarr; /chanakya review-feedback &rarr; verified</span>
     </div>
   </div>
-  <p>The full Achilles pipeline is <strong>11 steps</strong>: load spec → claim → isolate → implement → self-review → green build → write tests → optional wait → commit &amp; merge → debrief → surface follow-ups. Both agents are proactive — they always suggest the next step.</p>
+  <p>A feature isn't done when the code compiles &mdash; it's done when the <strong>task group</strong> (implementation + tests) is complete and the user has verified via manual testing.</p>
+</section>
+
+<!-- Task Groups -->
+<section id="task-groups">
+  <h2>Task Groups</h2>
+  <p>Every feature or bugfix expands into a <strong>task group</strong> &mdash; linked tasks covering implementation through testing. Chanakya decides at intake which sub-tasks are needed.</p>
+
+  <div class="task-group">
+    <span class="impl">T015 &mdash; Add filter presets</span> <span class="label">(feature, P1, L)</span><br>
+    <span class="arrow">&nbsp;&nbsp;&#x251C;&#x2500;&#x2500;</span> <span class="test-unit">T015a &mdash; Unit tests: filter presets</span> <span class="label">(blocked by T015)</span><br>
+    <span class="arrow">&nbsp;&nbsp;&#x251C;&#x2500;&#x2500;</span> <span class="test-int">T015b &mdash; Integration tests: filter + texture</span> <span class="label">(blocked by T015)</span><br>
+    <span class="arrow">&nbsp;&nbsp;&#x2514;&#x2500;&#x2500;</span> <span class="test-ui">T015c &mdash; UI tests: filter selection flow</span> <span class="label">(blocked by T015)</span>
+  </div>
+
+  <h3>What gets created when</h3>
+  <table class="decision-table">
+    <thead><tr><th>Sub-task</th><th>When to create</th><th>Blocked by</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Implementation</strong></td><td>Always</td><td>Task dependencies</td></tr>
+      <tr><td><strong>Unit tests</strong></td><td>Always for plan-worthy. For direct: if business logic is touched</td><td>Implementation</td></tr>
+      <tr><td><strong>Integration tests</strong></td><td>When feature spans 2+ modules or modifies shared APIs</td><td>Implementation</td></tr>
+      <tr><td><strong>UI tests</strong></td><td>When feature has a user-visible flow with 2+ interaction steps</td><td>Implementation</td></tr>
+    </tbody>
+  </table>
+
+  <h3>TDD vs Test-After</h3>
+  <table class="decision-table">
+    <thead><tr><th>Scenario</th><th>Approach</th><th>Task type</th></tr></thead>
+    <tbody>
+      <tr><td>New feature (greenfield)</td><td>TDD &mdash; test brief first, defines expected interfaces</td><td><code>test-tdd</code></td></tr>
+      <tr><td>Bug fix / existing code change</td><td>Test-after &mdash; implementation first, then regression tests</td><td><code>test-after</code></td></tr>
+      <tr><td>Refactor (tests already exist)</td><td>Update tests as part of implementation</td><td>No separate task</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Implementation briefs include testability mandates</h3>
+  <p>Every implementation brief now has a <strong>Testability Requirements</strong> section:</p>
+  <ul>
+    <li><strong>SOLID principles:</strong> single responsibility, protocol-based DI, focused interfaces</li>
+    <li><strong>Accessibility identifiers:</strong> shared enum per module (<code>enum AccessibilityID { enum Screen { static let element = "..." } }</code>). Strong types, not raw strings.</li>
+    <li><strong>Test seams:</strong> protocol-based interfaces for external dependencies. Injected via initializer.</li>
+    <li><strong>What NOT to do:</strong> Don't over-abstract. Pure functions are already testable. No protocol wrappers for simple value types.</li>
+  </ul>
+
+  <div class="callout purple">
+    <strong>Achilles enforces testability.</strong> During self-review, Achilles checks: are all accessibility IDs defined? Are test seams exposed? Any new singletons in business logic? Missing identifiers are treated as blockers.
+  </div>
+</section>
+
+<!-- Testing -->
+<section id="testing">
+  <h2>Testing Architecture</h2>
+  <p>Achilles handles four types of test tasks, each with type-specific execution logic:</p>
+
+  <h3>Unit Tests (<code>test-unit</code>)</h3>
+  <ul>
+    <li>Reads parent implementation first (parent must be <code>done</code>)</li>
+    <li>Scans existing tests for reusable helpers and mocks</li>
+    <li>Tests business logic, view models, model transformations in isolation</li>
+    <li>Extracts shared helpers when patterns repeat 3+ times</li>
+    <li>Files refactor tasks for test utilities if they outgrow the current file</li>
+  </ul>
+
+  <h3>Integration Tests (<code>test-integration</code>)</h3>
+  <ul>
+    <li>Tests real module boundaries &mdash; no mocking the integration itself</li>
+    <li>Mocks only external services (network, disk, sensors)</li>
+    <li>Kept separate from unit tests (different file/group)</li>
+    <li>Longer running &mdash; marked with test categories where supported</li>
+  </ul>
+
+  <h3>UI Tests (<code>test-ui</code>)</h3>
+  <ul>
+    <li>Validates accessibility identifiers exist before writing tests</li>
+    <li>Uses page object pattern for screen abstractions</li>
+    <li>Happy path flows first, then edge cases, then error recovery</li>
+    <li>Bug fix tasks add regression tests reproducing the original bug</li>
+    <li>Removes redundant tests when new ones provide better coverage</li>
+  </ul>
+
+  <h3>TDD Tests (<code>test-tdd</code>)</h3>
+  <ul>
+    <li>Defines expected interfaces (protocols, method signatures)</li>
+    <li>Writes failing tests against those interfaces</li>
+    <li>Implementation task (blocked by this) makes the tests pass</li>
+    <li>Debrief lists exact interfaces the implementation must satisfy</li>
+  </ul>
+
+  <div class="callout blue">
+    <strong>Test tasks never modify production code.</strong> If production code needs changes to be testable, Achilles files a follow-up task. This keeps test PRs clean and reviewable.
+  </div>
 </section>
 
 <!-- Safety -->
@@ -566,8 +839,8 @@
   <div class="tip-grid">
     <div class="tip">
       <div class="tip-num">01</div>
-      <div class="tip-title">Uncommitted changes are never touched</div>
-      <div class="tip-desc">Achilles branches from <em>committed</em> HEAD into an isolated worktree. Your main checkout is left alone.</div>
+      <div class="tip-title">Uncommitted changes never touched</div>
+      <div class="tip-desc">Achilles branches from <em>committed</em> HEAD into an isolated worktree. Your main checkout stays clean.</div>
     </div>
     <div class="tip">
       <div class="tip-num">02</div>
@@ -576,28 +849,28 @@
     </div>
     <div class="tip">
       <div class="tip-num">03</div>
-      <div class="tip-title">Merge conflicts are never force-resolved</div>
+      <div class="tip-title">Merge conflicts never force-resolved</div>
       <div class="tip-desc">Achilles stops and surfaces them. Branch + DerivedData stay alive so you can resolve manually.</div>
     </div>
     <div class="tip">
       <div class="tip-num">04</div>
       <div class="tip-title">Parallel-safe: builds serialized</div>
-      <div class="tip-desc">Per-project <code>mkdir</code> lock prevents SPM-cache and module-cache races across 6–10 parallel Achilles instances.</div>
+      <div class="tip-desc">Per-project <code>mkdir</code> lock prevents SPM-cache and module-cache races across 6&ndash;10 parallel Achilles instances.</div>
     </div>
     <div class="tip">
       <div class="tip-num">05</div>
       <div class="tip-title">Parallel-safe: merges serialized</div>
-      <div class="tip-desc">A second lock handles <code>.git/index.lock</code> contention, checkout races, and <code>$ORIG_BRANCH</code> tip movement.</div>
+      <div class="tip-desc">A second lock handles <code>.git/index.lock</code> contention, checkout races, and branch tip movement.</div>
     </div>
     <div class="tip">
       <div class="tip-num">06</div>
-      <div class="tip-title">Per-task DerivedData</div>
-      <div class="tip-desc">Each task builds into <code>~/.dev-studio/&lt;project&gt;/derived-data/&lt;task-id&gt;/</code>. Cleaned on clean merge, retained on failure.</div>
+      <div class="tip-title">All tests pass before merge</div>
+      <div class="tip-desc">For test tasks, all tests must be green. For implementation tasks, existing tests must not regress.</div>
     </div>
     <div class="tip">
       <div class="tip-num">07</div>
       <div class="tip-title">--wait never hangs</div>
-      <div class="tip-desc">A <code>ScheduleWakeup(600s)</code> fires even if you're idle. Achilles stamps "no reply within window" and auto-merges.</div>
+      <div class="tip-desc">A <code>ScheduleWakeup(600s)</code> fires even if you're idle. Achilles stamps "no reply" and auto-merges.</div>
     </div>
     <div class="tip">
       <div class="tip-num">08</div>
@@ -607,55 +880,125 @@
   </div>
 </section>
 
-<!-- Build Debt -->
-<section id="build-debt">
-  <h2>Build Debt &mdash; Automated</h2>
-  <p>XS/S tasks skip <code>xcodebuild</code> (LSP-only) to keep the fleet fast. Chanakya counts every skipped build as "debt" and forces a full verification at threshold.</p>
+<!-- Debt Tracking -->
+<section id="debt">
+  <h2>Debt Tracking &mdash; Three Gauges</h2>
+  <p>Chanakya tracks three independent debt counters. Each has warn and block thresholds. All are updated automatically on every inbox sweep.</p>
 
-  <h3>State machine</h3>
+  <div class="debt-gauges">
+    <div class="debt-gauge">
+      <div class="gauge-title" style="color: var(--accent);">Build Debt</div>
+      <p style="font-size: 0.85rem; margin-bottom: 8px;">Tasks merged without <code>xcodebuild</code></p>
+      <div class="gauge-bar">
+        <div class="gauge-fill" style="width: 66%; background: linear-gradient(90deg, var(--green), var(--yellow), var(--red));"></div>
+      </div>
+      <div class="gauge-labels"><span>0</span><span>warn@6</span><span>block@12</span></div>
+    </div>
+    <div class="debt-gauge">
+      <div class="gauge-title" style="color: var(--green);">Unit Test Debt</div>
+      <p style="font-size: 0.85rem; margin-bottom: 8px;">Impl tasks without unit tests done</p>
+      <div class="gauge-bar">
+        <div class="gauge-fill" style="width: 37%; background: linear-gradient(90deg, var(--green), var(--yellow), var(--red));"></div>
+      </div>
+      <div class="gauge-labels"><span>0</span><span>warn@4</span><span>block@8</span></div>
+    </div>
+    <div class="debt-gauge">
+      <div class="gauge-title" style="color: var(--purple);">UI Test Debt</div>
+      <p style="font-size: 0.85rem; margin-bottom: 8px;">Impl tasks without UI tests done</p>
+      <div class="gauge-bar">
+        <div class="gauge-fill" style="width: 33%; background: linear-gradient(90deg, var(--green), var(--yellow), var(--red));"></div>
+      </div>
+      <div class="gauge-labels"><span>0</span><span>warn@3</span><span>block@6</span></div>
+    </div>
+  </div>
+
+  <h3>Build Debt</h3>
+  <p>XS/S tasks skip <code>xcodebuild</code> (LSP-only) to keep the fleet fast. Chanakya counts every skipped build.</p>
   <table class="decision-table">
     <thead><tr><th>Counter</th><th>State</th><th>Behavior</th></tr></thead>
     <tbody>
-      <tr><td>0 – 5</td><td>silent</td><td>Normal operation. No banner. No action.</td></tr>
-      <tr><td>6 – 11</td><td>warn</td><td>Banner on every Chanakya invocation. <code>TBUILD-&lt;n&gt;</code> auto-filed as P0 at the 5→6 transition. New work still allowed.</td></tr>
-      <tr><td>≥ 12</td><td>block</td><td>Banner + refuse new <code>/chanakya brief</code>. Achilles refuses to claim non-TBUILD tasks unless <code>--ignore-build-debt</code>. Override tasks are tracked.</td></tr>
+      <tr><td>0 &ndash; 5</td><td>silent</td><td>Normal operation</td></tr>
+      <tr><td>6 &ndash; 11</td><td>warn</td><td>Banner + auto-file <code>TBUILD-&lt;n&gt;</code> at the 5&rarr;6 transition</td></tr>
+      <tr><td>&ge; 12</td><td>block</td><td>Refuse new implementation briefs until resolved</td></tr>
     </tbody>
   </table>
+  <p><strong>Reset:</strong> <code>/achilles build</code> &mdash; green resets counter to 0; red auto-bisects and files a P0 fix.</p>
+  <p><strong>Escalation triggers</strong> (force <code>full-green</code> regardless of size): any <code>import</code>, <code>public</code>/<code>open</code>, <code>protocol</code>, <code>actor</code>/<code>async</code>, generics, <code>Package.swift</code>, or new/deleted files.</p>
 
-  <h3>Size → gate</h3>
+  <h3>Unit Test Debt</h3>
+  <p>Increments when an implementation task merges but its unit test sub-task is still pending/briefed.</p>
   <table class="decision-table">
-    <thead><tr><th>Task size</th><th>Gate</th><th>Debt impact</th></tr></thead>
+    <thead><tr><th>Counter</th><th>State</th><th>Behavior</th></tr></thead>
     <tbody>
-      <tr><td>XS / S (≤2 files, ≤50 lines, no triggers)</td><td><code>lsp-only</code></td><td>+1 per merge</td></tr>
-      <tr><td>M / L, or escalation triggers</td><td><code>full-green</code> (xcodebuild)</td><td>Resets counter to 0</td></tr>
-      <tr><td>Direct mode</td><td><code>full-green</code></td><td>Resets counter to 0</td></tr>
+      <tr><td>0 &ndash; 3</td><td>silent</td><td>Normal operation</td></tr>
+      <tr><td>4 &ndash; 7</td><td>warn</td><td>Banner + auto-file <code>TUNIT-&lt;n&gt;</code> (run full unit test suite)</td></tr>
+      <tr><td>&ge; 8</td><td>block</td><td>Refuse new implementation briefs. Test briefs always allowed.</td></tr>
     </tbody>
   </table>
-  <p><strong>Escalation triggers</strong> (force <code>full-green</code> regardless of declared size): any <code>import</code>, <code>public</code>/<code>open</code>, <code>protocol</code>, <code>actor</code>/<code>async</code>/<code>@MainActor</code>, generics, <code>Package.swift</code>/<code>.xcconfig</code>/<code>project.pbxproj</code>, or new/deleted/renamed files.</p>
+  <p><strong>Decrement:</strong> When a unit test sub-task's debrief is processed, counter decrements and the parent is removed from <code>Untested since</code>.</p>
 
-  <h3><code>/achilles build</code> &mdash; the reset button</h3>
+  <h3>UI Test Debt</h3>
+  <p>Same logic, tighter thresholds &mdash; UI tests are more expensive to catch up on.</p>
+  <table class="decision-table">
+    <thead><tr><th>Counter</th><th>State</th><th>Behavior</th></tr></thead>
+    <tbody>
+      <tr><td>0 &ndash; 2</td><td>silent</td><td>Normal operation</td></tr>
+      <tr><td>3 &ndash; 5</td><td>warn</td><td>Banner + auto-file <code>TUI-&lt;n&gt;</code> (run full UI test suite)</td></tr>
+      <tr><td>&ge; 6</td><td>block</td><td>Refuse new implementation briefs. Test briefs always allowed.</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Key rule:</strong> All three debt systems are independent. Resolving one doesn't unblock the others. Test briefs are <em>never</em> blocked &mdash; they're the solution.</p>
+
+  <div class="callout yellow">
+    <strong>Master plan header tracks all three.</strong> The <code>## Build Debt</code> and <code>## Test Debt</code> blocks at the top of <code>chanakya-master.md</code> are the source of truth. Never hand-edit &mdash; Chanakya's Step 0 owns them.
+  </div>
+</section>
+
+<!-- Test Flow -->
+<section id="test-flow">
+  <h2>Test Flow &mdash; Single-Sitting Walkthrough</h2>
+  <p>A human-readable companion to <code>test-manifest</code>, organized by user journey rather than by task. Produces numbered round files that are never overwritten.</p>
+
+  <h3>Flags</h3>
+  <table class="decision-table">
+    <thead><tr><th>Flag</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>--round N</code></td><td>Target a specific round number instead of auto-incrementing</td></tr>
+      <tr><td><code>--force</code></td><td>Overwrite an existing round file</td></tr>
+      <tr><td><code>--scope new</code></td><td>(default) Only <code>done</code> tasks &mdash; unverified work</td></tr>
+      <tr><td><code>--scope full</code></td><td>Include <code>done</code> + <code>verified</code> tasks &mdash; full regression sweep</td></tr>
+      <tr><td><code>--scope module &lt;name&gt;</code></td><td>Only tasks touching a specific module/feature area</td></tr>
+      <tr><td><code>--smoke</code></td><td>Minimal smoke-test &mdash; one high-priority case per section + all retests</td></tr>
+      <tr><td><code>--diff N</code></td><td>Compare round N with the latest completed round. Show regressions, fixes, perf deltas</td></tr>
+      <tr><td><code>--promote</code></td><td>Generate pre-checked <code>user-testing.md</code> from a passing round for <code>review-feedback</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Test-manifest vs Test-flow</h3>
+  <table class="decision-table">
+    <thead><tr><th></th><th>test-manifest</th><th>test-flow</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Organized by</strong></td><td>Task (## T013 &mdash; Title)</td><td>User journey (## 1. Filter Module)</td></tr>
+      <tr><td><strong>Output</strong></td><td><code>user-testing.md</code> (overwritten)</td><td><code>user-testing-round&lt;N&gt;.md</code> (numbered, immutable)</td></tr>
+      <tr><td><strong>Processed by</strong></td><td><code>review-feedback</code></td><td>Human reads; optionally <code>--promote</code> to bridge</td></tr>
+      <tr><td><strong>Use for</strong></td><td>Machine-parseable verification</td><td>Single-sitting walkthrough</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Key features</h3>
   <ul>
-    <li><strong>Green:</strong> counter → 0, <code>TBUILD-&lt;n&gt;</code> closes, block clears. One short debrief.</li>
-    <li><strong>Red:</strong> <code>git bisect &lt;last-green&gt;..HEAD</code> runs automatically (capped at 6 bisect steps, DerivedData retained between steps). Debrief names the breaking commit and lists suspect files. Chanakya auto-files a P0 fix task on the next sweep. Block stays active until the fix lands and a subsequent green check runs.</li>
-    <li><strong>Fast-path no-op:</strong> if HEAD equals the last-green SHA, the command exits instantly without running xcodebuild.</li>
+    <li><strong>Partial continuation:</strong> detects half-finished rounds and asks whether to continue or start fresh</li>
+    <li><strong>Retest tracking:</strong> <code>[R&lt;prev&gt; retest]</code> tags for failed cases from prior rounds</li>
+    <li><strong>Severity tags:</strong> <code>[critical]</code> / <code>[important]</code> auto-derived from task priority</li>
+    <li><strong>Performance checkpoints:</strong> inline <code>[perf]</code> cases with <code>Timing:___</code> and <code>Perf baseline:</code> fields</li>
+    <li><strong>Evidence slots:</strong> <code>Evidence:</code> field per case for screenshot paths</li>
+    <li><strong>Device tagging:</strong> <code>Tested on:</code> header for environment capture</li>
+    <li><strong>Cross-round diff:</strong> <code>--diff N</code> shows regressions, fixes, and perf deltas with 20% thresholds</li>
+    <li><strong>Task crosswalk:</strong> bidirectional table mapping tasks &harr; sections</li>
   </ul>
 
-  <h3>Master-plan header</h3>
-  <p>The <code>## Build Debt</code> block at the top of <code>chanakya-master.md</code> is the source of truth:</p>
-  <div class="file-tree">
-    ## Build Debt<br>
-    - Counter: 8 / warn@6 / block@12<br>
-    - State: warn<br>
-    - Last green: build-20260414-093200 (2026-04-14 09:32)<br>
-    - Last green SHA: a1b2c3d<br>
-    - Unverified since: [T015, T016, T017, T018, T019, T020, T021, T022]<br>
-    - Open check task: TBUILD-3<br>
-    - Blocked by: &mdash;<br>
-    - Next TBUILD n: 4
-  </div>
-  <div class="callout" style="margin-top: 16px;">
-    <strong>Fully automated.</strong> No prompts. Counter updates on every inbox sweep. TBUILD is auto-filed, auto-closed. Stale <code>build-*</code> artifacts older than 48h are janitored away if no fix task references them.
-  </div>
+  <h3>Journey map (optional)</h3>
+  <p>Drop a <code>journey-map.md</code> file in <code>~/.dev-studio/&lt;project&gt;/</code> to define your preferred section ordering. Without it, Chanakya auto-infers sections from file paths, skill tags, and brief titles.</p>
 </section>
 
 <!-- When to Use -->
@@ -669,12 +1012,23 @@
       <tr><td>New feature with Figma designs</td><td><span class="badge badge-both">Chanakya + Achilles</span></td></tr>
       <tr><td>Multi-file refactor</td><td><span class="badge badge-chanakya">Chanakya plans</span></td></tr>
       <tr><td>Simple bug fix / crash / one-file tweak</td><td><span class="badge badge-achilles">Achilles direct</span></td></tr>
-      <tr><td>Running 6–10 tasks in parallel</td><td><span class="badge badge-achilles">/achilles T00X &times; N (default no-wait)</span></td></tr>
+      <tr><td>Running 6&ndash;10 tasks in parallel</td><td><span class="badge badge-achilles">/achilles T00X &times; N</span></td></tr>
       <tr><td>Want to watch a single task merge</td><td><span class="badge badge-achilles">/achilles T001 --wait</span></td></tr>
       <tr><td>Verify main is green on demand</td><td><span class="badge badge-achilles">/achilles build</span></td></tr>
-      <tr><td>Force full build on a small task</td><td><span class="badge badge-achilles">/achilles T001 --force-build</span></td></tr>
-      <tr><td>Batch-test completed work</td><td><span class="badge badge-chanakya">/chanakya test-manifest → review-feedback</span></td></tr>
+      <tr><td>Write unit tests for a completed feature</td><td><span class="badge badge-achilles">/achilles T001a</span></td></tr>
+      <tr><td>Write UI tests for a completed feature</td><td><span class="badge badge-achilles">/achilles T001c</span></td></tr>
+      <tr><td>Batch-test completed work (per-task)</td><td><span class="badge badge-chanakya">/chanakya test-manifest &rarr; review-feedback</span></td></tr>
+      <tr><td>Single-sitting manual walkthrough</td><td><span class="badge badge-chanakya">/chanakya test-flow</span></td></tr>
+      <tr><td>Quick sanity check after a hotfix</td><td><span class="badge badge-chanakya">/chanakya test-flow --smoke</span></td></tr>
+      <tr><td>Compare quality across test rounds</td><td><span class="badge badge-chanakya">/chanakya test-flow --diff N</span></td></tr>
+      <tr><td>Full regression sweep</td><td><span class="badge badge-chanakya">/chanakya test-flow --scope full</span></td></tr>
+      <tr><td>Promote a passing round to verified</td><td><span class="badge badge-chanakya">/chanakya test-flow --promote</span></td></tr>
       <tr><td>PRD changed mid-feature</td><td><span class="badge badge-chanakya">/chanakya review</span></td></tr>
+      <tr><td>Ship a feature hands-off</td><td><span class="badge badge-both">/chanakya ship all &rarr; run tabs &rarr; /chanakya verify</span></td></tr>
+      <tr><td>Implement + test in one session</td><td><span class="badge badge-achilles">/achilles group T015</span></td></tr>
+      <tr><td>Clear all debt to unblock</td><td><span class="badge badge-both">/chanakya sweep-debt &rarr; run tabs</span></td></tr>
+      <tr><td>Run whatever task is next</td><td><span class="badge badge-achilles">/achilles next</span></td></tr>
+      <tr><td>Run full unit/UI test suite</td><td><span class="badge badge-achilles">/achilles test-suite all</span></td></tr>
     </tbody>
   </table>
   <div class="callout">
@@ -690,16 +1044,30 @@
   <div class="example">
     <div class="example-header">
       <span class="example-number">1</span>
-      <span class="example-title">Quick Bug Fix</span>
-      <span class="example-subtitle">Direct to Achilles, no planning</span>
+      <span class="example-title">Feature with Test Group</span>
+      <span class="example-subtitle">Full task group lifecycle</span>
     </div>
     <div class="example-body">
       <div class="session-block">
+        <div class="session-label chanakya-label">Planning</div>
         <div class="dialogue">
-          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles</code><br>The app crashes when tapping "Compare" after selecting a sticker. Fix it.</span></div>
-          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[reads files, finds the bug, fixes it]</em><br>Fixed. The compare button's hit area was under the sticker overlay. Added <code>allowsHitTesting(false)</code> to stickers during comparison mode. Commit: <code>abc1234</code>. Any feedback?</span></div>
-          <div class="line"><span class="speaker you">You</span><span class="content">Looks good.</span></div>
-          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[writes debrief to inbox]</em><br>No briefed tasks in the master plan. Want me to look at something else?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya</code><br>Add filter presets to the photo editor. Users should be able to save and load preset combinations.</span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">Task group created:<br><strong>T015</strong> &mdash; Add filter presets (feature, P1, L)<br><strong>T015a</strong> &mdash; Unit tests: filter presets (test-unit, blocked by T015)<br><strong>T015c</strong> &mdash; UI tests: preset selection flow (test-ui, blocked by T015)<br><br>T015 brief includes Testability Requirements: FilterPresetManager must use protocol-based DI, accessibility IDs in <code>AccessibilityID.FilterPreset</code> enum. Brief T015?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content">Yes</span></div>
+        </div>
+      </div>
+      <div class="session-block">
+        <div class="session-label achilles-label">Implementation</div>
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles T015</code></span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[implements with SOLID, defines AccessibilityID.FilterPreset enum, exposes FilterPresetManagerProtocol]</em><br>Done. 4 commits. Testability report: FilterPresetManager injectable, 12 accessibility IDs defined. Test sub-tasks T015a and T015c are unblocked.</span></div>
+        </div>
+      </div>
+      <div class="session-block">
+        <div class="session-label achilles-label">Unit Tests (can run in parallel with UI tests)</div>
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles T015a</code></span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[reads parent implementation, scans existing test helpers, writes tests]</em><br>Done. 18 unit tests covering FilterPresetManager: save/load/delete, edge cases (empty name, duplicate), error handling. All green.</span></div>
         </div>
       </div>
     </div>
@@ -709,28 +1077,18 @@
   <div class="example">
     <div class="example-header">
       <span class="example-number">2</span>
-      <span class="example-title">Single Feature with Figma</span>
-      <span class="example-subtitle">Chanakya plans, Achilles implements</span>
+      <span class="example-title">Test Flow Walkthrough</span>
+      <span class="example-subtitle">Generate, test, diff, promote</span>
     </div>
     <div class="example-body">
       <div class="session-block">
-        <div class="session-label chanakya-label">Session 1 — Planning</div>
         <div class="dialogue">
-          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya</code><br>I need to build the new FAB for the home screen. Figma: <code>node-id=1:42171</code></span></div>
-          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">One task: <strong>T001 — Home screen FAB redesign</strong> (P1, M). Skills: figma-to-swiftui, swiftui-pro. Master plan written. Shall I generate the brief?</span></div>
-          <div class="line"><span class="speaker you">You</span><span class="content">Yes</span></div>
-          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[fetches Figma, scans code, inlines specs]</em><br>Brief ready. Includes: collapsed/expanded states, screenshot, design tokens, files to modify, acceptance criteria. Ready to launch a worker?</span></div>
-        </div>
-      </div>
-      <div class="session-block">
-        <div class="session-label achilles-label">Session 2 — Implementation</div>
-        <div class="dialogue">
-          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles T001</code></span></div>
-          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[reads brief, marks in-progress, implements]</em><br>Done. Replaced CreateNewFABView with new design. 3 commits. Any feedback?</span></div>
-          <div class="line"><span class="speaker you">You</span><span class="content">The background should be more translucent.</span></div>
-          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content">Updated. Material opacity 0.7 &#8594; 0.5. Any other feedback?</span></div>
-          <div class="line"><span class="speaker you">You</span><span class="content">Good, ship it.</span></div>
-          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[writes debrief, marks done]</em> All tasks complete.</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya test-flow</code></span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">Generated user-testing-round3.md with 8 sections, 42 test cases (3 retests, 4 perf checkpoints) covering 12 tasks. Scope: new. Open it in your editor.</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content"><em>[tests on device, fills out round 3]</em><br><code>/chanakya test-flow --diff 2</code></span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">Round 2 &rarr; Round 3:<br>&bull; 1 regression (filter grid &mdash; landscape)<br>&bull; 2 fixes confirmed<br>&bull; Cold launch: 1.8s &rarr; 2.4s (+33%) &#9888;&#65039;<br>&bull; Memory peak: 380MB &rarr; 520MB (+37%) &#9888;&#65039;</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content"><em>[fixes the regression, re-tests]</em><br><code>/chanakya test-flow --promote</code></span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">Promoted round 3 &rarr; user-testing.md with 12 tasks pre-verified. Run <code>/chanakya review-feedback</code> to apply.</span></div>
         </div>
       </div>
     </div>
@@ -740,36 +1098,16 @@
   <div class="example">
     <div class="example-header">
       <span class="example-number">3</span>
-      <span class="example-title">Multi-Task Feature with Dependencies</span>
-      <span class="example-subtitle">Full workflow + mid-flight PRD change</span>
+      <span class="example-title">Debt Warning Flow</span>
+      <span class="example-subtitle">Build + test debt interaction</span>
     </div>
     <div class="example-body">
       <div class="session-block">
-        <div class="session-label chanakya-label">Session 1 — Planning</div>
         <div class="dialogue">
-          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya</code><br>New feature: photo editor export. Export settings panel, format selection, share sheet, progress indicator, watermark overlay.</span></div>
-          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">Organized into 5 tasks:<br><strong>T001</strong> — Export settings panel (P0, L) &mdash; no deps<br><strong>T002</strong> — Format selection (P0, M) &mdash; depends on T001<br><strong>T003</strong> — Share sheet (P1, S) &mdash; depends on T001<br><strong>T004</strong> — Progress indicator (P1, S) &mdash; depends on T001<br><strong>T005</strong> — Watermark overlay (P2, M) &mdash; depends on T001<br><br>T001 is the foundation. Shall I brief it?</span></div>
-          <div class="line"><span class="speaker you">You</span><span class="content">Yes, and add swiftui-liquid-glass — the panel should use glass effects.</span></div>
-          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[fetches Figma, writes brief]</em> T001 briefed. T002 can't be briefed yet. Brief T003 and T004?</span></div>
-          <div class="line"><span class="speaker you">You</span><span class="content">Yes</span></div>
-          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">T003 and T004 briefed. Start T001 now, then T002–T004 in parallel after.</span></div>
-        </div>
-      </div>
-      <div class="session-block">
-        <div class="session-label achilles-label">Session 2 — Worker on T001</div>
-        <div class="dialogue">
-          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles T001</code></span></div>
-          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[implements export settings panel]</em><br>Done. 4 commits. Key finding: NavBar uses different glass material than Figma — I matched Figma. Any feedback?</span></div>
-          <div class="line"><span class="speaker you">You</span><span class="content">Looks great.</span></div>
-          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[writes debrief with glass material gotcha]</em><br>T003 and T004 are unblocked. Pick up T003?</span></div>
-        </div>
-      </div>
-      <div class="session-block">
-        <div class="session-label chanakya-label">Session 1 — PRD Change</div>
-        <div class="dialogue">
-          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya review</code><br>Product team changed: HEIF + alpha, watermark always on for free users, new export history feature.</span></div>
-          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[processes T001 debrief first]</em><br>PRD Delta:<br>&bull; T002 affected — HEIF needs alpha channel<br>&bull; T005 changed — watermark now mandatory, bumped to P1<br>&bull; NEW: T006 — Export history<br>Update the plan?</span></div>
-          <div class="line"><span class="speaker you">You</span><span class="content">Yes</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya status</code></span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">&#9888;&#65039; Build debt: 7/12 (warn). Open check: TBUILD-3.<br>&#9888;&#65039; Unit test debt: 5/8 (warn). Open check: TUNIT-1.<br><br>3 tasks done awaiting verification. 2 test sub-tasks pending.<br>Recommended: complete T015a (unit tests) and run <code>/achilles build</code> to reduce debt.</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles T015a</code></span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[writes unit tests, merges]</em><br>Done. Unit test debt will drop on next Chanakya sweep.</span></div>
         </div>
       </div>
     </div>
@@ -779,21 +1117,14 @@
   <div class="example">
     <div class="example-header">
       <span class="example-number">4</span>
-      <span class="example-title">Parallel Workers</span>
-      <span class="example-subtitle">Three terminal tabs, three tasks</span>
+      <span class="example-title">Quick Bug Fix</span>
+      <span class="example-subtitle">Direct to Achilles, no planning</span>
     </div>
     <div class="example-body">
       <div class="session-block">
         <div class="dialogue">
-          <div class="line"><span class="speaker" style="color: var(--text-muted);">Tab 1</span><span class="content"><code>/achilles T002</code> — format selection</span></div>
-          <div class="line"><span class="speaker" style="color: var(--text-muted);">Tab 2</span><span class="content"><code>/achilles T003</code> — share sheet</span></div>
-          <div class="line"><span class="speaker" style="color: var(--text-muted);">Tab 3</span><span class="content"><code>/achilles T004</code> — progress indicator</span></div>
-        </div>
-      </div>
-      <div class="session-block">
-        <div class="dialogue">
-          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya status</code> <em>(later)</em></span></div>
-          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[sweeps inbox — 3 debriefs]</em><br>T002, T003, T004 all done. Learnings compiled. T005 unblocked. Brief it?</span></div>
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles</code><br>The app crashes when tapping "Compare" after selecting a sticker. Fix it.</span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[reads files, finds the bug, fixes it]</em><br>Fixed. Added <code>allowsHitTesting(false)</code> to stickers during comparison mode. Commit: <code>abc1234</code>.</span></div>
         </div>
       </div>
     </div>
@@ -803,123 +1134,57 @@
   <div class="example">
     <div class="example-header">
       <span class="example-number">5</span>
-      <span class="example-title">Next-Day Resume</span>
-      <span class="example-subtitle">Picking up where you left off</span>
+      <span class="example-title">Parallel Workers</span>
+      <span class="example-subtitle">Three terminal tabs, three tasks</span>
     </div>
     <div class="example-body">
       <div class="session-block">
         <div class="dialogue">
-          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya status</code></span></div>
-          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">T001 done. T002 in-progress but stale (18h, no commits). T003/T004 briefed. T005 pending.<br>Did T002's worker finish?</span></div>
-          <div class="line"><span class="speaker you">You</span><span class="content">T002 is done, worker didn't debrief. Mark it done.</span></div>
-          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">Done. T003/T004 ready. Brief T005 while you start a worker?</span></div>
+          <div class="line"><span class="speaker" style="color: var(--text-muted);">Tab 1</span><span class="content"><code>/achilles T002</code> &mdash; format selection</span></div>
+          <div class="line"><span class="speaker" style="color: var(--text-muted);">Tab 2</span><span class="content"><code>/achilles T003</code> &mdash; share sheet</span></div>
+          <div class="line"><span class="speaker" style="color: var(--text-muted);">Tab 3</span><span class="content"><code>/achilles T015a</code> &mdash; unit tests for filter presets</span></div>
+        </div>
+      </div>
+      <div class="session-block">
+        <div class="dialogue">
+          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya status</code> <em>(later)</em></span></div>
+          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[sweeps inbox &mdash; 3 debriefs]</em><br>T002, T003 done. T015a done (unit test debt -1). Build debt: 5/12. Unit test debt: 2/8.</span></div>
         </div>
       </div>
     </div>
-  </div>
-
-  <!-- Example 6 -->
-  <div class="example">
-    <div class="example-header">
-      <span class="example-number">6</span>
-      <span class="example-title">Ad-Hoc Fix Feeds Back</span>
-      <span class="example-subtitle">Unplanned bug fix gets tracked</span>
-    </div>
-    <div class="example-body">
-      <div class="session-block">
-        <div class="dialogue">
-          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles</code><br>Crash in CollageEditorView when rotating text past 360&deg;. Angle overflows.</span></div>
-          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[fixes it]</em><br>Wrapped with <code>.truncatingRemainder(dividingBy: 360)</code>. Commit: <code>xyz7890</code>. Feedback?</span></div>
-          <div class="line"><span class="speaker you">You</span><span class="content">Good.</span></div>
-          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[writes debrief to inbox]</em><br>T003 is briefed and available. Pick it up?</span></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Example 7 -->
-  <div class="example">
-    <div class="example-header">
-      <span class="example-number">7</span>
-      <span class="example-title">Full PRD + Figma &mdash; Large Feature</span>
-      <span class="example-subtitle">20-page PRD, 5 Figma screens, phased rollout</span>
-    </div>
-    <div class="example-body">
-
-      <div class="session-block">
-        <div class="session-label chanakya-label">Session 1 &mdash; Feeding the PRD</div>
-        <div class="dialogue">
-          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya</code><br>New feature: Collage Templates V2.<br><br><strong>PRD:</strong> <code>~/Downloads/Collage Templates V2 - Product Spec.md</code><br><strong>Figma:</strong> <code>DMRP0bv9T9oUbGCC5esB01</code><br>&bull; Template browser: <code>node 1:60100</code><br>&bull; Template preview: <code>node 1:60250</code><br>&bull; Category filter: <code>node 1:60400</code><br>&bull; Template customizer: <code>node 1:60550</code><br>&bull; Save/share flow: <code>node 1:60700</code><br><br>This replaces the old template picker. BE shipping new endpoints next week. Category filter is highest priority.</span></div>
-          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[reads PRD &mdash; 47 requirements across 8 sections]</em><br><em>[fetches all 5 Figma screens]</em><br><em>[scans codebase &mdash; finds existing TemplateBrowserView, API layer]</em><br><br><strong>PHASE 1 &mdash; No BE dependency:</strong><br><strong>T001</strong> &mdash; Category filter UI (P0, L) &mdash; PRD 2.1-2.3, Figma 1:60400<br><strong>T002</strong> &mdash; Template browser grid (P0, XL) &mdash; PRD 3.1-3.6, Figma 1:60100<br><strong>T003</strong> &mdash; Template preview sheet (P0, M) &mdash; PRD 4.1-4.3, Figma 1:60250<br><br><strong>PHASE 2 &mdash; Requires BE:</strong><br><strong>T004</strong> &mdash; API layer for /v2/templates (P0, M) &mdash; PRD 7.1<br><strong>T005</strong> &mdash; Template customizer (P1, XL) &mdash; PRD 5.1-5.8, Figma 1:60550<br><strong>T006</strong> &mdash; Save/share flow (P1, M) &mdash; PRD 6.1-6.4, Figma 1:60700<br><br><strong>PHASE 3 &mdash; Polish:</strong><br><strong>T007</strong> &mdash; Old picker removal (P2, S)<br><strong>T008</strong> &mdash; Analytics events (P2, S)<br><strong>DIRECT:</strong> T009 &mdash; Mock fixtures, T010 &mdash; Feature flag<br><br>3 PRD gaps flagged:<br>&bull; PRD 3.4: 'Smart sort' &mdash; algorithm undefined<br>&bull; PRD 5.6: 'Custom color picker' &mdash; build or system?<br>&bull; PRD 6.2: 'Share to Stories' &mdash; which platforms?<br><br>Shall I brief T001 (category filter)?</span></div>
-          <div class="line"><span class="speaker you">You</span><span class="content">PRD 5.6: use system color picker. Other two I'll check with product. Brief T001, and also T004 since it can run in parallel.</span></div>
-          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[briefs T001 and T004 in parallel]</em></span></div>
-        </div>
-      </div>
-
-      <div class="session-block">
-        <div class="session-label chanakya-label">What's in the T001 brief</div>
-        <div class="dialogue">
-          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content">T001 brief generated. Contains:<br><br><strong>FROM PRD:</strong><br>&bull; 6 category types with icons (PRD 2.1)<br>&bull; Horizontal scroll, 'All' default (PRD 2.2)<br>&bull; Count badges update real-time (PRD 2.3)<br>&bull; VoiceOver labels (PRD 2.3.1)<br><br><strong>FROM FIGMA (1:60400):</strong><br>&bull; Pill chips, 36pt height<br>&bull; Selected: filled orange #FF4C24, white text<br>&bull; Unselected: glass material, gray text<br>&bull; 16pt spacing, count badge 12pt circle<br>&bull; Screenshot inlined<br><br><strong>FROM CODEBASE:</strong><br>&bull; Replaces TemplateBrowserView.swift lines 45-89<br>&bull; Reuse existing CategoryModel<br>&bull; Pattern: PhotoEditorModuleTabBar.swift<br><br><strong>ACCEPTANCE CRITERIA (PRD + Figma merged):</strong><br>7 criteria covering functional + visual requirements<br><br>T004 also ready. Launch a worker for T001?</span></div>
-        </div>
-      </div>
-
-      <div class="session-block">
-        <div class="session-label achilles-label">Session 2 &mdash; Worker on T001</div>
-        <div class="dialogue">
-          <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles T001</code></span></div>
-          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[reads brief &mdash; PRD + Figma + code paths all in one place]</em><br><em>[invokes /figma-to-swiftui, /swiftui-liquid-glass]</em><br><em>[reuses existing CategoryModel]</em><br><br>Done. Category filter bar with glass chips, count badges, VoiceOver labels. 3 commits.<br><br>Note: PRD says 'Smart sort' but doesn't define it. Used alphabetical. Flag for product?<br><br>Any feedback?</span></div>
-          <div class="line"><span class="speaker you">You</span><span class="content">Yes flag it. Rest looks good.</span></div>
-          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[writes debrief &mdash; 'Smart sort' in Follow-ups, CategoryModel reuse in Key Learnings]</em><br>T004 (API layer) is briefed and independent. Pick it up?</span></div>
-        </div>
-      </div>
-
-      <div class="session-block">
-        <div class="session-label chanakya-label">Session 1 &mdash; Continuing</div>
-        <div class="dialogue">
-          <div class="line"><span class="speaker you">You</span><span class="content"><code>/chanakya brief T002</code></span></div>
-          <div class="line"><span class="speaker chanakya-speaker">Chanakya</span><span class="content"><em>[auto-sweeps inbox &mdash; processes T001 debrief]</em><br><em>[reads T001's completed code for integration point]</em><br><em>[fetches Figma 1:60100, cross-refs PRD 3.1-3.6]</em><br><br>File overlap check: clean &mdash; T001 is done.<br><br>T002 brief includes:<br>&bull; Infinite scroll with 20-item pages (PRD 3.2)<br>&bull; 2-column grid, 8pt spacing, 180pt cards (Figma)<br>&bull; LazyVGrid performance guidance (500+ items, PRD 3.5)<br>&bull; Reads selected category from T001's filter<br><br>Launch a worker?</span></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="callout" style="margin-top: 32px;">
-    <strong>PRD workflow tips:</strong><br>
-    &bull; Give Chanakya the PRD file path &mdash; it reads the whole doc and extracts requirements per task<br>
-    &bull; Give all Figma nodes upfront &mdash; Chanakya maps them to tasks and fetches during brief generation<br>
-    &bull; Chanakya catches PRD gaps &mdash; ambiguous requirements get flagged before workers hit them<br>
-    &bull; PRD section refs travel into briefs &mdash; workers can trace every decision back to the spec<br>
-    &bull; Acceptance criteria merge Figma (visual) + PRD (functional) &mdash; workers don't cross-reference two sources
   </div>
 </section>
 
 <!-- File System -->
 <section id="files">
   <h2>File System</h2>
-  <p>After a typical feature lifecycle:</p>
+  <p>After a typical feature lifecycle with task groups:</p>
   <div class="file-tree">
     <span class="dir">~/.dev-studio/&lt;project&gt;/</span> <span class="comment"># slug = basename of git toplevel</span><br>
     &nbsp;&nbsp;<span class="dir">plans/</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">chanakya-master.md</span> <span class="comment"># The master plan</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">user-testing.md</span> <span class="comment"># Consolidated manual-test file (on demand)</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">chanakya-master.md</span> <span class="comment"># Master plan (Build Debt + Test Debt + Tasks)</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">user-testing.md</span> <span class="comment"># Per-task test manifest (on demand)</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">user-testing-rounds/</span> <span class="comment"># Test-flow round files</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">user-testing-round1.md</span> <span class="comment"># Immutable &mdash; never overwritten</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">user-testing-round2.md</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">user-testing-archive/</span> <span class="comment"># Processed test-manifest snapshots</span><br>
     &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">chanakya-tasks/</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-export-settings.md</span> <span class="comment"># Self-contained brief</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-tests.md</span> <span class="comment"># Test cases (by Achilles)</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T002-format-selection.md</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-export-settings.md</span> <span class="comment"># Implementation brief</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001a-unit-tests-export.md</span> <span class="comment"># Unit test brief</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001c-ui-tests-export.md</span> <span class="comment"># UI test brief</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-tests.md</span> <span class="comment"># Manual test cases (by Achilles)</span><br>
     &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">chanakya-inbox/</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">direct-xyz7890-debrief.md</span> <span class="comment"># Unprocessed</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-debrief.md</span> <span class="comment"># Unprocessed (includes Testability Report)</span><br>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">processed/</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-debrief.md</span> <span class="comment"># Processed by Chanakya</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-debrief.md</span><br>
     &nbsp;&nbsp;<span class="dir">worktrees/</span> <span class="comment"># Per-task isolated checkouts</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">T001/</span> <span class="comment"># branch achilles/T001 — removed on clean merge</span><br>
     &nbsp;&nbsp;<span class="dir">derived-data/</span> <span class="comment"># Per-task xcodebuild output</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">T001/</span> <span class="comment"># cleaned on clean merge, retained on failure</span><br>
-    &nbsp;&nbsp;<span class="dir">locks/</span> <span class="comment"># mkdir locks — serialize builds &amp; merges across instances</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">build.lock/</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">merge.lock/</span>
+    &nbsp;&nbsp;<span class="dir">locks/</span> <span class="comment"># mkdir locks &mdash; serialize builds &amp; merges</span><br>
+    <br>
+    <span class="dir">~/.dev-studio/&lt;project&gt;/</span><br>
+    &nbsp;&nbsp;<span class="file">journey-map.md</span> <span class="comment"># Optional: defines test-flow section ordering</span>
   </div>
-  <p style="margin-top: 16px;"><strong>Why outside <code>~/.claude/</code>?</strong> Keeps both agents clear of Claude Code's self-mod permission guard, so they can read/write their own artifacts unattended.</p>
+  <p style="margin-top: 16px;"><strong>Why outside <code>~/.claude/</code>?</strong> Keeps both agents clear of Claude Code's self-mod permission guard, so they can read/write artifacts unattended.</p>
 </section>
 
 <!-- Tips -->
@@ -933,48 +1198,58 @@
     </div>
     <div class="tip">
       <div class="tip-num">02</div>
-      <div class="tip-title">Just say "yes"</div>
-      <div class="tip-desc">Chanakya always suggests next steps. Say "yes" to keep moving, "do T003 instead" to redirect, "I'm done" to stop.</div>
+      <div class="tip-title">Task groups scale with complexity</div>
+      <div class="tip-desc">A trivial fix gets impl only. A feature gets impl + unit + UI tests. Chanakya decides &mdash; you approve.</div>
     </div>
     <div class="tip">
       <div class="tip-num">03</div>
-      <div class="tip-title">Default is no-wait</div>
-      <div class="tip-desc">Plain <code>/achilles T001</code> merges as soon as the build goes green and logs a manual-verification follow-up. Add <code>--wait</code> only when you want to test before merge.</div>
+      <div class="tip-title">Test sub-tasks run in parallel</div>
+      <div class="tip-desc">After T015 merges, fire <code>/achilles T015a</code> and <code>/achilles T015c</code> in separate tabs. They're independent.</div>
     </div>
     <div class="tip">
       <div class="tip-num">04</div>
-      <div class="tip-title">Briefs are snapshots</div>
-      <div class="tip-desc">If the codebase changes between briefing and execution, regenerate with <code>/chanakya brief T001</code>.</div>
+      <div class="tip-title">Don't over-abstract for testability</div>
+      <div class="tip-desc">Pure functions are already testable. Achilles only adds protocols where the brief's Test Seams section explicitly calls for them.</div>
     </div>
     <div class="tip">
       <div class="tip-num">05</div>
-      <div class="tip-title">Debriefs are knowledge</div>
-      <div class="tip-desc">Key Learnings in debriefs feed into project memory. Be generous with feedback about what was surprising or tricky.</div>
+      <div class="tip-title">Accessibility IDs are committed early</div>
+      <div class="tip-desc">The enum file is a separate, early commit in the implementation task. UI test tasks depend on it.</div>
     </div>
     <div class="tip">
       <div class="tip-num">06</div>
-      <div class="tip-title">Go parallel — aggressively</div>
-      <div class="tip-desc">Fire 6–10 <code>/achilles T00X</code> in separate tabs. Each runs in its own worktree with its own DerivedData; builds and merges serialize automatically via <code>~/.dev-studio/&lt;project&gt;/locks/</code>.</div>
+      <div class="tip-title">Use --smoke for quick checks</div>
+      <div class="tip-desc"><code>/chanakya test-flow --smoke</code> generates a minimal walkthrough &mdash; one critical case per section + all retests. 10 minutes vs 45.</div>
     </div>
     <div class="tip">
       <div class="tip-num">07</div>
-      <div class="tip-title">PRD changes are normal</div>
-      <div class="tip-desc"><code>/chanakya review</code> diffs changes against existing tasks and tells you exactly what's affected.</div>
+      <div class="tip-title">--diff tracks quality over time</div>
+      <div class="tip-desc"><code>/chanakya test-flow --diff 2</code> compares rounds. Flags regressions, confirms fixes, shows perf deltas with 20% thresholds.</div>
     </div>
     <div class="tip">
       <div class="tip-num">08</div>
-      <div class="tip-title">Skip when trivial</div>
-      <div class="tip-desc">A one-line crash fix doesn't need Chanakya. Just <code>/achilles</code> and describe the bug — direct mode runs the same safety pipeline.</div>
+      <div class="tip-title">--promote bridges manual to automated</div>
+      <div class="tip-desc">After a passing round, <code>--promote</code> generates a pre-checked <code>user-testing.md</code>. Run <code>review-feedback</code> to mark tasks verified.</div>
     </div>
     <div class="tip">
       <div class="tip-num">09</div>
-      <div class="tip-title">Batch-test on your schedule</div>
-      <div class="tip-desc">Run <code>/chanakya test-manifest</code> when you're ready. Tick boxes in <code>user-testing.md</code>, note failures, then <code>/chanakya review-feedback</code> promotes passes and files follow-ups for failures.</div>
+      <div class="tip-title">Debt gauges keep you honest</div>
+      <div class="tip-desc">Three independent counters (build, unit test, UI test). Each warns early and blocks late. Test briefs are never blocked &mdash; they're the solution.</div>
     </div>
     <div class="tip">
       <div class="tip-num">10</div>
       <div class="tip-title">Red builds don't merge</div>
       <div class="tip-desc">If Step 6 fails, Achilles stops and retains the branch + DerivedData. Inspect under <code>~/.dev-studio/&lt;project&gt;/worktrees/&lt;id&gt;/</code>.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">11</div>
+      <div class="tip-title">Journey map is optional</div>
+      <div class="tip-desc">Drop a <code>journey-map.md</code> in your project root to define section ordering for test-flow. Without it, sections are auto-inferred.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">12</div>
+      <div class="tip-title">Briefs are snapshots</div>
+      <div class="tip-desc">If the codebase changes between briefing and execution, regenerate with <code>/chanakya brief T001</code>.</div>
     </div>
   </div>
 </section>
@@ -983,7 +1258,7 @@
 
 <footer>
   <div class="container">
-    Chanakya + Achilles &mdash; built for the Turnip iOS project
+    Chanakya + Achilles &mdash; Plan, implement, test, verify
   </div>
 </footer>
 

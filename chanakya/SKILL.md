@@ -1,6 +1,6 @@
 ---
 name: chanakya
-description: "Project manager agent for the Turnip iOS codebase. Organizes tasks with priorities, maintains a master plan, generates per-task worker briefs with pre-fetched Figma context and codebase references. Proactively suggests next actions after every operation. Also produces a consolidated user-testing manifest for manual verification, tracks build debt (warn@6/block@12) accumulated from XS/S tasks that skipped xcodebuild, and auto-files build-check (TBUILD) and bisect-fix follow-up tasks. Sub-commands: /chanakya (intake), /chanakya status, /chanakya brief <task-id>, /chanakya review, /chanakya update, /chanakya test-manifest [--force], /chanakya review-feedback. Do NOT trigger for simple bug fixes or one-file changes — those go directly to /achilles."
+description: "Project manager agent for the Turnip iOS codebase. Organizes tasks with priorities, maintains a master plan, generates per-task worker briefs with pre-fetched Figma context and codebase references. Proactively suggests next actions after every operation. Also produces a consolidated user-testing manifest for manual verification, and a journey-ordered single-sitting test-flow with round tracking, performance checkpoints, and cross-round regression diffing. Tracks build debt (warn@6/block@12) accumulated from XS/S tasks that skipped xcodebuild, and auto-files build-check (TBUILD) and bisect-fix follow-up tasks. Sub-commands: /chanakya (intake), /chanakya status, /chanakya brief <task-id>, /chanakya review, /chanakya update, /chanakya test-manifest [--force], /chanakya test-flow [--force] [--round N] [--scope new|full|module <name>] [--smoke] [--diff N] [--promote], /chanakya review-feedback. Do NOT trigger for simple bug fixes or one-file changes — those go directly to /achilles."
 ---
 
 # Chanakya — Project Manager
@@ -31,6 +31,8 @@ Everywhere below, `<project>` is this slug. For the Turnip iOS repo it resolves 
 - **Worker debriefs (inbox):** `~/.dev-studio/<project>/plans/chanakya-inbox/`
 - **Processed debriefs:** `~/.dev-studio/<project>/plans/chanakya-inbox/processed/`
 - **User test manifest:** `~/.dev-studio/<project>/plans/user-testing.md`
+- **Test-flow rounds:** `~/.dev-studio/<project>/plans/user-testing-rounds/user-testing-round<N>.md`
+- **Journey map (optional):** `~/.dev-studio/<project>/journey-map.md`
 - **Locks:** `~/.dev-studio/<project>/locks/`
 - **Project memory (Claude-owned, do not relocate):** `~/.claude/projects/-Users-vishalsingh-Documents-Turnip-gg-turnip-ios/memory/`
 
@@ -59,12 +61,16 @@ Before executing ANY mode, check `~/.dev-studio/<project>/plans/chanakya-inbox/`
    - Set status to `done` (or `needs-review` if the debrief flags issues).
    - Record commit hashes and the merge commit from the Branch section.
 3. **Update the Build Debt block** (see Build Debt Tracking below) using the debrief's `build_gate:` field.
-4. For every item in the debrief's `## Follow-up Tasks` section, create a **new** task entry:
+4. **Update the Test Debt block** (see Test Debt Tracking below):
+   - If the task is an implementation type (feature/bugfix/refactor), check whether its unit test sub-task (same Group, `Type: test-unit`) is `done` or `verified`. If not, increment the unit test debt counter.
+   - Same check for UI test sub-task (`Type: test-ui`) against UI test debt counter.
+   - If the task IS a test sub-task (`test-unit`, `test-integration`, `test-ui`), decrement the appropriate counter and remove the parent task from `Untested since`.
+5. For every item in the debrief's `## Follow-up Tasks` section, create a **new** task entry:
    - Fresh task ID, `Source:` = originating task ID, status `pending`.
    - If the follow-up is manual-verification of the parent, include the test-case artifact path in Notes.
-5. If the debrief has substantive follow-ups, immediately generate briefs for them (same as Brief Generation mode, Steps 3–6). Set their status to `briefed`.
-6. Move the debrief to `processed/`. Leave `*-tests.md` in place.
-7. Report: "Processed T001 — done, 2 follow-ups briefed (T014, T015). Build debt: 7/12."
+6. If the debrief has substantive follow-ups, immediately generate briefs for them (same as Brief Generation mode, Steps 3–6). Set their status to `briefed`.
+7. Move the debrief to `processed/`. Leave `*-tests.md` in place.
+8. Report: "Processed T001 — done, 2 follow-ups briefed (T014, T015). Build debt: 7/12. Unit test debt: 3/8. UI test debt: 2/6."
 
 ### 0B — Process each manual-build-check debrief
 
@@ -161,7 +167,7 @@ Transitions after counter update:
 
 ### Banner rules
 
-Before executing any mode (including intake, status, brief, review, update, test-manifest, review-feedback), inspect `State:`:
+Before executing any mode (including intake, status, brief, review, update, test-manifest, test-flow, review-feedback), inspect `State:` for all three debt trackers (build, unit test, UI test):
 
 - `silent` → no banner.
 - `warn` → print once at the top:
@@ -175,6 +181,102 @@ In Brief Generation mode (`/chanakya brief <task-id>`), if `State: block`:
 
 - If the task-id is a `TBUILD-*` or the P0 fix referenced by `Blocked by:`, proceed — these are the unblocking tasks.
 - Otherwise refuse, print the block banner, and exit without writing.
+
+---
+
+## Test Debt Tracking
+
+Two independent debt counters track implementation tasks that merge without their test sub-tasks being completed. These work alongside build debt — all three are evaluated on every inbox sweep.
+
+### Master plan header
+
+```markdown
+## Test Debt
+
+### Unit Test Debt
+- Counter: 3 / warn@4 / block@8
+- State: silent            <!-- silent | warn | block -->
+- Last green run: —        <!-- timestamp of last full unit-test suite pass -->
+- Untested since: [T015, T018, T022]
+- Open check task: —       <!-- TUNIT-<n> when auto-filed -->
+- Next TUNIT n: 1
+
+### UI Test Debt
+- Counter: 2 / warn@3 / block@6
+- State: silent            <!-- silent | warn | block -->
+- Last green run: —        <!-- timestamp of last full UI-test suite pass -->
+- Untested since: [T015, T022]
+- Open check task: —       <!-- TUI-<n> when auto-filed -->
+- Next TUI n: 1
+```
+
+### Counter update rules (applied during Step 0A per debrief)
+
+**Unit test debt** increments when an implementation task (`Type: feature | bugfix | refactor`) merges but its unit test sub-task (same Group, `Type: test-unit`) is still `pending` or `briefed`:
+
+| Implementation debrief processed | Unit test sub-task status | Action |
+|---|---|---|
+| Implementation task done | test-unit sub-task `done` or `verified` | No change (tests shipped with implementation) |
+| Implementation task done | test-unit sub-task `pending` or `briefed` | Counter += 1; append task-id to `Untested since` |
+| Implementation task done | No test-unit sub-task exists | Counter += 1; append `<task-id>[no-test-task]` to `Untested since` |
+| test-unit sub-task done | (processed independently) | Counter -= 1; remove parent from `Untested since` |
+
+**UI test debt** follows the same logic for `Type: test-ui` sub-tasks. Only applies to tasks that have a UI test sub-task in their group.
+
+**Resetting the counter:** When a full test suite run passes (tracked via a `TUNIT-<n>` or `TUI-<n>` task), reset the respective counter to 0 and clear `Untested since`.
+
+### Threshold actions
+
+**Unit test debt:**
+
+| Counter | State | Action |
+|---|---|---|
+| 0 – 3 | silent | Normal operation |
+| 4 – 7 | warn | Banner on every Chanakya invocation. Auto-file `TUNIT-<n>` (P1, `Type: test-suite-run`) at 3→4 transition |
+| ≥ 8 | block | Banner + refuse new implementation briefs until unit test debt is reduced. Test sub-task briefs are always allowed. |
+
+**UI test debt** (tighter thresholds — UI tests are slower to accumulate and more expensive to catch up on):
+
+| Counter | State | Action |
+|---|---|---|
+| 0 – 2 | silent | Normal operation |
+| 3 – 5 | warn | Banner on every Chanakya invocation. Auto-file `TUI-<n>` (P1, `Type: test-suite-run`) at 2→3 transition |
+| ≥ 6 | block | Banner + refuse new implementation briefs until UI test debt is reduced |
+
+### Banner rules
+
+Evaluate after build debt banners. Show the most severe state first:
+
+- `silent` → no banner.
+- `warn` (unit tests) → print once:
+  > "⚠️ Unit test debt: `<n>` implementation tasks merged without unit tests (`<id-list>`). Open check: `TUNIT-<n>`. Block at 8."
+- `warn` (UI tests) → print once:
+  > "⚠️ UI test debt: `<n>` implementation tasks merged without UI tests (`<id-list>`). Open check: `TUI-<n>`. Block at 6."
+- `block` → print once:
+  > "⛔ Test debt BLOCKED (unit: `<n>`, UI: `<n>`). Complete pending test sub-tasks or run the test suite to unblock. New implementation briefs refused."
+
+### Brief-mode interaction with test debt block
+
+When unit or UI test debt is in `block` state:
+
+- **Implementation briefs** (feature/bugfix/refactor) are refused, same as build debt block.
+- **Test briefs** (test-unit, test-integration, test-ui) are always allowed — they're the solution.
+- **TUNIT / TUI tasks** are always allowed.
+- If BOTH build debt and test debt are blocked, show both banners. Resolving one doesn't unblock the other.
+
+### Auto-filed check tasks
+
+**`TUNIT-<n>`** (auto-filed at warn threshold):
+- Type: `test-suite-run`
+- Priority: P1
+- Description: "Run the full unit test suite. Covers: [T015, T018, T022]. All tests must pass."
+- Achilles runs `xcodebuild test` for the unit test target, reports results in debrief.
+
+**`TUI-<n>`** (auto-filed at warn threshold):
+- Type: `test-suite-run`
+- Priority: P1
+- Description: "Run the full UI test suite. Covers: [T015, T022]. All tests must pass."
+- Achilles runs `xcodebuild test` for the UI test target, reports results in debrief.
 
 ---
 
@@ -206,8 +308,17 @@ Parse the user's input after `/chanakya`:
 - `review` → **Review mode (PRD delta)**
 - `update` → **Update mode**
 - `test-manifest [--force]` → **Test-manifest mode**
+- `test-flow [--force] [--round N] [--scope new|full|module <name>] [--smoke] [--diff N] [--promote]` → **Test-flow mode**
 - `review-feedback` → **Review-feedback mode**
 - `auto-sweep` → **Auto-sweep tick** — Step 0 already ran; just re-schedule the next 600s wake and exit silently
+
+**Composite commands** (multi-step sequences that chain existing modes):
+
+- `brief-all` → **Brief-all mode** — brief every `pending` task in priority order
+- `ship <task-id-list | "next" | "all">` → **Ship mode** — brief + dispatch to Achilles + brief test sub-tasks, all in one command
+- `sweep-debt` → **Sweep-debt mode** — identify and dispatch all pending test sub-tasks and build checks to reduce debt
+- `verify [--round N]` → **Verify mode** — generate test-flow → (user tests) → promote → review-feedback, guided single-sitting sequence
+- `migrate` → **Migrate mode** — upgrade an existing master plan to the task-group + test-debt structure
 
 ---
 
@@ -239,9 +350,44 @@ Classify each task:
 
 Tell the user: "T001 and T002 need briefs (multi-file features). T003 is a simple bug fix — send it directly to Achilles when ready."
 
-### Step 4 — Assign skills
+### Step 4 — Expand into task groups
 
-For each plan-worthy task, determine relevant skills:
+Every plan-worthy task (and most non-trivial direct tasks) becomes a **task group** — a set of linked tasks covering implementation through testing. For each task, determine which sub-tasks are warranted:
+
+| Sub-task | When to create | Blocked by |
+|----------|---------------|------------|
+| **Implementation** (always) | Always | Dependencies from Step 1 |
+| **Unit tests** | Always for plan-worthy tasks. For direct tasks: create if the change touches business logic, models, or view models. Skip for pure UI-only or config-only changes. | Implementation task |
+| **Integration tests** | When the feature spans 2+ modules, touches shared state, or modifies APIs consumed by other modules. | Implementation task |
+| **UI tests** | When the feature has a user-visible flow with ≥2 interaction steps. Skip for backend-only, model-only, or infrastructure changes. | Implementation task |
+
+**TDD vs. test-after decision:**
+
+- **New features** (greenfield, no existing code): Prefer TDD — create the unit test task *before* implementation, with `blockedBy` reversed. The test task defines expected interfaces; the implementation satisfies them. Mark the test task as `Type: test-tdd`.
+- **Bug fixes / changes to existing code**: Test-after — implementation first, then test tasks. Mark test tasks as `Type: test-after`.
+- **Refactors**: If tests already exist and will break, update tests as part of the implementation task (no separate test task). If no tests exist, create a test-after task.
+
+**Naming convention:**
+
+```
+T015   — Add filter presets                    (Type: feature)
+T015a  — Unit tests: filter presets            (Type: test-unit, Group: T015)
+T015b  — Integration tests: filter + texture   (Type: test-integration, Group: T015)
+T015c  — UI tests: filter selection flow       (Type: test-ui, Group: T015)
+```
+
+Sub-task IDs use the parent ID + suffix (`a`, `b`, `c`). This keeps the group visually clustered in the master plan and parallelization map.
+
+**What goes into each sub-task at intake (briefs are generated later in Brief mode):**
+
+- **Implementation task:** Standard fields + `## Testability Requirements` placeholder (filled at brief time).
+- **Unit test task:** Reference to parent implementation task. Key areas to test (derived from acceptance criteria). Note: "Use the project's testing framework. Follow existing test organization patterns."
+- **Integration test task:** Which module boundaries to exercise. Expected interaction patterns.
+- **UI test task:** User flow steps (from Figma or PRD). Note: "Use accessibility identifiers defined by the implementation task."
+
+### Step 5 — Assign skills
+
+For each task in the group, determine relevant skills:
 
 | Skill | Use when |
 |-------|----------|
@@ -251,23 +397,36 @@ For each plan-worthy task, determine relevant skills:
 | `swiftui-view-refactor` | Splitting/restructuring views |
 | `swiftui-performance-audit` | Performance-sensitive views (lists, scrolling, animations) |
 | `swift-concurrency-pro` | Async/await, actors, Sendable |
-| `swift-testing-expert` | Writing or updating tests |
+| `swift-testing-expert` | Writing or updating tests (assign to ALL test sub-tasks) |
 | `imgly-engine-expert` | IMGLY engine, blocks, effects |
 | `swift-architecture-skill` | Architecture decisions, MVVM patterns |
 
+**Always assign `swift-testing-expert`** to unit test, integration test, and UI test sub-tasks. For implementation tasks, assign it when the brief will include testability requirements.
+
 Present assignments to the user. Ask: "Are these skill assignments correct? Any task-specific skills I'm missing?"
 
-### Step 5 — Write master plan
+### Step 6 — Write master plan
 
-Write/update `~/.dev-studio/<project>/plans/chanakya-master.md` using the format below.
+Write/update `~/.dev-studio/<project>/plans/chanakya-master.md` using the format below. Task groups are written with the parent task first, followed by its sub-tasks indented under it.
 
-### Step 6 — Propose parallelization
+### Step 7 — Propose parallelization
 
-Suggest which tasks can run in parallel (independent) and which must be sequential (dependencies). Render an ASCII dependency graph.
+Suggest which tasks can run in parallel (independent) and which must be sequential (dependencies). Render an ASCII dependency graph. Task groups show internal dependencies:
 
-### Step 7 — Suggest next action
+```
+T015 (implementation)
+  ├── T015a (unit tests)      ← blocked by T015
+  ├── T015b (integration)     ← blocked by T015
+  └── T015c (UI tests)        ← blocked by T015
+T016 (implementation)         ← independent of T015 group
+  └── T016a (unit tests)      ← blocked by T016
+```
 
-"Master plan created with N tasks (X plan-worthy, Y direct). Shall I start briefing T001 (highest priority)?"
+Note: Test sub-tasks within different groups CAN run in parallel (T015a and T016a are independent).
+
+### Step 8 — Suggest next action
+
+"Master plan created with N task groups (X implementation tasks, Y unit test tasks, Z UI test tasks). Shall I start briefing T001 (highest priority)?"
 
 ---
 
@@ -297,9 +456,20 @@ For in-progress tasks with branches:
 
 Identify tasks blocked by dependencies. Highlight them. Surface `done` tasks awaiting verification.
 
+### Step 3B — Test-flow round status
+
+Scan `~/.dev-studio/<project>/plans/user-testing-rounds/` for existing round files:
+- Report total rounds and when the latest was generated (from the `Generated:` header).
+- If the latest round has unchecked cases (some `[ ] pass` remaining), report: "Round N is partially completed (K/M cases checked)."
+- If the latest round is fully completed (all cases checked), report: "Round N completed — consider `--promote` to feed into review-feedback, or generate a new round."
+
 ### Step 4 — Suggest next action
 
-"T002 is briefed and ready. T003 is blocked by T001. T004 and T006 are `done` awaiting manual verification — run `/chanakya test-manifest` to generate the consolidated test file."
+When `done` tasks exist awaiting verification, suggest both paths:
+
+"T004 and T006 are `done` awaiting manual verification:
+- `/chanakya test-manifest` — per-task verification checklist (feeds into `review-feedback`)
+- `/chanakya test-flow` — single-sitting walkthrough ordered by user journey (N rounds exist, latest: round M)"
 
 ---
 
@@ -334,6 +504,7 @@ Use Glob and Grep to find:
 2. **Files to read** — adjacent files for context (view models, protocols, models)
 3. **Patterns to follow** — find a similar existing feature and reference it
 4. **Architectural constraints** — read relevant memory files from project memory
+5. **Testing context** — find existing test files for the module (`*Tests.swift`, `*UITests.swift`), existing accessibility identifier enums, test helpers/utilities, and the project's test organization pattern
 
 ### Step 5 — Determine branch strategy
 
@@ -341,9 +512,167 @@ Use Glob and Grep to find:
 - Dependent task: note the base branch
 - Include exact git commands to create the worktree (Achilles handles the actual worktree add; the brief only names conventions)
 
-### Step 6 — Write the brief
+### Step 6 — Write the brief (type-aware)
 
-Write to `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md` using the brief format below.
+Write to `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md`. The brief structure varies by task type:
+
+#### 6A — Implementation brief (Type: feature | bugfix | refactor | direct)
+
+Use the standard brief format below, **plus** the `## Testability Requirements` section (see format). This section instructs Achilles to write implementation code that is testable:
+
+- **SOLID principles:** Single responsibility per type. Depend on protocols, not concrete types. Inject dependencies via initializer.
+- **Architecture adherence:** Follow the existing project architecture. Reference the specific pattern used (e.g., MVVM, coordinator pattern) with file path examples.
+- **Accessibility identifiers:** Define identifiers in a shared enum file per module/screen. Use `enum AccessibilityID` with nested enums per screen. Use strong types (not raw strings) in actual UI code. Reference the existing identifier file if one exists for this module, or specify where to create a new one.
+- **Seams for testing:** Expose protocol-based interfaces for external dependencies (network, persistence, sensors). No hardcoded singletons in business logic — use DI. Mark testable interfaces clearly.
+- **What NOT to do:** Don't over-abstract for testability. Don't add unnecessary indirection. If a function is pure (input → output, no side effects), it's already testable — no protocol needed.
+
+#### 6B — Unit test brief (Type: test-unit)
+
+```markdown
+# Test Brief: <task-id> — Unit Tests: <feature>
+
+**Generated:** <timestamp>
+**Parent task:** <parent-task-id>
+**Implementation brief:** <path to parent's brief>
+
+---
+
+## Scope
+
+Unit tests for <feature>. Test business logic, view models, and model transformations in isolation.
+
+## Testing Framework
+
+Use the project's testing framework (e.g., Swift Testing / XCTest). Follow existing test file organization.
+
+## Reference Implementation
+
+- **Source files to test:** <list from parent brief's Files to Modify>
+- **Existing tests to reference:** <similar test files found in Step 4>
+- **Test helpers available:** <shared mocks, fixtures, utilities found in codebase>
+
+## Key Areas to Test
+
+1. <Area 1 — derived from acceptance criteria>
+   - Happy path: <expected behavior>
+   - Edge cases: <boundary conditions, empty states, nil handling>
+   - Error cases: <invalid input, failure modes>
+2. <Area 2>
+   ...
+
+## Test Organization
+
+- File: `<TestTarget>/<Module>/<FeatureName>Tests.swift`
+- Group tests by the type/method under test
+- Use descriptive test names that read as specifications
+- Reuse existing test helpers; create new shared helpers if a pattern repeats 3+ times (file a refactor task if this grows)
+
+## Dependencies to Mock
+
+- <Protocol>: <what it does, mock strategy>
+- ...
+
+## Acceptance Criteria
+
+1. All public methods of <type> have test coverage
+2. Edge cases for <specific scenarios> are covered
+3. Tests are independent (no shared mutable state, no test ordering dependency)
+4. Tests run in <target time — e.g., under 5s for the suite>
+```
+
+#### 6C — Integration test brief (Type: test-integration)
+
+```markdown
+# Test Brief: <task-id> — Integration Tests: <feature interaction>
+
+**Generated:** <timestamp>
+**Parent task:** <parent-task-id>
+
+---
+
+## Scope
+
+Integration tests verifying <module A> and <module B> work together correctly. These are longer-running tests that exercise real module boundaries without mocking the integration points.
+
+## Module Boundaries Under Test
+
+- <Module A> → <Module B>: <what crosses the boundary — data, events, state>
+- <Shared state>: <what both modules read/write>
+
+## Test Scenarios
+
+1. <Scenario: end-to-end data flow>
+   - Setup: <preconditions>
+   - Action: <what triggers the cross-module interaction>
+   - Verify: <expected state in both modules>
+2. <Scenario: error propagation across modules>
+   ...
+
+## What to Mock vs. What's Real
+
+- **Real:** <the module integration itself — don't mock the boundary you're testing>
+- **Mock:** <external services, network, disk I/O — anything outside the modules under test>
+
+## Test Organization
+
+- File: `<TestTarget>/Integration/<ModuleA>_<ModuleB>Tests.swift`
+- Keep integration tests separate from unit tests (different file/group)
+- These tests may take longer — mark them appropriately if the framework supports test categories
+```
+
+#### 6D — UI test brief (Type: test-ui)
+
+```markdown
+# Test Brief: <task-id> — UI Tests: <user flow>
+
+**Generated:** <timestamp>
+**Parent task:** <parent-task-id>
+
+---
+
+## Scope
+
+UI tests for <user flow>. Test the end-to-end user journey through the UI.
+
+## Accessibility Identifier Contract
+
+The implementation task (<parent-task-id>) defines identifiers in:
+- **Identifier file:** `<path to AccessibilityID enum file>`
+- **Key identifiers for this flow:**
+  - `AccessibilityID.<Screen>.<element>` — <what it identifies>
+  - ...
+
+If the implementation hasn't landed yet (TDD mode), define the expected identifiers here — the implementation must satisfy them.
+
+## User Flows to Test
+
+### Flow 1 — <Flow name> (happy path)
+1. Launch → <initial screen>
+2. Tap <element> (`AccessibilityID.<Screen>.<element>`)
+3. Verify <expected state>
+4. ...
+Expected end state: <what the user sees>
+
+### Flow 2 — <Edge case flow>
+1. ...
+
+### Flow 3 — <Error/recovery flow>
+1. ...
+
+## Test Organization
+
+- File: `<UITestTarget>/<Module>/<FlowName>UITests.swift`
+- Group test suites per module/feature
+- For bug fixes: add a regression test that reproduces the original bug
+- Reuse page objects / screen abstractions if the project has them; create one if 3+ tests interact with the same screen
+- Remove redundant tests that duplicate coverage from new tests
+
+## Performance Considerations
+
+- Minimize app re-launches between tests (use `setUpWithError` for state reset where possible)
+- Tests should be independent — no test ordering assumptions
+- Target: full UI test suite for this module runs in <N minutes>
+```
 
 ### Step 7 — Update master plan
 
@@ -472,6 +801,300 @@ Test artifact: `chanakya-inbox/T013-tests.md`
 
 ---
 
+## Mode: Test-Flow (`/chanakya test-flow [--force] [--round N] [--scope new|full|module <name>] [--smoke] [--diff N] [--promote]`)
+
+Generate a human-readable, journey-ordered single-sitting test walkthrough. Unlike `test-manifest` (per-task, machine-parseable, feeds `review-feedback`), test-flow is organized by **how you'd actually use the app** and produces numbered round files that are never overwritten.
+
+**Relationship to test-manifest:** Independent commands. `test-manifest` is the machine-parseable per-task checklist that `review-feedback` processes. `test-flow` is the human companion — the user walks through it, then either (a) fills out the per-task `test-manifest` and runs `review-feedback`, or (b) reports findings via `/chanakya intake`. The `--promote` flag bridges the two (see Step 9).
+
+### Flags
+
+| Flag | Purpose |
+|------|---------|
+| `--round N` | Use round number N instead of auto-incrementing |
+| `--force` | Overwrite an existing round file |
+| `--scope new` | (default) Only `done` tasks — unverified work |
+| `--scope full` | Include `done` + `verified` tasks — full regression sweep |
+| `--scope module <name>` | Only tasks touching a specific module/feature area |
+| `--smoke` | Generate a minimal smoke-test subset (one high-priority case per section + all retests, skip P2-only sections) |
+| `--diff N` | Instead of generating a round, compare round N with the most recent completed round and output a diff summary |
+| `--promote` | After the user fills out a round and everything passes, auto-generate a pre-checked `user-testing.md` from the round results so `review-feedback` can mark tasks verified |
+
+### Step 1 — Determine round number
+
+- If `--diff N` is passed, skip to **Step 10** (diff mode).
+- If `--promote` is passed, skip to **Step 9** (promote mode).
+- If `--round N` is passed, use N.
+- Otherwise, scan `~/.dev-studio/<project>/plans/user-testing-rounds/` for existing `user-testing-round*.md` files, find the highest N, and use N+1. If none exist, start at 1.
+
+### Step 2 — Dirty-state guard & partial continuation
+
+If `user-testing-round<N>.md` already exists:
+
+1. **Check for partial completion.** Scan for checked boxes `[x]` and total checkboxes. If some are checked but not all:
+   > "Round N is partially completed (K/M cases checked). Continue testing round N, or generate a new round N+1?"
+   Wait for user response. If they say continue, exit without changes. If they say new, increment N and proceed.
+
+2. **If fully untouched or fully completed**, and `--force` is not passed:
+   > "Round N already exists. Use `--force` to overwrite or omit `--round` to auto-increment."
+   Return.
+
+3. If `--force` is passed, overwrite.
+
+### Step 3 — Collect candidate tasks
+
+Based on `--scope`:
+
+- **`new`** (default): From `chanakya-master.md`, collect every task with status `done` (not `verified`). If zero candidates, exit: "No `done` tasks awaiting verification. Nothing to test."
+- **`full`**: Collect all tasks with status `done` or `verified`. Exit if zero.
+- **`module <name>`**: Collect `done` (or `done` + `verified` if combined with `full`) tasks whose files-changed, brief title, or skill tags match the module name. Match against debrief `## Files Changed` paths, brief titles, and task `Skills:` field. Exit if zero matches.
+
+### Step 4 — Identify re-tests
+
+Cross-reference with the previous round's file (if it exists in `user-testing-rounds/`):
+
+- Parse each case in the prior round. A case is a **failure** if: the `Result:` line has `[x] fail`, OR the checkbox is unchecked AND `Notes:` has non-empty content.
+- A case is **skipped** (not a failure) if: unchecked with empty `Notes:`.
+- For each failed case's parent task(s) `[Txxx]`:
+  - If the task itself is still `done` and appears in the current candidate set → mark it `[R<prev> retest]`.
+  - If a follow-up fix task (with `Source: Txxx`) has status `done` → mark the fix task's cases `[R<prev> retest]`.
+- Do NOT mark retests for merely skipped cases.
+
+### Step 5 — Organize by user journey
+
+Group tasks into sections by module/feature area. The section ordering is determined as follows:
+
+1. **Check for journey map.** If `~/.dev-studio/<project>/journey-map.md` exists, use its defined section order. Format:
+
+   ```markdown
+   # Journey Map
+   1. Setup
+   2. Core Canvas
+   3. Filter Module
+   ...
+   ```
+
+   Each line maps a section name. Tasks are matched to sections by keyword overlap between the section name and: task title, brief title, debrief `## Files Changed` directory names, and task `Skills:` field.
+
+2. **Auto-infer if no journey map.** Group tasks by analyzing:
+   - File paths from debrief `## Files Changed` — cluster by directory/module
+   - Skill tags on the task
+   - Brief title keywords
+   Order sections by dependency: foundational modules first (setup, core interaction), peripheral features last (export, infrastructure). Number sections sequentially.
+
+3. **Always include a Setup section** as section 0 (unnumbered in output) with:
+   - [ ] Fresh build on simulator or device
+   - [ ] Open a test item into the main workflow
+   - [ ] Have secondary test data ready if applicable
+
+Skip sections with zero cases.
+
+### Step 6 — Build test cases
+
+Within each section, pull test cases from:
+- `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-tests.md` (if present)
+- Or the processed debrief's `## Test Cases` block at `chanakya-inbox/processed/<task-id>-debrief.md`
+- If neither exists, create a placeholder: "No test cases written — inspect the debrief manually"
+
+Rewrite each case as user-facing steps:
+
+```markdown
+### 3.2 — <Case title>  [Txxx][Tyyy]  [R2 retest]  [critical]
+Do: <user action>
+Expect: <expected outcome>
+Result: [ ] pass  [ ] fail
+Notes:
+Evidence:
+```
+
+**Severity tagging:** Auto-infer from parent task priority:
+- P0 → `[critical]`
+- P1 → `[important]`
+- P2 → (no tag)
+
+**Performance cases:** If the test case involves timing-sensitive behavior (rendering, transitions, loading), or the debrief mentions performance data in `## Key Learnings` or a `## Performance` section, add performance fields:
+
+```markdown
+### 3.4 — <Case title>  [Txxx]  [perf]
+Do: <user action>
+Expect: <expected outcome, including timing threshold>
+Perf baseline: <value from debrief, if available>
+Result: [ ] pass  [ ] fail
+Timing: ___
+Notes:
+Evidence:
+```
+
+**Smoke mode (`--smoke`):** When active, for each section:
+- Include only the highest-priority case (by parent task priority, then first case)
+- Always include all retest cases `[R<prev>]`
+- Skip entire sections where all cases are P2
+- Add a header note: "Smoke-test subset — run `/chanakya test-flow` without `--smoke` for the full walkthrough."
+
+### Step 7 — Write the file
+
+Ensure `~/.dev-studio/<project>/plans/user-testing-rounds/` directory exists. Write to `user-testing-round<N>.md`:
+
+```markdown
+# <Project> — Single-Sitting Manual Test (Round <N>)
+
+Generated: <YYYY-MM-DD> IST
+Scope: <new | full | module:<name>>
+Purpose: <auto-generated one-line — e.g., "Covers T107–T135: filter fixes, texture rotation, export rework">
+Previous round: <path to round N-1, or "none">
+Tested on: ___ (device/simulator, OS version)
+
+## Instructions
+- Check `[ ] pass` → `[x] pass` when a case passes, or `[ ] fail` → `[x] fail` for failures.
+- Write failure details under `Notes:` and optionally attach screenshot paths under `Evidence:`.
+- Fill in `Timing:` fields for `[perf]` cases.
+- Sections ordered by user journey; cases cluster by module.
+- Each case tags parent task(s) in `[Txxx]`.
+- Re-tests from prior rounds marked `[R<prev> retest]`.
+- Severity: `[critical]` = P0, `[important]` = P1, unmarked = P2.
+
+## Setup (do once)
+- [ ] Fresh build on simulator or device
+- [ ] Open a test item into the main workflow (keep a secondary test item handy)
+- [ ] Have additional test data ready for swap/picker cases
+  Notes:
+
+---
+
+## 1. <Section Name>
+  (group: <task IDs covered>)
+
+### 1.1 — <Case title>  [Txxx][Tyyy]  [R2 retest]
+Do: <user action>
+Expect: <expected outcome>
+Result: [ ] pass  [ ] fail
+Notes:
+Evidence:
+
+### 1.2 — <Case title>  [Txxx]  [perf]
+Do: <user action>
+Expect: <expected outcome with timing threshold>
+Perf baseline: ~0.6s (from T120 debrief)
+Result: [ ] pass  [ ] fail
+Timing: ___
+Notes:
+Evidence:
+
+---
+
+## N. Performance Checkpoints
+  (cross-cutting, not tied to a single module)
+
+### N.1 — <Perf case title>
+Do: <action>
+Expect: <threshold>
+Perf baseline: <value if known>
+Timing: ___
+Device: ___
+Notes:
+
+---
+
+## Task Crosswalk
+
+| Task | Status | Covered by | Severity |
+|------|--------|------------|----------|
+| T109 | done   | 1.1, 3.2   | critical |
+| T115 | done   | 2.1        | important |
+...
+```
+
+**Performance Checkpoints section:** This is a dedicated final section (before the crosswalk) that aggregates cross-cutting performance cases. Include it when any candidate task has performance-related test cases or debrief data. Cases here test system-wide behavior that doesn't belong to a single module:
+- Cold launch / warm launch times
+- Memory ceiling under combined operations
+- Undo chain responsiveness at depth
+- Pipeline throughput (multiple operations applied sequentially)
+
+Source perf baselines from debrief `## Key Learnings` or `## Performance` sections when available. If no debrief performance data exists, omit the `Perf baseline:` line — the user fills in the first measurement and it becomes the baseline for future rounds.
+
+### Step 8 — Report
+
+> "Generated user-testing-round3.md with N sections, M test cases (K retests, J perf checkpoints) covering X tasks. Scope: new. Open it in your editor and walk through it on a fresh build."
+
+If `--smoke` was used:
+
+> "Generated smoke-test round3.md with N sections, M cases (reduced from F full cases). Run without `--smoke` for comprehensive coverage."
+
+### Step 9 — Promote mode (`--promote`)
+
+When `--promote` is passed (no other flags except optionally `--round N`):
+
+1. Determine which round to promote. If `--round N`, use that. Otherwise, use the latest round file.
+2. Read the round file. Parse all cases.
+3. **Gate check:** Every case must have `[x] pass` checked. If any case has `[x] fail` or is unchecked:
+   > "Round N has K failures and J untested cases. Cannot promote — all cases must pass. Fix failures and re-test, or run `/chanakya intake` to file follow-up tasks for the failures."
+   Return.
+4. Collect all unique task IDs from `[Txxx]` tags across all passing cases.
+5. Generate `~/.dev-studio/<project>/plans/user-testing.md` in the standard test-manifest format, with all cases pre-checked `[x]`:
+   ```markdown
+   # User Testing — <project>
+   
+   Generated: <YYYY-MM-DD HH:mm IST>  (promoted from round <N>)
+   Tasks awaiting verification: <task list>
+   ...
+   
+   ## Txxx — <Title>
+   - [x] Case 1: ...
+     Notes: passed in round N
+   ```
+6. Report:
+   > "Promoted round N → user-testing.md with X tasks pre-verified. Run `/chanakya review-feedback` to apply."
+
+### Step 10 — Diff mode (`--diff N`)
+
+When `--diff N` is passed, compare round N with the next completed round (N+1, or the latest round if N+1 doesn't exist).
+
+1. Read both round files. If either doesn't exist, error with the missing path.
+2. Parse all cases from both rounds. Match cases by their `[Txxx]` task tags + case title.
+3. Classify changes:
+   - **Regressions:** pass in round N → fail in round N+K (or pass → untested)
+   - **Fixes confirmed:** fail in round N → pass in round N+K
+   - **New cases:** present in round N+K but not in round N
+   - **Dropped cases:** present in round N but not in round N+K (task was verified between rounds)
+   - **Unchanged:** same result in both rounds
+4. **Performance comparison:** For `[perf]` cases present in both rounds, compare `Timing:` values:
+   - Flag regressions >20% slower with ⚠️
+   - Flag improvements >20% faster with ✓
+   - Show delta as absolute and percentage
+5. Output to stdout (not a file):
+
+```markdown
+## Test-Flow Diff: Round N → Round M
+
+### Regressions (pass → fail)  ⚠️
+- 3.2 — Filter grid aspect ratio [T118]: was passing, now fails
+  Notes from round M: "Grid cells stretched on landscape"
+
+### Fixes Confirmed (fail → pass)  ✅
+- 1.4 — Action bar styling [T105]: was failing in round N, now passes
+
+### Performance Delta  📊
+| Case | Round N | Round M | Delta |
+|------|---------|---------|-------|
+| 3.4 — Filter apply (48MP) | 0.6s | 0.5s | -17% ✓ |
+| N.1 — Cold launch | 1.8s | 2.4s | +33% ⚠️ |
+| N.2 — Memory peak | 380MB | 520MB | +37% ⚠️ |
+
+### New Cases (M only)
+- 5.1 — Crop rotation sync [T130]
+
+### Dropped (N only, now verified)
+- 2.3 — Canvas zoom [T102]
+
+### Summary
+- Total cases: N=38, M=42
+- Regressions: 1
+- Fixes: 2
+- Perf regressions: 2 of 4 checkpoints
+```
+
+---
+
 ## Mode: Review-Feedback (`/chanakya review-feedback`)
 
 Parse the user's edits to `user-testing.md` and apply them to the master plan.
@@ -518,6 +1141,144 @@ Archived to user-testing-archive/2026-04-15-14-30.md. Generate a fresh manifest 
 
 ---
 
+## Composite: Brief-All (`/chanakya brief-all`)
+
+Brief every `pending` task in the master plan, in priority order, without asking for confirmation between each one.
+
+### Steps
+
+1. Read the master plan. Collect all tasks with status `pending` (exclude `direct` type — those don't need briefs).
+2. If zero candidates, report: "No pending tasks to brief." Return.
+3. Sort by priority (P0 first), then by task ID.
+4. **Check debt gates.** If build or test debt is in `block` state, filter out implementation tasks and keep only test sub-tasks and TBUILD/TUNIT/TUI tasks. If nothing remains after filtering, report the block and return.
+5. For each task, run Brief Generation mode (Steps 1–8) sequentially. Skip user confirmation between briefs — the user already approved by running `brief-all`.
+6. Report: "Briefed N tasks: T001, T002, T003a, T004c. All ready for `/achilles`. Suggest: `/achilles ship next` to start executing."
+
+**Guard:** If a brief fails (e.g., missing Figma context, file overlap conflict), log the failure, skip that task, and continue with the next. Report skipped tasks at the end.
+
+---
+
+## Composite: Ship (`/chanakya ship <target>`)
+
+Brief and dispatch tasks to Achilles in a single command. This is the "hands-off" mode — Chanakya briefs, then tells the user exactly which `/achilles` commands to run in parallel.
+
+### Target parsing
+
+- `ship T001` → ship a specific task (and its test sub-tasks)
+- `ship T001,T002,T003` → ship multiple specific tasks
+- `ship next` → ship the highest-priority `pending` or `briefed` task
+- `ship next 3` → ship the top 3 ready tasks
+- `ship all` → ship every `pending` or `briefed` task that isn't blocked
+
+### Steps
+
+1. **Resolve targets.** Based on the argument, collect the task list. Include test sub-tasks that are unblocked (parent is `done`).
+2. **Check debt gates.** Same filtering as brief-all.
+3. **Brief any `pending` tasks** in the target list. Run Brief Generation mode for each. Skip already-briefed tasks.
+4. **Generate dispatch plan.** Analyze dependencies and produce a phased execution plan:
+
+   ```
+   Phase 1 (parallel — no dependencies):
+     Tab 1: /achilles T001
+     Tab 2: /achilles T003
+   
+   Phase 2 (after Phase 1 merges):
+     Tab 1: /achilles T002          ← depends on T001
+     Tab 2: /achilles T001a         ← unit tests for T001
+     Tab 3: /achilles T001c         ← UI tests for T001
+   
+   Phase 3 (after Phase 2 merges):
+     Tab 1: /achilles T002a         ← unit tests for T002
+   ```
+
+5. **Dispatch Phase 1.** Print the commands for the user to run. Do NOT auto-launch Achilles — the user opens tabs and runs the commands. Chanakya cannot spawn Achilles sessions.
+6. Report: "Ship plan generated. Phase 1: N tasks (run in parallel). Phase 2: M tasks (after Phase 1 merges). Run the Phase 1 commands above, then `/chanakya ship next` for Phase 2."
+
+**Auto-advance:** After each `/chanakya status` or inbox sweep, if all Phase 1 tasks are `done`, automatically print the Phase 2 commands. The user doesn't need to re-run `ship`.
+
+---
+
+## Composite: Sweep-Debt (`/chanakya sweep-debt`)
+
+Identify and dispatch all pending work needed to reduce build and test debt below warn thresholds. One command to get back to green.
+
+### Steps
+
+1. **Read all three debt counters** from the master plan.
+2. **Collect actionable tasks:**
+   - **Build debt:** If `State: warn` or `block`, include the open `TBUILD-<n>` task (or file one if none exists).
+   - **Unit test debt:** Collect all `pending` or `briefed` test-unit sub-tasks whose parent is `done`. These are the tasks that will decrement the counter.
+   - **UI test debt:** Same for test-ui sub-tasks.
+3. **Brief any un-briefed tasks** from the collected set.
+4. **Generate dispatch plan** (same phased format as `ship`). Test sub-tasks are independent of each other and can run in parallel. The build check should run last (after test tasks merge, so the build includes test code).
+5. **Estimate impact:** "Running these N tasks will reduce: build debt 8→0, unit test debt 5→2, UI test debt 3→1."
+6. Report with the dispatch commands.
+
+If all three counters are in `silent` state: "All debt counters are green. Nothing to sweep."
+
+---
+
+## Composite: Verify (`/chanakya verify [--round N]`)
+
+Guided single-sitting verification flow. Chains test-flow generation, waits for the user to test, then promotes and applies feedback.
+
+### Steps
+
+1. **Generate test-flow.** Run Test-Flow mode (unless `--round N` points to an existing round). This produces the walkthrough file.
+2. **Prompt the user:**
+   > "Test round N generated at `<path>`. Open it in your editor, walk through on a fresh build, and come back when done. Say 'done' when finished, or 'abort' to skip."
+3. **Wait for user response.** (No timeout — this is a manual testing session.)
+4. **On 'done':** Read the round file. Check completion:
+   - If all cases have `[x] pass` → run `--promote` to generate pre-checked `user-testing.md`, then run Review-Feedback mode to mark tasks `verified`. Report: "Verified N tasks. Feature wrap-up check running..."
+   - If any cases have `[x] fail` → report failures. Ask: "File follow-up tasks for the failures via intake? (y/n)". If yes, run Intake mode with the failure notes as task descriptions.
+   - If cases are unchecked → report: "N cases untested. Continue testing or run `/chanakya verify --round N` to resume later."
+5. **On 'abort':** "Verification paused. Round file preserved at `<path>`. Resume anytime with `/chanakya verify --round N`."
+
+---
+
+## Composite: Migrate (`/chanakya migrate`)
+
+Upgrade an existing master plan to the task-group + test-debt structure. Run this once when adopting the new testing workflow on a project that already has tasks.
+
+### Steps
+
+1. **Read the master plan.** Check if it already has a `## Test Debt` header block. If yes: "Master plan already migrated. Nothing to do." Return.
+
+2. **Add missing header blocks.** Insert the `## Test Debt` block (with Unit Test Debt and UI Test Debt sub-blocks, all counters at 0) after the `## Build Debt` block.
+
+3. **Scan every existing task.** For each task that is an implementation type (`feature`, `bugfix`, `refactor`) and does NOT have sub-tasks with matching `Group:` values:
+
+   a. **Determine which test sub-tasks are warranted** (same logic as Intake Step 4):
+      - Unit tests: if the task touches business logic, models, or view models
+      - Integration tests: if the task spans 2+ modules
+      - UI tests: if the task has a user-visible flow with 2+ steps
+
+   b. **Create the sub-tasks** with the suffix convention (T001a, T001b, T001c). Set their status based on the parent's status:
+      - Parent `pending` or `briefed` → sub-tasks `pending`
+      - Parent `in-progress` → sub-tasks `pending` (they'll be briefed when parent lands)
+      - Parent `done` → sub-tasks `pending` (these are the test debt — tests need to be written for already-shipped code)
+      - Parent `verified` → sub-tasks `pending` with lower priority (P2) — nice-to-have retroactive test coverage
+
+   c. **Add `Group:` and `Test coverage:` fields** to the parent task if missing.
+
+4. **Calculate initial test debt.** Count implementation tasks in `done` status whose new test sub-tasks are `pending`. Set the Unit Test Debt and UI Test Debt counters accordingly.
+
+5. **Present the migration report:**
+   > "Migration complete:
+   > - 15 implementation tasks scanned
+   > - 28 test sub-tasks created (12 unit, 6 integration, 10 UI)
+   > - Initial unit test debt: 8/8 (block!) — 8 done tasks have no unit tests
+   > - Initial UI test debt: 5/6 (warn) — 5 done tasks have no UI tests
+   > - Recommend: run `/chanakya sweep-debt` to start reducing debt
+   > 
+   > Review the new sub-tasks? (y/n)"
+
+6. **On confirmation**, write the updated master plan. On rejection, discard changes and let the user adjust.
+
+**Idempotent:** Running `migrate` on an already-migrated plan is a no-op. Running it after partial adoption (some tasks have groups, some don't) only fills in the gaps.
+
+---
+
 ## Post-Feature Wrap-Up
 
 When ALL tasks for a feature are `verified` (check after every inbox sweep and after every `review-feedback`):
@@ -556,6 +1317,26 @@ When ALL tasks for a feature are `verified` (check after every inbox sweep and a
 
 <!-- Thresholds are configurable. Do not hand-edit Counter/State — Chanakya's Step 0 owns them. -->
 
+## Test Debt
+
+### Unit Test Debt
+- Counter: 0 / warn@4 / block@8
+- State: silent
+- Last green run: —
+- Untested since: []
+- Open check task: —
+- Next TUNIT n: 1
+
+### UI Test Debt
+- Counter: 0 / warn@3 / block@6
+- State: silent
+- Last green run: —
+- Untested since: []
+- Open check task: —
+- Next TUI n: 1
+
+<!-- Do not hand-edit — Chanakya's Step 0 owns these counters. -->
+
 ---
 
 ## Tasks
@@ -564,7 +1345,8 @@ When ALL tasks for a feature are `verified` (check after every inbox sweep and a
 - **Priority:** P0
 - **Status:** pending   <!-- pending | briefed | in-progress | done | verified | needs-review -->
 - **Complexity:** L
-- **Type:** feature
+- **Type:** feature   <!-- feature | bugfix | refactor | direct | build-check | test-unit | test-integration | test-ui | test-tdd -->
+- **Group:** —   <!-- parent task ID for test sub-tasks, e.g., T001 for T001a/T001b/T001c. "—" for standalone/parent tasks -->
 - **Branch:** —
 - **Skills:** figma-to-swiftui, swiftui-pro
 - **Figma nodes:** `DMRP0bv9T9oUbGCC5esB01` node `1:42171`
@@ -573,8 +1355,37 @@ When ALL tasks for a feature are `verified` (check after every inbox sweep and a
 - **Brief:** —
 - **Commits:** —
 - **Merge commit:** —
+- **Test coverage:** —   <!-- for implementation tasks: list sub-task IDs, e.g., "T001a (unit), T001c (UI)" -->
 - **Verified at:** —   <!-- timestamp when user signed off via review-feedback -->
 - **Notes:** <any context, including path to test-case artifact if this is a verification follow-up>
+
+#### T001a — Unit Tests: <Title>
+- **Priority:** P0
+- **Status:** pending
+- **Complexity:** M
+- **Type:** test-unit
+- **Group:** T001
+- **Branch:** —
+- **Skills:** swift-testing-expert
+- **Dependencies:** T001
+- **Brief:** —
+- **Commits:** —
+- **Merge commit:** —
+- **Notes:** —
+
+#### T001c — UI Tests: <Title>
+- **Priority:** P0
+- **Status:** pending
+- **Complexity:** M
+- **Type:** test-ui
+- **Group:** T001
+- **Branch:** —
+- **Skills:** swift-testing-expert
+- **Dependencies:** T001
+- **Brief:** —
+- **Commits:** —
+- **Merge commit:** —
+- **Notes:** —
 
 ---
 
@@ -651,14 +1462,43 @@ Before starting, load these skills for guidance:
 ### Architectural Constraints
 - <Inlined from project memory — e.g., "uses @Observable not ObservableObject", "image loading via Kingfisher">
 
+## Testability Requirements
+
+<!-- Only present in implementation briefs (feature/bugfix/refactor). Omit for test briefs. -->
+
+### Architecture & SOLID
+- Follow the project's existing architecture pattern: <pattern name, e.g., MVVM+Coordinator> (reference: `<path to exemplar file>`)
+- Single responsibility: each new type should have one clear reason to change
+- Depend on protocols for external dependencies (network, persistence, sensors) — inject via initializer
+- <Specific architectural constraint for this task>
+
+### Accessibility Identifiers
+- Define identifiers in: `<path to identifier enum file, existing or new>`
+- Use nested enums per screen/component: `enum AccessibilityID { enum <Screen> { static let <element> = "<module>.<screen>.<element>" } }`
+- Apply identifiers in views via `.accessibilityIdentifier(AccessibilityID.<Screen>.<element>)`
+- <Reference existing identifier file if one exists for this module>
+
+### Test Seams
+- <Specific protocol/interface to expose for testing — e.g., "FilterEngine should conform to FilterEngineProtocol">
+- <Specific dependency to make injectable — e.g., "ImageLoader should be injected, not accessed as a singleton">
+- Pure functions (input → output, no side effects) need no extra abstraction — they're already testable
+
+### Related Test Tasks
+- Unit tests: `<task-id-a>` (will test business logic from this implementation)
+- Integration tests: `<task-id-b>` (if applicable)
+- UI tests: `<task-id-c>` (will use the accessibility identifiers defined above)
+
 ## Acceptance Criteria
 
 1. <Specific, testable criterion>
 2. <Another criterion>
+3. Accessibility identifiers defined for all interactive elements (see Testability Requirements)
+4. Dependencies injected via protocols where specified in Test Seams
 
 ## Out of Scope
 
 - <Explicit boundaries>
+- Writing tests (handled by sub-tasks <task-id-a>, <task-id-b>, <task-id-c>)
 
 ---
 
@@ -720,3 +1560,6 @@ Then update `~/.dev-studio/<project>/plans/chanakya-master.md`: set this task's 
 9. **Never auto-regenerate the test manifest.** It is user-driven; `test-manifest` runs only on explicit command, and refuses to clobber unreviewed edits unless `--force` is passed.
 10. **Build debt is automatic.** Step 0 updates the counter from every debrief, auto-files TBUILD at warn@6, blocks at warn@12, files P0 fix tasks from red build checks. No user confirmation needed; the banner keeps the user informed.
 11. **Fully automated.** Build-debt actions (counter updates, TBUILD filing, threshold transitions, janitor cleanup, closing TBUILD on green) never prompt the user. The banner is informational only.
+12. **Test-flow rounds are immutable.** Once written, a round file is never silently overwritten — only `--force` allows it. Rounds accumulate as a historical record of testing quality over time.
+13. **Test-flow is independent of review-feedback.** `test-flow` does not trigger `review-feedback`. The user reads it, tests, then uses `--promote` to bridge into `review-feedback`, or reports findings via `/chanakya intake`. The two test paths (`test-manifest` and `test-flow`) coexist without interference.
+14. **Performance baselines are opportunistic.** Perf data flows from debrief `## Performance` / `## Key Learnings` into test-flow `Perf baseline:` fields. If no debrief perf data exists, the first round's `Timing:` entry becomes the baseline for future diffs. Never block test-flow generation on missing perf data.
