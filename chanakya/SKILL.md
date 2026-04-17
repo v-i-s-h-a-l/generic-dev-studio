@@ -759,7 +759,7 @@ PRD Delta:
 - NEW: T006 — Watermark toggle (not in previous PRD)
 ```
 
-### Step 4 — On confirmation, update
+### Step 4 — Apply and report
 
 Update master plan. Auto-regenerate any stale briefs (run Brief Generation mode for each). Report which briefs were updated.
 
