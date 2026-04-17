@@ -101,14 +101,14 @@ EOF
 )"
 ```
 
-### Step 5.5: Push branch to remote
+### Step 6: Push branch to remote
 
 Push the branch including the version bump commit before archiving:
 ```bash
 git push -u origin HEAD
 ```
 
-### Step 6: Archive
+### Step 7: Archive
 
 ```bash
 cd /Users/vishalsingh/Documents/Turnip.gg/turnip-ios
@@ -129,7 +129,7 @@ This step takes several minutes. Keep the user informed that archiving is in pro
 
 **Verify:** After archiving, confirm the `.xcarchive` exists at `/tmp/Zaps-<NEW_BUILD_NUMBER>.xcarchive`. If it does not exist, the archive failed — stop here and report the error to the user. Do NOT continue to export or upload.
 
-### Step 7: Export and Upload to App Store Connect
+### Step 8: Export and Upload to App Store Connect
 
 The export options use `destination: upload`, which means `xcodebuild -exportArchive` uploads directly to App Store Connect. No local IPA is produced — there is no separate upload step.
 
@@ -171,9 +171,9 @@ xcodebuild -exportArchive \
 
 Do NOT offer to send a Slack notification unless this step succeeded.
 
-### Step 7.5: Upload dSYMs to Crashlytics
+### Step 9: Upload dSYMs to Crashlytics
 
-**Only run this step if Step 7 succeeded.**
+**Only run this step if Step 8 succeeded.**
 
 The `xcodebuild -exportArchive` pipeline does not trigger the Crashlytics run script, so dSYMs must be uploaded explicitly. Upload them one at a time (bulk upload can crash on certain archives).
 
@@ -203,17 +203,17 @@ fi
 
 If `UPLOAD_SYMBOLS` is empty (DerivedData was cleaned), report that dSYMs could not be uploaded but continue — it's non-blocking. The archive at `/tmp/Zaps-<NEW_BUILD_NUMBER>.xcarchive` will be available for manual upload later.
 
-### Step 8: Compose Slack notification
+### Step 10: Compose Slack notification
 
-**Only reach this step if Steps 6 and 7 both succeeded with verified outputs.**
+**Only reach this step if Steps 7 and 8 both succeeded with verified outputs.**
 
 Immediately proceed to compose the Slack message — do NOT ask whether to notify first. After composing, show the draft to the user and ask if they'd like to make any edits or send it as-is.
 
-### Step 9: Get relevant commits for message composition
+### Step 11: Get relevant commits for message composition
 
 The Slack message should be composed from **the user's (vishal) commits only** on the current branch. Use the bump-to-bump range to find commits since the last build that was shared on #testing.
 
-**Step 10a: Find the last build that was posted to #testing.** Fetch recent messages from #testing posted by Vishal-CLI (bot user `U0AJYVC8P8X`) and find the most recent build number mentioned.
+**Step 11a: Find the last build that was posted to #testing.** Fetch recent messages from #testing posted by Vishal-CLI (bot user `U0AJYVC8P8X`) and find the most recent build number mentioned.
 
 Load the Slack bot token once for all subsequent calls (stored out-of-repo at `~/.claude/secrets/slack-bot-token`, chmod 600). If the file is missing, halt and ask the user to run `/chanakya sync-slack --configure-token`.
 
@@ -225,7 +225,7 @@ curl -s "https://slack.com/api/conversations.history?channel=C016BNCGDM2&limit=1
 
 Look for the last message from Vishal-CLI that contains "build NNNN is available on TestFlight" and extract that build number as `LAST_SHARED_BUILD`.
 
-**Step 10b: Get vishal's commits since that build:**
+**Step 11b: Get vishal's commits since that build:**
 
 ```bash
 LAST_SHARED_BUMP=$(git log --oneline --all --grep="Bump build number to <LAST_SHARED_BUILD>" | head -1 | cut -d' ' -f1)
@@ -234,14 +234,14 @@ git log --no-merges --author="vishal" --format="%h | %s%n%b%n---" ${LAST_SHARED_
 
 Read the full commit messages (subject + body) to understand the user-facing impact.
 
-### Step 9.5: Compose the message
+### Step 12: Compose the message
 
 Compose the message from vishal's commits **first**, before scanning for reporters:
 - First line: `<!here> [iOS] build {NEW_BUILD_NUMBER} is available on TestFlight` — **always** use `<!here>` when posting a new message (not a thread reply). Slack does not support `<!here>` in thread replies, so never use it there.
 - Blank line after the first line.
 - Bullet points: plain, non-technical language for product owners (focus on user-facing impact, not implementation details). Derive each bullet from vishal's commit subjects and bodies.
 
-### Step 9.6: Scan recent Vishal-CLI build threads for bug reporters
+### Step 13: Scan recent Vishal-CLI build threads for bug reporters
 
 **After composing the message**, scan the last 3–4 build/TestFlight message threads posted by Vishal-CLI (bot user `U0AJYVC8P8X`) in #testing. Only look at threads started by Vishal-CLI that are build notifications.
 
@@ -265,7 +265,7 @@ When showing the draft to the user, display the person's real name in parenthese
 
 **Always show the draft to the user and ask: "Want me to send this, or would you like to make any edits?"** Wait for explicit user approval before sending.
 
-### Step 10: Send to Slack
+### Step 14: Send to Slack
 
 ```bash
 curl -s -X POST https://slack.com/api/chat.postMessage \

@@ -14,8 +14,6 @@ Tag the current commit, create a GitHub draft release with playful release notes
 - App Store Connect Issuer ID: `1fa9f26b-7b13-459a-9225-1ca8d9c51fca`
 - App Store Connect Key file: `~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8`
 
----
-
 ## Step 1: Get current build number
 
 ```bash
@@ -23,8 +21,6 @@ grep -m1 "CURRENT_PROJECT_VERSION" /Users/vishalsingh/Documents/Turnip.gg/turnip
 ```
 
 This gives us `CURRENT_BUILD_NUMBER` (e.g. `3030`).
-
----
 
 ## Step 2: Get the previous release tag
 
@@ -34,8 +30,6 @@ git -C /Users/vishalsingh/Documents/Turnip.gg/turnip-ios tag --sort=-creatordate
 
 This is `PREV_TAG` (e.g. `3027-zaps`).
 
----
-
 ## Step 3: Get commits between previous tag and HEAD
 
 Read full commit messages (subject + body) so the detailed context can inform release notes and App Store "What's New":
@@ -44,8 +38,6 @@ git -C /Users/vishalsingh/Documents/Turnip.gg/turnip-ios log <PREV_TAG>..HEAD --
 ```
 
 Filter out version/build bump commits (lines containing "Bump build", "Bump version"). These are the meaningful changes. Use the commit body (what/why/where) to write better, more informed release notes.
-
----
 
 ## Step 4: Compose release notes (two versions)
 
@@ -79,16 +71,12 @@ Using the filtered and classified commits, write two versions of release notes:
 We tidied up the editor and it shows. The canvas stays the right size when you go to pick a photo, and tapping placeholders in your collage now works exactly the way you expect. Small things, big difference.
 ```
 
----
-
 ## Step 5: Show both to user and ask for confirmation
 
 Display both versions clearly labelled and ask:
 "Does this look good? You can say 'edit github notes', 'edit app store notes', or 'looks good' to proceed."
 
 Wait for user approval or edits before continuing.
-
----
 
 ## Step 6: Push branch and create the git tag
 
@@ -97,8 +85,6 @@ git -C /Users/vishalsingh/Documents/Turnip.gg/turnip-ios push -u origin HEAD
 git -C /Users/vishalsingh/Documents/Turnip.gg/turnip-ios tag <CURRENT_BUILD_NUMBER>-zaps
 git -C /Users/vishalsingh/Documents/Turnip.gg/turnip-ios push origin <CURRENT_BUILD_NUMBER>-zaps
 ```
-
----
 
 ## Step 7: Create GitHub draft release
 
@@ -117,16 +103,12 @@ gh release create <CURRENT_BUILD_NUMBER>-zaps \
 
 Confirm the draft release URL to the user.
 
----
-
 ## Step 8: Ask which build number to submit to App Store
 
 Ask the user:
 "Which build number do you want to submit for App Store review? (default: `<CURRENT_BUILD_NUMBER>`)"
 
 Wait for their answer. Use `SUBMISSION_BUILD_NUMBER` going forward.
-
----
 
 ## Step 9: Generate App Store Connect JWT
 
@@ -144,8 +126,6 @@ print(jwt.encode(payload, key, algorithm='ES256', headers={'kid': 'WJQ6D76K8R'})
 ")
 ```
 
----
-
 ## Step 10: Find the build on App Store Connect
 
 IMPORTANT: Use `-sg` flag with curl to disable glob expansion (required for URLs with square brackets):
@@ -158,8 +138,6 @@ curl -sg "https://api.appstoreconnect.apple.com/v1/builds?filter[version]=<SUBMI
 Parse the response to get:
 - `BUILD_ID` — the build's `id` field
 - `VERSION_STRING` — from `included[].attributes.version` (the marketing version like `26.3.1`)
-
----
 
 ## Step 11: Find or create the App Store Version
 
@@ -197,8 +175,6 @@ curl -s -X POST "https://api.appstoreconnect.apple.com/v1/appStoreVersions" \
 
 Save the new `APP_STORE_VERSION_ID`.
 
----
-
 ## Step 12: Set the build and release type on the App Store version
 
 Set the build and ensure `releaseType` is `MANUAL` in a single PATCH call:
@@ -222,8 +198,6 @@ curl -s -X PATCH "https://api.appstoreconnect.apple.com/v1/appStoreVersions/<APP
     }
   }'
 ```
-
----
 
 ## Step 13: Update "What's New" for all localizations
 
@@ -250,8 +224,6 @@ curl -s -X PATCH "https://api.appstoreconnect.apple.com/v1/appStoreVersionLocali
     }
   }'
 ```
-
----
 
 ## Step 14: Create the App Store submission
 
@@ -300,8 +272,6 @@ curl -sg -X PATCH "https://api.appstoreconnect.apple.com/v1/reviewSubmissions/$R
     }
   }"
 ```
-
----
 
 ## Step 15: Post to #releases Slack channel
 
@@ -352,8 +322,6 @@ curl -s -X POST https://slack.com/api/chat.postMessage \
 ```
 
 IMPORTANT: Escape newlines as `\n` and any double quotes in the message text before embedding in the JSON `-d` payload.
-
----
 
 ## Step 16: Done
 
