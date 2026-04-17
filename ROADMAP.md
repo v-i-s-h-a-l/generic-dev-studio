@@ -44,3 +44,45 @@
 - `claude -p` per task = guaranteed fresh context without harness changes
 - Existing event log already handles the return path; no new infra needed for Chanakya → user comms
 - Chanakya's `--watch`/`--ship-mode` flags already establish the "event-driven orchestrator" pattern; this extends them
+
+---
+
+## Advanced use cases (future)
+
+- **Dependency-aware dispatch** — Chanakya tracks task DAG, only dispatches a task when all predecessors have reached `done` or `verified`
+- **Parallel refactor sharding** — split a large refactor into N independent file-level shards, dispatch to N workers simultaneously
+- **Handoff chains** — impl worker → tests worker → integration tests worker, each triggered by the previous one's `brief_completed` event; no manual dispatch between phases
+- **Overnight queue** — AFK backlog gets chewed through in `--away` mode; morning digest summarizes what merged, what blocked, what needs review
+- **Scheduled cadences** — auto-compact at 03:00, morning triage on first Chanakya wake, end-of-day summary; managed via `/schedule`
+- **A/B experimentation** — dispatch the same task to 2 workers with different prompt strategies, compare review verdicts and diff quality
+- **Regression watchdog** — after any merge to main, auto-dispatch a smoke test suite to any idle worker slot
+- **Conversational planning** — Chanakya parses ambiguous intent arriving via iMessage ("the filter thing is broken again") into a structured brief without user being at the laptop
+
+---
+
+## Edge cases to handle
+
+- **Stuck child process** — 45-min timeout for M/L tasks, 20-min for XS/S; kill the process and requeue the task with a `requeued_after_timeout` note in the debrief
+- **Cascading blocks** — when a predecessor task is blocked, all successor dispatch is gated; Chanakya surfaces the full blocked subgraph in `/chanakya status`
+- **PID recycling** — heartbeat tuple = `(hostname, pid, process-start-time)` to distinguish a reused PID from the original worker
+- **Headless permission prompts** — pre-allowlist all expected tool calls in `settings.local.json`, or run child processes with `--dangerously-skip-permissions` for fully unattended overnight runs
+- **Git LFS bandwidth** — use `--reference` to a shared bare-clone cache for large assets, or serialize LFS fetches via a dedicated lock to avoid throttling
+- **Simulator contention** — allocate dedicated named simulators per worker slot (e.g., `Achilles-1` through `Achilles-6`) to prevent slot collisions in parallel test runs
+- **Event log day-boundary** — offset stored as `(filename, byte)` tuple; when the date rolls over, Chanakya resets offset to 0 on the new day's file and re-processes from the start
+- **File contention across worktrees** — merge lock serializes writes to the main checkout; Argus base-staleness check catches drift introduced by a sibling merge that completed during review
+- **Disk fill** — Chanakya sweep checks available disk (`df -h`); emits `disk_low` event (threshold: <2 GB free) and pauses new worker dispatch until space is recovered
+- **Slot reclamation** — worker slots with a dead PID (no process at the recorded PID) are auto-reclaimed on the next worker boot, not requiring manual cleanup
+- **User mid-dispatch intervention** — "pause all" is honored at task-step boundaries (end of Step 3/4/5/6), not mid-execution; in-flight builds complete before pausing
+- **Log rotation mid-wake** — if `atomic replace` of the event log occurs while Chanakya is mid-read, the offset tuple survives because it references `(filename, byte)` — re-read from the new file's start if byte offset exceeds new file size
+
+---
+
+## Token budget posture
+
+Optimizations landed in this session and the rationale behind them:
+
+- **At-laptop / away split** — auto-sweep and push channels are only active in `--away` mode. When at the laptop, Chanakya runs on-demand only, eliminating scheduled-wake overhead and MCP cold-start costs entirely.
+- **Adaptive backoff** — `--auto-sweep` starts at 15-min intervals but backs off exponentially (15→30→60→120 min) on consecutive blank sweeps. Resets to 15 min on any real activity. Push-on-exception events (block, conflict, build-debt-blocked) bypass backoff entirely — critical alerts are never delayed.
+- **Model recommendations** — Chanakya: Sonnet for orchestration, Haiku for event-processing modes (~15× cheaper). Achilles: Opus always for code generation (no downgrade). Argus: Opus always (reasoning-heavy edge-case analysis). Worker parent bash-loop sessions can use Haiku since they only dispatch, not implement.
+- **Argus scope caps** — cross-file scan capped at 10 neighbor files × 50 lines each; diffs >500 lines load only the 500 most-changed lines; XS single-file diffs under 20 lines skip Argus entirely. Each triggered cap emits a `review_scoped` event for longitudinal tuning.
+- **MCP hygiene** — iMessage/Telegram MCPs are enabled only in `--away` mode. Figma MCP loads only for brief generation. Telegram is not the primary push channel (silent disconnect risk); iMessage is preferred.
