@@ -1,6 +1,6 @@
 ---
 name: chanakya
-description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, and manages the user verification pipeline. Sub-commands: status, brief, review, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify, migrate. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
+description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, and manages the user verification pipeline. Sub-commands: status, brief, review, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
 ---
 
 # Chanakya — Project Manager
@@ -334,7 +334,6 @@ Parse the user's input after `/chanakya`:
 - `ship <task-id-list | "next" | "all">` → **Ship mode** — brief + dispatch to Achilles + brief test sub-tasks, all in one command
 - `sweep-debt` → **Sweep-debt mode** — identify and dispatch all pending test sub-tasks and build checks to reduce debt
 - `verify [--round N]` → **Verify mode** — generate test-flow → (user tests) → promote → review-feedback, guided single-sitting sequence
-- `migrate` → **Migrate mode** — upgrade an existing master plan to the task-group + test-debt structure
 - `compact [--dry-run]` → **Compact mode** — archive verified tasks, regenerate dashboard/module index, trim plan to actionable items only
 - `sync-slack [--list <id>] [--build <number>]` → **Sync-Slack mode** — sync Slack bug list statuses, Dev Notes, and Fixed in Build with master plan
 - `sync-slack --configure-token` → **Sync-Slack token bootstrap** — write `~/.claude/secrets/slack-bot-token`
@@ -1209,49 +1208,6 @@ Guided single-sitting verification flow. Chains test-flow generation, waits for 
    - If any cases have `[x] fail` → auto-file follow-up tasks via Intake mode with the failure notes as task descriptions. Report: "Filed N follow-up tasks for failures: T031, T032."
    - If cases are unchecked → report: "N cases untested. Continue testing or run `/chanakya verify --round N` to resume later."
 5. **On 'abort':** "Verification paused. Round file preserved at `<path>`. Resume anytime with `/chanakya verify --round N`."
-
----
-
-## Composite: Migrate (`/chanakya migrate`)
-
-Upgrade an existing master plan to the task-group + test-debt structure. Run this once when adopting the new testing workflow on a project that already has tasks.
-
-### Steps
-
-1. **Read the master plan.** Check if it already has a `## Test Debt` header block. If yes: "Master plan already migrated. Nothing to do." Return.
-
-2. **Add missing header blocks.** Insert the `## Test Debt` block (with Unit Test Debt and UI Test Debt sub-blocks, all counters at 0) after the `## Build Debt` block.
-
-3. **Scan every existing task.** For each task that is an implementation type (`feature`, `bugfix`, `refactor`) and does NOT have sub-tasks with matching `Group:` values:
-
-   a. **Determine which test sub-tasks are warranted** (same logic as Intake Step 4):
-      - Unit tests: if the task touches business logic, models, or view models
-      - Integration tests: if the task spans 2+ modules
-      - UI tests: if the task has a user-visible flow with 2+ steps
-
-   b. **Create the sub-tasks** with the suffix convention (T001a, T001b, T001c). Set their status based on the parent's status:
-      - Parent `pending` or `briefed` → sub-tasks `pending`
-      - Parent `in-progress` → sub-tasks `pending` (they'll be briefed when parent lands)
-      - Parent `done` → sub-tasks `pending` (these are the test debt — tests need to be written for already-shipped code)
-      - Parent `verified` → sub-tasks `pending` with lower priority (P2) — nice-to-have retroactive test coverage
-
-   c. **Add `Group:` and `Test coverage:` fields** to the parent task if missing.
-
-4. **Calculate initial test debt.** Count implementation tasks in `done` status whose new test sub-tasks are `pending`. Set the Unit Test Debt and UI Test Debt counters accordingly.
-
-5. **Present the migration report:**
-   > "Migration complete:
-   > - 15 implementation tasks scanned
-   > - 28 test sub-tasks created (12 unit, 6 integration, 10 UI)
-   > - Initial unit test debt: 8/8 (block!) — 8 done tasks have no unit tests
-   > - Initial UI test debt: 5/6 (warn) — 5 done tasks have no UI tests
-   > - Recommend: run `/chanakya sweep-debt` to start reducing debt
-   > 
-   > Review the new sub-tasks? (y/n)"
-
-6. **On confirmation**, write the updated master plan. On rejection, discard changes and let the user adjust.
-
-**Idempotent:** Running `migrate` on an already-migrated plan is a no-op. Running it after partial adoption (some tasks have groups, some don't) only fills in the gaps.
 
 ---
 

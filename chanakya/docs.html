@@ -644,10 +644,6 @@
       <span>Guided flow: generate test-flow &rarr; you test &rarr; promote &rarr; review-feedback &rarr; verified. All in one session.</span>
     </div>
     <div class="cmd-card">
-      <code>/chanakya migrate</code>
-      <span>Upgrade an existing master plan: add test sub-tasks for all implementation tasks, initialize test debt counters.</span>
-    </div>
-    <div class="cmd-card">
       <code>/chanakya compact</code>
       <span>Archive verified tasks, regenerate Dashboard + Module Index, trim master plan to actionable items only. Keeps plan under ~500 lines. <code>--dry-run</code> previews without writing.</span>
     </div>
@@ -706,11 +702,6 @@
         <td>Brief everything, then ship</td>
         <td><code>/chanakya brief-all</code> &rarr; <code>/chanakya ship all</code></td>
         <td>2 (brief, ship)</td>
-      </tr>
-      <tr>
-        <td>Adopt new testing structure</td>
-        <td><code>/chanakya migrate</code> &rarr; <code>/chanakya sweep-debt</code></td>
-        <td>2 (migrate, sweep)</td>
       </tr>
       <tr>
         <td>Slim a bloated master plan</td>
