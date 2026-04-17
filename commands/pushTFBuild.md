@@ -8,12 +8,8 @@ allowed-tools: [Bash, Read, Edit, Grep]
 Archive the current branch and upload it to TestFlight, automatically bumping the build number and version if needed.
 
 ## Configuration
-- Project: `/Users/vishalsingh/Documents/Turnip.gg/turnip-ios/zaps-app/Turnip.xcodeproj`
-- Scheme: `Zaps`
-- pbxproj: `/Users/vishalsingh/Documents/Turnip.gg/turnip-ios/zaps-app/Turnip.xcodeproj/project.pbxproj`
-- App Store Connect Key ID: `WJQ6D76K8R`
-- App Store Connect Issuer ID: `1fa9f26b-7b13-459a-9225-1ca8d9c51fca`
-- App Store Connect Key file: `~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8`
+
+See `_shared/turnip-project-config.md` for all project paths and identifiers (project, scheme, pbxproj, ASC key ID/issuer/key file, App ID, bundle ID, Crashlytics plist, xcpretty).
 
 ## Steps
 

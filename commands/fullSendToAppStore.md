@@ -8,11 +8,8 @@ allowed-tools: [Bash, Read, Edit, Grep]
 Tag the current commit, create a GitHub draft release with playful release notes, and set up an App Store Connect submission with manual release.
 
 ## Configuration
-- Repo: `/Users/vishalsingh/Documents/Turnip.gg/turnip-ios`
-- pbxproj: `/Users/vishalsingh/Documents/Turnip.gg/turnip-ios/zaps-app/Turnip.xcodeproj/project.pbxproj`
-- App Store Connect Key ID: `WJQ6D76K8R`
-- App Store Connect Issuer ID: `1fa9f26b-7b13-459a-9225-1ca8d9c51fca`
-- App Store Connect Key file: `~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8`
+
+See `_shared/turnip-project-config.md` for all project paths and identifiers (repo root, pbxproj, ASC key ID/issuer/key file, App ID, bundle ID).
 
 ## Step 1: Get current build number
 
