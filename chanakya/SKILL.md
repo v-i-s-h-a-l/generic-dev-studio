@@ -695,6 +695,7 @@ Use the standard brief format below, **plus** the `## Testability Requirements` 
 - **SOLID principles:** Single responsibility per type. Depend on protocols, not concrete types. Inject dependencies via initializer.
 - **Architecture adherence:** Follow the existing project architecture. Reference the specific pattern used (e.g., MVVM, coordinator pattern) with file path examples.
 - **Accessibility identifiers:** Define identifiers in a shared enum file per module/screen. Use `enum AccessibilityID` with nested enums per screen. Use strong types (not raw strings) in actual UI code. Reference the existing identifier file if one exists for this module, or specify where to create a new one.
+- **Localization:** If the task introduces or modifies any user-visible strings, all strings must use `String(localized:)` (or the project's established localization API). No hardcoded string literals in views. No string concatenation for localized text. Layouts must accommodate text expansion. Format dates, numbers, and currencies with system formatters. Specify the Localizable.strings key namespace for this module.
 - **Seams for testing:** Expose protocol-based interfaces for external dependencies (network, persistence, sensors). No hardcoded singletons in business logic — use DI. Mark testable interfaces clearly.
 - **What NOT to do:** Don't over-abstract for testability. Don't add unnecessary indirection. If a function is pure (input → output, no side effects), it's already testable — no protocol needed.
 
@@ -1806,6 +1807,16 @@ Before starting, load these skills for guidance:
 - Apply identifiers in views via `.accessibilityIdentifier(AccessibilityID.<Screen>.<element>)`
 - <Reference existing identifier file if one exists for this module>
 
+### Localization
+<!-- Only populate if the task introduces or modifies user-visible strings. Omit if purely logic/infrastructure. -->
+- All user-visible strings must use `String(localized:)` (or `NSLocalizedString` if the project requires it). No hardcoded string literals in views.
+- Key namespace for this module: `<module>.<screen>.<element>` — e.g., `filter.presets.emptyState`
+- No string concatenation for localized text (word order varies by language). Use format arguments instead.
+- Layouts must accommodate text expansion (~30–50% longer in German/French). Avoid fixed widths on text containers.
+- Dates, numbers, currencies: use `DateFormatter`, `NumberFormatter`, or SwiftUI's built-in format styles. Never build these strings manually.
+- Pluralization: use `String(localized:)` with a `comment:` and a `.stringsdict` entry, or Swift's built-in plural rules. No `count == 1 ? "item" : "items"` inline logic.
+- <Reference existing localization files or note if this module is currently unlocalized>
+
 ### Test Seams
 - <Specific protocol/interface to expose for testing — e.g., "FilterEngine should conform to FilterEngineProtocol">
 - <Specific dependency to make injectable — e.g., "ImageLoader should be injected, not accessed as a singleton">
@@ -1822,6 +1833,7 @@ Before starting, load these skills for guidance:
 2. <Another criterion>
 3. Accessibility identifiers defined for all interactive elements (see Testability Requirements)
 4. Dependencies injected via protocols where specified in Test Seams
+5. All user-visible strings localized via `String(localized:)` — no hardcoded literals (if task touches UI strings)
 
 ## Out of Scope
 

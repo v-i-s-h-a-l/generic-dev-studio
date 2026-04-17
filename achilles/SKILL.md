@@ -151,7 +151,16 @@ When the brief includes `## Testability Requirements`:
    - Cover all interactive elements (buttons, text fields, toggles, pickers) and key display elements (labels, images that convey state)
    - Commit the identifier file as a separate, early commit — UI test tasks may depend on it
 
-3. **Expose test seams** — For each item in the brief's Test Seams section:
+3. **Localization** — When the task introduces or modifies any user-visible strings (brief's `### Localization` section present):
+   - Use `String(localized:)` for every user-visible string. No hardcoded string literals in views.
+   - Follow the key namespace specified in the brief (e.g., `filter.presets.emptyState`).
+   - Never concatenate localized strings. Use format arguments: `String(localized: "filter.count \(n)")`.
+   - Plurals: use `.stringsdict` or Swift's built-in plural rules — not inline ternary (`n == 1 ? … : …`).
+   - All text containers must be flexible-width. Avoid fixed frames on labels; use `.lineLimit(nil)` or appropriate layout.
+   - Dates, numbers, currencies: `DateFormatter` / `NumberFormatter` / SwiftUI format styles. Never build these manually.
+   - If the brief notes the module is currently unlocalized: wrap all new strings anyway and file a follow-up localization task in the debrief.
+
+4. **Expose test seams** — For each item in the brief's Test Seams section:
    - Define the protocol with clear documentation
    - Make the production implementation conform to the protocol
    - Use initializer injection (not property injection or service locators)
@@ -238,6 +247,7 @@ Before asking the user to look, review your own diff. Invoke the `simplify` skil
 - Verify all test seams from the brief are exposed (protocols defined, DI wired)
 - Check that no new singletons or static mutable state were introduced in business logic
 - Confirm the identifier enum file is committed separately from implementation
+- **Localization** (if brief has `### Localization`): grep the diff for hardcoded string literals in views — any `Text("...")` or `Label("...", ...)` with a non-empty string literal is a blocker. Verify format arguments are used instead of string concatenation. Verify plurals use `.stringsdict` or Swift plural rules.
 
 **Test review** (for test tasks):
 - Verify tests are independent (no shared mutable state, no ordering assumptions)
@@ -453,6 +463,7 @@ build_debt_override: false         <!-- true only if --ignore-build-debt was use
 - **Accessibility IDs defined:** <path to identifier enum file, count of identifiers added>
 - **Test seams exposed:** <list of protocols/interfaces created for testing>
 - **Architecture pattern followed:** <pattern name, any deviations>
+- **Localization:** <"N strings added via String(localized:), key namespace: filter.presets.*"> | <"n/a — no user-visible strings in this task"> | <"module unlocalized — follow-up task filed: T0XX">
 <!-- For test tasks: test execution results -->
 - **Tests written:** <count>
 - **Tests passing:** <count>
