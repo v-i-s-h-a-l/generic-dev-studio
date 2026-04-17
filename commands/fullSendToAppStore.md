@@ -109,19 +109,7 @@ Wait for their answer. Use `SUBMISSION_BUILD_NUMBER` going forward.
 
 ## Step 9: Generate App Store Connect JWT
 
-```bash
-TOKEN=$(python3 -c "
-import jwt, time
-key = open('$(echo ~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8)').read()
-payload = {
-    'iss': '1fa9f26b-7b13-459a-9225-1ca8d9c51fca',
-    'iat': int(time.time()),
-    'exp': int(time.time()) + 1200,
-    'aud': 'appstoreconnect-v1'
-}
-print(jwt.encode(payload, key, algorithm='ES256', headers={'kid': 'WJQ6D76K8R'}))
-")
-```
+Use the pattern in `_shared/appstore-connect-jwt.md` to generate `$TOKEN`. The `-sg` curl flag requirement documented there applies to all subsequent API calls in this command.
 
 ## Step 10: Find the build on App Store Connect
 

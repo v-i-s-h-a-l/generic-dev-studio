@@ -19,7 +19,7 @@ Generate a JWT token and call the App Store Connect API to get:
 
 **a) Latest TestFlight build number** — call the builds endpoint, sort by uploadedDate descending, take the first result's `version` field (this is the build number).
 
-**Use the App Store Connect REST API directly:**
+**Use the App Store Connect REST API directly** (JWT pattern from `_shared/appstore-connect-jwt.md`):
 
 ```bash
 # Step 1a: Generate JWT using python3
