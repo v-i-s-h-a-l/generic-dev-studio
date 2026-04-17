@@ -578,6 +578,18 @@
       <code>/chanakya review-feedback</code>
       <span>Promote passing tasks to <code>verified</code>; turn failures into follow-up tasks</span>
     </div>
+    <div class="cmd-card">
+      <code>/chanakya sync-slack</code>
+      <span>Sync Slack bug list statuses, Dev Notes, and Fixed in Build with master plan. Auto-triggered after TestFlight builds.</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya sync-slack --configure-token</code>
+      <span>One-time: save Slack bot token to <code>~/.claude/secrets/slack-bot-token</code>. Cross-project &mdash; run once globally.</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya sync-slack --configure</code>
+      <span>One-time: interactively populate project Slack list IDs, column IDs, and stakeholder handles in project memory.</span>
+    </div>
   </div>
 
   <h3 style="color: var(--achilles);">Achilles &mdash; The Warrior</h3>
@@ -618,6 +630,29 @@
   <div class="callout" style="margin-top: 20px;">
     <strong>Default is merge-immediately.</strong> Achilles logs a "manual verification" follow-up for every task and surfaces Chanakya-created follow-ups 15 min after merge. Batch-test with <code>/chanakya test-manifest</code> or <code>/chanakya test-flow</code> when you're ready.
   </div>
+
+  <h3>Minimal Intervention</h3>
+  <p>Chanakya runs end-to-end without stopping for confirmation. The only points where it pauses:</p>
+  <table class="decision-table">
+    <thead><tr><th>Pause point</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Slack publish</strong> (sync-slack Step 6)</td><td>Irreversible external write &mdash; you review the computed changes first</td></tr>
+      <tr><td><strong>First-time config writes</strong> (<code>--configure-token</code>, <code>--configure</code>)</td><td>Writing a secret to disk; prompted once per setup</td></tr>
+      <tr><td><strong>Merge conflicts</strong></td><td>Achilles cannot resolve them automatically</td></tr>
+      <tr><td><strong><code>--wait</code> mode feedback window</strong></td><td>You explicitly opted in to review before merge</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Session Flags</h3>
+  <p>Pass alongside any mode to modify Chanakya's session behavior:</p>
+  <table class="decision-table">
+    <thead><tr><th>Flag</th><th>Behavior</th></tr></thead>
+    <tbody>
+      <tr><td><code>--auto-sweep</code></td><td>Background inbox sweep every 600s. Opt in at invocation: <code>/chanakya --auto-sweep</code></td></tr>
+      <tr><td><code>--watch</code></td><td><code>--auto-sweep</code> + auto-dispatch ready tasks after each sweep</td></tr>
+      <tr><td><code>--ship-mode</code></td><td><code>--auto-sweep</code> + auto-dispatch + auto-verify when task queue drains</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <!-- Composites -->
@@ -1053,8 +1088,8 @@
     ## Release Log<br><br>
     | Build | Version | Type | Date | Tag | Tasks Included |<br>
     |-------|---------|------|------|-----|---------------|<br>
-    | 3031 &nbsp;| 26.3.1 &nbsp;| TestFlight | 2026-04-16 | &mdash; | T015, T016, T017 |<br>
-    | 3031 &nbsp;| 26.3.1 &nbsp;| App Store &nbsp;| 2026-04-16 | 3031-zaps | T015, T016, T017 |
+    | 3031 &nbsp;| 1.4.2 &nbsp;&nbsp;| TestFlight | 2026-04-18 | &mdash; | T015, T016, T017 |<br>
+    | 3031 &nbsp;| 1.4.2 &nbsp;&nbsp;| App Store &nbsp;| 2026-04-18 | v1.4.2 &nbsp;&nbsp;&nbsp; | T015, T016, T017 |
   </div>
 
   <div class="callout blue">
@@ -1092,6 +1127,8 @@
       <tr><td>Run full unit/UI test suite</td><td><span class="badge badge-achilles">/achilles test-suite all</span></td></tr>
       <tr><td>Push a TestFlight build</td><td><span class="badge badge-achilles">/achilles push-tf</span></td></tr>
       <tr><td>Submit to App Store</td><td><span class="badge badge-achilles">/achilles app-store</span></td></tr>
+      <tr><td>Sync Slack bug list after a build</td><td><span class="badge badge-chanakya">/chanakya sync-slack</span></td></tr>
+      <tr><td>First-time Slack setup</td><td><span class="badge badge-chanakya">/chanakya sync-slack --configure-token then --configure</span></td></tr>
       <tr><td>Master plan growing too long (&gt;500 lines)</td><td><span class="badge badge-chanakya">/chanakya compact</span></td></tr>
     </tbody>
   </table>
@@ -1329,7 +1366,7 @@
 
 <footer>
   <div class="container">
-    Chanakya + Achilles &mdash; Plan, implement, test, verify
+    Chanakya + Achilles &mdash; Plan, implement, test, verify &mdash; Updated 2026-04-18
   </div>
 </footer>
 
