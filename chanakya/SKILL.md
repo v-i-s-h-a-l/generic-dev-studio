@@ -11,30 +11,9 @@ You are Chanakya, the strategic project manager for the Turnip iOS codebase. You
 
 ---
 
-## Project Slug
+## Project Slug & File Locations
 
-All per-project artifacts live under a per-project root. Compute the project slug once, at Step 0, as the basename of the main repo's git toplevel:
-
-```bash
-PROJECT=$(basename "$(git -C <repo-root> rev-parse --show-toplevel)")
-```
-
-Everywhere below, `<project>` is this slug. For the Turnip iOS repo it resolves to `turnip-ios`.
-
----
-
-## File Locations
-
-- **Root:** `~/.dev-studio/<project>/`
-- **Master plan:** `~/.dev-studio/<project>/plans/chanakya-master.md`
-- **Task briefs:** `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md`
-- **Worker debriefs (inbox):** `~/.dev-studio/<project>/plans/chanakya-inbox/`
-- **Processed debriefs:** `~/.dev-studio/<project>/plans/chanakya-inbox/processed/`
-- **User test manifest:** `~/.dev-studio/<project>/plans/user-testing.md`
-- **Test-flow rounds:** `~/.dev-studio/<project>/plans/user-testing-rounds/user-testing-round<N>.md`
-- **Journey map (optional):** `~/.dev-studio/<project>/journey-map.md`
-- **Locks:** `~/.dev-studio/<project>/locks/`
-- **Project memory (Claude-owned, do not relocate):** `~/.claude/projects/-Users-vishalsingh-Documents-Turnip-gg-turnip-ios/memory/`
+See `~/.claude/skills/_shared/file-locations.md` for the project slug computation and full file locations table.
 
 ---
 
@@ -160,36 +139,7 @@ For `auto-sweep` invocations, stop here after re-scheduling the next wake.
 
 ## Build Debt Tracking
 
-The master plan's top-level `## Build Debt` block is the source of truth. Schema:
-
-```markdown
-## Build Debt
-- Counter: 8 / warn@6 / block@12
-- State: warn            <!-- silent | warn | block -->
-- Last green: build-20260414-093200 (2026-04-14 09:32)
-- Last green SHA: a1b2c3d
-- Unverified since: [T015, T016, T017, T018, T019, T020, T021, T022]
-- Open check task: TBUILD-3
-- Blocked by: —          <!-- only set when a manual-build-check came back red; points to the P0 fix task -->
-- Next TBUILD n: 4
-```
-
-### Counter update rules (applied during Step 0A per debrief)
-
-| Debrief's `build_gate` | Debrief's `build_debt_override` | Action |
-|---|---|---|
-| `full-green` | false | Counter → 0; `State: silent`; update `Last green`; clear `Unverified since`; close open TBUILD. |
-| `lsp-only` | false | Counter += 1; append task-id to `Unverified since`. |
-| `lsp-only` | true | Counter += 1; append `<task-id>[overridden]` to `Unverified since`. |
-| `full-green` | true | Counter → 0; ignore override flag (a real full-green has cleared the debt regardless). |
-
-Transitions after counter update:
-
-- `Counter = 0` → `State: silent`.
-- `Counter ∈ [1, 5]` → `State: silent`.
-- `Counter ∈ [6, 11]` → `State: warn`. File TBUILD on the 5→6 transition (0C).
-- `Counter ≥ 12` → `State: block`.
-- `Blocked by: T<nnn>` (red-build fix outstanding) → `State: block` regardless of counter. Cleared only when the fix task lands and a subsequent manual build check passes.
+Schema, counter update rules, and state transitions: see `~/.claude/skills/_shared/build-debt-schema.md`.
 
 ### Banner rules
 
@@ -746,162 +696,21 @@ Write to `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md`. The
 
 #### 6A — Implementation brief (Type: feature | bugfix | refactor | direct)
 
-Use the standard brief format below, **plus** the `## Testability Requirements` section (see format). This section instructs Achilles to write implementation code that is testable:
+Write the brief following the template at `~/.claude/skills/_shared/brief-formats/impl-brief.md`.
 
-- **SOLID principles:** Single responsibility per type. Depend on protocols, not concrete types. Inject dependencies via initializer.
-- **Architecture adherence:** Follow the existing project architecture. Reference the specific pattern used (e.g., MVVM, coordinator pattern) with file path examples.
-- **Accessibility identifiers:** Define identifiers in a shared enum file per module/screen. Use `enum AccessibilityID` with nested enums per screen. Use strong types (not raw strings) in actual UI code. Reference the existing identifier file if one exists for this module, or specify where to create a new one.
-- **Localization:** If the task introduces or modifies any user-visible strings, all strings must use the `.localized` extension (`"keyName".localized` — defined in `String+Localization.swift`). No hardcoded string literals in views. Keys are camelCase with a feature prefix (e.g., `filterPresetsEmpty`, `cropToolTitle`). New keys must be added to `Localizable.strings` in all language `.lproj` folders (en, hi, uk). For format strings use `{placeholder}` tokens with `.replacingOccurrences(of:with:)`. Layouts must accommodate text expansion (~30–50% in some locales). Note: this architecture has no compile-time key safety — a typed-enum refactor may be filed as a follow-up task.
-- **Seams for testing:** Expose protocol-based interfaces for external dependencies (network, persistence, sensors). No hardcoded singletons in business logic — use DI. Mark testable interfaces clearly.
-- **What NOT to do:** Don't over-abstract for testability. Don't add unnecessary indirection. If a function is pure (input → output, no side effects), it's already testable — no protocol needed.
+The `## Testability Requirements` section must include: SOLID principles, accessibility identifiers, localization (if task touches UI strings — see `~/.claude/skills/_shared/localization-rules.md` for the full ruleset), and test seams.
 
 #### 6B — Unit test brief (Type: test-unit)
 
-```markdown
-# Test Brief: <task-id> — Unit Tests: <feature>
-
-**Generated:** <timestamp>
-**Parent task:** <parent-task-id>
-**Implementation brief:** <path to parent's brief>
-
----
-
-## Scope
-
-Unit tests for <feature>. Test business logic, view models, and model transformations in isolation.
-
-## Testing Framework
-
-Use the project's testing framework (e.g., Swift Testing / XCTest). Follow existing test file organization.
-
-## Reference Implementation
-
-- **Source files to test:** <list from parent brief's Files to Modify>
-- **Existing tests to reference:** <similar test files found in Step 4>
-- **Test helpers available:** <shared mocks, fixtures, utilities found in codebase>
-
-## Key Areas to Test
-
-1. <Area 1 — derived from acceptance criteria>
-   - Happy path: <expected behavior>
-   - Edge cases: <boundary conditions, empty states, nil handling>
-   - Error cases: <invalid input, failure modes>
-2. <Area 2>
-   ...
-
-## Test Organization
-
-- File: `<TestTarget>/<Module>/<FeatureName>Tests.swift`
-- Group tests by the type/method under test
-- Use descriptive test names that read as specifications
-- Reuse existing test helpers; create new shared helpers if a pattern repeats 3+ times (file a refactor task if this grows)
-
-## Dependencies to Mock
-
-- <Protocol>: <what it does, mock strategy>
-- ...
-
-## Acceptance Criteria
-
-1. All public methods of <type> have test coverage
-2. Edge cases for <specific scenarios> are covered
-3. Tests are independent (no shared mutable state, no test ordering dependency)
-4. Tests run in <target time — e.g., under 5s for the suite>
-```
+Write the brief following the template at `~/.claude/skills/_shared/brief-formats/unit-test-brief.md`.
 
 #### 6C — Integration test brief (Type: test-integration)
 
-```markdown
-# Test Brief: <task-id> — Integration Tests: <feature interaction>
-
-**Generated:** <timestamp>
-**Parent task:** <parent-task-id>
-
----
-
-## Scope
-
-Integration tests verifying <module A> and <module B> work together correctly. These are longer-running tests that exercise real module boundaries without mocking the integration points.
-
-## Module Boundaries Under Test
-
-- <Module A> → <Module B>: <what crosses the boundary — data, events, state>
-- <Shared state>: <what both modules read/write>
-
-## Test Scenarios
-
-1. <Scenario: end-to-end data flow>
-   - Setup: <preconditions>
-   - Action: <what triggers the cross-module interaction>
-   - Verify: <expected state in both modules>
-2. <Scenario: error propagation across modules>
-   ...
-
-## What to Mock vs. What's Real
-
-- **Real:** <the module integration itself — don't mock the boundary you're testing>
-- **Mock:** <external services, network, disk I/O — anything outside the modules under test>
-
-## Test Organization
-
-- File: `<TestTarget>/Integration/<ModuleA>_<ModuleB>Tests.swift`
-- Keep integration tests separate from unit tests (different file/group)
-- These tests may take longer — mark them appropriately if the framework supports test categories
-```
+Write the brief following the template at `~/.claude/skills/_shared/brief-formats/integration-test-brief.md`.
 
 #### 6D — UI test brief (Type: test-ui)
 
-```markdown
-# Test Brief: <task-id> — UI Tests: <user flow>
-
-**Generated:** <timestamp>
-**Parent task:** <parent-task-id>
-
----
-
-## Scope
-
-UI tests for <user flow>. Test the end-to-end user journey through the UI.
-
-## Accessibility Identifier Contract
-
-The implementation task (<parent-task-id>) defines identifiers in:
-- **Identifier file:** `<path to AccessibilityID enum file>`
-- **Key identifiers for this flow:**
-  - `AccessibilityID.<Screen>.<element>` — <what it identifies>
-  - ...
-
-If the implementation hasn't landed yet (TDD mode), define the expected identifiers here — the implementation must satisfy them.
-
-## User Flows to Test
-
-### Flow 1 — <Flow name> (happy path)
-1. Launch → <initial screen>
-2. Tap <element> (`AccessibilityID.<Screen>.<element>`)
-3. Verify <expected state>
-4. ...
-Expected end state: <what the user sees>
-
-### Flow 2 — <Edge case flow>
-1. ...
-
-### Flow 3 — <Error/recovery flow>
-1. ...
-
-## Test Organization
-
-- File: `<UITestTarget>/<Module>/<FlowName>UITests.swift`
-- Group test suites per module/feature
-- For bug fixes: add a regression test that reproduces the original bug
-- Reuse page objects / screen abstractions if the project has them; create one if 3+ tests interact with the same screen
-- Remove redundant tests that duplicate coverage from new tests
-
-## Performance Considerations
-
-- Minimize app re-launches between tests (use `setUpWithError` for state reset where possible)
-- Tests should be independent — no test ordering assumptions
-- Target: full UI test suite for this module runs in <N minutes>
-```
+Write the brief following the template at `~/.claude/skills/_shared/brief-formats/ui-test-brief.md`.
 
 ### Step 7 — Update master plan
 
@@ -1162,84 +971,9 @@ Evidence:
 
 ### Step 7 — Write the file
 
-Ensure `~/.dev-studio/<project>/plans/user-testing-rounds/` directory exists. Write to `user-testing-round<N>.md`:
+Ensure `~/.dev-studio/<project>/plans/user-testing-rounds/` directory exists. Write to `user-testing-round<N>.md` following the format at `~/.claude/skills/_shared/test-flow-format.md`.
 
-```markdown
-# <Project> — Single-Sitting Manual Test (Round <N>)
-
-Generated: <YYYY-MM-DD> IST
-Scope: <new | full | module:<name>>
-Purpose: <auto-generated one-line — e.g., "Covers T107–T135: filter fixes, texture rotation, export rework">
-Previous round: <path to round N-1, or "none">
-Tested on: ___ (device/simulator, OS version)
-
-## Instructions
-- Check `[ ] pass` → `[x] pass` when a case passes, or `[ ] fail` → `[x] fail` for failures.
-- Write failure details under `Notes:` and optionally attach screenshot paths under `Evidence:`.
-- Fill in `Timing:` fields for `[perf]` cases.
-- Sections ordered by user journey; cases cluster by module.
-- Each case tags parent task(s) in `[Txxx]`.
-- Re-tests from prior rounds marked `[R<prev> retest]`.
-- Severity: `[critical]` = P0, `[important]` = P1, unmarked = P2.
-
-## Setup (do once)
-- [ ] Fresh build on simulator or device
-- [ ] Open a test item into the main workflow (keep a secondary test item handy)
-- [ ] Have additional test data ready for swap/picker cases
-  Notes:
-
----
-
-## 1. <Section Name>
-  (group: <task IDs covered>)
-
-### 1.1 — <Case title>  [Txxx][Tyyy]  [R2 retest]
-Do: <user action>
-Expect: <expected outcome>
-Result: [ ] pass  [ ] fail
-Notes:
-Evidence:
-
-### 1.2 — <Case title>  [Txxx]  [perf]
-Do: <user action>
-Expect: <expected outcome with timing threshold>
-Perf baseline: ~0.6s (from T120 debrief)
-Result: [ ] pass  [ ] fail
-Timing: ___
-Notes:
-Evidence:
-
----
-
-## N. Performance Checkpoints
-  (cross-cutting, not tied to a single module)
-
-### N.1 — <Perf case title>
-Do: <action>
-Expect: <threshold>
-Perf baseline: <value if known>
-Timing: ___
-Device: ___
-Notes:
-
----
-
-## Task Crosswalk
-
-| Task | Status | Covered by | Severity |
-|------|--------|------------|----------|
-| T109 | done   | 1.1, 3.2   | critical |
-| T115 | done   | 2.1        | important |
-...
-```
-
-**Performance Checkpoints section:** This is a dedicated final section (before the crosswalk) that aggregates cross-cutting performance cases. Include it when any candidate task has performance-related test cases or debrief data. Cases here test system-wide behavior that doesn't belong to a single module:
-- Cold launch / warm launch times
-- Memory ceiling under combined operations
-- Undo chain responsiveness at depth
-- Pipeline throughput (multiple operations applied sequentially)
-
-Source perf baselines from debrief `## Key Learnings` or `## Performance` sections when available. If no debrief performance data exists, omit the `Perf baseline:` line — the user fills in the first measurement and it becomes the baseline for future rounds.
+**Performance Checkpoints section:** Include a dedicated final section (before the crosswalk) for cross-cutting perf cases when any candidate task has performance-related test cases or debrief data (cold launch, memory ceiling, undo chain, pipeline throughput). Source baselines from debrief `## Key Learnings` or `## Performance` sections. If no data exists, omit `Perf baseline:` — the user fills in the first measurement.
 
 ### Step 8 — Report
 
@@ -1625,276 +1359,19 @@ When ALL tasks for a feature are `verified` (check after every inbox sweep and a
 
 ## Master Plan Format
 
-```markdown
-# <Project> — Master Plan
-
-**Updated:** <YYYY-MM-DD HH:mm IST>
-
----
-
-## Build Debt
-
-- Counter: 0 / warn@6 / block@12
-- State: silent
-- Last green: —
-- Last green SHA: —
-- Unverified since: []
-- Open check task: —
-- Blocked by: —
-- Next TBUILD n: 1
-
-<!-- Thresholds are configurable. Do not hand-edit Counter/State — Chanakya's Step 0 owns them. -->
-
-## Test Debt
-
-### Unit Test Debt
-- Counter: 0 / warn@4 / block@8
-- State: silent
-- Last green run: —
-- Untested since: []
-- Open check task: —
-- Next TUNIT n: 1
-
-### UI Test Debt
-- Counter: 0 / warn@3 / block@6
-- State: silent
-- Last green run: —
-- Untested since: []
-- Open check task: —
-- Next TUI n: 1
-
-<!-- Do not hand-edit — Chanakya's Step 0 owns these counters. -->
-
----
-
-## Tasks
-
-### T001 — <Title>
-- **Priority:** P0
-- **Status:** pending   <!-- pending | briefed | in-progress | done | verified | needs-review -->
-- **Complexity:** L
-- **Type:** feature   <!-- feature | bugfix | refactor | direct | build-check | test-unit | test-integration | test-ui | test-tdd -->
-- **Group:** —   <!-- parent task ID for test sub-tasks, e.g., T001 for T001a/T001b/T001c. "—" for standalone/parent tasks -->
-- **Branch:** —
-- **Skills:** figma-to-swiftui, swiftui-pro
-- **Figma nodes:** `DMRP0bv9T9oUbGCC5esB01` node `1:42171`
-- **Dependencies:** none
-- **Source:** —   <!-- parent task ID if this came from a debrief's Follow-up Tasks -->
-- **Brief:** —
-- **Commits:** —
-- **Merge commit:** —
-- **Test coverage:** —   <!-- for implementation tasks: list sub-task IDs, e.g., "T001a (unit), T001c (UI)" -->
-- **Released in:** —   <!-- e.g., "TF-3031, AS-3031" — filled by Chanakya on release debrief processing -->
-- **Verified at:** —   <!-- timestamp when user signed off via review-feedback -->
-- **Notes:** <any context, including path to test-case artifact if this is a verification follow-up>
-
-#### T001a — Unit Tests: <Title>
-- **Priority:** P0
-- **Status:** pending
-- **Complexity:** M
-- **Type:** test-unit
-- **Group:** T001
-- **Branch:** —
-- **Skills:** swift-testing-expert
-- **Dependencies:** T001
-- **Brief:** —
-- **Commits:** —
-- **Merge commit:** —
-- **Notes:** —
-
-#### T001c — UI Tests: <Title>
-- **Priority:** P0
-- **Status:** pending
-- **Complexity:** M
-- **Type:** test-ui
-- **Group:** T001
-- **Branch:** —
-- **Skills:** swift-testing-expert
-- **Dependencies:** T001
-- **Brief:** —
-- **Commits:** —
-- **Merge commit:** —
-- **Notes:** —
-
----
-
-## Parallelization Map
-
-(render ASCII dependency graph here)
-
----
-
-## Completed
-
-| ID | Title | Completed | Verified | Commits | Branch |
-|----|-------|-----------|----------|---------|--------|
-
----
-
-## Release Log
-
-| Build | Version | Type | Date | Tag | HEAD | Tasks Included |
-|-------|---------|------|------|-----|------|---------------|
-
-<!-- Populated by Chanakya's Step 0B2 when processing release debriefs from /achilles push-tf and /achilles app-store -->
-
----
-
-## Changelog
-
-- <YYYY-MM-DD HH:mm>: <what changed>
-```
+Full schema: `~/.claude/skills/_shared/master-plan-format.md`
 
 ---
 
 ## Task Brief Format
 
-```markdown
-# Task Brief: <task-id> — <Title>
+Implementation brief format: `~/.claude/skills/_shared/brief-formats/impl-brief.md`
+Unit test brief format: `~/.claude/skills/_shared/brief-formats/unit-test-brief.md`
+Integration test brief format: `~/.claude/skills/_shared/brief-formats/integration-test-brief.md`
+UI test brief format: `~/.claude/skills/_shared/brief-formats/ui-test-brief.md`
+TDD brief format: `~/.claude/skills/_shared/brief-formats/tdd-brief.md`
 
-**Generated:** <YYYY-MM-DD HH:mm IST>
-**Master plan:** ~/.dev-studio/<project>/plans/chanakya-master.md
-
----
-
-## Objective
-
-<Clear description of what to build/fix and why>
-
-## Priority & Complexity
-
-- **Priority:** P0
-- **Complexity:** L
-- **Size:** XS | S | M | L   <!-- drives Achilles' Step 6 gate: XS/S → lsp-only, M/L → full-green. Escalation triggers in Achilles override this to full-green regardless. -->
-
-## Branch
-
-- **Base:** `<base-branch>`
-- **Branch name:** `achilles/<task-id>`   <!-- Achilles creates this -->
-
-## Skills to Invoke
-
-Before starting, load these skills for guidance:
-- `/figma-to-swiftui` — for translating Figma designs
-- `/swiftui-pro` — for SwiftUI best practices
-
-## Figma Context
-
-### <Component Name> (node `<nodeId>`)
-
-<Inlined design specs: dimensions, colors, fonts, spacing, layout structure>
-<Screenshot path if captured>
-<Design tokens if fetched>
-
-## Codebase Context
-
-### Files to Modify
-- `path/to/file.swift` — <what to change>
-
-### Files to Read (for context)
-- `path/to/related.swift` — <why it's relevant>
-
-### Patterns to Follow
-- <Reference to similar existing feature with file path>
-
-### Architectural Constraints
-- <Inlined from project memory — e.g., "uses @Observable not ObservableObject", "image loading via Kingfisher">
-
-## Testability Requirements
-
-<!-- Only present in implementation briefs (feature/bugfix/refactor). Omit for test briefs. -->
-
-### Architecture & SOLID
-- Follow the project's existing architecture pattern: <pattern name, e.g., MVVM+Coordinator> (reference: `<path to exemplar file>`)
-- Single responsibility: each new type should have one clear reason to change
-- Depend on protocols for external dependencies (network, persistence, sensors) — inject via initializer
-- <Specific architectural constraint for this task>
-
-### Accessibility Identifiers
-- Define identifiers in: `<path to identifier enum file, existing or new>`
-- Use nested enums per screen/component: `enum AccessibilityID { enum <Screen> { static let <element> = "<module>.<screen>.<element>" } }`
-- Apply identifiers in views via `.accessibilityIdentifier(AccessibilityID.<Screen>.<element>)`
-- <Reference existing identifier file if one exists for this module>
-
-### Localization
-<!-- Only populate if the task introduces or modifies user-visible strings. Omit if purely logic/infrastructure. -->
-- Use `"keyName".localized` for every user-visible string (`String+Localization.swift` extension). No hardcoded string literals in views.
-- Key naming: camelCase with a feature prefix — e.g., `filterPresetsEmpty`, `filterPresetsSaveTitle`, `cropToolCancelButton`.
-- New keys must be added to `Localizable.strings` in **all three** `.lproj` folders: `en.lproj`, `hi.lproj`, `uk.lproj`. Add the translated value or a `"TODO: translate"` placeholder.
-- Format strings: embed `{placeholder}` tokens in the `.strings` value and replace at call site via `.replacingOccurrences(of: "{placeholder}", with: value)`.
-- Pluralization: define separate keys (e.g., `roomNumberText = "{rooms} room"` / `roomsNumberText = "{rooms} rooms"`) and select by count at call site. No inline ternary logic in views.
-- Avoid fixed widths on text containers — layouts must accommodate text expansion (~30–50% in some locales).
-- Dates, numbers, currencies: use `DateFormatter` / `NumberFormatter`. Never build these strings manually.
-- ⚠️ Current architecture has no compile-time key safety — a typo in the key silently returns the key string itself. A typed-enum refactor (`L10n` or SwiftGen) may be filed as a follow-up.
-- <Reference existing localization files or note if this module is currently unlocalized>
-
-### Test Seams
-- <Specific protocol/interface to expose for testing — e.g., "FilterEngine should conform to FilterEngineProtocol">
-- <Specific dependency to make injectable — e.g., "ImageLoader should be injected, not accessed as a singleton">
-- Pure functions (input → output, no side effects) need no extra abstraction — they're already testable
-
-### Related Test Tasks
-- Unit tests: `<task-id-a>` (will test business logic from this implementation)
-- Integration tests: `<task-id-b>` (if applicable)
-- UI tests: `<task-id-c>` (will use the accessibility identifiers defined above)
-
-## Acceptance Criteria
-
-1. <Specific, testable criterion>
-2. <Another criterion>
-3. Accessibility identifiers defined for all interactive elements (see Testability Requirements)
-4. Dependencies injected via protocols where specified in Test Seams
-5. All user-visible strings use `"keyName".localized` — no hardcoded literals, new keys added to all three `.lproj` files (if task touches UI strings)
-
-## Out of Scope
-
-- <Explicit boundaries>
-- Writing tests (handled by sub-tasks <task-id-a>, <task-id-b>, <task-id-c>)
-
----
-
-## Debrief Instructions
-
-When you finish this task, write a debrief file to:
-`~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-debrief.md`
-
-Use this format:
-
-~~~markdown
-# Debrief: <task-id> — <Title>
-Completed: <timestamp>
-
-## Summary
-<2-3 sentences>
-
-## Commits
-- <hash> — <description>
-
-## Files Changed
-- <list>
-
-## Build Verification
-build_gate: lsp-only | full-green
-build_debt_override: false
-
-## Decisions Made
-- <deviations from brief and why>
-
-## Test Cases
-<copy of <task-id>-tests.md>
-
-## Key Learnings
-- <patterns, gotchas, things future sessions should know>
-
-## Known Issues
-- <unresolved>
-
-## Follow-up Tasks
-- <new tasks discovered, including manual-verification follow-up>
-~~~
-
-Then update `~/.dev-studio/<project>/plans/chanakya-master.md`: set this task's status to `done` and record your commit hashes. User verification happens later via `/chanakya test-manifest` + `/chanakya review-feedback`.
-```
+Debrief format (for the `## Debrief Instructions` section in every brief): `~/.claude/skills/_shared/debrief-format.md`
 
 ---
 

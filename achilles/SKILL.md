@@ -11,29 +11,9 @@ You are Achilles, the execution agent for the Turnip iOS codebase. You implement
 
 ---
 
-## Project Slug
+## Project Slug & File Locations
 
-All artifacts live under a per-project root. Compute the project slug once, at the top of Step 3, as the basename of the main repo's git toplevel:
-
-```bash
-PROJECT=$(basename "$(git -C <repo-root> rev-parse --show-toplevel)")
-```
-
-Everywhere below, `<project>` is this slug. For the Turnip iOS repo it resolves to `turnip-ios`.
-
----
-
-## File Locations
-
-- **Root:** `~/.dev-studio/<project>/`
-- **Master plan:** `~/.dev-studio/<project>/plans/chanakya-master.md`
-- **Task briefs:** `~/.dev-studio/<project>/plans/chanakya-tasks/`
-- **Debrief inbox:** `~/.dev-studio/<project>/plans/chanakya-inbox/`
-- **Test-case artifacts:** `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-tests.md`
-- **Worktrees:** `~/.dev-studio/<project>/worktrees/<task-id>/`
-- **Locks:** `~/.dev-studio/<project>/locks/`
-- **Per-task DerivedData:** `~/.dev-studio/<project>/derived-data/<task-id>/`
-- **Project memory (Claude-owned, do not relocate):** `~/.claude/projects/-Users-vishalsingh-Documents-Turnip-gg-turnip-ios/memory/`
+See `~/.claude/skills/_shared/file-locations.md` for the project slug computation and full file locations table.
 
 ---
 
@@ -77,27 +57,7 @@ Record `WAIT_FOR_USER` (from `--wait` flag, else `no`). Do not prompt the user a
 
 ### Step 1.5 — Build-debt gate
 
-Read the `## Build Debt` block at the top of `~/.dev-studio/<project>/plans/chanakya-master.md`. The block looks like:
-
-```markdown
-## Build Debt
-- Counter: 8 / warn@6 / block@12
-- Last green: T014 (2026-04-15 11:02)
-- Unverified since: [T015, T016, T017, T018, T019, T020, T021, T022]
-```
-
-Behavior:
-
-- **Counter ≤ 5:** silent, proceed to Step 2.
-- **Counter 6–11 (warn):** print a one-line banner to the user, then proceed:
-  > "⚠️ Build debt: 8 tasks merged without a full build. Run `/achilles build` when convenient. (Block at 12 — 4 more tasks until new work is refused.)"
-- **Counter ≥ 12 (block):**
-  - If `<task-id>` has `Source: build-debt` in the master plan (i.e., it's a TBUILD), proceed — build-check tasks are exempt.
-  - If `--ignore-build-debt` was passed, print the override banner and proceed. Record `build_debt_override: true` in the debrief's `## Build Verification` section.
-  - Otherwise: print a block banner and **exit without claiming**:
-    > "⛔ Build debt blocked at 12. Run `/achilles build` before starting new work. Override (not recommended): `/achilles <task-id> --ignore-build-debt`."
-
-Never write to the master plan during this gate — Chanakya owns counter updates (via inbox sweep).
+Schema, counter rules, banner text, and gate behavior: see `~/.claude/skills/_shared/build-debt-schema.md` (Achilles section).
 
 ### Step 2 — Claim the task
 
@@ -151,16 +111,7 @@ When the brief includes `## Testability Requirements`:
    - Cover all interactive elements (buttons, text fields, toggles, pickers) and key display elements (labels, images that convey state)
    - Commit the identifier file as a separate, early commit — UI test tasks may depend on it
 
-3. **Localization** — When the task introduces or modifies any user-visible strings (brief's `### Localization` section present):
-   - Use `"keyName".localized` for every user-visible string (`String+Localization.swift`). No hardcoded string literals in views.
-   - Follow the key naming convention from the brief: camelCase with a feature prefix (e.g., `filterPresetsEmpty`).
-   - Add every new key to `Localizable.strings` in **all three** `.lproj` folders (`en.lproj`, `hi.lproj`, `uk.lproj`). Use `"TODO: translate"` as a placeholder value for non-English locales if translations aren't available.
-   - Format strings: embed `{placeholder}` tokens in the `.strings` value; replace at call site with `.replacingOccurrences(of: "{placeholder}", with: value)`. Never concatenate localized strings directly.
-   - Plurals: use separate keyed strings selected by count. No inline ternary (`n == 1 ? … : …`) logic in views.
-   - All text containers must be flexible-width. Avoid fixed frames on labels — use `.lineLimit(nil)` or flexible layout to accommodate text expansion.
-   - Dates, numbers, currencies: `DateFormatter` / `NumberFormatter`. Never build these manually.
-   - ⚠️ The `.localized` API has no compile-time safety — a key typo silently returns the key string. Double-check key spelling against `Localizable.strings`.
-   - If the brief notes the module is currently unlocalized: add strings with `.localized` anyway and file a follow-up localization task in the debrief.
+3. **Localization** — When the task introduces or modifies any user-visible strings (brief's `### Localization` section present): follow all rules at `~/.claude/skills/_shared/localization-rules.md`.
 
 4. **Expose test seams** — For each item in the brief's Test Seams section:
    - Define the protocol with clear documentation
@@ -249,7 +200,7 @@ Before asking the user to look, review your own diff. Invoke the `simplify` skil
 - Verify all test seams from the brief are exposed (protocols defined, DI wired)
 - Check that no new singletons or static mutable state were introduced in business logic
 - Confirm the identifier enum file is committed separately from implementation
-- **Localization** (if brief has `### Localization`): grep the diff for hardcoded string literals — any `Text("…")` or `Label("…", …)` that doesn't end with `.localized` is a blocker. Verify new keys exist in all three `Localizable.strings` files (`en.lproj`, `hi.lproj`, `uk.lproj`). Verify format strings use `{placeholder}` + `.replacingOccurrences` — no direct string concatenation.
+- **Localization** (if brief has `### Localization`): apply the self-review checklist from `~/.claude/skills/_shared/localization-rules.md`.
 
 **Test review** (for test tasks):
 - Verify tests are independent (no shared mutable state, no ordering assumptions)
@@ -435,67 +386,9 @@ rm -rf ~/.dev-studio/$PROJECT/derived-data/<task-id>
 
 ### Step 10 — Debrief + short user summary
 
-Write `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-debrief.md`:
+Write debrief following the format at `~/.claude/skills/_shared/debrief-format.md`.
 
-```markdown
-# Debrief: <task-id> — <Title>
-Completed: <YYYY-MM-DD HH:mm IST>
-
-## Summary
-<2-3 sentences on what was done>
-
-## Commits
-- <hash> — <one-line description>
-
-## Files Changed
-- <file path> — <what changed>
-
-## Branch
-- Worked on: `achilles/<task-id>`
-- Merged into: `<ORIG_BRANCH>` (local, --no-ff)
-- Merge commit: `<hash>`
-
-## Build Verification
-build_gate: lsp-only | full-green
-build_debt_override: false         <!-- true only if --ignore-build-debt was used -->
-
-## Testability Report
-<!-- For implementation tasks: what was done to support testing -->
-- **SOLID adherence:** <brief summary — e.g., "FilterEngine extracted to protocol, injected via init">
-- **Accessibility IDs defined:** <path to identifier enum file, count of identifiers added>
-- **Test seams exposed:** <list of protocols/interfaces created for testing>
-- **Architecture pattern followed:** <pattern name, any deviations>
-- **Localization:** <"N strings added via String(localized:), key namespace: filter.presets.*"> | <"n/a — no user-visible strings in this task"> | <"module unlocalized — follow-up task filed: T0XX">
-<!-- For test tasks: test execution results -->
-- **Tests written:** <count>
-- **Tests passing:** <count>
-- **Tests failing:** <count, with reasons>
-- **Coverage areas:** <what's covered>
-- **Gaps:** <what's not covered and why>
-
-## Decisions Made
-- <any deviations from the brief and why>
-
-## Test Cases
-<copy of <task-id>-tests.md>
-
-## Performance
-<!-- Include if any timing data was observed during implementation or testing -->
-- <operation>: <timing> on <device/simulator>
-
-## Key Learnings
-- <patterns, gotchas, things future sessions should know>
-
-## Known Issues
-- <unresolved — e.g., "user has not manually verified yet">
-
-## Follow-up Tasks
-- <manual-verification follow-up always present when WAIT_FOR_USER=no or on timeout>
-- <new tasks discovered during implementation>
-- <refactoring tasks for test utilities if patterns were duplicated>
-```
-
-Update master plan: status → `done`, record commit hashes and merge commit. Note: `done` ≠ user-verified. Chanakya promotes `done` to `verified` when the user processes their test-manifest feedback.
+Update master plan: status → `done`, record commit hashes and merge commit. `done` ≠ user-verified — Chanakya promotes to `verified` after test-manifest feedback.
 
 Print a short message to the user:
 
