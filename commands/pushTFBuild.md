@@ -211,7 +211,7 @@ The Slack message should be composed from **the user's (vishal) commits only** o
 
 **Step 11a: Find the last build that was posted to #testing.** Fetch recent messages from #testing posted by Vishal-CLI (bot user `U0AJYVC8P8X`) and find the most recent build number mentioned.
 
-Load the Slack bot token once for all subsequent calls (stored out-of-repo at `~/.claude/secrets/slack-bot-token`, chmod 600). If the file is missing, halt and ask the user to run `/chanakya sync-slack --configure-token`.
+Load the Slack bot token using the pattern in `_shared/slack-post.md` (token path, missing-token error, and remediation are documented there).
 
 ```bash
 SLACK_BOT_TOKEN=$(cat ~/.claude/secrets/slack-bot-token)
@@ -272,4 +272,4 @@ curl -s -X POST https://slack.com/api/chat.postMessage \
 
 Replace `MESSAGE_HERE` with the final approved message text. Confirm to the user that the message was sent successfully.
 
-**Thread replies:** When posting a follow-up to an existing build thread (e.g. updating status), use the `thread_ts` parameter set to the original message's `ts`. Do NOT use `<!here>` in thread replies — Slack ignores it.
+**Thread replies and `<!here>` rules:** See `_shared/slack-post.md`.

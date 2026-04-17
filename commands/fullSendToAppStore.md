@@ -262,7 +262,7 @@ curl -sg -X PATCH "https://api.appstoreconnect.apple.com/v1/reviewSubmissions/$R
 
 Slack channel: `C01PVRBMFJ6` (#releases)
 
-Load the Slack bot token once for all subsequent calls (stored out-of-repo at `~/.claude/secrets/slack-bot-token`, chmod 600). If the file is missing, halt and ask the user to run `/chanakya sync-slack --configure-token`.
+Load the Slack bot token using the pattern in `_shared/slack-post.md` (token path, missing-token error, and remediation are documented there). The `thread_ts` and `<!here>` rules in that file also apply here.
 
 ```bash
 SLACK_BOT_TOKEN=$(cat ~/.claude/secrets/slack-bot-token)
@@ -306,7 +306,7 @@ curl -s -X POST https://slack.com/api/chat.postMessage \
   -d "{\"channel\":\"C01PVRBMFJ6\",\"thread_ts\":\"$PARENT_TS\",\"text\":\"App Store \\\"What's New\\\" submitted with this build:\n\n\n<APP_STORE_WHATS_NEW_ESCAPED>\"}"
 ```
 
-IMPORTANT: Escape newlines as `\n` and any double quotes in the message text before embedding in the JSON `-d` payload.
+See `_shared/slack-post.md` for the general curl pattern. Escape newlines as `\n` and any double quotes in the message text before embedding in the JSON `-d` payload.
 
 ## Step 16: Done
 
