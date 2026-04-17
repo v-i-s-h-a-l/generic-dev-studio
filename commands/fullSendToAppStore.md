@@ -212,7 +212,7 @@ curl -s -X PATCH "https://api.appstoreconnect.apple.com/v1/appStoreVersionLocali
 
 ## Step 14: Create the App Store submission
 
-Tell the user you are about to submit for App Store review and ask for final confirmation before calling the API.
+Release mode is MANUAL (set in Step 12) — the build will not ship until the user clicks "Release" in App Store Connect. Proceed without a confirmation prompt.
 
 NOTE: The old `appStoreVersionSubmissions` API is deprecated. Use the new `reviewSubmissions` API instead:
 
