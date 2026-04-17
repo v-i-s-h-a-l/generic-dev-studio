@@ -347,6 +347,8 @@ Parse the user's input after `/chanakya`:
 - `migrate` → **Migrate mode** — upgrade an existing master plan to the task-group + test-debt structure
 - `compact [--dry-run]` → **Compact mode** — archive verified tasks, regenerate dashboard/module index, trim plan to actionable items only
 - `sync-slack [--list <id>] [--build <number>]` → **Sync-Slack mode** — sync Slack bug list statuses, Dev Notes, and Fixed in Build with master plan
+- `sync-slack --configure-token` → **Sync-Slack token bootstrap** — write `~/.claude/secrets/slack-bot-token`
+- `sync-slack --configure` → **Sync-Slack project bootstrap** — populate `project_slack_list_sync.md`
 
 ---
 
@@ -356,12 +358,16 @@ Sync a Slack Lists bug tracker with the Chanakya master plan. Reads task statuse
 
 ### Configuration
 
-All constants are in the project memory file `project_slack_list_sync.md`. Read it at mode entry for:
-- Bot token (from `~/.claude/skills/postSlackTesting/SKILL.md`)
-- List ID (default: `F0ASZ6B22SZ`)
-- Column IDs for Status, Dev Notes (`Col0ATE60G2RG`), Fixed in Build (`Col0ASYN4SEAK`), Reported in Build (`Col0AU11C81T2`)
-- Status option IDs (Not started, In progress, Blocked, Done)
-- GitHub repo URL for commit links (`https://github.com/turnip-ios/turnip-zaps/commit`)
+All project-specific constants are in the project memory file `project_slack_list_sync.md`. Read it at mode entry for:
+- List ID, column IDs, status option IDs, GitHub repo URL, stakeholder handles
+
+**Bot token:** Read from `~/.claude/secrets/slack-bot-token` (single-line file, chmod 600). This token is cross-project (one Slack app) and does NOT live in per-project memory.
+
+If `~/.claude/secrets/slack-bot-token` is missing, halt with:
+> "Run `/chanakya sync-slack --configure-token` to set up the Slack bot token."
+
+If `project_slack_list_sync.md` is missing, halt with:
+> "Run `/chanakya sync-slack --configure` to set up project Slack constants."
 
 ### Flags
 
@@ -369,6 +375,27 @@ All constants are in the project memory file `project_slack_list_sync.md`. Read 
 |------|---------|
 | `--list <id>` | Override default list ID. Schema discovery runs fresh for new lists. |
 | `--build <number>` | Current TestFlight build number. Used for "Fixed in Build" column and Dev Notes entries. If omitted, read from latest `Bump build number` commit in git log. |
+| `--configure-token` | Bootstrap: prompt for the Slack bot token once and write it to `~/.claude/secrets/slack-bot-token` (chmod 600). Creates `~/.claude/secrets/` dir (chmod 700) if missing. Cross-project — run once globally. |
+| `--configure` | Bootstrap: interactively populate `project_slack_list_sync.md` in project memory with list ID, column IDs, status option IDs, repo URL, and stakeholder handles. |
+
+### `--configure-token` mode
+
+When `/chanakya sync-slack --configure-token` is invoked:
+
+1. Create `~/.claude/secrets/` if it doesn't exist: `mkdir -m 700 -p ~/.claude/secrets/`
+2. Ask the user: "Paste the Slack bot token (xoxb-...):"
+3. Write the token to `~/.claude/secrets/slack-bot-token`: `printf '%s' '<token>' > ~/.claude/secrets/slack-bot-token && chmod 600 ~/.claude/secrets/slack-bot-token`
+4. Verify: read back the file and confirm it starts with `xoxb-`.
+5. Report: "Slack bot token saved to ~/.claude/secrets/slack-bot-token (chmod 600). Run `/chanakya sync-slack --configure` to set up project list constants."
+
+### `--configure` mode
+
+When `/chanakya sync-slack --configure` is invoked:
+
+1. Check if `project_slack_list_sync.md` already exists in project memory. If yes, show current values and ask: "Update existing config? (y/n)"
+2. Prompt for: List ID, column IDs (Status, Dev Notes, Fixed in Build, Reported in Build), status option IDs (Not started, In progress, Blocked, Done), GitHub repo URL, stakeholder handles (e.g., `daksh@`).
+3. Write to `~/.claude/projects/<project-memory-dir>/memory/project_slack_list_sync.md` using the standard memory frontmatter format.
+4. Report: "project_slack_list_sync.md written. Run `/chanakya sync-slack` to sync."
 
 ### Step 1 — Read current state
 
