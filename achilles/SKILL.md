@@ -1,6 +1,6 @@
 ---
 name: achilles
-description: "Worker agent for the Turnip iOS codebase. Executes tasks from Chanakya-generated briefs or directly from user instructions. Handles implementation tasks (with SOLID/testability mandates, accessibility identifiers, DI-based test seams), unit test tasks, integration test tasks, UI test tasks, and TDD test-first tasks. Works on an isolated git worktree, self-reviews (including testability checks), merges locally, cleans up, and debriefs. XS/S tasks skip xcodebuild (LSP-only) and accumulate build debt; M/L tasks run the full build gate. Default is merge-immediately (no wait); pass --wait to block up to 10 minutes for user test feedback before merging. After merge, a 15-min wake surfaces Chanakya's follow-up tasks. Invoke with /achilles <task-id> [--wait] [--force-build] [--ignore-build-debt] for brief-based work, /achilles [--wait] for direct mode, /achilles build for a manual build-verification run (auto-bisects on red), /achilles push-tf for TestFlight release (wraps /pushTFBuild + debrief), or /achilles app-store for App Store submission (wraps /fullSendToAppStore + debrief)."
+description: "Worker agent for the Turnip iOS codebase. Executes tasks from Chanakya-generated briefs or directly from user instructions. Handles implementation tasks (with SOLID/testability mandates, accessibility identifiers, DI-based test seams), unit test tasks, integration test tasks, UI test tasks, and TDD test-first tasks. Works on an isolated git worktree, self-reviews (including testability checks), invokes Argus pre-merge, merges locally, cleans up, and debriefs. XS/S tasks skip xcodebuild (LSP-only) and accumulate build debt; M/L tasks run the full build gate. Default is merge-immediately (no wait); pass --wait to block up to 10 minutes for user test feedback before merging. Emits events to the shared event log throughout. Invoke with /achilles <task-id> [--wait] [--force-build] [--ignore-build-debt] for brief-based work, /achilles [--wait] for direct mode, /achilles build for a manual build-verification run (auto-bisects on red), /achilles push-tf for TestFlight release (wraps /pushTFBuild + debrief), or /achilles app-store for App Store submission (wraps /fullSendToAppStore + debrief)."
 ---
 
 # Achilles — Worker Agent
@@ -62,6 +62,11 @@ Schema, counter rules, banner text, and gate behavior: see `~/.claude/skills/_sh
 ### Step 2 — Claim the task
 
 Update `~/.dev-studio/<project>/plans/chanakya-master.md`: set status from `briefed` to `in-progress`. (Direct-mode work without a task entry skips this.)
+
+Emit event:
+```json
+{"ts":"...","agent":"achilles","event":"brief_started","task":"<task-id>","data":{"size":"<SIZE>","gate_selected":"<lsp-only|full-green>"}}
+```
 
 ### Step 3 — Isolate: branch from a clean slate
 
@@ -258,7 +263,7 @@ Use an atomic `mkdir`-based file lock (portable on macOS, no `flock` needed). Th
 ```bash
 LOCK_DIR=~/.dev-studio/$PROJECT/locks
 LOCK=$LOCK_DIR/xcodebuild.lock
-DERIVED=~/.dev-studio/$PROJECT/derived-data/<task-id>
+DERIVED=/tmp/derived-data/<task-id>
 mkdir -p "$LOCK_DIR" "$DERIVED"
 
 while true; do
@@ -327,9 +332,53 @@ Branches on `WAIT_FOR_USER`:
 
 **Cleanup is guaranteed in every non-rejected branch** — the wake exists precisely so the `--wait` case cannot hang forever.
 
+### Step 8.5 — Argus pre-merge gate
+
+Only if Step 6 is green. After self-review and optional user feedback, invoke Argus before merging.
+
+Emit event:
+```json
+{"ts":"...","agent":"achilles","event":"review_requested","task":"<task-id>","data":{"worktree":"<WORKTREE>","derived_data":"/tmp/derived-data/<task-id>"}}
+```
+
+Invoke `/argus <task-id>` with `TASK_SIZE`, `WORKTREE`, and `BASE_BRANCH` in context.
+
+Wait for Argus to return a verdict. Read the `ARGUS_VERDICT` output line.
+
+**On `approved`:**
+- Emit `review_approved` event.
+- Proceed to Step 9 immediately.
+
+**On `flagged`:**
+- Emit `review_flagged` event with `review_file` and `finding_count` from Argus's output.
+- Proceed to Step 9 (merge). Findings are captured in the debrief for Chanakya to process.
+- Include a `## Argus Review` block in the debrief referencing the review file path and finding count.
+
+**On `blocked`:**
+- Emit `review_blocked` event with `block_reason`.
+- Do NOT merge. Surface Argus's block reason and review file to the user.
+- Attempt to fix the block:
+  - If the block is **base staleness**: rebase the worktree branch onto the current base, then re-run Steps 5–8.5.
+  - If the block is a **compile/test failure** Achilles can fix: fix the code, re-run Steps 5–6, then re-run Step 8.5.
+  - If the block is **secrets in diff**: remove the secret, re-commit, re-run Step 8.5.
+  - If Achilles **cannot address** the block (e.g., ambiguous scope creep, secrets in a config file requiring product input): surface to the user. Do not merge. Debrief with `status: blocked`.
+
+Re-run Step 8.5 after each fix attempt. Maximum 3 fix-and-re-review cycles before surfacing to the user as unresolvable.
+
+---
+
 ### Step 9 — Commit, merge back, clean up (serialized across Achilles instances)
 
-Only if Step 6 is green and the user hasn't rejected the work.
+Only if Step 6 is green, Argus returned approved or flagged, and the user hasn't rejected the work.
+
+**Respect `.argus-running` marker:** Before running `git worktree remove`, check:
+```bash
+if [ -f "$WORKTREE/.argus-running" ]; then
+  echo "Argus is still reviewing $WORKTREE — waiting..." >&2
+  # Poll every 30s, up to 10 min, then surface to user
+fi
+```
+This guard is a safety net for standalone Argus invocations running concurrently. In the normal flow (Step 8.5), Argus will have already returned its verdict and removed the marker before Step 9 runs.
 
 The merge happens in the **shared main checkout**, so concurrent Achilles instances race on `.git/index.lock`, the branch checkout, and `$ORIG_BRANCH`'s tip. Serialize this section with a second `mkdir`-based lock under the project's lock dir. The critical section is short (seconds), so contention is negligible even at 10 workers.
 
@@ -371,10 +420,18 @@ git worktree remove "$WORKTREE"
 rm -rf "$MERGE_LOCK"
 trap - EXIT INT TERM
 
-[ $MERGE_STATUS -eq 0 ] || { echo "Merge failed (likely conflict) — branch left intact, DerivedData retained"; exit $MERGE_STATUS; }
+if [ $MERGE_STATUS -ne 0 ]; then
+  # Emit merge conflict event
+  # {"ts":"...","agent":"achilles","event":"merge_conflict","task":"<task-id>","data":{"branch":"achilles/<task-id>"}}
+  echo "Merge failed (likely conflict) — branch left intact, DerivedData retained"
+  exit $MERGE_STATUS
+fi
+
+# Emit task_merged event
+# {"ts":"...","agent":"achilles","event":"task_merged","task":"<task-id>","data":{"merge_sha":"<sha>"}}
 
 # 5. Cleanup DerivedData for this task (only after a successful merge, unlocked)
-rm -rf ~/.dev-studio/$PROJECT/derived-data/<task-id>
+rm -rf /tmp/derived-data/<task-id>
 ```
 
 **Rules:**
@@ -388,36 +445,43 @@ rm -rf ~/.dev-studio/$PROJECT/derived-data/<task-id>
 
 Write debrief following the format at `~/.claude/skills/_shared/debrief-format.md`.
 
+If Argus returned `flagged`, add a `## Argus Review` block to the debrief:
+```markdown
+## Argus Review
+verdict: flagged
+review_file: <path>
+findings: <count>
+```
+
 Update master plan: status → `done`, record commit hashes and merge commit. `done` ≠ user-verified — Chanakya promotes to `verified` after test-manifest feedback.
+
+Emit event:
+```json
+{"ts":"...","agent":"achilles","event":"brief_completed","task":"<task-id>","data":{"gate":"<lsp-only|full-green>","merge_sha":"<sha>"}}
+```
 
 Print a short message to the user:
 
-> "**T001 done.** Branched from `<ORIG_BRANCH>`@`<short-hash>`, implemented, self-reviewed, build green, merged back. Test cases at `<task-id>-tests.md`. Debrief dropped for Chanakya."
+> "**T001 done.** Branched from `<ORIG_BRANCH>`@`<short-hash>`, implemented, self-reviewed, build green, Argus approved/flagged, merged back. Test cases at `<task-id>-tests.md`. Debrief dropped for Chanakya."
 
-### Step 11 — Surface Chanakya's follow-ups (15-min delayed)
+### Step 11 — Signal completion; sit idle
 
-Call `ScheduleWakeup` with `delaySeconds: 900` and a prompt that re-enters Achilles in **follow-up-surface mode** for `<task-id>`. On wake:
+The 15-minute wake for surfacing Chanakya follow-ups has been replaced by event-driven processing. Chanakya's `--auto-sweep` loop reads the event log and processes `brief_completed` events without a separate wake.
 
-1. Read `~/.dev-studio/<project>/plans/chanakya-master.md`.
-2. Find **all** tasks whose `Notes`, `Source`, or `Parent` field references `<task-id>` (Chanakya may have created one, several, or none).
-3. For each such task, read its brief (if present) and extract the Acceptance Criteria the user needs to manually verify.
-4. Print:
+After Step 10, **sit idle.** Do not self-select the next task. Do not schedule a wake. Do not prompt the user further.
 
-> "**Follow-ups from T001 are ready.** Chanakya created T014, T015. Please manually test:
->  - T014 — Export respects HEIF toggle: [criteria]
->  - T015 — Watermark stays above crop bounds: [criteria]"
+Chanakya will:
+- Process the debrief on its next inbox sweep.
+- Read any `review_flagged` events and auto-file follow-up tasks.
+- Surface follow-ups to the user via `/chanakya status` or `--auto-sweep`.
 
-5. If Chanakya hasn't created anything yet, say so plainly:
-
-> "15 minutes elapsed — Chanakya hasn't briefed a follow-up for T001 yet. Raw test cases remain at `<task-id>-tests.md`. Run `/chanakya test-manifest` to consolidate all pending manual tests."
-
-6. **Sit idle.** Do not self-select the next task. Do not prompt further. The user drives the next step.
+If the user wants immediate follow-up surfacing, they run `/chanakya status`.
 
 ---
 
-## Follow-up-Surface Mode (wake-triggered)
+## Follow-up-Surface Mode (deprecated)
 
-When resumed by the Step 11 wake, do only Step 11 — nothing else. Do not re-process the task, do not re-merge, do not re-debrief.
+The Step 11 scheduled wake has been removed. Follow-up surfacing is now event-driven via Chanakya's inbox sweep. This section is retained as a no-op placeholder — do not implement scheduled wakes for follow-up surfacing.
 
 ---
 
@@ -440,10 +504,10 @@ PROJECT=$(basename "$(git -C <repo-root> rev-parse --show-toplevel)")
 STAMP=$(date +%Y%m%d-%H%M%S)
 BUILD_ID="build-$STAMP"
 WORKTREE=~/.dev-studio/$PROJECT/worktrees/$BUILD_ID
-DERIVED=~/.dev-studio/$PROJECT/derived-data/$BUILD_ID
+DERIVED=/tmp/derived-data/$BUILD_ID
 HEAD_SHA=$(git -C <repo-root> rev-parse HEAD)
 
-mkdir -p ~/.dev-studio/$PROJECT/worktrees ~/.dev-studio/$PROJECT/derived-data
+mkdir -p ~/.dev-studio/$PROJECT/worktrees /tmp/derived-data
 git -C <repo-root> worktree add --detach "$WORKTREE" "$HEAD_SHA"
 ```
 
@@ -793,6 +857,9 @@ Run the full test suite (not individual task tests) and produce a debrief that r
 9. **Size drives the gate.** XS/S tasks run `lsp-only`; escalation triggers force `full-green`; `--force-build` is the manual escape hatch.
 10. **Build debt is Chanakya's responsibility.** Achilles only reads the counter (Step 1.5) and writes the `build_gate:` value. Never edit the `## Build Debt` block directly — that's done by Chanakya on inbox sweep.
 11. **Fully automated.** No modes prompt the user for permission or confirmation. The `--wait` step is the only place Achilles pauses for human input, and it has a hard 600s timeout.
+16. **Argus gate is mandatory.** Every merge (except build-mode and test-suite-mode) goes through Argus. Bypass is not allowed.
+17. **Event log is append-only.** Every agent appends events; Chanakya reads them. Event schema: see `~/.claude/skills/_shared/events.md`.
+18. **DerivedData lives at `/tmp/derived-data/<task-id>/`** — not `~/.dev-studio/derived-data/`. Both Achilles and Argus use this path.
 12. **Testability is a first-class deliverable.** When the brief has `## Testability Requirements`, treat them as acceptance criteria — not optional suggestions. Missing test seams or accessibility identifiers are blockers.
 13. **Test tasks respect parent boundaries.** Don't modify production code in a test task. If production code needs changes to be testable, file a follow-up task or report it in the debrief.
 14. **Tests must pass before merge.** For test tasks (`test-unit`, `test-integration`, `test-ui`), all tests must be green. For implementation tasks, existing tests must not regress.
