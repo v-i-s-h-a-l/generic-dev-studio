@@ -25,5 +25,12 @@ For the Turnip iOS repo this resolves to `turnip-ios`.
 | Journey map (optional) | `~/.dev-studio/<project>/journey-map.md` |
 | Worktrees | `~/.dev-studio/<project>/worktrees/<task-id>/` |
 | Locks | `~/.dev-studio/<project>/locks/` |
-| Per-task DerivedData | `~/.dev-studio/<project>/derived-data/<task-id>/` |
+| Per-task DerivedData | `/tmp/derived-data/<task-id>/` |
 | Project memory | `~/.claude/projects/-Users-vishalsingh-Documents-Turnip-gg-turnip-ios/memory/` |
+| Event log | `<project-memory>/events/<YYYY-MM-DD>.jsonl` |
+| Event offset marker | `<project-memory>/events_offset.md` |
+| Review files | `<project-memory>/reviews/review_<task-id>.md` |
+| Review archive | `<project-memory>/reviews/archive/` |
+| Push queue | `~/.claude/state/push-queue.jsonl` |
+| Test-slot semaphore | `~/.claude/locks/test-slots/` |
+| Argus result bundles | `/tmp/argus-<task-id>.xcresult` |

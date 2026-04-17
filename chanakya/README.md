@@ -1,6 +1,6 @@
-# Chanakya + Achilles
+# Chanakya + Achilles + Argus
 
-A two-agent system for managing iOS development. Chanakya plans the work; Achilles executes it in an isolated git worktree, self-reviews, gates on a green build, and merges back without ever touching your uncommitted changes.
+A three-agent system for managing iOS development. Chanakya plans the work; Achilles executes it in an isolated git worktree, self-reviews, gates on a green build, invokes Argus for a cross-file pre-merge review, and merges back without ever touching your uncommitted changes.
 
 All per-project artifacts live under `~/.dev-studio/<project>/` (outside `~/.claude/` so the agents don't trip the self-mod permission guard).
 
@@ -78,13 +78,19 @@ You describe work
    implement → self-review (simplify) → green-build gate (serialized xcodebuild)
         |
         v
-   write test cases → [optional --wait, auto-merge after 600s] → merge --no-ff (serialized)
+   write test cases → [optional --wait, auto-merge after 600s]
+        |
+        v
+   /argus <task-id>  ←── auto-invoked by Achilles before merge ──→  approved/flagged/blocked
+        |                                                                    |
+        v (approved or flagged)                                    (blocked) → fix & retry
+   merge --no-ff (serialized) → emit brief_completed event
         |
         v
    worktree + per-task DerivedData cleaned up; debrief dropped to inbox
         |
         v
-   Chanakya sweeps inbox — marks done, briefs any follow-ups, surfaces them ~15 min later
+   Chanakya sweeps inbox + event log — marks done, auto-files follow-ups from flagged reviews
         |
         v
    /chanakya test-manifest → you tick boxes → /chanakya review-feedback → verified
@@ -96,12 +102,86 @@ Default behavior is **merge immediately** and log a "manual verification" follow
 
 - Uncommitted changes in the main checkout are **never** touched — Achilles branches from committed HEAD.
 - A red `xcodebuild` **never** merges. Branch + per-task DerivedData stay alive for inspection.
+- **Argus blocks what must not ship.** Compile failures, test failures, secrets in diff, and base-branch staleness are hard blocks. Everything else flags and merges — with findings auto-filed as follow-up tasks by Chanakya.
 - Merge conflicts are **never** force-resolved — Achilles surfaces them and stops.
 - Builds and merges are **serialized across parallel Achilles instances** via `mkdir` locks in `~/.dev-studio/<project>/locks/` — designed for 6–10 parallel workers.
+- **Test slots are shared fairly.** Argus uses a 3-slot file semaphore for concurrent test runs. XS/S reviews never run tests and never acquire a slot.
 - `--wait` never hangs: a `ScheduleWakeup(600s)` auto-merges even if you're idle.
 - **Build debt is tracked, not hidden.** Every XS/S task that skips `xcodebuild` increments a counter. Warn@6, block@12. `/achilles build` runs a full check on demand — green resets, red auto-bisects and files a P0 fix.
+- **Event log is append-only.** All agents emit structured events. Chanakya processes them on each sweep — no polling, no 15-min wakes needed for follow-up surfacing.
 
 Both agents are **proactive** — they always suggest the next step. You just say "yes", "no", or redirect.
+
+---
+
+## Argus — The Pre-Merge Reviewer
+
+Argus runs automatically between Achilles's self-review and the merge step. You don't invoke it manually in normal flow — but you can run it standalone on any worktree:
+
+```
+/argus                   # review current worktree
+/argus T001              # review a specific task's worktree
+```
+
+### What Argus checks (v1)
+
+| Check | What it does | Week 1 verdict |
+|---|---|---|
+| Cross-file regression risk | Call-graph scan: does the diff break callers outside the worktree? | flag |
+| Edge-case coverage | Enumerates negative inputs, empty states, concurrency edges; checks test coverage | flag |
+| Test adequacy | Tests call changed functions but don't assert outcomes? | flag |
+| Diff anomalies | Debug prints, commented-out code blocks, magic values, scope creep | flag |
+| Base-branch staleness | Base advanced since the branch was created → must rebase | **block** |
+| Secrets in diff | Credentials, API keys, tokens in diff's added lines | **block** |
+
+**Week 1 posture:** only staleness and secrets are hard blocks. Everything else flags — merge proceeds and findings become Chanakya follow-up tasks automatically.
+
+### Verdicts
+
+- **Approved** — silent. Merge proceeds.
+- **Flagged** — findings written to `<project-memory>/reviews/review_<task-id>.md`. Chanakya reads the `review_flagged` event and auto-files follow-up tasks. Merge proceeds.
+- **Blocked** — Achilles loops back to fix the issue (max 3 cycles). Hard blocks: compile/test failure (M/L), secrets, staleness. No user input required for staleness (rebase) or code-fixable blocks.
+
+### Concurrent test runs
+
+M/L tasks trigger a targeted `xcodebuild test` run. Argus uses a 3-slot file semaphore at `~/.claude/locks/test-slots/` — up to 3 Argus instances can run tests in parallel. XS/S reviews skip the test phase entirely (fast path, seconds not minutes).
+
+DerivedData is reused from Achilles's build — no recompile. A staleness guard checks build product mtimes vs HEAD commit timestamp and forces a rebuild only when necessary.
+
+---
+
+## Event Log
+
+All agents write structured events to a daily append-only JSONL file:
+
+```
+~/.claude/projects/-Users-.../memory/events/<YYYY-MM-DD>.jsonl
+```
+
+Each line: `{"ts":"ISO8601","agent":"achilles|argus|chanakya","event":"<name>","task":"T001","data":{...}}`
+
+Chanakya processes new events on every sweep using a byte-offset marker (`events_offset.md`). This replaces the old 15-min scheduled wake for follow-up surfacing — Chanakya catches `review_flagged` and `brief_completed` events in its next auto-sweep tick.
+
+**Push queue** (`~/.claude/state/push-queue.jsonl`): agents append here for high-priority events (`review_blocked`, `merge_conflict`, `build_debt_blocked`). Chanakya surfaces these in `/chanakya status`.
+
+---
+
+## Cleanup
+
+Artifact cleanup is agent-owned and policy-driven:
+
+| Artifact | Who cleans it | When |
+|---|---|---|
+| `.argus-running` marker | Argus (trap) | On exit |
+| Test slot file | Argus (trap) | On test phase exit |
+| Approved xcresult bundle | Argus | Immediately after approve |
+| Flagged xcresult bundle | Chanakya | On `review_approved` event |
+| Blocked xcresult bundle | Chanakya compact | After 48h |
+| Review file | Chanakya | On `task_verified` → archived |
+| Achilles worktree + DerivedData | Achilles | After clean merge |
+| Event logs | Chanakya compact | Gzip >7d, delete >30d |
+
+Run `/chanakya compact` to sweep all artifacts. `--sweep-artifacts` is on by default. For nightly auto-compact, `/chanakya compact --auto-compact` prints the cron setup command.
 
 ---
 
@@ -511,12 +591,28 @@ After a typical feature lifecycle, here's what the file tree looks like:
   worktrees/                                  # Per-task isolated checkouts
     T001/                                     # branch achilles/T001 — removed on clean merge
     build-20260415-143200/                    # /achilles build — detached HEAD, retained on red
-  derived-data/                               # Per-task xcodebuild output
-    T001/                                     # cleaned on clean merge, retained on failure
-    build-20260415-143200/                    # /achilles build — retained on red
   locks/                                      # mkdir locks — serialize xcodebuild & merges
     xcodebuild.lock/
     git-merge.lock/
+
+/tmp/
+  derived-data/                               # Per-task xcodebuild output (NOT in ~/.dev-studio)
+    T001/                                     # cleaned on clean merge, retained on failure
+    build-20260415-143200/                    # /achilles build — retained on red
+  argus-T001.xcresult                         # Argus test result bundle (deleted on approve)
+
+~/.claude/projects/-Users-.../memory/
+  events/
+    2026-04-18.jsonl                          # Append-only event log
+    2026-04-17.jsonl.gz                       # Rotated (>7 days → gzip, >30 days → delete)
+  events_offset.md                            # Chanakya's byte offset into today's event log
+  reviews/
+    review_T001.md                            # Argus review file (archived on task_verified)
+    archive/
+      review_T001.md                          # Archived (deleted >30 days)
+
+~/.claude/locks/test-slots/                   # Argus 3-slot semaphore
+~/.claude/state/push-queue.jsonl              # Push notification queue
 ```
 
 ---
@@ -529,7 +625,7 @@ After a typical feature lifecycle, here's what the file tree looks like:
 
 3. **Default is no-wait.** Plain `/achilles T001` merges as soon as the build goes green and logs a manual-verification follow-up. Add `--wait` only when you want to test before the merge.
 
-4. **Achilles never self-picks.** Control returns to you (or Chanakya) after every completion. Follow-ups surface ~15 min later via a scheduled wake.
+4. **Achilles never self-picks.** Control returns to you (or Chanakya) after every completion. Follow-ups are surfaced by Chanakya's event-log sweep — no fixed 15-min delay.
 
 5. **Briefs are snapshots.** If the codebase changes significantly between briefing and execution, Achilles may flag stale references. Just regenerate with `/chanakya brief T001`.
 

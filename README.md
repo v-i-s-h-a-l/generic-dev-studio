@@ -1,6 +1,6 @@
 # Generic Dev Studio
 
-A two-agent system for Claude Code. **Chanakya** plans the work; **Achilles** executes it in an isolated git worktree, self-reviews, gates on a green build, and merges back without ever touching your uncommitted changes.
+A three-agent system for Claude Code. **Chanakya** plans the work; **Achilles** executes it in an isolated git worktree, self-reviews, gates on a green build, and invokes **Argus** for a pre-merge cross-file review before merging back — without ever touching your uncommitted changes.
 
 Built around an iOS/SwiftUI project, but the orchestration layer is stack-agnostic.
 
@@ -11,6 +11,8 @@ All per-project artifacts live under `~/.dev-studio/<project>/` — outside `~/.
 ## TL;DR
 
 ```
+/argus                           # review current worktree (auto-invoked by Achilles pre-merge)
+/argus T001                      # review a specific task's worktree standalone
 /chanakya                        # describe features → get a master plan
 /chanakya brief T001             # generate a self-contained worker brief
 /chanakya ship T001,T002         # brief + dispatch to Achilles in one step
@@ -40,15 +42,19 @@ Achilles merges immediately on green and logs a "manual verification" follow-up.
 ## What's in the Repo
 
 ```
+argus/
+  SKILL.md         # reviewer agent — cross-file regression risk, edge-case coverage,
+                   #   test adequacy, diff anomalies, staleness, secrets
+
 chanakya/
   SKILL.md         # manager agent — intake, briefing, status, PRD review, inbox sweep,
-                   #   test-manifest, test-flow, review-feedback, sync-slack,
-                   #   ship, brief-all, sweep-debt, verify, compact
+                   #   event log processing, test-manifest, test-flow, review-feedback,
+                   #   sync-slack, ship, brief-all, sweep-debt, verify, compact
   README.md        # long-form user docs with examples
   docs.html        # interactive docs page (open in browser)
 
 achilles/
-  SKILL.md         # worker agent — isolated execution pipeline
+  SKILL.md         # worker agent — isolated execution pipeline + Argus pre-merge gate
 
 commands/
   chanakya-help.md      # /chanakya-help — opens docs.html in browser
@@ -56,7 +62,7 @@ commands/
   fullSendToAppStore.md # /fullSendToAppStore — submit build to App Store review
 
 _shared/                # reusable primitives (symlinked from ~/.claude/skills/_shared/)
-  file-locations.md          # project slug computation + file paths
+  file-locations.md          # project slug computation + file paths (incl. events/, reviews/)
   build-debt-schema.md       # build debt counter rules + state transitions
   debrief-format.md          # debrief file schema
   master-plan-format.md      # master plan file schema
@@ -65,6 +71,12 @@ _shared/                # reusable primitives (symlinked from ~/.claude/skills/_
   turnip-project-config.md   # project-specific config (scheme, bundle ID, paths)
   appstore-connect-jwt.md    # JWT generation for App Store Connect API
   slack-post.md              # Slack API posting patterns
+  events.md                  # event log schema, atomicity, offset marker
+  review-rules.md            # Argus v1 check catalog
+  test-slot.md               # 3-slot semaphore for concurrent test runs
+  derived-data.md            # DerivedData path conventions + staleness guard
+  push-notifications.md      # push queue format + trigger rules
+  cleanup-policy.md          # artifact ownership + retention tiers + compact sweep
   brief-formats/             # brief templates (impl, unit-test, integration-test, ui-test, tdd)
 ```
 
@@ -77,6 +89,7 @@ _shared/                # reusable primitives (symlinked from ~/.claude/skills/_
 ```bash
 ln -s "$PWD/chanakya"   ~/.claude/skills/chanakya
 ln -s "$PWD/achilles"   ~/.claude/skills/achilles
+ln -s "$PWD/argus"      ~/.claude/skills/argus
 ln -s "$PWD/_shared"    ~/.claude/skills/_shared
 ln -s "$PWD/commands/chanakya-help.md"        ~/.claude/commands/chanakya-help.md
 ln -s "$PWD/commands/pushTFBuild.md"          ~/.claude/commands/pushTFBuild.md
@@ -86,6 +99,7 @@ ln -s "$PWD/commands/fullSendToAppStore.md"   ~/.claude/commands/fullSendToAppSt
 ### Option 2 — copy
 
 ```bash
+cp -r argus/     ~/.claude/skills/argus/
 cp -r chanakya/  ~/.claude/skills/chanakya/
 cp -r achilles/  ~/.claude/skills/achilles/
 cp -r _shared/   ~/.claude/skills/_shared/

@@ -514,9 +514,9 @@
 <div class="hero">
   <div class="container">
     <h1>
-      <span class="chanakya-name">Chanakya</span><span class="plus">+</span><span class="achilles-name">Achilles</span>
+      <span class="chanakya-name">Chanakya</span><span class="plus">+</span><span class="achilles-name">Achilles</span><span class="plus">+</span><span style="color: var(--purple);">Argus</span>
     </h1>
-    <p class="tagline">Plan, execute, test, gate on green builds &mdash; all without ever touching your uncommitted changes</p>
+    <p class="tagline">Plan, execute, cross-file review, test, gate on green builds &mdash; all without ever touching your uncommitted changes</p>
   </div>
 </div>
 
@@ -627,8 +627,23 @@
       <span>Wraps <code>/fullSendToAppStore</code> &mdash; submits to App Store, then debriefs Chanakya with release tracking data</span>
     </div>
   </div>
+  <h3 style="color: var(--purple);">Argus &mdash; The Watcher</h3>
+  <div class="cmd-grid">
+    <div class="cmd-card" style="border-color: var(--purple);">
+      <code>/argus</code>
+      <span>Review the current worktree (auto-invoked by Achilles pre-merge). Checks cross-file regression risk, edge cases, test adequacy, diff anomalies, staleness, secrets.</span>
+    </div>
+    <div class="cmd-card" style="border-color: var(--purple);">
+      <code>/argus T001</code>
+      <span>Review a specific task's worktree standalone, outside the Achilles flow</span>
+    </div>
+  </div>
+  <div class="callout" style="margin-top: 20px; border-left-color: var(--purple); background: rgba(188, 140, 255, 0.07);">
+    <strong>Week 1 posture:</strong> only hard checks block (compile/test failure, secrets, staleness). Everything else flags &mdash; merge proceeds and Chanakya auto-files follow-up tasks from flagged findings. Promote checks to blocks after observing real signal.
+  </div>
+
   <div class="callout" style="margin-top: 20px;">
-    <strong>Default is merge-immediately.</strong> Achilles logs a "manual verification" follow-up for every task and surfaces Chanakya-created follow-ups 15 min after merge. Batch-test with <code>/chanakya test-manifest</code> or <code>/chanakya test-flow</code> when you're ready.
+    <strong>Default is merge-immediately.</strong> Achilles invokes Argus pre-merge (Step 8.5), then merges on approved/flagged. Chanakya processes findings from the event log on its next sweep. Batch-test with <code>/chanakya test-manifest</code> or <code>/chanakya test-flow</code> when ready.
   </div>
 
   <h3>Minimal Intervention</h3>
@@ -680,7 +695,7 @@
     </div>
     <div class="cmd-card">
       <code>/chanakya compact</code>
-      <span>Archive verified tasks, regenerate Dashboard + Module Index, trim master plan to actionable items only. Keeps plan under ~500 lines. <code>--dry-run</code> previews without writing.</span>
+      <span>Archive verified tasks, regenerate Dashboard + Module Index, trim master plan to actionable items only. Also sweeps artifacts (event logs, orphaned xcresult bundles, stale markers). <code>--dry-run</code> previews. <code>--no-sweep-artifacts</code> skips artifact cleanup. <code>--auto-compact</code> prints cron setup for nightly 03:00 runs.</span>
     </div>
   </div>
 
@@ -768,7 +783,15 @@
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node achilles-node">self-review (+ testability check) &rarr; green-build gate &rarr; merge &rarr; debrief</span>
+      <span class="flow-node achilles-node">self-review (+ testability check) &rarr; green-build gate</span>
+    </div>
+    <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
+    <div class="flow-row">
+      <span class="flow-node" style="border-color: var(--purple); color: var(--purple);">/argus &mdash; cross-file regression, edge cases, test adequacy, diff anomalies, staleness, secrets</span>
+    </div>
+    <div class="flow-row"><span class="flow-arrow">&#8595; approved / flagged</span></div>
+    <div class="flow-row">
+      <span class="flow-node achilles-node">merge &mdash; emit brief_completed event &rarr; debrief</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
@@ -776,7 +799,7 @@
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node chanakya-node">Chanakya sweeps inbox &mdash; updates build debt + test debt counters</span>
+      <span class="flow-node chanakya-node">Chanakya sweeps inbox + event log &mdash; updates debt counters, auto-files follow-ups from flagged reviews</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
@@ -921,6 +944,21 @@
       <div class="tip-num">08</div>
       <div class="tip-title">Achilles never self-picks</div>
       <div class="tip-desc">Control returns to the user (or Chanakya) after every completion. No runaway fleets.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">09</div>
+      <div class="tip-title">Argus blocks what must not ship</div>
+      <div class="tip-desc">Secrets, base staleness, and compile/test failures are hard blocks regardless of week-1 posture. Argus re-runs after each fix attempt (max 3 cycles).</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">10</div>
+      <div class="tip-title">Test slots prevent simulator thrash</div>
+      <div class="tip-desc">Argus uses a 3-slot file semaphore for concurrent test runs. XS/S reviews skip tests entirely &mdash; fast path, seconds not minutes.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">11</div>
+      <div class="tip-title">Failure artifacts retained 48h</div>
+      <div class="tip-desc">On any block or fail event, xcresult bundles, review files, and DerivedData survive for 48 hours. Chanakya compact only eagerly sweeps success paths.</div>
     </div>
   </div>
 </section>
