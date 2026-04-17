@@ -199,26 +199,9 @@ Save the new `APP_STORE_VERSION_ID`.
 
 ---
 
-## Step 12: Set the build on the App Store version
+## Step 12: Set the build and release type on the App Store version
 
-```bash
-curl -s -X PATCH "https://api.appstoreconnect.apple.com/v1/appStoreVersions/<APP_STORE_VERSION_ID>" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "data": {
-      "type": "appStoreVersions",
-      "id": "<APP_STORE_VERSION_ID>",
-      "relationships": {
-        "build": {
-          "data": { "type": "builds", "id": "<BUILD_ID>" }
-        }
-      }
-    }
-  }'
-```
-
-Also ensure `releaseType` is `MANUAL`:
+Set the build and ensure `releaseType` is `MANUAL` in a single PATCH call:
 
 ```bash
 curl -s -X PATCH "https://api.appstoreconnect.apple.com/v1/appStoreVersions/<APP_STORE_VERSION_ID>" \
@@ -230,6 +213,11 @@ curl -s -X PATCH "https://api.appstoreconnect.apple.com/v1/appStoreVersions/<APP
       "id": "<APP_STORE_VERSION_ID>",
       "attributes": {
         "releaseType": "MANUAL"
+      },
+      "relationships": {
+        "build": {
+          "data": { "type": "builds", "id": "<BUILD_ID>" }
+        }
       }
     }
   }'
@@ -266,6 +254,8 @@ curl -s -X PATCH "https://api.appstoreconnect.apple.com/v1/appStoreVersionLocali
 ---
 
 ## Step 14: Create the App Store submission
+
+Tell the user you are about to submit for App Store review and ask for final confirmation before calling the API.
 
 NOTE: The old `appStoreVersionSubmissions` API is deprecated. Use the new `reviewSubmissions` API instead:
 

@@ -23,25 +23,7 @@ Generate a JWT token and call the App Store Connect API to get:
 
 **a) Latest TestFlight build number** — call the builds endpoint, sort by uploadedDate descending, take the first result's `version` field (this is the build number).
 
-Use this Python script to generate the JWT:
-```bash
-python3 - <<'EOF'
-import jwt, time, sys
-key = open(os.path.expanduser("~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8")).read()
-payload = {
-    "iss": "1fa9f26b-7b13-459a-9225-1ca8d9c51fca",
-    "iat": int(time.time()),
-    "exp": int(time.time()) + 1200,
-    "aud": "appstoreconnect-v1"
-}
-token = jwt.encode(payload, key, algorithm="ES256", headers={"kid": "WJQ6D76K8R"})
-print(token)
-EOF
-```
-
-Or use this shell-based approach with the existing upload credentials pattern — use `xcrun altool` or call the REST API directly.
-
-**Preferred approach — use the App Store Connect REST API directly:**
+**Use the App Store Connect REST API directly:**
 
 ```bash
 # Step 1a: Generate JWT using python3
@@ -53,11 +35,11 @@ print(jwt.encode(payload, key, algorithm='ES256', headers={'kid': 'WJQ6D76K8R'})
 ")
 
 # Step 1b: Get latest build number from TestFlight
-curl -s "https://api.appstoreconnect.apple.com/v1/builds?sort=-uploadedDate&limit=1&fields[builds]=version" \
+curl -sg "https://api.appstoreconnect.apple.com/v1/builds?sort=-uploadedDate&limit=1&fields[builds]=version" \
   -H "Authorization: Bearer $TOKEN"
 
 # Step 1c: Get current live App Store version
-curl -s "https://api.appstoreconnect.apple.com/v1/appStoreVersions?filter[appStoreState]=READY_FOR_SALE&fields[appStoreVersions]=versionString" \
+curl -sg "https://api.appstoreconnect.apple.com/v1/appStoreVersions?filter[appStoreState]=READY_FOR_SALE&fields[appStoreVersions]=versionString" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
