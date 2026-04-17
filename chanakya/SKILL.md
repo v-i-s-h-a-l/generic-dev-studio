@@ -582,7 +582,7 @@ For each task in the group, determine relevant skills:
 
 **Always assign `swift-testing-expert`** to unit test, integration test, and UI test sub-tasks. For implementation tasks, assign it when the brief will include testability requirements.
 
-Present assignments to the user. Ask: "Are these skill assignments correct? Any task-specific skills I'm missing?"
+Apply the skill assignments and record them in the write summary.
 
 ### Step 6 — Write master plan
 
@@ -605,7 +605,9 @@ Note: Test sub-tasks within different groups CAN run in parallel (T015a and T016
 
 ### Step 8 — Suggest next action
 
-"Master plan created with N task groups (X implementation tasks, Y unit test tasks, Z UI test tasks). Shall I start briefing T001 (highest priority)?"
+"Master plan created with N task groups (X implementation tasks, Y unit test tasks, Z UI test tasks). Starting T001 briefing (highest priority)..."
+
+Auto-start briefing T001 immediately after printing this message.
 
 ---
 
@@ -668,7 +670,7 @@ This is the most critical mode. The brief must be **completely self-contained** 
 
 ### Step 1 — Read task from master plan
 
-Load `~/.dev-studio/<project>/plans/chanakya-master.md`, find the task by ID. If the task is `direct` type, warn: "T003 is a direct task — it doesn't need a brief. Send it to Achilles directly. Brief it anyway?"
+Load `~/.dev-studio/<project>/plans/chanakya-master.md`, find the task by ID. If the task is `direct` type, note this in the output ("T003 is a direct task — briefing anyway") and continue.
 
 ### Step 2 — File overlap detection
 
@@ -684,7 +686,7 @@ If the task has Figma references:
 3. Call `mcp__figma__get_variable_defs(fileKey, nodeId)` for design tokens
 4. **Inline everything** into the brief — the worker must not need MCP access
 
-If no Figma refs, ask: "Does this task have a Figma design? Paste the URL or say 'no design'."
+If no Figma refs AND task type is `feature` or UI-related: ask "Does this task have a Figma design? Paste the URL or say 'no design'." Otherwise skip silently and continue to Step 4.
 
 ### Step 4 — Gather codebase context
 
@@ -729,7 +731,7 @@ Set task status to `briefed`. Record the brief path.
 
 ### Step 8 — Suggest next action
 
-"T001 brief ready at chanakya-tasks/T001-export-flow.md. Next: T002 is independent and P1. Brief it, or launch a worker for T001?"
+"T001 brief ready at chanakya-tasks/T001-export-flow.md. Next: T002 is independent and P1 — brief it with `/chanakya brief T002` or launch a worker with `/achilles T001`."
 
 ---
 
@@ -760,7 +762,7 @@ PRD Delta:
 
 ### Step 4 — On confirmation, update
 
-Update master plan. Mark affected briefs as stale. Suggest: "Regenerate brief for T003?"
+Update master plan. Auto-regenerate any stale briefs (run Brief Generation mode for each). Report which briefs were updated.
 
 ---
 
@@ -1204,7 +1206,7 @@ Guided single-sitting verification flow. Chains test-flow generation, waits for 
 3. **Wait for user response.** (No timeout — this is a manual testing session.)
 4. **On 'done':** Read the round file. Check completion:
    - If all cases have `[x] pass` → run `--promote` to generate pre-checked `user-testing.md`, then run Review-Feedback mode to mark tasks `verified`. Report: "Verified N tasks. Feature wrap-up check running..."
-   - If any cases have `[x] fail` → report failures. Ask: "File follow-up tasks for the failures via intake? (y/n)". If yes, run Intake mode with the failure notes as task descriptions.
+   - If any cases have `[x] fail` → auto-file follow-up tasks via Intake mode with the failure notes as task descriptions. Report: "Filed N follow-up tasks for failures: T031, T032."
    - If cases are unchecked → report: "N cases untested. Continue testing or run `/chanakya verify --round N` to resume later."
 5. **On 'abort':** "Verification paused. Round file preserved at `<path>`. Resume anytime with `/chanakya verify --round N`."
 
@@ -1337,12 +1339,12 @@ When passed, compute all changes but don't write. Print the report showing what 
 
 ### Auto-trigger hooks
 
-Compact runs automatically (with user confirmation) when:
+Compact runs automatically when:
 - `review-feedback` marks ≥3 tasks `verified` in one pass
 - `test-flow --promote` marks tasks verified
 - Master plan exceeds 1500 lines during an inbox sweep
 
-The prompt: "Master plan is at N lines with M archivable tasks. Run `/chanakya compact` to slim it down? (y/n)"
+On auto-trigger, run compact immediately (non-destructive — `--dry-run` is available as a preview). Report what was archived.
 
 ### Master Plan Format (after compaction)
 
