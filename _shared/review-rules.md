@@ -1,5 +1,16 @@
 # Shared: Argus Review Rules (v1)
 
+## Scope Caps
+
+Numeric limits enforced on every review. Emit `review_scoped` event whenever a cap is triggered.
+
+| Cap | Limit | How to apply |
+|---|---|---|
+| Cross-file neighbor files (Check 1) | 10 files max | Most-referenced symbols first, then alphabetical. |
+| Lines per neighbor file | 50 lines max | `head -50` or targeted grep window. Load whole file if ≤50 lines. |
+| Max diff size loaded | 500 lines | Sort changed files by change size desc; load top 500 lines; note remainder. |
+| XS-trivial skip | diff <20 lines AND single file AND task XS | Skip Argus entirely; emit `review_scoped` with `cap: xs_skip`. |
+
 Argus's narrow v1 review catalog. These are the checks Achilles cannot do well from its single-worktree view. SOLID, localization, and accessibility checks belong to Achilles — do not duplicate them here.
 
 ---

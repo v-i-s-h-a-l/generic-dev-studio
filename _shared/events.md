@@ -77,6 +77,7 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `test_run_passed` | Tests green | `duration_s`, `test_count` |
 | `test_run_failed` | Tests red | `failing_tests` (array) |
 | `base_stale` | Base branch advanced since branch point | `base_sha`, `branch_sha` |
+| `review_scoped` | A scope cap was triggered (diff cap, file cap, or xs_skip) | `cap` (`diff_size`\|`file_count`\|`xs_skip`), `value`, `limit` |
 
 ### Chanakya events
 
