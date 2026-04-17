@@ -1,6 +1,6 @@
 ---
 name: chanakya
-description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, and manages the user verification pipeline. Sub-commands: status, brief, review, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
+description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, processes the shared event log, and manages the user verification pipeline. Sub-commands: status, brief, review, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
 ---
 
 # Chanakya — Project Manager
@@ -137,7 +137,50 @@ Scan `~/.dev-studio/<project>/worktrees/` and `~/.dev-studio/<project>/derived-d
 
 This prevents indefinite accumulation of red-build artifacts while preserving anything the user is actively using.
 
-### 0E — Proceed to the requested mode
+### 0E — Process event log
+
+Read new events from today's event log since the last offset. Schema and offset protocol: `~/.claude/skills/_shared/events.md`.
+
+```bash
+PROJECT_MEMORY="$HOME/.claude/projects/-Users-vishalsingh-Documents-Turnip-gg-turnip-ios/memory"
+EVENT_FILE="$PROJECT_MEMORY/events/$(date -u +%Y-%m-%d).jsonl"
+OFFSET_FILE="$PROJECT_MEMORY/events_offset.md"
+```
+
+1. Read current offset from `events_offset.md`. If file missing or date differs from today, reset offset to 0.
+2. Read new lines from `$EVENT_FILE` starting at the stored offset.
+3. For each new event line, apply these handlers:
+
+| Event | Action |
+|---|---|
+| `review_flagged` | Auto-file follow-up tasks for each finding in `data.findings`. Create one task per distinct finding category with `Source: argus-review`, priority P2, status `pending`. Do not prompt the user — rule #10 scoped confirmation principle does not gate this. |
+| `review_blocked` | Surface the block to the user in the next status output. Append to push queue. |
+| `task_verified` | Archive `<project-memory>/reviews/review_<task>.md` to `reviews/archive/` if it exists. |
+| `review_approved` | Delete `/tmp/argus-<task>.xcresult` if it exists. |
+| `task_completed` | Note the task ID for potential follow-up brief generation. |
+| `base_stale` | Surface to user in next status: "Task <task> requires rebase — base advanced." |
+| `merge_conflict` | Surface to user. Append to push queue. |
+| `build_debt_blocked` | Append to push queue. |
+
+4. Update offset to current EOF of `$EVENT_FILE`:
+   ```bash
+   NEW_OFFSET=$(wc -c < "$EVENT_FILE" 2>/dev/null || echo 0)
+   ```
+   Write updated `events_offset.md`.
+
+5. Emit `task_verified` event when review-feedback promotes a task (Step in review-feedback mode):
+   ```json
+   {"ts":"...","agent":"chanakya","event":"task_verified","task":"<task-id>","data":{"method":"review-feedback"}}
+   ```
+
+6. Emit `cleanup_completed` event after each compact run:
+   ```json
+   {"ts":"...","agent":"chanakya","event":"cleanup_completed","task":"","data":{"archived":<N>,"freed_gb":<X>}}
+   ```
+
+---
+
+### 0F — Proceed to the requested mode
 
 For `auto-sweep` invocations, stop here after re-scheduling the next wake.
 
@@ -334,7 +377,7 @@ Parse the user's input after `/chanakya`:
 - `ship <task-id-list | "next" | "all">` → **Ship mode** — brief + dispatch to Achilles + brief test sub-tasks, all in one command
 - `sweep-debt` → **Sweep-debt mode** — identify and dispatch all pending test sub-tasks and build checks to reduce debt
 - `verify [--round N]` → **Verify mode** — generate test-flow → (user tests) → promote → review-feedback, guided single-sitting sequence
-- `compact [--dry-run]` → **Compact mode** — archive verified tasks, regenerate dashboard/module index, trim plan to actionable items only
+- `compact [--dry-run] [--sweep-artifacts] [--no-sweep-artifacts] [--auto-compact]` → **Compact mode** — archive verified tasks, regenerate dashboard/module index, trim plan; optionally sweep artifacts (default on)
 - `sync-slack [--list <id>] [--build <number>]` → **Sync-Slack mode** — sync Slack bug list statuses, Dev Notes, and Fixed in Build with master plan
 - `sync-slack --configure-token` → **Sync-Slack token bootstrap** — write `~/.claude/secrets/slack-bot-token`
 - `sync-slack --configure` → **Sync-Slack project bootstrap** — populate `project_slack_list_sync.md`
@@ -635,6 +678,21 @@ For in-progress tasks with branches:
 ### Step 3 — Surface blockers
 
 Identify tasks blocked by dependencies. Highlight them. Surface `done` tasks awaiting verification.
+
+### Step 3A — Surface push queue and recent events
+
+Read `~/.claude/state/push-queue.jsonl` (if it exists). Show any entries not yet marked displayed:
+
+```
+Pending notifications:
+- [2026-04-18 14:32] argus: review_blocked — T001: secrets found in FilterApplier.swift:42
+- [2026-04-18 15:01] achilles: merge_conflict — T003: branch left intact
+```
+
+Also read the most recent 10 events from today's event log and summarize agent activity:
+> "Recent activity: Argus reviewed T001 (flagged, 3 findings), T002 merged at 14:45."
+
+Mark displayed push queue entries after showing them.
 
 ### Step 3B — Test-flow round status
 
@@ -1211,9 +1269,13 @@ Guided single-sitting verification flow. Chains test-flow generation, waits for 
 
 ---
 
-## Composite: Compact (`/chanakya compact [--dry-run]`)
+## Composite: Compact (`/chanakya compact [--dry-run] [--sweep-artifacts] [--auto-compact]`)
 
 Archive verified tasks, regenerate the dashboard and module index, and trim the master plan to actionable items only. Keeps the plan under ~500 lines while preserving full history in the archive.
+
+`--sweep-artifacts` (default on) also runs the artifact sweep: rotate event logs, prune old archives, clean stale markers, remove orphaned xcresult bundles and DerivedData. Pass `--no-sweep-artifacts` to skip. Full spec: `~/.claude/skills/_shared/cleanup-policy.md`.
+
+`--auto-compact` prints cron setup instructions for nightly 03:00 local compact runs. Does not configure cron itself in v1. See `~/.claude/skills/_shared/cleanup-policy.md`.
 
 ### File Structure
 
@@ -1279,7 +1341,9 @@ chanakya-changelog.md       ← session changelog entries older than 7 days
 
 9. **Regenerate Parallelization Map.** Only include active tasks (pending/briefed/in-progress). Remove completed tasks from the map.
 
-10. **Report:**
+10. **Artifact sweep** (when `--sweep-artifacts` is on, default): run all sweep steps from `~/.claude/skills/_shared/cleanup-policy.md` (Chanakya Compact Extension section). Capture freed space and removed counts for the report.
+
+11. **Report:**
     ```
     Compacted master plan:
     - Archived: 65 tasks (45 verified, 20 infra/audit)
@@ -1287,11 +1351,19 @@ chanakya-changelog.md       ← session changelog entries older than 7 days
     - Done awaiting verification: 12 tasks
     - Master plan: 2200 → 480 lines
     - Archive: 1800 lines (full history preserved)
+    Swept artifacts: rotated 3 event files (gz, 42 KB), freed 6.2 GB DerivedData,
+      removed 2 orphaned xcresult bundles, cleared 0 stale markers.
     ```
+
+Emit `cleanup_completed` event with `archived` count and `freed_gb` value.
 
 ### `--dry-run`
 
 When passed, compute all changes but don't write. Print the report showing what would move. Useful for previewing before committing.
+
+### `--auto-compact`
+
+Print cron setup instructions for nightly 03:00 local compact. Do not configure cron automatically. See `~/.claude/skills/_shared/cleanup-policy.md` for the exact crontab line.
 
 ### Auto-trigger hooks
 
@@ -1360,3 +1432,6 @@ Debrief format (for the `## Debrief Instructions` section in every brief): `~/.c
 12. **Test-flow rounds are immutable.** Once written, a round file is never silently overwritten — only `--force` allows it. Rounds accumulate as a historical record of testing quality over time.
 13. **Test-flow is independent of review-feedback.** `test-flow` does not trigger `review-feedback`. The user reads it, tests, then uses `--promote` to bridge into `review-feedback`, or reports findings via `/chanakya intake`. The two test paths (`test-manifest` and `test-flow`) coexist without interference.
 14. **Performance baselines are opportunistic.** Perf data flows from debrief `## Performance` / `## Key Learnings` into test-flow `Perf baseline:` fields. If no debrief perf data exists, the first round's `Timing:` entry becomes the baseline for future diffs. Never block test-flow generation on missing perf data.
+15. **Event-driven follow-ups are automatic.** When `review_flagged` events appear in the event log, Chanakya auto-files follow-up tasks without user confirmation. This is not subject to the confirmation rule (#4) — it's a scoped, non-destructive file write.
+16. **Event log is a first-class artifact.** Read it on every sweep (Step 0E). The offset marker prevents re-processing. Do not skip event log processing even when the inbox is empty.
+17. **Compact sweeps artifacts by default.** The `--sweep-artifacts` flag is on unless explicitly disabled. This keeps `/tmp/` and `reviews/` clean without user action.
