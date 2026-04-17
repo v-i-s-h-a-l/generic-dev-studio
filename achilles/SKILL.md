@@ -152,13 +152,15 @@ When the brief includes `## Testability Requirements`:
    - Commit the identifier file as a separate, early commit — UI test tasks may depend on it
 
 3. **Localization** — When the task introduces or modifies any user-visible strings (brief's `### Localization` section present):
-   - Use `String(localized:)` for every user-visible string. No hardcoded string literals in views.
-   - Follow the key namespace specified in the brief (e.g., `filter.presets.emptyState`).
-   - Never concatenate localized strings. Use format arguments: `String(localized: "filter.count \(n)")`.
-   - Plurals: use `.stringsdict` or Swift's built-in plural rules — not inline ternary (`n == 1 ? … : …`).
-   - All text containers must be flexible-width. Avoid fixed frames on labels; use `.lineLimit(nil)` or appropriate layout.
-   - Dates, numbers, currencies: `DateFormatter` / `NumberFormatter` / SwiftUI format styles. Never build these manually.
-   - If the brief notes the module is currently unlocalized: wrap all new strings anyway and file a follow-up localization task in the debrief.
+   - Use `"keyName".localized` for every user-visible string (`String+Localization.swift`). No hardcoded string literals in views.
+   - Follow the key naming convention from the brief: camelCase with a feature prefix (e.g., `filterPresetsEmpty`).
+   - Add every new key to `Localizable.strings` in **all three** `.lproj` folders (`en.lproj`, `hi.lproj`, `uk.lproj`). Use `"TODO: translate"` as a placeholder value for non-English locales if translations aren't available.
+   - Format strings: embed `{placeholder}` tokens in the `.strings` value; replace at call site with `.replacingOccurrences(of: "{placeholder}", with: value)`. Never concatenate localized strings directly.
+   - Plurals: use separate keyed strings selected by count. No inline ternary (`n == 1 ? … : …`) logic in views.
+   - All text containers must be flexible-width. Avoid fixed frames on labels — use `.lineLimit(nil)` or flexible layout to accommodate text expansion.
+   - Dates, numbers, currencies: `DateFormatter` / `NumberFormatter`. Never build these manually.
+   - ⚠️ The `.localized` API has no compile-time safety — a key typo silently returns the key string. Double-check key spelling against `Localizable.strings`.
+   - If the brief notes the module is currently unlocalized: add strings with `.localized` anyway and file a follow-up localization task in the debrief.
 
 4. **Expose test seams** — For each item in the brief's Test Seams section:
    - Define the protocol with clear documentation
@@ -247,7 +249,7 @@ Before asking the user to look, review your own diff. Invoke the `simplify` skil
 - Verify all test seams from the brief are exposed (protocols defined, DI wired)
 - Check that no new singletons or static mutable state were introduced in business logic
 - Confirm the identifier enum file is committed separately from implementation
-- **Localization** (if brief has `### Localization`): grep the diff for hardcoded string literals in views — any `Text("...")` or `Label("...", ...)` with a non-empty string literal is a blocker. Verify format arguments are used instead of string concatenation. Verify plurals use `.stringsdict` or Swift plural rules.
+- **Localization** (if brief has `### Localization`): grep the diff for hardcoded string literals — any `Text("…")` or `Label("…", …)` that doesn't end with `.localized` is a blocker. Verify new keys exist in all three `Localizable.strings` files (`en.lproj`, `hi.lproj`, `uk.lproj`). Verify format strings use `{placeholder}` + `.replacingOccurrences` — no direct string concatenation.
 
 **Test review** (for test tasks):
 - Verify tests are independent (no shared mutable state, no ordering assumptions)
