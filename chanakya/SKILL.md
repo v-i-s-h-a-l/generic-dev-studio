@@ -17,15 +17,21 @@ See `~/.claude/skills/_shared/file-locations.md` for the project slug computatio
 
 ---
 
-## Step −1 — Session Launch: Offer Background Auto-Sweep
+## Flags
 
-On the **first** invocation of `/chanakya` in a session, after Step 0 completes, ask the user exactly once:
+Global flags that modify Chanakya's session behavior:
 
-> "Enable background inbox sweep every 10 min for this session? (y/n)"
+| Flag | Behavior |
+|---|---|
+| `--auto-sweep` | Enable background inbox sweep every 600s. On first invocation, call `ScheduleWakeup` with `delaySeconds: 600` and prompt `"/chanakya auto-sweep --auto-sweep"`. Each wake re-runs Step 0 silently (no output if inbox empty; one-line summary per debrief processed), then re-schedules. Loop ends when session ends or user says "stop auto-sweep". |
+| `--watch` | `--auto-sweep` + auto-dispatch ready tasks after each sweep (runs `/chanakya ship next` if any tasks become `briefed` after an inbox sweep). |
+| `--ship-mode` | `--auto-sweep` + auto-dispatch + auto-verify when the task queue drains (runs `/chanakya verify` automatically after the last active task reaches `done`). |
 
-If yes, call `ScheduleWakeup` with `delaySeconds: 600` and prompt `"/chanakya auto-sweep"`. The wake-handler runs Step 0 silently (no output if inbox was empty; one-line summary per processed debrief otherwise), then re-schedules itself with another 600s wake. The loop ends when the session ends or the user says "stop auto-sweep".
+File operations inside a sweep do **not** prompt — `Read`, `Write`, `Edit` are globally allowed and `~/.dev-studio/**` is in the allow-list. If a sweep hits a permission prompt, surface it once and continue.
 
-File operations inside the sweep (read/move debriefs, edit master plan, write new briefs) do **not** prompt — `Read`, `Write`, `Edit` are globally allowed and `~/.dev-studio/**` is explicitly in the allow-list. If a sweep ever hits a permission prompt, surface it once and continue.
+## Step −1 — Session Launch
+
+On the **first** invocation of `/chanakya` in a session (no `--auto-sweep` flag), proceed directly to Step 0. No prompt about background sweep — the user opts in by passing `--auto-sweep` (or composite flags) at invocation time.
 
 ---
 
@@ -315,7 +321,12 @@ Parse the user's input after `/chanakya`:
 - `test-manifest [--force]` → **Test-manifest mode**
 - `test-flow [--force] [--round N] [--scope new|full|module <name>] [--smoke] [--diff N] [--promote]` → **Test-flow mode**
 - `review-feedback` → **Review-feedback mode**
-- `auto-sweep` → **Auto-sweep tick** — Step 0 already ran; just re-schedule the next 600s wake and exit silently
+- `auto-sweep` → **Auto-sweep tick** — Step 0 already ran; re-schedule the next 600s wake (with same flags) and exit silently
+
+**Session flags** (passed alongside any mode):
+- `--auto-sweep` → enable background 600s inbox sweep loop (see Flags section)
+- `--watch` → `--auto-sweep` + auto-dispatch after each sweep
+- `--ship-mode` → `--auto-sweep` + auto-dispatch + auto-verify when queue drains
 
 **Composite commands** (multi-step sequences that chain existing modes):
 
