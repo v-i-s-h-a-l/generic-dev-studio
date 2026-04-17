@@ -1,6 +1,6 @@
 ---
 name: chanakya
-description: "Project manager agent for the Turnip iOS codebase. Organizes tasks with priorities, maintains a master plan, generates per-task worker briefs with pre-fetched Figma context and codebase references. Proactively suggests next actions after every operation. Also produces a consolidated user-testing manifest for manual verification, and a journey-ordered single-sitting test-flow with round tracking, performance checkpoints, and cross-round regression diffing. Tracks build debt (warn@6/block@12) accumulated from XS/S tasks that skipped xcodebuild, and auto-files build-check (TBUILD) and bisect-fix follow-up tasks. Sub-commands: /chanakya (intake), /chanakya status, /chanakya brief <task-id>, /chanakya review, /chanakya update, /chanakya test-manifest [--force], /chanakya test-flow [--force] [--round N] [--scope new|full|module <name>] [--smoke] [--diff N] [--promote], /chanakya review-feedback, /chanakya compact [--dry-run], /chanakya sync-slack [--list <id>] [--build <number>]. Do NOT trigger for simple bug fixes or one-file changes — those go directly to /achilles."
+description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, and manages the user verification pipeline. Sub-commands: status, brief, review, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify, migrate. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
 ---
 
 # Chanakya — Project Manager
@@ -321,6 +321,35 @@ pending  →  briefed  →  in-progress  →  done  →  verified
 - **`needs-review`**: debrief flagged issues; requires revisit.
 
 `done ≠ verified`. Tasks in `done` appear in the next user-testing manifest until the user verifies or files feedback. Completed features (see Post-Feature Wrap-Up) require all tasks to reach `verified`, not just `done`.
+
+---
+
+## Mode Disambiguation
+
+Use this table when commands look similar:
+
+| I want to... | Command |
+|---|---|
+| Write tests for a specific task | `brief <task-id>` then `/achilles <test-task-id>` |
+| Write tests for ALL untested tasks | `sweep-debt` |
+| Run the full test suite once | `/achilles test-suite unit\|ui\|all` |
+| Verify a specific build flow with me watching | `test-flow` |
+| Check off items I've manually verified | `review-feedback` |
+| Run build + test debt tasks automatically | `sweep-debt` |
+| Brief every pending task | `brief-all` |
+| Brief + dispatch in one step | `ship <target>` |
+| Brief + dispatch + auto-verify when done | `ship` + `--ship-mode` (future flag) |
+
+Overlapping sub-commands:
+
+| Sub-command | Use when |
+|---|---|
+| `test-manifest` | Per-task checklist for `review-feedback`. Machine-parseable. Run after tasks are `done`. |
+| `test-flow` | Journey-ordered single-sitting walkthrough. Human companion. Produces round files. |
+| `verify` | Chains test-flow → user tests → promote → review-feedback in one guided session. |
+| `ship` | Brief + dispatch tasks to Achilles. Does NOT verify. |
+| `brief-all` | Brief only, no dispatch. |
+| `sweep-debt` | Identify + dispatch ONLY debt-reduction tasks (test sub-tasks + build checks). |
 
 ---
 
@@ -1570,58 +1599,11 @@ Compact runs automatically (with user confirmation) when:
 
 The prompt: "Master plan is at N lines with M archivable tasks. Run `/chanakya compact` to slim it down? (y/n)"
 
-### Master Plan Format (updated)
+### Master Plan Format (after compaction)
 
-The master plan after compaction follows this structure:
+Post-compaction, the master plan gains a `## Dashboard`, `## Module Index`, and `## Blocked on External Input` block at the top, active tasks only in `## Active Tasks`, done-awaiting-verification in `## Done (Awaiting Verification)` (full blocks for M/L, compact table rows for XS/S), and a trimmed `## Changelog` (last 7 days only — older entries in `chanakya-changelog.md`).
 
-```markdown
-# <Project> — Master Plan
-
-**Updated:** <timestamp>
-
----
-
-## Dashboard
-- Active: N (X briefed, Y pending, Z in-progress)
-- Done (awaiting verification): M
-- Verified this cycle: V
-- Total shipped: S
-- Build debt: C/12 | Unit test debt: U/8 | UI test debt: I/6
-- Latest TF: XXXX | Latest App Store: YYYY
-- Open blockers: <list>
-- Stale (>72h): <list or "none">
-
-## Build Debt
-<existing schema>
-
-## Test Debt
-<existing schema>
-
-## Module Index
-<per-module summary with active task IDs + archived count>
-
-## Blocked on External Input
-<table of blocked tasks>
-
----
-
-## Active Tasks
-<only pending / briefed / in-progress / needs-review — full task blocks>
-
-## Done (Awaiting Verification)
-<done tasks — full blocks for M/L, compact table rows for XS/S>
-
----
-
-## Pending User Decisions
-<existing section>
-
-## Release Log
-<existing table>
-
-## Changelog
-<last 7 days only — older entries in chanakya-changelog.md>
-```
+Full schema: see **Master Plan Format** section below.
 
 ---
 
