@@ -394,16 +394,16 @@ Extract the number from the commit message.
 
 For each Slack row with a linked Chanakya task:
 
-**Status mapping:**
+**Status mapping** (option IDs from `project_slack_list_sync.md`):
 
 | Task status | Slack Status |
 |-------------|-------------|
-| `verified` | Done (`OptTR35W8NA`) |
+| `verified` | Done |
 | `done` (all acceptance cases pass in latest round) | Done |
-| `done` (partial — some cases still fail) | In progress (`OptXBPNOYKC`) |
+| `done` (partial — some cases still fail) | In progress |
 | `in-progress` or `briefed` | In progress |
-| `pending` with no brief | Not started (`Opt7MNHB19N`) |
-| blocked on dependency/PRD | Blocked (`OptEY5M00J3`) |
+| `pending` with no brief | Not started |
+| blocked on dependency/PRD | Blocked |
 
 **Dev Notes (append-only):**
 
@@ -463,7 +463,7 @@ For each synced row, update the task's `Slack status (last synced):` field with 
 Print a summary table:
 
 ```
-Slack List F0ASZ6B22SZ — Sync for Build 3137
+Slack List <list_id> — Sync for Build 3137
 
 | Bug                              | Status       | Fixed in | Dev Notes update |
 |----------------------------------|-------------|----------|-----------------|
