@@ -647,6 +647,10 @@
       <code>/chanakya migrate</code>
       <span>Upgrade an existing master plan: add test sub-tasks for all implementation tasks, initialize test debt counters.</span>
     </div>
+    <div class="cmd-card">
+      <code>/chanakya compact</code>
+      <span>Archive verified tasks, regenerate Dashboard + Module Index, trim master plan to actionable items only. Keeps plan under ~500 lines. <code>--dry-run</code> previews without writing.</span>
+    </div>
   </div>
 
   <h3 style="color: var(--achilles);">Achilles Composites</h3>
@@ -707,6 +711,11 @@
         <td>Adopt new testing structure</td>
         <td><code>/chanakya migrate</code> &rarr; <code>/chanakya sweep-debt</code></td>
         <td>2 (migrate, sweep)</td>
+      </tr>
+      <tr>
+        <td>Slim a bloated master plan</td>
+        <td><code>/chanakya compact --dry-run</code> &rarr; <code>/chanakya compact</code></td>
+        <td>2 (preview, apply)</td>
       </tr>
     </tbody>
   </table>
@@ -1091,6 +1100,7 @@
       <tr><td>Run full unit/UI test suite</td><td><span class="badge badge-achilles">/achilles test-suite all</span></td></tr>
       <tr><td>Push a TestFlight build</td><td><span class="badge badge-achilles">/achilles push-tf</span></td></tr>
       <tr><td>Submit to App Store</td><td><span class="badge badge-achilles">/achilles app-store</span></td></tr>
+      <tr><td>Master plan growing too long (&gt;500 lines)</td><td><span class="badge badge-chanakya">/chanakya compact</span></td></tr>
     </tbody>
   </table>
   <div class="callout">
@@ -1224,7 +1234,9 @@
   <div class="file-tree">
     <span class="dir">~/.dev-studio/&lt;project&gt;/</span> <span class="comment"># slug = basename of git toplevel</span><br>
     &nbsp;&nbsp;<span class="dir">plans/</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">chanakya-master.md</span> <span class="comment"># Master plan (Build Debt + Test Debt + Tasks)</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">chanakya-master.md</span> <span class="comment"># Active tasks only (Dashboard + debt + pending/done)</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">chanakya-archive.md</span> <span class="comment"># Full history: verified/done tasks (written by compact)</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">chanakya-changelog.md</span> <span class="comment"># Changelog entries older than 7 days (written by compact)</span><br>
     &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">user-testing.md</span> <span class="comment"># Per-task test manifest (on demand)</span><br>
     &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">user-testing-rounds/</span> <span class="comment"># Test-flow round files</span><br>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">user-testing-round1.md</span> <span class="comment"># Immutable &mdash; never overwritten</span><br>
@@ -1312,6 +1324,11 @@
       <div class="tip-num">12</div>
       <div class="tip-title">Briefs are snapshots</div>
       <div class="tip-desc">If the codebase changes between briefing and execution, regenerate with <code>/chanakya brief T001</code>.</div>
+    </div>
+    <div class="tip">
+      <div class="tip-num">13</div>
+      <div class="tip-title">Compact when the plan bloats</div>
+      <div class="tip-desc"><code>/chanakya compact --dry-run</code> shows what would move. Run without the flag to archive verified tasks and slim the plan to ~500 lines. Full history is preserved in <code>chanakya-archive.md</code>.</div>
     </div>
   </div>
 </section>

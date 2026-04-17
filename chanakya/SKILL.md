@@ -1,6 +1,6 @@
 ---
 name: chanakya
-description: "Project manager agent for the Turnip iOS codebase. Organizes tasks with priorities, maintains a master plan, generates per-task worker briefs with pre-fetched Figma context and codebase references. Proactively suggests next actions after every operation. Also produces a consolidated user-testing manifest for manual verification, and a journey-ordered single-sitting test-flow with round tracking, performance checkpoints, and cross-round regression diffing. Tracks build debt (warn@6/block@12) accumulated from XS/S tasks that skipped xcodebuild, and auto-files build-check (TBUILD) and bisect-fix follow-up tasks. Sub-commands: /chanakya (intake), /chanakya status, /chanakya brief <task-id>, /chanakya review, /chanakya update, /chanakya test-manifest [--force], /chanakya test-flow [--force] [--round N] [--scope new|full|module <name>] [--smoke] [--diff N] [--promote], /chanakya review-feedback, /chanakya sync-slack [--list <id>] [--build <number>]. Do NOT trigger for simple bug fixes or one-file changes — those go directly to /achilles."
+description: "Project manager agent for the Turnip iOS codebase. Organizes tasks with priorities, maintains a master plan, generates per-task worker briefs with pre-fetched Figma context and codebase references. Proactively suggests next actions after every operation. Also produces a consolidated user-testing manifest for manual verification, and a journey-ordered single-sitting test-flow with round tracking, performance checkpoints, and cross-round regression diffing. Tracks build debt (warn@6/block@12) accumulated from XS/S tasks that skipped xcodebuild, and auto-files build-check (TBUILD) and bisect-fix follow-up tasks. Sub-commands: /chanakya (intake), /chanakya status, /chanakya brief <task-id>, /chanakya review, /chanakya update, /chanakya test-manifest [--force], /chanakya test-flow [--force] [--round N] [--scope new|full|module <name>] [--smoke] [--diff N] [--promote], /chanakya review-feedback, /chanakya compact [--dry-run], /chanakya sync-slack [--list <id>] [--build <number>]. Do NOT trigger for simple bug fixes or one-file changes — those go directly to /achilles."
 ---
 
 # Chanakya — Project Manager
@@ -345,6 +345,7 @@ Parse the user's input after `/chanakya`:
 - `sweep-debt` → **Sweep-debt mode** — identify and dispatch all pending test sub-tasks and build checks to reduce debt
 - `verify [--round N]` → **Verify mode** — generate test-flow → (user tests) → promote → review-feedback, guided single-sitting sequence
 - `migrate` → **Migrate mode** — upgrade an existing master plan to the task-group + test-debt structure
+- `compact [--dry-run]` → **Compact mode** — archive verified tasks, regenerate dashboard/module index, trim plan to actionable items only
 - `sync-slack [--list <id>] [--build <number>]` → **Sync-Slack mode** — sync Slack bug list statuses, Dev Notes, and Fixed in Build with master plan
 
 ---
@@ -1447,6 +1448,152 @@ Upgrade an existing master plan to the task-group + test-debt structure. Run thi
 6. **On confirmation**, write the updated master plan. On rejection, discard changes and let the user adjust.
 
 **Idempotent:** Running `migrate` on an already-migrated plan is a no-op. Running it after partial adoption (some tasks have groups, some don't) only fills in the gaps.
+
+---
+
+## Composite: Compact (`/chanakya compact [--dry-run]`)
+
+Archive verified tasks, regenerate the dashboard and module index, and trim the master plan to actionable items only. Keeps the plan under ~500 lines while preserving full history in the archive.
+
+### File Structure
+
+```
+chanakya-master.md          ← slim: Dashboard + debt headers + active tasks only
+chanakya-archive.md         ← full history: verified/done task blocks
+chanakya-changelog.md       ← session changelog entries older than 7 days
+```
+
+### Steps
+
+1. **Read master plan.** Parse all tasks with their statuses.
+
+2. **Identify archivable tasks.** A task is archivable if:
+   - Status is `verified`, OR
+   - Status is `done` AND type is `audit`, `investigation`, `build-check`, `test-run`, `test infrastructure`, or `direct (user-run)`, OR
+   - Status is `done` AND has been `done` for >7 days with no pending verification task referencing it as `Source:`
+   
+   Do NOT archive:
+   - `done` tasks with open verification follow-ups (manual verification pending)
+   - `pending`, `briefed`, `in-progress`, `needs-review` tasks
+   - Tasks with `Source:` pointing to a non-archived parent (keep them together)
+
+3. **Build the archive file.** If `chanakya-archive.md` doesn't exist, create it with a header. For each archivable task:
+   - Move the full task block (all fields + Notes) to the archive
+   - Trim Notes to max 5 lines in the archive (preserve first 3 + last 2 if longer)
+   - Also move any manual-verification child tasks (type `direct (user-run)`) whose parent is being archived
+
+4. **Convert remaining done tasks to compact rows.** Tasks that are `done` but NOT archived (awaiting verification) get their full block preserved. But XS/direct tasks that have ≤3 lines of Notes can be converted to a compact table row format in a `## Done (Awaiting Verification)` table.
+
+5. **Regenerate Dashboard.** Write/update the `## Dashboard` block at the top of master plan:
+   ```markdown
+   ## Dashboard
+   - Active: N (X briefed, Y pending, Z in-progress)
+   - Done (awaiting verification): M
+   - Verified this cycle: V
+   - Total shipped: S (in archive)
+   - Build debt: C/12 | Unit test debt: U/8 | UI test debt: I/6
+   - Latest TF: XXXX (branch) | Latest App Store: YYYY
+   - Open blockers: <list tasks blocked on external input>
+   - Stale: <tasks pending/briefed >72h with no activity>
+   ```
+
+6. **Regenerate Module Index.** Write/update `## Module Index`:
+   ```markdown
+   ## Module Index
+   - **Filter:** T023, T081, T169 (3 active) | 12 archived
+   - **Texture:** T130 (1 pending) | 8 archived
+   - **Crop:** — (0 active) | 9 archived
+   ...
+   ```
+   Derive module from: task title keywords, debrief `## Files Changed` directory, Skills field.
+
+7. **Regenerate Blocked on External Input.** Scan all active tasks for blockers:
+   ```markdown
+   ## Blocked on External Input
+   | Task | Waiting on | Who | Since |
+   |------|-----------|-----|-------|
+   | T130 | Which blend mode? | daksh@ | 2026-04-16 |
+   ```
+
+8. **Trim changelog.** Move entries older than 7 days to `chanakya-changelog.md`. Keep only recent entries in master.
+
+9. **Regenerate Parallelization Map.** Only include active tasks (pending/briefed/in-progress). Remove completed tasks from the map.
+
+10. **Report:**
+    ```
+    Compacted master plan:
+    - Archived: 65 tasks (45 verified, 20 infra/audit)
+    - Active: 15 tasks
+    - Done awaiting verification: 12 tasks
+    - Master plan: 2200 → 480 lines
+    - Archive: 1800 lines (full history preserved)
+    ```
+
+### `--dry-run`
+
+When passed, compute all changes but don't write. Print the report showing what would move. Useful for previewing before committing.
+
+### Auto-trigger hooks
+
+Compact runs automatically (with user confirmation) when:
+- `review-feedback` marks ≥3 tasks `verified` in one pass
+- `test-flow --promote` marks tasks verified
+- Master plan exceeds 1500 lines during an inbox sweep
+
+The prompt: "Master plan is at N lines with M archivable tasks. Run `/chanakya compact` to slim it down? (y/n)"
+
+### Master Plan Format (updated)
+
+The master plan after compaction follows this structure:
+
+```markdown
+# <Project> — Master Plan
+
+**Updated:** <timestamp>
+
+---
+
+## Dashboard
+- Active: N (X briefed, Y pending, Z in-progress)
+- Done (awaiting verification): M
+- Verified this cycle: V
+- Total shipped: S
+- Build debt: C/12 | Unit test debt: U/8 | UI test debt: I/6
+- Latest TF: XXXX | Latest App Store: YYYY
+- Open blockers: <list>
+- Stale (>72h): <list or "none">
+
+## Build Debt
+<existing schema>
+
+## Test Debt
+<existing schema>
+
+## Module Index
+<per-module summary with active task IDs + archived count>
+
+## Blocked on External Input
+<table of blocked tasks>
+
+---
+
+## Active Tasks
+<only pending / briefed / in-progress / needs-review — full task blocks>
+
+## Done (Awaiting Verification)
+<done tasks — full blocks for M/L, compact table rows for XS/S>
+
+---
+
+## Pending User Decisions
+<existing section>
+
+## Release Log
+<existing table>
+
+## Changelog
+<last 7 days only — older entries in chanakya-changelog.md>
+```
 
 ---
 
