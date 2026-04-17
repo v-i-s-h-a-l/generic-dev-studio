@@ -659,11 +659,13 @@
   </table>
 
   <h3>Session Flags</h3>
-  <p>Pass alongside any mode to modify Chanakya's session behavior:</p>
+  <p>Pass alongside any mode to modify Chanakya's session behavior. Run <code>/chanakya --away</code> before leaving the laptop; <code>/chanakya --at-laptop</code> when you return.</p>
   <table class="decision-table">
     <thead><tr><th>Flag</th><th>Behavior</th></tr></thead>
     <tbody>
-      <tr><td><code>--auto-sweep</code></td><td>Background inbox sweep every 600s. Opt in at invocation: <code>/chanakya --auto-sweep</code></td></tr>
+      <tr><td><code>--at-laptop</code></td><td>On-demand mode (default). No auto-sweep, no push channels. Type <code>/chanakya status</code> when you want an update.</td></tr>
+      <tr><td><code>--away</code></td><td>Activates auto-sweep with adaptive backoff + push channels. Run when leaving the laptop.</td></tr>
+      <tr><td><code>--auto-sweep</code></td><td>Background inbox sweep with adaptive backoff (15→30→60→120 min on blank sweeps; resets on activity).</td></tr>
       <tr><td><code>--watch</code></td><td><code>--auto-sweep</code> + auto-dispatch ready tasks after each sweep</td></tr>
       <tr><td><code>--ship-mode</code></td><td><code>--auto-sweep</code> + auto-dispatch + auto-verify when task queue drains</td></tr>
     </tbody>

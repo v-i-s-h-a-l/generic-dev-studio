@@ -47,13 +47,15 @@ Chanakya runs end-to-end by default. You won't be asked "proceed?" at every step
 | **Merge conflicts** | Achilles cannot resolve them automatically |
 | **`--wait` mode feedback window** | You explicitly opted in to review before merge |
 
-Everything else — inbox sweeps, debrief processing, brief generation, follow-up task creation, build debt updates — happens automatically. Use `--auto-sweep`, `--watch`, or `--ship-mode` to go fully hands-off for a session.
+Everything else — inbox sweeps, debrief processing, brief generation, follow-up task creation, build debt updates — happens automatically. Run `/chanakya --away` before leaving the laptop to activate auto-sweep and push channels. Run `/chanakya --at-laptop` when you return to disable them. Use `--watch` or `--ship-mode` for fully hands-off sessions.
 
 ### Session flags
 
 | Flag | Behavior |
 |---|---|
-| `--auto-sweep` | Background inbox sweep every 600s. Opt in at invocation time: `/chanakya --auto-sweep` |
+| `--at-laptop` | Switch to at-laptop mode: disable auto-sweep, disable push channels. Default on fresh start. |
+| `--away` | Switch to away mode: activate auto-sweep with adaptive backoff, enable push channels. |
+| `--auto-sweep` | Background inbox sweep with adaptive backoff (15→30→60→120 min on blank sweeps; resets on activity). |
 | `--watch` | `--auto-sweep` + auto-dispatch ready tasks after each sweep |
 | `--ship-mode` | `--auto-sweep` + auto-dispatch + auto-verify when task queue drains |
 
