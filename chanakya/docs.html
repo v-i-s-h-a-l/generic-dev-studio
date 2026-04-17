@@ -738,7 +738,7 @@
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node achilles-node">/achilles T001 &mdash; implement with SOLID, accessibility IDs, test seams</span>
+      <span class="flow-node achilles-node">/achilles T001 &mdash; implement with SOLID, accessibility IDs, localization, test seams</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
@@ -793,17 +793,18 @@
     </tbody>
   </table>
 
-  <h3>Implementation briefs include testability mandates</h3>
-  <p>Every implementation brief now has a <strong>Testability Requirements</strong> section:</p>
+  <h3>Implementation briefs include quality mandates</h3>
+  <p>Every implementation brief has a <strong>Testability Requirements</strong> section covering:</p>
   <ul>
     <li><strong>SOLID principles:</strong> single responsibility, protocol-based DI, focused interfaces</li>
     <li><strong>Accessibility identifiers:</strong> shared enum per module (<code>enum AccessibilityID { enum Screen { static let element = "..." } }</code>). Strong types, not raw strings.</li>
+    <li><strong>Localization:</strong> all user-visible strings via <code>"keyName".localized</code> (camelCase + feature prefix). New keys added to all three <code>.lproj</code> files (en, hi, uk). Format strings use <code>{placeholder}</code> tokens. No hardcoded literals in views.</li>
     <li><strong>Test seams:</strong> protocol-based interfaces for external dependencies. Injected via initializer.</li>
     <li><strong>What NOT to do:</strong> Don't over-abstract. Pure functions are already testable. No protocol wrappers for simple value types.</li>
   </ul>
 
   <div class="callout purple">
-    <strong>Achilles enforces testability.</strong> During self-review, Achilles checks: are all accessibility IDs defined? Are test seams exposed? Any new singletons in business logic? Missing identifiers are treated as blockers.
+    <strong>Achilles enforces all mandates.</strong> During self-review, Achilles checks: are all accessibility IDs defined? Are test seams exposed? Any new singletons in business logic? Any hardcoded string literals missing <code>.localized</code>? Are new keys present in all three <code>.lproj</code> files? Any failure is a merge blocker.
   </div>
 </section>
 
@@ -1132,7 +1133,7 @@
         <div class="session-label achilles-label">Implementation</div>
         <div class="dialogue">
           <div class="line"><span class="speaker you">You</span><span class="content"><code>/achilles T015</code></span></div>
-          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[implements with SOLID, defines AccessibilityID.FilterPreset enum, exposes FilterPresetManagerProtocol]</em><br>Done. 4 commits. Testability report: FilterPresetManager injectable, 12 accessibility IDs defined. Test sub-tasks T015a and T015c are unblocked.</span></div>
+          <div class="line"><span class="speaker achilles-speaker">Achilles</span><span class="content"><em>[implements with SOLID, defines AccessibilityID.FilterPreset enum, exposes FilterPresetManagerProtocol, adds localized strings under filterPresets.* keys]</em><br>Done. 4 commits. Testability report: FilterPresetManager injectable, 12 accessibility IDs defined, 6 localized strings added to all 3 .lproj files. Test sub-tasks T015a and T015c are unblocked.</span></div>
         </div>
       </div>
       <div class="session-block">
