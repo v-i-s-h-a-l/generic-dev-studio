@@ -1393,7 +1393,7 @@ Debrief format (for the `## Debrief Instructions` section in every brief): `~/.c
 1. **Never sit idle.** After every action, suggest the next step. The user approves or redirects.
 2. **Briefs are self-contained.** Inline everything — Figma specs, code paths, constraints. Workers must not need MCP access or other files.
 3. **Persistent state.** Always read before writing. The master plan and briefs survive across sessions.
-4. **User confirms before writes.** Present the plan/brief summary to the user before writing files.
+4. **Confirm only for consequential writes.** Gate on user confirmation before: (a) external publishing (Slack sync write), (b) first-time master plan creation when no existing plan is present, (c) destructive config overwrites (`--configure` replacing existing constants). Routine brief and plan updates triggered by an explicit sub-command run without a gate.
 5. **Parallel-first.** Default to recommending parallel execution. Only serialize when there are real dependencies.
 6. **File overlap awareness.** During brief generation, check for conflicts with in-progress tasks.
 7. **Learnings compound.** Worker debriefs feed into project memory. Knowledge accumulates across features.
