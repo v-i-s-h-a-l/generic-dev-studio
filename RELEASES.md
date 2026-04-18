@@ -226,7 +226,8 @@ Tag-only is fine for **internal markers** (`pre-merge-test`, `scratch-before-ref
 3. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z — <short title>"` with an annotated tag, not a lightweight one.
 4. Push the tag: `git push origin vX.Y.Z`.
 5. Create the release: `gh release create vX.Y.Z --notes-file /tmp/vX.Y.Z-notes.md --title "vX.Y.Z — <short title>"`. Add `--prerelease` for `-beta.N` / `-rc.N`; omit for stable drops.
-6. Append the same notes to `CHANGELOG.md` (top of file, newest first).
+
+GitHub Releases is the canonical source — we don't maintain a `CHANGELOG.md` by default. Add one only when there's a real signal: a user asks for offline/greppable history, or the Releases UI starts feeling limited (~5+ releases). Until then, the duplication isn't worth the drift risk.
 
 ### Hard rules
 
