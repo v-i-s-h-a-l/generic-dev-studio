@@ -49,7 +49,16 @@ ACHILLES_PROJECT=other-app scripts/achilles-dispatch.sh T001   # cross-project
 scripts/worker-status.sh                       # current project's fleet
 scripts/worker-status.sh --all-projects        # machine-wide view
 scripts/achilles-cancel.sh T002                # remove a pending dispatch
+
+# Work-stealing queue (preferred for batch dispatch):
+scripts/achilles-queue.sh enqueue T001         # append to pending queue
+scripts/achilles-queue.sh drain                # hand head-of-queue to each free worker
+scripts/achilles-queue.sh list                 # inspect queue
+scripts/achilles-queue.sh depth                # integer queue depth
+scripts/achilles-queue.sh clear                # wipe queue (abort scenarios only)
 ```
+
+**Why work-stealing over upfront fan-out.** Task durations span 3–5× (XS LSP-only vs. M/L with full `xcodebuild`). Batch-assigning N+1…2N tasks to inboxes upfront leaves fast workers idle while slow ones still have a backlog. The queue hands one task at a time on each `task_completed` event, so every freed worker gets the next pending task.
 
 ## On-disk layout
 

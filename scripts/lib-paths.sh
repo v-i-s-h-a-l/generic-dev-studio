@@ -70,6 +70,14 @@ resolve_push_queue() {
   printf '%s\n' "$HOME/.dev-studio/$project/.runtime/state/push-queue.jsonl"
 }
 
+# Work-stealing dispatch queue — one ordered pending-task list per project.
+# Chanakya enqueues tasks; drain hands them out one-by-one as workers free up.
+resolve_dispatch_queue() {
+  local project
+  project=$(resolve_project) || return 1
+  printf '%s\n' "$HOME/.dev-studio/$project/.runtime/state/dispatch-queue.jsonl"
+}
+
 # Chanakya inbox root for a given project — where task debriefs land.
 # Canonical path: ~/.dev-studio/<project>/plans/chanakya-inbox/
 resolve_chanakya_inbox_for() {

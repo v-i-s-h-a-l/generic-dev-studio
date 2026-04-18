@@ -134,9 +134,12 @@ dispatched_from=user@host
 | Flag / mode | Behavior |
 |---|---|
 | `--worker-status` | Run `<scripts>/worker-status.sh` and surface the table. Use this before any dispatch to confirm capacity. |
-| `--dispatch <task-id> [worker-N\|any]` | Shell out to `<scripts>/achilles-dispatch.sh <task-id> <target>`. With `any` (default), the script picks the alive worker with the lowest `busy + pending` load. Refuse if the task's status is not `briefed` in `chanakya-master.md`. |
-| `--dispatch-many <task-id> [<task-id>…]` | One `<scripts>/achilles-dispatch.sh ... any` per task in order. Skip any that already appear as pending in some worker inbox (re-dispatch guard). |
-| `--cancel <task-id>` | Shell out to `<scripts>/achilles-cancel.sh`. Only removes pending dispatches; in-flight tasks require killing the worker pane. |
+| `--dispatch <task-id> [worker-N\|any]` | Shell out to `<scripts>/achilles-dispatch.sh <task-id> <target>`. With `any` (default), the script picks the alive worker with the lowest `busy + pending` load. Refuse if the task's status is not `briefed` in `chanakya-master.md`. Prefer `--queue-enqueue` + `--queue-drain` for batch dispatch so slow tasks don't starve fast workers. |
+| `--dispatch-many <task-id> [<task-id>…]` | Legacy batch path — one `achilles-dispatch.sh ... any` per task in order, picking least-loaded at each call. Superseded by the work-stealing queue (`--queue-enqueue` + `--queue-drain`) for anything more than 1–2 tasks. Kept for cases where the caller explicitly wants upfront fan-out. |
+| `--queue-enqueue <task-id>` | Append task to the per-project dispatch queue (`<scripts>/achilles-queue.sh enqueue`). No-op if already queued. |
+| `--queue-drain` | Pop head-of-queue tasks to free workers (busy=0 AND pending=0) until the queue empties or every worker is occupied (`<scripts>/achilles-queue.sh drain`). Safe to call repeatedly — a natural idempotent sweep step. |
+| `--queue-list` / `--queue-depth` / `--queue-clear` | Inspect or reset the queue (`<scripts>/achilles-queue.sh list|depth|clear`). Use `list` in `/chanakya status`; `clear` only for abort scenarios. |
+| `--cancel <task-id>` | Shell out to `<scripts>/achilles-cancel.sh`. Only removes pending dispatches; in-flight tasks require killing the worker pane. Does NOT remove from the dispatch queue — run `--queue-clear` or re-enqueue as needed. |
 
 ### Dispatch refusal rules
 
@@ -152,7 +155,9 @@ Surface the refusal with a one-line reason and a suggested fix:
 
 ### Integration with `ship`
 
-The existing `ship <target>` mode briefs and then dispatches. In fleet mode it should call `--dispatch-many` over the freshly-briefed task IDs rather than spawning a single foreground Achilles. Detect fleet mode by presence of any alive worker dir; fall back to single-session dispatch otherwise.
+The existing `ship <target>` mode briefs and then dispatches. In fleet mode it enqueues every freshly-briefed task via `--queue-enqueue` and then calls `--queue-drain` once — filling idle workers up to N and leaving the rest in the queue. Further drains happen automatically on every `task_completed` event (Step 0E). Detect fleet mode by presence of any alive worker dir; fall back to single-session dispatch otherwise.
+
+Work-stealing is the default because task durations easily span 3–5× (XS LSP-only vs. M/L with full `xcodebuild`); upfront batch fan-out leaves fast workers idle while slow ones still have a backlog.
 
 ### Events
 
@@ -322,7 +327,8 @@ OFFSET_FILE="$PROJECT_MEMORY/events_offset.md"
 | `task_awaiting_user` | Surface the question to the user in the next status output. **Always** append to push queue (in away mode this is the only notification channel; in at-laptop mode the banner still helps). Include `data.question` verbatim in the push payload, truncated to 200 chars. Pair with the corresponding `<task-id>-debrief.md` (`status: blocked_awaiting_input`) for full context. |
 | `task_verified` | Archive `<project-memory>/reviews/review_<task>.md` to `reviews/archive/` if it exists. |
 | `review_approved` | Delete `/tmp/argus-<task>.xcresult` if it exists. |
-| `task_completed` | Note the task ID for potential follow-up brief generation. |
+| `task_completed` | Note the task ID for potential follow-up brief generation. **Call `<scripts>/achilles-queue.sh drain`** to hand the freed worker its next task (no-op if queue is empty). |
+| `brief_failed` / `merge_conflict` / `review_blocked` | In addition to the row-specific action above, call `<scripts>/achilles-queue.sh drain` — the worker slot is free again; give it the next pending task rather than stranding the queue. (Already handled by `task_completed` when the block eventually merges; this covers the cases that stay blocked.) |
 | `base_stale` | Surface to user in next status: "Task <task> requires rebase — base advanced." |
 | `merge_conflict` | Surface to user. Append to push queue. |
 | `build_debt_blocked` | Append to push queue. |
@@ -1675,8 +1681,8 @@ Brief and dispatch tasks to Achilles in a single command. This is the "hands-off
      Tab 1: /achilles T002a         ← unit tests for T002
    ```
 
-5. **Dispatch Phase 1.** Print the commands for the user to run. Do NOT auto-launch Achilles — the user opens tabs and runs the commands. Chanakya cannot spawn Achilles sessions.
-6. Report: "Ship plan generated. Phase 1: N tasks (run in parallel). Phase 2: M tasks (after Phase 1 merges). Run the Phase 1 commands above, then `/chanakya ship next` for Phase 2."
+5. **Dispatch Phase 1.** In **fleet mode** (any alive worker dir present): enqueue every Phase 1 task via `--queue-enqueue`, then call `--queue-drain` once. Workers pick tasks up via `fswatch`; further drains fire automatically on each `task_completed` (Step 0E). Phase 2+ tasks wait in the queue until their dependency resolves and can be enqueued by the auto-advance step below. In **single-session mode** (no alive workers): fall back to printing `/achilles` commands for the user to run in parallel tabs.
+6. Report: "Ship plan generated. Phase 1: N tasks enqueued (queue depth=N, free workers=W). Further phases will auto-dispatch as tasks complete — no need to re-run `ship`."
 
 **Auto-advance:** After each `/chanakya status` or inbox sweep, if all Phase 1 tasks are `done`, automatically print the Phase 2 commands. The user doesn't need to re-run `ship`.
 

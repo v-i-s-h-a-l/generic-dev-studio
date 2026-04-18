@@ -852,7 +852,11 @@ chmod +x scripts/*.sh</code></pre>
     </div>
     <div class="cmd-card">
       <code>scripts/achilles-dispatch.sh &lt;task-id&gt; [worker-N|any]</code>
-      <span>Writes a task file to a worker inbox. Default <code>any</code> picks the alive worker with the lowest <code>busy + pending</code> load. Pass extra flags after <code>--</code> (e.g. <code>-- --wait --force-build</code>).</span>
+      <span>Writes a task file to a worker inbox. Default <code>any</code> picks the alive worker with the lowest <code>busy + pending</code> load. Pass extra flags after <code>--</code> (e.g. <code>-- --wait --force-build</code>). For batch dispatch prefer the work-stealing queue.</span>
+    </div>
+    <div class="cmd-card">
+      <code>scripts/achilles-queue.sh {enqueue|drain|list|depth|clear}</code>
+      <span>Work-stealing dispatch queue. <code>enqueue &lt;id&gt;</code> appends; <code>drain</code> hands head-of-queue tasks to each free worker (<code>busy=0 AND pending=0</code>). Chanakya calls <code>drain</code> on every <code>task_completed</code> event so fast workers don't sit idle behind slow ones.</span>
     </div>
     <div class="cmd-card">
       <code>scripts/worker-status.sh</code>
@@ -860,7 +864,7 @@ chmod +x scripts/*.sh</code></pre>
     </div>
     <div class="cmd-card">
       <code>scripts/achilles-cancel.sh &lt;task-id&gt;</code>
-      <span>Removes pending dispatches matching the id. Cannot stop in-flight tasks &mdash; kill the worker pane for that.</span>
+      <span>Removes pending dispatches matching the id. Cannot stop in-flight tasks &mdash; kill the worker pane for that. Does not touch the dispatch queue; use <code>achilles-queue.sh clear</code> for that.</span>
     </div>
   </div>
 
@@ -870,8 +874,11 @@ chmod +x scripts/*.sh</code></pre>
     <tbody>
       <tr><td><code>--worker-status</code></td><td>Surface the fleet table. Use before any dispatch to confirm capacity.</td></tr>
       <tr><td><code>--dispatch &lt;task-id&gt; [worker-N|any]</code></td><td>Shell out to <code>achilles-dispatch.sh</code>. Refuses if task status is not <code>briefed</code>.</td></tr>
-      <tr><td><code>--dispatch-many &lt;ids&hellip;&gt;</code></td><td>One <code>--dispatch any</code> per id; skips ids already pending in some inbox (re-dispatch guard).</td></tr>
-      <tr><td><code>--cancel &lt;task-id&gt;</code></td><td>Remove pending dispatches across all inboxes.</td></tr>
+      <tr><td><code>--dispatch-many &lt;ids&hellip;&gt;</code></td><td>Legacy upfront fan-out &mdash; one <code>--dispatch any</code> per id. Superseded by <code>--queue-enqueue</code> + <code>--queue-drain</code> for anything more than 1&ndash;2 tasks.</td></tr>
+      <tr><td><code>--queue-enqueue &lt;task-id&gt;</code></td><td>Append to the per-project work-stealing queue. No-op if already queued.</td></tr>
+      <tr><td><code>--queue-drain</code></td><td>Hand head-of-queue tasks to each free worker (<code>busy=0 AND pending=0</code>). Called automatically by Chanakya on <code>task_completed</code>.</td></tr>
+      <tr><td><code>--queue-list</code> / <code>--queue-depth</code> / <code>--queue-clear</code></td><td>Inspect or reset the queue.</td></tr>
+      <tr><td><code>--cancel &lt;task-id&gt;</code></td><td>Remove pending dispatches across all inboxes. Does not touch the queue.</td></tr>
     </tbody>
   </table>
 

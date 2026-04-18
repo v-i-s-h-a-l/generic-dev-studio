@@ -70,7 +70,9 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 # Multi-worker fleet (BETA)
 /achilles worker                 # in a Claude session (broadcast-typed across N panes); each claims a slot
 scripts/achilles-worker.sh       # bash equivalent; same atomic claim, no Claude wrapper
-scripts/achilles-dispatch.sh T001        # routes to least-loaded alive worker
+scripts/achilles-dispatch.sh T001        # direct dispatch (single task)
+scripts/achilles-queue.sh enqueue T001   # work-stealing queue — batch-friendly, no idle slots
+scripts/achilles-queue.sh drain          # hand head-of-queue to each free worker
 scripts/worker-status.sh                 # one-shot fleet table
 scripts/achilles-cancel.sh T001          # remove pending dispatch
 scripts/fleet-cleanup.sh [--dry-run|--all]  # soft sweep / full teardown
@@ -109,6 +111,7 @@ commands/
 scripts/                # multi-worker fleet (BETA)
   achilles-worker.sh    # long-running worker pane; atomic slot claim via mkdir+PID-token
   achilles-dispatch.sh  # write task file to least-loaded (or pinned) worker inbox
+  achilles-queue.sh     # work-stealing dispatch queue — enqueue/drain/list/depth/clear
   worker-status.sh      # one-shot fleet status table
   achilles-cancel.sh    # remove pending dispatches
   fleet-cleanup.sh      # soft sweep (stale locks, old done/) or --all teardown

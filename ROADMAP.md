@@ -34,7 +34,7 @@ This file is the **vision and themes** doc — long-running directions the proje
 ### Commands to build
 - `scripts/achilles-worker.sh` — shell loop with fswatch + claude -p
 - `scripts/worker-status.sh` — one-shot report of all workers
-- Chanakya modes: `--dispatch <task-id> <worker-N|any>`, `--dispatch-many <task-ids>`, `--cancel <task-id>`, `--worker-status`
+- Chanakya modes: `--dispatch <task-id> <worker-N|any>`, `--queue-enqueue <task-id>` + `--queue-drain` (work-stealing; preferred for batch), `--dispatch-many <task-ids>` (legacy upfront fan-out), `--cancel <task-id>`, `--worker-status`
 - iMessage/Telegram command parser in Chanakya: "work on T001 T002", "status", "cancel T004", "what's worker 2 doing"
 
 ### Nice-to-haves (later)
