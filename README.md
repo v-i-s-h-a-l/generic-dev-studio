@@ -57,6 +57,13 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /chanakya sync-slack             # sync Slack bug list with master plan after a build
 /chanakya sync-slack --configure-token   # one-time: save Slack bot token
 /chanakya sync-slack --configure         # one-time: configure project Slack list IDs
+/chanakya ingest-thread <ch> <ts>        # pull Slack thread into feedback/active.md
+/chanakya ingest-dm <user>               # ingest a DM history into feedback
+/chanakya ingest-slack                   # broad channel sweep into feedback
+/chanakya report-design                  # filtered feedback report for design stakeholders
+/chanakya report-product                 # filtered feedback report for PM stakeholders
+/chanakya feedback-archive               # prune resolved records from feedback/active.md
+/chanakya feedback-history               # search archived feedback (--reporter/--module/--root-cause)
 
 # Multi-worker fleet (BETA)
 /achilles worker                 # in a Claude session (broadcast-typed across N panes); each claims a slot
@@ -83,7 +90,9 @@ argus/
 chanakya/
   SKILL.md         # manager agent — intake, briefing, status, PRD review, inbox sweep,
                    #   event log processing, test-manifest, test-flow, review-feedback,
-                   #   sync-slack, ship, brief-all, sweep-debt, verify, compact
+                   #   sync-slack, ship, brief-all, sweep-debt, verify, compact,
+                   #   ingest-thread/dm/slack, report-design, report-product,
+                   #   feedback-archive, feedback-history
   README.md        # long-form user docs with examples
   docs.html        # interactive docs page (open in browser)
 

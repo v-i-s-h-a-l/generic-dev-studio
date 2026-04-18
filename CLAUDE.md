@@ -18,6 +18,18 @@ Also, proactively: after landing commits on `main`, evaluate whether the repo ha
 
 When a release ships, update the **Mermaid timeline + "Story so far"** section near the top of `README.md`: add the new release line under the appropriate timeline year, prepend a one-paragraph summary to "Story so far", and remove any "Coming next" / "Long term" themes that the release just delivered. Keep the bullet style outcome-first (same rules as RELEASES.md).
 
+## Docs sync (auto-apply)
+
+Whenever a change adds, removes, or renames a user-visible sub-command, flag, or session mode across `chanakya/SKILL.md`, `achilles/SKILL.md`, `argus/SKILL.md`, or any `scripts/*.sh` entry point — **sync the three doc surfaces in the same change, without asking**:
+
+1. `chanakya/docs.html` — add/update the matching card in Quick Reference, Composites, or Fleet sections.
+2. `README.md` — TL;DR code block + the relevant `# comment` roster under "What's in the Repo".
+3. `chanakya/README.md` — if the long-form walkthrough touches the affected mode.
+
+After updating HTML, open it in Safari once (`open -a Safari "file://…/chanakya/docs.html"`) and print the URL. No need to ask. Skip the open step if the diff was doc-only wording (no new cards).
+
+Pure rule/doc edits (REVIEW.md, RELEASES.md, CLAUDE.md, THEMES.md, ARCHITECTURE.md) do **not** trigger this — they have no user-facing command surface.
+
 ## Backlog
 
 When the user agrees on new work in chat (explicitly: "let's do X", "let's plan Y for later") — **open a GitHub issue** for it via `gh issue create` with the appropriate label (`phase-2`, `roadmap`, `enhancement`, `bug`, `polish`). No need to ask permission for items the user has explicitly discussed and agreed to.

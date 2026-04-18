@@ -591,6 +591,34 @@
       <code>/chanakya sync-slack --configure</code>
       <span>One-time: interactively populate project Slack list IDs, column IDs, and stakeholder handles in project memory.</span>
     </div>
+    <div class="cmd-card">
+      <code>/chanakya ingest-thread &lt;channel&gt; &lt;thread-ts&gt;</code>
+      <span>Pull a Slack thread into <code>feedback/active.md</code> as structured records. <code>--build N</code> tags to build; <code>--dry-run</code> previews.</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya ingest-dm &lt;user&gt;</code>
+      <span>Ingest a DM history into feedback records. <code>--since ts</code> to bound; <code>--dry-run</code> previews.</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya ingest-slack</code>
+      <span>Broad channel sweep into feedback. <code>--channel id</code>, <code>--since ts</code>, <code>--dry-run</code>.</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya report-design</code>
+      <span>Filtered report of design-owned feedback (for design stakeholders). <code>--build N</code> to scope.</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya report-product</code>
+      <span>Filtered report of product-owned feedback (for PM stakeholders). <code>--build N</code> to scope.</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya feedback-archive</code>
+      <span>Prune resolved records from <code>feedback/active.md</code> into dated archives. <code>--notify-slack</code>, <code>--dry-run</code>. Auto-suggested at &gt;50 records; required at ≥100.</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya feedback-history</code>
+      <span>Search archived feedback: <code>--reporter</code>, <code>--module</code>, <code>--root-cause</code>.</span>
+    </div>
   </div>
 
   <h3 style="color: var(--achilles);">Achilles &mdash; The Warrior</h3>
