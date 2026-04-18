@@ -151,8 +151,13 @@ for f in "$DIR/inbox"/*.task; do process_task "$f"; done
 shopt -u nullglob
 
 log "watching $DIR/inbox (timeout=${TIMEOUT_SEC}s, unattended=${ACHILLES_UNATTENDED:-0})"
-fswatch -0 --event Created --event MovedTo "$DIR/inbox" | while IFS= read -r -d '' path; do
+fswatch -0 --event Created --event Updated --event MovedTo --event Renamed "$DIR/inbox" | while IFS= read -r -d '' path; do
   case "$path" in
-    *.task) process_task "$path" ;;
+    *.task)
+      [ -e "$path" ] || continue
+      # Coalesce duplicate events for the same file (Created+Updated arrives twice)
+      sleep 0.05
+      [ -e "$path" ] && process_task "$path"
+      ;;
   esac
 done
