@@ -454,6 +454,8 @@ rm -rf /tmp/derived-data/<task-id>
 
 Write debrief following the format at `~/.claude/skills/_shared/debrief-format.md`.
 
+**Debrief is load-bearing for worker-mode detection.** The worker wrapper (`scripts/achilles-worker.sh`) treats a `claude -p` exit with `rc=0` and no debrief at `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-debrief.md` as a silent-stuck state and routes the task to `rescue/<task-id>-stuck.md`. Any meaningful outcome — completion, blocked, failed — must write a debrief before exit. Clarifying questions exit one-shot subagents cleanly and trip this detector; prefer the autonomous-default pattern (pick the obvious default, proceed, note the assumption in the debrief) instead of asking.
+
 If Argus returned `flagged`, add a `## Argus Review` block to the debrief:
 ```markdown
 ## Argus Review

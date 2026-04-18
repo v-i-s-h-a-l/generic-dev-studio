@@ -6,6 +6,8 @@
 #   resolve_display_name     prints a friendly display name (git remote → slug)
 #   resolve_inbox_root       prints the current project's achilles-inbox root
 #   resolve_inbox_root_for   prints the achilles-inbox root for a given slug
+#   resolve_chanakya_inbox   prints the current project's chanakya-inbox root
+#   resolve_chanakya_inbox_for prints the chanakya-inbox root for a given slug
 #   resolve_runtime_global   prints the machine-global runtime root
 #   resolve_push_queue       prints the per-project push-queue path
 #   detect_stack             prints ios|web|rust|python|go|mixed|unknown
@@ -66,6 +68,19 @@ resolve_push_queue() {
   local project
   project=$(resolve_project) || return 1
   printf '%s\n' "$HOME/.dev-studio/$project/.runtime/state/push-queue.jsonl"
+}
+
+# Chanakya inbox root for a given project — where task debriefs land.
+# Canonical path: ~/.dev-studio/<project>/plans/chanakya-inbox/
+resolve_chanakya_inbox_for() {
+  local project="${1:?usage: resolve_chanakya_inbox_for <slug>}"
+  printf '%s\n' "$HOME/.dev-studio/$project/plans/chanakya-inbox"
+}
+
+resolve_chanakya_inbox() {
+  local project
+  project=$(resolve_project) || return 1
+  resolve_chanakya_inbox_for "$project"
 }
 
 # Friendly display name. Auto-derived in this order:

@@ -167,12 +167,33 @@ process_task() {
   tail -n 40 "$LOG" 2>/dev/null || true
   printf '──────────────────────────────────\n'
 
+  local debrief="$(resolve_chanakya_inbox_for "$PROJECT")/$task_id-debrief.md"
+  local debrief_exists=0
+  [ -f "$debrief" ] && debrief_exists=1
+
   if [ "$rc" -eq 124 ]; then
-    log "timeout $task_id after ${TIMEOUT_SEC}s -> rescue/"
+    log "timeout $task_id after ${TIMEOUT_SEC}s -> rescue/ (debrief=$debrief_exists)"
     mv "$task_file" "$DIR/rescue/$base"
+  elif [ "$rc" -eq 0 ] && [ "$debrief_exists" = "0" ]; then
+    # Silent-stuck: subagent exited cleanly but wrote no debrief. Almost
+    # always means it asked a clarifying question and the one-shot process
+    # closed before an answer could arrive. Surface as stuck — operator
+    # decides the next step — instead of letting the slot look completed.
+    local stuck="$DIR/rescue/$task_id-stuck.md"
+    {
+      printf 'task_id=%s\n' "$task_id"
+      printf 'flags=%s\n' "$flags"
+      printf 'ts=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf 'rc=%s\n' "$rc"
+      printf 'reason=no-debrief-written\n'
+      printf '\n---- log tail (last 200 lines) ----\n'
+      tail -n 200 "$LOG" 2>/dev/null || true
+    } > "$stuck"
+    mv "$task_file" "$DIR/rescue/$base"
+    log "STUCK $task_id (rc=0 debrief=0) -> rescue/ (see $task_id-stuck.md)"
   else
     mv "$task_file" "$DIR/done/$base"
-    log "done $task_id (rc=$rc)"
+    log "done $task_id (rc=$rc debrief=$debrief_exists)"
   fi
 }
 

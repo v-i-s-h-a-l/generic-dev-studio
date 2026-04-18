@@ -37,6 +37,8 @@ Worker panes auto-title as `<project>:worker-N` (iTerm/tmux OSC 0) so you can te
 
 After each dispatched task, the pane prints the last 40 lines of `worker.log` so questions or errors from the subagent are visible without tailing the log from a separate pane.
 
+**Stuck-state detection:** if `claude -p` exits `rc=0` but no debrief was written at `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-debrief.md`, the worker treats the task as silently stuck (the subagent almost certainly exited after asking a clarifying question the one-shot process could never answer). The task file goes to `rescue/` and a sidecar `<task-id>-stuck.md` captures the flags, timestamp, and last 200 lines of log. Operator decides whether to re-brief and re-dispatch.
+
 In your Chanakya session (or any shell):
 
 ```sh

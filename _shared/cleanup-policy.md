@@ -27,6 +27,7 @@ Ownership table, retention tiers, and compact extension spec for all agents.
 | Worker `busy` marker | Worker | Removed after each task; on shutdown |
 | Worker `done/<ts>-<id>.task` | Worker (boot sweep) | Auto-pruned >7 days on every worker boot |
 | Worker `inbox/`, `rescue/` | Operator | `rescue/` left for manual retry; `fleet-cleanup.sh --all` for teardown |
+| Worker `rescue/<task-id>-stuck.md` | Operator | Written by worker on rc=0 + missing debrief; captures flags + log tail |
 | Worker `worker.log` | `fleet-cleanup.sh` | Rotated to `.1` when >5MB on soft sweep |
 | Stale worker `.lock` (PID dead OR heartbeat >180s) | `fleet-cleanup.sh` (soft) | Cleared on between-session sweep |
 
