@@ -101,6 +101,60 @@ last_activity_ts: 2026-04-18T14:32:01Z
 
 ---
 
+## Multi-worker fleet dispatch
+
+When the user runs N panes of `scripts/achilles-worker.sh <N>` (typical: 6), Chanakya can fan tasks out across them instead of expecting an interactive Achilles session in the foreground.
+
+### IPC contract
+
+Worker dirs live under `${ACHILLES_INBOX_ROOT:-~/.claude/achilles-inbox}/worker-<N>/` with this layout:
+
+| Path | Meaning |
+|---|---|
+| `alive` | mtime updated every 60s by the worker; staleness >180s = dead |
+| `busy` | present iff a task is in-flight; contents = task-id |
+| `inbox/<ts>-<id>.task` | pending dispatch (the worker's `fswatch` target) |
+| `done/<ts>-<id>.task` | completed |
+| `rescue/<ts>-<id>.task` | timed-out or malformed; operator decides retry |
+| `worker.log` | append-only worker log |
+
+Task file format:
+
+```
+task_id=T001
+flags=--wait --force-build
+dispatched_at=2026-04-18T12:34:56Z
+dispatched_from=user@host
+```
+
+### Sub-commands
+
+| Flag / mode | Behavior |
+|---|---|
+| `--worker-status` | Run `scripts/worker-status.sh` and surface the table. Use this before any dispatch to confirm capacity. |
+| `--dispatch <task-id> [worker-N\|any]` | Shell out to `scripts/achilles-dispatch.sh <task-id> <target>`. With `any` (default), the script picks the alive worker with the lowest `busy + pending` load. Refuse if the task's status is not `briefed` in `chanakya-master.md`. |
+| `--dispatch-many <task-id> [<task-id>…]` | One `achilles-dispatch.sh ... any` per task in order. Skip any that already appear as pending in some worker inbox (re-dispatch guard). |
+| `--cancel <task-id>` | Shell out to `scripts/achilles-cancel.sh`. Only removes pending dispatches; in-flight tasks require killing the worker pane. |
+
+### Dispatch refusal rules
+
+Refuse to dispatch when:
+- Task status is not `briefed` (e.g. still `pending`, already `in-progress`, `done`).
+- Build Debt block is in `block` state and the task is not a debt-reduction task.
+- No alive workers (heartbeat <180s) and the user did not explicitly pin a worker.
+
+Surface the refusal with a one-line reason and a suggested fix (e.g. "T004 is `pending` — run `/chanakya brief T004` first").
+
+### Integration with `ship`
+
+The existing `ship <target>` mode briefs and then dispatches. In fleet mode it should call `--dispatch-many` over the freshly-briefed task IDs rather than spawning a single foreground Achilles. Detect fleet mode by presence of any alive worker dir; fall back to single-session dispatch otherwise.
+
+### Events
+
+Worker.log lines are operator-facing only. Real status flow stays on the existing event log: Achilles inside the worker still emits `task_started`, `task_completed`, `review_blocked`, etc. Chanakya consumes those in Step 0E exactly as today — the worker layer is invisible to the event pipeline.
+
+---
+
 ## Step −1 — Session Launch
 
 On the **first** invocation of `/chanakya` in a session (no `--auto-sweep` flag), proceed directly to Step 0. No prompt about background sweep — the user opts in by passing `--away` or `--auto-sweep` at invocation time.
