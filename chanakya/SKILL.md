@@ -359,7 +359,25 @@ Read the `## Reminders` section of `feedback/active.md`. For each row whose `due
 
 This mechanism replaces a real scheduler — the adaptive-backoff sweep already ticks at most every 15–120 min, which is adequate granularity for a 24h post-`push-tf` reminder.
 
-### 0F — Proceed to the requested mode
+### 0F — Studio-feedback inbox ingestion (generic-dev-studio sessions only)
+
+Gate: only run when the current project slug (from `resolve_project()`) is `generic-dev-studio`. In any other project's session this step is a no-op — files accumulate in `~/.dev-studio/generic-dev-studio/feedback-inbox/<source-project>/` until a generic-dev-studio session next sweeps.
+
+Steps:
+
+1. Scan `~/.dev-studio/generic-dev-studio/feedback-inbox/*/*.md`, **excluding** files under any `processed/` subdirectory.
+2. For each unprocessed file, in filename order (timestamp-prefixed, so chronological):
+   a. Append the file's contents verbatim (frontmatter + body) to `~/.dev-studio/generic-dev-studio/analysis/<today>.md`, preceded by a `---` separator and a `## Ingested: <path>` heading for traceability.
+   b. Read the `scope:` frontmatter value:
+      - `generic-dev-studio` → surface the record in session chat with a one-line summary and offer to file a sanitized public issue via `gh issue create`. Strip `source_project`-specific identifiers (task IDs, field names, project slug) before filing. Per CLAUDE.md privacy rule, public issues describe abstract patterns — full-detail citations stay in the private analysis file.
+      - `upstream` → surface the record and ask the user where to file (Playwright MCP repo / claude-code issue tracker / etc.). Do not auto-file; user confirms the destination.
+      - `work-project` → no public filing. Private analysis only.
+   c. Move the file to `<source-project-dir>/processed/<filename>` (`mkdir -p` the processed dir if missing).
+3. If N files ingested, include a one-line summary in the session greeting: `Ingested N studio-feedback records (see analysis/<today>.md)`.
+
+This step replaces the earlier paste-based flow. Emitting sessions write files to the canonical path; generic-dev-studio sessions ingest on next wake.
+
+### 0G — Proceed to the requested mode
 
 For `auto-sweep` invocations: determine whether the sweep was blank (no events processed, no inbox items found, no reminders fired). Update `auto_sweep_state.md` accordingly (increment or reset `consecutive_blank`), compute the next delay via adaptive backoff, re-schedule, then stop.
 
@@ -917,38 +935,62 @@ No writes. Pure read.
 
 ## Mode: Studio-Feedback (`/chanakya studio-feedback` or conversational "capture this as feedback")
 
-Emit a structured block the user can paste into their generic-dev-studio session for ingestion. **Distinct from the project-feedback family** (`feedback-archive`, `feedback-history`, `ingest-*`, `report-*`) — that family handles stakeholder/tester bug reports about the product being built. **This mode captures feedback about the studio itself** (Chanakya/Achilles/Argus/scripts, brief-template defects, rule misses, workflow friction, MCP or harness issues observed while using the studio).
+Capture feedback about the studio itself — Chanakya/Achilles/Argus/scripts, brief-template defects, rule misses, workflow friction, MCP or harness issues observed while using the studio. **Distinct from the project-feedback family** (`feedback-archive`, `feedback-history`, `ingest-*`, `report-*`), which handles stakeholder/tester reports about the product being built.
 
 ### Triggers
 
 - User types `/chanakya studio-feedback`.
 - User says conversationally: "capture this as feedback", "file feedback", "save this as feedback", or similar.
 
-### Output
+### Canonical inbox path
 
-Emit **exactly** this fenced block, filled from current session context. No files written.
+Always write to the per-project inbox under the studio's own project slug:
+
+```
+~/.dev-studio/generic-dev-studio/feedback-inbox/<source-project>/<ts>-<kind>-<slug>.md
+```
+
+- `<source-project>` = `resolve_project()` result of the session where this mode runs (e.g. `turnip-ios`, `generic-dev-studio`). Groups feedback by where it was noticed.
+- `<ts>` = `YYYYMMDD-HHMMSS` UTC.
+- `<kind>` = `bug` | `friction` | `idea` | `rule-miss`.
+- `<slug>` = ≤40 chars, lower-kebab-case, derived from the session description.
+
+Example: `~/.dev-studio/generic-dev-studio/feedback-inbox/turnip-ios/20260418-203000-bug-worker-rc0-silent-stuck.md`
+
+Create parent dirs with `mkdir -p` — no setup required. The path is hardcoded because the point of this mode is to route every session's feedback to the **same canonical location** (earlier sessions scattered to `/tmp`, `~/.claude/...`, etc. — the hardcoded path is what prevents scatter).
+
+### File format
 
 ```
 ---
-ts: <ISO-8601 UTC, e.g. 2026-04-18T20:05:00Z>
+ts: <ISO-8601 UTC>
 session: <one-line what the user was doing, ≤20 words>
+source_project: <slug>
 kind: bug | friction | idea | rule-miss
 severity: low | med | high
-scope: generic-dev-studio | upstream (Claude Code / MCP server) | work-project
+scope: generic-dev-studio | upstream | work-project
 ---
 <body — what happened, why it matters, repro or root cause if known, proposed fix if obvious>
 ```
 
-Then print one line: `Paste into your generic-dev-studio session to ingest.`
+### After write
 
-### No writes
+Print one line confirming the write path, e.g. `Wrote feedback to ~/.dev-studio/generic-dev-studio/feedback-inbox/turnip-ios/<file>.md — will be ingested on next generic-dev-studio session.`
 
-This mode only emits text. The ingesting generic-dev-studio session decides where it lands:
-- `~/.dev-studio/generic-dev-studio/analysis/<date>.md` (always, verbatim, private).
-- Public GitHub issue on generic-dev-studio (sanitized) — studio-scope only.
-- Upstream filing (Claude Code / MCP repo) — upstream-scope only.
+Do not require the user to do anything else. Do not paste, do not copy.
 
-Writing to disk from this mode would re-create the exact scatter-to-random-paths problem the mode exists to solve.
+### Ingestion (generic-dev-studio session only)
+
+When the current session's project slug is `generic-dev-studio`, Step 0 scans `~/.dev-studio/generic-dev-studio/feedback-inbox/*/` for new `.md` files **outside** of `processed/` subdirs. For each file:
+
+1. Append verbatim to `~/.dev-studio/generic-dev-studio/analysis/<date>.md` (always, private).
+2. Decide scope from the file's `scope:` frontmatter:
+   - `generic-dev-studio` → offer to file a sanitized GitHub issue via `gh issue create`.
+   - `upstream` → surface the record, ask user where to file (Playwright MCP repo / claude-code issue tracker / etc.).
+   - `work-project` → no public filing; private analysis only.
+3. Move the file to `<source-project>/processed/<filename>`.
+
+The ingestion step is a no-op in sessions outside `generic-dev-studio` — files just accumulate in `feedback-inbox/<source-project>/` until the user next opens a generic-dev-studio session.
 
 ---
 

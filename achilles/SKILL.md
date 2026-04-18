@@ -543,21 +543,19 @@ The Step 11 scheduled wake has been removed. Follow-up surfacing is now event-dr
 
 ## Studio-Feedback Mode (`/achilles studio-feedback` or conversational "capture this as feedback")
 
-Same contract as `/chanakya studio-feedback`: emit a fenced feedback block the user pastes into their generic-dev-studio session. No writes. See `chanakya/SKILL.md` → Mode: Studio-Feedback for the exact block format — identical here.
+Same contract as `/chanakya studio-feedback`: write a feedback file to the canonical inbox path. Single source of truth for path/format/ingestion rules lives in `chanakya/SKILL.md` → Mode: Studio-Feedback — identical here.
+
+**Canonical path (restated for reference):** `~/.dev-studio/generic-dev-studio/feedback-inbox/<source-project>/<ts>-<kind>-<slug>.md`. `<source-project>` = `resolve_project()`. Create parents with `mkdir -p`. No paste required.
 
 ### Interactive invocation
 
-User runs `/achilles studio-feedback` or says "capture this as feedback" inside an Achilles session. Emit the block, print `Paste into your generic-dev-studio session to ingest.`, exit.
+User runs `/achilles studio-feedback` or says "capture this as feedback". Fill the file format from context, write to the canonical path, print one line confirming the write path.
 
 ### Subagent emission discipline (one-shot `claude -p "/achilles <task-id>"`)
 
-When executing a task, if the subagent notices a **studio-level issue** (wrapper bug, brief-template defect, unreachable step, silent failure mode, misleading error, rule gap), it must include a studio-feedback block in its **debrief output** — not invoke the sub-command separately. The `claude -p` subprocess cannot wait for user paste; emitting inline in the debrief routes through Chanakya's Step 0E ingestion on the next sweep.
+When executing a task, if the subagent notices a **studio-level issue** (wrapper bug, brief-template defect, unreachable step, silent failure mode, misleading error, rule gap), write the feedback file directly to the canonical path — the one-shot subprocess has write access and the filesystem is the ingestion channel. Do **not** also emit a fenced block in the debrief; double-ingestion would duplicate records.
 
-Scope boundary: studio-level issues only. Questions about the task's implementation go to the debrief's `status: blocked_awaiting_input` field, not here. If unsure, lean toward emitting — ingestion is idempotent and cheap.
-
-### Format
-
-Identical to Chanakya's block. Do not re-specify here — single source of truth lives in `chanakya/SKILL.md`.
+Scope boundary: studio-level issues only. Questions about the task's implementation go to the debrief's `status: blocked_awaiting_input` field, not here. If unsure, lean toward writing — ingestion is idempotent and cheap.
 
 ---
 

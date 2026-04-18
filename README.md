@@ -64,8 +64,8 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /chanakya report-product                 # filtered feedback report for PM stakeholders
 /chanakya feedback-archive               # prune resolved records from feedback/active.md
 /chanakya feedback-history               # search archived feedback (--reporter/--module/--root-cause)
-/chanakya studio-feedback                # emit a paste-able block capturing feedback about the studio itself
-/achilles studio-feedback                # same, from an Achilles session; subagents emit inline in debrief
+/chanakya studio-feedback                # capture feedback about the studio itself → writes to canonical inbox; auto-ingested next generic-dev-studio session
+/achilles studio-feedback                # same, from an Achilles session; subagents write direct to inbox
 
 # Multi-worker fleet (BETA)
 /achilles worker                 # in a Claude session (broadcast-typed across N panes); each claims a slot
