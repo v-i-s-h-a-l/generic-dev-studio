@@ -75,6 +75,24 @@ Before finalizing, read each bullet and ask: *who's the subject of this sentence
 - If it's the software ("the studio now…", "workers…", "tabs…") → rewrite.
 - If it's the user (implied "you") or an outcome ("no conflicts", "machine-wide status") → keep.
 
+### Minor-bump headline rule
+
+Every MINOR bump exists *because of* one specific feature (or closely related set). That feature is the reason a user should upgrade — it must be obvious from the notes.
+
+- **Identify the triggering feature** before writing. If you can't name it in one sentence, the release probably shouldn't be a MINOR.
+- **Give it the top bullet** under What's new. Don't bury it under smaller wins.
+- **Add one example use case** — a short, concrete scenario showing how a user would actually reach for it. One example, one scenario, 1–2 lines. Use judgement: if the top bullet is already self-evident, skip the example. If the feature is abstract or might not be obvious *when* to use it, the example earns its keep.
+- **Don't example-spam.** Only the triggering feature gets an example. Supporting bullets stay clean one-liners. Readers scan — over-examples dilute the headline.
+
+Example of the rule applied:
+
+> - **Work on multiple projects at the same time.** Each project's work stays separate — no accidental cross-talk.
+>
+>   *Example: you're deep in turnip-ios when a bug hits another app. Open the studio in the other project's folder — it gets its own workers and queue, and turnip-ios stays untouched.*
+>
+> - Know which pane is doing what. Tabs label themselves with the project name.
+> - No setup when you switch projects.
+
 ### Tone check
 
 Read each bullet aloud. Red flags:
