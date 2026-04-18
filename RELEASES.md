@@ -81,12 +81,62 @@ Leaks to watch for:
 
 ## Versioning
 
-Semver (`MAJOR.MINOR.PATCH`), starting at `v0.1` when the first tag lands.
+Semver (`MAJOR.MINOR.PATCH`). When proposing a bump, state *which rule triggered it* — forces explicit reasoning, catches mistakes.
 
-- `v0.x` → pre-stable; minor bumps can include breaking changes *if the What's new section flags them*.
-- `v1.0` → first stable release. After that, breaking changes bump `MAJOR`; new capabilities bump `MINOR`; fixes bump `PATCH`.
+### Decide the bump by asking three questions
 
-Don't fight the versioning. If in doubt, bump `MINOR`.
+**1. Does the user need to change anything to upgrade?**
+If yes → **breaking**. Examples in this repo:
+- Script flag removed or renamed
+- SKILL.md sub-command removed or renamed (`/chanakya ship` gone)
+- On-disk path moved (the `~/.dev-studio/.runtime/` → `<project>/.runtime/` refactor is exactly this)
+- Env var removed or renamed
+- Event log / task file / brief format changes that old agents can't parse
+
+**2. Does this add a new way to do something that didn't exist?**
+If yes → **additive**. Examples:
+- New sub-command (`/chanakya feedback-archive`)
+- New script
+- New flag that preserves old default behavior
+- New env var (`ACHILLES_DISPLAY_NAME`)
+- New optional field in a schema
+
+**3. Is this only fixing something broken, or a perf improvement with no behavior change?**
+If yes → **fix**.
+
+### Mapping to version bumps
+
+**Pre-1.0** (we are here):
+- Breaking → bump **MINOR** (0.1 → 0.2) + prominent Migration section in notes
+- Additive → bump **MINOR**
+- Fix → bump **PATCH**
+
+Rationale: semver §4 says `0.y.z` is for "anything may change." Collapsing breaking and additive into MINOR avoids premature 1.0 churn without deceiving users — the Migration section carries the weight when it's breaking.
+
+**Post-1.0**:
+- Breaking → bump **MAJOR** (strict)
+- Additive → bump **MINOR**
+- Fix → bump **PATCH**
+
+### When to cut 1.0
+
+Don't rush it. Cut 1.0 when:
+- APIs have stabilized (few breaking changes across 2–3 recent releases)
+- At least one external user (not just you) depends on the repo
+- You're willing to live with post-1.0 discipline (MAJOR bumps for every break)
+
+Until then, staying in 0.x is honest and gives freedom to reshape.
+
+### Pre-release suffixes
+
+- `-beta.N` — shipping for feedback; interfaces may still shift
+- `-rc.N` — release candidate; no changes expected unless bugs found
+
+Drop the suffix when you're ready to call it stable. Don't ship public `-beta` indefinitely.
+
+### When in doubt
+
+Bump MINOR. The Migration section in "What's new" carries the weight if it's breaking. Don't fight the version number.
 
 ## Mechanics
 
