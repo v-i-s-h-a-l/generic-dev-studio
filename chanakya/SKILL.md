@@ -97,7 +97,7 @@ last_activity_ts: 2026-04-18T14:32:01Z
 - After a blank sweep: increment `consecutive_blank`, persist, schedule next wake at the new delay.
 - After an active sweep: reset `consecutive_blank` to 0, persist, schedule next wake at 15 min.
 
-**Push-on-exception events bypass backoff.** Block events (`review_blocked`, `merge_conflict`, `build_debt_blocked`, `task_awaiting_user`) are pushed immediately via the push queue — the user never waits 2 hours to hear about a critical block regardless of the current sleep interval.
+**Push-on-exception events bypass backoff.** Block events (`review_blocked`, `merge_conflict`, `build_debt_blocked`, `task_awaiting_user`, `task_rescued`) are pushed immediately via the push queue — the user never waits 2 hours to hear about a critical block regardless of the current sleep interval.
 
 ---
 
@@ -328,7 +328,8 @@ OFFSET_FILE="$PROJECT_MEMORY/events_offset.md"
 | `task_verified` | Archive `<project-memory>/reviews/review_<task>.md` to `reviews/archive/` if it exists. |
 | `review_approved` | Delete `/tmp/argus-<task>.xcresult` if it exists. |
 | `task_completed` | Note the task ID for potential follow-up brief generation. **Call `<scripts>/achilles-queue.sh drain`** to hand the freed worker its next task (no-op if queue is empty). |
-| `brief_failed` / `merge_conflict` / `review_blocked` | In addition to the row-specific action above, call `<scripts>/achilles-queue.sh drain` — the worker slot is free again; give it the next pending task rather than stranding the queue. (Already handled by `task_completed` when the block eventually merges; this covers the cases that stay blocked.) |
+| `brief_failed` / `merge_conflict` / `review_blocked` / `task_awaiting_user` / `task_rescued` | Call `<scripts>/achilles-queue.sh drain` in addition to the row-specific action — every one of these frees the worker slot without emitting `task_completed`, so skipping drain would strand the rest of the queue. |
+| `task_rescued` | Surface to user in next status: "Task `<task>` moved to rescue (reason: `<reason>`, worker: `<worker-N>`). See `worker-<N>/rescue/<task>-stuck.md` if reason=`silent_stuck`, or the task file's sidecar for `timeout`." Append to push queue — rescue is a hard block from the user's perspective. |
 | `base_stale` | Surface to user in next status: "Task <task> requires rebase — base advanced." |
 | `merge_conflict` | Surface to user. Append to push queue. |
 | `build_debt_blocked` | Append to push queue. |

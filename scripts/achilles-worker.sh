@@ -183,6 +183,9 @@ process_task() {
   if [ "$rc" -eq 124 ]; then
     log "timeout $task_id after ${TIMEOUT_SEC}s -> rescue/ (debrief=$debrief_exists)"
     mv "$task_file" "$DIR/rescue/$base"
+    append_event achilles task_rescued "$task_id" \
+      "{\"reason\":\"timeout\",\"timeout_s\":$TIMEOUT_SEC,\"debrief_written\":$debrief_exists,\"worker\":\"worker-$N\"}" \
+      2>/dev/null || true
   elif [ "$rc" -eq 0 ] && [ "$debrief_exists" = "0" ]; then
     # Silent-stuck: subagent exited cleanly but wrote no debrief. Almost
     # always means it asked a clarifying question and the one-shot process
@@ -200,6 +203,9 @@ process_task() {
     } > "$stuck"
     mv "$task_file" "$DIR/rescue/$base"
     log "STUCK $task_id (rc=0 debrief=0) -> rescue/ (see $task_id-stuck.md)"
+    append_event achilles task_rescued "$task_id" \
+      "{\"reason\":\"silent_stuck\",\"rc\":0,\"debrief_written\":0,\"worker\":\"worker-$N\"}" \
+      2>/dev/null || true
   else
     mv "$task_file" "$DIR/done/$base"
     log "done $task_id (rc=$rc debrief=$debrief_exists)"
