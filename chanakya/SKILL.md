@@ -369,8 +369,8 @@ Steps:
 2. For each unprocessed file, in filename order (timestamp-prefixed, so chronological):
    a. Append the file's contents verbatim (frontmatter + body) to `~/.dev-studio/generic-dev-studio/analysis/<today>.md`, preceded by a `---` separator and a `## Ingested: <path>` heading for traceability.
    b. Read the `scope:` frontmatter value:
-      - `generic-dev-studio` → surface the record in session chat with a one-line summary and offer to file a sanitized public issue via `gh issue create`. Strip `source_project`-specific identifiers (task IDs, field names, project slug) before filing. Per CLAUDE.md privacy rule, public issues describe abstract patterns — full-detail citations stay in the private analysis file.
-      - `upstream` → surface the record and ask the user where to file (Playwright MCP repo / claude-code issue tracker / etc.). Do not auto-file; user confirms the destination.
+      - `generic-dev-studio` → **auto-file** a sanitized public issue via `gh issue create`. Strip `source_project`-specific identifiers (task IDs, field names, project slug) before filing. Per CLAUDE.md privacy rule, public issues describe abstract patterns — full-detail citations stay in the private analysis file. Label `enhancement` or `bug` from the `kind:` frontmatter. Surface the resulting issue URL in the session greeting.
+      - `upstream` → surface the record with a one-line summary. Do not auto-file (destination is ambiguous — user decides Playwright MCP / claude-code / other). In at-laptop mode, ask for the destination. In away mode, defer: the record stays in `processed/` with its analysis-file copy; re-surface on the next at-laptop session.
       - `work-project` → no public filing. Private analysis only.
    c. Move the file to `<source-project-dir>/processed/<filename>` (`mkdir -p` the processed dir if missing).
 3. If N files ingested, include a one-line summary in the session greeting: `Ingested N studio-feedback records (see analysis/<today>.md)`.
