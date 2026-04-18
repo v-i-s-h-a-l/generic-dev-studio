@@ -142,6 +142,9 @@ mkdir -p ~/.dev-studio/$PROJECT/plans/chanakya-inbox/processed
 mkdir -p ~/.dev-studio/$PROJECT/worktrees
 mkdir -p ~/.dev-studio/$PROJECT/locks
 mkdir -p ~/.dev-studio/$PROJECT/derived-data
+
+# Cross-project runtime state (fleet inbox, test-slot semaphore, push queue):
+mkdir -p ~/.dev-studio/.runtime/{achilles-inbox,locks/test-slots,state}
 ```
 
 ### Permissions

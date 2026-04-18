@@ -9,7 +9,7 @@ Ownership table, retention tiers, and compact extension spec for all agents.
 | Artifact | Owner | Trigger |
 |---|---|---|
 | `.argus-running` marker | Argus (trap) | Removed on exit (success or failure) |
-| Test-slot files (`~/.claude/locks/test-slots/slot-N/`) | Argus (trap) | Released when test phase exits |
+| Test-slot files (`~/.dev-studio/.runtime/locks/test-slots/slot-N/`) | Argus (trap) | Released when test phase exits |
 | Result bundle (approve) | Argus | Deleted immediately after review completes |
 | Result bundle (flag) | Chanakya | Deleted on `review_approved` event (after review file archived) |
 | Result bundle (block) | Chanakya | Retained 48h; compact sweeps after |
@@ -114,7 +114,7 @@ The `--sweep-artifacts` flag (default on) extends compact with artifact cleanup.
    - Scan all `.argus-running` markers in `~/.dev-studio/<project>/worktrees/*/`:
      - Read PID from file
      - If `! kill -0 <pid> 2>/dev/null` (PID dead) OR age >24h → remove marker
-   - Scan `~/.claude/locks/test-slots/slot-*/pid`:
+   - Scan `~/.dev-studio/.runtime/locks/test-slots/slot-*/pid`:
      - Same PID/age logic → remove slot directory
 
 4. **Orphaned result bundles:**
@@ -146,7 +146,7 @@ The `--sweep-artifacts` flag (default on) extends compact with artifact cleanup.
 
 6. **Push queue cleanup:**
    ```bash
-   PUSH_FILE=~/.claude/state/push-queue.jsonl
+   PUSH_FILE=~/.dev-studio/.runtime/state/push-queue.jsonl
    if [ -f "$PUSH_FILE" ]; then
      CUTOFF=$(date -v -7d -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -d "7 days ago" -u +%Y-%m-%dT%H:%M:%SZ)
      # Filter out entries older than 7 days (awk or python one-liner)

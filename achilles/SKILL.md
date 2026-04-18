@@ -869,14 +869,14 @@ The Claude session itself does not run user tasks in its own context — it shel
    ```
    With no `N`: the script atomically claims the lowest free slot via `mkdir worker-N/.lock` with PID-token verify (race-safe under concurrent broadcast).
 4. Read the first few lines of the bash output to capture the claimed slot number. Report to the user:
-   > "Claimed slot 3. Watching inbox at `~/.claude/achilles-inbox/worker-3/`. Tell Chanakya `--dispatch <task-id>` (or use `scripts/achilles-dispatch.sh`) to send work."
+   > "Claimed slot 3. Watching inbox at `~/.dev-studio/.runtime/achilles-inbox/worker-3/`. Tell Chanakya `--dispatch <task-id>` (or use `scripts/achilles-dispatch.sh`) to send work."
 5. Stay foreground. Do **not** pre-emptively poll. The user will ask when they want status.
 
 ### W2 — Status / monitor on demand
 
 When the user asks for status, run `Bash` to:
-- `tail -n 20 ~/.claude/achilles-inbox/worker-<N>/worker.log`
-- Check `~/.claude/achilles-inbox/worker-<N>/busy` (current task id, if any)
+- `tail -n 20 ~/.dev-studio/.runtime/achilles-inbox/worker-<N>/worker.log`
+- Check `~/.dev-studio/.runtime/achilles-inbox/worker-<N>/busy` (current task id, if any)
 - Report concisely: current task, recent completions, recent errors.
 
 For fleet-wide status, run `<path>/worker-status.sh` and surface the table.

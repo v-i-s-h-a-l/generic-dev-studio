@@ -18,7 +18,7 @@ shift || true
 [ "${1:-}" = "--" ] && shift
 FLAGS="${*:-}"
 
-ROOT="${ACHILLES_INBOX_ROOT:-$HOME/.claude/achilles-inbox}"
+ROOT="${ACHILLES_INBOX_ROOT:-$HOME/.dev-studio/.runtime/achilles-inbox}"
 HEARTBEAT_MAX=180
 
 mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }

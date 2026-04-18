@@ -42,7 +42,7 @@ scripts/achilles-cancel.sh T002                # remove a pending dispatch
 ## On-disk layout
 
 ```
-~/.claude/achilles-inbox/
+~/.dev-studio/.runtime/achilles-inbox/
   worker-1/
     alive               # touched every 60s by heartbeat
     busy                # present iff a task is in-flight (contents = task-id)
@@ -69,7 +69,7 @@ dispatched_from=user@host
 
 | Var | Default | Effect |
 |---|---|---|
-| `ACHILLES_INBOX_ROOT` | `$HOME/.claude/achilles-inbox` | Where worker dirs live |
+| `ACHILLES_INBOX_ROOT` | `$HOME/.dev-studio/.runtime/achilles-inbox` | Where worker dirs live |
 | `ACHILLES_MAX_SLOTS` | `16` | Upper bound for auto-claim slot scan |
 | `ACHILLES_TASK_TIMEOUT_SEC` | `2700` (45m) | Max per-task runtime; needs `gtimeout`. 0 disables. |
 | `ACHILLES_UNATTENDED` | `0` | Set to `1` to pass `--dangerously-skip-permissions` for fully unattended overnight runs. |

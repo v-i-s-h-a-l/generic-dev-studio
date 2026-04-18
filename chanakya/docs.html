@@ -840,7 +840,7 @@ chmod +x scripts/*.sh</code></pre>
   </table>
 
   <h3>On-disk layout</h3>
-  <pre><code>~/.claude/achilles-inbox/worker-&lt;N&gt;/
+  <pre><code>~/.dev-studio/.runtime/achilles-inbox/worker-&lt;N&gt;/
   alive                    # touched every 60s; staleness &gt;180s = dead
   busy                     # present iff a task is in-flight (contents = task-id)
   inbox/&lt;ts&gt;-&lt;id&gt;.task     # pending dispatches (fswatch target)
@@ -852,7 +852,7 @@ chmod +x scripts/*.sh</code></pre>
   <table class="decision-table">
     <thead><tr><th>Var</th><th>Default</th><th>Effect</th></tr></thead>
     <tbody>
-      <tr><td><code>ACHILLES_INBOX_ROOT</code></td><td><code>$HOME/.claude/achilles-inbox</code></td><td>Where worker dirs live</td></tr>
+      <tr><td><code>ACHILLES_INBOX_ROOT</code></td><td><code>$HOME/.dev-studio/.runtime/achilles-inbox</code></td><td>Where worker dirs live</td></tr>
       <tr><td><code>ACHILLES_TASK_TIMEOUT_SEC</code></td><td><code>2700</code> (45m)</td><td>Max per-task runtime; needs <code>gtimeout</code>. <code>0</code> disables.</td></tr>
       <tr><td><code>ACHILLES_UNATTENDED</code></td><td><code>0</code></td><td>Set to <code>1</code> to pass <code>--dangerously-skip-permissions</code> for fully unattended overnight runs.</td></tr>
     </tbody>

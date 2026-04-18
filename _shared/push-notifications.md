@@ -5,7 +5,7 @@ Push queue protocol and trigger rules for iMessage/Telegram notifications via th
 ## Push Queue File
 
 ```
-~/.claude/state/push-queue.jsonl
+~/.dev-studio/.runtime/state/push-queue.jsonl
 ```
 
 Append-only JSONL. Each line is a push event:
@@ -25,8 +25,8 @@ Append-only JSONL. Each line is a push event:
 ## Append Pattern
 
 ```bash
-PUSH_FILE=~/.claude/state/push-queue.jsonl
-mkdir -p ~/.claude/state
+PUSH_FILE=~/.dev-studio/.runtime/state/push-queue.jsonl
+mkdir -p ~/.dev-studio/.runtime/state
 printf '%s\n' '{"ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","agent":"argus","trigger":"review_blocked","task":"'"$TASK_ID"'","message":"'"$MSG"'"}' >> "$PUSH_FILE"
 ```
 
@@ -80,7 +80,7 @@ After `/chanakya status` surfaces the push queue, Chanakya marks displayed entri
 
 ```bash
 # In-place edit: add "displayed": true to each shown entry
-# Simplest implementation: move shown entries to ~/.claude/state/push-queue-archive.jsonl
+# Simplest implementation: move shown entries to ~/.dev-studio/.runtime/state/push-queue-archive.jsonl
 ```
 
 The queue file should not grow unboundedly. Chanakya compact sweeps entries older than 7 days.

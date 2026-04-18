@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # achilles-worker.sh [N]
 #
-# Long-running worker pane. Watches ~/.claude/achilles-inbox/worker-<N>/inbox/
+# Long-running worker pane. Watches ~/.dev-studio/.runtime/achilles-inbox/worker-<N>/inbox/
 # for *.task files and spawns `claude -p "/achilles <task-id> <flags>"` per task.
 #
 # With no arg: atomically claims the lowest free slot (1..ACHILLES_MAX_SLOTS).
@@ -9,7 +9,7 @@
 # and each pane picks its own slot, registers heartbeat, tells the manager.
 #
 # Env:
-#   ACHILLES_INBOX_ROOT       default: $HOME/.claude/achilles-inbox
+#   ACHILLES_INBOX_ROOT       default: $HOME/.dev-studio/.runtime/achilles-inbox
 #   ACHILLES_MAX_SLOTS        default: 16  (upper bound for auto-claim scan)
 #   ACHILLES_TASK_TIMEOUT_SEC default: 2700  (45 min; needs gtimeout — `brew install coreutils`)
 #   ACHILLES_UNATTENDED       set to 1 to pass --dangerously-skip-permissions to claude
@@ -18,7 +18,7 @@
 
 set -uo pipefail
 
-ROOT="${ACHILLES_INBOX_ROOT:-$HOME/.claude/achilles-inbox}"
+ROOT="${ACHILLES_INBOX_ROOT:-$HOME/.dev-studio/.runtime/achilles-inbox}"
 MAX_SLOTS="${ACHILLES_MAX_SLOTS:-16}"
 HEARTBEAT_MAX=180
 TIMEOUT_SEC="${ACHILLES_TASK_TIMEOUT_SEC:-2700}"

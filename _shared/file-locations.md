@@ -10,6 +10,19 @@ PROJECT=$(basename "$(git -C <repo-root> rev-parse --show-toplevel)")
 
 For the Turnip iOS repo this resolves to `turnip-ios`.
 
+## Canonical Roots
+
+All agents read and write under exactly two roots — both inside `~/.dev-studio/` so a single `Read/Write/Edit(~/.dev-studio/**)` allowlist covers everything without permission prompts:
+
+| Root | Scope | Contents |
+|---|---|---|
+| `~/.dev-studio/<project>/` | Per-project | Worktrees, plans, per-project derived-data, per-project locks, logs |
+| `~/.dev-studio/.runtime/` | Cross-project (global) | Fleet inbox (`achilles-inbox/`), test-slot semaphore (`locks/test-slots/`), push queue (`state/push-queue.jsonl`) |
+
+**Never write outside these two roots.** Specifically: never use `~/.claude/` for runtime state — it's the agent's own config dir, outside the allowlist by design. The only `~/.claude/` paths agents may *read* are `~/.claude/secrets/` (narrow allow) and `~/.claude/projects/<slug>/memory/` (Claude Code's own auto-managed area).
+
+When introducing a new artifact type, place it under one of the two canonical roots — extend `.runtime/` for global state, `<project>/` for project-scoped state.
+
 ## File Locations
 
 | Artifact | Path |
@@ -31,6 +44,6 @@ For the Turnip iOS repo this resolves to `turnip-ios`.
 | Event offset marker | `<project-memory>/events_offset.md` |
 | Review files | `<project-memory>/reviews/review_<task-id>.md` |
 | Review archive | `<project-memory>/reviews/archive/` |
-| Push queue | `~/.claude/state/push-queue.jsonl` |
-| Test-slot semaphore | `~/.claude/locks/test-slots/` |
+| Push queue | `~/.dev-studio/.runtime/state/push-queue.jsonl` |
+| Test-slot semaphore | `~/.dev-studio/.runtime/locks/test-slots/` |
 | Argus result bundles | `/tmp/argus-<task-id>.xcresult` |

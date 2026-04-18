@@ -7,7 +7,7 @@ File-based semaphore for Argus test execution. Limits concurrent test runs to 3 
 ## Slot Directory
 
 ```
-~/.claude/locks/test-slots/
+~/.dev-studio/.runtime/locks/test-slots/
 ```
 
 Three slot files: `slot-1`, `slot-2`, `slot-3`. Each is a directory (so `mkdir` is the atomic acquire operation).
@@ -15,7 +15,7 @@ Three slot files: `slot-1`, `slot-2`, `slot-3`. Each is a directory (so `mkdir` 
 ## Acquire Protocol
 
 ```bash
-SLOT_DIR=~/.claude/locks/test-slots
+SLOT_DIR=~/.dev-studio/.runtime/locks/test-slots
 mkdir -p "$SLOT_DIR"
 
 SLOT=""

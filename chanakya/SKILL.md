@@ -32,7 +32,7 @@ Enable MCPs selectively — each active MCP server adds cold-instruction overhea
 - **iMessage / Telegram MCPs:** enable only when in `--away` mode. In `--at-laptop` mode, the user types directly — no push channel needed.
 - **Figma MCP:** load only for skills that need it (`figma-to-swiftui`, brief generation steps that fetch Figma context). Do not load for Chanakya-only, Achilles, or Argus sessions.
 - **Telegram reliability:** Telegram MCP can disconnect silently. Do not treat it as the primary push channel. iMessage is more stable — prefer it for `--away` mode notifications.
-- If a push fails silently, the push queue (`~/.claude/state/push-queue.jsonl`) acts as the durable fallback; Chanakya surfaces it on the next `/chanakya status`.
+- If a push fails silently, the push queue (`~/.dev-studio/.runtime/state/push-queue.jsonl`) acts as the durable fallback; Chanakya surfaces it on the next `/chanakya status`.
 
 ---
 
@@ -107,7 +107,7 @@ When the user runs N panes of `scripts/achilles-worker.sh <N>` (typical: 6), Cha
 
 ### IPC contract
 
-Worker dirs live under `${ACHILLES_INBOX_ROOT:-~/.claude/achilles-inbox}/worker-<N>/` with this layout:
+Worker dirs live under `${ACHILLES_INBOX_ROOT:-~/.dev-studio/.runtime/achilles-inbox}/worker-<N>/` with this layout:
 
 | Path | Meaning |
 |---|---|
@@ -811,7 +811,7 @@ Identify tasks blocked by dependencies. Highlight them. Surface `done` tasks awa
 
 ### Step 3A — Surface push queue and recent events
 
-Read `~/.claude/state/push-queue.jsonl` (if it exists). Show any entries not yet marked displayed:
+Read `~/.dev-studio/.runtime/state/push-queue.jsonl` (if it exists). Show any entries not yet marked displayed:
 
 ```
 Pending notifications:

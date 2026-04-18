@@ -13,7 +13,7 @@
 
 set -uo pipefail
 DRY=0; ALL=0
-ROOT="${ACHILLES_INBOX_ROOT:-$HOME/.claude/achilles-inbox}"
+ROOT="${ACHILLES_INBOX_ROOT:-$HOME/.dev-studio/.runtime/achilles-inbox}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1 ;;

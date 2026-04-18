@@ -4,7 +4,7 @@
 # Cannot stop an in-flight task — kill the worker pane manually for that.
 set -euo pipefail
 TASK_ID="${1:?usage: achilles-cancel.sh <task-id>}"
-ROOT="${ACHILLES_INBOX_ROOT:-$HOME/.claude/achilles-inbox}"
+ROOT="${ACHILLES_INBOX_ROOT:-$HOME/.dev-studio/.runtime/achilles-inbox}"
 removed=0
 shopt -s nullglob
 for f in "$ROOT"/worker-*/inbox/*-"${TASK_ID}".task; do

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # worker-status.sh — one-shot report of all Achilles worker panes.
 set -uo pipefail
-ROOT="${ACHILLES_INBOX_ROOT:-$HOME/.claude/achilles-inbox}"
+ROOT="${ACHILLES_INBOX_ROOT:-$HOME/.dev-studio/.runtime/achilles-inbox}"
 [ -d "$ROOT" ] || { echo "no inbox root: $ROOT"; exit 0; }
 
 mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
