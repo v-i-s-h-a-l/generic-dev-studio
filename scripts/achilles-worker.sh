@@ -159,6 +159,13 @@ process_task() {
   fi
   rm -f "$DIR/busy"
 
+  # Surface Achilles' last output in the terminal so questions / errors /
+  # silent-stuck rc=0 exits don't stay hidden in worker.log. Cheap fix for
+  # issue #18 — proper detection (debrief + merge + status check) lands later.
+  printf '────── %s output (tail) ──────\n' "$task_id"
+  tail -n 40 "$LOG" 2>/dev/null || true
+  printf '──────────────────────────────────\n'
+
   if [ "$rc" -eq 124 ]; then
     log "timeout $task_id after ${TIMEOUT_SEC}s -> rescue/"
     mv "$task_file" "$DIR/rescue/$base"
