@@ -380,16 +380,22 @@ Both are wired via `emit_predispatch_signals` in `scripts/lib-paths.sh`. No Chan
 
 **Chanakya sweep-time detections:**
 
-| Signal | How to detect | Event to emit |
+`scripts/detect-edits.sh` handles the two mtime-based scans in one shot. Invoke it once per sweep, ideally right after Step 0E2 before user-visible output:
+
+```bash
+<scripts>/detect-edits.sh --quiet
+```
+
+It emits `brief_edited` and `debrief_edited` directly via `append_event`, maintains its own idempotency markers (`<project-memory>/brief_edit_seen.txt`, `debrief_seen.txt`), and returns 0 even when the current project has no briefs or debriefs. Chanakya treats a non-zero exit as non-fatal.
+
+The remaining two sweep-time signals need Chanakya's in-session context and don't belong in a script:
+
+| Signal | When to emit | Concrete recipe |
 |---|---|---|
-| Brief was hand-edited after dispatch | During sweep, for every task with `task_dispatched` and no matching `task_completed`, compare brief file `mtime` to the `ts` of the last `task_dispatched`. If brief mtime is later, emit once and stash a marker in `<project-memory>/brief_edit_seen.txt` to avoid dupe emits. | `brief_edited` |
-| Debrief was hand-edited after processing | For debriefs already moved into `plans/chanakya-inbox/processed/`, compare mtime to the `ts` of the `feedback_ingested` or sweep processing time. Emit once per file; stash a marker in `<project-memory>/debrief_edit_seen.txt`. | `debrief_edited` |
-| User overrode an Argus flag | When an interactive "ship anyway" / "merge anyway" prompt is answered yes in `ship` / `review-feedback` / `intake` mode. Capture the review file path and finding count. | `review_override` |
-| Build-debt counter incremented | During inbox sweep, when a processed debrief has `build_gate: lsp-only` (or equivalent test-skip marker) and the matching counter in `chanakya-master.md` has advanced, emit with the new counter value and trigger. Fires on every increment, not only threshold crossings (`build_debt_warned`/`blocked` still cover those). | `build_debt_incremented` |
+| User overrode an Argus flag | After a user confirms "ship anyway" / "merge anyway" on a `review_flagged` task in `ship`, `review-feedback`, or `intake` mode. | Source `<scripts>/lib-paths.sh` and call `append_event chanakya review_override "<task-id>" '{"review_file":"<path>","finding_count":<n>,"reason":"<≤100 chars>"}'`. Emit once per override decision, not once per finding. |
+| Build-debt counter incremented | Inside inbox sweep: after applying a debrief that carries `build_gate: lsp-only` (or an equivalent test-skip marker) and updating the counter in `chanakya-master.md`. | `append_event chanakya build_debt_incremented "<task-id>" '{"counter":"build","new_value":<n>,"trigger":"xs_skip"}'`. Fires on every increment — the existing `build_debt_warned` / `build_debt_blocked` events still own threshold crossings; this one enables size-vs-debt analysis. |
 
-Markers (`brief_edit_seen.txt`, `debrief_edit_seen.txt`) are simple one-filename-per-line lists; wipe them on `compact` so re-ingested debriefs can re-emit if edited again.
-
-To emit from within Chanakya's sweep, source `scripts/lib-paths.sh` and call `append_event chanakya <event-name> <task> '<data-json>'`. The helper resolves the event log path and timestamps the entry.
+Markers (`brief_edit_seen.txt`, `debrief_seen.txt`) are simple text files; wipe them on `compact` so a re-edit after archival can re-emit.
 
 ### 0F — Studio-feedback inbox ingestion (generic-dev-studio sessions only)
 

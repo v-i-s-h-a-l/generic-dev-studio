@@ -176,6 +176,26 @@ resolve_chanakya_inbox() {
   resolve_chanakya_inbox_for "$project"
 }
 
+# Per-project workspace root — where plans/, worktrees/, locks/, .runtime/ live.
+resolve_project_root_for() {
+  local project="${1:?usage: resolve_project_root_for <slug>}"
+  printf '%s\n' "$HOME/.dev-studio/$project"
+}
+
+resolve_project_root() {
+  local project
+  project=$(resolve_project) || return 1
+  resolve_project_root_for "$project"
+}
+
+# Briefs live under plans/chanakya-tasks/ per project.
+resolve_briefs_dir() {
+  local project root
+  project=$(resolve_project) || return 1
+  root=$(resolve_project_root_for "$project")
+  printf '%s\n' "$root/plans/chanakya-tasks"
+}
+
 # Friendly display name. Auto-derived in this order:
 #   1. ACHILLES_DISPLAY_NAME env var (explicit override)
 #   2. ~/.dev-studio/<project>/.display_name (pre-baked per-project override —

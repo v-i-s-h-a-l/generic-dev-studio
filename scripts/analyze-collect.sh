@@ -61,8 +61,8 @@ MEMORY=$(find_memory "$PROJECT") || {
 
 EVENT_DIR="$MEMORY/events"
 REVIEW_DIR="$MEMORY/reviews"
-INBOX_PROCESSED="$HOME/.dev-studio/$PROJECT/plans/chanakya-inbox/processed"
-FLEET_ROOT="$HOME/.dev-studio/$PROJECT/.runtime/achilles-inbox"
+INBOX_PROCESSED="$(resolve_chanakya_inbox_for "$PROJECT")/processed"
+FLEET_ROOT=$(resolve_inbox_root_for "$PROJECT")
 
 echo "# analyze-collect: $PROJECT"
 echo "window: $SINCE → $(date -u +%Y-%m-%d)"

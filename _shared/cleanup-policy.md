@@ -112,6 +112,11 @@ The `--sweep-artifacts` flag (default on) extends compact with artifact cleanup.
    find "$ARCHIVE_DIR" -name "review_*.md" -mtime +30 -delete
    ```
 
+   Also wipe the Step 0E3 edit-detection markers so a re-edit of an already-emitted brief or debrief can emit again:
+   ```bash
+   rm -f "$PROJECT_MEMORY/brief_edit_seen.txt" "$PROJECT_MEMORY/debrief_seen.txt"
+   ```
+
 3. **Stale marker cleanup:**
    - Scan all `.argus-running` markers in `~/.dev-studio/<project>/worktrees/*/`:
      - Read PID from file
