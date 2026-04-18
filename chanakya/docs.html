@@ -897,7 +897,7 @@ chmod +x scripts/*.sh</code></pre>
   </table>
 
   <div class="callout" style="margin-top: 20px; border-left-color: var(--purple); background: rgba(188, 140, 255, 0.07);">
-    <strong>Refusal rules:</strong> Chanakya refuses to dispatch when (a) the task is not <code>briefed</code>, (b) Build Debt is in <code>block</code> state and the task is not a debt-reduction task, or (c) no alive workers exist and the user did not pin a specific worker.
+    <strong>Refusal rules:</strong> Chanakya refuses to dispatch when (a) the task is not <code>briefed</code>, (b) Build Debt is in <code>block</code> state and the task is not a debt-reduction task, (c) no alive workers exist and the user did not pin a specific worker, or (d) the brief contains an unresolved interactive-input gate (Phase 0 marker like "confirm with", "check Figma", "debug print" — a worker cannot answer, and the silent-stuck detector would catch it at exit).
   </div>
 
   <div class="callout" style="margin-top: 20px;">

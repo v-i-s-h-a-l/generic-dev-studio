@@ -144,8 +144,11 @@ Refuse to dispatch when:
 - Task status is not `briefed` (e.g. still `pending`, already `in-progress`, `done`).
 - Build Debt block is in `block` state and the task is not a debt-reduction task.
 - No alive workers (heartbeat <180s) and the user did not explicitly pin a worker.
+- **Brief contains an unresolved interactive-input gate.** Before dispatching, scan the brief file for a Phase-0 block and any of the following markers: `ask the user`, `confirm with`, `confirm X before`, `run on device`, `check Figma`, `inspect in Figma`, `paste`, `debug print`, `manual inspection`, `await input`, `TODO(user)`, `<USER_INPUT_REQUIRED>`. Matches are case-insensitive. If present, the brief needs either (a) the external input resolved and inlined into the brief, or (b) an explicit "proceed with obvious default" instruction so the autonomous subagent can act. A worker cannot answer these — the silent-stuck detector (`scripts/achilles-worker.sh`) would catch the dispatch at exit, wasting a full cycle.
 
-Surface the refusal with a one-line reason and a suggested fix (e.g. "T004 is `pending` — run `/chanakya brief T004` first").
+Surface the refusal with a one-line reason and a suggested fix:
+- "T004 is `pending` — run `/chanakya brief T004` first"
+- "T019 brief has an interactive gate at Phase 0 (`confirm BE field name with backend`) — resolve + re-brief, or add a default directive"
 
 ### Integration with `ship`
 
