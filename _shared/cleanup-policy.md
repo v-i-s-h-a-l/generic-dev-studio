@@ -22,6 +22,12 @@ Ownership table, retention tiers, and compact extension spec for all agents.
 | Stale markers (any PID dead or age >24h) | Chanakya compact | Remove |
 | Orphaned `/tmp/argus-*.xcresult` | Chanakya compact | Delete if no matching active task |
 | Orphaned DerivedData (worktree gone) | Chanakya compact | Delete |
+| Worker `.lock` dir | Worker (trap) | Removed on EXIT/INT/TERM |
+| Worker `busy` marker | Worker | Removed after each task; on shutdown |
+| Worker `done/<ts>-<id>.task` | Worker (boot sweep) | Auto-pruned >7 days on every worker boot |
+| Worker `inbox/`, `rescue/` | Operator | `rescue/` left for manual retry; `fleet-cleanup.sh --all` for teardown |
+| Worker `worker.log` | `fleet-cleanup.sh` | Rotated to `.1` when >5MB on soft sweep |
+| Stale worker `.lock` (PID dead OR heartbeat >180s) | `fleet-cleanup.sh` (soft) | Cleared on between-session sweep |
 
 ---
 

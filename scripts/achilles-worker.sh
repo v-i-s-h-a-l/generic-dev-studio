@@ -27,6 +27,18 @@ PERM_FLAG=""
 
 mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
 
+verify_owner() {
+  # After mkdir .lock, write our PID and verify after a brief settle
+  # window — if a racing reclaimer clobbered our lock and re-mkdir'd,
+  # owner won't match $$ and we back off.
+  local d="$1"
+  echo "$$" > "$d/.lock/owner" 2>/dev/null || return 1
+  sleep 0.3
+  local recorded
+  recorded=$(cat "$d/.lock/owner" 2>/dev/null || true)
+  [ "$recorded" = "$$" ]
+}
+
 claim_slot() {
   # Atomically claim the lowest free slot via mkdir of a .lock dir.
   # A slot is "free" if its .lock dir doesn't exist OR its alive heartbeat
@@ -36,6 +48,7 @@ claim_slot() {
     d="$ROOT/worker-$n"
     mkdir -p "$d/inbox" "$d/done" "$d/rescue"
     if mkdir "$d/.lock" 2>/dev/null; then
+      verify_owner "$d" || { rm -rf "$d/.lock"; continue; }
       echo "$n"; return 0
     fi
     # .lock exists — check if the holder is dead
@@ -44,13 +57,22 @@ claim_slot() {
       if [ "$age" -gt "$HEARTBEAT_MAX" ]; then
         rm -rf "$d/.lock" 2>/dev/null
         if mkdir "$d/.lock" 2>/dev/null; then
-          rm -f "$d/busy"
-          echo "$n"; return 0
+          if verify_owner "$d"; then
+            rm -f "$d/busy"
+            echo "$n"; return 0
+          fi
+          rm -rf "$d/.lock"
         fi
       fi
     fi
   done
   return 1
+}
+
+# Boot-time housekeeping: prune done/ files older than 7 days (per-worker).
+sweep_done() {
+  local d="$1"
+  find "$d/done" -name '*.task' -mtime +7 -delete 2>/dev/null || true
 }
 
 if [ $# -ge 1 ]; then
@@ -69,6 +91,7 @@ LOG="$DIR/worker.log"
 
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] worker-$N $*" | tee -a "$LOG"; }
 log "claimed slot $N (pid $$)"
+sweep_done "$DIR"
 
 command -v fswatch >/dev/null || { log "fswatch not installed (brew install fswatch)"; exit 1; }
 command -v claude  >/dev/null || { log "claude CLI not on PATH"; exit 1; }
