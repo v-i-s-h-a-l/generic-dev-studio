@@ -129,12 +129,14 @@ dispatched_from=user@host
 
 ### Sub-commands
 
+**Script path resolution (apply to every script reference below):** prefer `<repo-root>/scripts/<name>` (run `git rev-parse --show-toplevel` to find repo root), fall back to `~/.claude/skills/scripts/<name>`. If neither exists, surface a one-line install hint (`ln -s <repo>/scripts ~/.claude/skills/scripts`) instead of guessing. Do **not** write task files directly into worker inboxes as a fallback — the dispatch script enforces atomicity and slot selection.
+
 | Flag / mode | Behavior |
 |---|---|
-| `--worker-status` | Run `scripts/worker-status.sh` and surface the table. Use this before any dispatch to confirm capacity. |
-| `--dispatch <task-id> [worker-N\|any]` | Shell out to `scripts/achilles-dispatch.sh <task-id> <target>`. With `any` (default), the script picks the alive worker with the lowest `busy + pending` load. Refuse if the task's status is not `briefed` in `chanakya-master.md`. |
-| `--dispatch-many <task-id> [<task-id>…]` | One `achilles-dispatch.sh ... any` per task in order. Skip any that already appear as pending in some worker inbox (re-dispatch guard). |
-| `--cancel <task-id>` | Shell out to `scripts/achilles-cancel.sh`. Only removes pending dispatches; in-flight tasks require killing the worker pane. |
+| `--worker-status` | Run `<scripts>/worker-status.sh` and surface the table. Use this before any dispatch to confirm capacity. |
+| `--dispatch <task-id> [worker-N\|any]` | Shell out to `<scripts>/achilles-dispatch.sh <task-id> <target>`. With `any` (default), the script picks the alive worker with the lowest `busy + pending` load. Refuse if the task's status is not `briefed` in `chanakya-master.md`. |
+| `--dispatch-many <task-id> [<task-id>…]` | One `<scripts>/achilles-dispatch.sh ... any` per task in order. Skip any that already appear as pending in some worker inbox (re-dispatch guard). |
+| `--cancel <task-id>` | Shell out to `<scripts>/achilles-cancel.sh`. Only removes pending dispatches; in-flight tasks require killing the worker pane. |
 
 ### Dispatch refusal rules
 
