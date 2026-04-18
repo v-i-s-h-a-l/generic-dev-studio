@@ -761,7 +761,7 @@
     </div>
     <div class="cmd-card">
       <code>/chanakya compact</code>
-      <span>Archive verified tasks, regenerate Dashboard + Module Index, trim master plan to actionable items only. Also sweeps artifacts (event logs, orphaned xcresult bundles, stale markers). <code>--dry-run</code> previews. <code>--no-sweep-artifacts</code> skips artifact cleanup. <code>--auto-compact</code> prints cron setup for nightly 03:00 runs.</span>
+      <span>Archive verified tasks, regenerate Dashboard + Module Index, trim master plan to actionable items only. Also sweeps artifacts (event logs, orphaned xcresult bundles, stale markers, gitignored Playwright MCP telemetry via <code>git clean -fdX</code>). <code>--dry-run</code> previews. <code>--no-sweep-artifacts</code> skips artifact cleanup. <code>--auto-compact</code> prints cron setup for nightly 03:00 runs.</span>
     </div>
   </div>
 

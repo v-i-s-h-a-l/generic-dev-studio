@@ -1678,7 +1678,7 @@ Guided single-sitting verification flow. Chains test-flow generation, waits for 
 
 Archive verified tasks, regenerate the dashboard and module index, and trim the master plan to actionable items only. Keeps the plan under ~500 lines while preserving full history in the archive.
 
-`--sweep-artifacts` (default on) also runs the artifact sweep: rotate event logs, prune old archives, clean stale markers, remove orphaned xcresult bundles and DerivedData. Pass `--no-sweep-artifacts` to skip. Full spec: `~/.claude/skills/_shared/cleanup-policy.md`.
+`--sweep-artifacts` (default on) also runs the artifact sweep: rotate event logs, prune old archives, clean stale markers, remove orphaned xcresult bundles and DerivedData, and clean gitignored Playwright MCP telemetry (`.playwright-mcp/`) via `git clean -fdX` (tracked files never touched). Pass `--no-sweep-artifacts` to skip. Full spec: `~/.claude/skills/_shared/cleanup-policy.md`.
 
 `--auto-compact` prints cron setup instructions for nightly 03:00 local compact runs. Does not configure cron itself in v1. See `~/.claude/skills/_shared/cleanup-policy.md`.
 
@@ -1759,7 +1759,8 @@ chanakya-changelog.md       ← session changelog entries older than 7 days
     - Master plan: 2200 → 480 lines
     - Archive: 1800 lines (full history preserved)
     Swept artifacts: rotated 3 event files (gz, 42 KB), freed 6.2 GB DerivedData,
-      removed 2 orphaned xcresult bundles, cleared 0 stale markers.
+      removed 2 orphaned xcresult bundles, cleared 0 stale markers,
+      deleted 14 Playwright MCP artifacts.
     ```
 
 Emit `cleanup_completed` event with `archived` count and `freed_gb` value.

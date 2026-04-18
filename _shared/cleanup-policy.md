@@ -22,6 +22,7 @@ Ownership table, retention tiers, and compact extension spec for all agents.
 | Stale markers (any PID dead or age >24h) | Chanakya compact | Remove |
 | Orphaned `/tmp/argus-*.xcresult` | Chanakya compact | Delete if no matching active task |
 | Orphaned DerivedData (worktree gone) | Chanakya compact | Delete |
+| `.playwright-mcp/` gitignored telemetry + known stray dumps | Chanakya compact | `git clean -fdX -- .playwright-mcp/`; strays only if untracked |
 | Worker `.lock` dir | Worker (trap) | Removed on EXIT/INT/TERM |
 | Worker `busy` marker | Worker | Removed after each task; on shutdown |
 | Worker `done/<ts>-<id>.task` | Worker (boot sweep) | Auto-pruned >7 days on every worker boot |
@@ -144,7 +145,36 @@ The `--sweep-artifacts` flag (default on) extends compact with artifact cleanup.
    done
    ```
 
-6. **Push queue cleanup:**
+6. **Playwright MCP telemetry cleanup:**
+   ```bash
+   # Playwright MCP writes per-session artifacts (console-*.log, page-*.yml, etc.)
+   # into whatever CWD the MCP is launched from — the user's project repo. Files
+   # land as untracked, pollute git status, and accumulate on disk forever.
+   #
+   # .playwright-mcp/ may ALSO contain deliberately tracked assets (committed
+   # screenshots, design references). A naïve rm -rf would wipe real user work.
+   # git clean -fdX with capital X removes ONLY gitignored files — tracked files
+   # are never touched. Scoped path (-- .playwright-mcp/) prevents blast radius
+   # outside that directory.
+   REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+   if [ -n "$REPO_ROOT" ] && [ -d "$REPO_ROOT/.playwright-mcp" ]; then
+     git -C "$REPO_ROOT" clean -fdX -- .playwright-mcp/ 2>/dev/null || true
+   fi
+
+   # Known stray top-level dumps written outside .playwright-mcp/. Delete only
+   # when untracked (git ls-files --error-unmatch returns non-zero for untracked).
+   if [ -n "$REPO_ROOT" ]; then
+     for stray in "$REPO_ROOT/notes_panel.yml"; do
+       if [ -f "$stray" ] && ! git -C "$REPO_ROOT" ls-files --error-unmatch "$stray" >/dev/null 2>&1; then
+         rm -f "$stray"
+       fi
+     done
+   fi
+   ```
+
+   **Precondition:** the repo's `.gitignore` must include `.playwright-mcp/` for the sweep to find anything. Without it, the sweep is a safe no-op. Recommend adding the pattern once per repo during onboarding (see README).
+
+7. **Push queue cleanup:**
    ```bash
    . "$(git rev-parse --show-toplevel)/scripts/lib-paths.sh" 2>/dev/null \
      || . ~/.claude/skills/scripts/lib-paths.sh
@@ -172,7 +202,7 @@ After sweep-artifacts runs, append to the compact report:
 ```
 Swept artifacts: rotated N event files (gzip, X KB), freed Y GB DerivedData,
   removed M orphaned xcresult bundles, pruned P archive entries >30d,
-  cleared Q stale markers.
+  cleared Q stale markers, deleted R Playwright MCP artifacts.
 ```
 
 ---
