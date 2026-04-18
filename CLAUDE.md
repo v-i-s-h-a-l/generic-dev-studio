@@ -10,6 +10,8 @@ Do not wait for the user to name REVIEW.md. The file is authoritative for this r
 
 Skip review for single-line doc fixes. Trigger it for: any `scripts/*.sh` change, any `SKILL.md` change, any `_shared/*` change, or diffs >100 lines.
 
+**Walk REVIEW.md *before* committing on a trigger, not after.** Findings go in chat (ask-tier) and in the commit message (all tiers noted). Retroactive reviews are a failure mode — the rule file exists to shape the commit, not audit it afterward.
+
 ## Releases
 
 When the user asks about tagging, releasing, release notes, or "what's new" — **read `RELEASES.md` at the repo root first** and follow its template and tone rules. Don't draft release notes without consulting it.
