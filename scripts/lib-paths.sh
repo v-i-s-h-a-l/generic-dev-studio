@@ -70,16 +70,30 @@ resolve_push_queue() {
 
 # Friendly display name. Auto-derived in this order:
 #   1. ACHILLES_DISPLAY_NAME env var (explicit override)
-#   2. basename of `git remote get-url origin` minus .git (e.g., turnip-ios from
+#   2. ~/.dev-studio/<project>/.display_name (pre-baked per-project override —
+#      first non-empty, non-comment line; lets users pin a name without shell config)
+#   3. basename of `git remote get-url origin` minus .git (e.g., turnip-ios from
 #      git@github.com:Turnip-gg/turnip-ios.git — cleaner than the local dir name)
-#   3. resolve_project slug (final fallback)
+#   4. resolve_project slug (final fallback)
 # Falls through silently; never errors — callers can use the slug directly.
 resolve_display_name() {
   if [ -n "${ACHILLES_DISPLAY_NAME:-}" ]; then
     printf '%s\n' "$ACHILLES_DISPLAY_NAME"
     return 0
   fi
-  local url name
+  local project pinfile name
+  project=$(resolve_project 2>/dev/null) || project=""
+  if [ -n "$project" ]; then
+    pinfile="$HOME/.dev-studio/$project/.display_name"
+    if [ -r "$pinfile" ]; then
+      name=$(grep -v -E '^\s*(#|$)' "$pinfile" 2>/dev/null | head -n 1 | tr -d '[:space:]')
+      if [ -n "$name" ]; then
+        printf '%s\n' "$name"
+        return 0
+      fi
+    fi
+  fi
+  local url
   url=$(git remote get-url origin 2>/dev/null) || url=""
   if [ -n "$url" ]; then
     name=$(basename "$url" .git 2>/dev/null)
@@ -88,7 +102,8 @@ resolve_display_name() {
       return 0
     fi
   fi
-  resolve_project 2>/dev/null || echo "(unknown)"
+  [ -n "$project" ] && { printf '%s\n' "$project"; return 0; }
+  echo "(unknown)"
 }
 
 # Detect the project's tech stack from filesystem fingerprints at the git
