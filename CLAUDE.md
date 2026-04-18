@@ -26,6 +26,26 @@ When work lands on `main` that closes an issue, close the issue with a one-line 
 
 When the user asks "what's pending?" / "what's on the list?" / "what's next?" — run `gh issue list` and surface; don't load the issue list speculatively into context.
 
+## Analysis sessions and privacy
+
+Analysis of how the studio is being used in real projects runs **from this repo (generic-dev-studio)**, not from the project being analyzed. Reasons: right gh account by default, no auth juggling across personal/work identities, no bleed of tool-internal concerns into work sessions. Cross-repo reads are fine — `~/.dev-studio/**` is allowlisted from any session.
+
+**Output split (load-bearing):**
+
+| Output | Location | Visibility |
+|---|---|---|
+| Detailed analysis report | `~/.dev-studio/<project>/analysis/<date>.md` | Private — never committed anywhere |
+| Distilled patterns + proposals | GitHub issues on generic-dev-studio | Public |
+| Code/doc improvements | Commits to this repo | Public |
+
+**Privacy rule for any public output (issues, commits, PR descriptions):**
+
+Strip everything project-specific before publishing. Specifically: task IDs, feedback-record IDs, debrief/review text quoted verbatim, Slack channel names, @mentions, commit messages or branch names from the work project, file paths revealing proprietary architecture, build numbers, TestFlight versions, feature names ("the new crop tool"), anyone's name, performance/velocity numbers.
+
+Public issues describe **abstract patterns** (e.g. "Argus's secrets-in-diff rule triggers on test fixtures ~30% of the time — false positive; consider exempting `*Tests.swift`"), not specific incidents. Detailed citations go into the private analysis report only.
+
+**Self-check before publishing:** *if this text were posted to a competitor's Slack, would anything embarrassing or proprietary leak?* If yes, rewrite as anonymous pattern. If still leaky, keep it private.
+
 ## Paths
 
 All runtime writes go under `~/.dev-studio/**`. Scripts resolve paths via `scripts/lib-paths.sh` — never hardcode. See `_shared/file-locations.md` for canonical roots.
