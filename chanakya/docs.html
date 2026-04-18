@@ -802,11 +802,11 @@
 chmod +x scripts/*.sh</code></pre>
 
   <h3>Daily flow</h3>
-  <p>Open N panes (typical: 6) and run one worker per pane. Then dispatch from your Chanakya session or any shell.</p>
+  <p>Open N panes (typical: 6). Use iTerm <strong>Broadcast Input</strong> (<code>Cmd+Opt+I</code>) and type <code>scripts/achilles-worker.sh</code> once &mdash; every pane runs it, and each atomically claims the lowest free slot (1, 2, 3, &hellip;) via a <code>worker-N/.lock</code> dir. Then dispatch from your Chanakya session or any shell.</p>
   <div class="cmd-grid">
     <div class="cmd-card achilles">
-      <code>scripts/achilles-worker.sh N</code>
-      <span>Long-running pane. Watches <code>~/.claude/achilles-inbox/worker-N/inbox/</code> via <code>fswatch</code>; spawns a fresh Achilles per task. Heartbeats every 60s, optional <code>gtimeout</code>, optional unattended mode via <code>ACHILLES_UNATTENDED=1</code>.</span>
+      <code>scripts/achilles-worker.sh [N]</code>
+      <span>Long-running pane. <strong>No arg = auto-claim lowest free slot</strong> (broadcast-friendly); pass an explicit <code>N</code> to pin. Watches <code>~/.claude/achilles-inbox/worker-N/inbox/</code> via <code>fswatch</code>; spawns a fresh Achilles per task. Heartbeats every 60s, optional <code>gtimeout</code>, optional unattended mode via <code>ACHILLES_UNATTENDED=1</code>.</span>
     </div>
     <div class="cmd-card">
       <code>scripts/achilles-dispatch.sh &lt;task-id&gt; [worker-N|any]</code>

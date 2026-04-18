@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# achilles-worker.sh <N>
+# achilles-worker.sh [N]
 #
 # Long-running worker pane. Watches ~/.claude/achilles-inbox/worker-<N>/inbox/
 # for *.task files and spawns `claude -p "/achilles <task-id> <flags>"` per task.
 #
+# With no arg: atomically claims the lowest free slot (1..ACHILLES_MAX_SLOTS).
+# Designed for iTerm "Broadcast Input" — type the same command in N panes
+# and each pane picks its own slot, registers heartbeat, tells the manager.
+#
 # Env:
 #   ACHILLES_INBOX_ROOT       default: $HOME/.claude/achilles-inbox
+#   ACHILLES_MAX_SLOTS        default: 16  (upper bound for auto-claim scan)
 #   ACHILLES_TASK_TIMEOUT_SEC default: 2700  (45 min; needs gtimeout — `brew install coreutils`)
 #   ACHILLES_UNATTENDED       set to 1 to pass --dangerously-skip-permissions to claude
 #
@@ -13,16 +18,57 @@
 
 set -uo pipefail
 
-N="${1:?usage: achilles-worker.sh <N>}"
 ROOT="${ACHILLES_INBOX_ROOT:-$HOME/.claude/achilles-inbox}"
-DIR="$ROOT/worker-$N"
-LOG="$DIR/worker.log"
+MAX_SLOTS="${ACHILLES_MAX_SLOTS:-16}"
+HEARTBEAT_MAX=180
 TIMEOUT_SEC="${ACHILLES_TASK_TIMEOUT_SEC:-2700}"
 PERM_FLAG=""
 [ "${ACHILLES_UNATTENDED:-0}" = "1" ] && PERM_FLAG="--dangerously-skip-permissions"
 
-mkdir -p "$DIR/inbox" "$DIR/done" "$DIR/rescue"
+mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
+
+claim_slot() {
+  # Atomically claim the lowest free slot via mkdir of a .lock dir.
+  # A slot is "free" if its .lock dir doesn't exist OR its alive heartbeat
+  # is older than HEARTBEAT_MAX (stale worker — reclaim it).
+  local n d
+  for n in $(seq 1 "$MAX_SLOTS"); do
+    d="$ROOT/worker-$n"
+    mkdir -p "$d/inbox" "$d/done" "$d/rescue"
+    if mkdir "$d/.lock" 2>/dev/null; then
+      echo "$n"; return 0
+    fi
+    # .lock exists — check if the holder is dead
+    if [ -f "$d/alive" ]; then
+      local age=$(( $(date +%s) - $(mtime "$d/alive") ))
+      if [ "$age" -gt "$HEARTBEAT_MAX" ]; then
+        rm -rf "$d/.lock" 2>/dev/null
+        if mkdir "$d/.lock" 2>/dev/null; then
+          rm -f "$d/busy"
+          echo "$n"; return 0
+        fi
+      fi
+    fi
+  done
+  return 1
+}
+
+if [ $# -ge 1 ]; then
+  N="$1"
+  DIR="$ROOT/worker-$N"
+  mkdir -p "$DIR/inbox" "$DIR/done" "$DIR/rescue"
+  if ! mkdir "$DIR/.lock" 2>/dev/null; then
+    echo "worker-$N already locked by another process; refusing" >&2
+    exit 1
+  fi
+else
+  N=$(claim_slot) || { echo "no free slot in 1..$MAX_SLOTS" >&2; exit 1; }
+  DIR="$ROOT/worker-$N"
+fi
+LOG="$DIR/worker.log"
+
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] worker-$N $*" | tee -a "$LOG"; }
+log "claimed slot $N (pid $$)"
 
 command -v fswatch >/dev/null || { log "fswatch not installed (brew install fswatch)"; exit 1; }
 command -v claude  >/dev/null || { log "claude CLI not on PATH"; exit 1; }
@@ -36,7 +82,8 @@ HEARTBEAT_PID=$!
 cleanup() {
   kill "$HEARTBEAT_PID" 2>/dev/null || true
   rm -f "$DIR/busy"
-  log "shutdown"
+  rm -rf "$DIR/.lock"
+  log "shutdown — released slot $N"
 }
 trap cleanup EXIT INT TERM
 

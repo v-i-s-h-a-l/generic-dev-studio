@@ -14,14 +14,20 @@ chmod +x scripts/*.sh
 
 ## Daily flow
 
-Open N terminal panes (typical: 6). In each:
+Open N terminal panes (typical: 6). Easiest with iTerm **Broadcast Input** (`Cmd+Opt+I`) — type the same command once, every pane runs it, and each pane atomically claims the lowest free slot:
 
 ```sh
-scripts/achilles-worker.sh 1   # pane 1
-scripts/achilles-worker.sh 2   # pane 2
-# …
-scripts/achilles-worker.sh 6
+scripts/achilles-worker.sh        # auto-claims slot 1, 2, 3, … per pane
 ```
+
+Or pin slots explicitly:
+
+```sh
+scripts/achilles-worker.sh 1
+scripts/achilles-worker.sh 2
+```
+
+Slot ownership is held by `worker-N/.lock` (an atomic `mkdir`). When a pane exits, the lock is released. A stale heartbeat (>180s) lets a new pane reclaim that slot automatically. Cap the auto-claim scan with `ACHILLES_MAX_SLOTS` (default 16).
 
 In your Chanakya session (or any shell):
 
@@ -64,6 +70,7 @@ dispatched_from=user@host
 | Var | Default | Effect |
 |---|---|---|
 | `ACHILLES_INBOX_ROOT` | `$HOME/.claude/achilles-inbox` | Where worker dirs live |
+| `ACHILLES_MAX_SLOTS` | `16` | Upper bound for auto-claim slot scan |
 | `ACHILLES_TASK_TIMEOUT_SEC` | `2700` (45m) | Max per-task runtime; needs `gtimeout`. 0 disables. |
 | `ACHILLES_UNATTENDED` | `0` | Set to `1` to pass `--dangerously-skip-permissions` for fully unattended overnight runs. |
 
