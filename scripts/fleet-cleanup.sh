@@ -38,6 +38,18 @@ done
 do_or_say() { if [ "$DRY" = "1" ]; then echo "  [dry-run] $*"; else eval "$*"; fi; }
 now=$(date +%s)
 
+# One-shot machine-global orphan sweep. `rmdir` only succeeds on empty dirs,
+# so anything that gets re-populated is protected. Currently just `state/`
+# (moved per-project in v0.2.0-beta.1); add more as migrations accumulate.
+for orphan in "$HOME/.dev-studio/.runtime/state"; do
+  [ -d "$orphan" ] || continue
+  if [ "$DRY" = "1" ]; then
+    echo "  [dry-run] rmdir '$orphan' (if empty)"
+  elif rmdir "$orphan" 2>/dev/null; then
+    echo "cleared empty machine-global leftover: $orphan"
+  fi
+done
+
 sweep_fleet() {
   local ROOT="$1" LABEL="$2"
   [ -d "$ROOT" ] || { echo "$LABEL: no inbox root ($ROOT) — skipping"; return 0; }
