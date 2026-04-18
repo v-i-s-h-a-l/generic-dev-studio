@@ -78,6 +78,38 @@ resolve_dispatch_queue() {
   printf '%s\n' "$HOME/.dev-studio/$project/.runtime/state/dispatch-queue.jsonl"
 }
 
+# Project memory dir — Claude Code auto-manages one of these per repo. Slug is
+# the repo toplevel path with `/` → `-` (leading slash included, so a repo at
+# `/Users/x/work/foo` maps to `-Users-x-work-foo`).
+# Read _shared/file-locations.md for the full scheme.
+# Used by scripts that need to append to the shared event log.
+resolve_project_memory() {
+  local top
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  local slug="${top//\//-}"
+  printf '%s\n' "$HOME/.claude/projects/${slug}/memory"
+}
+
+resolve_event_log() {
+  local memory
+  memory=$(resolve_project_memory) || return 1
+  printf '%s\n' "$memory/events/$(date -u +%Y-%m-%d).jsonl"
+}
+
+# Append one JSONL event to today's event log. Caller provides agent, event,
+# task id, and a pre-formatted JSON `data` object (default `{}`). Keep the
+# entire line ≤ 4096 bytes so O_APPEND stays atomic (see _shared/events.md).
+append_event() {
+  local agent="${1:?append_event <agent> <event> <task> [data-json]}"
+  local event="$2" task="${3:-}" data="${4:-\{\}}"
+  local log ts
+  log=$(resolve_event_log) || return 1
+  mkdir -p "$(dirname "$log")" 2>/dev/null || true
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  printf '{"ts":"%s","agent":"%s","event":"%s","task":"%s","data":%s}\n' \
+    "$ts" "$agent" "$event" "$task" "$data" >> "$log"
+}
+
 # Chanakya inbox root for a given project — where task debriefs land.
 # Canonical path: ~/.dev-studio/<project>/plans/chanakya-inbox/
 resolve_chanakya_inbox_for() {

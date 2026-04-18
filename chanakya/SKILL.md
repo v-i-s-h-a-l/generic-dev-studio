@@ -365,6 +365,21 @@ Read the `## Reminders` section of `feedback/active.md`. For each row whose `due
 
 This mechanism replaces a real scheduler — the adaptive-backoff sweep already ticks at most every 15–120 min, which is adequate granularity for a 24h post-`push-tf` reminder.
 
+### 0E3 — Blind-spot detection (usage-analysis signals)
+
+Best-effort detection of workflow signals that aren't directly observable from other agents. Each detection emits at most one event per occurrence; skip silently on any read error (the event log is a hint, not a source of truth).
+
+| Signal | How to detect | Event to emit |
+|---|---|---|
+| User re-dispatched a task that already completed | Before each `achilles-dispatch.sh` / `--queue-enqueue`, check the event log for a prior `task_completed` with the same `task`. If present, prior merge_sha goes in the event. | `task_redispatched` |
+| Brief was hand-edited after dispatch | During sweep, for every task with `task_dispatched` and no matching `task_completed`, compare brief file `mtime` to the `ts` of the last `task_dispatched`. If brief mtime is later, emit once and stash a marker in `<project-memory>/brief_edit_seen.txt` to avoid dupe emits. | `brief_edited` |
+| Debrief was hand-edited after processing | For debriefs already moved into `plans/chanakya-inbox/processed/`, compare mtime to the `ts` of the `feedback_ingested` or sweep processing time. Emit once per file; stash a marker in `<project-memory>/debrief_edit_seen.txt`. | `debrief_edited` |
+| User overrode an Argus flag | When an interactive "ship anyway" / "merge anyway" prompt is answered yes in `ship` / `review-feedback` / `intake` mode. Capture the review file path and finding count. | `review_override` |
+| User answered a `task_awaiting_user` | When a new `task_dispatched` / `task_redispatched` matches an unresolved `task_awaiting_user` for the same task id, emit with `wait_duration_s` (now − ts of the awaiting event). | `task_awaiting_user_resolved` |
+| Build-debt counter incremented | During inbox sweep, when a processed debrief has `build_gate: lsp-only` (or equivalent test-skip marker) and the matching counter in `chanakya-master.md` has advanced, emit with the new counter value and trigger. Fires on every increment, not only threshold crossings (`build_debt_warned`/`blocked` still cover those). | `build_debt_incremented` |
+
+Markers (`brief_edit_seen.txt`, `debrief_edit_seen.txt`) are simple one-filename-per-line lists; wipe them on `compact` so re-ingested debriefs can re-emit if edited again.
+
 ### 0F — Studio-feedback inbox ingestion (generic-dev-studio sessions only)
 
 Gate: only run when the current project slug (from `resolve_project()`) is `generic-dev-studio`. In any other project's session this step is a no-op — files accumulate in `~/.dev-studio/generic-dev-studio/feedback-inbox/<source-project>/` until a generic-dev-studio session next sweeps.

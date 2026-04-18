@@ -13,8 +13,10 @@ TASK_ID="${1:?usage: achilles-cancel.sh <task-id>}"
 ROOT=$(resolve_inbox_root) || exit 1
 
 removed=0
+worker=""
 shopt -s nullglob
 for f in "$ROOT"/worker-*/inbox/*-"${TASK_ID}".task; do
+  worker=$(basename "$(dirname "$(dirname "$f")")")
   rm "$f"
   echo "cancelled $f"
   removed=$((removed+1))
@@ -23,3 +25,9 @@ if [ "$removed" -eq 0 ]; then
   echo "no pending task file matched $TASK_ID in $ROOT (already in-flight or completed?)" >&2
   exit 1
 fi
+
+# Emit task_cancelled so usage analysis can tell the difference between a
+# completed task and an aborted one. Best-effort — don't fail the cancel if
+# the event log isn't reachable (e.g. cross-project slug mismatch).
+data=$(printf '{"stage":"pending","reason":"user_abort","worker":"%s"}' "${worker:-unknown}")
+append_event achilles task_cancelled "$TASK_ID" "$data" 2>/dev/null || true

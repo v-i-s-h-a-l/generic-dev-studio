@@ -65,6 +65,7 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `build_debt_warned` | Build debt crosses warn threshold | `counter`, `threshold` |
 | `build_debt_blocked` | Build debt crosses block threshold | `counter` |
 | `task_awaiting_user` | Subagent cannot pick a default and must block for user input. Always paired with a debrief at `status: blocked_awaiting_input`. | `question` (≤200 chars), `brief_excerpt` (≤200 chars, the Phase-0 block or the ambiguous spec line), `mode` (`autonomous`\|`interactive`) |
+| `task_cancelled` | User cancelled a pending or in-flight task (`scripts/achilles-cancel.sh` or an Achilles abort). Paired with no `task_completed`. | `stage` (`pending`\|`in_flight`\|`merged`), `reason` (`user_abort`\|`replaced`\|`stale_brief`\|`other`), `worker` (`worker-N` if known) |
 
 ### Argus events
 
@@ -90,6 +91,12 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `feedback_ingested` | Feedback record minted from a Slack thread / DM / channel | `source`, `channel`, `thread_ts`, `reporter`, `build` |
 | `feedback_archived` | Feedback record promoted to per-build archive | `build`, `reporter`, `linked_task` |
 | `root_cause_promoted` | A `root_cause` label crossed 2+ instances and got its own file | `instances` (array of F-ids) |
+| `task_redispatched` | Chanakya dispatches a task whose last prior event was already `task_completed` (or that appears in worker `done/`). Signals brief or output defect — user wasn't satisfied with the first run. | `prior_merge_sha` (if resolvable), `reason` (`user_retry`\|`follow_up`\|`rebase_needed`\|`other`) |
+| `brief_edited` | Detected in Step 0E: the brief file's mtime moved forward after the most recent `task_dispatched` for that task, and no `task_completed` has closed it. Signals brief-template defect — user had to hand-edit before the worker picked it up. | `age_s_since_dispatch`, `lines_changed_est` (optional; `wc -l` delta if prior size was recorded) |
+| `debrief_edited` | Detected in Step 0E: a processed debrief file's mtime moved forward after it landed in `plans/chanakya-inbox/processed/`. Signals debrief-template defect — user corrected something the agent wrote. | `age_s_since_process`, `lines_changed_est` (optional) |
+| `review_override` | User elects to merge / ship despite a `review_flagged` (e.g. "ship anyway" during ship or review-feedback). Signals potential false-positive Argus rule. | `review_file`, `finding_count`, `reason` (short string; ≤100 chars) |
+| `task_awaiting_user_resolved` | Counterpart to `task_awaiting_user` — emitted when the user's answer lands (detected by a subsequent `task_redispatched` or explicit intake of the brief update). Enables "time waiting on user" measurement. | `wait_duration_s`, `resolved_by` (`user_answered`\|`timeout`\|`cancelled`) |
+| `build_debt_incremented` | Counter goes up on an XS/S LSP-only merge (every skip, not only threshold crossings). Chanakya emits during inbox sweep when the incoming debrief's `build_gate: lsp-only`. Enables "which task sizes drive debt" analysis. | `counter` (`build`\|`test_unit`\|`test_ui`), `new_value`, `trigger` (`xs_skip`\|`s_skip`\|`tdd_skip`\|`other`) |
 
 ### Cross-agent events (every agent emits)
 
