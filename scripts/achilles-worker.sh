@@ -18,6 +18,11 @@
 #   ACHILLES_MAX_SLOTS        default: 16  (upper bound for auto-claim scan)
 #   ACHILLES_TASK_TIMEOUT_SEC default: 2700  (45 min; needs gtimeout — `brew install coreutils`)
 #   ACHILLES_UNATTENDED       set to 1 to pass --dangerously-skip-permissions to claude
+#   ACHILLES_AUTONOMOUS       set to 1 by the worker for every claude -p subprocess;
+#                             tells Achilles to prefer obvious-default + debrief-note
+#                             over asking the user (there is no user to answer in a
+#                             one-shot subagent). Exported automatically — do not set
+#                             manually unless you know what you're doing.
 #
 # Deps: fswatch (brew install fswatch). claude CLI on PATH. gtimeout optional.
 
@@ -150,11 +155,15 @@ process_task() {
   echo "$task_id" > "$DIR/busy"
   log "start $task_id (flags='$flags')"
 
+  # ACHILLES_AUTONOMOUS=1 tells Achilles this invocation has no user to answer
+  # questions (one-shot claude -p). Pair with the silent-stuck detector below:
+  # autonomous reduces how often a task exits without a debrief in the first
+  # place; the detector is the backstop for when a default truly can't be chosen.
   if [ -n "$TIMEOUT_BIN" ] && [ "$TIMEOUT_SEC" -gt 0 ]; then
-    "$TIMEOUT_BIN" "$TIMEOUT_SEC" claude -p "/achilles $task_id $flags" $PERM_FLAG >> "$LOG" 2>&1
+    ACHILLES_AUTONOMOUS=1 "$TIMEOUT_BIN" "$TIMEOUT_SEC" claude -p "/achilles $task_id $flags" $PERM_FLAG >> "$LOG" 2>&1
     rc=$?
   else
-    claude -p "/achilles $task_id $flags" $PERM_FLAG >> "$LOG" 2>&1
+    ACHILLES_AUTONOMOUS=1 claude -p "/achilles $task_id $flags" $PERM_FLAG >> "$LOG" 2>&1
     rc=$?
   fi
   rm -f "$DIR/busy"

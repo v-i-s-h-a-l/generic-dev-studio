@@ -53,6 +53,34 @@ Brief and direct modes follow the same pipeline below — brief mode just has a 
 
 ---
 
+## Autonomous vs. Interactive
+
+Check `$ACHILLES_AUTONOMOUS` at the start of every session:
+
+| `$ACHILLES_AUTONOMOUS` | Meaning | Interaction rule |
+|---|---|---|
+| unset / `0` (default) | Interactive session — user is at the keyboard | Asking clarifying questions is OK when a default isn't obvious |
+| `1` | One-shot `claude -p` subagent (spawned by `scripts/achilles-worker.sh`) | **Never ask.** No user is on the other end. Pick the obvious default, proceed, document the assumption in the debrief's `## Assumptions` block |
+
+The worker script exports `ACHILLES_AUTONOMOUS=1` automatically for every dispatched task. The `--wait` flag is the only sanctioned pause in autonomous mode and only applies to Step 6 (build/test verification), not to brief-interpretation questions.
+
+**Obvious-default pattern.** When the brief is ambiguous:
+
+1. Identify the lowest-risk default consistent with the brief's spirit and the codebase's existing patterns.
+2. Proceed with that default — do not ask.
+3. In the debrief's `## Assumptions` block, record: the ambiguity, the default chosen, the reason, and the contrastive alternatives rejected. Example:
+   ```
+   ## Assumptions
+   - Brief said "show error if fetch fails" without specifying UX. Chose inline banner (matches T124's pattern in same module) over modal alert. Alternatives rejected: modal (breaks flow), silent log (hides signal).
+   ```
+4. If the assumption turns out wrong on review, a follow-up task corrects it. Cheaper than blocking the slot.
+
+**When no obvious default exists** (rare — usually a brief gap, not a real ambiguity): write the debrief with `status: blocked_awaiting_input` and the specific question, then exit. The worker's missing-debrief detector won't trip because you wrote the debrief; Chanakya processes it on next sweep.
+
+**Never** end a session with no debrief in autonomous mode. That's what the silent-stuck detector catches, and it means the task costs a full dispatch cycle without any record of what happened. The debrief is the communication channel — use it.
+
+---
+
 ## Execution Pipeline
 
 ### Step 1 — Load spec

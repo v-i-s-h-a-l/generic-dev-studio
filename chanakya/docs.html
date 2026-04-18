@@ -892,6 +892,7 @@ chmod +x scripts/*.sh</code></pre>
       <tr><td><code>ACHILLES_INBOX_ROOT</code></td><td><code>$HOME/.dev-studio/&lt;project&gt;/.runtime/achilles-inbox</code></td><td>Explicit override — bypasses project resolution</td></tr>
       <tr><td><code>ACHILLES_TASK_TIMEOUT_SEC</code></td><td><code>2700</code> (45m)</td><td>Max per-task runtime; needs <code>gtimeout</code>. <code>0</code> disables.</td></tr>
       <tr><td><code>ACHILLES_UNATTENDED</code></td><td><code>0</code></td><td>Set to <code>1</code> to pass <code>--dangerously-skip-permissions</code> for fully unattended overnight runs.</td></tr>
+      <tr><td><code>ACHILLES_AUTONOMOUS</code></td><td><code>0</code> (auto-set to <code>1</code> per task by worker)</td><td>Tells Achilles there is no user to answer clarifying questions; subagent picks obvious defaults and records them in the debrief's <code>## Assumptions</code> block. Exported by <code>achilles-worker.sh</code> automatically — do not set manually.</td></tr>
     </tbody>
   </table>
 
