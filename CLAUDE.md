@@ -26,6 +26,40 @@ When work lands on `main` that closes an issue, close the issue with a one-line 
 
 When the user asks "what's pending?" / "what's on the list?" / "what's next?" — run `gh issue list` and surface; don't load the issue list speculatively into context.
 
+## Auto-apply tiers (reduce user touchpoints)
+
+The studio's own rules and conventions are auto-improvable. Some changes apply silently; some require a quick OK. Default to action; ask only when there's real ambiguity.
+
+**Auto-apply tier (apply, commit, brief in next session):**
+- Rule wording tweaks in `REVIEW.md`, `RELEASES.md`, `CLAUDE.md`, `THEMES.md`
+- Threshold adjustments backed by data (build-debt warn 6→8, Argus diff cap 500→400)
+- Brief-template additions when patterns show repeated clarification asks
+- Skill-prose trimming when an SKILL.md section never gets used (token savings)
+- Comment improvements, dead-code removal, README clarifications
+- New issue creation when work is explicitly discussed and agreed
+- Theme label assignment on existing/new issues
+- Updating README's roadmap timeline + Story so far on releases
+
+**Ask-first tier (always require user OK):**
+- Changing how agents hand off (Chanakya → Achilles flow)
+- Removing or renaming rules / sub-commands / event types
+- Anything that changes what blocks or what runs in the user's actual project at runtime
+- Permission scope, secrets, auth changes
+- Any breaking change (per RELEASES.md MAJOR rules)
+- Deleting issues or releases
+
+**Adaptive trust.** Track which auto-applies get reverted by the user. If a class of change has zero reverts after 5 applications, the auto-apply criteria can loosen for that class. If something gets reverted, that class tightens. The system learns what the user actually wants.
+
+**Hard stop.** Auto-apply never touches the user's project's runtime behavior — only the studio's internal rules. Their project is sacred; the studio's conventions are negotiable.
+
+## Briefing convention
+
+Brief the user on cumulative work or non-obvious decisions. Stay silent on trivial changes (typo, comment, formatting).
+
+- **Brief**: 3+ small auto-applied changes batched, OR 1 medium change, OR a behavioral inference acted on, OR a tradeoff made.
+- **Don't brief**: routine commits, label additions, doc-only fixes that match an explicit request, mechanical refactors.
+- **Format**: 2–4 lines max in the next session. "Did X, Y, Z. Reason: …. Revert any of it with Q if wrong."
+
 ## Analysis sessions and privacy
 
 Analysis of how the studio is being used in real projects runs **from this repo (generic-dev-studio)**, not from the project being analyzed. Reasons: right gh account by default, no auth juggling across personal/work identities, no bleed of tool-internal concerns into work sessions. Cross-repo reads are fine — `~/.dev-studio/**` is allowlisted from any session.

@@ -16,10 +16,11 @@ timeline
     Apr 2026 : v0.1.0-beta.1 — Three-agent system + multi-worker fleet
              : v0.1.0-beta.2 — In-Claude worker mode + collision-safe slot claims
              : v0.2.0-beta.1 — Per-project fleets + review and release tooling
-    Coming next : Stack modules — opt-in skill bundles per stack (iOS, web…)
-                : Per-project secrets + agent conventions (AGENTS.md)
-                : iMessage / Telegram remote orchestration
-    Long term : DAG dispatch, refactor sharding, overnight queues
+    Coming next : Internal craft — analysis loop, faster/leaner agents
+                : iOS depth — first-class Swift/SwiftUI/UIKit intelligence
+                : Release pipeline — TestFlight + App Store with zero touches
+    Long term : External integrations (Crashlytics, Linear, …)
+              : Design pipeline — Figma → code with high fidelity
               : Conversational planning from ambient input
 ```
 
@@ -29,7 +30,7 @@ timeline
 - **[v0.1.0-beta.2](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.1.0-beta.2)** — Workers can run as real Claude sessions (`/achilles worker`), broadcast across N panes with collision-safe slot claiming. Fleet cleanup script for between-session sweeps.
 - **[v0.1.0-beta.1](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.1.0-beta.1)** — First beta. Three Claude agents — Chanakya plans, Achilles writes, Argus reviews — coordinated over a file-based inbox so work survives Claude restarts. Multi-worker fan-out for parallel tasks.
 
-For the longer-term vision and themes, see [`ROADMAP.md`](ROADMAP.md). For actionable backlog, see [open issues](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues).
+For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term vision, see [`ROADMAP.md`](ROADMAP.md). For actionable backlog, see [open issues](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues).
 
 ---
 
