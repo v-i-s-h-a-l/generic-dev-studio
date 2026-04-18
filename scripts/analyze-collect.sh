@@ -92,9 +92,11 @@ echo
 
 echo "## Review verdict rates"
 if [ -d "$REVIEW_DIR" ]; then
-  approved=$(grep -l '^verdict: approved' "$REVIEW_DIR"/*.md "$REVIEW_DIR"/archive/*.md 2>/dev/null | wc -l | tr -d ' ')
-  flagged=$(grep -l '^verdict: flagged' "$REVIEW_DIR"/*.md "$REVIEW_DIR"/archive/*.md 2>/dev/null | wc -l | tr -d ' ')
-  blocked=$(grep -l '^verdict: blocked' "$REVIEW_DIR"/*.md "$REVIEW_DIR"/archive/*.md 2>/dev/null | wc -l | tr -d ' ')
+  # Argus writes `Verdict: <state>` as a top-of-file body line (not YAML
+  # frontmatter). Case-insensitive + anchored-after-whitespace match.
+  approved=$(grep -lEi '^[[:space:]]*verdict:[[:space:]]*approved' "$REVIEW_DIR"/*.md "$REVIEW_DIR"/archive/*.md 2>/dev/null | wc -l | tr -d ' ')
+  flagged=$(grep -lEi '^[[:space:]]*verdict:[[:space:]]*flagged' "$REVIEW_DIR"/*.md "$REVIEW_DIR"/archive/*.md 2>/dev/null | wc -l | tr -d ' ')
+  blocked=$(grep -lEi '^[[:space:]]*verdict:[[:space:]]*blocked' "$REVIEW_DIR"/*.md "$REVIEW_DIR"/archive/*.md 2>/dev/null | wc -l | tr -d ' ')
   echo "approved: $approved"
   echo "flagged:  $flagged"
   echo "blocked:  $blocked"
