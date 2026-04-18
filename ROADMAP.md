@@ -1,5 +1,9 @@
 # Roadmap
 
+This file is the **vision and themes** doc — long-running directions the project is heading. For *actionable backlog* (specific work that's queued or in flight), see [open issues](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues). For *what just shipped*, see the [Releases page](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases) and the timeline at the top of [README.md](README.md).
+
+---
+
 ## Remote orchestration via iMessage / Telegram (planned)
 
 **Goal:** user interacts with Chanakya via iMessage/Telegram from anywhere; Chanakya dispatches work to manually-spawned Achilles worker terminals in real time. User never needs to be at the laptop to direct the work — only to have the worker terminals already running.
