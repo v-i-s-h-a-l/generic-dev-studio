@@ -112,6 +112,7 @@ scripts/                # multi-worker fleet (BETA)
   achilles-worker.sh    # long-running worker pane; atomic slot claim via mkdir+PID-token
   achilles-dispatch.sh  # write task file to least-loaded (or pinned) worker inbox
   achilles-queue.sh     # work-stealing dispatch queue — enqueue/drain/list/depth/clear
+  analyze-collect.sh    # mechanical stats for usage-analysis passes (see ANALYSIS.md)
   worker-status.sh      # one-shot fleet status table
   achilles-cancel.sh    # remove pending dispatches
   fleet-cleanup.sh      # soft sweep (stale locks, old done/) or --all teardown
@@ -256,6 +257,8 @@ See `scripts/README.md` for the full on-disk layout, env vars (`ACHILLES_PROJECT
 Interactive docs page: [`chanakya/docs.html`](chanakya/docs.html) — or run `/chanakya-help` from inside Claude Code.
 
 Long-form user walkthrough with examples: [`chanakya/README.md`](chanakya/README.md).
+
+Usage-analysis procedure + report template: [`ANALYSIS.md`](ANALYSIS.md). Run `scripts/analyze-collect.sh --project <slug>` for a mechanical stats dump to seed each pass.
 
 ---
 
