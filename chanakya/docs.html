@@ -525,6 +525,7 @@
   <div class="nav-inner">
     <a href="#commands">Commands</a>
     <a href="#composites">Composites</a>
+    <a href="#fleet">Fleet</a>
     <a href="#flow">How It Works</a>
     <a href="#task-groups">Task Groups</a>
     <a href="#testing">Testing</a>
@@ -642,6 +643,10 @@
     <strong>Week 1 posture:</strong> only hard checks block (compile/test failure, secrets, staleness). Everything else flags &mdash; merge proceeds and Chanakya auto-files follow-up tasks from flagged findings. Promote checks to blocks after observing real signal.
   </div>
 
+  <div class="callout" style="margin-top: 20px; border-left-color: var(--purple); background: rgba(188, 140, 255, 0.07);">
+    <strong>Scope caps (token budget guardrails):</strong> cross-file scan capped at <strong>10 neighbor files &times; 50 lines each</strong>; diffs over <strong>500 lines</strong> load only the 500 most-changed lines; <strong>XS single-file diffs under 20 lines skip Argus entirely</strong>. Every triggered cap emits a <code>review_scoped</code> event (cap type + actual vs limit) so you can tune thresholds from longitudinal data.
+  </div>
+
   <div class="callout" style="margin-top: 20px;">
     <strong>Default is merge-immediately.</strong> Achilles invokes Argus pre-merge (Step 8.5), then merges on approved/flagged. Chanakya processes findings from the event log on its next sweep. Batch-test with <code>/chanakya test-manifest</code> or <code>/chanakya test-flow</code> when ready.
   </div>
@@ -668,6 +673,29 @@
       <tr><td><code>--auto-sweep</code></td><td>Background inbox sweep with adaptive backoff (15→30→60→120 min on blank sweeps; resets on activity).</td></tr>
       <tr><td><code>--watch</code></td><td><code>--auto-sweep</code> + auto-dispatch ready tasks after each sweep</td></tr>
       <tr><td><code>--ship-mode</code></td><td><code>--auto-sweep</code> + auto-dispatch + auto-verify when task queue drains</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Model Recommendations</h3>
+  <p>Per-agent model defaults &mdash; tune for cost/quality without losing capability where it matters.</p>
+  <table class="decision-table">
+    <thead><tr><th>Agent</th><th>Default</th><th>When to upgrade / downgrade</th></tr></thead>
+    <tbody>
+      <tr>
+        <td style="color: var(--chanakya);"><strong>Chanakya</strong></td>
+        <td>Sonnet</td>
+        <td>Orchestration is structured reads/writes &mdash; Sonnet handles it. Use <strong>Opus</strong> for ambiguous PRD intake; use <strong>Haiku</strong> for event-processing modes (compact, auto-sweep ticks, sync-slack) for ~15&times; cost reduction.</td>
+      </tr>
+      <tr>
+        <td style="color: var(--achilles);"><strong>Achilles</strong></td>
+        <td>Opus (always)</td>
+        <td>Code generation never downgrades. The worker parent bash-loop (<code>scripts/achilles-worker.sh</code>) can run on Haiku since it only dispatches; child <code>claude -p</code> subprocesses stay on Opus.</td>
+      </tr>
+      <tr>
+        <td style="color: var(--purple);"><strong>Argus</strong></td>
+        <td>Opus (always)</td>
+        <td>Reasoning-heavy edge-case analysis requires the strongest model. Do not downgrade.</td>
+      </tr>
     </tbody>
   </table>
 </section>
@@ -762,6 +790,75 @@
       </tr>
     </tbody>
   </table>
+</section>
+
+<!-- Multi-worker fleet -->
+<section id="fleet">
+  <h2>Multi-Worker Fleet <span style="font-size: 0.5em; color: var(--purple); vertical-align: middle;">BETA</span></h2>
+  <p>File-based IPC that lets one Chanakya session fan tasks out to N independent Achilles worker panes. Each worker spawns a fresh <code>claude -p "/achilles &lt;id&gt;"</code> per task &mdash; clean context every time, no harness changes.</p>
+
+  <h3>One-time setup</h3>
+  <pre><code>brew install fswatch coreutils
+chmod +x scripts/*.sh</code></pre>
+
+  <h3>Daily flow</h3>
+  <p>Open N panes (typical: 6) and run one worker per pane. Then dispatch from your Chanakya session or any shell.</p>
+  <div class="cmd-grid">
+    <div class="cmd-card achilles">
+      <code>scripts/achilles-worker.sh N</code>
+      <span>Long-running pane. Watches <code>~/.claude/achilles-inbox/worker-N/inbox/</code> via <code>fswatch</code>; spawns a fresh Achilles per task. Heartbeats every 60s, optional <code>gtimeout</code>, optional unattended mode via <code>ACHILLES_UNATTENDED=1</code>.</span>
+    </div>
+    <div class="cmd-card">
+      <code>scripts/achilles-dispatch.sh &lt;task-id&gt; [worker-N|any]</code>
+      <span>Writes a task file to a worker inbox. Default <code>any</code> picks the alive worker with the lowest <code>busy + pending</code> load. Pass extra flags after <code>--</code> (e.g. <code>-- --wait --force-build</code>).</span>
+    </div>
+    <div class="cmd-card">
+      <code>scripts/worker-status.sh</code>
+      <span>One-shot table of every worker: state (idle/busy), pending / done / rescue counts, heartbeat age, current task id.</span>
+    </div>
+    <div class="cmd-card">
+      <code>scripts/achilles-cancel.sh &lt;task-id&gt;</code>
+      <span>Removes pending dispatches matching the id. Cannot stop in-flight tasks &mdash; kill the worker pane for that.</span>
+    </div>
+  </div>
+
+  <h3>Chanakya sub-commands</h3>
+  <table class="decision-table">
+    <thead><tr><th>Sub-command</th><th>Behavior</th></tr></thead>
+    <tbody>
+      <tr><td><code>--worker-status</code></td><td>Surface the fleet table. Use before any dispatch to confirm capacity.</td></tr>
+      <tr><td><code>--dispatch &lt;task-id&gt; [worker-N|any]</code></td><td>Shell out to <code>achilles-dispatch.sh</code>. Refuses if task status is not <code>briefed</code>.</td></tr>
+      <tr><td><code>--dispatch-many &lt;ids&hellip;&gt;</code></td><td>One <code>--dispatch any</code> per id; skips ids already pending in some inbox (re-dispatch guard).</td></tr>
+      <tr><td><code>--cancel &lt;task-id&gt;</code></td><td>Remove pending dispatches across all inboxes.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>On-disk layout</h3>
+  <pre><code>~/.claude/achilles-inbox/worker-&lt;N&gt;/
+  alive                    # touched every 60s; staleness &gt;180s = dead
+  busy                     # present iff a task is in-flight (contents = task-id)
+  inbox/&lt;ts&gt;-&lt;id&gt;.task     # pending dispatches (fswatch target)
+  done/&lt;ts&gt;-&lt;id&gt;.task      # completed
+  rescue/&lt;ts&gt;-&lt;id&gt;.task    # timed-out / malformed; operator decides retry
+  worker.log</code></pre>
+
+  <h3>Environment</h3>
+  <table class="decision-table">
+    <thead><tr><th>Var</th><th>Default</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>ACHILLES_INBOX_ROOT</code></td><td><code>$HOME/.claude/achilles-inbox</code></td><td>Where worker dirs live</td></tr>
+      <tr><td><code>ACHILLES_TASK_TIMEOUT_SEC</code></td><td><code>2700</code> (45m)</td><td>Max per-task runtime; needs <code>gtimeout</code>. <code>0</code> disables.</td></tr>
+      <tr><td><code>ACHILLES_UNATTENDED</code></td><td><code>0</code></td><td>Set to <code>1</code> to pass <code>--dangerously-skip-permissions</code> for fully unattended overnight runs.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout" style="margin-top: 20px; border-left-color: var(--purple); background: rgba(188, 140, 255, 0.07);">
+    <strong>Refusal rules:</strong> Chanakya refuses to dispatch when (a) the task is not <code>briefed</code>, (b) Build Debt is in <code>block</code> state and the task is not a debt-reduction task, or (c) no alive workers exist and the user did not pin a specific worker.
+  </div>
+
+  <div class="callout" style="margin-top: 20px;">
+    <strong>Events stay on the existing log.</strong> <code>worker.log</code> is operator-facing only. Achilles inside the worker still emits <code>task_started</code>, <code>task_completed</code>, <code>review_blocked</code>, etc. Chanakya consumes them in Step 0E exactly as today &mdash; the worker layer is invisible to the event pipeline.
+  </div>
 </section>
 
 <!-- Flow -->
