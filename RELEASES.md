@@ -62,11 +62,18 @@ if many (scripts/, chanakya/, achilles/, argus/, _shared/, docs).>
 ### Style rules for "What's new"
 
 - **Bullets over prose.** Each bullet = one thing the user can now do, will notice, or will have to work around. Readers scan bullets; they skip paragraphs.
-- **Lead with the verb.** "Run the studio on multiple projects…" not "The studio now supports…". Active, not passive.
+- **The user's outcome is the subject — not the feature.** Every bullet must answer one of: *what can I do now? what got easier? what goes away? what am I getting?* Bullets whose subject is the software ("Workers now…", "The inbox now…", "Terminal tabs now…") fail this test — rewrite with the user as the (implied) subject.
 - **Plain language — 10-year-old test.** If a word needs explaining to a 10-year-old, pick a different word. "Orchestrator" → "manager". "File-based IPC" → "a shared inbox". "Atomic claim" → "first-come-first-served".
-- **Workflow-first.** Ask: *what can the user do now that they couldn't before? what got easier? what got faster?* If a bullet doesn't answer one of those, cut it or move it to Changes.
+- **Lead with the outcome in bold, then one line of context.** Like `**Work on multiple projects at once.** No conflicts between them.` — the bold is what they're getting; the rest is the how-it-feels.
+- **Workflow-first.** If a bullet doesn't change what the user does or notices, cut it or move it to Changes. Feature names without outcomes belong in Changes, not What's new.
 - **Examples sparingly.** One short example under a bullet is fine when the bullet alone is abstract. Not every bullet needs one. When in doubt, no example.
-- **One line per bullet.** If a bullet needs more than one line, you're probably mixing two points — split them.
+- **One line per bullet** (not counting the optional sub-line). If a bullet needs more than that, you're probably mixing two points — split them.
+
+### Subject-flip test
+
+Before finalizing, read each bullet and ask: *who's the subject of this sentence?*
+- If it's the software ("the studio now…", "workers…", "tabs…") → rewrite.
+- If it's the user (implied "you") or an outcome ("no conflicts", "machine-wide status") → keep.
 
 ### Tone check
 
@@ -78,16 +85,21 @@ Read each bullet aloud. Red flags:
 
 ### Good vs bad examples
 
-**Bad**:
-> *Refactored path resolution into `scripts/lib-paths.sh` and added helper functions. Updated 14 files to route through it. Added `detect_stack()` for phase-2 consumers.*
+**Bad (technical, refactor-speak)**:
+> *Refactored path resolution into `scripts/lib-paths.sh` and added helper functions. Updated 14 files to route through it.*
 
-**Bad (too wordy, prose-form)**:
-> *Each project you use the studio on now runs its own independent Achilles fleet. Before this release, worker inboxes, push queues, and fleet state all shared one machine-global location — fine for one project, a mess the moment two projects tried to share a machine. Now the studio resolves each project automatically…*
+**Bad (prose, still feature-subject)**:
+> *Each project now runs its own independent Achilles fleet. Worker inboxes, push queues, and fleet state are scoped per project…*
 
-**Good**:
-> - Run the studio on multiple projects at once — each gets its own workers, inbox, and queues.
+**Better (bullets but software-as-subject)**:
 > - Terminal tabs now show which project a worker belongs to (e.g. `turnip-ios:worker-1`).
-> - No setup — the studio picks the right project from your git folder.
+> - The studio now auto-resolves the project from your git folder.
+
+**Good (user-as-subject / outcome-first)**:
+> - **Work on multiple projects at the same time.** Each project's work stays separate — no accidental cross-talk.
+> - **Know which pane is doing what.** Tabs label themselves with the project name and worker number.
+> - **No setup when you switch projects.** The studio figures it out from your git folder.
+> - **Check on everything in one place.** One command shows every worker across every project.
 
 ## Versioning
 
