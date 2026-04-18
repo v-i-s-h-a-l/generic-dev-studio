@@ -110,6 +110,59 @@ append_event() {
     "$ts" "$agent" "$event" "$task" "$data" >> "$log"
 }
 
+# Print the ts of the most recent event matching {event, task} in the last
+# N days of event logs (default 14). Empty output if nothing matches.
+find_recent_event_ts() {
+  local target_event="$1" target_task="$2" days="${3:-14}"
+  local memory events_dir f
+  memory=$(resolve_project_memory) || return 1
+  events_dir="$memory/events"
+  [ -d "$events_dir" ] || return 1
+  # Filenames are YYYY-MM-DD.jsonl — lexicographic sort == date sort.
+  ls -r "$events_dir"/*.jsonl 2>/dev/null | head -n "$days" | while IFS= read -r f; do
+    grep "\"event\":\"$target_event\"" "$f" 2>/dev/null \
+      | grep "\"task\":\"$target_task\"" \
+      | tail -n 1 \
+      | sed -n 's/.*"ts":"\([^"]*\)".*/\1/p'
+  done | head -n 1
+}
+
+# Portable ISO-8601-Z → epoch-seconds. macOS: stat-style -j; GNU: -d.
+ts_to_epoch() {
+  local ts="$1"
+  date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$ts" +%s 2>/dev/null \
+    || date -u -d "$ts" +%s 2>/dev/null
+}
+
+# Emit pre-dispatch blind-spot signals (Step 0E3) for a task about to be
+# routed. Fires `task_redispatched` if the task has a prior `task_completed`
+# in recent history, and `task_awaiting_user_resolved` if a prior
+# `task_awaiting_user` is newer than its last resolved event. Best-effort:
+# failures are swallowed so the dispatch itself never breaks.
+emit_predispatch_signals() {
+  local task="${1:?emit_predispatch_signals <task-id>}"
+  local ts_complete ts_await ts_resolved now_s await_s wait_s
+  ts_complete=$(find_recent_event_ts task_completed "$task" 2>/dev/null)
+  if [ -n "$ts_complete" ]; then
+    append_event chanakya task_redispatched "$task" \
+      "{\"prior_completed_at\":\"$ts_complete\",\"reason\":\"user_retry\"}" \
+      2>/dev/null || true
+  fi
+  ts_await=$(find_recent_event_ts task_awaiting_user "$task" 2>/dev/null)
+  if [ -n "$ts_await" ]; then
+    ts_resolved=$(find_recent_event_ts task_awaiting_user_resolved "$task" 2>/dev/null)
+    if [ -z "$ts_resolved" ] || [ "$ts_await" \> "$ts_resolved" ]; then
+      now_s=$(date -u +%s)
+      await_s=$(ts_to_epoch "$ts_await") || await_s=0
+      wait_s=$(( now_s - await_s ))
+      [ "$await_s" -eq 0 ] && wait_s=-1
+      append_event chanakya task_awaiting_user_resolved "$task" \
+        "{\"wait_duration_s\":$wait_s,\"resolved_by\":\"user_answered\"}" \
+        2>/dev/null || true
+    fi
+  fi
+}
+
 # Chanakya inbox root for a given project — where task debriefs land.
 # Canonical path: ~/.dev-studio/<project>/plans/chanakya-inbox/
 resolve_chanakya_inbox_for() {

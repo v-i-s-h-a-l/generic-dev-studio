@@ -369,16 +369,27 @@ This mechanism replaces a real scheduler — the adaptive-backoff sweep already 
 
 Best-effort detection of workflow signals that aren't directly observable from other agents. Each detection emits at most one event per occurrence; skip silently on any read error (the event log is a hint, not a source of truth).
 
+**Auto-emitted by dispatch scripts (no sweep action needed):**
+
+| Signal | Where it fires | Event |
+|---|---|---|
+| User re-dispatched a task that already completed | `scripts/achilles-dispatch.sh` calls `emit_predispatch_signals` (in `lib-paths.sh`) which scans the last 14 days of event logs for a prior `task_completed` with the same `task`. The event's `prior_completed_at` pins the ts so latency can be derived. | `task_redispatched` |
+| User answered a `task_awaiting_user` | Same helper — fires when a prior `task_awaiting_user` exists for the task and is newer than its last `task_awaiting_user_resolved`. `wait_duration_s = now − await_ts`. | `task_awaiting_user_resolved` |
+
+Both are wired via `emit_predispatch_signals` in `scripts/lib-paths.sh`. No Chanakya code path needs to detect them — they fire every time a task is routed through the dispatch script.
+
+**Chanakya sweep-time detections:**
+
 | Signal | How to detect | Event to emit |
 |---|---|---|
-| User re-dispatched a task that already completed | Before each `achilles-dispatch.sh` / `--queue-enqueue`, check the event log for a prior `task_completed` with the same `task`. If present, prior merge_sha goes in the event. | `task_redispatched` |
 | Brief was hand-edited after dispatch | During sweep, for every task with `task_dispatched` and no matching `task_completed`, compare brief file `mtime` to the `ts` of the last `task_dispatched`. If brief mtime is later, emit once and stash a marker in `<project-memory>/brief_edit_seen.txt` to avoid dupe emits. | `brief_edited` |
 | Debrief was hand-edited after processing | For debriefs already moved into `plans/chanakya-inbox/processed/`, compare mtime to the `ts` of the `feedback_ingested` or sweep processing time. Emit once per file; stash a marker in `<project-memory>/debrief_edit_seen.txt`. | `debrief_edited` |
 | User overrode an Argus flag | When an interactive "ship anyway" / "merge anyway" prompt is answered yes in `ship` / `review-feedback` / `intake` mode. Capture the review file path and finding count. | `review_override` |
-| User answered a `task_awaiting_user` | When a new `task_dispatched` / `task_redispatched` matches an unresolved `task_awaiting_user` for the same task id, emit with `wait_duration_s` (now − ts of the awaiting event). | `task_awaiting_user_resolved` |
 | Build-debt counter incremented | During inbox sweep, when a processed debrief has `build_gate: lsp-only` (or equivalent test-skip marker) and the matching counter in `chanakya-master.md` has advanced, emit with the new counter value and trigger. Fires on every increment, not only threshold crossings (`build_debt_warned`/`blocked` still cover those). | `build_debt_incremented` |
 
 Markers (`brief_edit_seen.txt`, `debrief_edit_seen.txt`) are simple one-filename-per-line lists; wipe them on `compact` so re-ingested debriefs can re-emit if edited again.
+
+To emit from within Chanakya's sweep, source `scripts/lib-paths.sh` and call `append_event chanakya <event-name> <task> '<data-json>'`. The helper resolves the event log path and timestamps the entry.
 
 ### 0F — Studio-feedback inbox ingestion (generic-dev-studio sessions only)
 

@@ -75,5 +75,9 @@ FILE="$DIR/inbox/${STAMP}-${TASK_ID}.task"
   echo "dispatched_from=${USER:-unknown}@${HOSTNAME:-$(hostname)}"
 } > "$FILE.tmp"
 mv "$FILE.tmp" "$FILE"
+
+# Blind-spot signals (#11 / #20): best-effort, won't fail the dispatch.
+emit_predispatch_signals "$TASK_ID" 2>/dev/null || true
+
 echo "dispatched $TASK_ID -> worker-$N"
 echo "  $FILE"
