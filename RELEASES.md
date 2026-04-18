@@ -93,6 +93,33 @@ Example of the rule applied:
 > - Know which pane is doing what. Tabs label themselves with the project name.
 > - No setup when you switch projects.
 
+### Major-bump extras
+
+A MAJOR bump means *the tool works differently now* — users have to update their mental model, not just run a migration script. MAJOR notes need everything a MINOR has, plus:
+
+- **"Why major?" section** — 2–3 sentences on what was rethought and why it couldn't be done as a MINOR. Forces discipline. If you can't write this paragraph, the bump is probably a MINOR.
+- **Concept changes with Before/Now framing** — users have the old model baked in. Tell them what's no longer true. Format:
+  > *Before: one Chanakya session drove tasks across all projects.*
+  > *Now: each project runs its own Chanakya — `/chanakya status` only shows the current project.*
+- **Migration effort estimate** — one line: `< 5 min` / `< 30 min` / `1–2 hours, includes re-reading SKILL.md files`. Users plan around effort, not instructions.
+- **"Should you upgrade now?" call-out** — honest. If the migration is heavy or feedback is still coming in, recommend waiting for `vN.1`. Better to delay adoption than rush a regret.
+- **Rollback path** — how to get back to `v(N-1)` cleanly if it goes poorly. State lives on disk in this repo; rollback is realistic, document it.
+- **Prior deprecation preferred** — a MINOR a release or two ahead should mark the old behavior deprecated with a visible warning (a one-line stderr note from the affected script, or a banner in `/chanakya status`). The MAJOR removes it. Not always possible (clean-break refactors), but default to it.
+
+#### Cadence rules for MAJORs
+
+- **Rare by default.** If MAJORs land more than every ~2–3 months, decisions are off or the bump is being over-used. Re-read the "Why major?" justification with a skeptical eye.
+- **Dogfood the migration** before tagging. Spin up a fresh `~/.dev-studio/scratch/`, run through the migration docs, see what's missing.
+- **Smoke test the new model** end-to-end before tagging — not just `bash -n`. Prove the new mental model actually works.
+
+#### Trim the bullets, not the rigor
+
+A MAJOR doesn't need *more* What's new bullets than a MINOR — it needs *better-chosen* ones. Pick the 2–3 things that capture the model shift; let "Concept changes" carry the rest. Don't pad to feel important.
+
+#### What MAJOR is not
+
+If migration is mechanically simple and the mental model didn't shift, it's a MINOR (pre-1.0) or a strict MAJOR with a small footprint (post-1.0). Don't make MAJORs scary for their own sake — when migration is `< 5 min`, say so up top.
+
 ### Tone check
 
 Read each bullet aloud. Red flags:
@@ -166,6 +193,12 @@ Don't rush it. Cut 1.0 when:
 - You're willing to live with post-1.0 discipline (MAJOR bumps for every break)
 
 Until then, staying in 0.x is honest and gives freedom to reshape.
+
+#### `v1.0` is special
+
+`v0.x → v1.0` is itself a MAJOR but with different semantics than later MAJORs: it's a **stability promise**. From 1.0 onward, the public surface (script CLIs, SKILL.md sub-commands, on-disk paths, env vars, schemas) won't break without another MAJOR.
+
+`v1.0` notes should lead with what's being committed to stability — not what's new. Add a "Stability promises" section listing the surface that's now under contract. This is the headline for 1.0; new features take the back seat.
 
 ### Pre-release suffixes
 
