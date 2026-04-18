@@ -31,6 +31,14 @@ All per-project artifacts live under `~/.dev-studio/<project>/` — outside `~/.
 /chanakya sync-slack             # sync Slack bug list with master plan after a build
 /chanakya sync-slack --configure-token   # one-time: save Slack bot token
 /chanakya sync-slack --configure         # one-time: configure project Slack list IDs
+
+# Multi-worker fleet (BETA)
+/achilles worker                 # in a Claude session (broadcast-typed across N panes); each claims a slot
+scripts/achilles-worker.sh       # bash equivalent; same atomic claim, no Claude wrapper
+scripts/achilles-dispatch.sh T001        # routes to least-loaded alive worker
+scripts/worker-status.sh                 # one-shot fleet table
+scripts/achilles-cancel.sh T001          # remove pending dispatch
+scripts/fleet-cleanup.sh [--dry-run|--all]  # soft sweep / full teardown
 ```
 
 **Minimal-intervention by default.** Chanakya runs end-to-end without stopping for confirmation. The only points where it pauses are: Slack publish, first-time config writes (`--configure-token`, `--configure`), merge conflicts, and `--wait` mode feedback windows.
@@ -60,6 +68,14 @@ commands/
   chanakya-help.md      # /chanakya-help — opens docs.html in browser
   pushTFBuild.md        # /pushTFBuild — archive + upload to TestFlight
   fullSendToAppStore.md # /fullSendToAppStore — submit build to App Store review
+
+scripts/                # multi-worker fleet (BETA)
+  achilles-worker.sh    # long-running worker pane; atomic slot claim via mkdir+PID-token
+  achilles-dispatch.sh  # write task file to least-loaded (or pinned) worker inbox
+  worker-status.sh      # one-shot fleet status table
+  achilles-cancel.sh    # remove pending dispatches
+  fleet-cleanup.sh      # soft sweep (stale locks, old done/) or --all teardown
+  README.md             # setup, on-disk layout, env vars, caveats
 
 _shared/                # reusable primitives (symlinked from ~/.claude/skills/_shared/)
   file-locations.md          # project slug computation + file paths (incl. events/, reviews/)
@@ -94,6 +110,7 @@ ln -s "$PWD/_shared"    ~/.claude/skills/_shared
 ln -s "$PWD/commands/chanakya-help.md"        ~/.claude/commands/chanakya-help.md
 ln -s "$PWD/commands/pushTFBuild.md"          ~/.claude/commands/pushTFBuild.md
 ln -s "$PWD/commands/fullSendToAppStore.md"   ~/.claude/commands/fullSendToAppStore.md
+ln -s "$PWD/scripts"   ~/.claude/skills/scripts    # required for /achilles worker mode
 ```
 
 ### Option 2 — copy
@@ -104,6 +121,14 @@ cp -r chanakya/  ~/.claude/skills/chanakya/
 cp -r achilles/  ~/.claude/skills/achilles/
 cp -r _shared/   ~/.claude/skills/_shared/
 cp commands/*.md ~/.claude/commands/
+cp -r scripts/   ~/.claude/skills/scripts/         # required for /achilles worker mode
+chmod +x ~/.claude/skills/scripts/*.sh
+```
+
+### Fleet prerequisites (only if you'll use multi-worker mode)
+
+```bash
+brew install fswatch coreutils
 ```
 
 ### One-time directories (per project)
@@ -157,6 +182,22 @@ To port to a non-iOS stack:
 2. Replace `xcodebuild -derivedDataPath ...` in `achilles/SKILL.md` Step 6 with `cargo build`, `pnpm build`, `go build`, etc. Keep the per-task output-dir convention.
 3. Drop Figma calls from Brief Generation Step 3 if unused.
 4. Update `_shared/turnip-project-config.md` (or replace it) with your project's config.
+
+---
+
+## Multi-Worker Fleet (BETA)
+
+Fan tasks out to N independent Achilles worker panes from one Chanakya session via file-based IPC.
+
+**In-Claude (recommended):** launch `claude --dangerously-skip-permissions` in N panes, turn on iTerm Broadcast Input (`Cmd+Opt+I`), type `/achilles worker` once. Each Claude session atomically claims a slot via `mkdir worker-N/.lock` (PID-token verified — race-safe under broadcast). The session shells out to the bash watch loop in the background and stays available for status/stop questions. Tasks themselves spawn fresh `claude -p` subprocesses, so per-task context stays clean.
+
+**Pure bash (no wrapper):** `scripts/achilles-worker.sh` in each pane. Same atomic claim, no Claude session around it.
+
+Then dispatch from your Chanakya pane normally — Chanakya auto-detects fleet mode (alive worker dirs present) and routes `ship`/`dispatch` through `scripts/achilles-dispatch.sh`. Communication stays via the existing event log; no new IPC.
+
+**Cleanup:** workers self-clean their `.lock` and `busy` markers on exit, and prune their own old `done/` files on boot. Between sessions or after crashes, run `scripts/fleet-cleanup.sh` (soft sweep — clears stale locks/busy/old-done, rotates large logs) or `scripts/fleet-cleanup.sh --all` (full teardown — refuses if any worker is still alive).
+
+See `scripts/README.md` for the full on-disk layout, env vars (`ACHILLES_INBOX_ROOT`, `ACHILLES_MAX_SLOTS`, `ACHILLES_TASK_TIMEOUT_SEC`, `ACHILLES_UNATTENDED`), and caveats.
 
 ---
 
