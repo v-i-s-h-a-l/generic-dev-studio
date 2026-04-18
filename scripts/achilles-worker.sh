@@ -159,9 +159,10 @@ process_task() {
   fi
   rm -f "$DIR/busy"
 
-  # Surface Achilles' last output in the terminal so questions / errors /
-  # silent-stuck rc=0 exits don't stay hidden in worker.log. Cheap fix for
-  # issue #18 — proper detection (debrief + merge + status check) lands later.
+  # claude -p stdout is fully redirected to $LOG, so rc=0 alone cannot
+  # distinguish a completed task from a subagent that exited after asking
+  # a clarifying question. Echoing the tail makes both outcomes visible
+  # in the pane without relying on a separate tail -f.
   printf '────── %s output (tail) ──────\n' "$task_id"
   tail -n 40 "$LOG" 2>/dev/null || true
   printf '──────────────────────────────────\n'

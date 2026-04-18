@@ -35,6 +35,8 @@ Slot ownership is held by `worker-N/.lock` (an atomic `mkdir`). When a pane exit
 
 Worker panes auto-title as `<project>:worker-N` (iTerm/tmux OSC 0) so you can tell at a glance which project each pane belongs to.
 
+After each dispatched task, the pane prints the last 40 lines of `worker.log` so questions or errors from the subagent are visible without tailing the log from a separate pane.
+
 In your Chanakya session (or any shell):
 
 ```sh
