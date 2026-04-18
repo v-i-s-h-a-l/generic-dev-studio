@@ -502,6 +502,26 @@ The Step 11 scheduled wake has been removed. Follow-up surfacing is now event-dr
 
 ---
 
+## Studio-Feedback Mode (`/achilles studio-feedback` or conversational "capture this as feedback")
+
+Same contract as `/chanakya studio-feedback`: emit a fenced feedback block the user pastes into their generic-dev-studio session. No writes. See `chanakya/SKILL.md` → Mode: Studio-Feedback for the exact block format — identical here.
+
+### Interactive invocation
+
+User runs `/achilles studio-feedback` or says "capture this as feedback" inside an Achilles session. Emit the block, print `Paste into your generic-dev-studio session to ingest.`, exit.
+
+### Subagent emission discipline (one-shot `claude -p "/achilles <task-id>"`)
+
+When executing a task, if the subagent notices a **studio-level issue** (wrapper bug, brief-template defect, unreachable step, silent failure mode, misleading error, rule gap), it must include a studio-feedback block in its **debrief output** — not invoke the sub-command separately. The `claude -p` subprocess cannot wait for user paste; emitting inline in the debrief routes through Chanakya's Step 0E ingestion on the next sweep.
+
+Scope boundary: studio-level issues only. Questions about the task's implementation go to the debrief's `status: blocked_awaiting_input` field, not here. If unsure, lean toward emitting — ingestion is idempotent and cheap.
+
+### Format
+
+Identical to Chanakya's block. Do not re-specify here — single source of truth lives in `chanakya/SKILL.md`.
+
+---
+
 ## Build Mode (`/achilles build`)
 
 On-demand build verification. One command: green resets the debt counter; red auto-bisects to name the breaking commit and files a P0 fix task. No brief required. Never prompts the user.

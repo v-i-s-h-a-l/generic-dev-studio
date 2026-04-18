@@ -619,6 +619,10 @@
       <code>/chanakya feedback-history</code>
       <span>Search archived feedback: <code>--reporter</code>, <code>--module</code>, <code>--root-cause</code>.</span>
     </div>
+    <div class="cmd-card">
+      <code>/chanakya studio-feedback</code>
+      <span>Emit a fenced block capturing feedback <em>about the studio itself</em> (not project feedback). Paste into your generic-dev-studio session to ingest. Triggered by <code>/chanakya studio-feedback</code> or "capture this as feedback".</span>
+    </div>
   </div>
 
   <h3 style="color: var(--achilles);">Achilles &mdash; The Warrior</h3>
@@ -654,6 +658,10 @@
     <div class="cmd-card achilles">
       <code>/achilles app-store</code>
       <span>Wraps <code>/fullSendToAppStore</code> &mdash; submits to App Store, then debriefs Chanakya with release tracking data</span>
+    </div>
+    <div class="cmd-card achilles">
+      <code>/achilles studio-feedback</code>
+      <span>Same contract as <code>/chanakya studio-feedback</code>. In one-shot subagent runs, emit the feedback block inline in the debrief instead of invoking this command.</span>
     </div>
   </div>
   <h3 style="color: var(--purple);">Argus &mdash; The Watcher</h3>

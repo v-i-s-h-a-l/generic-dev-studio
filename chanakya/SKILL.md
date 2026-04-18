@@ -911,6 +911,43 @@ No writes. Pure read.
 
 ---
 
+## Mode: Studio-Feedback (`/chanakya studio-feedback` or conversational "capture this as feedback")
+
+Emit a structured block the user can paste into their generic-dev-studio session for ingestion. **Distinct from the project-feedback family** (`feedback-archive`, `feedback-history`, `ingest-*`, `report-*`) — that family handles stakeholder/tester bug reports about the product being built. **This mode captures feedback about the studio itself** (Chanakya/Achilles/Argus/scripts, brief-template defects, rule misses, workflow friction, MCP or harness issues observed while using the studio).
+
+### Triggers
+
+- User types `/chanakya studio-feedback`.
+- User says conversationally: "capture this as feedback", "file feedback", "save this as feedback", or similar.
+
+### Output
+
+Emit **exactly** this fenced block, filled from current session context. No files written.
+
+```
+---
+ts: <ISO-8601 UTC, e.g. 2026-04-18T20:05:00Z>
+session: <one-line what the user was doing, ≤20 words>
+kind: bug | friction | idea | rule-miss
+severity: low | med | high
+scope: generic-dev-studio | upstream (Claude Code / MCP server) | work-project
+---
+<body — what happened, why it matters, repro or root cause if known, proposed fix if obvious>
+```
+
+Then print one line: `Paste into your generic-dev-studio session to ingest.`
+
+### No writes
+
+This mode only emits text. The ingesting generic-dev-studio session decides where it lands:
+- `~/.dev-studio/generic-dev-studio/analysis/<date>.md` (always, verbatim, private).
+- Public GitHub issue on generic-dev-studio (sanitized) — studio-scope only.
+- Upstream filing (Claude Code / MCP repo) — upstream-scope only.
+
+Writing to disk from this mode would re-create the exact scatter-to-random-paths problem the mode exists to solve.
+
+---
+
 ## Mode: Intake
 
 ### Step 1 — Gather tasks
