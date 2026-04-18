@@ -213,13 +213,25 @@ Bump MINOR. The Migration section in "What's new" carries the weight if it's bre
 
 ## Mechanics
 
-GitHub release flow (once ready):
+### Tags vs releases
+
+Every public version tag (`vN.M.Z`, including `-beta.N` and `-rc.N`) gets a **GitHub release**, not just a git tag. Reasoning: this repo ships docs, not binaries — the release notes *are* the deliverable. Burying them in a tag annotation hides migration steps and makes them undiscoverable from the repo's "Releases" sidebar.
+
+Tag-only is fine for **internal markers** (`pre-merge-test`, `scratch-before-refactor`, etc.) — anything that isn't a version someone might install or upgrade to.
+
+### Standard release flow
 
 1. Ensure `main` is green (scripts pass `bash -n`, smoke tests pass, REVIEW.md rules satisfied).
-2. Draft the release notes in this template — work on a scratch file first, not directly in the tag annotation.
-3. Tag: `git tag -a vX.Y.Z -m "<title from notes>"` with an annotated tag, not a lightweight one.
-4. Push: `git push origin vX.Y.Z`.
-5. `gh release create vX.Y.Z --notes-file <scratch-file>` — publishes to GitHub with the markdown rendered.
+2. Draft the release notes in this template — work on a scratch file first (`/tmp/vX.Y.Z-notes.md`), not directly in the tag annotation.
+3. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z — <short title>"` with an annotated tag, not a lightweight one.
+4. Push the tag: `git push origin vX.Y.Z`.
+5. Create the release: `gh release create vX.Y.Z --notes-file /tmp/vX.Y.Z-notes.md --title "vX.Y.Z — <short title>"`. Add `--prerelease` for `-beta.N` / `-rc.N`; omit for stable drops.
 6. Append the same notes to `CHANGELOG.md` (top of file, newest first).
 
-Never tag without notes. Never tag a commit that's not on `main`. Never force-push or delete a published tag.
+### Hard rules
+
+- Never tag without notes (a release without notes is a tag — see above).
+- Never tag a commit that's not on `main`.
+- Never force-push or delete a published tag.
+- Always set `--prerelease` for beta/rc; drop it only for stable. Lying about stability poisons trust.
+- Always link the previous version in migration steps so users know what they're moving from.
