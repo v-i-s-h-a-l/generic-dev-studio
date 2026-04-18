@@ -41,43 +41,53 @@ Don't auto-tag. Don't open a PR. Just surface the suggestion and let the user de
 ## vX.Y.Z — <YYYY-MM-DD>
 
 ### What's new
-<2–4 short sentences in plain conversational language. No jargon. Focus on:
-  - new capabilities the user can reach from their workflow
-  - friction that went away
-  - behavior they'll notice
-Written as if explaining to a teammate who uses the studio but doesn't
-touch its internals. One paragraph. No bullet lists unless 3+ items.>
+- <Bullet 1 — one-line capability or change from the user's point of view>
+- <Bullet 2 — …>
+- <Bullet 3 — …>
+
+<Target: 3–6 bullets, one line each. If something needs an example
+to be clear, add a short one below the bullet — indented, one line.
+Not every bullet needs an example.>
 
 ### Migration
-<Only include if required. Any steps the user must take — env vars to
-set, dirs to move, configs to tweak. If nothing's required, delete this
-section entirely. Don't write "None" — just omit.>
+<Only include if the user must do something to upgrade. Step-by-step,
+copy-pasteable. If nothing's required, delete this whole section.
+Don't write "None".>
 
 ### Changes
-<Technical detail. Commit-log-style. Group by area if many:
-  - scripts/
-  - chanakya/
-  - achilles/
-  - argus/
-  - _shared/
-  - docs
->
+<Technical detail for contributors. Commit-log-style. Group by area
+if many (scripts/, chanakya/, achilles/, argus/, _shared/, docs).>
 ```
 
-### Tone check for "What's new"
+### Style rules for "What's new"
 
-Before finalizing, read your paragraph as if you're a new Turnip dev who just ran `git pull` on the studio repo. Does it tell you what to do differently, or does it read like internal bookkeeping? If the latter, rewrite.
+- **Bullets over prose.** Each bullet = one thing the user can now do, will notice, or will have to work around. Readers scan bullets; they skip paragraphs.
+- **Lead with the verb.** "Run the studio on multiple projects…" not "The studio now supports…". Active, not passive.
+- **Plain language — 10-year-old test.** If a word needs explaining to a 10-year-old, pick a different word. "Orchestrator" → "manager". "File-based IPC" → "a shared inbox". "Atomic claim" → "first-come-first-served".
+- **Workflow-first.** Ask: *what can the user do now that they couldn't before? what got easier? what got faster?* If a bullet doesn't answer one of those, cut it or move it to Changes.
+- **Examples sparingly.** One short example under a bullet is fine when the bullet alone is abstract. Not every bullet needs one. When in doubt, no example.
+- **One line per bullet.** If a bullet needs more than one line, you're probably mixing two points — split them.
 
-Leaks to watch for:
-- Implementation terms (`resolve_inbox_root`, `fswatch`, `lib-paths.sh`) → promote to plain language ("path resolution", "file watcher").
-- Refactor language ("refactored", "extracted", "generalized") → the user doesn't care *how*, only *what it unlocks*.
+### Tone check
+
+Read each bullet aloud. Red flags:
+- Implementation terms (`resolve_inbox_root`, `fswatch`, `lib-paths.sh`) → replace or remove.
+- Refactor language ("refactored", "extracted", "generalized") → the user doesn't care *how*. Say *what it unlocks*.
 - Commit counts, file counts, line counts → meaningless to the user.
+- Sounds like a commit message → rewrite from the user's point of view.
 
 ### Good vs bad examples
 
-**Bad**: *"Refactored path resolution into scripts/lib-paths.sh and added helper functions. Updated 14 files to route through it. Added detect_stack() for phase-2 consumers."*
+**Bad**:
+> *Refactored path resolution into `scripts/lib-paths.sh` and added helper functions. Updated 14 files to route through it. Added `detect_stack()` for phase-2 consumers.*
 
-**Good**: *"Each project now has its own Achilles worker fleet. Run Chanakya in one project, workers in another, and they stay out of each other's way — inboxes, push queues, and logs are all scoped per project. Panes auto-label as `<project>:worker-N` so you can tell at a glance which project a terminal belongs to."*
+**Bad (too wordy, prose-form)**:
+> *Each project you use the studio on now runs its own independent Achilles fleet. Before this release, worker inboxes, push queues, and fleet state all shared one machine-global location — fine for one project, a mess the moment two projects tried to share a machine. Now the studio resolves each project automatically…*
+
+**Good**:
+> - Run the studio on multiple projects at once — each gets its own workers, inbox, and queues.
+> - Terminal tabs now show which project a worker belongs to (e.g. `turnip-ios:worker-1`).
+> - No setup — the studio picks the right project from your git folder.
 
 ## Versioning
 
