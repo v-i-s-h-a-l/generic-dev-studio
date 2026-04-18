@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 # achilles-dispatch.sh <task-id> [worker-N|any] [-- <flags...>]
 #
-# Writes a task file into a worker's inbox. With "any" (default) picks the
-# alive worker with the lowest current load (busy-flag + pending-count).
+# Writes a task file into a worker's inbox within the current project's fleet.
+# With "any" (default) picks the alive worker with the lowest current load
+# (busy-flag + pending-count). Cross-project dispatch: set ACHILLES_PROJECT.
 #
 # Examples:
 #   achilles-dispatch.sh T001
 #   achilles-dispatch.sh T002 worker-3
 #   achilles-dispatch.sh T004 any -- --wait --force-build
+#   ACHILLES_PROJECT=other-app achilles-dispatch.sh T001
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-paths.sh
+. "$SCRIPT_DIR/lib-paths.sh"
 
 TASK_ID="${1:?usage: achilles-dispatch.sh <task-id> [worker-N|any] [-- <flags>]}"
 TARGET="${2:-any}"
@@ -18,10 +24,8 @@ shift || true
 [ "${1:-}" = "--" ] && shift
 FLAGS="${*:-}"
 
-ROOT="${ACHILLES_INBOX_ROOT:-$HOME/.dev-studio/.runtime/achilles-inbox}"
+ROOT=$(resolve_inbox_root) || exit 1
 HEARTBEAT_MAX=180
-
-mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
 
 is_alive() {
   local d="$1"

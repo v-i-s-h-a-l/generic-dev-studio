@@ -133,18 +133,23 @@ brew install fswatch coreutils
 
 ### One-time directories (per project)
 
-Achilles auto-creates `~/.dev-studio/<project>/{worktrees,locks,derived-data}` on first run. The plans folder is created by your first `/chanakya` invocation. To create them up front:
+Achilles auto-creates everything on first run. The scripts resolve paths via `scripts/lib-paths.sh` — project slug defaults to the git toplevel basename, override with `ACHILLES_PROJECT=<slug>`. No setup needed.
+
+If you prefer to create the tree up front:
 
 ```bash
 PROJECT=$(basename "$(git rev-parse --show-toplevel)")
+
+# Per-project state (workflow, fleet, push queue — one set per project):
 mkdir -p ~/.dev-studio/$PROJECT/plans/chanakya-tasks
 mkdir -p ~/.dev-studio/$PROJECT/plans/chanakya-inbox/processed
 mkdir -p ~/.dev-studio/$PROJECT/worktrees
 mkdir -p ~/.dev-studio/$PROJECT/locks
 mkdir -p ~/.dev-studio/$PROJECT/derived-data
+mkdir -p ~/.dev-studio/$PROJECT/.runtime/{achilles-inbox,state}
 
-# Cross-project runtime state (fleet inbox, test-slot semaphore, push queue):
-mkdir -p ~/.dev-studio/.runtime/{achilles-inbox,locks/test-slots,state}
+# Machine-global state (shared across all projects — only machine resources):
+mkdir -p ~/.dev-studio/.runtime/locks/test-slots
 ```
 
 ### Permissions
@@ -200,7 +205,9 @@ Then dispatch from your Chanakya pane normally — Chanakya auto-detects fleet m
 
 **Cleanup:** workers self-clean their `.lock` and `busy` markers on exit, and prune their own old `done/` files on boot. Between sessions or after crashes, run `scripts/fleet-cleanup.sh` (soft sweep — clears stale locks/busy/old-done, rotates large logs) or `scripts/fleet-cleanup.sh --all` (full teardown — refuses if any worker is still alive).
 
-See `scripts/README.md` for the full on-disk layout, env vars (`ACHILLES_INBOX_ROOT`, `ACHILLES_MAX_SLOTS`, `ACHILLES_TASK_TIMEOUT_SEC`, `ACHILLES_UNATTENDED`), and caveats.
+**Multi-project:** each project gets its own independent fleet — run one Chanakya + N workers per project. Panes auto-title as `<project>:worker-N` for at-a-glance visibility. Use `scripts/worker-status.sh --all-projects` for a machine-wide view.
+
+See `scripts/README.md` for the full on-disk layout, env vars (`ACHILLES_PROJECT`, `ACHILLES_INBOX_ROOT`, `ACHILLES_MAX_SLOTS`, `ACHILLES_TASK_TIMEOUT_SEC`, `ACHILLES_UNATTENDED`), and caveats.
 
 ---
 

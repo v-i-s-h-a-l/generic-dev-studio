@@ -5,6 +5,10 @@ Achilles worker panes. Each worker is a long-running shell loop that spawns a
 fresh `claude -p "/achilles <id>"` per task — clean context every time, no
 harness changes required.
 
+**Multi-project:** each project gets its own independent fleet, resolved
+automatically from the git toplevel basename. Run one Chanakya + N workers
+per project. Cross-project one-offs: `ACHILLES_PROJECT=<slug>`.
+
 ## Setup
 
 ```sh
@@ -29,20 +33,26 @@ scripts/achilles-worker.sh 2
 
 Slot ownership is held by `worker-N/.lock` (an atomic `mkdir`). When a pane exits, the lock is released. A stale heartbeat (>180s) lets a new pane reclaim that slot automatically. Cap the auto-claim scan with `ACHILLES_MAX_SLOTS` (default 16).
 
+Worker panes auto-title as `<project>:worker-N` (iTerm/tmux OSC 0) so you can tell at a glance which project each pane belongs to.
+
 In your Chanakya session (or any shell):
 
 ```sh
-scripts/achilles-dispatch.sh T001              # auto-routes to least-loaded alive worker
+scripts/achilles-dispatch.sh T001              # current project, least-loaded worker
 scripts/achilles-dispatch.sh T002 worker-3     # pin to a specific worker
 scripts/achilles-dispatch.sh T004 any -- --wait --force-build
-scripts/worker-status.sh                       # see fleet at a glance
+ACHILLES_PROJECT=other-app scripts/achilles-dispatch.sh T001   # cross-project
+scripts/worker-status.sh                       # current project's fleet
+scripts/worker-status.sh --all-projects        # machine-wide view
 scripts/achilles-cancel.sh T002                # remove a pending dispatch
 ```
 
 ## On-disk layout
 
+Per-project (the common case):
+
 ```
-~/.dev-studio/.runtime/achilles-inbox/
+~/.dev-studio/<project>/.runtime/achilles-inbox/
   worker-1/
     alive               # touched every 60s by heartbeat
     busy                # present iff a task is in-flight (contents = task-id)
@@ -54,7 +64,12 @@ scripts/achilles-cancel.sh T002                # remove a pending dispatch
   ...
 ```
 
-Override the root with `ACHILLES_INBOX_ROOT=/some/path`.
+Project slug is resolved by `scripts/lib-paths.sh` in this order:
+1. `ACHILLES_PROJECT` env var (explicit override — cross-project dispatch)
+2. `$(basename "$(git rev-parse --show-toplevel)")` (normal case)
+3. Error with install hint
+
+Full root override: `ACHILLES_INBOX_ROOT=/some/path` bypasses project resolution entirely.
 
 ## Task file format
 
@@ -69,7 +84,8 @@ dispatched_from=user@host
 
 | Var | Default | Effect |
 |---|---|---|
-| `ACHILLES_INBOX_ROOT` | `$HOME/.dev-studio/.runtime/achilles-inbox` | Where worker dirs live |
+| `ACHILLES_PROJECT` | `$(basename "$(git rev-parse --show-toplevel)")` | Project slug for path resolution — set to dispatch cross-project |
+| `ACHILLES_INBOX_ROOT` | `$HOME/.dev-studio/<project>/.runtime/achilles-inbox` | Explicit override — bypasses project resolution entirely |
 | `ACHILLES_MAX_SLOTS` | `16` | Upper bound for auto-claim slot scan |
 | `ACHILLES_TASK_TIMEOUT_SEC` | `2700` (45m) | Max per-task runtime; needs `gtimeout`. 0 disables. |
 | `ACHILLES_UNATTENDED` | `0` | Set to `1` to pass `--dangerously-skip-permissions` for fully unattended overnight runs. |

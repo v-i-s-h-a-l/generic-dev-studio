@@ -146,7 +146,9 @@ The `--sweep-artifacts` flag (default on) extends compact with artifact cleanup.
 
 6. **Push queue cleanup:**
    ```bash
-   PUSH_FILE=~/.dev-studio/.runtime/state/push-queue.jsonl
+   . "$(git rev-parse --show-toplevel)/scripts/lib-paths.sh" 2>/dev/null \
+     || . ~/.claude/skills/scripts/lib-paths.sh
+   PUSH_FILE=$(resolve_push_queue)
    if [ -f "$PUSH_FILE" ]; then
      CUTOFF=$(date -v -7d -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -d "7 days ago" -u +%Y-%m-%dT%H:%M:%SZ)
      # Filter out entries older than 7 days (awk or python one-liner)

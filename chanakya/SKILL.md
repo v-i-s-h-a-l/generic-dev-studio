@@ -1,6 +1,6 @@
 ---
 name: chanakya
-description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, processes the shared event log, and manages the user verification pipeline. Sub-commands: status, brief, review, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
+description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, processes the shared event log, and manages the user verification pipeline. Sub-commands: status, brief, review, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify, ingest-thread, ingest-dm, ingest-slack, report-design, report-product, feedback-archive, feedback-history. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
 ---
 
 # Chanakya — Project Manager
@@ -32,7 +32,7 @@ Enable MCPs selectively — each active MCP server adds cold-instruction overhea
 - **iMessage / Telegram MCPs:** enable only when in `--away` mode. In `--at-laptop` mode, the user types directly — no push channel needed.
 - **Figma MCP:** load only for skills that need it (`figma-to-swiftui`, brief generation steps that fetch Figma context). Do not load for Chanakya-only, Achilles, or Argus sessions.
 - **Telegram reliability:** Telegram MCP can disconnect silently. Do not treat it as the primary push channel. iMessage is more stable — prefer it for `--away` mode notifications.
-- If a push fails silently, the push queue (`~/.dev-studio/.runtime/state/push-queue.jsonl`) acts as the durable fallback; Chanakya surfaces it on the next `/chanakya status`.
+- If a push fails silently, the push queue (`~/.dev-studio/<project>/.runtime/state/push-queue.jsonl`) acts as the durable fallback; Chanakya surfaces it on the next `/chanakya status`.
 
 ---
 
@@ -107,7 +107,7 @@ When the user runs N panes of `scripts/achilles-worker.sh <N>` (typical: 6), Cha
 
 ### IPC contract
 
-Worker dirs live under `${ACHILLES_INBOX_ROOT:-~/.dev-studio/.runtime/achilles-inbox}/worker-<N>/` with this layout:
+Worker dirs live under the **per-project** fleet root `~/.dev-studio/<project>/.runtime/achilles-inbox/worker-<N>/` (project slug resolved via `scripts/lib-paths.sh` — `ACHILLES_PROJECT` env or `git rev-parse --show-toplevel` basename). Explicit override: `ACHILLES_INBOX_ROOT`. Each worker dir has this layout:
 
 | Path | Meaning |
 |---|---|
@@ -260,12 +260,25 @@ After 0A and 0B run, evaluate the current Build Debt counter:
 
 ### 0D — Stale-artifact janitor
 
-Scan `~/.dev-studio/<project>/worktrees/` and `~/.dev-studio/<project>/derived-data/` for directories matching `build-*` (lowercase, timestamp-stamped):
+**Red-build worktrees/derived-data.** Scan `~/.dev-studio/<project>/worktrees/` and `~/.dev-studio/<project>/derived-data/` for directories matching `build-*` (lowercase, timestamp-stamped):
 
 - If older than 48h AND no open P0 fix task references them in its Source field → remove the directory.
 - Otherwise leave in place.
 
 This prevents indefinite accumulation of red-build artifacts while preserving anything the user is actively using.
+
+**Feedback asset retention** (spec: `project_feedback_lifecycle.md`). Scan `~/.dev-studio/<project>/feedback/archive/` and `~/.dev-studio/<project>/chanakya-inbox/assets/`:
+
+1. **Video deletion — at archive time, not here.** `feedback-archive` removes the video and rewrites `video_path` to `(deleted — <filename>, <description>)` *before* the file is unlinked. The janitor only asserts invariants: if a `video_path` in `archive/build-<N>.md` still points at a real file older than 24h post-archive, delete it and rewrite the record (defensive; should be rare).
+2. **Screenshot deletion — 7 days after archive.** For each F-record in `archive/build-<N>.md` with an `archived_date:` older than 7 days and a live `screenshot_path:` pointing at a real file: read the file's description from the record's `original_message:` or a one-line summary, rewrite `screenshot_path` to `(deleted — <filename>, <description>)`, then delete the file.
+3. **Orphan-asset sweep.** Walk `chanakya-inbox/assets/` recursively. Any file *not referenced* by any `screenshot_path:` or `video_path:` (live or deleted-with-filename) across `feedback/active.md` + `feedback/incoming/` + `feedback/archive/`:
+   - If mtime older than 7 days → delete.
+   - Otherwise leave (likely freshly attached, awaiting ingestion).
+4. **Scaling alerts.** Line-count `feedback/active.md`:
+   - >50 records → print a one-line warning banner: "⚠️ `feedback/active.md` has N records; run `/chanakya feedback-archive` to prune."
+   - ≥100 records → print a block banner: "⛔ `feedback/active.md` has N records — ingest refused until pruned. Run `/chanakya feedback-archive`." Record `feedback_ingest_blocked: true` in memory so `ingest-*` modes refuse until cleared.
+
+Text descriptions (`original_message`, the "(deleted — …)" replacement string) are preserved permanently — janitor never edits them.
 
 ### 0E — Process event log
 
@@ -291,6 +304,9 @@ OFFSET_FILE="$PROJECT_MEMORY/events_offset.md"
 | `base_stale` | Surface to user in next status: "Task <task> requires rebase — base advanced." |
 | `merge_conflict` | Surface to user. Append to push queue. |
 | `build_debt_blocked` | Append to push queue. |
+| `feedback_ingested` | No master-plan mutation. Surface count in next status ("N new feedback records: F0XX..F0YY"). |
+| `feedback_archived` | Regenerate reporters/ index entries for affected reporters (scan archive file + active). |
+| `root_cause_promoted` | Note the pattern label in the next status output so the user knows a new root-cause entry exists. |
 
 4. Update offset to current EOF of `$EVENT_FILE`:
    ```bash
@@ -310,9 +326,20 @@ OFFSET_FILE="$PROJECT_MEMORY/events_offset.md"
 
 ---
 
+### 0E2 — Process feedback reminders
+
+Read the `## Reminders` section of `feedback/active.md`. For each row whose `due_at` is in the past:
+
+1. Parse `type` and `args`.
+2. Dispatch:
+   - `type: ingest-reminder` with `args: <channel> <thread-ts> [--build N]` → invoke Ingest-Thread mode with those args (silent — summarise in next status output).
+3. Delete the row on success. On error, leave it and surface the error in the next status.
+
+This mechanism replaces a real scheduler — the adaptive-backoff sweep already ticks at most every 15–120 min, which is adequate granularity for a 24h post-`push-tf` reminder.
+
 ### 0F — Proceed to the requested mode
 
-For `auto-sweep` invocations: determine whether the sweep was blank (no events processed, no inbox items found). Update `auto_sweep_state.md` accordingly (increment or reset `consecutive_blank`), compute the next delay via adaptive backoff, re-schedule, then stop.
+For `auto-sweep` invocations: determine whether the sweep was blank (no events processed, no inbox items found, no reminders fired). Update `auto_sweep_state.md` accordingly (increment or reset `consecutive_blank`), compute the next delay via adaptive backoff, re-schedule, then stop.
 
 ---
 
@@ -479,6 +506,10 @@ Overlapping sub-commands:
 | `ship` | Brief + dispatch tasks to Achilles. Does NOT verify. |
 | `brief-all` | Brief only, no dispatch. |
 | `sweep-debt` | Identify + dispatch ONLY debt-reduction tasks (test sub-tasks + build checks). |
+| `ingest-thread` / `ingest-dm` / `ingest-slack` | Pull external feedback (Slack thread, DM, channel) into the F-id pipeline. Idempotent — safe to re-run. |
+| `report-design` / `report-product` | Render reporter-facing reports. Read-only, no writes. |
+| `feedback-archive` | Move verified F-records to the per-build archive and apply asset retention. Auto-called by `compact` + `review-feedback`. |
+| `feedback-history` | Search active + archive by reporter / module / root-cause. Read-only. |
 
 ---
 
@@ -511,6 +542,18 @@ Parse the user's input after `/chanakya`:
 - `sync-slack [--list <id>] [--build <number>]` → **Sync-Slack mode** — sync Slack bug list statuses, Dev Notes, and Fixed in Build with master plan
 - `sync-slack --configure-token` → **Sync-Slack token bootstrap** — write `~/.claude/secrets/slack-bot-token`
 - `sync-slack --configure` → **Sync-Slack project bootstrap** — populate `project_slack_list_sync.md`
+
+**Feedback lifecycle commands** (spec: `project_feedback_lifecycle.md`; data: `~/.dev-studio/<project>/feedback/`):
+
+- `ingest-thread <channel> <thread-ts> [--build N] [--dry-run]` → **Ingest-Thread mode** — fetch a Slack thread, AI-classify each message (feedback vs conversation), mint F-ids for feedback messages, dedupe against `active.md` + open tasks
+- `ingest-dm <user> [--since ts] [--dry-run]` → **Ingest-DM mode** — same pipeline against a DM conversation
+- `ingest-slack [--channel id] [--since ts] [--dry-run]` → **Ingest-Channel mode** — scan top-level channel messages for bug reports (not thread replies)
+- `report-design [--build N]` → **Report-Design mode** — render a design-team report scoped to `category ∈ {design}` (and UI/UX modules)
+- `report-product [--build N]` → **Report-Product mode** — same report filtered to `category ∈ {clarification, enhancement}`
+- `feedback-archive [--build N] [--notify-slack] [--dry-run]` → **Feedback-Archive mode** — move verified F-records to `archive/build-<N>.md`, apply asset retention, optionally react + thread-reply on Slack
+- `feedback-history [--reporter name] [--module name] [--root-cause pattern]` → **Feedback-History mode** — search active + archive; print matched records as a table with links
+
+Command recognition follows `feedback_proactive_commands.md` — recognise natural-language intent ("ingest the thread from the 3140 testflight post", "archive build 3141 feedback and ping Slack"), don't require exact syntax.
 
 ---
 
@@ -671,6 +714,183 @@ When Chanakya processes a TestFlight release debrief (Step 0B2), after tagging t
 
 This ensures daksh@ sees updated statuses as soon as a TestFlight goes out, without the user needing to remember to run `/chanakya sync-slack`.
 
+### Feedback-ingest auto-trigger
+
+In addition to the Slack-list sync, after a TestFlight release debrief is processed in Step 0B2, Chanakya **also** schedules a feedback-thread ingest for 24h later:
+
+1. Locate the TestFlight thread posted by `postSlackTesting` (thread-ts is captured in the release debrief's `## Release Info` block, or — if missing — in `project_slack_list_sync.md` logs).
+2. Append a row to the `## Reminders` table in `~/.dev-studio/<project>/feedback/active.md`:
+   ```
+   | <now+24h ISO-8601>  | ingest-reminder | #ios-testflight <thread-ts> --build <BUILD_NUMBER> | auto-scheduled after TF <BUILD_NUMBER> |
+   ```
+3. The adaptive-backoff sweep (Step 0E2) will fire it when `due_at` passes.
+
+If the TestFlight thread-ts cannot be resolved, skip this step and surface a one-line warning — never block the release debrief on it.
+
+---
+
+## Mode: Ingest-Thread (`/chanakya ingest-thread <channel> <thread-ts> [--build N] [--dry-run]`)
+
+Pull a Slack thread, classify each message, mint F-ids. Full spec: `project_feedback_lifecycle.md`.
+
+**Preconditions.** Bot token at `~/.claude/secrets/slack-bot-token`. `feedback/active.md` below 100 rows (else refuse — block banner from Step 0D).
+
+### Steps
+
+1. **Fetch thread.** `conversations.replies?channel=<channel>&ts=<thread-ts>&limit=200` with `Authorization: Bearer <token>`.
+2. **Resolve reporters.** For each unique `user:` ID in the returned messages, call `users.info` once (cache in memory). Prefer `profile.display_name`, fall back to `name`.
+3. **Download attachments.** For each message with `files[]`: `GET <url_private>` with the bot token, save to `~/.dev-studio/<project>/chanakya-inbox/assets/thread-<thread-ts>/<file_name>`. Only HEIC/PNG/JPG/MP4/MOV.
+4. **Classify each message** using the heuristic in `project_feedback_lifecycle.md` (screenshot/video/bullets/bug-language → feedback; short reply/emoji/ack → conversation).
+5. **Dedupe.** Compute source key `slack-thread:<channel>/<thread-ts>/<message-ts>`. If any row in `active.md` or any F-record in `archive/**` already has that key, skip this message.
+6. **Mint F-id.** Next monotonic F-id (scan active + archive for max). Write a full record block to `feedback/incoming/F<nnn>.md` per the schema in `project_feedback_lifecycle.md`. Append a table row to `feedback/active.md`. Status starts as `new`.
+7. **Emit event** per new F-id:
+   ```json
+   {"ts":"…","agent":"chanakya","event":"feedback_ingested","task":"F<nnn>","data":{"source":"slack-thread","channel":"<channel>","thread_ts":"<thread-ts>","reporter":"<name>","build":<N>}}
+   ```
+8. **Report** a summary: "Ingested 3 new feedback records (F007, F008, F009) from #ios-testflight/1745... Skipped 11 conversation messages. Existing dedupes: 2."
+
+### `--dry-run`
+
+Run Steps 1–5 only. Print what *would* be written to `active.md` as a diff (added rows) and list F-id ranges. Do not touch the filesystem beyond reading.
+
+### Failure modes
+
+- Bot token missing → surface install hint, exit.
+- Rate-limit (429) → back off per `Retry-After`, resume. Never lose partial progress: F-records that have been minted stay minted.
+- Attachment download fails → record `screenshot_path: (download-failed — <url>, <error>)` so the record is still usable.
+
+---
+
+## Mode: Ingest-DM (`/chanakya ingest-dm <user> [--since ts] [--dry-run]`)
+
+Same pipeline against a DM. Resolve the IM channel with `conversations.open?users=<user>` (or `users.info` → open), then `conversations.history?channel=<im_channel>&oldest=<since>`. Source key: `slack-dm:<user>/<message-ts>`.
+
+`--since` defaults to the last F-id from this user's DM in the archive (or 24h ago if none).
+
+Steps 2–8 identical to Ingest-Thread (classification, dedupe, F-mint, event, report).
+
+---
+
+## Mode: Ingest-Channel (`/chanakya ingest-slack [--channel id] [--since ts] [--dry-run]`)
+
+Scan **top-level** messages in a channel (exclude thread replies — those belong to Ingest-Thread). Use `conversations.history?channel=<id>&oldest=<since>` and filter out messages with a `thread_ts` that differs from their own `ts` (i.e. replies).
+
+Source key: `slack-slack:<channel>/<message-ts>`.
+
+`--channel` defaults to `#product-bugs` (or whatever channel is pinned in `project_slack_list_sync.md`). `--since` defaults to 24h ago.
+
+Steps 2–8 identical. When a thread reply is detected, the reporter's top-level message still gets classified — but a note is added to `original_message`: "(has N replies — consider `ingest-thread`)".
+
+---
+
+## Mode: Report-Design (`/chanakya report-design [--build N]`)
+
+Render a design-team-facing report.
+
+### Filter
+
+- `category ∈ {design}` OR `module ∈ {UI, UX, design}` (case-insensitive).
+- Status in `{new, triaged, in-progress, fixed, verified}` (exclude archived unless `--build N` is passed, in which case include archived for that build only).
+
+### Output
+
+Markdown table + detail blocks. Printed to stdout and written to `~/.dev-studio/<project>/plans/chanakya-inbox/design-report-<YYYY-MM-DD>.md`.
+
+```markdown
+# Design Feedback Report — <date> [--build N if scoped]
+
+| F-id | Reporter | Module | Status | Reported Build | Linked Task |
+|------|----------|--------|--------|----------------|-------------|
+| F007 | @pranjali | Crop | triaged | 3140 | T215 |
+
+---
+
+## F007 — Crop reset doesn't reset rotation
+
+**Reporter:** @pranjali
+**Reported:** build 3140 (slack-thread:#ios-testflight/1745000000.000400)
+**Chanakya's interpretation:** the reset button on the crop view should restore both the crop rect AND the rotation state. Currently it only resets the rect.
+**Screenshot:** ![F007](chanakya-inbox/assets/thread-1745000000/F007-crop-reset.png) _or_ `(deleted — F007-crop-reset.png, …)`
+**Linked task:** T215 (`in-progress`)
+**Status:** triaged
+
+> Original message:
+> "When I rotate and then hit reset, the rotation doesn't go back. Expected: full reset."
+```
+
+### `--build N`
+
+Filter to records with `reported_build == N` OR `fixed_build == N`.
+
+---
+
+## Mode: Report-Product (`/chanakya report-product [--build N]`)
+
+Same format as Report-Design but filtered to `category ∈ {clarification, enhancement}`. Intended audience: Toufiq (PRD) and BE team.
+
+Written to `chanakya-inbox/product-report-<YYYY-MM-DD>.md`.
+
+---
+
+## Mode: Feedback-Archive (`/chanakya feedback-archive [--build N] [--notify-slack] [--dry-run]`)
+
+Promote `verified` records (or `wontfix`) to `archive/build-<N>.md`, apply asset retention, optionally notify Slack.
+
+### Steps
+
+1. **Select.** Gather all F-records with `status ∈ {verified, wontfix}` and (if `--build N`) `fixed_build == N`. Without `--build`, archive everything eligible.
+2. **Write archive.** For each selected F-id, append its full record block to `archive/build-<N>.md` (create the file if absent; order by F-id). Use `fixed_build` as `<N>` unless the record is `wontfix` (use `reported_build` in that case).
+3. **Video retention.** If `video_path` is a live file: write `(deleted — <filename>, <one-line description from original_message>)` **into the archive record first**, then `rm` the file. Update active.md reference similarly.
+4. **Screenshot retention.** Do **not** delete screenshots here — they expire 7d post-archive via the Step 0D janitor. Record `archived_date: <today>` so the janitor can compute the 7-day mark.
+5. **Remove from active.** Delete the F-record row from `feedback/active.md` and its staging file `feedback/incoming/F<id>.md`.
+6. **Regenerate indices.** For each reporter appearing in the archived set, regenerate `feedback/reporters/<slug>.md` by scanning active + archive.
+7. **Root-cause promotion.** For each `root_cause` label appearing on 2+ records across archive, ensure `feedback/root-causes/<pattern>.md` exists. On first promotion emit:
+   ```json
+   {"ts":"…","agent":"chanakya","event":"root_cause_promoted","task":"<pattern>","data":{"instances":["F001","F009"]}}
+   ```
+8. **Slack notify** (if `--notify-slack`, off by default):
+   - For each archived record whose `source` starts with `slack-thread:` or `slack-dm:`:
+     - `reactions.add` with `name=white_check_mark` to the original message (bot token).
+     - Post a threaded reply:
+       > "Fixed in build <fixed_build> (commit <fix_commit>). Thanks <reporter>!"
+     - Respect the existing 5-writes/min throttle from `project_slack_list_sync.md`.
+     - If the write fails, log and continue — archive mutation is already durable.
+9. **Emit per record:**
+   ```json
+   {"ts":"…","agent":"chanakya","event":"feedback_archived","task":"F<id>","data":{"build":<N>,"reporter":"<name>","linked_task":"T<id>"}}
+   ```
+10. **Report.** "Archived 4 records to `archive/build-3141.md` (F001, F002, F005, F007). Notified Slack: 3. Screenshots scheduled for 7d deletion on 2026-04-25."
+
+### `--dry-run`
+
+Print the selected F-ids and proposed archive file path. Do not write, delete, or notify.
+
+### Auto-trigger
+
+`feedback-archive` is called implicitly at the end of `compact` (archive eligible records before compacting) and at the end of `review-feedback` (when a record's linked task moves to `verified`). Both implicit calls run **without** `--notify-slack` — the user runs it explicitly when they want Slack replies.
+
+---
+
+## Mode: Feedback-History (`/chanakya feedback-history [--reporter name] [--module name] [--root-cause pattern]`)
+
+Search active + archive. Exactly one filter at a time (if multiple passed, AND them).
+
+### Steps
+
+1. Walk `feedback/active.md` (rows), `feedback/incoming/*.md`, `feedback/archive/build-*.md`.
+2. Match against the filter(s).
+3. Print a table:
+
+```
+| F-id | Reporter | Source | Module | Build (reported→fixed) | Status | Linked Task | Location |
+|------|----------|--------|--------|------------------------|--------|-------------|----------|
+| F001 | @pranjali | slack-list:… | Recipe&Transforms | 3133→3135 | verified | T165 | archive/build-3135.md |
+```
+
+4. If `--root-cause <pattern>` is passed, also print the contents of `feedback/root-causes/<pattern>.md` at the top.
+
+No writes. Pure read.
+
 ---
 
 ## Mode: Intake
@@ -811,7 +1031,7 @@ Identify tasks blocked by dependencies. Highlight them. Surface `done` tasks awa
 
 ### Step 3A — Surface push queue and recent events
 
-Read `~/.dev-studio/.runtime/state/push-queue.jsonl` (if it exists). Show any entries not yet marked displayed:
+Read `~/.dev-studio/<project>/.runtime/state/push-queue.jsonl` (if it exists; resolve via `scripts/lib-paths.sh resolve_push_queue`). Show any entries not yet marked displayed:
 
 ```
 Pending notifications:
@@ -1472,6 +1692,8 @@ chanakya-changelog.md       ← session changelog entries older than 7 days
 9. **Regenerate Parallelization Map.** Only include active tasks (pending/briefed/in-progress). Remove completed tasks from the map.
 
 10. **Artifact sweep** (when `--sweep-artifacts` is on, default): run all sweep steps from `~/.claude/skills/_shared/cleanup-policy.md` (Chanakya Compact Extension section). Capture freed space and removed counts for the report.
+
+10a. **Feedback archive + index regen.** Implicitly run `feedback-archive` (without `--notify-slack`) to move any `verified`/`wontfix` F-records to `archive/build-<N>.md`, then regenerate `feedback/reporters/<slug>.md` for every reporter seen in active + archive. Regenerate any `feedback/root-causes/<pattern>.md` whose instance list changed. These indices are always rebuilt from primary data; hand-edits are overwritten.
 
 11. **Report:**
     ```

@@ -5,8 +5,10 @@ Push queue protocol and trigger rules for iMessage/Telegram notifications via th
 ## Push Queue File
 
 ```
-~/.dev-studio/.runtime/state/push-queue.jsonl
+~/.dev-studio/<project>/.runtime/state/push-queue.jsonl
 ```
+
+Per-project — resolve via `scripts/lib-paths.sh resolve_push_queue`. Rationale: different projects typically route notifications to different channels (separate iMessage threads, Slack workspaces), so each Chanakya manages its own queue without cross-project contention.
 
 Append-only JSONL. Each line is a push event:
 
@@ -25,8 +27,11 @@ Append-only JSONL. Each line is a push event:
 ## Append Pattern
 
 ```bash
-PUSH_FILE=~/.dev-studio/.runtime/state/push-queue.jsonl
-mkdir -p ~/.dev-studio/.runtime/state
+# Source scripts/lib-paths.sh first to get resolve_push_queue
+. "$(git rev-parse --show-toplevel)/scripts/lib-paths.sh" 2>/dev/null \
+  || . ~/.claude/skills/scripts/lib-paths.sh
+PUSH_FILE=$(resolve_push_queue)
+mkdir -p "$(dirname "$PUSH_FILE")"
 printf '%s\n' '{"ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","agent":"argus","trigger":"review_blocked","task":"'"$TASK_ID"'","message":"'"$MSG"'"}' >> "$PUSH_FILE"
 ```
 
@@ -80,7 +85,7 @@ After `/chanakya status` surfaces the push queue, Chanakya marks displayed entri
 
 ```bash
 # In-place edit: add "displayed": true to each shown entry
-# Simplest implementation: move shown entries to ~/.dev-studio/.runtime/state/push-queue-archive.jsonl
+# Simplest implementation: move shown entries to ~/.dev-studio/<project>/.runtime/state/push-queue-archive.jsonl
 ```
 
 The queue file should not grow unboundedly. Chanakya compact sweeps entries older than 7 days.

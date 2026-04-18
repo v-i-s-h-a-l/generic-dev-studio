@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 # achilles-worker.sh [N]
 #
-# Long-running worker pane. Watches ~/.dev-studio/.runtime/achilles-inbox/worker-<N>/inbox/
-# for *.task files and spawns `claude -p "/achilles <task-id> <flags>"` per task.
+# Long-running worker pane. Watches the current project's fleet inbox at
+# ~/.dev-studio/<project>/.runtime/achilles-inbox/worker-<N>/inbox/ for *.task
+# files and spawns `claude -p "/achilles <task-id> <flags>"` per task.
+#
+# Project resolved via lib-paths.sh: ACHILLES_PROJECT env > git toplevel basename.
+# Cross-project: ACHILLES_PROJECT=<slug> achilles-worker.sh
 #
 # With no arg: atomically claims the lowest free slot (1..ACHILLES_MAX_SLOTS).
 # Designed for iTerm "Broadcast Input" — type the same command in N panes
 # and each pane picks its own slot, registers heartbeat, tells the manager.
 #
 # Env:
-#   ACHILLES_INBOX_ROOT       default: $HOME/.dev-studio/.runtime/achilles-inbox
+#   ACHILLES_PROJECT          override project slug (otherwise: git basename)
+#   ACHILLES_INBOX_ROOT       explicit override (bypasses project resolution)
 #   ACHILLES_MAX_SLOTS        default: 16  (upper bound for auto-claim scan)
 #   ACHILLES_TASK_TIMEOUT_SEC default: 2700  (45 min; needs gtimeout — `brew install coreutils`)
 #   ACHILLES_UNATTENDED       set to 1 to pass --dangerously-skip-permissions to claude
@@ -18,14 +23,24 @@
 
 set -uo pipefail
 
-ROOT="${ACHILLES_INBOX_ROOT:-$HOME/.dev-studio/.runtime/achilles-inbox}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-paths.sh
+. "$SCRIPT_DIR/lib-paths.sh"
+
+# Resolve project once, then build ROOT from it — avoids a second git fork.
+# If ACHILLES_INBOX_ROOT is set, resolve_project may not apply; fall back.
+if [ -n "${ACHILLES_INBOX_ROOT:-}" ]; then
+  ROOT="$ACHILLES_INBOX_ROOT"
+  PROJECT=$(resolve_project 2>/dev/null || echo "(override)")
+else
+  PROJECT=$(resolve_project) || exit 1
+  ROOT=$(resolve_inbox_root_for "$PROJECT")
+fi
 MAX_SLOTS="${ACHILLES_MAX_SLOTS:-16}"
 HEARTBEAT_MAX=180
 TIMEOUT_SEC="${ACHILLES_TASK_TIMEOUT_SEC:-2700}"
 PERM_FLAG=""
 [ "${ACHILLES_UNATTENDED:-0}" = "1" ] && PERM_FLAG="--dangerously-skip-permissions"
-
-mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
 
 verify_owner() {
   # After mkdir .lock, write our PID and verify after a brief settle
@@ -89,8 +104,17 @@ else
 fi
 LOG="$DIR/worker.log"
 
-log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] worker-$N $*" | tee -a "$LOG"; }
-log "claimed slot $N (pid $$)"
+log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $PROJECT:worker-$N $*" | tee -a "$LOG"; }
+
+# Set terminal pane title for at-a-glance visibility under iTerm/tmux.
+# Uses OSC 0 escape — no-op on dumb terminals.
+set_pane_title() {
+  local title="$1"
+  printf '\033]0;%s\007' "$title" 2>/dev/null || true
+}
+set_pane_title "$PROJECT:worker-$N"
+
+log "claimed slot $N (pid $$) project=$PROJECT root=$ROOT"
 sweep_done "$DIR"
 
 command -v fswatch >/dev/null || { log "fswatch not installed (brew install fswatch)"; exit 1; }

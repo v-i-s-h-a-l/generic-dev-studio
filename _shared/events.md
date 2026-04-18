@@ -114,4 +114,4 @@ OFFSET=$(wc -c < "$EVENT_FILE")
 
 ## Push Queue
 
-For push notifications, agents append to `~/.dev-studio/.runtime/state/push-queue.jsonl` — see `_shared/push-notifications.md`.
+For push notifications, agents append to the per-project push queue at `~/.dev-studio/<project>/.runtime/state/push-queue.jsonl` (resolve via `scripts/lib-paths.sh resolve_push_queue`) — see `_shared/push-notifications.md`.
