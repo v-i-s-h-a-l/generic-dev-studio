@@ -64,6 +64,7 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `merge_conflict` | Merge failed with conflict | `branch`, `files` |
 | `build_debt_warned` | Build debt crosses warn threshold | `counter`, `threshold` |
 | `build_debt_blocked` | Build debt crosses block threshold | `counter` |
+| `task_awaiting_user` | Subagent cannot pick a default and must block for user input. Always paired with a debrief at `status: blocked_awaiting_input`. | `question` (≤200 chars), `brief_excerpt` (≤200 chars, the Phase-0 block or the ambiguous spec line), `mode` (`autonomous`\|`interactive`) |
 
 ### Argus events
 

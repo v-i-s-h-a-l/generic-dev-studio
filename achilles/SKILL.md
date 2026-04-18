@@ -75,7 +75,16 @@ The worker script exports `ACHILLES_AUTONOMOUS=1` automatically for every dispat
    ```
 4. If the assumption turns out wrong on review, a follow-up task corrects it. Cheaper than blocking the slot.
 
-**When no obvious default exists** (rare — usually a brief gap, not a real ambiguity): write the debrief with `status: blocked_awaiting_input` and the specific question, then exit. The worker's missing-debrief detector won't trip because you wrote the debrief; Chanakya processes it on next sweep.
+**When no obvious default exists** (rare — usually a brief gap, not a real ambiguity):
+
+1. Write the debrief with `status: blocked_awaiting_input` and the specific question.
+2. Emit a `task_awaiting_user` event so Chanakya's Step 0E routes a push notification (important in away mode — the debrief alone only surfaces on next sweep):
+   ```bash
+   printf '%s\n' '{"ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","agent":"achilles","event":"task_awaiting_user","task":"<task-id>","data":{"question":"<≤200 chars>","brief_excerpt":"<≤200 chars>","mode":"autonomous"}}' >> "$EVENT_FILE"
+   ```
+3. Exit.
+
+The worker's missing-debrief detector won't trip because the debrief is written. Chanakya processes the event + debrief on next sweep and pushes the question to the user.
 
 **Never** end a session with no debrief in autonomous mode. That's what the silent-stuck detector catches, and it means the task costs a full dispatch cycle without any record of what happened. The debrief is the communication channel — use it.
 

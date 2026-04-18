@@ -97,7 +97,7 @@ last_activity_ts: 2026-04-18T14:32:01Z
 - After a blank sweep: increment `consecutive_blank`, persist, schedule next wake at the new delay.
 - After an active sweep: reset `consecutive_blank` to 0, persist, schedule next wake at 15 min.
 
-**Push-on-exception events bypass backoff.** Block events (`review_blocked`, `merge_conflict`, `build_debt_blocked`) are pushed immediately via the push queue — the user never waits 2 hours to hear about a critical block regardless of the current sleep interval.
+**Push-on-exception events bypass backoff.** Block events (`review_blocked`, `merge_conflict`, `build_debt_blocked`, `task_awaiting_user`) are pushed immediately via the push queue — the user never waits 2 hours to hear about a critical block regardless of the current sleep interval.
 
 ---
 
@@ -319,6 +319,7 @@ OFFSET_FILE="$PROJECT_MEMORY/events_offset.md"
 |---|---|
 | `review_flagged` | Auto-file follow-up tasks for each finding in `data.findings`. Create one task per distinct finding category with `Source: argus-review`, priority P2, status `pending`. Do not prompt the user — rule #10 scoped confirmation principle does not gate this. |
 | `review_blocked` | Surface the block to the user in the next status output. Append to push queue. |
+| `task_awaiting_user` | Surface the question to the user in the next status output. **Always** append to push queue (in away mode this is the only notification channel; in at-laptop mode the banner still helps). Include `data.question` verbatim in the push payload, truncated to 200 chars. Pair with the corresponding `<task-id>-debrief.md` (`status: blocked_awaiting_input`) for full context. |
 | `task_verified` | Archive `<project-memory>/reviews/review_<task>.md` to `reviews/archive/` if it exists. |
 | `review_approved` | Delete `/tmp/argus-<task>.xcresult` if it exists. |
 | `task_completed` | Note the task ID for potential follow-up brief generation. |
