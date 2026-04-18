@@ -802,11 +802,17 @@
 chmod +x scripts/*.sh</code></pre>
 
   <h3>Daily flow</h3>
-  <p>Open N panes (typical: 6). Use iTerm <strong>Broadcast Input</strong> (<code>Cmd+Opt+I</code>) and type <code>scripts/achilles-worker.sh</code> once &mdash; every pane runs it, and each atomically claims the lowest free slot (1, 2, 3, &hellip;) via a <code>worker-N/.lock</code> dir. Then dispatch from your Chanakya session or any shell.</p>
+  <p><strong>Recommended:</strong> launch Claude in N panes with <code>claude --dangerously-skip-permissions</code>, turn on iTerm <strong>Broadcast Input</strong> (<code>Cmd+Opt+I</code>), and type <code>/achilles worker</code> once. Every Claude session runs the worker mode, each pane atomically claims the lowest free slot (1, 2, 3, &hellip;) via a <code>worker-N/.lock</code> dir, and the parent Claude session stays available for status / shutdown questions. Tasks themselves still spawn in fresh <code>claude -p</code> subprocesses &mdash; per-task context stays clean.</p>
+  <p><strong>Alternative (no Claude wrapper):</strong> run the bash worker directly &mdash; <code>scripts/achilles-worker.sh</code> in each pane. Same atomic claim, no Claude session around it.</p>
+  <p>Then dispatch from your Chanakya session or any shell.</p>
   <div class="cmd-grid">
     <div class="cmd-card achilles">
+      <code>/achilles worker [N]</code>
+      <span><strong>Inside a Claude session.</strong> Atomically claims a slot, starts the bash watch loop in the background (with <code>ACHILLES_UNATTENDED=1</code> so child <code>claude -p</code> subprocesses inherit your dangerous-skip-permissions intent), and stays available to answer status / stop questions. Use this from broadcast-typed panes.</span>
+    </div>
+    <div class="cmd-card achilles">
       <code>scripts/achilles-worker.sh [N]</code>
-      <span>Long-running pane. <strong>No arg = auto-claim lowest free slot</strong> (broadcast-friendly); pass an explicit <code>N</code> to pin. Watches <code>~/.claude/achilles-inbox/worker-N/inbox/</code> via <code>fswatch</code>; spawns a fresh Achilles per task. Heartbeats every 60s, optional <code>gtimeout</code>, optional unattended mode via <code>ACHILLES_UNATTENDED=1</code>.</span>
+      <span><strong>Pure bash, no Claude wrapper.</strong> Same atomic claim and watch loop. Use this if you don't want a Claude session around it. <code>ACHILLES_UNATTENDED=1</code> enables <code>--dangerously-skip-permissions</code> for child subprocesses.</span>
     </div>
     <div class="cmd-card">
       <code>scripts/achilles-dispatch.sh &lt;task-id&gt; [worker-N|any]</code>
