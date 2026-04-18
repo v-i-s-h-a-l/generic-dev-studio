@@ -85,6 +85,18 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 |---|---|---|
 | `task_verified` | review-feedback promotes task | `method` (`review-feedback` \| `test-flow`) |
 | `cleanup_completed` | compact sweep finishes | `archived`, `freed_gb` |
+| `task_dispatched` | Chanakya writes a task file to a worker inbox (Ship/Dispatch/Sweep-debt modes) | `worker` (`worker-N` or `any`), `flags` (string), `from_brief` (`true`\|`false`) |
+| `feedback_ingested` | Feedback record minted from a Slack thread / DM / channel | `source`, `channel`, `thread_ts`, `reporter`, `build` |
+| `feedback_archived` | Feedback record promoted to per-build archive | `build`, `reporter`, `linked_task` |
+| `root_cause_promoted` | A `root_cause` label crossed 2+ instances and got its own file | `instances` (array of F-ids) |
+
+### Cross-agent events (every agent emits)
+
+| Event | Emitted when | Typical `data` keys |
+|---|---|---|
+| `agent_session_completed` | Final step of any agent session (any mode) | `mode` (e.g. `ship`, `T001`, `auto-sweep`), `duration_s`, `tokens` (`{input, output, cache_read, cache_write}` — best-effort; may be omitted if not available), `files_read` (count), `files_written` (count) |
+
+**Why `agent_session_completed`.** Without this we can't measure context cost or session duration per agent. Treat as required at the end of every Chanakya / Achilles / Argus session, regardless of how the session terminated. If token counts aren't available to the agent at emit time, omit the `tokens` key — duration alone is still useful.
 
 ## Offset Marker (Consumer Pattern)
 

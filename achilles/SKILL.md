@@ -477,7 +477,15 @@ Print a short message to the user:
 
 The 15-minute wake for surfacing Chanakya follow-ups has been replaced by event-driven processing. Chanakya's `--auto-sweep` loop reads the event log and processes `brief_completed` events without a separate wake.
 
-After Step 10, **sit idle.** Do not self-select the next task. Do not schedule a wake. Do not prompt the user further.
+Before sitting idle, **emit `agent_session_completed`** to close the session record:
+
+```json
+{"ts":"...","agent":"achilles","event":"agent_session_completed","task":"<task-id>","data":{"mode":"<task-id>","duration_s":<seconds_from_brief_started>,"files_read":<count>,"files_written":<count>}}
+```
+
+Include `tokens` (`{input, output, cache_read, cache_write}`) if you have access to your own session token totals; omit otherwise. Duration alone is still useful for analysis. See `~/.claude/skills/_shared/events.md` → "Cross-agent events".
+
+After Step 10 + the session-completed event, **sit idle.** Do not self-select the next task. Do not schedule a wake. Do not prompt the user further.
 
 Chanakya will:
 - Process the debrief on its next inbox sweep.

@@ -235,6 +235,16 @@ ARGUS_VERDICT=flagged review_file=<path> findings=<count>
 ARGUS_VERDICT=blocked block_reason="<reason>" review_file=<path>
 ```
 
+### Step 9 — Emit session-completed event
+
+Before returning, emit `agent_session_completed` so analysis can measure context cost and review duration:
+
+```json
+{"ts":"...","agent":"argus","event":"agent_session_completed","task":"<TASK_ID>","data":{"mode":"review","duration_s":<seconds>,"files_read":<count>,"files_written":<count>,"verdict":"<approved|flagged|blocked>"}}
+```
+
+Include `tokens` (`{input, output, cache_read, cache_write}`) if available; omit otherwise. See `~/.claude/skills/_shared/events.md` → "Cross-agent events".
+
 ---
 
 ## Behavior Rules

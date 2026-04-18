@@ -155,6 +155,24 @@ The existing `ship <target>` mode briefs and then dispatches. In fleet mode it s
 
 Worker.log lines are operator-facing only. Real status flow stays on the existing event log: Achilles inside the worker still emits `task_started`, `task_completed`, `review_blocked`, etc. Chanakya consumes those in Step 0E exactly as today — the worker layer is invisible to the event pipeline.
 
+**Chanakya itself emits `task_dispatched`** immediately before shelling out to `achilles-dispatch.sh` (covers `--dispatch`, `--dispatch-many`, and the dispatch portion of `ship` / `sweep-debt`). One event per task, even for batched dispatches:
+
+```json
+{"ts":"...","agent":"chanakya","event":"task_dispatched","task":"<task-id>","data":{"worker":"<worker-N|any>","flags":"<flags-string>","from_brief":<true|false>}}
+```
+
+Without this, dispatch→merge latency can't be computed. See `~/.claude/skills/_shared/events.md` for the catalog entry.
+
+## Session-completion event (every Chanakya mode)
+
+At the end of any Chanakya session — regardless of mode (`status`, `brief`, `ship`, `auto-sweep`, `compact`, ingest modes, etc.) — emit `agent_session_completed` so analysis can measure context cost and session duration:
+
+```json
+{"ts":"...","agent":"chanakya","event":"agent_session_completed","task":"","data":{"mode":"<mode-name>","duration_s":<seconds>,"files_read":<count>,"files_written":<count>}}
+```
+
+Include `tokens` (`{input, output, cache_read, cache_write}`) if available; omit otherwise. `task` is `""` for system-scope sessions; for task-specific modes (e.g. `brief T001`), use the task ID. See `~/.claude/skills/_shared/events.md` → "Cross-agent events".
+
 ---
 
 ## Step −1 — Session Launch
