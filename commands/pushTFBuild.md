@@ -229,10 +229,11 @@ Read the full commit messages (subject + body) to understand the user-facing imp
 
 ### Step 12: Compose the message
 
-Compose the message from vishal's commits **first**, before scanning for reporters:
-- First line: `<!here> [iOS] build {NEW_BUILD_NUMBER} is available on TestFlight` — **always** use `<!here>` when posting a new message (not a thread reply). Slack does not support `<!here>` in thread replies, so never use it there.
-- Blank line after the first line.
-- Bullet points: plain, non-technical language for product owners (focus on user-facing impact, not implementation details). Derive each bullet from vishal's commit subjects and bodies.
+Compose the message from vishal's commits **first**, before scanning for reporters. Follow `_shared/build-message-format.md` for the full composition rules — three-section shape (`*New*` / `*Fixed*` / `*Crash fixes*`, skip empty sections), feature rollup under *New*, crash-fix bare-link bullets, cc-mentions inline (TF-only, added in Step 13), and `• includes changes from <PREV_BUILD_NUMBER>` rollover when stacking on an unreleased TF.
+
+Name regressions explicitly under *Fixed* as `• regression bug fix: <thing>` — testers need to see the net delta from the prior TF build.
+
+Headline: `<!here> [iOS] build <NEW_BUILD_NUMBER> is available on TestFlight` — `<!here>` on parent only, never in thread replies (Slack ignores it there). Drop `<!here>` for buddy/internal/silent builds.
 
 ### Step 13: Scan recent Vishal-CLI build threads for bug reporters
 

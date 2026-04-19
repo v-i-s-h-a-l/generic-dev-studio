@@ -51,17 +51,15 @@ Examples:
 - "Fixed scroll-to-tap misinterpretation in grids" — image placeholder grids existed before → keep
 - "Disabled crop on user-added stickers" — user-added stickers existed before → keep
 
-Using the filtered and classified commits, write two versions of release notes:
+Using the filtered and classified commits, write two outputs:
 
-**A) GitHub Draft Release Notes** — playful, user-friendly, past tense, written for a technical-but-fun audience. Group related changes under **bold section headers** (e.g. `**Editor**`, `**Collage**`, `**Bug Fixes**`). Short bullet points under each group. No emojis. Example:
-```
-**Editor**
-- Fixed the canvas shrinking when opening the photo picker
-- The collage viewport now stays put after filling a placeholder
+**A) Slack parent body + GitHub release notes (unified)** — follow `_shared/build-message-format.md`: three-section shape `*New*` / `*Fixed*` / `*Crash fixes*`, skip empty sections, feature rollup under *New*, bare-link bullets under *Crash fixes*. The same text is used as both the Slack parent body (Step 15) and the GitHub release notes (Step 7) — they are not separate.
 
-**Bug Fixes**
-- Fixed placeholder auto-focus not triggering correctly when tapped
-```
+Release-specific rules (beyond the shared doc):
+- **Drop regressions introduced and fixed within `PREV_TAG..HEAD`** — if commit A introduced a bug and commit B fixed it, and both fall in this range, the net user-visible delta is zero; emit nothing for either. Only bullets representing changes users will actually see from the last shipped version survive.
+- Crash-fix bullets use the release form: `• Fixed crash <Crashlytics URL>` or `• Possible fix for crash <Crashlytics URL>` (prefix signals confidence).
+- No `cc:` mentions (release audience is broader — cc is TF-only).
+- No rollover line.
 
 **B) App Store "What's New"** — even more playful and user-facing, written like you're talking directly to the user. Keep it short (under 4000 chars, ideally under 500). No emojis. No bullet points — flowing sentences or short punchy lines. Example:
 ```
@@ -279,30 +277,24 @@ Load the Slack bot token using the pattern in `_shared/slack-post.md` (token pat
 SLACK_BOT_TOKEN=$(cat ~/.claude/secrets/slack-bot-token)
 ```
 
-**Main message** — format exactly like this (no @here or <!here>):
+**Main message** — headline + body (no `<!here>` on release parent, per `_shared/build-message-format.md`). The body is the three-section `*New*` / `*Fixed*` / `*Crash fixes*` text composed in Step 4A (the unified Slack-parent / GitHub-release-notes output — not a separate dump):
 ```
 [iOS] v<VERSION_STRING> (build <SUBMISSION_BUILD_NUMBER>) has been submitted for App Store review
 
-<GITHUB_RELEASE_NOTES>
+<STEP_4A_BODY>
 ```
 
 ```bash
 PARENT_TS=$(curl -s -X POST https://slack.com/api/chat.postMessage \
   -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"channel\":\"C01PVRBMFJ6\",\"text\":\"[iOS] v<VERSION_STRING> (build <SUBMISSION_BUILD_NUMBER>) has been submitted for App Store review\n\n<GITHUB_RELEASE_NOTES_ESCAPED>\"}" \
+  -d "{\"channel\":\"C01PVRBMFJ6\",\"text\":\"[iOS] v<VERSION_STRING> (build <SUBMISSION_BUILD_NUMBER>) has been submitted for App Store review\n\n<STEP_4A_BODY_ESCAPED>\"}" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['ts'])")
 ```
 
-**Reply 1** — GitHub release URL only:
-```bash
-curl -s -X POST https://slack.com/api/chat.postMessage \
-  -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"channel\":\"C01PVRBMFJ6\",\"thread_ts\":\"$PARENT_TS\",\"text\":\"<GITHUB_RELEASE_URL>\"}"
-```
+Thread reply order (per `_shared/build-message-format.md` → Thread replies): App Store "What's New" first (highest product value), GitHub release URL second.
 
-**Reply 2** — App Store "What's New" with context header, two blank lines before the actual text:
+**Reply 1** — App Store "What's New" with context header, two blank lines before the actual text:
 ```
 App Store "What's New" submitted with this build:
 
@@ -315,6 +307,14 @@ curl -s -X POST https://slack.com/api/chat.postMessage \
   -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"channel\":\"C01PVRBMFJ6\",\"thread_ts\":\"$PARENT_TS\",\"text\":\"App Store \\\"What's New\\\" submitted with this build:\n\n\n<APP_STORE_WHATS_NEW_ESCAPED>\"}"
+```
+
+**Reply 2** — GitHub release URL only (stable tag URL from Step 7):
+```bash
+curl -s -X POST https://slack.com/api/chat.postMessage \
+  -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"channel\":\"C01PVRBMFJ6\",\"thread_ts\":\"$PARENT_TS\",\"text\":\"<GITHUB_RELEASE_URL>\"}"
 ```
 
 See `_shared/slack-post.md` for the general curl pattern. Escape newlines as `\n` and any double quotes in the message text before embedding in the JSON `-d` payload.
