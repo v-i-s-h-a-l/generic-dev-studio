@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/ingest-feedback.sh 2>&1 | head -20 || true"
+          }
+        ]
+      }
+    ]
+  }
+}

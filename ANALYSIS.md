@@ -21,6 +21,8 @@ How generic-dev-studio observes itself. Runs **from this repo**, never from the 
 
 **Feedback-inbox first, always.** User-authored feedback records are the highest-signal input: they come pre-distilled, often include a proposed design, and carry severity judgments that events and debriefs can't express. A pass that skips feedback-inbox silently downgrades user-reported findings to re-derivable patterns and misses anything severity-high that hasn't yet manifested in event counts.
 
+Ingestion is automatic (`scripts/ingest-feedback.sh`, wired to SessionStart + Chanakya Step 0F). The inbox should therefore be **empty or near-empty** on any analysis pass — unprocessed records mean ingestion hasn't fired (missing hook, cross-project sessions only, sanitization bail-out on a leaky record). Treat a non-empty inbox as a finding in its own right; investigate before proceeding with the rest of the pass.
+
 Use `scripts/analyze-collect.sh <project-slug>` to gather mechanical stats in one shot (counts, duration medians, rule-hit frequencies). Manual reading of debriefs and reviews stays a human step — that's where the patterns live.
 
 ## Report template

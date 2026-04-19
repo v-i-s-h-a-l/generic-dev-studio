@@ -398,23 +398,13 @@ The remaining two sweep-time signals need Chanakya's in-session context and don'
 
 Markers (`brief_edit_seen.txt`, `debrief_seen.txt`) are simple text files; wipe them on `compact` so a re-edit after archival can re-emit.
 
-### 0F — Studio-feedback inbox ingestion (generic-dev-studio sessions only)
+### 0F — Studio-feedback inbox ingestion (delegated to script)
 
-Gate: only run when the current project slug (from `resolve_project()`) is `generic-dev-studio`. In any other project's session this step is a no-op — files accumulate in `~/.dev-studio/generic-dev-studio/feedback-inbox/<source-project>/` until a generic-dev-studio session next sweeps.
+Run `scripts/ingest-feedback.sh` and surface any stdout lines in the session greeting (e.g. `ingested feedback-inbox/turnip-ios/<file>.md → <issue-url>`). The script is gated on `resolve_project() == generic-dev-studio` — in any other project's session it silent-exits, so this step is safe to invoke unconditionally.
 
-Steps:
+The same script runs automatically on SessionStart for this repo (`.claude/settings.json`), so most ingestions complete before Step 0F fires. Re-running here is idempotent: processed files are never touched.
 
-1. Scan `~/.dev-studio/generic-dev-studio/feedback-inbox/*/*.md`, **excluding** files under any `processed/` subdirectory.
-2. For each unprocessed file, in filename order (timestamp-prefixed, so chronological):
-   a. Append the file's contents verbatim (frontmatter + body) to `~/.dev-studio/generic-dev-studio/analysis/<today>.md`, preceded by a `---` separator and a `## Ingested: <path>` heading for traceability.
-   b. Read the `scope:` frontmatter value:
-      - `generic-dev-studio` → **auto-file** a sanitized public issue via `gh issue create`. Strip `source_project`-specific identifiers (task IDs, field names, project slug) before filing. Per CLAUDE.md privacy rule, public issues describe abstract patterns — full-detail citations stay in the private analysis file. Label `enhancement` or `bug` from the `kind:` frontmatter. Surface the resulting issue URL in the session greeting.
-      - `upstream` → surface the record with a one-line summary. Do not auto-file (destination is ambiguous — user decides Playwright MCP / claude-code / other). In at-laptop mode, ask for the destination. In away mode, defer: the record stays in `processed/` with its analysis-file copy; re-surface on the next at-laptop session.
-      - `work-project` → no public filing. Private analysis only.
-   c. Move the file to `<source-project-dir>/processed/<filename>` (`mkdir -p` the processed dir if missing).
-3. If N files ingested, include a one-line summary in the session greeting: `Ingested N studio-feedback records (see analysis/<today>.md)`.
-
-This step replaces the earlier paste-based flow. Emitting sessions write files to the canonical path; generic-dev-studio sessions ingest on next wake.
+For the per-scope dispatch contract (`generic-dev-studio` → sanitized `gh issue create`; `upstream` → stderr notice, leave in place; `work-project` → private only), see the script header and the "Studio-Feedback" mode doc below.
 
 ### 0G — Proceed to the requested mode
 

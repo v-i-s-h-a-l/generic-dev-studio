@@ -113,6 +113,7 @@ scripts/                # multi-worker fleet (BETA)
   achilles-dispatch.sh  # write task file to least-loaded (or pinned) worker inbox
   achilles-queue.sh     # work-stealing dispatch queue — enqueue/drain/list/depth/clear
   analyze-collect.sh    # mechanical stats for usage-analysis passes (see ANALYSIS.md)
+  ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   worker-status.sh      # one-shot fleet status table
   achilles-cancel.sh    # remove pending dispatches

@@ -61,6 +61,9 @@ scripts/achilles-queue.sh clear                # wipe queue (abort scenarios onl
 scripts/analyze-collect.sh --project turnip-ios         # stats dump for a usage-analysis pass
 scripts/analyze-collect.sh --project turnip-ios --since 2026-04-01
 
+# Studio-feedback ingestion (auto-fires via SessionStart hook + Chanakya Step 0F):
+scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
+
 # Chanakya sweep-time detections (Step 0E3, auto-invoked by Chanakya):
 scripts/detect-edits.sh --quiet                         # emits brief_edited + debrief_edited
 ```
