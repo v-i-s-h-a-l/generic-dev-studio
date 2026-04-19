@@ -108,12 +108,15 @@ This form resolves to the draft pre-publish and to the final published release p
 
 Confirm `<GITHUB_RELEASE_URL>` to the user.
 
-## Step 8: Ask which build number to submit to App Store
+## Step 8: Resolve submission build number
 
-Ask the user:
-"Which build number do you want to submit for App Store review? (default: `<CURRENT_BUILD_NUMBER>`)"
+Default `SUBMISSION_BUILD_NUMBER` to `CURRENT_BUILD_NUMBER` and proceed without asking. Print:
 
-Wait for their answer. Use `SUBMISSION_BUILD_NUMBER` going forward.
+```
+Submitting build <CURRENT_BUILD_NUMBER> for App Store review
+```
+
+In the rare case the user wants to submit an older TestFlight build instead, they can abort now and re-invoke; don't add a prompt for the common path.
 
 ## Step 9: Generate App Store Connect JWT
 

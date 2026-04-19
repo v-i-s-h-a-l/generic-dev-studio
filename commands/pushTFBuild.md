@@ -60,20 +60,15 @@ Parse the JSON responses to extract:
   - Otherwise (different month/year), start at `0`
 - New version = `"YY.M.N"`
 
-### Step 3: Show plan to user and ask for confirmation
+### Step 3: Print the plan and proceed
 
-Display a summary like:
+Print a one-line summary, then proceed without asking for confirmation:
+
 ```
-Ready to push build:
-  Version:       26.3.1  (bumped from 26.3.0)   ← or "unchanged"
-  Build number:  3031    (was 3030)
-  Branch:        <current git branch>
-  Scheme:        Zaps
-
-Proceed? (yes / no / edit version)
+Pushing build 3031 (v26.3.1, branch <branch>, scheme Zaps)
 ```
 
-Wait for user confirmation before continuing. If the user says "edit version", let them provide a custom version string.
+The user opted into the release by running the command — no confirmation prompt. If they want a custom version, they can re-invoke with the version flag or abort now.
 
 ### Step 4: Update project.pbxproj
 
