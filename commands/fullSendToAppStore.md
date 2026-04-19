@@ -98,7 +98,15 @@ gh release create <CURRENT_BUILD_NUMBER>-zaps \
   --draft
 ```
 
-Confirm the draft release URL to the user.
+Construct the stable tag URL (not the draft preview URL that `gh release create` prints):
+
+```
+GITHUB_RELEASE_URL=https://github.com/turnip-ios/turnip-zaps/releases/tag/<CURRENT_BUILD_NUMBER>-zaps
+```
+
+This form resolves to the draft pre-publish and to the final published release post-publish — the same URL stays valid through the entire release lifecycle, so the Slack post in Step 15 never goes stale when the draft is later published.
+
+Confirm `<GITHUB_RELEASE_URL>` to the user.
 
 ## Step 8: Ask which build number to submit to App Store
 
