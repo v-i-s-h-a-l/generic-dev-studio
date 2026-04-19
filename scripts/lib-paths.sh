@@ -8,6 +8,7 @@
 #   resolve_inbox_root_for   prints the achilles-inbox root for a given slug
 #   resolve_chanakya_inbox   prints the current project's chanakya-inbox root
 #   resolve_chanakya_inbox_for prints the chanakya-inbox root for a given slug
+#   resolve_feedback_inbox_for prints the studio-self feedback inbox for a source slug
 #   resolve_runtime_global   prints the machine-global runtime root
 #   resolve_push_queue       prints the per-project push-queue path
 #   detect_stack             prints ios|web|rust|python|go|mixed|unknown
@@ -186,6 +187,15 @@ resolve_project_root() {
   local project
   project=$(resolve_project) || return 1
   resolve_project_root_for "$project"
+}
+
+# Studio-self feedback inbox for a given source-project slug. Feedback records
+# authored in any project route here (see CLAUDE.md "Analysis sessions and
+# privacy"); generic-dev-studio is the destination because that's where the
+# studio's own issues and improvements get filed.
+resolve_feedback_inbox_for() {
+  local project="${1:?usage: resolve_feedback_inbox_for <source-slug>}"
+  printf '%s\n' "$HOME/.dev-studio/generic-dev-studio/feedback-inbox/$project"
 }
 
 # Briefs live under plans/chanakya-tasks/ per project.

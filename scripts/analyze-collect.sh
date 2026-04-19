@@ -63,10 +63,28 @@ EVENT_DIR="$MEMORY/events"
 REVIEW_DIR="$MEMORY/reviews"
 INBOX_PROCESSED="$(resolve_chanakya_inbox_for "$PROJECT")/processed"
 FLEET_ROOT=$(resolve_inbox_root_for "$PROJECT")
+FEEDBACK_INBOX=$(resolve_feedback_inbox_for "$PROJECT")
 
 echo "# analyze-collect: $PROJECT"
 echo "window: $SINCE → $(date -u +%Y-%m-%d)"
 echo "memory: $MEMORY"
+echo
+
+echo "## Feedback inbox (read these first — user-authored, highest signal)"
+if [ -d "$FEEDBACK_INBOX" ]; then
+  count=$(find "$FEEDBACK_INBOX" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
+  echo "count: $count"
+  if [ "$count" -gt 0 ]; then
+    for f in "$FEEDBACK_INBOX"/*.md; do
+      [ -f "$f" ] || continue
+      kind=$(sed -n 's/^kind:[[:space:]]*//p' "$f" | head -1)
+      sev=$(sed -n 's/^severity:[[:space:]]*//p' "$f" | head -1)
+      echo "  - $(basename "$f")  [kind=${kind:-?} sev=${sev:-?}]"
+    done
+  fi
+else
+  echo "(no feedback inbox at $FEEDBACK_INBOX)"
+fi
 echo
 
 echo "## Event counts (by type)"

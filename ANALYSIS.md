@@ -12,11 +12,14 @@ How generic-dev-studio observes itself. Runs **from this repo**, never from the 
 
 | # | Source | Path | What it tells you |
 |---|---|---|---|
-| 1 | Event log | `~/.claude/projects/<slug>/memory/events/*.jsonl` | Task lifecycle, review verdicts, dispatch events. Primary signal. |
-| 2 | Debriefs | `~/.dev-studio/<project>/plans/chanakya-inbox/processed/*-debrief.md` | What Achilles wrote when the work landed. Look for patterns in "Key Learnings" + "Blockers". |
-| 3 | Argus reviews | `~/.claude/projects/<slug>/memory/reviews/*.md` + `reviews/archive/` | Flag/block frequency by rule. Feeds REVIEW.md rule evolution. |
-| 4 | Worker logs | `~/.dev-studio/<project>/.runtime/achilles-inbox/worker-*/worker.log` | Per-task timing, stuck states, rescue events. |
-| 5 | Git log | `git log --first-parent --since=<window>` in the **target project**, not this repo | Time-to-merge, PR size distribution. Pair with event log for dispatch→merge latency. |
+| 1 | **Feedback inbox** | `~/.dev-studio/generic-dev-studio/feedback-inbox/<project>/*.md` | User-authored records of rule gaps, rule misses, bugs, ideas. Highest signal per token — already distilled, often with proposed designs. Read **first**. |
+| 2 | Event log | `~/.claude/projects/<slug>/memory/events/*.jsonl` | Task lifecycle, review verdicts, dispatch events. Primary mechanical signal. |
+| 3 | Debriefs | `~/.dev-studio/<project>/plans/chanakya-inbox/processed/*-debrief.md` | What Achilles wrote when the work landed. Look for patterns in "Key Learnings" + "Blockers". |
+| 4 | Argus reviews | `~/.claude/projects/<slug>/memory/reviews/*.md` + `reviews/archive/` | Flag/block frequency by rule. Feeds REVIEW.md rule evolution. |
+| 5 | Worker logs | `~/.dev-studio/<project>/.runtime/achilles-inbox/worker-*/worker.log` | Per-task timing, stuck states, rescue events. |
+| 6 | Git log | `git log --first-parent --since=<window>` in the **target project**, not this repo | Time-to-merge, PR size distribution. Pair with event log for dispatch→merge latency. |
+
+**Feedback-inbox first, always.** User-authored feedback records are the highest-signal input: they come pre-distilled, often include a proposed design, and carry severity judgments that events and debriefs can't express. A pass that skips feedback-inbox silently downgrades user-reported findings to re-derivable patterns and misses anything severity-high that hasn't yet manifested in event counts.
 
 Use `scripts/analyze-collect.sh <project-slug>` to gather mechanical stats in one shot (counts, duration medians, rule-hit frequencies). Manual reading of debriefs and reviews stays a human step — that's where the patterns live.
 
