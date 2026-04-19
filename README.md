@@ -115,6 +115,7 @@ scripts/                # multi-worker fleet (BETA)
   analyze-collect.sh    # mechanical stats for usage-analysis passes (see ANALYSIS.md)
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
+  appstore-watch.sh     # polls ASC for pending submission; finalizes draft release + Slack on release
   worker-status.sh      # one-shot fleet status table
   achilles-cancel.sh    # remove pending dispatches
   fleet-cleanup.sh      # soft sweep (stale locks, old done/) or --all teardown

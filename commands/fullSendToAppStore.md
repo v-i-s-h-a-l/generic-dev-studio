@@ -316,12 +316,58 @@ curl -s -X POST https://slack.com/api/chat.postMessage \
 
 See `_shared/slack-post.md` for the general curl pattern. Escape newlines as `\n` and any double quotes in the message text before embedding in the JSON `-d` payload.
 
-## Step 16: Done
+## Step 16: Arm the App Store watcher
+
+Chanakya sweeps (every `/chanakya status`, `brief`, `ship`, `auto-sweep` tick) piggyback `scripts/appstore-watch.sh` to poll App Store Connect for this submission's state. When Apple flips the version to `PENDING_DEVELOPER_RELEASE` or `READY_FOR_SALE`, the watcher publishes the draft release (`gh release edit <tag> --draft=false`), posts a threaded reply on the Slack message from Step 15, and emits `appstore_released`. No further user action needed unless the watcher reports stuck.
+
+Write the marker:
+
+```bash
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+QUIET=$(date -u -v+6H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '6 hours' +%Y-%m-%dT%H:%M:%SZ)
+mkdir -p ~/.dev-studio/turnip-ios/.runtime/state
+
+python3 - "$NOW" "$QUIET" <<'PY'
+import json, sys, os
+now, quiet = sys.argv[1], sys.argv[2]
+marker = {
+    "schema": 1,
+    "project": "turnip-ios",
+    "tag": "<CURRENT_BUILD_NUMBER>-zaps",
+    "build": "<SUBMISSION_BUILD_NUMBER>",
+    "version": "<VERSION_STRING>",
+    "repo": "turnip-ios/turnip-zaps",
+    "source_branch": os.popen("git -C /Users/vishalsingh/Documents/Turnip.gg/turnip-ios branch --show-current").read().strip(),
+    "github_release_url": "<GITHUB_RELEASE_URL>",
+    "slack_channel": "C01PVRBMFJ6",
+    "slack_parent_ts": "<PARENT_TS>",
+    "asc_app_id": "6502945736",
+    "asc_key_path": os.path.expanduser("~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8"),
+    "asc_issuer_id": "1fa9f26b-7b13-459a-9225-1ca8d9c51fca",
+    "asc_key_id": "WJQ6D76K8R",
+    "submitted_at": now,
+    "quiet_until": quiet,
+    "next_check_at": quiet,
+    "last_state": "WAITING_FOR_REVIEW",
+    "last_check_at": None,
+    "failures": 0
+}
+path = os.path.expanduser("~/.dev-studio/turnip-ios/.runtime/state/pending-appstore-review.json")
+with open(path, 'w') as f:
+    json.dump(marker, f, indent=2)
+print(f"Marker written: {path}")
+PY
+```
+
+Emit `appstore_submitted` to the event log (via the project's `lib-paths.sh` `append_event` helper if invoked from there, otherwise skip — the marker itself carries full state).
+
+## Step 17: Done
 
 Confirm to the user:
 - Git tag created and pushed: `<CURRENT_BUILD_NUMBER>-zaps`
-- GitHub draft release created (show URL)
+- GitHub draft release created (stable URL: `<GITHUB_RELEASE_URL>`)
 - App Store submission created for version `<VERSION_STRING>` (build `<SUBMISSION_BUILD_NUMBER>`) with manual release
 - Posted to #releases on Slack
+- App Store watcher armed — will auto-publish the draft + thread-reply on Slack when the submission flips to `PENDING_DEVELOPER_RELEASE` / `READY_FOR_SALE` (piggybacks every `/chanakya` sweep; no `--away`/`--auto-sweep` required)
 
-Remind the user: the app will not go live automatically after approval — they need to manually release it from App Store Connect.
+Remind the user: the app will not go live automatically after approval — they need to manually release it from App Store Connect. The watcher fires when Apple finishes review, not when the user releases.

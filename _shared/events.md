@@ -98,6 +98,10 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `review_override` | User elects to merge / ship despite a `review_flagged` (e.g. "ship anyway" during ship or review-feedback). Signals potential false-positive Argus rule. | `review_file`, `finding_count`, `reason` (short string; ≤100 chars) |
 | `task_awaiting_user_resolved` | Counterpart to `task_awaiting_user` — emitted when the user's answer lands (detected by a subsequent `task_redispatched` or explicit intake of the brief update). Enables "time waiting on user" measurement. | `wait_duration_s`, `resolved_by` (`user_answered`\|`timeout`\|`cancelled`) |
 | `build_debt_incremented` | Counter goes up on an XS/S LSP-only merge (every skip, not only threshold crossings). Chanakya emits during inbox sweep when the incoming debrief's `build_gate: lsp-only`. Enables "which task sizes drive debt" analysis. | `counter` (`build`\|`test_unit`\|`test_ui`), `new_value`, `trigger` (`xs_skip`\|`s_skip`\|`tdd_skip`\|`other`) |
+| `appstore_submitted` | `/fullSendToAppStore` writes the `pending-appstore-review.json` marker after posting to `#releases`. Task field = release tag. | `build`, `version`, `submitted_at` |
+| `appstore_state_checked` | `scripts/appstore-watch.sh` completed a non-terminal ASC state poll. One emit per real API call (self-gated on `next_check_at`, so far less than one per sweep). | `state` (ASC `appStoreState` value) |
+| `appstore_released` | Watcher observed terminal state (`PENDING_DEVELOPER_RELEASE` / `READY_FOR_SALE`) and finalized: draft published, Slack reply posted, marker deleted. | `final_state`, `tag` |
+| `appstore_watch_stuck` | Watcher hit ≥3 consecutive failures (JWT, ASC query, `gh release edit`, or Slack post). Marker's `stuck: true` flag is set; next sweep will surface a banner and retry. | `reason`, `failures`, `state` (optional — present when failure was during finalize) |
 
 ### Cross-agent events (every agent emits)
 

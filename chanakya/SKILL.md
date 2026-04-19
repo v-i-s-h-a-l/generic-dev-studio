@@ -266,6 +266,23 @@ Handle `Type: testflight-release` and `Type: appstore-release` debriefs:
    d. On confirmation, write. On rejection, skip the write but keep the computed data for manual review.
    e. This is NOT a suggestion — Chanakya proactively runs the sync computation. The only user gate is the write confirmation.
 
+### 0B3 — App Store submission watcher (if any)
+
+If `~/.dev-studio/<project>/.runtime/state/pending-appstore-review.json` exists, invoke `bash scripts/appstore-watch.sh` (best-effort; swallow non-zero exit). The script is idempotent and self-gated on the marker's `next_check_at`, so most calls exit in <50ms without an API call. It piggybacks every `/chanakya` sweep (`status`, `brief`, `ship`, `auto-sweep` tick, etc.) — no separate trigger is needed, and no `--away`/`--auto-sweep` is required.
+
+On terminal App Store state (`PENDING_DEVELOPER_RELEASE` / `READY_FOR_SALE`) the script publishes the draft release, posts a threaded Slack reply on the original `#releases` post, deletes the marker, and emits `appstore_released`. Partial-finalize failures are handled idempotently via flags inside the marker, so the next sweep only retries the unfinished step.
+
+If the marker's `stuck: true` flag is set (≥3 consecutive failures), surface a one-line banner in the sweep summary:
+
+```
+⚠️ App Store watcher stuck on <tag> (<N> failures, last: <reason>).
+   Inspect ~/.dev-studio/<project>/.runtime/state/pending-appstore-review.json.
+```
+
+Read the stuck state cheaply by `grep '"stuck": true'` on the marker file — do not invoke the watcher script just to report status.
+
+No output when the marker is absent, when `resolve_project` doesn't match the marker's project, or when `next_check_at` is in the future.
+
 ### 0C — Threshold actions
 
 After 0A and 0B run, evaluate the current Build Debt counter:
