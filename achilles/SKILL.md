@@ -382,6 +382,8 @@ Branches on `WAIT_FOR_USER`:
 
 Only if Step 6 is green. After self-review and optional user feedback, invoke Argus before merging.
 
+**This gate runs on every dispatch path — interactive, worker-mode, `--wait`, and `--no-wait`. No exceptions except `build-mode` and `test-suite-mode`.** The "Autonomous vs. Interactive" section above governs clarifying-question latitude only; it does not authorize skipping compliance steps. If you are tempted to skip Argus because you are in an interactive session, do not — the gate exists because self-review has known blind spots (cross-file regressions, test adequacy, base staleness) that persist regardless of whether a human is watching. If Argus is genuinely unavailable, surface that as a block and stop before merge; do not silently proceed.
+
 Emit event:
 ```json
 {"ts":"...","agent":"achilles","event":"review_requested","task":"<task-id>","data":{"worktree":"<WORKTREE>","derived_data":"/tmp/derived-data/<task-id>"}}
@@ -432,8 +434,9 @@ The committing inside the worktree is safe to run unlocked (each worktree has it
 
 ```bash
 # 1. Inside the worktree — safe to run unlocked
+# Pre-step: clear stale .git/index.lock if safe (see _shared/safe-git.md).
 cd "$WORKTREE"
-git add -A && git commit -m "<task-id>: <summary>"   # or several small commits
+git add -A && CALLER_SKILL=achilles-merge safe_git_commit -m "<task-id>: <summary>"   # or several small commits
 
 # 2. Acquire the merge lock before touching the main checkout
 LOCK_DIR=~/.dev-studio/$PROJECT/locks

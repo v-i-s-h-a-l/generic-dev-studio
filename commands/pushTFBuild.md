@@ -79,10 +79,12 @@ Both values appear multiple times — update ALL occurrences using `replace_all`
 
 ### Step 5: Commit the version bump
 
+Pre-step: clear stale `.git/index.lock` if safe, then commit via `safe_git_commit` — see `_shared/safe-git.md` for rationale and the full helper.
+
 ```bash
 cd /Users/vishalsingh/Documents/Turnip.gg/turnip-ios
 git add zaps-app/Turnip.xcodeproj/project.pbxproj
-git commit -m "$(cat <<EOF
+CALLER_SKILL=pushTFBuild safe_git_commit -m "$(cat <<EOF
 Bump build number to <NEW_BUILD_NUMBER>
 
 Preparing TestFlight build <NEW_BUILD_NUMBER> (v<VERSION>) from branch <BRANCH_NAME>.
