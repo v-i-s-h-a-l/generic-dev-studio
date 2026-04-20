@@ -8,7 +8,7 @@ type: reference
 
 File-based semaphore for Argus test execution. Limits concurrent test runs to 3 slots to avoid simulator overcommit.
 
-**Only Argus acquires test slots.** Achilles uses the separate `xcodebuild.lock` (see `achilles/SKILL.md` Step 6). XS/S reviews never run tests and never acquire slots.
+**Only Argus acquires test slots.** Achilles uses the separate `xcodebuild.lock` (see `achilles/modes/task.md` Step 6). XS/S reviews never run tests and never acquire slots.
 
 ## Slot Directory
 

@@ -248,7 +248,7 @@ The orchestration is project-agnostic. `<project>` slug is derived from the git 
 
 To port to a non-iOS stack:
 1. Replace the Swift/SwiftUI skill table in `chanakya/SKILL.md` with your stack's equivalents.
-2. Replace `xcodebuild -derivedDataPath ...` in `achilles/SKILL.md` Step 6 with `cargo build`, `pnpm build`, `go build`, etc. Keep the per-task output-dir convention.
+2. Replace `xcodebuild -derivedDataPath ...` in `achilles/modes/task.md` Step 6 with `cargo build`, `pnpm build`, `go build`, etc. Keep the per-task output-dir convention.
 3. Drop Figma calls from Brief Generation Step 3 if unused.
 4. Update `_shared/turnip-project-config.md` (or replace it) with your project's config.
 
