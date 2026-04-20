@@ -2,6 +2,12 @@
 
 Multi-agent Claude Code orchestration system (Chanakya manager + Achilles worker + Argus reviewer). Per-project runtime under `~/.dev-studio/<project>/`; machine-global resources under `~/.dev-studio/.runtime/`.
 
+## Active architecture refactor (2026-04 onward)
+
+A multi-session refactor is in progress. Before taking any architectural action, read **`ROADMAP.md` §Phase sequence** (where we are, what's next, dependencies) and **`ARCHITECTURE.md` §Design Vision (2026-04-20 synthesis)** (rationale, agent roster, rejected alternatives). Check `~/.claude-personal/projects/<project-hash>/memory/project_*_pending.md` for questions the previous session deferred to this one.
+
+If the user asks "where were we" or similar, invoke `/resume-plan` — it reads the above and reports.
+
 ## Reviews
 
 When the user asks to review a diff (any phrasing — "review", "self-review", "check this", "any issues", or invoking `/simplify`), **read `REVIEW.md` at the repo root first** and walk its rules against the diff. Auto-fix the `block + auto-fix` tier silently; surface `ask` tier before changing; note `warn` tier either way.

@@ -90,3 +90,49 @@ Optimizations landed in this session and the rationale behind them:
 - **Model recommendations** — Chanakya: Sonnet for orchestration, Haiku for event-processing modes (~15× cheaper). Achilles: Opus always for code generation (no downgrade). Argus: Opus always (reasoning-heavy edge-case analysis). Worker parent bash-loop sessions can use Haiku since they only dispatch, not implement.
 - **Argus scope caps** — cross-file scan capped at 10 neighbor files × 50 lines each; diffs >500 lines load only the 500 most-changed lines; XS single-file diffs under 20 lines skip Argus entirely. Each triggered cap emits a `review_scoped` event for longitudinal tuning.
 - **MCP hygiene** — iMessage/Telegram MCPs are enabled only in `--away` mode. Figma MCP loads only for brief generation. Telegram is not the primary push channel (silent disconnect risk); iMessage is preferred.
+
+---
+
+## Phase sequence (architecture refactor)
+
+Ordered plan for the intent-router + ledger + knowledge refactor, as of 2026-04-20. GitHub issues (#35–#50) track actionable items; this section captures *sequence and dependencies*.
+
+### Completed (branch `refactor/intent-router`)
+
+- **Phase 1** ✓ Foundation docs — `_shared/router-pattern.md`, `_shared/singleton-invariants.md`.
+- **Phase 1.5** ✓ Enforcement layer — linter, pre-commit hook, scaffold, graduation scan, surface manifest.
+- **Phase 2** ✓ Chanakya router refactor — router 55 lines + 14 mode packs + snapshot skeletons.
+- **Phase 2 (snap)** ✓ Real snapshot producers + SessionStart prewarm + status-mode consumption + invalidation.
+- **Phase 3 (Achilles)** ✓ Achilles router refactor — router 51 lines + 9 mode packs.
+
+### Planned
+
+- **Phase 2.5** — Router contract extensions. Must-haves: message contracts, state machines, idempotency, schema versioning, read/write declarations. Ship-alongside: capability manifest, dry-run, budget telemetry. Reorganize `_shared/` into subdirectories (`patterns/`, `contracts/`, `state-machines/`, `schemas/`, `primitives/`, `rules/`). Linter extends with ~5 new codes. No mode-pack changes yet.
+- **Phase 2.6** — Ledger overhaul. All artifacts → structured YAML (tasks, designs, rounds, releases, debriefs, reviews, crashes). `plans/index.yaml` + inline relational links. Single canonical event log at `events/YYYY-MM-DD.jsonl`; six other locations consolidated + archived. Migration script for turnip-ios (backup → transform → cutover). Every Chanakya and Achilles mode pack rewritten against new contracts. Agent-versioning hooks.
+- **Phase 2.7** — Knowledge layer. `_shared/project-memory.md` + `scripts/memory-query.sh`. Chanakya `modes/knowledge.md` for synthesis. Slack-ingest index joins the memory layer. Cross-refs from Lu Ban / Achilles / Argus.
+- **Phase 3** — Prompt-caching instrumentation + schedule-driven automation. Stable-prefix caching design. Daily/weekly/monthly/quarterly crons via `/schedule` and `/loop`. `modes/test-health.md`. Weekly narrative auto-post.
+- **Phase 4** — Lu Ban greenfield (`/luban`). Multi-file designs from day 1. ADR auto-write on `status: approved`. `_shared/architecture-catalog.md`. Integration with Chanakya Step 0 scan.
+- **Phase 5** — Crashlytics auto-brief loop + Chiron (synthetic QA agent). 3-step gate for crash fixes. `scripts/crash-watch.sh` modeled on `appstore-watch.sh`.
+- **Phase 6** — Executive dashboard. Local web app. Four zoom levels (Now / Week / Month / Quarter) + approval buttons.
+- **Phase 7** — Cross-agent routing intelligence. Chanakya suggests Lu Ban handoff on novelty; Achilles debrief surfaces architectural concerns. Always suggestion, never hard routing.
+- **Phase 8** — docs.html redesign. Use-case primary groupings + agent badge. Adds Lu Ban, Chiron cards.
+- **Phase 9** — Memory-aware briefs + crystal-ball analysis + narrative polish.
+
+### Later (prove need first)
+
+Autonomous improvement loop, agent rollback via semver, studio as shippable public product.
+
+### Dependencies
+
+- 2.5 gates 2.6 (contracts before the overhaul conforming to them).
+- 2.6 gates 2.7 (structured data before the knowledge layer indexing it).
+- 2.7 and 3 are parallelizable.
+- Lu Ban (4) lands on 2.5 + 2.6 foundation.
+- Chiron (5) independent of Lu Ban.
+- Dashboard (6) reads the 2.6 ledger; gated on 2.6.
+
+### Open questions — revisit at next session start
+
+- Any phase reorder or reject? (memory: `project_phase_reordering_pending.md`)
+- Budget defaults after observing real traffic.
+- Confucius (dedicated knowledge agent) — extract from Chanakyas mode if it bloats?

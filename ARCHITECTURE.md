@@ -90,3 +90,131 @@ Each extraction has cost (briefing the new artifact, drift risk, debugging). Ext
 - A subagent candidate has been validated as a real job, not a step
 
 Iterating on extraction is harder than adding inline; default to inline until pain is concrete.
+
+---
+
+## Design Vision (2026-04-20 synthesis)
+
+Long-form design decisions from the April 2026 architecture session. The existing docs (this file, ROADMAP.md, REVIEW.md, CLAUDE.md) cover most; this section captures decisions and rationales that would otherwise live only in conversation context. Goal: a fresh Claude session reads this and picks up without re-litigating.
+
+### Router pattern (landed)
+
+See `_shared/router-pattern.md` and `_shared/singleton-invariants.md`. Chanakya + Achilles now use the pattern; Argus stays inline (single-purpose); Lu Ban (upcoming) is router-first from birth.
+
+### Agent roster (v1)
+
+| Agent | Role | Singleton? | Lineage |
+|---|---|---|---|
+| Chanakya | Project manager, orchestrator, knowledge synthesizer | Yes (per project) | Indian strategist, Arthashastra |
+| Achilles | Implementer, worktree-isolated worker | No (many concurrent) | Greek warrior |
+| Argus | Reviewer, diff + regression auditor | No (stateless per task) | Greek many-eyed watchman |
+| Lu Ban (planned) | Architect, design dialogue | No (slug-isolated) | Chinese master craftsman 鲁班, 5th c. BCE |
+| Chiron (planned) | Synthetic QA — AI tester for TF builds | No (per build) | Greek centaur, trained Achilles |
+
+Deferred: Confucius (knowledge synthesizer as separate agent) — currently a mode on Chanakya.
+
+### Ledger / artifact layer (Phase 2.6)
+
+Current master plan is a ~100KB God-object markdown. Target: per-entity structured YAML + single canonical event log + derived snapshots.
+
+Key commitments:
+- One file per task / round / release / design / debrief / review / crash report.
+- `plans/index.yaml` is the single entry point with pointers.
+- Inline relational links (`related_tasks`, `in_round`, `targets_release`, `from_design`, `fixes_crash`).
+- Master plan is a **generated view**, not source of truth. Never written to directly.
+- Event log canonical path: `events/YYYY-MM-DD.jsonl`. Six other historical locations consolidated + deleted.
+- Snapshots derived from structured sources, not from the master plan.
+
+### Router contract extensions (Phase 2.5)
+
+Five primitives on top of the router pattern:
+
+1. **Message contracts** — `_shared/contracts/<kind>.yaml` schemas for briefs, debriefs, verdicts, designs, crash-reports. Linter enforces.
+2. **State machines** — `_shared/state-machines/<entity>.yaml` declarative transitions. Task, review, design, crash lifecycles. Transitions emit `*_transitioned` events.
+3. **Idempotency declarations** — mode frontmatter: `idempotent: true|false` + `dedup_key: <field>` when false.
+4. **Schema versioning** — every artifact, message, snapshot carries `schema: <int>`; consumers declare `requires_schema:`. Mismatch = hard fail.
+5. **Read/write declarations** — mode frontmatter `writes: [tasks, events]` or `writes: []`. Enables static analysis.
+
+Ship alongside (Phase 2.6): capability manifest (`docs-surface.json` extension), dry-run contract (every mutating mode supports `--dry-run`), budget telemetry (`mode_dispatched` carries observed token cost; analyzer tightens periodically).
+
+Deferred until need proves: recovery protocols, pipeline declarations, approval primitive, cost telemetry, provenance tags.
+
+### Knowledge layer (Phase 2.7)
+
+Knowledge is a **shared primitive, not an agent.** `_shared/project-memory.md` (contract) + `scripts/memory-query.sh` (primitive). Every agent queries; each owns queries that match its role:
+- Status / synthesis → Chanakya (new `modes/knowledge.md`).
+- Design rationale / ADRs → Lu Ban.
+- Implementation memory — "seen this before?" → Achilles.
+- Review patterns → Argus.
+
+Cross-cutting synthesis ("summarize last 3 months") lives in Chanakya `modes/knowledge.md`. Separate Confucius agent deferred until synthesis mode proves too heavy for Chanakyas singleton role.
+
+### Prompt-caching strategy (Phase 3)
+
+Design every session invocation to maximize Anthropic-API cache hits:
+- **Stable prefix:** CLAUDE.md + router + shared patterns. First. Doesnt change per-session.
+- **Cacheable middle:** project state snapshot (changes slowly).
+- **Variable tail:** current user message + mode-specific context.
+
+Target: 80 ache hit rate across sessions. Token savings cumulative; latency follows.
+
+### Schedule-driven automation (Phase 3)
+
+Routine maintenance reactive → proactive via `/schedule` and `/loop`:
+- **Daily:** debt sweep, feedback inbox sweep, Crashlytics pull, snapshot regen.
+- **Weekly:** retrospective auto-draft, test-health report, dependency-update scan.
+- **Monthly:** architecture review with Lu Ban, simplicity prune, agent-rule-rot check.
+- **Quarterly:** budget re-tuning, deprecation sweep, studio self-audit.
+
+### Tests as a first-class concern (Phase 3)
+
+New `modes/test-health.md` on Chanakya: coverage trends, flaky detection, test-to-crash correlation, proactive test suggestions. Auto-surfaced weekly.
+
+### Crashlytics loop with 3-step gate (Phase 5 pilot)
+
+Flow: detect → brief → fix → 3-step verification → release-track → Crashlytics auto-comment.
+
+Three gates before resolving a crash fix:
+1. Fix-confidence assessment (LLM compares commit diff vs stack trace; low confidence → `Possible fix for crash` label per existing Slack convention).
+2. Edge cases (Argus mandatory for crash-labeled fixes).
+3. No behavior regression (Argus diff-review).
+
+Post-merge: `scripts/crash-watch.sh` tracks recurrence; drops trigger auto-comment on the Crashlytics issue naming the release.
+
+### Executive dashboard (Phase 6)
+
+Local web app, read-only + approval buttons, against the structured ledger. Four zoom levels:
+- **Now** — in-flight tasks, TF build status, top 3 crashes.
+- **Week** — releases shipped, regressions, designer feedback rate, debt delta.
+- **Month** — narrative synthesis, velocity, architectural concerns from debriefs.
+- **Quarter** — release cadence, crash trajectory.
+
+Purpose: CLI respects the agents; dashboard respects the human.
+
+### Cross-agent routing intelligence (Phase 7)
+
+Chanakya detects novelty signals (new subsystem, rewrite, >N files) at plan time → suggests Lu Ban handoff (user approves). Achilles debriefs carry `architectural_concern` flag; Chanakya re-routes on sweep. **Suggestions, not hard routing.**
+
+### Studio as shippable product (mindset)
+
+Design as if another iOS team could adopt tomorrow. Not literal shipping — a constraint that forces standardization, reliability, and absence of tribal knowledge. Any convention "only one person knows" is a weakness.
+
+### Explicitly rejected alternatives
+
+So future sessions dont re-propose:
+
+- **XcodeGen/Tuist** — 2-person team; automation handles pbxproj.
+- **SwiftLint** — tentative skip; Claude writes conformant Swift. Revisit on style drift.
+- **MetricKit** — redundant with App Store Connect Analytics at this teams scale.
+- **Always-on session replay** — projects opt-in debug tool is the better fit.
+- **Phased release** — tried; didnt suit cadence.
+- **App Store rejection-risk pre-check** — friction per release, low hit rate.
+- **Release retrospective auto-draft** — release-health manifest (structured data) covers the same ground better.
+- **Canary TF channel** — team small enough it doesnt need a second channel.
+- **Screenshot automation** — design team owns.
+- **Bi-directional Figma↔code sync** — operationally brittle.
+- **Team routing intelligence** — 2-dev team, both do everything.
+- **Competitive intelligence agent** — too ambitious, legal gray area.
+- **SQLite state** — premature; YAML + grep scales 10x.
+- **Auto-removing stale feature flags** — product decisions dont map to usage data.
+- **Separate Historian/Confucius agent** — deferred; starts as Chanakya mode.
