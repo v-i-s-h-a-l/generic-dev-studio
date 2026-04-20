@@ -10,7 +10,7 @@ See `ROADMAP.md` §Phase sequence, `PHASE-2-5-PLAN.md` for upstream contracts, a
 
 These govern every decision here; unchanged from 2.5 §0, restated for self-containment:
 
-- **World-class or it doesn't ship.** Scalable, reliable, fast, observable, versioned, testable. No fragile migrations — dual-write + shadow-read + halt-on-divergence is table stakes. Vertical slices, never wide fragile layers. See memory: `feedback_world_class_standard.md`.
+- **World-class — fit-for-purpose at this project's scale, not fit-for-enterprise.** Single-user workflow tool; the real work is iOS development the studio must stay out of the way of. Reliable, observable, light at runtime, zero recurring costs, no heavy local dependencies. Migration must be safe but not over-engineered: user quiesces the project before migration (Q16), so big-bang transform + post-transform diff-verify is the correct shape — no dual-write window, no continuous verifier. See memory: `feedback_world_class_standard.md` (updated 2026-04-20 with scope qualifier).
 - **Agent-first design.** Structured, machine-readable, zero prompts. Agent drift (model versions, prompt wording, agent boundaries) is the error model — design against it, not against human typos. See memory: `feedback_no_manual_input.md`.
 - **Three-tier artifact paths.** Tier 1 = repo; tier 2 = `~/.dev-studio/<project>/`; tier 3 = `~/.dev-studio/<project>/shared/<machine-id>/`. All writes resolve via `scripts/lib-paths.sh` — never hardcode. See memory: `feedback_artifact_paths.md`.
 - **Minimal permission footprint.** No new allowlist asks. All ledger writes stay under the existing two roots.
@@ -19,9 +19,9 @@ These govern every decision here; unchanged from 2.5 §0, restated for self-cont
 
 | # | Decision | Status | Resolution |
 |---|---|---|---|
-| Q1 | Ledger migration strategy | Locked | Dual-write (old paths + new YAML) + parallel read + shadow-read verifier. Verifier emits `ledger_divergence` events; migration auto-halts when divergence > 0.1%. No fail-over complexity — user confirmed no in-flight work during migration, so freeze-on-divergence is the correct default. |
+| Q1 | Ledger migration strategy | Locked (simplified 2026-04-20) | Big-bang with diff-verify. User quiesces project (stops all sessions) before migration starts. Script: backup → transform legacy → new canonical path → diff-verify (compare canonical-form round-trip) → if clean, cutover; if dirty, fix transform and re-run. **No dual-write window, no continuous verifier, no live-migration complexity** — all unnecessary when the project is quiesced. Dramatically simpler than the initial draft. |
 | Q2 | Schema versioning scope | Locked | Per-type SemVer. Each artifact type (task, brief, debrief, review, round, release, feedback, crash) independently versioned using the `{name, version, min_reader, deprecated_at}` object form from 2.5 Q10. |
-| Q3 | Agent-boot payload shape | Locked | Rich: `{agent, git_sha, skill_version, schema_versions, loaded_mode_packs, active_snapshots, token_budget}`. Trim after debugging stabilizes (post-2.6 review). |
+| Q3 | Agent-boot payload shape | Locked (right-sized 2026-04-20) | Start minimal: `{agent, git_sha, skill_version}`. Three fields cover the common debugging cases (which agent, what code, what studio version). Add more (`schema_versions`, `loaded_mode_packs`, `active_snapshots`, `token_budget`) only when a specific debugging session actually needs them. Avoids per-session payload bloat. |
 | Q4 | Achilles `/achilles debrief` invocation | Locked | Conversational. Scans transcript + staged/working-tree diff, asks inline whether tests are needed, emits YAML debrief. Ships in 2.6 against the new schema. No flag-heavy form. |
 | Q15 | `plans/index.yaml` structure | Locked | Hybrid (option c): normalized relational index *and* back-references embedded in individual artifact files. Both shapes. Index is authoritative for queries; back-refs let a single file stand alone. |
 | Q16 | In-flight work during migration | Locked | None. User assures migration runs on a quiesced project. This makes freeze-on-divergence safe; no dual-code-path fallback needed. |
@@ -226,41 +226,49 @@ Schema matches task-mode debrief (§2.1) with `task_id: null` sentinel + `mode: 
 
 ## 6. Migration script architecture
 
-`scripts/migrate-ledger.sh` — project-scoped. Run against the first project with accumulated ledger state; other projects migrate later if/when they accumulate state.
+`scripts/migrate-ledger.sh` — project-scoped, single-shot big-bang migration. User quiesces the project (stops all Chanakya/Achilles sessions, no in-flight work) before running. Dual-write and continuous verifier were removed in favor of this simpler shape once Q16 confirmed quiescence is the user's operating mode.
 
 ### 6.1 Phases
 
-1. **Backup** — snapshot entire `~/.dev-studio/<project>/` tree to `archive/2026-pre-2.6/` with atomic rename. Idempotent: skip if archive exists.
-2. **Transform** — read legacy artifacts, emit new YAML to a **staging path** (`~/.dev-studio/<project>/.migration-staging/`). Does not touch canonical paths yet. Detects misfiled artifacts (Q20) and routes correctly in the process.
-3. **Dual-write window** — both old writers and new writers emit simultaneously. Duration: as long as verifier reports 0 divergence.
-4. **Verify** — shadow-read verifier (§6.3) runs on a loop.
-5. **Cutover** — atomic rename staging → canonical. Legacy paths become read-error on next access. Archive kept.
+1. **Pre-flight check.** Abort unless: no events in the last 60s, no worker heartbeats in `.runtime/achilles-inbox/*/alive` newer than 60s, no uncommitted changes in any worktree. Prints the reason and exits non-zero on any failure. Opt-out via `--force` for developer testing only.
+2. **Backup.** `cp -R` the entire `~/.dev-studio/<project>/` tree to `archive/2026-pre-2.6/` (atomic rename the tmp into place). Idempotent — skip if archive already exists with matching digest.
+3. **Transform.** Read each legacy artifact, emit new YAML into the canonical target paths directly. Detects misfiled artifacts (Q20 in original plan — e.g. `*-debrief.md` in `chanakya-inbox/` routes to `debriefs/`) inline. Unparseable entries go to `archive/2026-pre-2.6/unparseable/` with source + line number.
+4. **Diff-verify.** Round-trip every new artifact back to its legacy canonical-form representation; compare to the archived original. Mismatch rate > 0 → stop, show the diff, user fixes the transform logic, re-run. Idempotent: re-running starts from step 2 by validating backup digest and skips to transform.
+5. **Cutover.** Once diff-verify is clean, remove legacy paths from `lib-paths.sh` and commit the cutover. Archive retained permanently.
+6. **Resume.** User restarts sessions; all writes flow to the new canonical paths.
 
-### 6.2 Dual-write shape
+### 6.2 Why dual-write was dropped
 
-Every Chanakya/Achilles write during the migration window goes through a `write_artifact(kind, payload)` helper that:
+The initial plan had dual-write + parallel-read + continuous verifier. That complexity exists to **preserve write-availability during migration** — important for systems that can't stop. At this project's scale (single user, explicit quiesce), write-availability is not required during the ~minutes-long migration. Dropping dual-write:
 
-- Writes the YAML form to the new canonical path.
-- Writes the legacy form (markdown brief, flat event line, etc.) to the old path.
-- Tags both with a shared `migration_write_id` so the verifier can pair them.
+- Removes `scripts/dual-write.sh` (never written).
+- Removes `migration_write_id` pairing.
+- Removes the looping verifier daemon.
+- Removes the 24h convergence wait.
+- Collapses two commits (migration primitives + dual-write) into one.
 
-Helper lives at `scripts/dual-write.sh`. Removed in the commit that flips cutover.
+Exchanges live-migration complexity for a ~5-minute coordinated quiesce window. Trade is obviously correct at this scale.
 
-### 6.3 Shadow-read verifier
+### 6.3 Diff-verify tool
 
-`scripts/verify-ledger.sh`:
+`scripts/verify-ledger.sh` run once post-transform:
 
-1. Reads a random 5% sample of `migration_write_id` pairs per run.
-2. Normalizes each side to a canonical comparison form (strip whitespace, sort keys, resolve IDs).
-3. Computes divergence rate = mismatches / sampled.
-4. If `> 0.1%` for two consecutive runs → emit `ledger_divergence` event, **freeze migration** (dual-write continues; cutover blocked).
-5. If `0` for 24h of sustained writes → emit `ledger_convergence_achieved`, cutover unblocked.
+1. Walk every new YAML artifact.
+2. Apply a reverse-transform (YAML → legacy canonical form).
+3. Compare byte-normalized against the archive original.
+4. Report:
+   - Match count + mismatch count + unparseable count.
+   - Per-mismatch a 3-line diff excerpt.
+   - Overall: pass / fail.
+5. Exit code 0 on pass, non-zero on any mismatch. User reviews the diff and decides — either the transform has a bug (fix + re-run) or the mismatch is expected-normalization (add to allowlist).
 
-Runs on a loop during the dual-write window (human-triggered or cron; not a daemon).
+No looping, no daemon, no `migration_write_id`. One call. Pass or fail.
 
-### 6.4 Halt-on-divergence logic
+### 6.4 Recovery
 
-On freeze: emit `ledger_migration_frozen` with divergence diff. User investigates manually. No automatic rollback — the dual-write means both shapes are intact. Resume by fixing the root cause and re-running verify.
+On mismatch, user iterates: edit `migrate-ledger.sh`, re-run. Each re-run starts from the archived backup (not the last transform output) — transforms are pure functions on immutable input. No partial-state concerns.
+
+On catastrophic failure (backup corrupt, cutover half-applied), restore from `archive/2026-pre-2.6/` — one-command `cp -R` reverse — and investigate. No live state to worry about.
 
 ## 7. Mode-pack rewrite checklist
 
@@ -296,21 +304,16 @@ Low → medium → high. Within each tier, leaf modes (no dependents) first. Eve
 
 ### 8.1 `agent_boot` event
 
-Emitted once per agent session at first write. Payload per Q3:
+Emitted once per agent session at first write. Payload per Q3 (right-sized 2026-04-20):
 
 ```yaml
 schema_version: {name: agent-boot, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}
 agent: chanakya|achilles|argus
 git_sha: <short-sha>              # repo commit at session start
 skill_version: <semver>           # from SKILL.md frontmatter
-schema_versions:                  # every schema the agent will read/write this session
-  - {name: brief, version: 3.1.0}
-  - {name: debrief, version: 2.0.0}
-  - …
-loaded_mode_packs: [<name>…]
-active_snapshots: [<snapshot-id>…]
-token_budget: {session_cap, mode_caps: {…}}
 ```
+
+Start with these three fields only. They cover the common debug need ("which agent, running what code, on what studio version"). Richer fields (`schema_versions`, `loaded_mode_packs`, `active_snapshots`, `token_budget`) are additive and land only when a specific debugging session actually demands them — avoids per-session payload bloat + the discipline tax of keeping many fields current.
 
 ### 8.2 Reader validation
 
@@ -331,34 +334,31 @@ Keeps drift observable without hair-trigger breakage.
 
 ## 9. Execution order
 
-Sequential unless `‖`. Small commits, independently revertible. Estimate: 10 commits.
+Sequential unless `‖`. Small commits, independently revertible. Estimate: 8 commits (down from 10 after dual-write simplification).
 
 1. **Commit A — schemas land.** All YAML schemas (§2.1) under `_shared/schemas/` as flat markdown specs. No script/mode changes. Pre-commit validates schemas parse.
 2. **Commit B — state-machines land.** `state-machines/release-lifecycle.md` + `state-machines/feedback-lifecycle.md` (deferred from 2.5 §3.9). Plus `contracts/plans-index-validator.md`.
-3. **Commit C — migration primitives.** `scripts/dual-write.sh` + `scripts/verify-ledger.sh` + `scripts/migrate-ledger.sh` (backup + transform phases only, not cutover). Unit tests on fixture ledger.
+3. **Commit C — migration tooling.** `scripts/migrate-ledger.sh` (pre-flight + backup + transform + cutover) + `scripts/verify-ledger.sh` (one-shot diff verifier). Unit tests on fixture ledger covering every artifact kind + the misfiled-debrief case. No dual-write helper — dropped per §6.2.
 4. **Commit D — `plans/index.yaml` generator.** `scripts/rebuild-index.sh` + `scripts/query-plans.sh`. Wired into pre-commit. Smoke test rebuild-from-scratch.
-5. **Commit E — event-log consolidation.** Run one-shot merge of the 9 sources → canonical day-partitioned files. Archive originals under `archive/2026-pre-2.6/events/`. Every consumer flipped to `scripts/read-events.sh`. Legacy-path access → warn.
-6. **Commit F — Agent-boot hook.** `contracts/agent-boot.md` + emission helper. All three agent SKILL.md files add the hook. Schema-version validation primitive (`scripts/validate-schema.sh`).
-7. **Commit G — low-risk mode-pack rewrites (§7.1).** Pure path/ref updates. Dual-write active.
-8. **Commit H — medium-risk mode-pack rewrites (§7.2).** Writers emit new YAML shape; legacy writes continue via dual-write. Verifier runs.
-9. **Commit I — high-risk mode-pack rewrites + `/achilles debrief`.** `achilles/modes/debrief.md` (§5). Remaining behavioral changes.
-10. **Commit J — cutover.** Verifier green for 24h with sustained writes → flip. `scripts/dual-write.sh` removed; legacy paths removed from `lib-paths.sh`. Archive frozen. Post-cutover validation run.
+5. **Commit E — agent-boot hook.** `contracts/agent-boot.md` + emission helper (minimal 3-field payload per §8.1). All three agent SKILL.md files add the hook at first write. Schema-version validation primitive (`scripts/validate-schema.sh`).
+6. **Commit F — low-risk mode-pack rewrites (§7.1).** Pure path/ref updates to target new paths. Still reads legacy paths during this commit (migration not yet run).
+7. **Commit G — medium-risk + high-risk mode-pack rewrites + `/achilles debrief` (§7.2 and §7.3).** Writers switch to YAML emit shape. `achilles/modes/debrief.md` (§5) lands. Reads still fall back to legacy paths until migration runs.
+8. **Commit H — migration execute + cutover.** User quiesces, runs `scripts/migrate-ledger.sh`, verify-ledger clean → cutover commit lands (legacy paths removed from `lib-paths.sh`). Post-cutover smoke test: every mode-pack dispatch works on the new ledger.
 
-Parallelizable: A ‖ B. G ‖ H's drafting once F merges. Migration script testing (C) can run against fixture data anytime after A.
+Parallelizable: A ‖ B. Commits F and G can be authored in parallel once A–E merge, but merge serially to keep rewrites reviewable per-tier.
 
 ## 10. Risk register
 
 | Risk | Likelihood | Blast radius | Mitigation |
 |---|---|---|---|
-| Divergence verifier too noisy (false positives from whitespace/ordering) | Medium | Medium (false freeze) | Canonical-form normalization in verifier; two-consecutive-runs rule before freeze. |
-| Legacy event parse fails on `events.log` text format | High | Low (rows skipped to `unparseable-events.jsonl`) | Expected; reviewed manually post-merge. |
-| Mode-pack rewrite Commit H introduces behavior drift | Medium | Medium | Per-mode diff review; Commit G precedes so contract-only changes land first. |
-| `agent_boot` hook doubles session overhead | Low | Low | Emitted once; size ~1 KB. Trimmed per Q3 post-stabilization. |
+| Verify-ledger too strict (whitespace/ordering false positives) | Medium | Low (user iterates transform, re-runs) | Canonical-form normalization — sort keys, strip trailing whitespace, normalize line endings. Allowlist for known-safe diffs. |
+| Legacy event parse fails on `events.log` text format | High | Low (rows skipped to `archive/2026-pre-2.6/unparseable/`) | Expected; reviewed manually post-migration. |
+| Mode-pack rewrite Commit G introduces behavior drift | Medium | Medium | Per-mode diff review; Commit F precedes so path-only changes land first. |
+| `agent_boot` hook overhead on session | Low | Low | 3-field payload, ~150 bytes. Trimmed from the original rich shape per Q3. |
 | `plans/index.yaml` regenerator slow at scale (141+ tasks × 8 kinds) | Low | Medium | YAML globbing + `yq` aggregation; if >2s, move to incremental rebuild. |
-| Cutover flips before verifier actually green | Low | High | Gate: `verify-ledger.sh` must report `ledger_convergence_achieved` event before Commit J runs; script-enforced, not human-trusted. |
-| Dual-write path divergence because helper misses an edge case (e.g. cancel events) | Medium | Medium | Verifier catches it by construction; that is the whole point. |
-| Migration script run against a non-quiesced project (Q16 violated) | Low | High | Pre-flight check: `scripts/migrate-ledger.sh` aborts if any event <30s old or any worktree has uncommitted changes. |
-| `/achilles debrief` writes into wrong dir during dual-write window | Low | Low | Emits through same `write_artifact` helper — no new paths. |
+| Migration script run against a non-quiesced project (Q16 violated) | Low | High | Pre-flight check (§6.1) aborts on recent events / worker heartbeats / uncommitted changes. `--force` opt-out only for developer testing. |
+| Transform loses data on unknown artifact kind | Medium | Medium | Unparseable-artifact bucket catches everything transform doesn't recognize. Zero data loss by construction (original backup retained). |
+| User runs `migrate-ledger.sh` but skips cutover | Low | Low | Migration script refuses subsequent re-runs once cutover commit landed. Idempotent otherwise. |
 
 ## 11. Post-2.6 freeze rules
 

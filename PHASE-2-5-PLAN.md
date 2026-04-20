@@ -8,7 +8,7 @@ See `ROADMAP.md` §Phase sequence for phase context. This phase is foundational 
 
 These govern every decision in this plan and every later phase that builds on it:
 
-- **World-class or it doesn't ship.** Scalable, reliable, fast, observable, versioned, testable. Phase work vertically (ship a small slice perfectly), never horizontally (wide layer of fragile). See memory: `feedback_world_class_standard.md`.
+- **World-class — fit-for-purpose at this project's scale, not fit-for-enterprise.** Single-user workflow tool on a personal laptop where the real work is iOS development. Reliable, observable, light at runtime, zero recurring costs, no heavy local dependencies (no resident LLMs, no multi-GB dbs, no paid APIs). Phase work vertically (ship a small slice perfectly), never horizontally (wide fragile layer). See memory: `feedback_world_class_standard.md` (updated 2026-04-20 with scope qualifier).
 - **Agent-first design.** The studio is built for agent-to-agent orchestration; human involvement is the exception. Optimize for consistent shapes, machine-readable outputs, zero interactive prompts. Agent-consistency bugs (drift across model versions, prompts, agent boundaries) are the error model we invest against — not human typos. See memory: `feedback_no_manual_input.md`.
 - **Three-tier artifact paths.** Tier 1: design artifacts committed to repo tree. Tier 2: per-machine runtime under `~/.dev-studio/<project>/`. Tier 3: multi-machine reconciled state under `~/.dev-studio/<project>/shared/<machine-id>/`, append-only partitioned-by-writer. Non-negotiable. See memory: `feedback_artifact_paths.md`.
 - **Minimal permission footprint.** Everything resolves through `scripts/lib-paths.sh`. No writes outside the three tiers. No new allowlist asks.
@@ -24,7 +24,7 @@ These govern every decision in this plan and every later phase that builds on it
 | Q9 | Write-path tiers | Locked | Three tiers defined above. Tier-3 contract + primitives ship in 2.5; sync mechanism deferred (see §8). |
 | Q10 | Schema versioning format | Locked | Object form with SemVer + `min_reader` + `deprecated_at`. `{name: "brief", version: "3.1.0", min_reader: "3.0.0", deprecated_at: null}`. |
 | Q11 | Read/write decl enforcement | Locked | Pre-commit lint only. No runtime write-guard. Invisible to main agent during orchestration. |
-| Q12 | Event log dedupe | Locked | Producer-tagged (`producer: {agent, mode, instance_id}` + `idempotency_key`), best-effort append, reader-side in-memory dedupe via shared primitive. No write locks. No compact-pass sweep. |
+| Q12 | Event log dedupe | Locked (right-sized 2026-04-20) | Producers emit `producer: {agent, mode, instance_id}` + `idempotency_key` on every event — cheap and earns its keep. Reader-side dedupe primitive **deferred** until a real duplicate surfaces (single-user serial workflow makes duplicates rare). Consumers can filter ad-hoc if they ever see one. |
 | Q13 | Split `chanakya-principles.md` | Locked | Split in 2.5 (Commit C). `patterns/chanakya-principles.md` + `contracts/event-emission.md`. |
 | Q14 | Capability-manifest specifics | Locked | Committed, self-versioned (`capability-manifest@1.0.0`), pre-commit validator asserts manifest matches mode-pack declarations, `CHANGELOG.md` for capability changes. |
 
@@ -211,23 +211,29 @@ Tier-3 contract for multi-machine reconciled state. Enshrined now so no later ph
 - `scripts/read-shared.sh` — enumerates partitions, merges per contract, returns stream.
 - Directory skeleton created lazily on first write.
 
-**Deferred:** sync mechanism pick + first consumer. See §8.
+**Sync mechanism — chosen (2026-04-20):** Private GitHub repo. Each machine pushes its own `shared/<machine-id>/` partition; pulls others. Append-only model maps cleanly to git commits on a shared `main` branch — no conflicts because partitions never overlap. Works asymmetrically (either machine can be offline; other catches up later). Free (private repos unlimited). The Mac mini offload scenario (see memory `project_mac_mini_worker.md`) is the first real user; initial staging is tests-only, escalating to builds + uploads as credentials get provisioned.
 
-### 3.14 `primitives/event-log-reader.md` + `scripts/read-events.sh` (Q12 upgrade)
+**SSH + rsync** over LAN/Tailscale may land later as an additional low-latency same-LAN mechanism without breaking the contract (both machines online, skip git roundtrip). Not required for 2.5.
 
-Single canonical reader primitive. Every event-log consumer (Chanakya, Achilles, Argus, future dashboard) calls it. In-memory dedupe via `(producer.agent, idempotency_key)`. Consistent semantics across agents by construction. ~50 lines.
+**Deferred:** first mode-pack consumer of tier-3 (no mode writes through `write-shared.sh` in 2.5). See §8.
 
-## 4. Linter extensions — 5 new codes
+### 3.14 Event-log producer tagging (Q12 simplified)
 
-All codes land as warn-only first (`ARCH_LINT_LEVEL=strict` gate), promoted to block after a 48h soak.
+Every event carries `producer: {agent, mode, instance_id}` and (when applicable) `idempotency_key`. Writing these fields is mandatory — cheap, observable, and required for any future dedupe. **Reader primitive deferred** (see §8): single-user serial workflow rarely produces duplicates. If/when one appears, a ~50-line `scripts/read-events.sh` wrapper lands then. Contract (`contracts/events.md`) already specifies the dedupe rule `(producer.agent, idempotency_key)` so any ad-hoc consumer can apply it correctly.
+
+## 4. Linter extensions — 3 new codes (trimmed 2026-04-20)
+
+Right-sized to the scale of ~30 mode packs authored by one person. Dropped two codes that would add friction without catching real bugs at this scale. Remaining codes land as warn-only first (`ARCH_LINT_LEVEL=strict` gate), promoted to block after a 48h soak.
 
 | Code | Tier | When | Fix recipe |
 |---|---|---|---|
 | `E_MISSING_RW_DECL` | block | A `modes/*.md` lacks `reads:` or `writes:` keys | Add `reads: []` / `writes: []`. Routers exempt (synthesized automatically). |
 | `E_UNKNOWN_CONTRACT_REF` | block | Reference to `_shared/<subdir>/<file>` that doesn't exist | Move/rename or fix the reference. Linter holds index of `_shared/**/*.md`. |
-| `E_SCHEMA_VERSION_MISSING` | block | Schema or message declaration lacks `schema_version` object | Add per `contracts/schema-version.md`. |
-| `W_IDEMPOTENCY_UNSPECIFIED` | warn | Non-empty `writes:` but no mention of `idempotency` in prose | Add Idempotency section or justify why safe to retry blindly. |
-| `W_CAPABILITY_STALE` | warn | `capability-manifest.json` older than any staged `modes/*.md` | Run `scripts/capability-manifest.sh --regen`. |
+| `W_CAPABILITY_STALE` | warn (permanent) | `capability-manifest.json` older than any staged `modes/*.md` | Run `scripts/capability-manifest.sh --regen`. **Never promoted to block** — user reads warnings during analysis sessions and regenerates intentionally. |
+
+**Dropped (right-sizing):**
+- `E_SCHEMA_VERSION_MISSING` — for ~10–20 schema files authored by one person, block-tier is over-enforcement. `git grep schema_version` on review catches real omissions.
+- `W_IDEMPOTENCY_UNSPECIFIED` — self-written mode-pack docs, self-understood semantics. Re-add only if real drift surfaces.
 
 ## 5. Execution order
 
@@ -236,11 +242,11 @@ Sequential unless marked `‖`. Small commits, independently revertible.
 1. **Commit A — linter widening.** `collect_candidates` walks `_shared/**/*.md` recursively. Fixture run. No file moves.
 2. **Commit B — add new primitives (flat paths).** All new docs from §3 land at flat `_shared/` paths first. Referenced from ROADMAP + new `_shared/README.md` index. No mode-pack touches.
 3. **Commit C — reorg + split.** `git mv` every file to target subdir. Split `chanakya-principles.md`. Sed sweep updates every reference. Regenerate `docs-surface.json`. Single commit; interim states break pre-commit.
-4. **Commit D — linter extensions.** Add 5 codes to `lint-architecture.sh` + `rules/enforcement-contract.md`. Warn-only behind `ARCH_LINT_LEVEL=strict`.
+4. **Commit D — linter extensions.** Add 3 codes to `lint-architecture.sh` + `rules/enforcement-contract.md`. `E_*` codes warn-only behind `ARCH_LINT_LEVEL=strict`; `W_CAPABILITY_STALE` warn permanently.
 5. **Commit E — capability manifest.** `scripts/capability-manifest.sh` + initial `capability-manifest.json` + CHANGELOG + validator. Wired into pre-commit.
 6. **Commit F — dry-run pilot + budget seeding.** Implement `--dry-run` in Achilles `task` mode end-to-end. Seed `token-budgets.json` with realistic values per existing mode prose. Wire `budget-report.sh` into compact mode.
 7. **Commit G — promote codes to block.** Flip `E_*` new codes from warn-only to block. Fix any violations.
-8. **Commit H — multi-machine-sync contract + primitives.** `patterns/multi-machine-sync.md` + `scripts/machine-id.sh` + `scripts/write-shared.sh` + `scripts/read-shared.sh` + directory skeleton. Unit tests exercise partition + merge semantics on fixture data. No mode-pack consumers yet.
+8. **Commit H — multi-machine-sync contract + primitives + GitHub sync.** `patterns/multi-machine-sync.md` + `scripts/machine-id.sh` + `scripts/write-shared.sh` + `scripts/read-shared.sh` + directory skeleton. **Plus:** `scripts/sync-shared-remote.sh` implementing the chosen GitHub-private-repo sync (push own partition, pull others, never touch other partitions). Unit tests exercise partition + merge semantics on fixture data. No mode-pack consumers yet; Mac mini onboarding is a separate follow-on (tests-only stage first; see §8).
 
 Parallelizable: A ‖ drafting for B. E ‖ D once C merges. H independent after C.
 
@@ -265,8 +271,10 @@ When Commit H merges, `_shared/` layout is **frozen**. All later-phase primitive
 
 Each gets a GitHub issue post-plan-commit so status is visible at a glance.
 
-- **Tier-3 sync mechanism.** Contract ships in 2.5. Implementation (git repo / rsync / S3 / custom) deferred until a second machine joins. Acceptance criterion: any mechanism that preserves append-only-per-partition semantics.
-- **First tier-3 consumer.** No mode pack uses `write-shared.sh` / `read-shared.sh` in 2.5. First consumer lands in a future phase when multi-machine state is genuinely needed.
+- **Event-log reader primitive (Q12 simplification).** `scripts/read-events.sh` with in-memory dedupe is not built in 2.5. Producer-tagging ships (cheap, reversible); reader primitive lands when a real duplicate surfaces and ad-hoc filtering becomes a pain. Acceptance criterion: first reproduced duplicate in production use.
+- **Mac mini onboarding stages.** Commit H ships the sync substrate. User-side onboarding staged: Stage 1 = tests-only (no signing, no creds), Stage 2 = unsigned builds, Stage 3 = archived builds + TF/App Store uploads (requires API key + certs on mini). Each stage opens its own tracking issue.
+- **LAN / rsync sync as same-LAN optimization.** GitHub sync is the chosen default. If latency on same-LAN days becomes a pain, add rsync as an additive mechanism (contract unchanged). Acceptance: a real latency complaint.
+- **First tier-3 consumer mode pack.** No mode pack uses `write-shared.sh` / `read-shared.sh` in 2.5. First consumer lands when a real offload use case arrives (likely Achilles build/test offloading to mini).
 - **`turnip-project-config.md` move to `projects/turnip/`.** Flagged in mapping table; staged in `primitives/` for 2.5. Proper home decided in a dedicated project-isolation phase.
 - **Release + feedback state machines.** `state-machines/release-lifecycle.md` ships with 2.6; `state-machines/feedback-lifecycle.md` ships with 2.7. Placeholders referenced but not authored in 2.5.
 - **Runtime write-guard.** Explicitly rejected (Q11) — pre-commit static validation covers it. Revisit only if a real drift bug surfaces.
