@@ -31,6 +31,7 @@ Pull a Slack thread, classify each message, mint F-ids.
    {"ts":"…","agent":"chanakya","event":"feedback_ingested","task":"F<nnn>","data":{"source":"slack-thread","channel":"<channel>","thread_ts":"<thread-ts>","reporter":"<name>","build":<N>}}
    ```
 8. **Report** a summary: "Ingested 3 new feedback records (F007, F008, F009) from #ios-testflight/1745... Skipped 11 conversation messages. Existing dedupes: 2."
+9. **Invalidate feedback-inbox snapshot.** After `active.md` is written, fire `scripts/chanakya-snap.sh feedback-inbox &` in the background. Same reasoning as brief mode: a user who ingests then immediately runs `/chanakya` expects to see the new F-ids without waiting 60 seconds for the snapshot window to expire. Skip this on `--dry-run` (no filesystem writes, nothing to invalidate).
 
 ## `--dry-run`
 

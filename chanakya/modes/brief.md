@@ -73,6 +73,16 @@ Write the brief following the template at `~/.claude/skills/_shared/brief-format
 
 Set task status to `briefed`. Record the brief path.
 
+## Step 7A — Invalidate briefs snapshot
+
+After the master-plan write, fire the briefs snapshot producer in the background so the next status read is fresh inside the 60-second window:
+
+```bash
+scripts/chanakya-snap.sh briefs &
+```
+
+Don't wait for it. The producer is ~50ms and idempotent; worst case the next status invocation falls back to a full-load. Why: a user who briefs a task then immediately runs `/chanakya` expects to see the new `briefed` status without a 60-second lag.
+
 ## Step 8 — Suggest next action
 
 "T001 brief ready at chanakya-tasks/T001-export-flow.md. Next: T002 is independent and P1 — brief it with `/chanakya brief T002` or launch a worker with `/achilles T001`."
@@ -90,7 +100,8 @@ Brief every `pending` task in the master plan, in priority order, without asking
 3. Sort by priority (P0 first), then by task ID.
 4. **Check debt gates.** If build or test debt is in `block` state, filter out implementation tasks and keep only test sub-tasks and TBUILD/TUNIT/TUI tasks. If nothing remains after filtering, report the block and return.
 5. For each task, run Brief Generation mode (Steps 1–8) sequentially. Skip user confirmation between briefs — the user already approved by running `brief-all`.
-6. Report: "Briefed N tasks: T001, T002, T003a, T004c. All ready for `/achilles`. Suggest: `/achilles ship next` to start executing."
+6. **Invalidate once, at the end.** Skip Step 7A's per-task snapshot refresh while iterating; fire one `scripts/chanakya-snap.sh briefs &` after the loop finishes. Avoids N redundant producer runs on a batch brief.
+7. Report: "Briefed N tasks: T001, T002, T003a, T004c. All ready for `/achilles`. Suggest: `/achilles ship next` to start executing."
 
 **Guard:** If a brief fails (e.g., missing Figma context, file overlap conflict), log the failure, skip that task, and continue with the next. Report skipped tasks at the end.
 
