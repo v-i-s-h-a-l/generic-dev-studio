@@ -38,8 +38,12 @@ emit_warn() {
 
 # Resolve the file set to lint. Staged mode intersects the full candidate list
 # with `git diff --cached --name-only`. Standalone lints everything.
+#
+# `_shared/` is walked recursively so the forthcoming reorg (Phase 2.5 Commit C)
+# into subdirs (`contracts/`, `schemas/`, `primitives/`, `patterns/`, `rules/`,
+# `state-machines/`) is lintable without a second pass through this function.
 collect_candidates() {
-  find "$REPO_ROOT/_shared" -maxdepth 1 -type f -name '*.md' 2>/dev/null
+  find "$REPO_ROOT/_shared" -type f -name '*.md' 2>/dev/null
   find "$REPO_ROOT" -mindepth 3 -maxdepth 3 -type f -path '*/modes/*.md' 2>/dev/null
   find "$REPO_ROOT" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' 2>/dev/null
 }
@@ -275,6 +279,11 @@ main() {
     [ -z "$file" ] && continue
     [ -f "$file" ] || continue
     case "$file" in
+      */_shared/brief-formats/*.md)
+        # Brief-format templates predate the frontmatter convention; they will
+        # be re-authored as proper contracts in Phase 2.5 Commit C. Skip for now
+        # so the widened walk stays a no-op on the current flat tree.
+        ;;
       */_shared/*.md)
         check_frontmatter "$file" "name description type"
         ;;
