@@ -204,10 +204,17 @@ check_dup_prose() {
         ;;
       *) continue ;;
     esac
+    # Build one record per 10-line window. Each record is: <file>\t<window>
+    # with internal newlines of the window replaced by a sentinel (`\x1f`,
+    # ASCII unit-separator, which does not appear in prose). This keeps each
+    # record on a single line so the downstream `read` loop consumes one
+    # record at a time instead of interpreting embedded newlines as record
+    # breaks (earlier form caused E_DUP_PROSE false positives on single
+    # repeated lines like `## Steps` or indented code fences).
     prose_only "$file" \
       | sed '/^[[:space:]]*$/d' \
-      | awk -v f="$file" '{ buf[NR%10]=$0; if (NR>=10) {
-          s=""; for (i=1;i<=10;i++) s=s buf[(NR+i)%10] "\n";
+      | awk -v f="$file" 'BEGIN { SEP = "\x1f" } { buf[NR%10]=$0; if (NR>=10) {
+          s=""; for (i=1;i<=10;i++) s = s buf[(NR+i)%10] SEP;
           printf "%s\t%s\n", f, s
       } }' >> "$tmp" 2>/dev/null || true
   done < <(collect_candidates)
