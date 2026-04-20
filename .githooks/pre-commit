@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Pre-commit hook for generic-dev-studio. Three gates in order:
+#   1. update-surface-manifest.sh — regenerate and auto-stage docs-surface.json.
+#   2. lint-architecture.sh --staged — router/frontmatter/dup/surface checks.
+#   3. privacy gate — reject if staged diff leaks another project's runtime.
+#
+# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2 and 3. Gate 1
+# (manifest regen) always runs because a stale manifest leaks downstream.
+
+set -u
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+SCRIPTS="$REPO_ROOT/scripts"
+
+# Gate 1 — regenerate manifest + restage if it changed.
+if [ -x "$SCRIPTS/update-surface-manifest.sh" ]; then
+  "$SCRIPTS/update-surface-manifest.sh" >/dev/null || {
+    printf 'pre-commit: update-surface-manifest.sh failed\n' >&2
+    exit 1
+  }
+  if ! git diff --quiet -- "$REPO_ROOT/docs-surface.json" 2>/dev/null; then
+    git add "$REPO_ROOT/docs-surface.json" 2>/dev/null || true
+  fi
+fi
+
+if [ "${ARCH_LINT:-1}" = "0" ]; then
+  printf 'pre-commit: ARCH_LINT=0 — skipping architecture + privacy gates (emergency bypass)\n' >&2
+  exit 0
+fi
+
+# Gate 2 — architecture linter.
+if [ -x "$SCRIPTS/lint-architecture.sh" ]; then
+  "$SCRIPTS/lint-architecture.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: architecture violations above — see _shared/enforcement-contract.md\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 3 — privacy.
+#
+# Reject commits whose staged diff references another project's runtime path.
+# `~/.dev-studio/<other-project>/` leakage into a public repo is a CLAUDE.md
+# privacy violation. Current project (resolved from git toplevel) is exempt;
+# so is `.runtime/` which is machine-global.
+. "$SCRIPTS/lib-paths.sh" 2>/dev/null || true
+CURRENT=$(basename "$REPO_ROOT")
+HOME_DS="$HOME/.dev-studio"
+
+# The set of known project slugs under ~/.dev-studio that aren't the current
+# one. If the dir doesn't exist, nothing to compare against.
+leaks=""
+if [ -d "$HOME_DS" ]; then
+  # Build a list of other-project slugs. `.runtime` is machine-global, not a
+  # project, and is permitted.
+  others=$(find "$HOME_DS" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
+    | while IFS= read -r d; do
+        slug=$(basename "$d")
+        case "$slug" in
+          .runtime|"$CURRENT") ;;
+          *) printf '%s\n' "$slug" ;;
+        esac
+      done)
+  if [ -n "$others" ]; then
+    diff_blob=$(git diff --cached --unified=0 2>/dev/null)
+    while IFS= read -r slug; do
+      [ -z "$slug" ] && continue
+      # Match paths like `.dev-studio/<slug>/` or `~/.dev-studio/<slug>/`.
+      if printf '%s' "$diff_blob" | grep -qE "\\.dev-studio/${slug}(/|\$|[\"' ])"; then
+        leaks="${leaks:+$leaks }${slug}"
+      fi
+    done <<< "$others"
+  fi
+fi
+
+if [ -n "$leaks" ]; then
+  printf 'E_PRIVACY_LEAK:staged diff references other-project runtime: %s | strip other-project paths or abstract to <project> placeholder\n' "$leaks" >&2
+  printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+  exit 1
+fi
+
+exit 0
