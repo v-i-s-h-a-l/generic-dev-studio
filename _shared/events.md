@@ -110,6 +110,20 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `appstore_released` | Watcher observed terminal state (`PENDING_DEVELOPER_RELEASE` / `READY_FOR_SALE`) and finalized: draft published, Slack reply posted, marker deleted. | `final_state`, `tag` |
 | `appstore_watch_stuck` | Watcher hit ≥3 consecutive failures (JWT, ASC query, `gh release edit`, or Slack post). Marker's `stuck: true` flag is set; next sweep will surface a banner and retry. | `reason`, `failures`, `state` (optional — present when failure was during finalize) |
 
+### Snapshot events (router-pattern)
+
+Emitted by `scripts/chanakya-snap.sh` (producer side) and by mode packs that consume snapshots (reader side). See `_shared/router-pattern.md` §Freshness and fallback for the contract. Agent field is `chanakya` on all five.
+
+| Event | Emitted when | Typical `data` keys |
+|---|---|---|
+| `snapshot_generated` | A snapshot producer finishes an atomic write successfully | `domain` (`briefs`\|`debt`\|`feedback-inbox`\|`events-tail`), `duration_ms`, `size_bytes`, `caller` (script name or `prewarm`) |
+| `snapshot_hit` | Mode pack read a snapshot whose `generated_at` is within the mode's staleness window | `domain`, `age_seconds` |
+| `snapshot_miss` | Mode pack tried to read a snapshot that is absent, empty, or corrupt (fell back to full-load) | `domain`, `reason` (`not_generated`\|`missing_file`\|`corrupt`) |
+| `snapshot_stale` | Mode pack read a snapshot whose `generated_at` exceeds the mode's staleness window (fell back to full-load) | `domain`, `age_seconds`, `staleness_window_seconds` |
+| `snapshot_failed` | Producer hit an error before the atomic mv — previous snapshot left in place | `domain`, `error` (short string; ≤100 chars) |
+
+**Why five.** `generated` / `failed` on the producer side let us alert if a domain stops refreshing. `hit` / `miss` / `stale` on the consumer side let us measure the actual pre-warm win (ratio of hits to total reads) and detect when a staleness window is too tight (high stale-rate on a domain with frequent writes).
+
 ### Cross-agent events (every agent emits)
 
 | Event | Emitted when | Typical `data` keys |
