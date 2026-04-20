@@ -55,13 +55,15 @@ leaks=""
 if [ -d "$HOME_DS" ]; then
   # Build a list of other-project slugs. `.runtime` is machine-global, not a
   # project, and is permitted.
+  # Use an if-chain instead of a case arm: bash 3.2 (macOS default) has a
+  # parser bug where `case` inside `while read` inside a pipe inside `$(...)`
+  # rejects empty arms. if-chain sidesteps it.
   others=$(find "$HOME_DS" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
     | while IFS= read -r d; do
         slug=$(basename "$d")
-        case "$slug" in
-          .runtime|"$CURRENT") ;;
-          *) printf '%s\n' "$slug" ;;
-        esac
+        if [ "$slug" != ".runtime" ] && [ "$slug" != "$CURRENT" ]; then
+          printf '%s\n' "$slug"
+        fi
       done)
   if [ -n "$others" ]; then
     diff_blob=$(git diff --cached --unified=0 2>/dev/null)
