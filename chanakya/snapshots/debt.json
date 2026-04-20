@@ -1,0 +1,7 @@
+{
+  "generated_at": null,
+  "schema": 1,
+  "build_debt": {"counter": 0, "threshold_warn": 6, "threshold_block": 12},
+  "test_unit_debt": {"counter": 0, "threshold_warn": 4, "threshold_block": 8},
+  "test_ui_debt": {"counter": 0, "threshold_warn": 3, "threshold_block": 6}
+}
