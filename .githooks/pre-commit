@@ -66,11 +66,15 @@ if [ -d "$HOME_DS" ]; then
         fi
       done)
   if [ -n "$others" ]; then
-    diff_blob=$(git diff --cached --unified=0 2>/dev/null)
+    # Inspect only added lines. Removals that clean up a pre-existing leak are
+    # a good thing; treating them as violations blocks legitimate cleanup.
+    # `^+` matches added content; `^+++` matches the file-path header and is
+    # excluded via the second grep.
+    added_blob=$(git diff --cached --unified=0 2>/dev/null | grep '^+' | grep -v '^+++')
     while IFS= read -r slug; do
       [ -z "$slug" ] && continue
       # Match paths like `.dev-studio/<slug>/` or `~/.dev-studio/<slug>/`.
-      if printf '%s' "$diff_blob" | grep -qE "\\.dev-studio/${slug}(/|\$|[\"' ])"; then
+      if printf '%s' "$added_blob" | grep -qE "\\.dev-studio/${slug}(/|\$|[\"' ])"; then
         leaks="${leaks:+$leaks }${slug}"
       fi
     done <<< "$others"
