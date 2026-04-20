@@ -49,7 +49,7 @@ Return control to the foreground conversation immediately. The agent will report
 >
 > **Transcript:** `$TRANSCRIPT`
 > **Turn window:** last `$N` turns (default 30).
-> **Target file:** `/Users/vishalsingh/Documents/v-i-s-h-a-l/github/generic-dev-studio/IDEAS.md`
+> **Target file:** `<REPO_ROOT>/IDEAS.md` (resolve via `git rev-parse --show-toplevel`; makes this command portable across machines).
 >
 > **Extraction criteria — capture:**
 > - Architectural proposals or design decisions (especially ones I accepted, rejected, or deferred).

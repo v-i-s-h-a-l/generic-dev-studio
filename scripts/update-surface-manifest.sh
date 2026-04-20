@@ -5,7 +5,9 @@
 # regenerated file to catch removals.
 #
 # Sources:
-#   commands/*.md             → top-level slash commands
+#   commands/*.md             → globally-symlinked slash commands
+#   .claude/commands/*.md     → project-scoped slash commands (only active
+#                               when Claude Code runs inside this repo)
 #   <skill>/SKILL.md          → agent routers (single entry per agent, plus
 #                               any dispatch-table entries if present)
 #   <skill>/modes/*.md        → agent sub-mode entries
@@ -64,15 +66,25 @@ now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     printf '%s' "$s"
   }
 
-  # commands/*.md
+  # commands/*.md  — globally-symlinked commands
   while IFS= read -r f; do
     [ -z "$f" ] && continue
     name=$(basename "$f" .md)
     desc=$(frontmatter_value "$f" description)
     rel="${f#"$REPO_ROOT/"}"
-    emit "$(printf '{"name": "%s", "source": "%s", "description": "%s", "agent": null}' \
+    emit "$(printf '{"name": "%s", "source": "%s", "description": "%s", "agent": null, "scope": "global"}' \
       "$(json_str "$name")" "$(json_str "$rel")" "$(json_str "$desc")")"
   done < <(find "$REPO_ROOT/commands" -maxdepth 1 -type f -name '*.md' 2>/dev/null | sort)
+
+  # .claude/commands/*.md — project-scoped commands (active only in this repo)
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    name=$(basename "$f" .md)
+    desc=$(frontmatter_value "$f" description)
+    rel="${f#"$REPO_ROOT/"}"
+    emit "$(printf '{"name": "%s", "source": "%s", "description": "%s", "agent": null, "scope": "project"}' \
+      "$(json_str "$name")" "$(json_str "$rel")" "$(json_str "$desc")")"
+  done < <(find "$REPO_ROOT/.claude/commands" -maxdepth 1 -type f -name '*.md' 2>/dev/null | sort)
 
   # Agent routers (SKILL.md)
   while IFS= read -r f; do
