@@ -1,3 +1,9 @@
+---
+name: Test-Slot Semaphore
+description: File-based semaphore limiting concurrent Argus test runs to 3 slots to prevent simulator overcommit.
+type: reference
+---
+
 # Shared: Test-Slot Semaphore
 
 File-based semaphore for Argus test execution. Limits concurrent test runs to 3 slots to avoid simulator overcommit.

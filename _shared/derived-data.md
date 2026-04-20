@@ -1,3 +1,9 @@
+---
+name: DerivedData Conventions
+description: Per-task DerivedData paths and staleness rules; Argus reuses Achilles's DerivedData for test runs.
+type: reference
+---
+
 # Shared: DerivedData Conventions
 
 Per-task DerivedData paths and staleness rules. Argus reuses Achilles's DerivedData — no recompile needed for test runs.

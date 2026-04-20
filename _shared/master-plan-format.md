@@ -1,3 +1,9 @@
+---
+name: Master Plan Format
+description: File schema for the per-project master plan that Chanakya maintains as source of truth.
+type: reference
+---
+
 # Shared: Master Plan Format
 
 ```markdown

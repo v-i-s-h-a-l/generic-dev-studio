@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "mode_budgets": {},
+  "router_budgets": {},
+  "default_mode_budget": 4000,
+  "default_router_budget": 1000
+}

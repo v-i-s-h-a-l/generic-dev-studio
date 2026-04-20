@@ -1,3 +1,9 @@
+---
+name: Event Log
+description: Schema, atomicity contract, and offset-marker conventions for the shared append-only event log.
+type: reference
+---
+
 # Shared: Event Log
 
 All agents write to a shared append-only event log. Chanakya tails it on wake.

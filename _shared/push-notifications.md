@@ -1,3 +1,9 @@
+---
+name: Push Notifications
+description: Push queue protocol and trigger rules for iMessage/Telegram notifications via configured MCPs.
+type: reference
+---
+
 # Shared: Push Notifications
 
 Push queue protocol and trigger rules for iMessage/Telegram notifications via the configured MCPs.

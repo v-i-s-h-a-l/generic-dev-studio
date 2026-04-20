@@ -1,3 +1,9 @@
+---
+name: Debrief Format
+description: File schema for task debriefs written to chanakya-inbox after Achilles completes.
+type: reference
+---
+
 # Shared: Debrief Format
 
 Write to `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-debrief.md`:

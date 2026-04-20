@@ -1,3 +1,9 @@
+---
+name: Safe Git Commit
+description: Guarded wrapper around git commit that clears stale .git/index.lock when no live git process holds it.
+type: reference
+---
+
 # Shared: Safe Git Commit
 
 Guarded wrapper around `git commit` that clears stale `.git/index.lock` files when no live git process holds them. Use anywhere a skill runs a non-interactive `git commit`.

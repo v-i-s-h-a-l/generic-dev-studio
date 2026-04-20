@@ -1,3 +1,9 @@
+---
+name: Argus Review Rules v1
+description: Argus check catalog plus scope caps and escalation ladder.
+type: reference
+---
+
 # Shared: Argus Review Rules (v1)
 
 ## Scope Caps

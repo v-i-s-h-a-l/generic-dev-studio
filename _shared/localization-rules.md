@@ -1,3 +1,9 @@
+---
+name: Localization Rules
+description: Conventions for introducing or modifying user-visible strings in the Turnip iOS codebase.
+type: reference
+---
+
 # Shared: Localization Rules
 
 Apply whenever a task introduces or modifies user-visible strings.

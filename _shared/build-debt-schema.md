@@ -1,3 +1,9 @@
+---
+name: Build Debt Schema
+description: Counter rules and state transitions for the master plan's Build Debt block. Chanakya owns writes; Achilles reads.
+type: reference
+---
+
 # Shared: Build Debt Schema
 
 The master plan's `## Build Debt` block is the source of truth. Chanakya owns all writes; Achilles only reads.

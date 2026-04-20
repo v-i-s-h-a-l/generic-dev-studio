@@ -1,3 +1,9 @@
+---
+name: Test-Flow Round File Format
+description: Schema for user-testing round files written by /chanakya test-flow.
+type: reference
+---
+
 # Shared: Test-Flow Round File Format
 
 Write to `~/.dev-studio/<project>/plans/user-testing-rounds/user-testing-round<N>.md`:

@@ -1,3 +1,9 @@
+---
+name: File Locations
+description: Canonical project slug computation plus all file paths (events, reviews, snapshots).
+type: reference
+---
+
 # Shared: File Locations
 
 ## Project Slug

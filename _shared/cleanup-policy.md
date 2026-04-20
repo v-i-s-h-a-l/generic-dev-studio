@@ -1,3 +1,9 @@
+---
+name: Cleanup Policy
+description: Artifact ownership table, retention tiers, and compact extension spec for all agents.
+type: reference
+---
+
 # Shared: Cleanup Policy
 
 Ownership table, retention tiers, and compact extension spec for all agents.
