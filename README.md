@@ -119,7 +119,14 @@ scripts/                # multi-worker fleet (BETA)
   worker-status.sh      # one-shot fleet status table
   achilles-cancel.sh    # remove pending dispatches
   fleet-cleanup.sh      # soft sweep (stale locks, old done/) or --all teardown
+  lint-architecture.sh  # router-pattern + frontmatter + dup-prose + surface-removal checks
+  update-surface-manifest.sh  # regenerates docs-surface.json from command surface
+  scaffold-agent.sh     # create new router-pattern-compliant agent skeleton
+  graduation-scan.sh    # Jaccard scan for prose that should graduate into _shared/
   README.md             # setup, on-disk layout, env vars, caveats
+
+.githooks/
+  pre-commit            # architecture linter + privacy gate (enable via core.hooksPath)
 
 _shared/                # reusable primitives (symlinked from ~/.claude/skills/_shared/)
   file-locations.md          # project slug computation + file paths (incl. events/, reviews/)
@@ -174,6 +181,16 @@ chmod +x ~/.claude/skills/scripts/*.sh
 ```bash
 brew install fswatch coreutils
 ```
+
+### Git hooks (contributors only)
+
+After cloning this repo to contribute back, enable the architecture + privacy pre-commit hook:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook regenerates `docs-surface.json`, runs `scripts/lint-architecture.sh --staged`, and blocks other-project runtime paths from leaking into commits. Error codes and fix recipes live in `_shared/enforcement-contract.md`. Emergency bypass: `ARCH_LINT=0 git commit ...` (hotfixes only).
 
 ### One-time directories (per project)
 
