@@ -210,8 +210,27 @@ Before executing ANY mode, check `~/.dev-studio/<project>/plans/chanakya-inbox/`
    - Fresh task ID, `Source:` = originating task ID, status `pending`.
    - If the follow-up is manual-verification of the parent, include the test-case artifact path in Notes.
 6. If the debrief has substantive follow-ups, immediately generate briefs for them (same as Brief Generation mode, Steps 3–6). Set their status to `briefed`.
-7. Move the debrief to `processed/`. Leave `*-tests.md` in place.
-8. Report: "Processed T001 — done, 2 follow-ups briefed (T014, T015). Build debt: 7/12. Unit test debt: 3/8. UI test debt: 2/6."
+7. **Argus-skip detection.** Parse the debrief's `## Argus Review` section. A debrief counts as *Argus-skipped* when any of these is true:
+   - The section is missing entirely.
+   - Its body case-insensitively matches `not invoked` / `skipped` / `bypassed` / `did not run`.
+   - The verdict is neither `approved` nor `flagged` nor `blocked`.
+
+   Exemptions (never flagged):
+   - Task type is `build-check`, `test-suite-run`, `direct (user-run)`, `documentation`, or the task title starts with `TBUILD-` / `TUNIT-` / `TUI-`.
+   - The task's Notes explicitly say `argus: not required` (operator override).
+
+   On detection:
+   - Emit one event:
+     ```json
+     {"ts":"…","agent":"chanakya","event":"review_pending","task":"<task-id>","data":{"merge_sha":"<sha>","reason":"argus_skipped_in_debrief"}}
+     ```
+   - Add `- **Argus:** pending (not invoked in source session — run \`/argus <task-id>\`)` to the task entry in the master plan if the field isn't already present.
+   - Append to the push queue so `--away` mode surfaces it.
+
+   `review_pending` is a new event type; add it to `~/.claude/skills/_shared/events.md` → "Cross-agent events" with handler: "Surface in next status output. Banner: `⚠️ Review pending: <task-id> merged without Argus. Run \`/argus <task-id>\` before user verification.`"
+
+8. Move the debrief to `processed/`. Leave `*-tests.md` in place.
+9. Report: "Processed T001 — done, 2 follow-ups briefed (T014, T015). Build debt: 7/12. Unit test debt: 3/8. UI test debt: 2/6. Review pending: none." (or `Review pending: T001` when detected.)
 
 ### 0B — Process each manual-build-check debrief
 
@@ -341,6 +360,7 @@ OFFSET_FILE="$PROJECT_MEMORY/events_offset.md"
 |---|---|
 | `review_flagged` | Auto-file follow-up tasks for each finding in `data.findings`. Create one task per distinct finding category with `Source: argus-review`, priority P2, status `pending`. Do not prompt the user — rule #10 scoped confirmation principle does not gate this. |
 | `review_blocked` | Surface the block to the user in the next status output. Append to push queue. |
+| `review_pending` | Surface in next status with banner: "⚠️ Review pending: `<task>` merged without Argus. Run `/argus <task>` before user verification." Append to push queue. Cleared when a later `review_approved`/`review_flagged`/`review_blocked` event lands for the same task. |
 | `task_awaiting_user` | Surface the question to the user in the next status output. **Always** append to push queue (in away mode this is the only notification channel; in at-laptop mode the banner still helps). Include `data.question` verbatim in the push payload, truncated to 200 chars. Pair with the corresponding `<task-id>-debrief.md` (`status: blocked_awaiting_input`) for full context. |
 | `task_verified` | Archive `<project-memory>/reviews/review_<task>.md` to `reviews/archive/` if it exists. |
 | `review_approved` | Delete `/tmp/argus-<task>.xcresult` if it exists. |
