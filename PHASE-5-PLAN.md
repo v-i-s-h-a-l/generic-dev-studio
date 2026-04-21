@@ -22,11 +22,11 @@ Unchanged from 2.5/2.6/2.7/3/4 §0, restated for self-containment:
 
 | # | Decision | Resolution |
 |---|---|---|
-| Q42 | Smoke-runner implementation | Local simulator matrix (XCUITest-based). Runs on Mac mini by default. If mini is unavailable, Chanakya/Argus suggests connecting it; user continues on laptop, smoke mode paused until mini online. **No LLM scenario synthesis, no paid cloud device farm.** |
-| Q43 | Test-flow source | Hybrid. Auto-expanded from briefs by default — every `size: m\|l` Achilles task adds its own flows during the brief → debrief round-trip. User manually surfaces critical flows via `/argus smoke add-flow <name>` (mode deferred — §13) or inline when Chanakya sees gaps. |
-| Q44 | Smoke-run trigger | Three triggers: TestFlight build availability (hook on `appstore-watch.sh`) + Crashlytics alert (new `crash-watch.sh`) + ad-hoc `/argus smoke`. **No default schedule at launch.** User adds schedule later if warranted, via Phase 3's detect → suggest → approve flow over `scheduler.yaml`. |
+| Q42 | Smoke-runner implementation (amended 2026-04-22 — rationale rewrite) | Local simulator matrix (XCUITest-based), runs per Q46 priority. **No LLM scenario synthesis, no paid cloud device farm.** Remaining reasons (dropped $-cost argument since user is on Claude Max plan): **determinism** — LLM-generated flows that change run-to-run erode smoke as a regression-detection tool; **quality** — synthetic flows miss real user intent. Revisit if a deterministic flow-synthesis approach emerges (see §13). |
+| Q43 | Test-flow source (amended 2026-04-22 — flow dedup via clustering) | Hybrid. Auto-expanded from briefs by default — every `size: m\|l` Achilles task adds its own flows during brief → debrief. **Auto-expanded flows auto-merge when symbol-overlap is high** (reuse Phase 7 Q52 clustering logic: `introduced_symbols[]` token overlap ≥ 0.40 + file-path overlap ≥ 0.67) — prevents monotonic library growth. Flows unused in any smoke run for 60 days emit `smoke_flow_retired` event and drop to `status: retired` (auto-expire). User manually surfaces critical flows via `/argus smoke add-flow <name>` (mode deferred — §13). |
+| Q44 | Smoke-run trigger (amended 2026-04-22 — no scheduled smoke pre-Studio) | Three ad-hoc triggers ship in Phase 5: TestFlight build availability (hook on `appstore-watch.sh`) + Crashlytics alert (new `crash-watch.sh`) + ad-hoc `/argus smoke`. **No default schedule at launch.** See §13 deferred: *once Studio is online (~May 2026), enable **Tue / Thu / optional Sat** weekly smoke via Phase 3's opt-in flow.* Pre-Studio: ad-hoc only; user can add a manual mini-Saturday entry if mini uptime proves stable. |
 | Q45 | 3-step gate (with fallback) | **Step 1:** reproducer test written — or `possible-fixes` path if the crash is non-replicable in simulator. **Step 2:** reproducer red→green, OR user-selected candidate fix lands. **Step 3:** Argus smoke replays core flows → no regression. Debrief YAML carries `fix_mode: reproducer \| possible-fixes` and `candidates: [...]` (ordered by Achilles confidence). |
-| Q46 | Smoke-runner placement | Mac mini by default once onboarding Stage 2 complete. Falls back to **paused, awaiting mini** — not laptop fallback. Simulator matrix on the laptop alongside Xcode + live-preview simulators is a bad citizen; pausing is the honest answer. Future: Mac Studio as an additional worker node (§13). |
+| Q46 | Smoke-runner placement (amended 2026-04-22 — priority inverted) | Priority: **Studio (if online) → mini (if online) → paused-awaiting-remote**. **No laptop fallback** — simulator matrix alongside Xcode + live-preview simulators is resource-contention. Pausing is the honest answer. Aligns with Phase 4 Q38 cross-agent default dispatch order. |
 | Q-fold | Chiron as standalone agent vs Argus mode | **Folded into Argus as `/argus smoke` mode.** Rationale: same safety envelope (read-only, no product-code writes), same agent family (QA), single-user scale doesn't justify a fifth agent. Smoke capability lives in `argus/modes/smoke.md`; simulator pool, test-flow storage, and reports retain smoke-specific naming (§7.1, §9) for grep-ability. |
 
 ## 2. Crashlytics auto-brief loop
@@ -223,7 +223,9 @@ Why Chanakya not Achilles: briefs carry user-visible acceptance *first*, before 
 Auto-expansion will produce noise — briefs whose acceptance doesn't map cleanly to UI, internal refactors with no flow need. Mitigations:
 
 - Brief-writer detects "internal refactor" shape (bullets starting with "internal" / "refactor" / "cleanup" / "no behavior change") and **skips** auto-flow emission.
-- Every auto-flow carries `created_by: chanakya` — user can grep + cull. Future sweep mode (deferred) can retire flows unexercised in N runs.
+- Every auto-flow carries `created_by: chanakya` — user can grep + cull.
+- **Flow deduplication via clustering** (2026-04-22 amendment, Q43). At auto-expansion time, Chanakya checks if a candidate flow overlaps with an existing one on: `introduced_symbols[]` token overlap ≥ 0.40 (camelCase-tokenized + stemmed — same tokenizer as Phase 7 §4.3.1) AND file-path overlap ≥ 0.67. If both match, the existing flow's `tags[]` are broadened (add missing ones from the candidate) and `source_task_id` becomes a multi-value field with both task ids. Prevents monotonic library growth. Emit `smoke_flow_merged {existing_flow_id, absorbed_task_id, tag_delta}`.
+- **60-day retirement** (2026-04-22). Flows untouched by any smoke run in 60 days move to `status: retired`; smoke runs skip them by default (opt-in re-enable via `/argus smoke run-retired` — mode deferred, §13). Emit `smoke_flow_retired {flow_id, last_run_at, age_days}`.
 - Debrief field `test_flow_quality: kept|trimmed|removed` tags usefulness; 2.7 `testing-health` aggregates and surfaces chronically-bad generators.
 
 **Accept imperfect auto-expansion.** Demanding hand-authored flows before every M|L task breaks minimal-intervention. Noise is cheaper to cull than absence is to author.
@@ -289,6 +291,7 @@ Borrows Phase 2.5 Commit H's stable per-writer partition pattern. Each smoke run
 - Allocation recorded at `~/.dev-studio/<project>/.runtime/state/argus-smoke/simulator-pool.json`: `{name, device, ios, udid, status: idle|running|booting|shutting-down, last_used_at}`.
 - Pool created lazily on first `/argus smoke` via `scripts/smoke-pool.sh` (`xcrun simctl`).
 - **No parallel runs share a simulator.** Flow claims its cell for the XCUITest duration; concurrency = pool size; flows queue.
+- **Per-host pool isolation** (2026-04-22 — aligns with Q46 Studio → mini priority). Each eligible host (Studio, mini) maintains its own `simulator-pool.json` scoped to the local machine-id. If a smoke run ends on Studio and a later one is dispatched to mini, the mini provisions its own pool — pool state does not sync across hosts.
 
 ### 7.2 RAM / disk footprint + cleanup
 
@@ -318,9 +321,11 @@ Per §2. On new crash post-dedup: `crash_detected` → brief materialization (§
 
 Args: `<build-id|git-sha|task-id>` (default `HEAD`) + `--flows <tag>,<tag>` (default `core`).
 
-### 8.4 No default schedule
+### 8.4 No default schedule pre-Studio (2026-04-22 amendment)
 
 Phase 5 ships **zero** default scheduled smoke runs. `scheduler.yaml` is available; user opts in via Phase 3's detect → suggest → approve flow. Anti-patterns to avoid: every-midnight full matrix (noise); every-commit full matrix (overlaps Argus's per-task review).
+
+**Post-Studio cadence** (deferred to §13): once Studio is online (~May 2026), enable a **Tue / Thu / optional Sat** weekly smoke via Phase 3's opt-in flow. Pre-Studio: ad-hoc only; user can add a manual mini-Saturday entry if mini uptime proves stable.
 
 ## 9. Event types added
 
@@ -332,9 +337,12 @@ All events carry the standard 2.5 envelope (`producer`, `idempotency_key`, `occu
 | `crash_occurrence_added` | `{crash_id, crash_signature, occurrence_event_id, total_occurrences}` | Signature match — no new brief. |
 | `crash_brief_created` | `{crash_id, brief_id, target_machine}` | Chanakya materializes a brief. |
 | `possible_fixes_emitted` | `{task_id, crash_id, candidate_count, top_confidence}` | Achilles flips to `possible-fixes`. |
-| `smoke_run_started` | `{run_id, trigger: testflight\|crashfix\|adhoc, git_sha, flows: […], matrix: […]}` | Run begins. |
+| `smoke_run_started` | `{run_id, trigger: testflight\|crashfix\|adhoc, git_sha, flows: […], matrix: […], host: <machine-id>}` | Run begins. `host` reflects the Studio → mini priority per Q46. |
 | `smoke_run_completed` | `{run_id, duration_ms, flow_count, pass_count, fail_count, regression: bool}` | Run finishes. |
 | `regression_detected` | `{run_id, flow_id, flow_name, device, ios_version, failure_excerpt, blocking_task_id?}` | One per failing (flow, cell) pair. |
+| `smoke_paused_awaiting_remote` | `{reason, attempted_hosts: [<machine-id>…]}` | Priority walker exhausted — no Studio, no mini. No laptop fallback (Q46). |
+| `smoke_flow_merged` | `{existing_flow_id, absorbed_task_id, tag_delta}` | Clustering dedup absorbs a new auto-flow into an existing one (Q43). |
+| `smoke_flow_retired` | `{flow_id, last_run_at, age_days}` | 60-day unused rule fires (Q43). |
 | `testflight_build_available` | `{build_id, version, build_number, asc_app_id}` | `appstore-watch.sh` detects a new TF build. |
 | `crash_watch_stuck` | `{failures, last_error}` | 3 consecutive failures. Warn. |
 
@@ -388,9 +396,11 @@ GitHub issue per item post-plan-lock.
 
 - **`argus/modes/smoke-add-flow.md`.** Structured flow authoring + inline validation. **Recommend: revisit after ≥ 20 auto-flows exist and user has culled ≥ 3.**
 - **`argus/modes/smoke-tune-matrix.md`.** Per-flow matrix override. Deferred until default matrix proves under- or over-broad.
-- **Argus router refactor (Phase 2.8 candidate).** Current Argus is a monolithic SKILL.md. Phase 5 adds one mode pack (`smoke`); if Argus grows a second or third mode, split the router per 2.5 `patterns/router-pattern.md`. Not urgent while smoke is the only mode.
-- **LLM scenario synthesis (hybrid).** Only if hand-curated + auto-expanded flows empirically fail to catch regressions. Gate: ≥ 3 shipped crashes smoke could-have-but-didn't catch on an LLM-synthesizable flow.
-- **Mac Studio as additional worker node.** Multi-mini fleets for parallelized matrix. Blocks on 2.5 Commit H sync past Stage 3. **Recommend: revisit once a single mini is resource-bound.**
+- **`argus/modes/smoke-run-retired`.** Opt-in re-run of flows dropped by the 60-day rule. Deferred until first retirement happens and user asks for it.
+- **Argus router refactor (Phase 2.8 candidate).** Current Argus is a monolithic SKILL.md. Phase 5 adds one mode pack (`smoke`) directly; the Q33 dual-review amendment from Phase 4 adds `design-review` + the Achilles plan-review amendment adds `plan-review` — three modes total. Once three land, split the router per 2.5 `patterns/router-pattern.md`. Track as a Phase 2.8 candidate.
+- **LLM scenario synthesis (deterministic variant only — 2026-04-22)** — revisit if a deterministic flow-synthesis approach emerges (e.g., template-based generation from debrief `introduced_symbols[]` with human-authored templates). The non-deterministic LLM path is permanently rejected on determinism + quality grounds, not cost.
+- **Mac Studio as primary + mini as secondary** — Q46 priority already names Studio first, so this is a documentation-only deferred entry: once Studio is online (~May 2026), the priority walker prefers it automatically. No code change needed at that point.
+- **Post-Studio scheduled smoke cadence** (Q44 amendment) — enable **Tue / Thu / optional Sat** weekly smoke via Phase 3's opt-in flow once Studio uptime is proven. Pre-Studio: ad-hoc only.
 - **Cross-project smoke sharing.** Requires tier-3 test-flow sync + per-project pool isolation. Out of scope until a second project onboards.
 - **Public test-flow library.** Post-Phase-6; privacy-sanitized per CLAUDE.md "Analysis sessions" — flows likely carry business-logic specifics.
 - **Tier-3 for test flows.** Moves from tier-2 only if cross-machine coordination requires it.

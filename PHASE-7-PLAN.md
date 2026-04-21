@@ -2,9 +2,9 @@
 
 Drafted 2026-04-21 for the `refactor/intent-router` branch. **Status: draft — will lock with user before execution.** Decisions Q51–Q53 locked from user biases stated in resume context (2026-04-21 session start); flagged inline for explicit OK before execution. Deferred items in §13 have a recommended default in **bold** where the user will still want to weigh in.
 
-Phase 7 introduces **cross-agent routing intelligence**. The principle: *always suggestion, never hard routing*. Chanakya's intake pipeline gains a **novelty heuristic** that proposes Lu Ban handoff when the work doesn't match an existing architectural pattern. Achilles debriefs gain a structured **`architectural_concerns[]`** field that captures smells-in-passing — circular deps, unexpected abstractions, catalog deviations — which Chanakya aggregates into suggestions. Both surfaces (Chanakya status + dashboard Now view) display suggestions non-blockingly; the user decides whether to act.
+Phase 7 introduces **cross-agent routing intelligence**. The principle: *always suggestion, never hard routing*. Chanakya's intake pipeline gains a **novelty heuristic** that proposes Lu Ban handoff when the work doesn't match an existing architectural pattern. Achilles debriefs gain a structured **`architectural_concerns[]`** field that captures smells-in-passing — circular deps, unexpected abstractions, catalog deviations — which Chanakya aggregates into suggestions. Phase 7 surfaces suggestions in `/chanakya status` + a `/chanakya suggestion` sub-command family; the dashboard NowView reader lands later with Phase 6 against the same artifact. User decides whether to act; nothing blocks on a suggestion.
 
-See `ROADMAP.md` §Phase sequence, `PHASE-4-PLAN.md` for Lu Ban contracts, `PHASE-2-7-PLAN.md` for the FTS5 substrate novelty queries ride on, `PHASE-6-PLAN.md` §4.1 for the dashboard Now view the new "Suggestions" section plugs into. Gated by 2.6 (YAML ledger + debrief schema) and 2.7 (FTS5 for catalog-absence queries). Parallelizable with Phase 6 after 2.7 lands.
+See `ROADMAP.md` §Phase sequence, `PHASE-4-PLAN.md` for Lu Ban contracts, `PHASE-2-7-PLAN.md` for the FTS5 substrate novelty queries ride on. Gated by 2.6 (YAML ledger + debrief schema) and 2.7 (FTS5 for catalog-absence queries + symbol-overlap clustering + `recent-utilities` view for duplicated-utility trigger). Phase 7 no longer depends on Phase 6 — per 2026-04-22 CLI-only decision, the dashboard reader is deferred to Phase 6 at end of sequence.
 
 ## 0. Standards and non-negotiables
 
@@ -22,9 +22,9 @@ Unchanged from 2.5 onward, restated for self-containment:
 
 | # | Decision | User bias (resume context) | Resolution |
 |---|---|---|---|
-| Q51 | Novelty heuristic for Lu Ban handoff | (d) weighted combo | **Weighted score = 0.5·catalog-absence + 0.3·keyword-match + 0.2·size-weight**, threshold ≥ 0.5 → suggest. Components (§3.1): catalog-absence from FTS5 query against `_shared/architecture-catalog.md`; keyword-match against a 12-word intake vocabulary; size-weight driven by Chanakya's size estimate. Weights live in `_shared/routing/novelty-weights.yaml`, tunable without code change. |
-| Q52 | Achilles architectural-concern trigger | "confirm — all-of-list as structured `architectural_concerns[]` in debrief" | **Debrief schema gains `architectural_concerns: [{id, description, severity, suggested_followup, file_paths}]`, additive minor bump.** Concerns are opt-in observations Achilles makes *while working*, not blockers. Chanakya aggregates post-merge, turns any `severity ∈ {medium, high}` with `suggested_followup: lu-ban` into a Phase 7 suggestion. Cap: 3 concerns per debrief (noise mitigation). |
-| Q53 | Delivery surface | (c) both | **Suggestions surface in `/chanakya status` + dashboard Now view.** Same underlying YAML artifact (`plans/suggestions/<id>.yaml`); two readers. Chanakya status shows as a section after "Pending tasks." Dashboard shows as a collapsible "Suggestions" section in NowView with count badge. Never in the approvals queue — suggestions aren't decisions. |
+| Q51 | Novelty heuristic for Lu Ban handoff | (d) weighted combo | **Confirmed 2026-04-22: weighted score = 0.5·catalog-absence + 0.3·keyword-match + 0.2·size-weight**, threshold ≥ 0.5 → suggest. Components (§3.1): catalog-absence from FTS5 query against `_shared/architecture-catalog.md`; keyword-match against a 12-word intake vocabulary; size-weight driven by Chanakya's size estimate. Weights live in `_shared/routing/novelty-weights.yaml`, tunable without code change. |
+| Q52 | Achilles architectural-concern trigger | "confirm — all-of-list as structured `architectural_concerns[]` in debrief" | **Confirmed 2026-04-22 and expanded: debrief schema gains `architectural_concerns: [{id, description, severity, suggested_followup, file_paths, introduced_symbols}]`, additive minor bump.** Concerns are opt-in observations Achilles makes *while working*, not blockers. Chanakya aggregates post-merge, turns any `severity ∈ {medium, high}` with `suggested_followup: lu-ban` into a Phase 7 suggestion. Cap: 3 concerns per debrief (noise mitigation). Trigger list expanded from 6 to **12** (§4.2). Catalog-deviation severity bumped from `medium/debate` → `high/lu-ban`. |
+| Q53 | Delivery surface | (c) both → (2026-04-22) CLI-only | **CLI-only in Phase 7.** `/chanakya status` "Suggestions" section + `/chanakya suggestion list\|show\|promote\|dismiss`. Dashboard NowView integration deferred to §11 and lands with Phase 6 at the end of the sequence — Phase 7 stays CLI-native because the dashboard is no longer a Phase 7 dependency. Suggestions never enter the approvals queue — they're observations, not decisions. |
 
 ## 2. Suggestion artifact schema
 
@@ -165,9 +165,12 @@ architectural_concerns:
     description: "<one sentence, ≤200 chars — the smell observed>"
     severity: low|medium|high
     suggested_followup: lu-ban|debate|self-resolve|none
-    file_paths: [<rel-path>…]   # scope of the concern
+    file_paths: [<rel-path>…]              # scope of the concern
+    introduced_symbols: [<type|func|protocol>…]  # extracted from staged diff at self-review
     created_at: <rfc3339>
 ```
+
+**`introduced_symbols` extraction:** parsed from the staged diff during Achilles self-review. For Swift: type declarations (`class/struct/enum/actor/protocol`), top-level `func` signatures, and extension members touching `public`/`internal` scope. Populated automatically; Achilles never hand-edits. Powers Chanakya's symbol-overlap clustering (§4.3) without requiring full-file re-parse.
 
 **Cap: 3 concerns per debrief.** Beyond 3 = Achilles is firehose-flagging; debrief likely smells wrong itself. Chanakya surfaces "Achilles emitted >3 concerns on `<task-id>` — review debrief" as a warn-tier event.
 
@@ -180,30 +183,50 @@ Achilles adds a concern *during self-review step*, not during implementation. Tr
 | **Circular dep introduced** | Module A now imports B which imports A. | high | lu-ban |
 | **New cross-module abstraction** | Protocol added with ≥ 3 conformers across modules. | medium | lu-ban |
 | **Shared mutable state across modules** | Global singleton or mutable dependency-inject'd across module lines. | medium | lu-ban |
-| **Catalog deviation** | Pattern chosen in implementation contradicts a documented pattern in `_shared/architecture-catalog.md`. | medium | debate |
+| **Catalog deviation** | Pattern chosen in implementation contradicts a documented pattern in `_shared/architecture-catalog.md`. | high | lu-ban |
 | **Repetition smell** | Third implementation of similar flow-shape across recent tasks (Achilles-level memory, hinted via 2.7). | low | debate |
 | **Subsystem boundary crossed** | File touches a subsystem marked `stable: true` in the catalog but wasn't scoped in the brief. | high | lu-ban |
+| **Duplicated utility** | Helper/extension already exists elsewhere in the codebase, or was introduced in a debrief within the last 30 days (via 2.7 `recent-utilities` view). | medium | debate |
+| **New third-party dep** | `Package.swift`, `Podfile`, or `Cartfile` touched — a new external dependency enters the graph. | medium | debate |
+| **Force unwrap in non-test code** | `!` operator on an optional outside test files. | low | self-resolve |
+| **Subsystem mixing within module** | UIKit reference inside a SwiftUI file, AppKit inside an iOS target, or equivalent framework crossover. | medium | debate |
+| **Global singleton introduced** | `static let shared` (or functional equivalent) added in non-test code. | high | lu-ban |
+| **Hardcoded user-facing string** | UI string literal with no `NSLocalizedString` / `String(localized:)` wrapper. | low | self-resolve |
 
-Triggers live in `_shared/routing/concern-triggers.md` (human-readable rules, no DSL). Achilles reads at self-review; matches by pattern. Phase 7 ships these 6 triggers; additions require plan amendment.
+Triggers live in `_shared/routing/concern-triggers.md` (human-readable rules, no DSL). Achilles reads at self-review; matches by pattern. Phase 7 ships these 12 triggers (6 original + 6 added 2026-04-22); additions require plan amendment. Severity-bump rationale (catalog-deviation `medium → high`): a chosen-implementation-that-contradicts-catalog is the highest-confidence signal that architectural dialogue is needed before the pattern propagates — treat it as a Lu Ban handoff candidate, not a debate item.
 
 ### 4.3 Chanakya aggregation
 
 Post-merge, Chanakya's event processor (Phase 2.6) reads the debrief's `architectural_concerns[]`:
 
 1. For each concern with `severity ∈ {medium, high}` AND `suggested_followup: lu-ban`:
-   - Check if a suggestion already exists with matching `file_paths` overlap ≥ 50% and same kind.
+   - Check if a suggestion already exists that matches on **any** of the three similarity axes below (§4.3.1). Same kind required.
    - **If exists**: append concern id to existing suggestion's `cluster[]`, update `score` as `max(existing, new concern-score)`. Emit `suggestion_clustered`.
    - **If not**: write new `plans/suggestions/<id>.yaml` with `kind: architectural-concern`, summary from `description`, rationale listing cluster. Emit `suggestion_created`.
 2. Concerns with `severity: low` OR `suggested_followup ∈ {self-resolve, none}`: log to FTS5 substrate (2.7) for longitudinal tracking, no suggestion emitted.
 3. `suggested_followup: debate` (not Lu-Ban-bound) emits a `pattern-deviation` suggestion instead — shown same way, but `promote-to-luban` is greyed; user chooses `dismiss` or `ignore-wontfix`.
 
-**Clustering horizon: 30 days.** Concerns on debriefs older than 30d don't cluster against current suggestions; they surface as independent. Keeps recency meaningful.
+### 4.3.1 Similarity axes (2026-04-22 expansion)
+
+Two concerns cluster if **any** of the three axes match. The original 50% file-path rule tightened to 67% since the two new signals give the aggregator additional high-precision levers.
+
+| Axis | Rule | Threshold | Source |
+|---|---|---|---|
+| **File-path overlap** | Symmetric overlap ratio between `file_paths[]` sets | ≥ 0.67 | Concern `file_paths[]` (tightened from 0.50) |
+| **Symbol-name token overlap** | camelCase-tokenized, stemmed identifier overlap across `introduced_symbols[]` | ≥ 0.40 | Concern `introduced_symbols[]` (new in 2026-04-22) |
+| **FTS5 description similarity** | bm25 score between concern `description` fields over the 2.7 substrate | ≥ 0.70 | Requires 2.7 substrate; skipped gracefully pre-2.7 |
+
+Tokenizer for symbol overlap: split on camelCase + `_`, lowercase, Porter-stem; overlap = `|A ∩ B| / min(|A|, |B|)`. Pure symmetric Jaccard is too punishing when a small concern is absorbed by a large one — min-denominator keeps absorption meaningful.
+
+**Clustering horizon: 30 days.** Concerns on debriefs older than 30d don't cluster against current suggestions; they surface as independent. Keeps recency meaningful. Thresholds live in `_shared/routing/novelty-weights.yaml` under a new `clustering:` block (additive to the existing file).
 
 ### 4.4 Severity knob
 
 Severity is Achilles's judgement. Phase 7 trusts it. If severity proves systematically wrong (calibration §6.3 below), `_shared/routing/concern-triggers.md` tightens the wording for the misbehaving trigger — no tier auto-adjust.
 
-## 5. Delivery surfaces (Q53)
+## 5. Delivery surfaces (Q53 — CLI-only per 2026-04-22)
+
+Phase 7 ships CLI-native suggestions. The dashboard NowView integration originally proposed in this section is deferred to §11 and lands with Phase 6 at the end of the sequence; the same `suggestion@1.0.0` artifact is forward-compatible, so the future reader plugs in without schema churn. Rationale: CLI-first until the routing heuristic's signal quality is proven over real traffic — binding a UI surface to an untuned heuristic risks baking in a bad shape.
 
 ### 5.1 Chanakya status — "Suggestions" section
 
@@ -221,7 +244,7 @@ Added to `chanakya/modes/status.md` output layout, after "Pending tasks," before
   …
 ```
 
-Section hidden when zero pending. Max 5 shown; "+N more" link for the rest.
+Section hidden when zero pending. Max 5 shown; "+N more" line with a pointer to `/chanakya suggestion list` for the rest.
 
 ### 5.2 Chanakya CLI sub-commands
 
@@ -234,21 +257,9 @@ Added to `chanakya/SKILL.md` mode roster:
 | `/chanakya suggestion dismiss <id> [--reason "…"]` | `modes/suggestion.md` | Marks `acted` with `choice: dismiss`. |
 | `/chanakya suggestion show <id>` | `modes/suggestion.md` | Full detail (rationale + cluster + related catalog entries). |
 
-### 5.3 Dashboard Now view — "Suggestions" section
+### 5.3 Suggestions never enter the approvals queue
 
-New section in `studio-dashboard/.../NowView.swift` (Phase 6 §4.1). Position: between "In-flight tasks" and "Crashes unhandled." Collapsible, collapsed-by-default. Badge on section header shows pending count. Menu-bar icon badge does *not* reflect suggestions (that's approvals-only per Phase 6 §4.1).
-
-Row tap → detail sheet with:
-- Summary, rationale, score components bar chart.
-- Related catalog entries (for lu-ban-handoff) — tappable → opens catalog pattern in a read-only sheet.
-- Cluster list (for architectural-concern) — tappable → opens debrief artifact sheet.
-- Action buttons: "Promote to Lu Ban" (if eligible), "Dismiss" (with optional reason), "Ignore" (won't fix).
-
-Promoting from dashboard emits `suggestion_resolved` with `decided_via: dashboard`; Chanakya's event processor handles the same as CLI promotion.
-
-### 5.4 Suggestions never enter the approvals queue
-
-Suggestions ≠ approvals. Approvals (Phase 6 §5) are *pending decisions that block an agent*. Suggestions are *observations the user can ignore*. Different UX, different schema, different producer contract. Conflating them would make the approvals queue noisy; keeping them separate keeps each surface pure.
+Suggestions ≠ approvals. Approvals (future Phase 6) are *pending decisions that block an agent*. Suggestions are *observations the user can ignore*. Different UX, different schema, different producer contract. Conflating them would make the approvals queue noisy; keeping them separate keeps each surface pure. This rule holds whether the reader is a CLI or (later) a dashboard.
 
 ## 6. Expiry + lifecycle management
 
@@ -296,9 +307,9 @@ Sequential unless `‖`. Small commits, independently revertible. Estimate: **5 
 2. **Commit B — novelty heuristic.** `scripts/score-novelty.sh` + FTS5 catalog-index rebuild step (hooks into 2.7's existing rebuild). Chanakya `modes/intake.md` Step 0C integration. Unit tests: 12 fixtures covering score ranges + vocabulary hits + catalog-absence edge cases.
 3. **Commit C — Achilles concern emission.** `achilles/modes/task.md` self-review step gains concern-detection rules from `_shared/routing/concern-triggers.md`. Unit tests on 6 trigger fixtures. Cap-of-3 enforcement + warn event when exceeded.
 4. **Commit D — Chanakya aggregation + CLI + status section.** `chanakya/modes/suggestion.md` mode pack. Event-processor aggregation logic (§4.3). `modes/status.md` adds Suggestions section. `scripts/suggestion-expire.sh` + scheduler hook (Phase 3). Unit tests on aggregator clustering + 30-day horizon.
-5. **Commit E — Dashboard surface + docs sync.** `studio-dashboard/.../NowView.swift` adds Suggestions section + detail sheet + promote/dismiss actions. `chanakya/docs.html` Suggestions card under Fleet. `README.md` + `chanakya/README.md` updated. Open docs.html in Safari per CLAUDE.md. End-to-end smoke: high-novelty intake → suggestion in status + dashboard → dashboard promote → Chanakya creates design-task.
+5. **Commit E — Docs sync (CLI-only).** `chanakya/docs.html` gains a Suggestions card under Fleet covering the four new `/chanakya suggestion …` sub-commands. `README.md` + `chanakya/README.md` updated with the suggestion flow. Open docs.html in Safari per CLAUDE.md. End-to-end smoke: high-novelty intake → suggestion in `/chanakya status` → `/chanakya suggestion promote <id>` → Chanakya creates Lu Ban design-task. **No SwiftUI / dashboard code in Phase 7** — the dashboard NowView reader lands with Phase 6 at the end of the sequence (§11 deferred), reading the same `suggestion@1.0.0` artifact.
 
-Parallelizable: B ‖ C once A merges. E merges last; gated on Phase 6's dashboard scaffold existing.
+Parallelizable: B ‖ C once A merges. E merges last; no external gate (Phase 6 dashboard no longer a Phase 7 dependency).
 
 ## 9. Risk register
 
@@ -313,7 +324,8 @@ Parallelizable: B ‖ C once A merges. E merges last; gated on Phase 6's dashboa
 | Concern-trigger rule drift between Achilles and Chanakya aggregator | Low | Medium | Single source: `_shared/routing/concern-triggers.md`. Achilles reads at self-review, aggregator reads the same file. Unit test asserts parsing equivalence. |
 | Suggestions section in status clutters terse-preferring users | Medium | Low | Hidden when empty. Cap at 5 visible. User can globally mute via `novelty-weights.yaml::suggestion_threshold: 1.0` (effectively off). |
 | Keyword vocabulary misses domain-specific novelty language | Medium | Medium | v1 is 12 words; vocabulary edit is a one-line change + `novelty_heuristic_tuned` event. Expect monthly tweaks in first quarter. |
-| Dashboard suggestion row tap crashes on malformed YAML | Low | Low | Swift parser tolerant (schema-version-aware from Phase 6 §11); malformed entry renders as "⚠ parse error — open raw" row with file-path link. |
+| Expanded trigger list (6 → 12) raises per-debrief concern volume past the cap of 3 | Medium | Low | Cap enforcement unchanged; Achilles ranks by severity + recency and emits top 3. Warn event fires when >3 would-be concerns matched — signals a brief-level problem (too-broad scope), not a cap problem. |
+| Symbol-overlap clustering (new §4.3.1 axis) over-merges on common Swift identifiers (`handle`, `view`, `model`) | Medium | Medium | Porter-stemmed tokens + min-denominator overlap gate at 0.40 are the defense. If over-merge shows up in `suggestion_clustered` audit: raise threshold in `novelty-weights.yaml::clustering.symbol_overlap_threshold` (one-line tuning). |
 
 ## 10. Post-Phase-7 freeze rules
 
@@ -323,14 +335,17 @@ When Commit E merges:
 - **Never hard-route.** Any future change that dispatches agents based on suggestion scores — without user OK — requires explicit plan amendment. This is the phase's load-bearing invariant.
 - **Heuristic stays bash + YAML.** No ML classifier, no Python service, no embedding model. Calibration is empirical via human weight edits. Promotion to ML-based scoring = plan amendment.
 - **Cap of 3 concerns per debrief frozen.** Raising requires plan amendment; noise risk is real.
-- **Trigger list frozen at 6.** Additions via plan amendment; removals only via 3-month "no hits" data.
+- **Trigger list frozen at 12** (2026-04-22 expansion from the original 6). Additions via plan amendment; removals only via 3-month "no hits" data.
+- **Clustering axes frozen at 3** (file-path overlap 0.67 / symbol-token overlap 0.40 / FTS5 similarity 0.70). Threshold tuning in `novelty-weights.yaml::clustering.*` is free; adding or removing axes requires plan amendment.
 - **Approvals queue and Suggestions queue stay separate.** Merging them = plan amendment.
 - **Weight-file edits always emit `novelty_heuristic_tuned`.** No silent tuning.
+- **Phase 7 is CLI-only.** Dashboard NowView reader lands with Phase 6 against the already-frozen `suggestion@1.0.0` artifact. Any producer that bypasses the CLI surface in Phase 7 requires plan amendment.
 
 ## 11. Deferred items (tracked, not lost)
 
 GitHub issue per item post-plan-lock.
 
+- **Dashboard NowView "Suggestions" section (Q53 — CLI-only in Phase 7).** Lands with Phase 6 dashboard at end-of-sequence. Surfaces same `suggestion@1.0.0` artifact: collapsible section positioned between "In-flight tasks" and "Crashes unhandled," collapsed-by-default, badge shows pending count (menu-bar icon badge stays approvals-only). Row tap → detail sheet with summary, rationale, score-components bar chart, related catalog entries (lu-ban-handoff) or debrief sheet (architectural-concern), and action buttons (Promote / Dismiss / Ignore). Dashboard emits `suggestion_resolved` with `decided_via: dashboard`. **Recommend: lands in Phase 6 Commit (dashboard NowView); forward-compatible with the suggestion artifact already shipped in Phase 7.**
 - **Repetition-smell trigger that reads 2.7's `workflow-signature` view.** Needs Month view in Phase 6 first to have baseline data. **Recommend: revisit after Phase 6 ships + 30 days of debrief history.**
 - **Auto-tuning of novelty weights via empirical loop** (closed-loop reinforcement from resolution outcomes). Keep manual in Phase 7; revisit only if manual tuning proves tedious.
 - **Cross-project pattern library** — catalog patterns shared across user's projects. Out of scope until multi-project is real.

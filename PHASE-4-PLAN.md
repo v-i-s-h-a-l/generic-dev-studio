@@ -22,12 +22,12 @@ Unchanged from 2.5/2.6/2.7 §0, restated for self-containment:
 | # | Decision | Resolution |
 |---|---|---|
 | Q32 | Agent shape | Standalone agent `/luban`, not a Chanakya mode. Used sparingly but runs long; folding into Chanakya would bloat its router cognitive surface. |
-| Q33 | Intake flow | User → Chanakya (`/chanakya design "…"` or conversational intake) → Chanakya writes a `design-task` artifact under `plans/design-tasks/<id>.yaml` and dispatches → Lu Ban picks up, produces `plans/designs/<design-id>.yaml` → emits `design_completed` → Chanakya ingests, decides how to break into Achilles briefs. |
+| Q33 | Intake flow (amended 2026-04-22 — dual review added) | User → Chanakya (`/chanakya design "…"` or conversational intake) → Chanakya writes a `design-task` artifact under `plans/design-tasks/<id>.yaml` and dispatches → Lu Ban produces design → **Lu Ban self-reviews before publishing** (mandatory, mirrors Achilles self-review pattern) → **Argus `/argus design-review` runs** (mandatory for designs producing ≥3 Achilles tasks, optional for smaller) → Lu Ban iterates on `argus_verdict ∈ {flagged, blocked}` or publishes on `approved` → emits `design_completed` → Chanakya ingests, decides how to break into Achilles briefs. User can force-publish via `/luban publish --override`; design carries `overrode: <argus-reason>` for audit. See §5.2 for revision-loop detail. |
 | Q34 | Design output format | Single YAML artifact per design at `plans/designs/<design-id>.yaml`. Multi-line markdown body in a `body:` field. Consistent with 2.6's YAML-per-artifact pattern; indexable into 2.7's FTS5 substrate; no directory-per-artifact sprawl. |
 | Q35 | Code-writing scope | Docs-only. Lu Ban never writes code. Achilles implements from Chanakya's briefs derived from Lu Ban's design. Whether Chanakya still needs to brief Achilles after a design lands is an **open observation** — monitor via 2.7's `workflow-signature` view before deciding. |
-| Q36 | Architecture catalog shape | `_shared/architecture-catalog.md` with three slim sections: **(1)** pattern library (proven iOS approaches, anti-patterns, when-to-use-what); **(2)** past-ADR index (every approved design: id, title, status, outcome); **(3)** technology inventory (frameworks/libraries in use, deprecated, approved). Total under 500 lines. Lu Ban loads at session start. Grows as decisions accumulate. |
+| Q36 | Architecture catalog shape (amended 2026-04-22 — cap removed) | `_shared/architecture-catalog.md` with three slim sections: **(1)** pattern library (proven iOS approaches, anti-patterns, when-to-use-what); **(2)** past-ADR index (every approved design: id, title, status, outcome); **(3)** technology inventory (frameworks/libraries in use, deprecated, approved). **No line cap — architect freely.** Catalog loaded only at Lu Ban session start (infrequent); prompt budget is a non-issue at current scale. When catalog crosses ~5000 lines, split into relevance-based sub-files — real-problem-later, not a now constraint. |
 | Q37 | ADR lifecycle | **The design YAML *is* the ADR when `status: approved`.** No separate markdown file. Views filter designs by status to surface current ADRs. Avoids dual source of truth. |
-| Q38 | Machine placement | Runs on laptop by default. User redirects via natural language ("run this on mac mini") — handled by a **general multi-machine-dispatch hook** that applies to *all* agents, not Lu Ban-specific. Phase 4 specifies the hook contract; real cross-machine routing implementation deferred until Mac mini onboarding Stage 2+ lands. |
+| Q38 | Machine placement (amended 2026-04-22 — priority inverted) | Long-running work (Achilles / Argus / Lu Ban) follows the priority: **Studio (if online) → mini (if online) → laptop (fallback)**. Chanakya stays on the interaction machine (fast user round-trip). Hook reads presence via `ssh <host> true` at dispatch time; unavailable hosts drop out of the ordering gracefully. Natural-language override (`"run this on mac mini"`) still parses and pins a specific machine — overrides the priority. |
 
 ## 2. Lu Ban agent architecture
 
@@ -62,10 +62,14 @@ Constraints inherited from 2.5 `patterns/router-pattern.md`:
 
 Phase 4 ships **one** mode pack: `modes/design.md` (§6).
 
+**Shipped in Phase 4 (2026-04-22 amendment — Q33 dual review):**
+
+- `luban/modes/self-review.md` — mandatory self-review pass Lu Ban runs on its own design YAML before publishing. Mirrors Achilles's self-review discipline: decisions-vs-rationale consistency, rejected-alternatives coverage (0 alternatives = red flag), constraint satisfaction, catalog-deviation detection (flags a Phase 7 `architectural-concern` suggestion if present). Output is either "publish-ready" or a list of self-identified gaps to iterate on.
+- `luban/modes/publish.md` — writes the design YAML to `plans/designs/` and emits `design_completed`. Runs after self-review + (conditional) Argus design-review. Supports `--override` flag for force-publish on Argus `flagged` / `blocked` verdicts.
+
 **Explicitly deferred mode packs** (right-sizing per 2.5/2.6 pattern — don't build until a real need surfaces):
 
-- `modes/review-design.md` — structured design-review pass on an existing design YAML. Deferred until a second design exists to be reviewed.
-- `modes/catalog-curate.md` — sweep the catalog for stale entries, deprecated tech, orphan ADRs. Deferred until the catalog grows past ~300 lines and drift becomes visible.
+- `modes/catalog-curate.md` — sweep the catalog for stale entries, deprecated tech, orphan ADRs. Deferred until the catalog grows past ~5000 lines and drift becomes visible (line cap relaxed per 2026-04-22 Q36 amendment).
 - `modes/superseded.md` — walk through marking a design as `superseded-by: <new-id>` with reason. Deferred until the second major rework lands.
 
 ## 3. Design YAML schema
@@ -199,18 +203,111 @@ Why a new mode rather than extending `brief`:
 6. Print a one-line handoff: "Dispatched design-task `<id>` to Lu Ban. Run `/luban design <id>` to begin."
 7. Does **not** wait. Lu Ban may run in a different session, possibly a different machine.
 
-### 5.2 Ingest path — post-design
+### 5.2 Ingest path — post-design (amended 2026-04-22 — dual review)
 
-Chanakya's existing debrief-ingest loop (2.6) gains a branch for `design_completed` events:
+Lu Ban produces the design → self-reviews (`luban/modes/self-review.md`) → Chanakya routes to Argus design-review if the design is "≥3-Achilles-tasks" sized → Argus verdict decides whether Lu Ban iterates or publishes. The verdict-loop sits *between* Lu Ban authorship and `design_completed`, not after it — the `design_completed` event fires only once the design is publication-ready.
 
-- On `design_completed` event, Chanakya reads `plans/designs/<design-id>.yaml`.
-- Status at emission is `draft`.
-- Chanakya surfaces the design to the user inline: "Lu Ban finished design `<id>`. Approve, request revision, or reject?"
+**Sizing gate (Argus mandatory vs optional):** Lu Ban's self-review emits a preliminary `downstream_task_count_estimate` on the draft design (integer; Lu Ban's best guess at how many Achilles tasks it will spawn). Chanakya compares to the threshold in `_shared/routing/design-review-policy.yaml` (default 3):
+
+- Estimate ≥ 3 → Argus design-review **mandatory**. Chanakya dispatches `/argus design-review <design-id>`.
+- Estimate < 3 → Argus design-review **optional**. Lu Ban may skip and publish directly; user can still request review via `/argus design-review <design-id>` any time before approval.
+
+**Revision loop:**
+
+1. Lu Ban drafts `plans/designs/<design-id>.yaml` with `status: self-review-pending`.
+2. Lu Ban self-review runs. On gap: Lu Ban iterates (no event); on ready: status → `review-pending`, emits `design_self_reviewed` `{design_id, gaps_found, iterations}`.
+3. Chanakya's event processor routes to `/argus design-review <design-id>` if mandatory per sizing gate.
+4. Argus emits `design_review_verdict` `{design_id, verdict: approved|flagged|blocked, findings: [...]}`:
+   - `approved` → status → `draft` (ready for user approval). Emit `design_completed`. Chanakya surfaces to user per existing flow.
+   - `flagged` → status stays `review-pending`; Lu Ban iterates on findings. Loop back to step 2. Emit `design_review_iteration_requested`.
+   - `blocked` → same as `flagged` but findings are hard-blockers; user intervention recommended.
+5. User can force-publish on `flagged` / `blocked` via `/luban publish --override`. Design YAML carries `overrode: {argus_verdict, reason, override_justification}` for audit; `design_completed` fires with `override: true`.
+
+**Post-`design_completed` user-approval flow (unchanged from original §5.2):**
+
 - On **approve**: Chanakya patches the YAML to `status: approved`, `approved_at: <now>`, emits `design_approved`. Triggers catalog ADR-index rebuild hook (§7.2).
 - On **revise**: user comments captured as a revision note; Chanakya writes a new `design-task` with `related_design_ids: [<old-id>]` and dispatches again. Old design stays `draft`.
 - On **reject**: Chanakya deletes the `design-task` `claimed → cancelled`, design remains `draft` (not auto-deleted; user can re-examine).
 
 After approval, Chanakya evaluates whether Achilles briefs are needed to implement the design. This is the **open observation** from Q35 — measure via 2.7's `workflow-signature` view whether briefs are typically redundant post-design, and decide empirically.
+
+## 5B. Achilles plan-review amendment (2026-04-22 — carved from Phase 7 Q52 discussion)
+
+The architectural-concern triggers Phase 7 catches at Achilles self-review (post-implementation) miss a class of issues that are cheaper to catch earlier: duplicated utilities already in the codebase, subsystem-boundary risks, pattern choices that contradict the catalog. For `size: m|l` Achilles tasks that did **not** come from an upstream Lu Ban design, add a lightweight plan phase before implementation. Not a full Lu Ban hand-off — a short structured plan Achilles writes, Argus reviews, and Chanakya re-checks for novelty now that the plan text is richer than the brief.
+
+### 5B.1 Scope
+
+- Tasks with `size: m|l` AND `brief.source != "lu-ban-design"`.
+- XS / S tasks skip. Crash-fix tasks (`kind: crash-fix`) skip (Phase 5's 3-step gate handles them differently).
+
+### 5B.2 Plan artifact
+
+New schema `_shared/schemas/achilles-plan.md`, `achilles-plan@1.0.0`. Stored at `plans/achilles-plans/<task-id>.yaml`:
+
+```yaml
+schema_version: {name: achilles-plan, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}
+id: <uuidv7>
+task_id: <uuidv7>
+brief_id: <uuidv7>
+status: drafting|reviewed|approved|flagged
+created_at: <rfc3339>
+updated_at: <rfc3339>
+
+approach:                               # 1-3 paragraphs, prose
+  - "…"
+
+files_likely_touched: [<rel-path>…]
+introduced_symbols_expected: [<type|func|protocol>…]
+patterns_chosen:
+  - pattern: "…"
+    rationale: "…"
+    catalog_reference: <pattern-id>?
+rejected_approaches:
+  - option: "…"
+    why_rejected: "…"
+risks: ["…"]
+open_questions: ["…"]
+
+novelty_rescore:                        # populated by Chanakya on plan-phase re-run
+  score: 0.0..1.0
+  components: {catalog_absence, keyword_match, size}
+  suggested_lu_ban_handoff: bool
+```
+
+### 5B.3 Flow
+
+1. Achilles receives brief. If scope per §5B.1, drafts `plans/achilles-plans/<task-id>.yaml` with `status: drafting`.
+2. Chanakya's event processor reacts to `achilles_plan_drafted`: re-runs the Phase 7 novelty heuristic against the plan text (richer than the intake). If the new score crosses the threshold, emits a Phase 7 `lu-ban-handoff` suggestion with `context.intake_text: "<plan excerpt>"` — user can promote before implementation starts. Plan still proceeds regardless (suggestion is non-blocking).
+3. Chanakya dispatches `/argus plan-review <task-id>` — a new single-pass Argus mode. Verdict is **`approved`** or **`flagged`**; `blocked` is not available (plan-review is never a hard stop — the implementation loop can always proceed and course-correct).
+4. Argus review checks: plan consistency with brief acceptance criteria; `patterns_chosen` against the catalog; `rejected_approaches` non-empty (0 alternatives = red flag — same heuristic as Lu Ban); `files_likely_touched` matches Chanakya's pre-brief scan (gross mismatch = scope drift).
+5. Verdict `approved` → status → `approved`; Achilles proceeds to implementation. Verdict `flagged` → Chanakya surfaces findings to user; Achilles iterates or user decides to proceed-as-is (`status: flagged`, implementation continues with findings attached to the eventual debrief for post-hoc correlation).
+
+### 5B.4 Argus `plan-review` mode
+
+New mode pack `argus/modes/plan-review.md`, ~120 lines. Reuses Argus's existing read-only envelope + the 2.5 Argus-review primitives. Reviews a plan document (YAML + prose), not a diff — so no xcodebuild, no test run. Output schema reuses `review@<current>` with `kind: plan-review`.
+
+### 5B.5 State machine
+
+Task-lifecycle state machine `_shared/state-machines/task-lifecycle.md` gains an additive alternate path (additive = doesn't break Phase 2.5 contract):
+
+```
+proposed → briefed → dispatched → plan-drafting → plan-reviewed-approved → in-progress → self-reviewed → argus-reviewed → merged → …
+                                ↘ plan-reviewed-flagged → in-progress (user override or iteration) → …
+```
+
+`plan-drafting` and the `plan-reviewed-*` states are additive. Existing tasks that skip the plan phase (XS/S, Lu-Ban-sourced, crash-fix) flow `dispatched → in-progress` as before. Phase 2.5's 2.5 Q6 idempotency guarantees are preserved — same dedup-key rules.
+
+### 5B.6 Phase 2.7 dependency
+
+The duplicated-utility trigger added to Phase 7 (Q52 expansion) needs to query "what helpers were introduced in recent debriefs?" at plan-phase. Phase 2.7 adds a new `recent-utilities` view (see PHASE-2-7-PLAN.md §3.6) — a lightweight query over debrief `introduced_symbols[]` field, windowed to 30d by default. Achilles reads this view at plan-phase; if any of its `introduced_symbols_expected` overlap with `recent-utilities`, it adds a `duplicated-utility` concern candidate to its plan.
+
+### 5B.7 Events
+
+| Event | Payload | When emitted |
+|---|---|---|
+| `achilles_plan_drafted` | `{task_id, plan_id, files_likely_touched_count, introduced_symbols_expected_count}` | Achilles writes plan YAML, status `drafting`. |
+| `achilles_plan_novelty_rescored` | `{task_id, plan_id, old_score, new_score, suggested_lu_ban_handoff}` | Chanakya re-runs novelty heuristic at plan time. |
+| `achilles_plan_reviewed` | `{task_id, plan_id, verdict, findings_count}` | Argus plan-review verdict lands. |
 
 ## 6. Lu Ban `modes/design.md` workflow
 
@@ -306,27 +403,35 @@ Shipped in Phase 4 schemas:
 
 - `design-task@1.0.0` — `target_machine: <machine-id>?`
 - `design@1.0.0` — `target_machine: <machine-id>?`
+- `achilles-plan@1.0.0` (2026-04-22) — `target_machine: <machine-id>?`
 
 Phase 2.6 brief schema (`brief@3.1.0`) does not carry this yet; we add it additively in Phase 4 Commit A as a bump to `brief@3.2.0` (minor — new field with null default). Other dispatchable kinds inherit the pattern from there.
 
-### 8.2 Chanakya parses natural-language machine directives
+### 8.2 Dispatch priority and natural-language directives (2026-04-22 amendment — priority inverted)
 
-Hook location: `chanakya/modes/_shared/machine-dispatch-parser.md` (referenced from any Chanakya mode that writes a dispatchable artifact — `brief`, `design`, future test-dispatch).
+Dispatch picks a machine in this order, evaluated at dispatch time via `ssh <host> true`:
 
-Parse rules:
+| Rank | Host | Applies to |
+|---|---|---|
+| 1 | **Studio** (office machine, when online) | Achilles, Argus, Lu Ban — long-running work |
+| 2 | **mini** (M1 Mac mini, when online) | Achilles, Argus, Lu Ban |
+| 3 | **laptop** (daily driver) | Fallback only — used when 1+2 both unreachable |
+| — | Chanakya stays on the interaction machine regardless | Fast round-trip for user |
 
-- Regex + keyword over user input: `/run (this|it) on (mac ?mini|laptop|<machine-name>)/i`, `/on the (mac ?mini|laptop)/i`, etc.
+**Natural-language overrides** still parse and pin a specific machine (hook location `chanakya/modes/_shared/machine-dispatch-parser.md`; referenced from any Chanakya mode that writes a dispatchable artifact — `brief`, `design`, `achilles-plan`, future test-dispatch):
+
+- Regex + keyword over user input: `/run (this|it) on (mac ?mini|laptop|studio|<machine-name>)/i`, `/on the (mac ?mini|laptop|studio)/i`, etc.
 - Resolve name → machine-id via `~/.dev-studio/.runtime/known-machines.yaml` (seeded lazily; `scripts/machine-id.sh` from 2.5 §3.13 writes entries on first boot per machine).
-- Unknown name → emit `machine_dispatch_unresolved` warn event + fall back to `target_machine: null`.
-- Explicit "any machine" / "wherever" → `target_machine: null`.
+- Unknown name → emit `machine_dispatch_unresolved` warn event + fall back to priority order (not `null` — the default is no longer "any machine" but "walk the priority list").
+- Explicit "any machine" / "wherever" → `target_machine: null` (dispatch walks the priority list).
 
 ### 8.3 Worker-side filtering (deferred implementation)
 
-Contract: each worker (Achilles, Lu Ban, future test-worker) reads its inbox and filters out artifacts whose `target_machine` is set and doesn't match the local machine-id. This is **documented in the contract now, implemented when Mac mini onboarding Stage 2 lands**. Until then, all workers ignore `target_machine` and pick up everything — effectively laptop-only.
+Contract: each worker (Achilles, Lu Ban, future test-worker) reads its inbox and filters out artifacts whose `target_machine` is set and doesn't match the local machine-id. This is **documented in the contract now, implemented when Mac mini onboarding Stage 2 lands**. Until then, all workers ignore `target_machine` and pick up everything — effectively laptop-only until mini onboarding completes.
 
 ### 8.4 Why ship contract empty-implementation
 
-Field + parser now means: no schema migration later (~30-line filter is all Mac mini Stage 2 adds); historical dispatches are tagged correctly even while filtering is off; prevents a later phase from adding this field three incompatible ways.
+Field + parser now means: no schema migration later (~30-line filter is all Mac mini Stage 2 adds); historical dispatches are tagged correctly even while filtering is off; prevents a later phase from adding this field three incompatible ways. The 2026-04-22 priority inversion is a parser rule change, not a schema change — no new field, no new migration.
 
 ## 9. Event types added
 
@@ -336,27 +441,35 @@ All events carry the standard 2.5 envelope (`producer`, `idempotency_key`, `occu
 |---|---|---|
 | `design_requested` | `{design_task_id, title, urgency, target_machine}` | Chanakya writes the design-task. |
 | `design_started` | `{design_id_placeholder, design_task_id, claimed_by: luban}` | Lu Ban claims the task. |
-| `design_completed` | `{design_id, design_task_id, decision_count, rejected_alternative_count, status: draft, target_machine}` | Lu Ban writes the design YAML. |
+| `design_self_reviewed` | `{design_id, gaps_found, iterations}` | Lu Ban self-review finishes (2026-04-22 amendment Q33). |
+| `design_review_verdict` | `{design_id, verdict, findings: [...]}` | Argus design-review verdict lands (2026-04-22 amendment Q33). |
+| `design_review_iteration_requested` | `{design_id, verdict, iteration_count}` | Argus returned `flagged`/`blocked`; Lu Ban iterates. |
+| `design_completed` | `{design_id, design_task_id, decision_count, rejected_alternative_count, status: draft, target_machine, override: bool}` | Lu Ban publishes the design YAML (after dual review or user override). |
 | `design_approved` | `{design_id, approved_by: user, approved_at}` | Chanakya patches status to approved. |
 | `design_superseded` | `{design_id, superseded_by, reason}` | User (via Chanakya) marks supersede. |
 | `design_deprecated` | `{design_id, reason}` | User (via Chanakya) marks deprecated. |
 | `machine_dispatch_unresolved` | `{raw_text, artifact_id, artifact_kind}` | §8.2 natural-language parse fails. Warn. |
-| `luban_session_reading` | `{design_task_id, files_read_so_far, tokens_so_far}` | Every ~10 files Lu Ban reads during §6 step 4. Feeds 2.7 token-cost-budget view. |
+| `luban_session_reading` | `{design_task_id, files_read_so_far, tokens_so_far}` | Every ~10 files Lu Ban reads during §6 step 4. Feeds 2.7 `token-consumption` view (renamed from `token-cost-budget` 2026-04-22). |
+| `achilles_plan_drafted` | `{task_id, plan_id, files_likely_touched_count, introduced_symbols_expected_count}` | Achilles writes plan YAML (2026-04-22 §5B). |
+| `achilles_plan_novelty_rescored` | `{task_id, plan_id, old_score, new_score, suggested_lu_ban_handoff}` | Chanakya re-runs novelty at plan-time (2026-04-22 §5B). |
+| `achilles_plan_reviewed` | `{task_id, plan_id, verdict, findings_count}` | Argus plan-review verdict (2026-04-22 §5B). |
 
 Payload schemas live at `_shared/schemas/events/<event-name>.md`, following the 2.6 per-type schema pattern.
 
 ## 10. Execution order
 
-Sequential unless `‖`. Small commits, independently revertible. Estimate: **6 commits**.
+Sequential unless `‖`. Small commits, independently revertible. Estimate: **8 commits** (amended 2026-04-22 — up from 6; adds Commit G for Lu Ban self-review + Argus design-review, and Commit H for the Achilles plan-review amendment).
 
-1. **Commit A — schemas land.** `_shared/schemas/design.md` + `design-task.md` + event-payload schemas (§9). Bump `brief@3.1.0 → brief@3.2.0` adding `target_machine` field (additive, minor). Pre-commit validates. No script/agent changes yet.
-2. **Commit B — state machines + catalog skeleton.** `state-machines/design-lifecycle.md` + `design-task-lifecycle.md`. `_shared/architecture-catalog.md` with the three-section skeleton + seed content for §1 and §3 (§7.3). `<!-- adr-index:start/end -->` markers in §2 with an empty table.
+1. **Commit A — schemas land.** `_shared/schemas/design.md` + `design-task.md` + `achilles-plan.md` (§5B.2) + event-payload schemas (§9). Bump `brief@3.1.0 → brief@3.2.0` adding `target_machine` field (additive, minor). Pre-commit validates. No script/agent changes yet.
+2. **Commit B — state machines + catalog skeleton.** `state-machines/design-lifecycle.md` + `design-task-lifecycle.md` + `task-lifecycle.md` additive plan-phase path (§5B.5). `_shared/architecture-catalog.md` with the three-section skeleton + seed content for §1 and §3 (§7.3). `<!-- adr-index:start/end -->` markers in §2 with an empty table. **No line cap** on the catalog (2026-04-22 Q36 amendment).
 3. **Commit C — Lu Ban agent scaffold.** `luban/SKILL.md` (router-only, <100 lines) + `luban/modes/design.md` (§6 workflow). `luban/README.md` long-form walkthrough. `scripts/scaffold-agent.sh` runs clean. Capability manifest regenerates with Lu Ban's `reads/writes`. Smoke test: `/luban` with no args prints help; `/luban design` against a fixture design-task produces a valid YAML.
-4. **Commit D — Chanakya `design` mode + multi-machine parser hook.** `chanakya/modes/design.md` (§5.1) + `chanakya/modes/_shared/machine-dispatch-parser.md` (§8.2). Chanakya debrief-ingest loop branch for `design_completed` (§5.2). `machine-dispatch-parser.md` referenced from `chanakya/modes/brief.md` too (so briefs can carry `target_machine` immediately). Unit tests on the natural-language parser with ~10 phrasings.
+4. **Commit D — Chanakya `design` mode + dispatch parser hook.** `chanakya/modes/design.md` (§5.1) + `chanakya/modes/_shared/machine-dispatch-parser.md` (§8.2 — **Studio → mini → laptop priority walker**). Chanakya debrief-ingest loop branch for `design_completed` (§5.2). Parser referenced from `chanakya/modes/brief.md` too (so briefs can carry `target_machine` immediately). Unit tests on the natural-language parser with ~10 phrasings + priority walker with different host-availability combinations.
 5. **Commit E — catalog ADR-index auto-rebuild.** `scripts/rebuild-catalog-adr-index.sh` + pre-commit hook wiring. Seed content for §2 stays empty (no approved designs yet). Unit test: a fixture approved design triggers the rebuild and populates §2; a hand-edit inside the markers fails pre-commit.
 6. **Commit F — docs sync + event wiring.** `chanakya/docs.html` adds a "Design" card alongside Brief, Review. `README.md` TL;DR + roster updated (Lu Ban added). Event types registered in `contracts/events.md`. `_shared/schemas/events/design-*.md` validated. Open docs.html in Safari per CLAUDE.md routine. End-to-end smoke: Chanakya dispatches a design-task → Lu Ban completes it → Chanakya ingests → user approves → catalog ADR-index rebuilds with the new row.
+7. **Commit G — Lu Ban self-review + Argus design-review (Q33 dual-review amendment).** `luban/modes/self-review.md` + `luban/modes/publish.md` (with `--override`). New Argus mode `argus/modes/design-review.md` (~150 lines, reuses Argus read-only envelope). `_shared/routing/design-review-policy.yaml` (sizing threshold default 3). Chanakya event-processor branches for `design_self_reviewed` + `design_review_verdict` + `design_review_iteration_requested` (§5.2 revision loop). Unit tests: self-review gap-detection fixtures, design-review verdict routing, override-audit persistence.
+8. **Commit H — Achilles plan-review amendment (§5B).** Achilles `modes/plan.md` (plan-drafting step). Argus `modes/plan-review.md` (single-pass, approved|flagged). Chanakya novelty-rescore hook on `achilles_plan_drafted`. `_shared/schemas/achilles-plan.md` finalizes against the 2.7 `recent-utilities` view. Docs-sync: Argus docs.html gets a plan-review card; Achilles README walkthrough updated. Unit tests on 6 plan-review fixtures + duplicated-utility detection via 2.7 view.
 
-Parallelizable: A ‖ B. D ‖ E once C merges. F merges last.
+Parallelizable: A ‖ B. D ‖ E once C merges. F merges after D/E. G merges after F (needs the Chanakya design-completed branch to plug the dual-review into). H merges after Phase 2.7's `recent-utilities` view lands — if 2.7 slips, H can ship with the duplicated-utility trigger feature-flagged off, re-enabled when 2.7 Commit G merges.
 
 ## 11. Risk register
 
@@ -384,9 +497,9 @@ When Commit F merges:
 
 GitHub issue per item post-plan-lock.
 
-- **`luban/modes/review-design.md`.** Deferred until design count ≥ 3.
-- **`luban/modes/catalog-curate.md`.** Deferred until catalog §1 / §3 pass ~300 lines. Line-count trigger, not time.
+- **`luban/modes/catalog-curate.md`.** Deferred until catalog §1 / §3 pass ~5000 lines (cap relaxed per 2026-04-22 Q36). Line-count trigger, not time.
 - **`luban/modes/superseded.md`.** Deferred until first real rework.
+- **Two-pass plan-review** (2026-04-22) — adding a Lu Ban plan-sanity-check pass alongside Argus plan-review. Keep it single-pass for now; escalate only if telemetry shows Argus consistently misses architectural issues in plans.
 - **Catalog auto-generation from debrief history.** 2.7's `feature-catalog` view could seed §1 anti-patterns. Deferred until 2.7's view is producing signal.
 - **Q35 empirical observation — "does Chanakya still need to brief after Lu Ban?"** Monitor via 2.7 `workflow-signature`. **Acceptance: ≥5 approved designs with downstream work, then decide.**
 - **Cross-machine dispatch real implementation (Q38).** Worker filtering + design-task sync lands with Mac mini Stage 2. Dependent on tier-3 sync.

@@ -2,10 +2,11 @@
 
 Drafted 2026-04-20 for the `refactor/intent-router` branch. **Status: draft — will lock with user before execution.** Decisions Q20–Q23, Q39–Q41 are each marked locked; no open rows in the decisions table.
 
-Phase 3 is the lightest plan in the sequence because the heavy design lives in 2.6 (structured ledger) and 2.7 (views). Phase 3 ships **two thin mechanisms** plus the glue between them:
+Phase 3 is the lightest plan in the sequence because the heavy design lives in 2.6 (structured ledger) and 2.7 (views). Phase 3 ships **three thin mechanisms** plus the glue between them (amended 2026-04-22 — scope expanded from two to three per issue [#65](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/65)):
 
-1. **Prompt-caching instrumentation** — per-session cache-hit telemetry on the existing `agent_session_completed` event, plus `cache_control` breakpoints at mode-pack preamble boundaries. Delivered by 2.6's preamble split (Q39); 2.7's `token-cost-budget` view is the primary reader.
+1. **Prompt-caching instrumentation** — per-session cache-hit telemetry on the existing `agent_session_completed` event, plus `cache_control` breakpoints at mode-pack preamble boundaries. Delivered by 2.6's preamble split (Q39); 2.7's `token-consumption` view (renamed from `token-cost-budget` 2026-04-22) is the primary reader.
 2. **Schedule-driven automation** — a scheduler mechanism (config file + cron dispatcher) that ships with **zero entries enabled by default**. Automation lights up case-by-case through a detect → suggest → user-approve → enable flow over 2.7's `workflow-signature` view.
+3. **Task-level model recommendation** (issue #65, added 2026-04-22) — a deterministic rule function maps `(size, kind, cross_file_count, novelty_score) → {best_result_model, fast_turnaround_model}`. Briefs carry a `recommended_models: {...}` field; `agent_session_completed` gains `model_selected` + `model_fallback_reason` so telemetry feeds back into calibration. A `/chanakya model-refresh` mode + monthly scheduler reminder keeps the model catalog current.
 
 A weekly-narrative generator rides on top of the same primitives as a first consumer.
 
@@ -32,7 +33,8 @@ Unchanged from 2.5/2.6/2.7 §0, restated for self-containment:
 | Q23 | Weekly narrative publish target | Private tier-2 file `~/.dev-studio/<project>/narrative/YYYY-Wnn.md`. No public publishing yet — deferred until content quality proven (§10). |
 | Q39 | Where preamble split lands | In Phase 2.6 alongside mode-pack rewrites. Phase 3 assumes the structural split is done and wires `cache_control` on top. |
 | Q40 | First-opt-in flow | **Detect → suggest → user-approve → enable.** System detects repeated manual patterns via the 2.7 `workflow-signature` view; surfaces opportunities via `/chanakya suggest-automations`; user replies `yes now` / `yes schedule <cron>` / `no`; cron-wrapper adds the entry or runs immediately. User is responsible for keeping the machine on during scheduled windows — no daemon, no phone-home reliability. |
-| Q41 | Default views feeding narrative | `workflow-signature`, `testing-health`, `token-cost-budget` (the three 2.7 priority views that cover how-we-work / what-we-ship / what-it-costs). Phase 5 adds release + crash highlights once those feeds exist. Other views toggleable via `narrative/config.yaml`. |
+| Q41 | Default views feeding narrative | `workflow-signature`, `testing-health`, `token-consumption` (renamed from `token-cost-budget` 2026-04-22 per Max-plan reframe), `regression-correlation` (promoted to priority 2026-04-22; gated on "data available" check per 2.7 §3.5 so it no-ops cleanly pre-Phase-5). Phase 5 adds release + crash highlights once those feeds exist. Other views toggleable via `narrative/config.yaml`. |
+| Q65 | Task-level model recommendation (folded from issue [#65](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/65) 2026-04-22) | Deterministic rule function, not an ML classifier. Inputs: `size`, `kind`, `cross_file_count`, `novelty_score`. Outputs: `{best_result, fast_turnaround}` model choices. Rule lives in `_shared/rules/model-recommendation.md`; user default preference in `_shared/rules/model-policy.yaml`; hand-editable model roster in `_shared/schemas/model-catalog.yaml`. Semi-automatic catalog update via `/chanakya model-refresh` — Claude reports what it knows, user confirms, YAML updates. Brief YAML gains `recommended_models` field; `agent_session_completed` gains `model_selected` + `model_fallback_reason`. Monthly `model-refresh` reminder added via Phase 3's scheduler once that mechanism lands. |
 
 ## 2. Cache-hit telemetry
 
@@ -60,14 +62,13 @@ No new file. No new event type. No new directory. This is the whole Phase 3 tele
   "idempotency_key": "…",
   "session_id": "…",
   "tokens": 7420,
-  "cost_usd": 0.074,
   "cache_read_tokens": 5800,
   "cache_creation_tokens": 0,
   "duration_ms": 12430
 }
 ```
 
-Cache-hit ratio for this turn: `cache_read_tokens / (cache_read_tokens + (tokens - cache_read_tokens))` = 5800 / 7420 ≈ 0.78. Readers compute this inline; no stored ratio field.
+Cache-hit ratio for this turn: `cache_read_tokens / (cache_read_tokens + (tokens - cache_read_tokens))` = 5800 / 7420 ≈ 0.78. Readers compute this inline; no stored ratio field. No `cost_usd` field — user is on the Claude Max plan; token consumption is the honest unit. Historical events that carried `cost_usd` remain parseable but the value is ignored by post-2026-04-22 views.
 
 ### 2.3 Reader queries (shapes only — real queries live in 2.7 views)
 
@@ -87,17 +88,21 @@ ORDER BY hit_ratio DESC;
 ```
 
 ```sql
--- Cost avoided by caching this week (cache reads priced at 10% of uncached input)
+-- Cache amplification this week — how many input tokens the cache saved us from re-sending
 SELECT
-  sum(json_extract(body, '$.cache_read_tokens')) AS cache_read_tokens,
-  sum(json_extract(body, '$.cache_read_tokens')) * 0.9
-    * <per-token-rate> AS approx_usd_avoided
+  sum(json_extract(body, '$.cache_read_tokens')) AS cache_read_tokens_total,
+  sum(json_extract(body, '$.tokens')) AS tokens_total,
+  round(
+    sum(json_extract(body, '$.cache_read_tokens')) * 1.0
+    / nullif(sum(json_extract(body, '$.tokens')), 0),
+    3
+  ) AS cache_amplification_ratio
 FROM events
 WHERE type = 'agent_session_completed'
   AND occurred_at >= date('now', '-7 days');
 ```
 
-Both queries become first-class in the 2.7 `token-cost-budget` view once this plan lands — the view already has a `cache_hit_ratio` slot that's null pre-Phase-3.
+Both queries become first-class in the 2.7 `token-consumption` view (renamed from `token-cost-budget` 2026-04-22 per Max-plan reframe) once this plan lands — the view already has a `cache_hit_ratio` slot that's null pre-Phase-3.
 
 ## 3. Stable-prefix cache implementation
 
@@ -262,11 +267,12 @@ Not enabled by default. Becomes a scheduled task only through §5's approval flo
 Behavior:
 
 1. Resolve the week window — ISO week number, local timezone. `--week <YYYY-Wnn>` overrides.
-2. Read the three default-enabled views (2.7) from `~/.dev-studio/<project>/views/`:
+2. Read the four default-enabled views (2.7 priority set, amended 2026-04-22) from `~/.dev-studio/<project>/views/`:
    - `workflow-signature/<date>.json`
    - `testing-health/<date>.json`
-   - `token-cost-budget/<date>.json`
-3. Compose a markdown narrative per `_shared/narrative-templates/weekly.md.tmpl` (ships in Commit E).
+   - `token-consumption/<date>.json` (renamed from `token-cost-budget`)
+   - `regression-correlation/<date>.json` (data-availability gated — §3.5 of PHASE-2-7-PLAN; emits a `"regression sources not live yet"` note pre-Phase-5)
+3. Compose a markdown narrative per `_shared/narrative-templates/weekly.md.tmpl` (ships in Commit E). Regression-correlation section renders an "insufficient data" banner when the view reports `data_sources_live: []`.
 4. Atomic-rename into `~/.dev-studio/<project>/narrative/YYYY-Wnn.md`.
 5. Emit `narrative_generated` event `{week, views_consumed, output_path, overwrote_prior: bool}`.
 
@@ -276,34 +282,158 @@ Re-running for the same week overwrites the output. Same inputs → byte-identic
 
 ### 6.3 Config file
 
-`~/.dev-studio/<project>/narrative/config.yaml` lets the user toggle which views feed the narrative. Defaults to the three Q41 views:
+`~/.dev-studio/<project>/narrative/config.yaml` lets the user toggle which views feed the narrative. Defaults to the four Q41 views (amended 2026-04-22):
 
 ```yaml
 schema_version: {name: narrative-config, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}
 views:
   workflow-signature: true
   testing-health: true
-  token-cost-budget: true
+  token-consumption: true
+  regression-correlation: true
   # Toggle others on once they produce signal:
   architecture-overview: false
+  recent-utilities: false    # typically a plan-phase primitive, not a weekly lens
 ```
 
 ### 6.4 Publication surface
 
 None. Narrative is private-local (tier-2), read by the user directly or surfaced inline by `/chanakya status` when freshly generated. Phase 5+ may add a private-published surface (§10); public publishing stays deferred.
 
+## 6B. Task-level model recommendation (issue #65 — added 2026-04-22)
+
+Deterministic rule, not a classifier. Inputs come from signals already on the brief; outputs are two model picks the user can override.
+
+### 6B.1 Inputs + outputs
+
+**Inputs (all already on the brief post-Phase-2.6):**
+
+| Input | Source | Notes |
+|---|---|---|
+| `size` | `brief.size` (`xs\|s\|m\|l`) | Direct. |
+| `kind` | `brief.kind` (`feature\|fix\|refactor\|debrief\|crash-fix`) | Phase 2.6 brief schema. |
+| `cross_file_count` | Chanakya's scan step during brief generation | Integer count of files likely touched. |
+| `novelty_score` | Phase 7 `score-novelty.sh` output | `[0, 1]` — only populated if Phase 7 has landed; absent → treated as 0. |
+
+**Outputs:**
+
+```yaml
+recommended_models:
+  best_result: claude-opus-4-7           # model id from model-catalog
+  fast_turnaround: claude-sonnet-4-6     # cheaper model for tight loops
+  rule_version: 1                        # bump when rule file changes
+  reason: "size=l + novelty=0.72 → best_result=opus; size=l → fast_turnaround=sonnet"
+```
+
+### 6B.2 Rule function (`_shared/rules/model-recommendation.md`)
+
+Human-readable rules, no DSL. Achilles + Chanakya evaluate the rules at brief-write time. Example (v1 — tune empirically):
+
+```
+Let best_result = (default from policy).
+Let fast_turnaround = (default from policy).
+
+If size == "l":
+  best_result = policy.models.heavyweight
+  fast_turnaround = policy.models.midweight
+
+If size == "m" AND (cross_file_count >= 3 OR novelty_score >= 0.5):
+  best_result = policy.models.heavyweight
+
+If kind == "crash-fix" OR kind == "refactor":
+  best_result = policy.models.heavyweight  # never downgrade
+```
+
+Rule file is the single source of truth. Agents parse it via `scripts/model-recommendation.sh` (~50 lines bash) at brief emit; no runtime DSL interpreter.
+
+### 6B.3 Model policy (`_shared/rules/model-policy.yaml`)
+
+```yaml
+schema_version: {name: model-policy, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}
+defaults:
+  heavyweight: claude-opus-4-7            # best-result default
+  midweight: claude-sonnet-4-6            # fast-turnaround default
+  lightweight: claude-haiku-4-5           # sweep / status / orchestration
+user_overrides:
+  chanakya: {}                            # empty = inherit from defaults
+  achilles: {}
+  argus: {}
+```
+
+### 6B.4 Model catalog (`_shared/schemas/model-catalog.yaml`)
+
+Hand-editable — the user is authoritative. `/chanakya model-refresh` (§6B.6) assists but never auto-commits.
+
+```yaml
+schema_version: {name: model-catalog, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}
+models:
+  - id: claude-opus-4-7
+    family: opus
+    tier: heavyweight
+    context_window: 200000
+    notes: "Latest Opus. Primary choice for code generation + reasoning-heavy review."
+    retired: false
+  - id: claude-sonnet-4-6
+    family: sonnet
+    tier: midweight
+    context_window: 200000
+    notes: "Fast turnaround, good code quality, lower consumption than Opus."
+    retired: false
+  - id: claude-haiku-4-5
+    family: haiku
+    tier: lightweight
+    context_window: 200000
+    notes: "Sweeps, orchestration, event processing. Not for code generation."
+    retired: false
+```
+
+### 6B.5 Brief + event additions
+
+**Brief schema minor bump:** adds `recommended_models: {best_result, fast_turnaround, rule_version, reason}`. Additive — old briefs parse fine with null.
+
+**`agent_session_completed` adds two fields (separate from the cache-telemetry pair in §2.1 — they share a minor bump but the cache fields and model fields are independent): `model_selected` (id from catalog) + `model_fallback_reason` (null if selected == recommended, else a short string like `"recommendation unavailable"`, `"user override"`, `"rate limit"`).**
+
+Together with the cache fields, `agent_session_completed` goes `v1.0.0 → v1.2.0` in Phase 3 (two minor bumps in one phase for fields captured from the same source are fine — no consumer breakage). Schema spec gets a single update in Commit A covering all four new fields.
+
+### 6B.6 `/chanakya model-refresh` mode
+
+New mode pack `chanakya/modes/model-refresh.md`, ~80 lines. Invocation: `/chanakya model-refresh`.
+
+Flow:
+1. Claude reads the current `model-catalog.yaml`.
+2. Reports what it knows about the listed models (e.g. "claude-opus-4-6 retired 2026-02-15; successor is claude-opus-4-7"), plus any models it knows of that aren't listed.
+3. User confirms each proposed edit inline. Confirmed edits become a structured diff against the YAML.
+4. Chanakya writes the diff atomically; emits `model_catalog_refreshed` event `{added: [...], retired: [...], edited_by: user}`.
+5. Rule-version remains unchanged; only the catalog updates.
+
+**Why semi-automatic:** the user is the only one who can validate model-knowledge claims against their Anthropic account / real usage. Auto-updating the catalog from Claude's training-data model roster would bake in stale info permanently.
+
+### 6B.7 Scheduler reminder
+
+When the Phase 3 scheduler lands (§4), `/chanakya suggest-automations` surfaces a monthly `model-refresh` reminder as an opt-in task:
+
+```
+Candidate: /chanakya model-refresh — monthly
+Last refresh: 2026-03-22 (31 days ago)
+Last catalog update discovered: 2 models retired, 1 added
+[yes schedule "0 9 1 * *" | no | snooze 30d]
+```
+
+Reminder doesn't auto-execute; user always confirms.
+
 ## 7. Execution order
 
-Sequential unless `‖`. Small commits, independently revertible. Estimate: **6 commits**.
+Sequential unless `‖`. Small commits, independently revertible. Estimate: **7 commits** (amended 2026-04-22 — up from 6, adding the model-recommendation Commit G).
 
-1. **Commit A — cache-telemetry event fields.** Bump `agent_session_completed@1.0.0 → 1.1.0`. Schema spec under `_shared/schemas/events/agent_session_completed.md` gains the two fields. Request-builder primitive captures `cache_read_input_tokens` + `cache_creation_input_tokens` from the Anthropic response and includes them in the emitted event. Unit test on a fixture API response. No consumer changes — the 2.7 `token-cost-budget` view already reads the fields (currently null).
+1. **Commit A — cache-telemetry event fields + model-session fields.** Bump `agent_session_completed@1.0.0 → 1.2.0`. Schema spec under `_shared/schemas/events/agent_session_completed.md` gains the four additive fields (`cache_read_tokens`, `cache_creation_tokens`, `model_selected`, `model_fallback_reason`). Request-builder primitive captures the two cache values from the Anthropic response + records the model chosen. Unit test on fixture response. No consumer changes — the 2.7 `token-consumption` view already reads the fields (null pre-rollout).
 2. **Commit B — `cache_control` wiring.** Primitive sets `cache_control: {type: "ephemeral"}` at the `<!-- cache-breakpoint -->` marker in every mode pack. Asserts the marker exists (lint from 2.6). Smoke test against a single Chanakya mode: two back-to-back invocations within 5 min → second emits a non-zero `cache_read_tokens`.
 3. **Commit C — scheduler scaffold.** `scripts/scheduler/{install,uninstall,dispatch}.sh` + `scheduler.yaml` schema under `_shared/schemas/scheduler-config.md` + `resolve_scheduler_config` in `lib-paths.sh`. `tasks: []` by default. Unit test: install.sh is idempotent; dispatch.sh with empty config exits 0 silently; dispatch.sh with one approved task fires the command at the right minute.
-4. **Commit D — suggestion flow.** `chanakya/modes/suggest-automations.md` + detection queries over the 2.7 substrate + `automation_*` events. Hook into `/chanakya status` for the once-per-invocation surface. Unit tests on the ranking function + the reply parser.
-5. **Commit E — weekly narrative generator.** `scripts/narrative/generate-weekly.sh` + `_shared/narrative-templates/weekly.md.tmpl` + `narrative/config.yaml` defaults. Idempotence test: two runs on the same week → byte-identical output. Not auto-scheduled — approval lands via §5.
-6. **Commit F — docs sync.** `chanakya/docs.html` adds a "Suggest automations" card + a "Scheduler" card under Fleet. `README.md` TL;DR gains one line under Chanakya and one under scripts. `chanakya/README.md` walkthrough touches the approval flow. Open docs.html in Safari per CLAUDE.md routine.
+4. **Commit D — suggestion flow.** `chanakya/modes/suggest-automations.md` + detection queries over the 2.7 substrate + `automation_*` events. Hook into `/chanakya status` for the once-per-invocation surface. Unit tests on the ranking function + the reply parser. Monthly `model-refresh` reminder lands in the candidate set (gated on Commit G having merged).
+5. **Commit E — weekly narrative generator.** `scripts/narrative/generate-weekly.sh` + `_shared/narrative-templates/weekly.md.tmpl` + `narrative/config.yaml` defaults (four views, incl. `regression-correlation` gated on data availability). Idempotence test: two runs on the same week → byte-identical output. Not auto-scheduled — approval lands via §5.
+6. **Commit F — docs sync (caching + scheduler + narrative).** `chanakya/docs.html` adds a "Suggest automations" card + a "Scheduler" card under Fleet. `README.md` TL;DR gains one line under Chanakya and one under scripts. `chanakya/README.md` walkthrough touches the approval flow. Open docs.html in Safari per CLAUDE.md routine.
+7. **Commit G — model-recommendation system** (§6B, issue [#65](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/65)). `_shared/rules/model-recommendation.md` + `_shared/rules/model-policy.yaml` + `_shared/schemas/model-catalog.yaml`. `scripts/model-recommendation.sh` (parser + lookup). Brief schema minor bump adds `recommended_models`. `chanakya/modes/model-refresh.md` mode pack + docs-sync row for `/chanakya model-refresh`. Unit tests on 12 rule-evaluation fixtures + catalog-refresh diff handler. No ML, no classifier.
 
-Parallelizable: A ‖ B (both primitive-level, different files). D ‖ E once C merges.
+Parallelizable: A ‖ B (both primitive-level, different files). D ‖ E once C merges. G merges after A (needs the session-event schema bump) but is otherwise independent — can land in parallel with C/D/E/F.
 
 ## 8. Risk register
 
@@ -322,7 +452,9 @@ Parallelizable: A ‖ B (both primitive-level, different files). D ‖ E once C 
 
 When Commit F merges:
 
-- **Cache fields on `agent_session_completed` are frozen at 2 (`cache_read_tokens` + `cache_creation_tokens`).** Adding a third requires an explicit plan amendment — the 2-field ceiling is load-bearing discipline.
+- **Cache fields on `agent_session_completed` are frozen at 2 (`cache_read_tokens` + `cache_creation_tokens`).** Adding a third requires an explicit plan amendment — the 2-field ceiling is load-bearing discipline. The two model fields (`model_selected`, `model_fallback_reason`) are a separate additive pair on the same event, frozen independently — raising either ceiling requires plan amendment.
+- **Model-recommendation rule file is the single source of truth.** Agents never hard-code model choices. Rule-version bump captured by `rule_version` on each brief's `recommended_models` block.
+- **Model catalog is user-authoritative.** `/chanakya model-refresh` proposes edits; only user confirmation commits them.
 - **`cache_control` breakpoint placement is frozen at one per mode pack**, at the `<!-- cache-breakpoint -->` marker. Multi-breakpoint strategies revisit in Phase 5+ only if concrete pressure surfaces.
 - **`scheduler.yaml` is authoritative.** No parallel schedule source. No auto-populated entries — every task lands via §5 approval. Hand-edits allowed (audit-friendly); invalid YAML surfaces loud.
 - **The scheduler never runs an unapproved command.** `approved_at: null` = dispatcher skips. This is the non-negotiable trust contract.

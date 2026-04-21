@@ -2,7 +2,7 @@
 
 Drafted 2026-04-20 for the `refactor/intent-router` branch. **Status: draft — will lock with user before execution.** Decisions Q24–Q31 are each marked locked or deferred; deferred rows have a recommended default in **bold**.
 
-Phase 2.7 builds the **synthesis / analytical layer** on top of the Phase 2.6 structured ledger. The original ROADMAP framing ("project-memory + memory-query + knowledge mode + Slack-ingest join") was shape-correct but intent-narrow: "find similar bugs" retrieval duplicates `git log` + `grep`. The real product is a set of **named, aggregated views** that answer questions the raw ledger can't easily answer — workflow shape, architecture shape, testing health, token-cost shape. Tier A (SQLite FTS5 substrate) indexes every structured artifact + Slack row; Tier B (view generators) produces machine-readable outputs under `views/`; a thin renderer turns those into markdown for skim.
+Phase 2.7 builds the **synthesis / analytical layer** on top of the Phase 2.6 structured ledger. The original ROADMAP framing ("project-memory + memory-query + knowledge mode + Slack-ingest join") was shape-correct but intent-narrow: "find similar bugs" retrieval duplicates `git log` + `grep`. The real product is a set of **named, aggregated views** that answer questions the raw ledger can't easily answer — workflow shape, architecture shape, testing health, token consumption, regression correlation. Tier A (SQLite FTS5 substrate) indexes every structured artifact + Slack row; Tier B (view generators) produces machine-readable outputs under `views/`; a thin renderer turns those into markdown for skim.
 
 See `ROADMAP.md` §Phase sequence, `PHASE-2-5-PLAN.md` + `PHASE-2-6-PLAN.md` for upstream contracts, and `ARCHITECTURE.md` §Design Vision for agent-roster rationale. Gated by 2.6 (needs the YAML ledger). Parallelizable with Phase 3.
 
@@ -24,7 +24,7 @@ Unchanged from 2.5/2.6 §0, restated for self-containment:
 | Q26 | Query shape | Locked | Not "find similar text" (git log + grep covers that). Named **views** that aggregate Tier A substrate into Tier B structured outputs. Each view is a deliberately-designed answer to a recurring question. |
 | Q27 | Producers | Locked | Debriefs, reviews (Argus + user rounds), feedback records, release artifacts, crashes (once Phase 5 feeds them), ADRs (once Phase 4 produces them). Agent consumers are **deferred** — primary consumers in 2.7 are the view generators themselves. |
 | Q28 | Slack-ingest unification | Locked | Single SQLite db with `source: slack` tag on Slack rows alongside artifact rows. Unified query surface; no separate Slack db. |
-| Q29 | Must-ship-in-2.7 views | Locked | **Four priority views:** `workflow-signature`, `architecture-overview`, `testing-health`, `token-cost-budget`. Seven others (listed §10) are opt-in / later. |
+| Q29 | Must-ship-in-2.7 views | Locked (amended 2026-04-22) | **Five priority views:** `workflow-signature`, `architecture-overview`, `testing-health`, `token-consumption` (renamed from `token-cost-budget` — Max-plan reframe), `regression-correlation` (promoted from deferred — gated on data-available check so it no-ops cleanly pre-Phase-5). A sixth view, `recent-utilities`, also lands in 2.7 to support the Phase 4 plan-review amendment (Achilles plan-phase "did we already build this?" query). Remaining five deferred views listed §10. |
 | Q30 | View output format | Locked | Machine-readable primary — structured JSON under `~/.dev-studio/<project>/views/<view-name>/<date>.json` (YAML allowed where more ergonomic; one format per view, declared in the contract). Markdown is a thin optional renderer. |
 | Q31 | Refresh cadence | Locked | On-demand via `/chanakya knowledge view <name>` + weekly cron (opt-in, hooked into Phase 3's `/schedule` once that lands). No real-time dashboard refresh. |
 
@@ -214,34 +214,95 @@ Every view's JSON output carries a `schema_version` object (per 2.5 Q10 + 2.6 Q2
 
 **Dimensions:** weekly buckets, release bucket, all-time cumulative. Frequency: weekly cron + on-demand; triggered on every `release_shipped` event (freshest when the question matters most).
 
-### 3.4 View: `token-cost-budget`
+### 3.4 View: `token-consumption` (renamed from `token-cost-budget` 2026-04-22)
 
-**Question answered:** "Where is token spend going, and where is it leaking?" — per-agent, per-mode spend over time; `mode_budget_exceeded` frequency; cache-hit ratio (once Phase 3 adds the cache fields).
+**Question answered:** "Where are tokens going, and where are we leaving cache on the table?" — per-agent, per-mode consumption over time; `mode_budget_exceeded` frequency; cache-hit ratio (once Phase 3 adds the cache fields); context-window utilization percentile.
+
+**Rename rationale:** user is on the Claude Max plan (flat subscription), not per-token API billing. A `$ cost` framing is misleading; the real tuning levers are token volume, cache-hit rate, and context-window utilization. Same data, honest framing. See memory `feedback_max_plan_pricing.md`.
 
 **Inputs:**
-- Event types: `agent_session_completed` (tokens + cost_usd per 2.5 §3.12), `mode_budget_exceeded`.
-- Phase-3 additive fields: `cache_hit_tokens`, `cache_miss_tokens` — view handles absence gracefully.
+- Event types: `agent_session_completed` (tokens + cache fields once Phase 3 lands), `mode_budget_exceeded`.
+- Phase-3 additive fields: `cache_read_tokens`, `cache_creation_tokens` — view handles absence gracefully (pre-Phase-3 rows read as 0, `cache_hit_ratio` null + note).
 - Sample query: `SELECT json_extract(body, '$.producer.agent'), json_extract(body, '$.producer.mode'), sum(json_extract(body, '$.tokens')) FROM events WHERE type='agent_session_completed' GROUP BY 1, 2`.
 
-**Output schema** (`view-token-cost-budget@1.0.0`):
+**Output schema** (`view-token-consumption@1.0.0`):
 
 ```json
 {
-  "schema_version": {"name": "view-token-cost-budget", "version": "1.0.0", "min_reader": "1.0.0", "deprecated_at": null},
+  "schema_version": {"name": "view-token-consumption", "version": "1.0.0", "min_reader": "1.0.0", "deprecated_at": null},
   "generated_at": "…",
   "window": {"from": "…", "to": "…"},
-  "spend_by_agent_mode": [
-    {"agent": "chanakya", "mode": "brief", "tokens": 120000, "cost_usd": 1.20, "session_count": 34, "p50_tokens": 3200, "p90_tokens": 7800}
+  "consumption_by_agent_mode": [
+    {"agent": "chanakya", "mode": "brief", "tokens": 120000, "session_count": 34, "p50_tokens": 3200, "p90_tokens": 7800, "cache_read_tokens": 84000, "cache_hit_ratio": 0.70, "ctx_util_p50": 0.42, "ctx_util_p90": 0.71}
   ],
   "budget_exceeded_events": [
     {"agent": "chanakya", "mode": "brief-all", "count": 3, "last_at": "…"}
   ],
-  "cache_hit_ratio": {"overall": null, "note": "Phase 3 cache fields not live yet"},
+  "cache_hit_ratio": {"overall": 0.68, "by_agent_mode_top5": [...]},
   "row_count": 9
 }
 ```
 
-**Dimensions:** agent, mode, weekly buckets. Frequency: weekly cron + on-demand; triggered on every `mode_budget_exceeded` event (freshest when a budget just blew).
+**Dimensions:** agent, mode, weekly buckets. Frequency: weekly cron + on-demand; triggered on every `mode_budget_exceeded` event (freshest when a budget just blew). Old `view-token-cost-budget@1.0.0` schema_version stays parseable via `deprecated_at` + `min_reader` — consumers update on their cadence; no hard cutover.
+
+### 3.5 View: `regression-correlation` (promoted 2026-04-22)
+
+**Question answered:** "Which debriefs precede regressions?" — correlates shipped debriefs to subsequent regression reports (user feedback, crash signatures, Argus smoke failures). Originally deferred; promoted to priority because it's the one view that reliably feeds Phase 7's architectural-concern clustering post-hoc audit.
+
+**Data availability gate:** the view needs a regression signal source. Phase 5 delivers `regression_detected` events (Argus smoke) + `crash_occurrence_added` (Crashlytics). Pre-Phase-5: gates on "any regression-source present in the substrate" and emits `{row_count: 0, note: "regression sources not live yet"}` without crashing. This no-op-cleanly posture mirrors `architecture-overview`'s ADR handling.
+
+**Inputs:**
+- Event types: `regression_detected` (Phase 5), `crash_occurrence_added` (Phase 5), `feedback_labeled_regression` (user flag — opt-in).
+- Artifact kinds: `debrief` (for the shipped-code attribution), `release` (for release-window grouping), `crash` (for top-frame file paths).
+- Sample query: for each debrief in window, count regressions observed within `T+7d` touching any `files_touched[]` overlap with the regression source.
+
+**Output schema** (`view-regression-correlation@1.0.0`):
+
+```json
+{
+  "schema_version": {"name": "view-regression-correlation", "version": "1.0.0", "min_reader": "1.0.0", "deprecated_at": null},
+  "generated_at": "…",
+  "window": {"from": "…", "to": "…"},
+  "data_sources_live": ["crash", "smoke", "feedback"],
+  "debrief_to_regression_7d": [
+    {"debrief_id": "<id>", "task_id": "<id>", "files_touched": ["src/sync/Cart.swift"], "regressions_within_7d": 2, "sources": ["crash:<id>", "smoke:<run-id>"]}
+  ],
+  "hot_files": [
+    {"path": "src/sync/Cart.swift", "regressions_within_7d_total": 5, "debrief_count": 3}
+  ],
+  "row_count": 17
+}
+```
+
+**Dimensions:** file path, debrief window (7d / 14d), release window. Frequency: weekly cron + on-demand; triggered on every `regression_detected` event (freshest when the question matters).
+
+### 3.6 View: `recent-utilities` (new, 2026-04-22 — supports Phase 4 plan-review amendment)
+
+**Question answered:** "Did we already build this?" — Achilles queries at plan time to detect duplicated-utility concerns (per Phase 7 Q52 trigger expansion). Lists helpers, extensions, and small utility types introduced in debriefs within a configurable window (default 30d).
+
+**Inputs:**
+- Artifact kinds: `debrief` (for `introduced_symbols[]` from Phase 7 Q52 addition + file paths).
+- Event types: none (substrate-only read).
+- Sample query: `SELECT json_extract(body_json, '$.introduced_symbols'), json_extract(body_json, '$.files_touched'), occurred_at FROM artifacts WHERE kind='debrief' AND occurred_at > date('now', '-30 days')`.
+
+**Output schema** (`view-recent-utilities@1.0.0`):
+
+```json
+{
+  "schema_version": {"name": "view-recent-utilities", "version": "1.0.0", "min_reader": "1.0.0", "deprecated_at": null},
+  "generated_at": "…",
+  "window": {"from": "…", "to": "…"},
+  "utilities": [
+    {"symbol": "StringExtension.truncate", "introduced_in_debrief": "<id>", "task_id": "<id>", "file_path": "src/util/StringExtension.swift", "introduced_at": "…"},
+    {"symbol": "DateUtils.localizedDay", "introduced_in_debrief": "<id>", "task_id": "<id>", "file_path": "src/util/DateUtils.swift", "introduced_at": "…"}
+  ],
+  "row_count": 14
+}
+```
+
+**Dimensions:** window (default 30d, configurable per-query), symbol-kind filter (extension / helper / small-type). Frequency: on-demand (invoked at Achilles plan phase; no cron — one-off per task).
+
+**Consumer:** Achilles's Phase 4 plan-phase + Phase 7 duplicated-utility trigger self-review check. Not user-facing; renderer deferred.
 
 ## 4. Hybrid synthesis engine
 
@@ -321,17 +382,17 @@ One template per priority view ships in 2.7. Future renderers (HTML, Slack block
 
 ## 7. Execution order
 
-Sequential unless `‖`. Small commits, independently revertible. Estimate: 7 commits.
+Sequential unless `‖`. Small commits, independently revertible. Estimate: **7 commits** (amended 2026-04-22 — same commit count; regression-correlation + recent-utilities folded into F / G rather than adding new commits).
 
 1. **Commit A — Tier A substrate.** `scripts/memory-ingest.sh` + `scripts/memory-rebuild.sh` + `memory/migrations/001-init.sql` + `resolve_memory_db` in `lib-paths.sh`. Schema + FTS5 table created on first run. Contract doc `contracts/memory-ingest.md`. Unit tests on a fixture artifact tree.
 2. **Commit B — ingest hooks.** Wire `memory-ingest.sh --event` into `scripts/write-event.sh`. Wire `--artifact` into a new `scripts/write-artifact.sh` (or into existing writers — whichever is less invasive after 2.6 lands). Slack-ingest modes call `--slack`. Post-2.6-cutover bootstrap ingest runs once here.
 3. **Commit C — view contract + dispatcher.** `contracts/view-generation.md` + `scripts/run-view.sh` + `schemas/view-manifest.json` (self-versioned, pre-commit regen). Empty manifest at first — validates the dispatch path without any views yet.
 4. **Commit D — view: `workflow-signature`.** Generator + schema + renderer template + unit tests on fixture substrate. First end-to-end view.
 5. **Commit E — views: `architecture-overview` + `testing-health`.** Generators + schemas + renderers. Both graceful on missing producers.
-6. **Commit F — view: `token-cost-budget`.** Generator + schema + renderer. Hooks into Phase 2.5 `agent_session_completed` events.
-7. **Commit G — Chanakya `knowledge` mode + weekly cron hook.** `chanakya/modes/knowledge.md` exposes `/chanakya knowledge view <name>`, `/chanakya knowledge rebuild`, `/chanakya knowledge list`. Opt-in weekly cron stanza added to `scripts/schedule-hooks.md` (lands fully when Phase 3's `/schedule` ships; 2.7 documents the intended config only).
+6. **Commit F — views: `token-consumption` + `regression-correlation`.** Both consumption-adjacent views land together. `token-consumption` hooks into 2.5 `agent_session_completed` + Phase-3 additive cache fields; `regression-correlation` no-ops cleanly pre-Phase-5 per §3.5 data-availability gate. Generators + schemas + renderers + unit tests.
+7. **Commit G — view: `recent-utilities` + Chanakya `knowledge` mode + weekly cron hook.** `recent-utilities` generator + schema (consumer is Achilles at plan phase per Phase 4 amendment + Phase 7 duplicated-utility trigger; no renderer). `chanakya/modes/knowledge.md` exposes `/chanakya knowledge view <name>`, `/chanakya knowledge rebuild`, `/chanakya knowledge list`. Opt-in weekly cron stanza added to `scripts/schedule-hooks.md` (lands fully when Phase 3's `/schedule` ships; 2.7 documents the intended config only).
 
-Parallelizable: D ‖ E ‖ F once C merges. G merges last — thin mode-pack wrapper over the primitives from C–F.
+Parallelizable: D ‖ E ‖ F once C merges. G merges last — thin mode-pack wrapper over the primitives from C–F plus the Achilles-consumed `recent-utilities` view.
 
 ## 8. Risk register
 
@@ -360,24 +421,23 @@ When Commit G merges:
 
 GitHub issue per item post-plan-lock.
 
-- **The other seven views.** Opt-in / later:
+- **The other five views** (2026-04-22: list shrank by two — `regression-correlation` promoted to priority §3.5; `recent-utilities` added to priority §3.6). Opt-in / later:
   - `feature-catalog` — what features exist, where they live. Needs ADRs (Phase 4) to be non-trivial.
   - `crash-detection` — crash-to-fix-to-release chain. Needs Phase 5 crash feed.
   - `performance-trend` — build time, test time, cold-start metrics. Needs Phase 5 instrumentation.
   - `user-feedback-theme-map` — cluster feedback by theme. Needs Slack-ingest volume + possibly a small embedding step (non-local-LLM alternative: FTS5 `snippet()` + manual thematic tags).
   - `decision-journal` — chronological ADR + debrief-decision timeline. Needs Phase 4 ADR producer.
   - `release-changelog-for-humans` — release-notes renderer from release artifacts + linked tasks. Deferred until the rendering style matters to a real audience.
-  - `regression-correlation` — ties regressions back to the debrief that shipped them. Valuable but needs more signal than 2.7 has.
-- **Agent consumers of views.** Chanakya brief mode reading `architecture-overview` for Step-0 context; Lu Ban (Phase 4) catalog lookup via `feature-catalog`; Argus reading `testing-health` to tune verdicts. Primary consumers in 2.7 are the generators themselves + the user via renderer.
+- **Agent consumers of views.** Chanakya brief mode reading `architecture-overview` for Step-0 context; Lu Ban (Phase 4) catalog lookup via `feature-catalog`; Argus reading `testing-health` to tune verdicts. Primary consumers in 2.7 are the generators themselves + the user via renderer + Achilles (for `recent-utilities` at plan phase — Phase 4 amendment).
 - **Real-time view refresh.** Explicitly out of scope. Views are batch artifacts with sub-second staleness tolerance.
 - **Decision-journal structure.** Deferred until Phase 4 ADRs exist — shape of the journal depends on ADR shape.
-- **Cost-aware query throttling.** Only relevant if db grows past ~100 MB — at that point, per-view cached tables + query budget. Revisit on concrete growth. At this project's scale, expect <5 MB indefinitely.
+- **Query throttling for large substrates.** Only relevant if db grows past ~100 MB — at that point, per-view cached tables + query budget. Revisit on concrete growth. At this project's scale, expect <5 MB indefinitely.
 - **Cross-project rollup.** Tier-2 per-project db by design. A future "compare projects" view would be a tier-3-sync + merge pattern, orthogonal to 2.7.
-- **Embedding-based similarity.** Intentionally excluded. FTS5 covers the real needs; embeddings would require a local model or a paid API — both violate §0 standards.
+- **Embedding-based similarity (amended 2026-04-22).** FTS5 covers the primary needs for 2.7. If FTS5 proves too narrow downstream — e.g., thematic clustering of feedback that needs better semantic match than `porter unicode61` tokenization offers — evaluate `sqlite-vss` or a **local** embedding add-on. Rule out paid API + cloud-only options. Prior framing dismissed embeddings on cost grounds; that dismissal is retracted because the user is on a Max plan (local models remain on the table). Revisit on a concrete miss, not speculatively.
 
 ## 11. Notes from initial drafting
 
 - SQLite ships with macOS; FTS5 is compiled in. Zero install cost. The `sqlite3` binary at `/usr/bin/sqlite3` is already in the user's path.
 - `events/YYYY-MM-DD.jsonl` (2.6 canonical) is a clean ingest source — one line per event, typed, schema-versioned. Ingest cost is trivial.
-- The four priority views were chosen to cover: **how we work** (workflow-signature), **what we work on** (architecture-overview), **what we ship** (testing-health), **what it costs us** (token-cost-budget). Each is a distinct lens; together they characterize the project at a session-open glance.
+- The five priority views (amended 2026-04-22) cover: **how we work** (workflow-signature), **what we work on** (architecture-overview), **what we ship** (testing-health), **what we consume** (token-consumption — renamed from token-cost-budget for Max-plan honesty), **what we break** (regression-correlation — promoted once Phase 5 gives it a signal source). `recent-utilities` is a priority-but-not-lens sixth view: it exists to serve Achilles's plan-phase "did we already build this?" query (Phase 4 amendment), not the session-open glance. Together the five lenses characterize the project; the sixth quietly prevents duplicate work.
 - Renderer layer exists mostly for one user (the user) to skim. Keeping it thin avoids the trap of building a dashboard product.
