@@ -112,10 +112,10 @@ Ordered plan for the intent-router + ledger + knowledge refactor, as of 2026-04-
 - **Phase 2.7** — Knowledge layer. `_shared/project-memory.md` + `scripts/memory-query.sh`. Chanakya `modes/knowledge.md` for synthesis. Slack-ingest index joins the memory layer. Cross-refs from Lu Ban / Achilles / Argus.
 - **Phase 3** — Prompt-caching instrumentation + schedule-driven automation. Stable-prefix caching design. Daily/weekly/monthly/quarterly crons via `/schedule` and `/loop`. `modes/test-health.md`. Weekly narrative auto-post.
 - **Phase 4** — Lu Ban greenfield (`/luban`). Multi-file designs from day 1. ADR auto-write on `status: approved`. `_shared/architecture-catalog.md`. Integration with Chanakya Step 0 scan.
-- **Phase 5** — Crashlytics auto-brief loop + Chiron (synthetic QA agent). 3-step gate for crash fixes. `scripts/crash-watch.sh` modeled on `appstore-watch.sh`.
+- **Phase 5** — Crashlytics auto-brief loop + Argus `smoke` mode (synthetic-QA capability folded into Argus; right-sizing — no fifth agent). 3-step gate for crash fixes. `scripts/crash-watch.sh` modeled on `appstore-watch.sh`.
 - **Phase 6** — Executive dashboard. Local web app. Four zoom levels (Now / Week / Month / Quarter) + approval buttons.
 - **Phase 7** — Cross-agent routing intelligence. Chanakya suggests Lu Ban handoff on novelty; Achilles debrief surfaces architectural concerns. Always suggestion, never hard routing.
-- **Phase 8** — docs.html redesign. Use-case primary groupings + agent badge. Adds Lu Ban, Chiron cards.
+- **Phase 8** — docs.html redesign. Use-case primary groupings + agent badge. Adds Lu Ban card + Argus smoke-mode section.
 - **Phase 9** — Memory-aware briefs + crystal-ball analysis + narrative polish.
 
 ### Later (prove need first)
@@ -128,7 +128,7 @@ Autonomous improvement loop, agent rollback via semver, studio as shippable publ
 - 2.6 gates 2.7 (structured data before the knowledge layer indexing it).
 - 2.7 and 3 are parallelizable.
 - Lu Ban (4) lands on 2.5 + 2.6 foundation.
-- Chiron (5) independent of Lu Ban.
+- Argus smoke mode (5) independent of Lu Ban.
 - Dashboard (6) reads the 2.6 ledger; gated on 2.6.
 
 ### Open questions — revisit at next session start
