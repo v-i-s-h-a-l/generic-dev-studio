@@ -4,8 +4,15 @@ description: Render reporter-facing feedback reports — design (category=design
 type: mode-pack
 snapshots: [feedback-inbox.json]
 budget_tokens: 2500
-reads: []
-writes: []
+reads:
+  - plans/feedback/*.yaml                          # post-migration feedback artifacts (schema: _shared/schemas/feedback.md)
+  - plans/index.yaml                               # post-migration feedback index
+  - feedback/active.md                             # legacy active feedback (until Commit H)
+  - feedback/archive/build-*.md                    # legacy per-build archives (until Commit H)
+  - .runtime/state/chanakya-snapshots/feedback-inbox.json
+writes:
+  - plans/chanakya-inbox/design-report-<date>.md   # legacy report location (retained; unchanged in Commit F)
+  - plans/chanakya-inbox/product-report-<date>.md  # legacy report location (retained; unchanged in Commit F)
 ---
 
 # Mode: Report-Design (`/chanakya report-design [--build N]`)

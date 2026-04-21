@@ -4,15 +4,23 @@ description: Brief + dispatch composite. Resolves targets, checks debt gates, br
 type: mode-pack
 snapshots: [briefs.json, debt.json]
 budget_tokens: 2500
-reads: []
-writes: []
+reads:
+  - plans/index.yaml                               # post-migration task index
+  - plans/tasks/*.yaml                             # post-migration per-task artifacts
+  - plans/briefs/*.yaml                            # post-migration brief artifacts
+  - plans/chanakya-master.md                       # legacy fallback until Commit H
+  - plans/chanakya-tasks/*.md                      # legacy fallback until Commit H
+  - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
+  - .runtime/achilles-inbox/worker-*/alive         # worker heartbeats (fleet-mode detect)
+writes:
+  - .runtime/achilles-inbox/queue/*.json           # queue enqueues in fleet mode
 ---
 
 # Composite: Ship (`/chanakya ship <target>`)
 
 Brief and dispatch tasks to Achilles in a single command. This is the "hands-off" mode — Chanakya briefs, then tells the user exactly which `/achilles` commands to run in parallel.
 
-Snapshots: `snapshots/briefs.json` (5-min freshness; fall back to `chanakya-master.md` direct read). `snapshots/debt.json` for the debt-gate filter (fallback: master-plan debt block).
+Snapshots: `snapshots/briefs.json` (5-min freshness; post-migration fallback is `scripts/query-plans.sh --kind=task,brief`, with a `chanakya-master.md` direct read still honored during Phase 2.6 transition). `snapshots/debt.json` for the debt-gate filter (fallback: master-plan debt block).
 
 ## Target parsing
 

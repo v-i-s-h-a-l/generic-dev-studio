@@ -5,7 +5,8 @@ type: mode-pack
 snapshots: []
 budget_tokens: 800
 reads: []
-writes: []
+writes:
+  - feedback-inbox/<source-project>/<ts>-<kind>-<slug>.md   # canonical studio-feedback inbox (path unchanged in Commit F; YAML emission is a later commit once the studio-feedback schema lands)
 ---
 
 # Mode: Studio-Feedback (`/achilles studio-feedback` or conversational "capture this as feedback")

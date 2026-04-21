@@ -4,8 +4,14 @@ description: Fleet worker mode (`/achilles worker [N]`). Turns the current Claud
 type: mode-pack
 snapshots: []
 budget_tokens: 1500
-reads: []
-writes: []
+reads:
+  - .runtime/achilles-inbox/worker-*/             # worker slot state (busy, .lock, worker.log)
+  - events/<date>.jsonl                            # canonical event log (status reads)
+writes:
+  - .runtime/achilles-inbox/worker-*/.lock        # slot claim (atomic mkdir)
+  - .runtime/achilles-inbox/worker-*/busy         # current task marker
+  - .runtime/achilles-inbox/worker-*/worker.log   # watch-loop log
+  - events/<date>.jsonl                            # emits worker_started / worker_stopped via scripts/write-event.sh
 ---
 
 # Mode: Worker (`/achilles worker [N]`)

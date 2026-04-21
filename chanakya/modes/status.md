@@ -4,8 +4,18 @@ description: Default mode. Renders master-plan summary, git state, blockers, pus
 type: mode-pack
 snapshots: [briefs.json, debt.json, feedback-inbox.json, events-tail.json]
 budget_tokens: 3000
-reads: []
-writes: []
+reads:
+  - plans/index.yaml                               # post-migration task index (schema: _shared/schemas/task.md via plans-index-validator)
+  - plans/tasks/*.yaml                             # post-migration per-task artifacts
+  - plans/rounds/*.yaml                            # post-migration round artifacts
+  - plans/releases/*.yaml                          # post-migration release artifacts
+  - plans/chanakya-master.md                       # legacy fallback until Commit H
+  - plans/user-testing-rounds/*.md                 # legacy fallback until Commit H
+  - events/<date>.jsonl                            # canonical event log
+  - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
+  - .runtime/state/push-queue.jsonl                # push queue
+writes:
+  - .runtime/state/push-queue.jsonl                # marks entries displayed
 ---
 
 # Mode: Status
@@ -30,7 +40,7 @@ For each of `briefs.json`, `debt.json`, `feedback-inbox.json`, `events-tail.json
 
 ### Step 0A — Full-load fallback: briefs
 
-Parse `~/.dev-studio/<project>/plans/chanakya-master.md` directly. Walk `### Txxx — title` blocks, extract Status / Priority / Complexity / Branch. This is the authoritative source; the snapshot is only an indirection.
+Post-migration: read `~/.dev-studio/<project>/plans/index.yaml` (authoritative) + `plans/tasks/*.yaml` per entry; query via `scripts/query-plans.sh --kind=task` rather than globbing. During Phase 2.6 transition, fall back to `plans/chanakya-master.md` when `plans/index.yaml` is absent — walk `### Txxx — title` blocks, extract Status / Priority / Complexity / Branch.
 
 ### Step 0B — Full-load fallback: debt
 
@@ -92,14 +102,14 @@ Use the feedback-inbox snapshot (`total_pending`, `by_scope`) or fallback. If `t
 
 ## Step 3C — Test-flow round status
 
-Scan `~/.dev-studio/<project>/plans/user-testing-rounds/` for existing round files:
-- Report total rounds and when the latest was generated (from the `Generated:` header).
+Post-migration: scan `~/.dev-studio/<project>/plans/rounds/*.yaml` (schema: `_shared/schemas/round.md`) via `scripts/query-plans.sh --kind=round`. Legacy fallback during Phase 2.6 transition: `plans/user-testing-rounds/*.md` + `plans/user-testing.md`.
+- Report total rounds and when the latest was generated (from the `generated_at` field / legacy `Generated:` header).
 - If the latest round has unchecked cases (some `[ ] pass` remaining), report: "Round N is partially completed (K/M cases checked)."
 - If the latest round is fully completed (all cases checked), report: "Round N completed — consider `--promote` to feed into review-feedback, or generate a new round."
 
 ## Step 3D — Release status
 
-Read the `## Release Log` from the master plan:
+Post-migration: read `plans/releases/*.yaml` (schema: `_shared/schemas/release.md`) via `scripts/query-plans.sh --kind=release`. Legacy fallback: `## Release Log` from `plans/chanakya-master.md`.
 - Report the latest TestFlight and App Store releases (build number, version, date).
 - Count tasks with status `done` or `verified` whose `Released in:` field does NOT contain a `TF-` entry — these have merged since the last TestFlight build.
 - If the count is > 0, suggest: "N tasks merged since last TestFlight (build <LAST_BUILD>). Run `/achilles push-tf` when ready."

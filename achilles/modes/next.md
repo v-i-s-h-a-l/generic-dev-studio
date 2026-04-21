@@ -4,7 +4,10 @@ description: Composite next mode (`/achilles next [N]`). Picks and executes the 
 type: mode-pack
 snapshots: []
 budget_tokens: 1000
-reads: []
+reads:
+  - plans/index.yaml                               # post-migration task index
+  - plans/tasks/*.yaml                             # post-migration per-task artifacts
+  - plans/chanakya-master.md                       # legacy fallback until Commit H
 writes: []
 ---
 
@@ -16,7 +19,7 @@ Delegates execution to the task-mode pipeline; this mode is only the picker + di
 
 ## Steps
 
-1. **Read the master plan.** Find all tasks with status `briefed` (ready for execution). Sort by:
+1. **Find briefed tasks.** Post-migration: `scripts/query-plans.sh --kind=task --state=briefed`. Legacy fallback: scan `plans/chanakya-master.md`. Sort by:
    - Priority (P0 first)
    - Type preference: TBUILD/TUNIT/TUI tasks first (debt reduction), then test sub-tasks whose parent is `done`, then implementation tasks
    - Task ID (lower first, as tiebreaker)

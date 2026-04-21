@@ -4,8 +4,14 @@ description: Manual build verification (`/achilles build`). One command: green r
 type: mode-pack
 snapshots: []
 budget_tokens: 2500
-reads: []
-writes: []
+reads:
+  - plans/index.yaml                               # post-migration task index (for Unverified-since set)
+  - plans/tasks/*.yaml                             # post-migration per-task artifacts
+  - plans/chanakya-master.md                       # legacy: `## Build Debt` block + Unverified-since (until Commit H)
+writes:
+  - plans/debriefs/<debrief-id>.yaml               # post-migration build-check debrief (YAML emission lands in Commit G; schema: _shared/schemas/debrief.md)
+  - plans/chanakya-inbox/<BUILD_ID>-debrief.md     # legacy write target during Phase 2.6 transition
+  - events/<date>.jsonl                            # build-check events (via scripts/write-event.sh)
 ---
 
 # Mode: Build (`/achilles build`)
@@ -16,7 +22,7 @@ This mode short-circuits the normal task pipeline — no branch, no merge, no Ar
 
 ## B1 — Compute `Covers:` range
 
-Read the master plan's `## Build Debt` block. Take `Last green: <sha>` and the current committed HEAD of `$ORIG_BRANCH`. The range is `<last-green-sha>..HEAD`. Also capture the `Unverified since: [T015, T016, ...]` list — these task IDs are the human-readable Covers set.
+Read the `## Build Debt` block (legacy: `plans/chanakya-master.md`; post-migration: the `build_debt` section that Commit G's master-plan regenerator emits from `plans/index.yaml`). Take `Last green: <sha>` and the current committed HEAD of `$ORIG_BRANCH`. The range is `<last-green-sha>..HEAD`. Also capture the `Unverified since: [T015, T016, ...]` list — these task IDs are the human-readable Covers set.
 
 If `Last green` is empty or the SHA is unreachable (branch rewritten), treat the base as "unknown" and use `<earliest-commit-on-branch>..HEAD`.
 
@@ -46,7 +52,7 @@ Run the full-green build path used by the task mode's Step 6 verbatim, using `$D
 
 ## B4a — Green path
 
-1. Write debrief to `~/.dev-studio/<project>/plans/chanakya-inbox/<BUILD_ID>-debrief.md`:
+1. Write debrief. Post-migration canonical target: `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml` (schema: `_shared/schemas/debrief.md`, `mode: direct-debrief`, `task_id: null`). YAML emission lands in Commit G; during Phase 2.6 transition the legacy write target `~/.dev-studio/<project>/plans/chanakya-inbox/<BUILD_ID>-debrief.md` (format: `_shared/contracts/debrief-format.md`) remains in use:
 
 ```markdown
 # Debrief: <BUILD_ID> — Manual build verification

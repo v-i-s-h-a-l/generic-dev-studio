@@ -4,15 +4,23 @@ description: Sync a Slack Lists bug tracker with the Chanakya master plan — St
 type: mode-pack
 snapshots: [briefs.json]
 budget_tokens: 3500
-reads: []
-writes: []
+reads:
+  - plans/index.yaml                               # post-migration task index (for Slack-row cross-ref)
+  - plans/tasks/*.yaml                             # post-migration per-task artifacts
+  - plans/releases/*.yaml                          # post-migration release artifacts (build numbers, TF tags)
+  - plans/chanakya-master.md                       # legacy fallback until Commit H
+  - .runtime/state/chanakya-snapshots/briefs.json
+  - feedback/active.md                             # reminders table (append target below)
+writes:
+  - plans/chanakya-master.md                       # legacy: Slack-status-last-synced writeback (until Commit G emits YAML)
+  - feedback/active.md                             # append ingest-reminder rows
 ---
 
 # Mode: Sync-Slack (`/chanakya sync-slack [--list <id>] [--build <number>]`)
 
 Sync a Slack Lists bug tracker with the Chanakya master plan. Reads task statuses from the plan, writes Status + Dev Notes + Fixed in Build back to the Slack list. Designed to run after every TestFlight build upload.
 
-Snapshots: `snapshots/briefs.json` for the task→Slack-row cross-reference pass (5-min freshness; falls back to full `chanakya-master.md` scan on stale/null).
+Snapshots: `snapshots/briefs.json` for the task→Slack-row cross-reference pass (5-min freshness; post-migration fallback is `scripts/query-plans.sh --kind=task`, with a full `chanakya-master.md` scan still honored during Phase 2.6 transition).
 
 ## Configuration
 
@@ -58,7 +66,7 @@ When `/chanakya sync-slack --configure` is invoked:
 ## Step 1 — Read current state
 
 1. Fetch all rows: `GET slackLists.items.list?list_id=<id>&limit=50`
-2. Read `chanakya-master.md` — collect all tasks with a `Slack row:` field.
+2. Collect all tasks with a `Slack row:` field. Post-migration: `scripts/query-plans.sh --kind=task --has=slack_row` over `plans/tasks/*.yaml`. Legacy fallback: scan `chanakya-master.md`.
 3. Parse each row: extract Issue text, current Status, current Dev Notes content, current Fixed in Build, Reported in Build, row_id.
 
 ## Step 2 — Determine build number

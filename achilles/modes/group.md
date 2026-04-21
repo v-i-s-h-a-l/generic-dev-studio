@@ -4,8 +4,13 @@ description: Composite group mode (`/achilles group <task-id>`). Executes the im
 type: mode-pack
 snapshots: []
 budget_tokens: 1500
-reads: []
-writes: []
+reads:
+  - plans/index.yaml                               # post-migration task index (group lookup)
+  - plans/tasks/*.yaml                             # post-migration per-task artifacts
+  - plans/briefs/*.yaml                            # post-migration brief artifacts
+  - plans/chanakya-master.md                       # legacy fallback until Commit H
+  - plans/chanakya-tasks/*.md                      # legacy fallback until Commit H
+writes: []   # delegates to task-mode pipeline; writes happen there
 ---
 
 # Composite: Group Mode (`/achilles group <task-id>`)
@@ -16,7 +21,7 @@ Each phase runs the standard task-mode pipeline. This mode is an orchestrator: i
 
 ## Steps
 
-1. **Resolve the group.** Read the master plan. Find the task and all sub-tasks with the same `Group:` value. Sort: implementation first, then test-unit, test-integration, test-ui.
+1. **Resolve the group.** Post-migration: `scripts/query-plans.sh --kind=task --group=<group>` against `plans/index.yaml`. Legacy fallback: scan `plans/chanakya-master.md`. Find the task and all sub-tasks with the same `Group:` value. Sort: implementation first, then test-unit, test-integration, test-ui.
 2. **Validate.** The implementation task must be `briefed` (or `pending` with a brief available). Test sub-tasks must exist and be `pending` or `briefed`. If the implementation is already `done`, skip to the test sub-tasks.
 3. **Phase 1 — Implementation.** Run the standard task-mode pipeline (Steps 1–10) for the implementation task. If it fails at any step, stop the entire group and report.
 4. **Phase 2 — Test sub-tasks.** After the implementation merges successfully, execute each test sub-task sequentially through the same pipeline:

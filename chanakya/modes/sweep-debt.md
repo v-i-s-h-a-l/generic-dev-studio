@@ -4,7 +4,12 @@ description: Identify and dispatch all pending debt-reduction tasks (test sub-ta
 type: mode-pack
 snapshots: [briefs.json, debt.json]
 budget_tokens: 2000
-reads: []
+reads:
+  - plans/index.yaml                               # post-migration task index
+  - plans/tasks/*.yaml                             # post-migration per-task artifacts
+  - plans/briefs/*.yaml                            # post-migration brief artifacts (for briefed check)
+  - plans/chanakya-master.md                       # legacy fallback until Commit H
+  - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
 writes: []
 ---
 
@@ -12,7 +17,7 @@ writes: []
 
 Identify and dispatch all pending work needed to reduce build and test debt below warn thresholds. One command to get back to green.
 
-Snapshots: `snapshots/debt.json` for counter state (5-min freshness; fallback: read master-plan debt block). `snapshots/briefs.json` for the pending-test-task selection (5-min freshness; fallback: master-plan scan).
+Snapshots: `snapshots/debt.json` for counter state (5-min freshness; fallback: read master-plan debt block). `snapshots/briefs.json` for the pending-test-task selection (5-min freshness; fallback post-migration is `scripts/query-plans.sh --kind=task`, with a `plans/chanakya-master.md` scan still honored during Phase 2.6 transition).
 
 ## Steps
 
