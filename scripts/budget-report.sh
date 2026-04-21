@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 # budget-report.sh — aggregate agent_session_completed events over the last N
 # days and print a per-(agent, mode) roll-up: run count, p50/p95 tokens, seed
-# budget, p95/budget ratio, total spend.
+# budget, p95/budget ratio, cache_hit_rate, ctx_util_pct.
 #
 # Reads events from `resolve_project_memory()/events/YYYY-MM-DD.jsonl`. Emits
 # a human-readable table to stdout. Intended to be wired into Chanakya's
 # compact mode so the user sees the report on every sweep (see
 # _shared/patterns/budget-telemetry.md).
 #
+# User is on the Claude Max plan (flat subscription). This report tracks
+# consumption, not $. Prior $-denominated columns were dropped 2026-04-22 —
+# see memory feedback_max_plan_pricing.md.
+#
 # Usage:
-#   scripts/budget-report.sh           # last 7 days
-#   scripts/budget-report.sh --days 30 # last N days
+#   scripts/budget-report.sh              # last 7 days
+#   scripts/budget-report.sh --days 30    # last N days
+#   CTX_WINDOW_TOKENS=1000000 …           # override context-window baseline
+#                                         # (default 200000 — standard Claude)
 
 set -u
 umask 022
@@ -27,6 +33,10 @@ while [ $# -gt 0 ]; do
     *) printf 'usage: budget-report.sh [--days N]\n' >&2; exit 2 ;;
   esac
 done
+
+# Context-window baseline for ctx_util_pct. Standard Claude context is 200K;
+# override via env for 1M-context sessions (e.g. Opus 4.7).
+CTX_WINDOW_TOKENS=${CTX_WINDOW_TOKENS:-200000}
 
 BUDGETS="$REPO_ROOT/_shared/schemas/token-budgets.json"
 if ! command -v jq >/dev/null 2>&1; then
@@ -45,7 +55,6 @@ if [ ! -d "$events_dir" ]; then
   exit 0
 fi
 
-# Build the date list of files to scan (last N days, lexicographic sort).
 now_epoch=$(date -u +%s)
 files=""
 for i in $(seq 0 $((DAYS - 1))); do
@@ -60,16 +69,16 @@ if [ -z "$files" ]; then
   exit 0
 fi
 
-# Extract every agent_session_completed event's (agent, mode, tokens_total,
-# cost_usd) tuple as newline-separated TSV rows.
+# Per-event TSV: agent, mode, input, output, cache_read.
 tsv=$(mktemp)
 printf '%s\n' "$files" | while IFS= read -r f; do
   [ -z "$f" ] && continue
   jq -r 'select(.event == "agent_session_completed") |
     [.agent,
      (.data.mode // ""),
-     ((.data.tokens.input // 0) + (.data.tokens.output // 0)),
-     (.data.cost_usd // 0)
+     (.data.tokens.input // 0),
+     (.data.tokens.output // 0),
+     (.data.tokens.cache_read // 0)
     ] | @tsv' "$f" 2>/dev/null
 done > "$tsv"
 
@@ -80,80 +89,83 @@ if [ "$total_runs" -eq 0 ]; then
   exit 0
 fi
 
-# Group by (agent, mode) and compute p50 / p95 / sum(cost). Emit human
-# table. Awk handles the grouping; sort drives the percentile math.
-awk -F'\t' -v budgets="$BUDGETS" '
-  function percentile(arr, n, p,    idx) {
-    idx = int(n * p / 100)
-    if (idx < 1) idx = 1
-    if (idx > n) idx = n
-    return arr[idx]
-  }
-  BEGIN {
-    # Lazy-load budgets via a jq sidecar would be ideal; done externally below.
-  }
+# Aggregate per (agent, mode). Emit a header line of keys, then =DATA= marker,
+# then per-run rows (so the second awk pass can sort tok_total for percentiles).
+awk -F'\t' '
   {
     key = $1 "/" $2
     runs[key]++
-    tok[key, runs[key]] = $3
-    cost_sum[key] += $4
+    tok_total = $3 + $4
+    sum_input[key] += $3
+    sum_cache_read[key] += $5
+    sum_ctx[key] += ($3 + $5)
   }
   END {
-    # Print the keys so the outer shell can join budget values.
-    for (k in runs) print k "\t" runs[k]
-    print "=DATA="
     for (k in runs) {
-      n = runs[k]
-      for (i = 1; i <= n; i++) {
-        print k "\t" tok[k, i] "\t" cost_sum[k]
-      }
+      print k "\t" runs[k] "\t" sum_input[k] "\t" sum_cache_read[k] "\t" sum_ctx[k]
     }
+    print "=DATA="
   }
-' "$tsv" > "${tsv}.grouped"
+' "$tsv" > "${tsv}.agg"
 
-# Extract budget for each (agent/mode) and build the final report.
+# Per-run rows for percentile computation.
+awk -F'\t' '{ print $1 "/" $2 "\t" ($3 + $4) }' "$tsv" >> "${tsv}.agg"
+
+# Header.
 printf 'Budget report (last %d days)\n' "$DAYS"
-printf '%-10s %-18s %5s %9s %9s %8s %11s %8s\n' \
-  'Agent' 'Mode' 'Runs' 'p50 tok' 'p95 tok' 'Budget' 'p95/budget' '$spent'
+printf '%-10s %-18s %5s %9s %9s %8s %11s %10s %9s\n' \
+  'Agent' 'Mode' 'Runs' 'p50 tok' 'p95 tok' 'Budget' 'p95/budget' 'cache_hit' 'ctx_util'
 
-# Rebuild: read the grouped file; per key, gather tokens, compute p50/p95.
-awk -F'\t' -v budgets="$BUDGETS" '
-  function min(a, b) { return a < b ? a : b }
+# Second pass: compute p50/p95 per key, join with sum_* for the derived columns.
+awk -F'\t' -v ctx_window="$CTX_WINDOW_TOKENS" '
   BEGIN { data = 0 }
   $0 == "=DATA=" { data = 1; next }
   data == 0 {
-    # Keys phase: remember order.
     order[++n_keys] = $1
     key_runs[$1] = $2
+    sum_input[$1] = $3
+    sum_cache_read[$1] = $4
+    sum_ctx[$1] = $5
     next
   }
-  # Data phase.
   {
     toks[$1, ++toks_n[$1]] = $2
-    cost[$1] = $3
   }
   END {
     for (i = 1; i <= n_keys; i++) {
       key = order[i]
       n = toks_n[key]
-      # Bubble-sort the per-key array (n is tiny — <500 runs typical).
       for (a = 1; a <= n; a++) {
-        for (b = a+1; b <= n; b++) {
+        for (b = a + 1; b <= n; b++) {
           if (toks[key, a] > toks[key, b]) {
             t = toks[key, a]; toks[key, a] = toks[key, b]; toks[key, b] = t
           }
         }
       }
-      # Percentiles.
       idx50 = int(n * 0.5); if (idx50 < 1) idx50 = 1
       idx95 = int(n * 0.95); if (idx95 < 1) idx95 = 1
       p50 = toks[key, idx50]
       p95 = toks[key, idx95]
+      # cache_hit_rate = cache_read / (cache_read + input); skip if no token data.
+      denom = sum_cache_read[key] + sum_input[key]
+      if (denom > 0) {
+        hit = sum_cache_read[key] / denom
+        hit_s = sprintf("%.2f", hit)
+      } else {
+        hit_s = "n/a"
+      }
+      # ctx_util_pct = mean((input + cache_read) / ctx_window) per run.
+      if (ctx_window > 0 && n > 0) {
+        util = (sum_ctx[key] / n) / ctx_window
+        util_s = sprintf("%.2f", util)
+      } else {
+        util_s = "n/a"
+      }
       split(key, ab, "/")
-      print ab[1] "\t" ab[2] "\t" n "\t" p50 "\t" p95 "\t" cost[key]
+      print ab[1] "\t" ab[2] "\t" n "\t" p50 "\t" p95 "\t" hit_s "\t" util_s
     }
   }
-' "${tsv}.grouped" | sort | while IFS=$'\t' read -r agent mode runs p50 p95 total_cost; do
+' "${tsv}.agg" | sort | while IFS=$'\t' read -r agent mode runs p50 p95 hit util; do
   if [ -n "$mode" ] && [ "$mode" != "" ]; then
     budget=$(jq -r --arg k "$agent/$mode" '.mode_budgets[$k] // .default_mode_budget' "$BUDGETS" 2>/dev/null)
   else
@@ -165,14 +177,10 @@ awk -F'\t' -v budgets="$BUDGETS" '
   else
     ratio="n/a"
   fi
-  printf '%-10s %-18s %5s %9s %9s %8s %11s %8.2f\n' \
-    "$agent" "$mode" "$runs" "$p50" "$p95" "$budget" "$ratio" "$total_cost" \
-    2>/dev/null || \
-  printf '%-10s %-18s %5s %9s %9s %8s %11s %8s\n' \
-    "$agent" "$mode" "$runs" "$p50" "$p95" "$budget" "$ratio" "$total_cost"
+  printf '%-10s %-18s %5s %9s %9s %8s %11s %10s %9s\n' \
+    "$agent" "$mode" "$runs" "$p50" "$p95" "$budget" "$ratio" "$hit" "$util"
 done
 
-total_spend=$(awk -F'\t' 'NF >= 6 { sum += $6 } END { printf "%.2f", sum }' "${tsv}.grouped" 2>/dev/null)
-printf '\nTotal runs: %s   Total spend: $%s\n' "$total_runs" "${total_spend:-0.00}"
+printf '\nTotal runs: %s   (ctx window baseline: %s tokens)\n' "$total_runs" "$CTX_WINDOW_TOKENS"
 
-rm -f "$tsv" "${tsv}.grouped"
+rm -f "$tsv" "${tsv}.agg"

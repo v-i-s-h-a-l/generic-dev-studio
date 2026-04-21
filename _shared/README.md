@@ -54,7 +54,7 @@ Post Phase 2.5 Commit C, layout is frozen: later phases land new files in existi
 | `token-budgets.json` | Per-mode token budget seed values. |
 | `capability-manifest.json` | Machine-readable agent + mode-pack roster (regenerated). |
 | `capability-manifest-CHANGELOG.md` | Human-readable capability-change log. |
-| `model-rates.json` | Per-model token pricing for budget telemetry. |
+| `model-rates.json` | **Deprecated 2026-04-22** (Max-plan reframe — was per-model USD rates; unused post-reframe). Kept one cycle; remove at 2.7 cutover. |
 | `reader-versions.json` | Per-schema reader version table — `validate-schema.sh` reads this. Phase 2.6. |
 
 ## `primitives/` — reusable helpers
@@ -78,7 +78,7 @@ Post Phase 2.5 Commit C, layout is frozen: later phases land new files in existi
 | `singleton-invariants.md` | Which agents are singleton and why. |
 | `chanakya-principles.md` | Cross-cutting invariants Chanakya modes inherit. |
 | `dry-run.md` | `--dry-run` convention every writable mode adopts. |
-| `budget-telemetry.md` | `tokens` + `cost_usd` on session-completed; `mode_budget_exceeded` event. |
+| `budget-telemetry.md` | `tokens` on session-completed plus derived `cache_hit_rate` + `ctx_util_pct`; `mode_budget_exceeded` event. Max-plan reframe 2026-04-22. |
 | `multi-machine-sync.md` | Tier-3 partitioned-by-writer shared state. |
 | `capability-manifest.md` | Machine-readable roster regenerated from mode-pack frontmatter. |
 

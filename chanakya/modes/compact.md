@@ -86,7 +86,7 @@ chanakya-changelog.md       ← session changelog entries older than 7 days
 
 10a. **Feedback archive + index regen.** Implicitly run `feedback-archive` (without `--notify-slack`) to move any `verified`/`wontfix` F-records to `archive/build-<N>.md`, then regenerate `feedback/reporters/<slug>.md` for every reporter seen in active + archive. Regenerate any `feedback/root-causes/<pattern>.md` whose instance list changed. These indices are always rebuilt from primary data; hand-edits are overwritten.
 
-10b. **Budget report.** Run `scripts/budget-report.sh` (last 7 days by default). It aggregates `agent_session_completed` events from the event log and prints a per-(agent, mode) roll-up: run count, p50/p95 tokens, seed budget, p95/budget ratio, total spend. Include the report in the compact output below. See `~/.claude/skills/_shared/patterns/budget-telemetry.md` for the emission contract and report semantics.
+10b. **Budget report.** Run `scripts/budget-report.sh` (last 7 days by default). It aggregates `agent_session_completed` events from the event log and prints a per-(agent, mode) roll-up: run count, p50/p95 tokens, seed budget, p95/budget ratio, `cache_hit_rate`, `ctx_util_pct`. Include the report in the compact output below. See `~/.claude/skills/_shared/patterns/budget-telemetry.md` for the emission contract and report semantics.
 
 11. **Report:**
     ```

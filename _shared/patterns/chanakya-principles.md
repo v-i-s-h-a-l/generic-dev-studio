@@ -46,6 +46,6 @@ The authoritative state-machine (10+ states, transitions with preconditions) liv
 
 ## Session-completion event (every Chanakya mode)
 
-At the end of any Chanakya session — regardless of mode — emit `agent_session_completed` per the emission contract in `_shared/contracts/event-emission.md`. The event carries `{mode, duration_s, files_read, files_written}` and (when available) `tokens` + `cost_usd` per `_shared/patterns/budget-telemetry.md`.
+At the end of any Chanakya session — regardless of mode — emit `agent_session_completed` per the emission contract in `_shared/contracts/event-emission.md`. The event carries `{mode, duration_s, files_read, files_written}` and (when available) `tokens` (`{input, output, cache_read, cache_write}`) per `_shared/patterns/budget-telemetry.md`. No `cost_usd` — Max-plan reframe, 2026-04-22.
 
 For task-specific modes (e.g. `brief T001`), use the task ID in the `task` field; for system-scope sessions, use `""`.
