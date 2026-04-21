@@ -5,8 +5,23 @@ type: mode-pack
 snapshots: []
 budget_tokens: 6000
 dry_run: true
-reads: []
-writes: []
+reads:
+  - plans/index.yaml                               # post-migration task + brief index
+  - plans/tasks/<task-id>.yaml                     # post-migration per-task artifacts (schema: _shared/schemas/task.md)
+  - plans/briefs/<brief-id>.yaml                   # post-migration brief artifacts (schema: _shared/schemas/brief.md)
+  - plans/reviews/<review-id>.yaml                 # argus verdict resolution (schema: _shared/schemas/review.md)
+  - plans/chanakya-master.md                       # legacy fallback until Commit H
+  - plans/chanakya-tasks/<task-id>-*.md            # legacy brief fallback until Commit H
+  - events/<date>.jsonl                            # via scripts/read-events.sh
+writes:
+  - plans/debriefs/<debrief-id>.yaml               # post-migration canonical (schema: _shared/schemas/debrief.md, debrief@2.0.0, mode: task)
+  - plans/tasks/<task-id>.yaml                     # back-ref update: links.debrief + state transitions per _shared/state-machines/task-lifecycle.md
+  - plans/briefs/<brief-id>.yaml                   # brief state transition dispatched → debriefed per _shared/state-machines/brief-lifecycle.md
+  - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
+  - plans/chanakya-master.md                       # legacy master-plan status mutation during Phase 2.6 transition
+  - plans/chanakya-inbox/<task-id>-debrief.md      # legacy debrief markdown retained during Phase 2.6 transition
+  - plans/chanakya-inbox/<task-id>-tests.md        # test-case artifact (read-write surface for test-manifest)
+  - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
 # Mode: Task Execution (`/achilles <task-id>` and `/achilles` bare)
@@ -105,8 +120,9 @@ This pilot catches contract bugs before 2.6 rewrites apply `--dry-run` to 30+ mo
 
 ### Step 1 — Load spec
 
-- **Brief mode:** find and read the brief for `<task-id>` from `chanakya-tasks/`. If missing: tell the user to run `/chanakya brief <task-id>` or switch to direct mode.
-- **Direct mode:** ask the user what needs to be done. Keep clarifications minimal.
+- **Brief mode (post-migration):** resolve the brief for `<task-id>` via `scripts/query-plans.sh --kind=brief --task-id=<task-id> --state=ready,dispatched` against `plans/briefs/<brief-id>.yaml` (schema: `_shared/schemas/brief.md`, `brief@3.1.0`). The structured `reads` / `writes` / `acceptance` / `testability` / `figma` fields drive Steps 2–4; the `body:` multi-line string carries the narrative context.
+- **Brief mode (legacy fallback):** if no YAML brief exists (migration not run), read from `plans/chanakya-tasks/<task-id>-*.md` and emit one `legacy_artifact_read` event. If both surfaces miss, tell the user to run `/chanakya brief <task-id>` or switch to direct mode.
+- **Direct mode:** ask the user what needs to be done. Keep clarifications minimal. No `brief_id` is resolved — the debrief will carry `brief_id: null`.
 
 Invoke any skills the brief lists (e.g., `swiftui-pro`, `figma-to-swiftui`).
 
@@ -118,7 +134,9 @@ Schema, counter rules, banner text, and gate behavior: see `~/.claude/skills/_sh
 
 ### Step 2 — Claim the task
 
-Update `~/.dev-studio/<project>/plans/chanakya-master.md`: set status from `briefed` to `in-progress`. (Direct-mode work without a task entry skips this.)
+Post-migration: transition `plans/tasks/<task-id>.yaml` state `briefed → dispatched → in-progress` per `_shared/state-machines/task-lifecycle.md` (two transitions if the task was still at `briefed` on pickup). Append the `history:` entry for each transition, bump `updated_at`, and emit `task_state_changed` per transition. In parallel, transition the brief `plans/briefs/<brief-id>.yaml` `ready → dispatched` per `_shared/state-machines/brief-lifecycle.md`. Regenerate `plans/index.yaml` via `scripts/rebuild-index.sh`.
+
+**Phase 2.6 transition note:** also mutate `~/.dev-studio/<project>/plans/chanakya-master.md` — set the legacy status row from `briefed` to `in-progress` — until Commit H cutover. (Direct-mode work without a task entry skips this.)
 
 Emit event:
 ```json
@@ -504,19 +522,13 @@ rm -rf /tmp/derived-data/<task-id>
 
 ### Step 10 — Debrief + short user summary
 
-Write debrief following the format at `~/.claude/skills/_shared/contracts/debrief-format.md`.
+Write the debrief as YAML to `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml` per schema `_shared/schemas/debrief.md` (`debrief@2.0.0`). Mint `id` as a UUIDv7. Populate `schema_version`, `task_id: <task-id>`, `brief_id: <brief-id>` (null for direct-mode without brief), `mode: task`, `completed_at`, `branch: {worked_on, merged_into, merge_sha}`, `commits: [{sha, message}…]`, `diff_summary: {files, added_lines, removed_lines}`, the structured `decisions` / `tests` / `testability` / `debt` / `performance` / `key_learnings` / `known_issues` / `follow_ups` arrays/objects, `build_gate: <lsp-only|full-green>` (from Step 6), `build_debt_override`, `open_questions: []` (task mode rarely uses this), and `argus_review: {status, review_id, notes}` derived from the Step 8.5 verdict (status `approved` / `flagged` / `blocked`; `not-invoked` only for exempted build-mode/test-suite-mode paths, which don't land here anyway — Argus is mandatory).
 
-**Debrief is load-bearing for worker-mode detection.** The worker wrapper (`scripts/achilles-worker.sh`) treats a `claude -p` exit with `rc=0` and no debrief at `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-debrief.md` as a silent-stuck state and routes the task to `rescue/<task-id>-stuck.md`. Any meaningful outcome — completion, blocked, failed — must write a debrief before exit. Clarifying questions exit one-shot subagents cleanly and trip this detector; prefer the autonomous-default pattern (pick the obvious default, proceed, note the assumption in the debrief) instead of asking.
+Then transition `plans/tasks/<task-id>.yaml` state `argus-reviewed → merged` per `_shared/state-machines/task-lifecycle.md`, set `links.debrief = <debrief-id>`, append `links.reviews` with `argus_review.review_id` when present. Transition the paired brief `plans/briefs/<brief-id>.yaml` `dispatched → debriefed`. Emit `task_state_changed`, `brief_state_changed`, and `debrief_emitted` via `scripts/write-event.sh`. Regenerate `plans/index.yaml` via `scripts/rebuild-index.sh`.
 
-If Argus returned `flagged`, add a `## Argus Review` block to the debrief:
-```markdown
-## Argus Review
-verdict: flagged
-review_file: <path>
-findings: <count>
-```
+**Debrief is load-bearing for worker-mode detection.** The worker wrapper (`scripts/achilles-worker.sh`) treats a `claude -p` exit with `rc=0` and no debrief for the task as a silent-stuck state and routes the task to `rescue/<task-id>-stuck.md`. Any meaningful outcome — completion, blocked, failed — must write a debrief (post-migration: plans/debriefs/<debrief-id>.yaml; legacy: plans/chanakya-inbox/<task-id>-debrief.md) before exit. Clarifying questions exit one-shot subagents cleanly and trip this detector; prefer the autonomous-default pattern (pick the obvious default, proceed, note the assumption in the debrief) instead of asking.
 
-Update master plan: status → `done`, record commit hashes and merge commit. `done` ≠ user-verified — Chanakya promotes to `verified` after test-manifest feedback.
+**Phase 2.6 transition note:** also write the legacy markdown debrief at `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-debrief.md` (format: `_shared/contracts/debrief-format.md`) so the worker's silent-stuck detector + in-flight Chanakya sessions that haven't yet migrated still see the debrief. If Argus returned `flagged`, the legacy markdown includes a `## Argus Review` block referencing the review file path and finding count. Also mutate `chanakya-master.md`: status → `done`, record commit hashes + merge commit. `done` ≠ user-verified — Chanakya promotes the task state to `verified` after test-manifest feedback. Cutover removes the legacy debrief + master-plan writes at Commit H.
 
 Emit event:
 ```json
