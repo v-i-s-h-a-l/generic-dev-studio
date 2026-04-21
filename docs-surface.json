@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-21T23:25:12Z",
+  "generated_at": "2026-04-21T23:32:08Z",
   "schema": 1,
   "commands": [
     {"name": "chanakya-help", "source": "commands/chanakya-help.md", "description": "", "agent": null, "scope": "global"},
@@ -26,7 +26,7 @@
     {"name": "chanakya.feedback", "source": "chanakya/modes/feedback.md", "agent": "chanakya", "mode": "feedback", "description": "Review-Feedback (apply user-testing.md edits to master plan), Feedback-Archive (promote verified records to per-build archive), Feedback-History (search active + archive), Studio-Feedback (capture studio-internal feedback). The full feedback lifecycle except Slack ingestion (which lives in the ingest mode pack)."},
     {"name": "chanakya.ingest", "source": "chanakya/modes/ingest.md", "agent": "chanakya", "mode": "ingest", "description": "Slack-source feedback ingestion — thread, DM, channel. Pulls messages, classifies feedback vs conversation, mints feedback records, downloads attachments, dedupes, emits feedback_ingested."},
     {"name": "chanakya.intake", "source": "chanakya/modes/intake.md", "agent": "chanakya", "mode": "intake", "description": "Initial task capture + planning — take a PRD or bullet points, tier into plan-worthy vs direct, expand into task groups with sub-task decisions (unit/integration/UI tests, TDD vs test-after), assign skills, write the master plan."},
-    {"name": "chanakya.review", "source": "chanakya/modes/review.md", "agent": "chanakya", "mode": "review", "description": "Inbox sweep + event-log processing. Handles regular task debriefs, manual-build-check debriefs, release debriefs, App Store watcher, threshold actions, stale-artifact janitor, event log, feedback reminders, blind-spot detection, studio-feedback ingestion. Also the explicit `/chanakya review` PRD-delta sub-command."},
+    {"name": "chanakya.review", "source": "chanakya/modes/review.md", "agent": "chanakya", "mode": "review", "description": "Inbox sweep + event-log processing. Handles regular task debriefs (task-mode + direct-debrief), manual-build-check debriefs, release debriefs, App Store watcher, threshold actions, stale-artifact janitor, event log, feedback reminders, blind-spot detection, studio-feedback ingestion. Also the explicit `/chanakya review` PRD-delta sub-command."},
     {"name": "chanakya.ship", "source": "chanakya/modes/ship.md", "agent": "chanakya", "mode": "ship", "description": "Brief + dispatch composite. Resolves targets, checks debt gates, briefs pending tasks, phases dispatch (fleet mode via work-stealing queue; single-session prints commands)."},
     {"name": "chanakya.status", "source": "chanakya/modes/status.md", "agent": "chanakya", "mode": "status", "description": "Default mode. Renders master-plan summary, git state, blockers, push queue, test-flow round status, and release status."},
     {"name": "chanakya.sweep-debt", "source": "chanakya/modes/sweep-debt.md", "agent": "chanakya", "mode": "sweep-debt", "description": "Identify and dispatch all pending debt-reduction tasks (test sub-tasks + build checks) in one command."},

@@ -1,11 +1,33 @@
 ---
 name: Chanakya Review
-description: Inbox sweep + event-log processing. Handles regular task debriefs, manual-build-check debriefs, release debriefs, App Store watcher, threshold actions, stale-artifact janitor, event log, feedback reminders, blind-spot detection, studio-feedback ingestion. Also the explicit `/chanakya review` PRD-delta sub-command.
+description: Inbox sweep + event-log processing. Handles regular task debriefs (task-mode + direct-debrief), manual-build-check debriefs, release debriefs, App Store watcher, threshold actions, stale-artifact janitor, event log, feedback reminders, blind-spot detection, studio-feedback ingestion. Also the explicit `/chanakya review` PRD-delta sub-command.
 type: mode-pack
 snapshots: [debt.json, events-tail.json, feedback-inbox.json]
-budget_tokens: 4000
-reads: []
-writes: []
+budget_tokens: 5500
+reads:
+  - plans/index.yaml                               # post-migration relational index
+  - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
+  - plans/briefs/*.yaml                            # brief lookup for follow-up task brief-regeneration
+  - plans/debriefs/*.yaml                          # post-migration canonical (schema: _shared/schemas/debrief.md, debrief@2.0.0 — both task + direct-debrief modes)
+  - plans/reviews/*.yaml                           # argus verdicts (schema: _shared/schemas/review.md)
+  - plans/releases/*.yaml                          # release-state linkage for release debriefs
+  - plans/feedback/*.yaml                          # feedback state snapshot for reminders
+  - plans/chanakya-master.md                       # legacy fallback until Commit H
+  - plans/chanakya-inbox/<task-id>-debrief.md      # legacy debrief fallback until Commit H
+  - plans/chanakya-inbox/build-*-debrief.md        # legacy manual-build-check debrief until Commit H
+  - plans/chanakya-inbox/{tf,release}-*-debrief.md # legacy release debrief until Commit H
+  - feedback/active.md                             # reminder reads
+  - .runtime/state/pending-appstore-review.json    # legacy watcher marker (migrates to plans/releases/<id>.yaml asc_metadata at Commit H)
+  - events/<date>.jsonl                            # via scripts/read-events.sh
+  - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
+writes:
+  - plans/tasks/<task-id>.yaml                     # state transitions per _shared/state-machines/task-lifecycle.md + links.debrief + links.reviews
+  - plans/releases/<release-id>.yaml               # release state transitions on release-debrief ingest
+  - plans/feedback/<feedback-id>.yaml              # feedback state transitions from reminder dispatch
+  - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh
+  - plans/chanakya-master.md                       # legacy master-plan mutation until Commit H
+  - plans/chanakya-inbox/processed/                # legacy debrief move destination until Commit H
+  - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
 # Mode: Review (inbox sweep + event processing + PRD delta)
@@ -25,27 +47,24 @@ Read `chanakya_mode.md` to determine current mode. If the file is missing, write
 
 ## Step 0 — Auto-Inbox Sweep (ALWAYS do this first)
 
-Before executing ANY mode, check `~/.dev-studio/<project>/plans/chanakya-inbox/` for unprocessed files. Handle three categories: regular task debriefs (`<task-id>-debrief.md`), manual-build-check debriefs (`build-*-debrief.md`, identified by `Type: manual-build-check` header), and release debriefs (`tf-*-debrief.md` with `Type: testflight-release`, `release-*-debrief.md` with `Type: appstore-release`). Ignore `processed/` and `*-tests.md`.
+Before executing ANY mode, enumerate unprocessed debrief artifacts. Post-migration surface: `scripts/query-plans.sh --kind=debrief --unprocessed` returns debriefs at `plans/debriefs/<debrief-id>.yaml` whose parent task (via `task_id` / `links.debrief`) has not yet been ingested — see the `processed` marker the ingester sets on the task's state history. Legacy surface: walk `~/.dev-studio/<project>/plans/chanakya-inbox/` for unprocessed files (regular task debriefs `<task-id>-debrief.md`, manual-build-check debriefs `build-*-debrief.md` with `Type: manual-build-check`, release debriefs `tf-*-debrief.md` with `Type: testflight-release`, `release-*-debrief.md` with `Type: appstore-release`; ignore `processed/` and `*-tests.md`). Emit one `legacy_artifact_read` event per legacy-surface hit so the transition is visible.
+
+**Uniform debrief ingest (task + direct-debrief).** Debriefs authored by Achilles in either `task` mode (with `task_id` + `brief_id` set) or the new `direct-debrief` mode (both null; surface: `/achilles debrief`) share the same schema (`debrief@2.0.0`). Ingest reads them uniformly — no branching on `mode`. A direct-debrief with `task_id: null` skips Step 0A's task-linkage steps and is absorbed into the knowledge layer (Phase 2.7); its `follow_ups[]` still feed Step 0A.5 follow-up minting.
 
 ### 0A — Process each regular task debrief
 
-1. Read the debrief.
-2. Update the corresponding task in `chanakya-master.md`:
-   - Set status to `done` (or `needs-review` if the debrief flags issues).
-   - Record commit hashes and the merge commit from the Branch section.
-3. **Update the Build Debt block** (see `_shared/rules/debt-tracking.md`) using the debrief's `build_gate:` field.
+1. Read the debrief. Post-migration surface: parse `plans/debriefs/<debrief-id>.yaml` per schema `_shared/schemas/debrief.md` (`debrief@2.0.0`); structured fields (`decisions`, `tests`, `diff_summary`, `argus_review`, `follow_ups`, `build_gate`, `debt`) are typed arrays/objects — no section-header parsing. Legacy fallback parses `## Summary` / `## Build Verification` / `## Follow-up Tasks` / `## Argus Review` section headers in the markdown debrief.
+2. Update the corresponding task. Post-migration: transition `plans/tasks/<task-id>.yaml` state per `_shared/state-machines/task-lifecycle.md` — typical flow is `argus-reviewed → merged` on merge; append the `history:` entry, set `links.debrief = <debrief-id>`, append `links.reviews` with the `argus_review.review_id` when present. Legacy fallback mutates `chanakya-master.md`: sets status to `done` (or `needs-review` when the debrief flags issues), records commit hashes + merge commit.
+3. **Update the Build Debt block** (see `_shared/rules/debt-tracking.md`) using the debrief's `build_gate` field (`lsp-only` vs `full-green`) — typed enum in YAML, no parsing needed.
 4. **Update the Test Debt block** (see `_shared/rules/debt-tracking.md`):
-   - If the task is an implementation type (feature/bugfix/refactor), check whether its unit test sub-task (same Group, `Type: test-unit`) is `done` or `verified`. If not, increment the unit test debt counter.
-   - Same check for UI test sub-task (`Type: test-ui`) against UI test debt counter.
-   - If the task IS a test sub-task (`test-unit`, `test-integration`, `test-ui`), decrement the appropriate counter and remove the parent task from `Untested since`.
-5. For every item in the debrief's `## Follow-up Tasks` section, create a **new** task entry:
-   - Fresh task ID, `Source:` = originating task ID, status `pending`.
-   - If the follow-up is manual-verification of the parent, include the test-case artifact path in Notes.
-6. If the debrief has substantive follow-ups, immediately generate briefs for them (same as Brief Generation mode, Steps 3–6). Set their status to `briefed`.
-7. **Argus-skip detection.** Parse the debrief's `## Argus Review` section. A debrief counts as *Argus-skipped* when any of these is true:
-   - The section is missing entirely.
-   - Its body case-insensitively matches `not invoked` / `skipped` / `bypassed` / `did not run`.
-   - The verdict is neither `approved` nor `flagged` nor `blocked`.
+   - If the task is an implementation type (feature/bugfix/refactor), check whether its unit test sub-task (sibling by title-prefix, type `test-unit`) is `merged`/`verified`. If not, increment the unit test debt counter.
+   - Same check for UI test sub-task (type `test-ui`) against UI test debt counter.
+   - If the task IS a test sub-task (`test-unit`, `test-integration`, `test-ui`), decrement the appropriate counter and remove the parent from `Untested since`.
+5. For every item in the debrief's `follow_ups[]` array (YAML) / `## Follow-up Tasks` section (legacy), mint a **new** task entry: post-migration writes a fresh `plans/tasks/<new-task-id>.yaml` per schema with `state: proposed`, title referencing the originating task, `links.feedback` empty; legacy fallback writes a new row into `chanakya-master.md` with `Source: <task-id>`, status `pending`.
+6. If the debrief has substantive follow-ups, immediately generate briefs for them (invoke Brief Generation mode). Post-migration: brief mode transitions the new task's state to `briefed` and writes `plans/briefs/<brief-id>.yaml`; legacy path sets status to `briefed` in the master plan.
+7. **Argus-skip detection.** Read the debrief's `argus_review` object (YAML) or `## Argus Review` section (legacy). A debrief counts as *Argus-skipped* when any of these is true:
+   - Post-migration: `argus_review.status == not-invoked` and the task's type is NOT in the exemption list.
+   - Legacy: section missing, or body case-insensitively matches `not invoked` / `skipped` / `bypassed` / `did not run`, or the verdict is neither `approved` nor `flagged` nor `blocked`.
 
    Exemptions (never flagged):
    - Task type is `build-check`, `test-suite-run`, `direct (user-run)`, `documentation`, or the task title starts with `TBUILD-` / `TUNIT-` / `TUI-`.
@@ -61,7 +80,7 @@ Before executing ANY mode, check `~/.dev-studio/<project>/plans/chanakya-inbox/`
 
    `review_pending` is a new event type; add it to `~/.claude/skills/_shared/contracts/events.md` → "Cross-agent events" with handler: "Surface in next status output. Banner: `⚠️ Review pending: <task-id> merged without Argus. Run \`/argus <task-id>\` before user verification.`"
 
-8. Move the debrief to `processed/`. Leave `*-tests.md` in place.
+8. Mark the debrief as processed. Post-migration: append an `ingested_at` marker in the task's `history:` (the `plans/debriefs/<debrief-id>.yaml` file stays in place — its state is implicit in the parent task's `links.debrief` and the rebuilt index). Legacy fallback still moves the markdown debrief to `chanakya-inbox/processed/`. Leave `*-tests.md` in place.
 9. Report: "Processed T001 — done, 2 follow-ups briefed (T014, T015). Build debt: 7/12. Unit test debt: 3/8. UI test debt: 2/6. Review pending: none." (or `Review pending: T001` when detected.)
 
 ### 0B — Process each manual-build-check debrief
@@ -93,24 +112,15 @@ Before executing ANY mode, check `~/.dev-studio/<project>/plans/chanakya-inbox/`
 
 ### 0B2 — Process each release debrief
 
-Handle `Type: testflight-release` and `Type: appstore-release` debriefs:
+Handle release-type debriefs (both TestFlight and App Store channels). Post-migration: Achilles's push-tf / app-store modes now write **two** artifacts per release — the release artifact itself at `plans/releases/<release-id>.yaml` (schema: `_shared/schemas/release.md`, `release@1.0.0`) and a release-mode debrief at `plans/debriefs/<debrief-id>.yaml` referencing the release via `links` in the debrief body / structured `key_learnings`. Legacy fallback reads the markdown debriefs `tf-*-debrief.md` (`Type: testflight-release`) and `release-*-debrief.md` (`Type: appstore-release`) from the inbox.
 
-1. Read the debrief. Extract `Build number`, `Version`, `Distribution`, `Git tag` (if App Store), `HEAD`, and the `Covers:` task list.
-2. **Add a row to `## Release Log`** in the master plan:
-   - Build: `<BUILD_NUMBER>`
-   - Version: `<VERSION>`
-   - Type: `TestFlight` or `App Store`
-   - Date: debrief's `Completed` timestamp
-   - Tag: git tag (App Store) or `—` (TestFlight)
-   - HEAD: `<HEAD_SHA>`
-   - Tasks Included: the `Covers:` list
-3. **Tag each task** in the `Covers:` list: append to the task's `Released in:` field:
-   - TestFlight: `TF-<BUILD_NUMBER>`
-   - App Store: `AS-<BUILD_NUMBER>`
-   - If the field already has entries, comma-separate: `TF-3028, TF-3031, AS-3031`
-4. Move the debrief to `processed/`.
-5. Report: "Processed TestFlight release 3031 — 5 tasks tagged (T015, T016, T017, T018, T019)."
-6. **Auto-trigger Slack sync.** After processing a TestFlight release debrief:
+1. Read the release artifact (`plans/releases/<release-id>.yaml`) and its paired debrief. Extract `build_number`, `version`, `channel`, `tag`, `commit_sha`, and the `tasks[]` array. Legacy fallback parses `Build number`, `Version`, `Distribution`, `Git tag`, `HEAD`, and the `Covers:` task list from the markdown debrief header.
+2. **Back-reference maintenance per §2.2 of the Phase 2.6 plan.** For each task-id in `release.tasks[]`, update the corresponding `plans/tasks/<task-id>.yaml` to set `links.release = <release-id>` (if null) and bump `updated_at`. This is the writer-maintains-counterparty invariant; the plans-index validator enforces bidirectional consistency.
+3. **Emit `release_state_changed`** per `_shared/state-machines/release-lifecycle.md` when the release's observed state (from the debrief) differs from the artifact's current state. Release-state transitions fire on submission, in-review, released, etc.; see the state machine doc for the transition table.
+4. **Phase 2.6 transition note:** also add a row to `## Release Log` in `chanakya-master.md` (legacy surface) with Build / Version / Type / Date / Tag / HEAD / Tasks Included — and tag each covered task's `Released in:` field (`TF-<BUILD_NUMBER>` / `AS-<BUILD_NUMBER>`, comma-separated on multi-release tasks). Cutover removes the legacy Release Log write at Commit H — the `plans/releases/` directory becomes the single source of truth.
+5. Mark the debrief as processed (YAML: set the task-linkage `history` entry; legacy: move `tf-*-debrief.md` / `release-*-debrief.md` to `chanakya-inbox/processed/`). Regenerate `plans/index.yaml` via `scripts/rebuild-index.sh`.
+6. Report: "Processed TestFlight release 3031 — 5 tasks tagged (T015, T016, T017, T018, T019)."
+7. **Auto-trigger Slack sync.** After processing a TestFlight release debrief:
    a. Read the project memory file `project_slack_list_sync.md` to check if a Slack list is configured.
    b. If yes, automatically run Sync-Slack mode (Steps 1–7) with `--build <BUILD_NUMBER>` from the debrief.
    c. **Before writing to Slack (Step 6),** present the summary table to the user and ask: "Sync these updates to the Slack bug list? (y/n)".
@@ -119,9 +129,11 @@ Handle `Type: testflight-release` and `Type: appstore-release` debriefs:
 
 ### 0B3 — App Store submission watcher (if any)
 
-If `~/.dev-studio/<project>/.runtime/state/pending-appstore-review.json` exists, invoke `bash scripts/appstore-watch.sh` (best-effort; swallow non-zero exit). The script is idempotent and self-gated on the marker's `next_check_at`, so most calls exit in <50ms without an API call. It piggybacks every `/chanakya` sweep (`status`, `brief`, `ship`, `auto-sweep` tick, etc.) — no separate trigger is needed, and no `--away`/`--auto-sweep` is required.
+Post-migration the authoritative watcher state lives in each `plans/releases/<release-id>.yaml` under `asc_metadata` (per `_shared/schemas/release.md`); `scripts/appstore-watch.sh` reads and writes that block directly. Phase 2.6 keeps the legacy `~/.dev-studio/<project>/.runtime/state/pending-appstore-review.json` marker as a transition bridge — the migration step at Commit H promotes marker JSON into the release artifact's `asc_metadata` and retires the marker file.
 
-On terminal App Store state (`PENDING_DEVELOPER_RELEASE` / `READY_FOR_SALE`) the script publishes the draft release, posts a threaded Slack reply on the original `#releases` post, deletes the marker, and emits `appstore_released`. Partial-finalize failures are handled idempotently via flags inside the marker, so the next sweep only retries the unfinished step.
+If either surface indicates a pending review, invoke `bash scripts/appstore-watch.sh` (best-effort; swallow non-zero exit). The script is idempotent and self-gated on `asc_metadata.next_check_at` (or the legacy marker's `next_check_at`), so most calls exit in <50ms without an API call. It piggybacks every `/chanakya` sweep (`status`, `brief`, `ship`, `auto-sweep` tick, etc.) — no separate trigger is needed, and no `--away`/`--auto-sweep` is required.
+
+On terminal App Store state (`pending-developer-release` / `released`, per the state machine at `_shared/state-machines/release-lifecycle.md`), the script publishes the draft release, posts a threaded Slack reply on the original `#releases` post, updates `plans/releases/<release-id>.yaml` state + `released_at`, and emits `release_state_changed` + `appstore_released`. Partial-finalize failures are handled idempotently via flags inside `asc_metadata`, so the next sweep only retries the unfinished step.
 
 If the marker's `stuck: true` flag is set (≥3 consecutive failures), surface a one-line banner in the sweep summary:
 
@@ -176,13 +188,9 @@ Text descriptions (`original_message`, the "(deleted — …)" replacement strin
 
 ### 0E — Process event log
 
-Read new events from today's event log since the last offset. Schema and offset protocol: `~/.claude/skills/_shared/contracts/events.md`.
+Read new events from today's event log since the last offset via `scripts/read-events.sh` (the canonical reader primitive per `_shared/contracts/event-emission.md`). Schema and offset protocol: `_shared/contracts/events.md`.
 
-```bash
-PROJECT_MEMORY="$HOME/.claude/projects/-Users-vishalsingh-Documents-Turnip-gg-turnip-ios/memory"
-EVENT_FILE="$PROJECT_MEMORY/events/$(date -u +%Y-%m-%d).jsonl"
-OFFSET_FILE="$PROJECT_MEMORY/events_offset.md"
-```
+Post-migration canonical path: `~/.dev-studio/<project>/events/<YYYY-MM-DD>.jsonl` (day-partitioned, single source of truth per Phase 2.6 plan §3.2). The `scripts/read-events.sh` wrapper resolves the project root via `scripts/lib-paths.sh` — consumers never hardcode the path. Offset tracking uses the same reader API.
 
 1. Read current offset from `events_offset.md`. If file missing or date differs from today, reset offset to 0.
 2. Read new lines from `$EVENT_FILE` starting at the stored offset.
@@ -206,11 +214,7 @@ OFFSET_FILE="$PROJECT_MEMORY/events_offset.md"
 | `feedback_archived` | Regenerate reporters/ index entries for affected reporters (scan archive file + active). |
 | `root_cause_promoted` | Note the pattern label in the next status output so the user knows a new root-cause entry exists. |
 
-4. Update offset to current EOF of `$EVENT_FILE`:
-   ```bash
-   NEW_OFFSET=$(wc -c < "$EVENT_FILE" 2>/dev/null || echo 0)
-   ```
-   Write updated `events_offset.md`.
+4. Update offset via `scripts/read-events.sh --checkpoint` (wraps the seek-to-EOF + offset-write atomically per `_shared/contracts/event-emission.md`).
 
 5. Emit `task_verified` event when review-feedback promotes a task (Step in review-feedback mode):
    ```json
