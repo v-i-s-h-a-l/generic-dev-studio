@@ -4,8 +4,27 @@ description: Review-Feedback (apply user-testing.md edits to master plan), Feedb
 type: mode-pack
 snapshots: [briefs.json, feedback-inbox.json]
 budget_tokens: 4000
-reads: []
-writes: []
+reads:
+  - plans/index.yaml                               # post-migration task + feedback index
+  - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
+  - plans/rounds/*.yaml                            # post-migration round artifacts (schema: _shared/schemas/round.md)
+  - plans/feedback/*.yaml                          # post-migration feedback artifacts (schema: _shared/schemas/feedback.md)
+  - plans/user-testing.md                          # user-authored test-manifest surface (legacy shape, preserved through Phase 2.6)
+  - plans/chanakya-master.md                       # legacy fallback until Commit H
+  - feedback/active.md                             # legacy feedback index until Commit H
+  - feedback/archive/**/*.md                       # legacy archive until Commit H
+  - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
+writes:
+  - plans/tasks/<task-id>.yaml                     # task state bumps + follow-up task mint (state transitions per _shared/state-machines/task-lifecycle.md)
+  - plans/feedback/<feedback-id>.yaml              # feedback state transitions per _shared/state-machines/feedback-lifecycle.md
+  - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
+  - plans/chanakya-master.md                       # legacy master-plan mutation during Phase 2.6 transition
+  - plans/user-testing-archive/<ts>.md             # archived test-manifest after processing
+  - feedback/active.md                             # legacy active-list prune during Phase 2.6 transition
+  - feedback/archive/build-<N>.md                  # legacy archive append during Phase 2.6 transition
+  - feedback/incoming/F<nnn>.md                    # legacy staging-file removal during Phase 2.6 transition
+  - feedback-inbox/*/processed/*                   # studio-feedback ingestion move target
+  - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
 # Mode: Review-Feedback (`/chanakya review-feedback`)
@@ -27,19 +46,23 @@ For each case under each task:
 
 ## Step 3 — Roll up per task
 
-- **All cases passed** (every case is `- [x]`) → promote task's status from `done` to `verified` in the master plan.
-- **Any case failed** (unchecked with notes) → keep status `done`, create a new follow-up task per failure:
-  - Fresh task ID
-  - Title: "Fix <parent-task-title> — <first sentence of the note>"
-  - Description: full note content
-  - Priority: inherit parent's priority, or bump to P0 if the note says "blocker/crash/data-loss/etc."
-  - `Source:` = parent task ID
-  - Status: `pending`
-- **Mixed passed + skipped** (no failures, but not everything checked) → leave status `done`; manifest will still include it next time.
+- **All cases passed** (every case is `- [x]`) → transition the task's `state` from `merged`/`user-verifying` to `verified` per `_shared/state-machines/task-lifecycle.md`.
+- **Any case failed** (unchecked with notes) → leave the task state untouched (it stays `merged`/`user-verifying`) and mint one follow-up task per failure as a fresh `plans/tasks/<task-id>.yaml`:
+  - Mint a UUIDv7 `id`.
+  - Human-readable title: "Fix <parent-task-title> — <first sentence of the note>".
+  - Body content from the note lives in the brief once Brief mode runs against the follow-up; the task artifact itself carries only `title`.
+  - Priority is derived by Chanakya's downstream mode (the task schema does not encode priority in `task@1.0.0`); surface "P0" in the user-visible report when the note language matches blocker/crash/data-loss.
+  - Initial `state: proposed`; history seeded with `from: null, to: proposed, actor: chanakya`.
+  - `links: {brief: null, debrief: null, reviews: [], release: null, feedback: [<feedback-id of the originating manifest entry, if any>]}`.
+- **Mixed passed + skipped** (no failures, but not everything checked) → leave the parent task state untouched; the manifest will still include it next time.
+
+When a manifest row resolves from a previously-ingested feedback record, also transition that feedback's `state` to `linked` (add the failing task's UUIDv7 to `linked_tasks`) or to `resolved` (set `resolved_by: <task-id>`, `resolved_at: <ts>`) per `_shared/state-machines/feedback-lifecycle.md`.
 
 ## Step 4 — Write changes
 
-Update `chanakya-master.md` with status changes and new follow-up tasks.
+For each task/feedback transition above, update the corresponding `plans/tasks/<task-id>.yaml` / `plans/feedback/<feedback-id>.yaml`: bump `updated_at`, append the `history:` entry (task artifacts), and emit `task_state_changed` / `feedback_state_changed` events via `scripts/write-event.sh`. Regenerate `plans/index.yaml` via `scripts/rebuild-index.sh`.
+
+**Phase 2.6 transition note:** also update `chanakya-master.md` (legacy status mutations + new follow-up task rows) until Commit H cutover.
 
 ## Step 5 — Archive the manifest
 

@@ -4,8 +4,23 @@ description: Test-manifest (per-task checklist) + test-flow (journey-ordered wal
 type: mode-pack
 snapshots: [briefs.json]
 budget_tokens: 4000
-reads: []
-writes: []
+reads:
+  - plans/index.yaml                               # post-migration task + round + debrief index
+  - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
+  - plans/debriefs/*.yaml                          # post-migration debrief artifacts (schema: _shared/schemas/debrief.md)
+  - plans/rounds/*.yaml                            # previous-round retest linkage (schema: _shared/schemas/round.md)
+  - plans/chanakya-master.md                       # legacy fallback until Commit H
+  - plans/chanakya-inbox/<task-id>-tests.md        # legacy per-task test artifact (read-only surface)
+  - plans/chanakya-inbox/processed/<task-id>-debrief.md  # legacy debrief read fallback until Commit H
+  - plans/user-testing-rounds/user-testing-round<N>.md   # legacy round fallback until Commit H
+  - journey-map.md                                 # optional project-root journey ordering
+  - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
+writes:
+  - plans/rounds/<round-id>.yaml                   # post-migration canonical (schema: _shared/schemas/round.md, round@1.0.0)
+  - plans/user-testing.md                          # per-task manifest (user-facing checklist surface)
+  - plans/user-testing-rounds/user-testing-round<N>.md   # legacy round markdown during Phase 2.6 transition
+  - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
+  - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
 # Mode: Test-Manifest (`/chanakya test-manifest [--force]`)
@@ -28,16 +43,16 @@ Do not write anything. Return.
 
 If `--force` was passed, skip the guard and overwrite.
 
-## Step 2 — Scan master plan
+## Step 2 — Scan candidate tasks
 
-Read `~/.dev-studio/<project>/plans/chanakya-master.md`. Collect every task whose status is `done` (not `verified`, not `in-progress`, not `briefed`). These are the manual-verification candidates.
+Post-migration surface: `scripts/query-plans.sh --kind=task --state=merged` (plus `state=user-verifying`) enumerates manual-verification candidates from `plans/tasks/*.yaml`. The legacy equivalent — tasks at status `done` in `chanakya-master.md` — is the fallback during the Phase 2.6 transition until Commit H cutover.
 
 ## Step 3 — Pull test cases
 
 For each candidate task `<task-id>`:
-- Read `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-tests.md` if present.
-- Otherwise, look for `## Test Cases` inside the processed debrief at `chanakya-inbox/processed/<task-id>-debrief.md`.
-- If neither exists, record the task with a single "No test cases written — please inspect the debrief" placeholder.
+- Post-migration: look for `tests:` on the task's debrief artifact at `plans/debriefs/<debrief-id>.yaml` (resolved via the task's `links.debrief`). The `tests.added` + `tests.modified` arrays give the machine-readable case list; fall through to `body:` when finer-grained user-facing steps are needed.
+- Legacy fallback: read `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-tests.md` if present, else the `## Test Cases` block inside `chanakya-inbox/processed/<task-id>-debrief.md`.
+- If neither surface yields cases, record the task with a single "No test cases written — please inspect the debrief" placeholder.
 
 ## Step 4 — Write the manifest
 
@@ -207,9 +222,13 @@ Evidence:
 - Skip entire sections where all cases are P2
 - Add a header note: "Smoke-test subset — run `/chanakya test-flow` without `--smoke` for the full walkthrough."
 
-## Step 7 — Write the file
+## Step 7 — Write the round artifact
 
-Ensure `~/.dev-studio/<project>/plans/user-testing-rounds/` directory exists. Write to `user-testing-round<N>.md` following the format at `~/.claude/skills/_shared/schemas/test-flow.md`.
+Write the round as YAML to `~/.dev-studio/<project>/plans/rounds/<round-id>.yaml` per schema `_shared/schemas/round.md` (`round@1.0.0`). Mint `id` as a UUIDv7. Populate `schema_version`, `round_number` (the integer N chosen in Step 1), `state: open` (transitions are documented inline in `_shared/schemas/round.md` §Lifecycle — `planned → open` fires as the round hands to the user; a dedicated state-machine file is not warranted until round-state has downstream consumers beyond review-feedback), `scope`, `generated_at`, `closed_at: null`, `previous_round: <uuidv7 of round N-1 or null>`, `tested_on: null` (the user fills it when the session starts), `tasks: [<task-id>…]`, `reviews: []`, `cases: [{id, title, task_refs, severity, retest_of, result: pending, timing_ms: null, notes: null}…]`, `summary: {cases_total, pass: 0, fail: 0, pending: <cases_total>}`, and the rendered markdown walkthrough as `body:` (the human-readable checklist surface — same content as the legacy round file).
+
+Emit `round_state_changed` (from null to `open`) per `_shared/contracts/events.md` via `scripts/write-event.sh`. Regenerate `plans/index.yaml` via `scripts/rebuild-index.sh`.
+
+**Phase 2.6 transition note:** also write the legacy markdown at `~/.dev-studio/<project>/plans/user-testing-rounds/user-testing-round<N>.md` (format at `~/.claude/skills/_shared/schemas/test-flow.md`) for one cycle so in-flight test-flow `--diff` / `--promote` consumers still see the round. Cutover removes the legacy write at Commit H.
 
 **Performance Checkpoints section:** Include a dedicated final section (before the crosswalk) for cross-cutting perf cases when any candidate task has performance-related test cases or debrief data (cold launch, memory ceiling, undo chain, pipeline throughput). Source baselines from debrief `## Key Learnings` or `## Performance` sections. If no data exists, omit `Perf baseline:` — the user fills in the first measurement.
 

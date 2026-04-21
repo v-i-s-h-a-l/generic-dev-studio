@@ -4,8 +4,16 @@ description: Initial task capture + planning — take a PRD or bullet points, ti
 type: mode-pack
 snapshots: [briefs.json]
 budget_tokens: 4000
-reads: []
-writes: []
+reads:
+  - plans/index.yaml                               # post-migration task index for existing-task lookup
+  - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
+  - plans/chanakya-master.md                       # legacy fallback until Commit H
+  - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
+writes:
+  - plans/tasks/<task-id>.yaml                     # post-migration canonical (schema: _shared/schemas/task.md, task@1.0.0)
+  - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
+  - plans/chanakya-master.md                       # legacy master-plan row mutation during Phase 2.6 transition
+  - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
 # Mode: Intake (`/chanakya intake` or `/chanakya` with no args)
@@ -26,11 +34,13 @@ Accept any format. For each task, extract:
 - **Dependencies** (does this block or depend on another task?)
 - **Estimated complexity** (S/M/L/XL)
 
-## Step 2 — Read existing master plan
+## Step 2 — Read existing tasks
 
-If `~/.dev-studio/<project>/plans/chanakya-master.md` exists, read it. Merge new tasks with existing ones. Assign task IDs continuing from the highest existing ID (format: `T001`, `T002`, ...).
+Post-migration surface: list existing tasks via `scripts/query-plans.sh --kind=task` against `plans/tasks/*.yaml`. Merge new tasks with existing ones; resolve ID collisions by issuing fresh UUIDv7 `id`s and continuing the human-readable `T<nnn>` title prefix from the highest existing sequence.
 
-If no master plan exists, create the initial version.
+**Phase 2.6 transition:** if no YAML task artifacts exist yet (migration not run), read `~/.dev-studio/<project>/plans/chanakya-master.md` and emit one `legacy_artifact_read` event so the fallback is visible. Cutover removes the legacy read at Commit H.
+
+If neither surface has prior state, this is a fresh project — proceed to Step 3 with an empty set.
 
 ## Step 3 — Tier tasks
 
@@ -95,9 +105,23 @@ For each task in the group, determine relevant skills:
 
 Apply the skill assignments and record them in the write summary.
 
-## Step 6 — Write master plan
+## Step 6 — Write task artifacts
 
-Write/update `~/.dev-studio/<project>/plans/chanakya-master.md` using the format below. Task groups are written with the parent task first, followed by its sub-tasks indented under it.
+For each newly-captured task (implementation + any sub-tasks), author one `plans/tasks/<task-id>.yaml` file per schema `_shared/schemas/task.md` (`task@1.0.0`):
+
+- Mint a UUIDv7 for `id` per task.
+- Set `title` to the human-readable label from Step 1.
+- Set `state: proposed` (initial state per `_shared/state-machines/task-lifecycle.md`).
+- Set `size` from the complexity estimate (S/M/L/XL map to `s`/`m`/`l`; XS is introduced separately for trivial direct tasks).
+- Set `created_at`/`updated_at` to the same RFC3339 UTC timestamp.
+- Initialize `links.brief = null`, `links.debrief = null`, `links.reviews = []`, `links.release = null`, `links.feedback = []`.
+- Seed `history:` with the initial `from: null, to: proposed, actor: chanakya, at: <ts>, event_id: <uuidv7>` entry.
+
+For sub-task groupings (T015a/b/c under T015), the parent/child relationship lives in the human-readable title (prefix shares the parent ID) and in the `plans/index.yaml` rollup (the index generator clusters on title prefix). `task@1.0.0` does not encode a `group` field — keeping the schema narrow is deliberate (Phase 2.6 plan §2.1).
+
+Emit `task_state_changed` events for each new task via `scripts/write-event.sh`, then regenerate `plans/index.yaml` via `scripts/rebuild-index.sh`.
+
+**Phase 2.6 transition note:** also write/update `~/.dev-studio/<project>/plans/chanakya-master.md` using the legacy format so in-flight consumers still see the task list. Task groups are written with the parent task first, followed by its sub-tasks indented under it. Cutover removes the legacy write at Commit H.
 
 ## Step 7 — Propose parallelization
 

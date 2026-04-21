@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-21T23:19:05Z",
+  "generated_at": "2026-04-21T23:25:12Z",
   "schema": 1,
   "commands": [
     {"name": "chanakya-help", "source": "commands/chanakya-help.md", "description": "", "agent": null, "scope": "global"},
@@ -24,7 +24,7 @@
     {"name": "chanakya.compact", "source": "chanakya/modes/compact.md", "agent": "chanakya", "mode": "compact", "description": "Archive verified tasks, regenerate Dashboard + Module Index + Blocked list, trim changelog, optionally sweep artifacts. Includes implicit feedback-archive + index regeneration."},
     {"name": "chanakya.feedback-reports", "source": "chanakya/modes/feedback-reports.md", "agent": "chanakya", "mode": "feedback-reports", "description": "Render reporter-facing feedback reports — design (category=design or UI/UX module) and product (category=clarification/enhancement). Read-only; writes a dated markdown file to chanakya-inbox. Sub-commands report-design and report-product."},
     {"name": "chanakya.feedback", "source": "chanakya/modes/feedback.md", "agent": "chanakya", "mode": "feedback", "description": "Review-Feedback (apply user-testing.md edits to master plan), Feedback-Archive (promote verified records to per-build archive), Feedback-History (search active + archive), Studio-Feedback (capture studio-internal feedback). The full feedback lifecycle except Slack ingestion (which lives in the ingest mode pack)."},
-    {"name": "chanakya.ingest", "source": "chanakya/modes/ingest.md", "agent": "chanakya", "mode": "ingest", "description": "Slack-source feedback ingestion — thread, DM, channel. Pulls messages, classifies feedback vs conversation, mints F-ids, downloads attachments, dedupes, emits feedback_ingested."},
+    {"name": "chanakya.ingest", "source": "chanakya/modes/ingest.md", "agent": "chanakya", "mode": "ingest", "description": "Slack-source feedback ingestion — thread, DM, channel. Pulls messages, classifies feedback vs conversation, mints feedback records, downloads attachments, dedupes, emits feedback_ingested."},
     {"name": "chanakya.intake", "source": "chanakya/modes/intake.md", "agent": "chanakya", "mode": "intake", "description": "Initial task capture + planning — take a PRD or bullet points, tier into plan-worthy vs direct, expand into task groups with sub-task decisions (unit/integration/UI tests, TDD vs test-after), assign skills, write the master plan."},
     {"name": "chanakya.review", "source": "chanakya/modes/review.md", "agent": "chanakya", "mode": "review", "description": "Inbox sweep + event-log processing. Handles regular task debriefs, manual-build-check debriefs, release debriefs, App Store watcher, threshold actions, stale-artifact janitor, event log, feedback reminders, blind-spot detection, studio-feedback ingestion. Also the explicit `/chanakya review` PRD-delta sub-command."},
     {"name": "chanakya.ship", "source": "chanakya/modes/ship.md", "agent": "chanakya", "mode": "ship", "description": "Brief + dispatch composite. Resolves targets, checks debt gates, briefs pending tasks, phases dispatch (fleet mode via work-stealing queue; single-session prints commands)."},

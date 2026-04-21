@@ -4,8 +4,32 @@ description: Archive verified tasks, regenerate Dashboard + Module Index + Block
 type: mode-pack
 snapshots: [briefs.json]
 budget_tokens: 3500
-reads: []
-writes: []
+reads:
+  - plans/index.yaml                               # post-migration task + debrief index for archival eligibility
+  - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
+  - plans/debriefs/*.yaml                          # post-migration debrief artifacts for key-learnings rollup
+  - plans/feedback/*.yaml                          # feedback archive-eligibility pass
+  - plans/rounds/*.yaml                            # round archival
+  - plans/chanakya-master.md                       # legacy master plan (slim post-compact)
+  - plans/chanakya-archive.md                      # legacy archive
+  - plans/chanakya-changelog.md                    # legacy changelog
+  - plans/chanakya-inbox/processed/<task-id>-debrief.md  # legacy debrief source until Commit H
+  - feedback/active.md                             # legacy active-list feed
+  - feedback/archive/**/*.md                       # legacy archive
+  - events/<date>.jsonl                            # budget-report + cleanup data via scripts/read-events.sh
+  - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
+writes:
+  - plans/tasks/<task-id>.yaml                     # state transitions to archived (per _shared/state-machines/task-lifecycle.md)
+  - plans/feedback/<feedback-id>.yaml              # state transitions to archived (per _shared/state-machines/feedback-lifecycle.md)
+  - plans/rounds/<round-id>.yaml                   # state transitions to archived
+  - archive/2026-pre-2.6/<task-id>.yaml            # post-migration archival sink (one file per artifact kind)
+  - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
+  - plans/chanakya-master.md                       # legacy master-plan slim + Dashboard block
+  - plans/chanakya-archive.md                      # legacy archive append
+  - plans/chanakya-changelog.md                    # legacy changelog trim
+  - feedback/active.md                             # legacy prune
+  - feedback/archive/build-<N>.md                  # legacy archive append
+  - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
 # Mode: Compact (`/chanakya compact [--dry-run] [--sweep-artifacts] [--auto-compact]`)
@@ -40,10 +64,9 @@ chanakya-changelog.md       ← session changelog entries older than 7 days
    - `pending`, `briefed`, `in-progress`, `needs-review` tasks
    - Tasks with `Source:` pointing to a non-archived parent (keep them together)
 
-3. **Build the archive file.** If `chanakya-archive.md` doesn't exist, create it with a header. For each archivable task:
-   - Move the full task block (all fields + Notes) to the archive
-   - Trim Notes to max 5 lines in the archive (preserve first 3 + last 2 if longer)
-   - Also move any manual-verification child tasks (type `direct (user-run)`) whose parent is being archived
+3. **Transition tasks to `archived` and write archival sink.** Post-migration, for each archivable task: transition `plans/tasks/<task-id>.yaml` state `verified → archived` per `_shared/state-machines/task-lifecycle.md`, append the `history:` entry, bump `updated_at`, and emit `task_state_changed` via `scripts/write-event.sh`. The task YAML stays in place (archived is a terminal state in the live ledger, not a separate directory — per-artifact CHANGELOG in `_shared/schemas/task.md` and the relational index handle querying). Archive-as-archive policy lives in `_shared/rules/cleanup-policy.md` — for 2.6, keep artifacts in `plans/tasks/` and let the `state` field drive archival visibility.
+
+   **Phase 2.6 transition note:** continue to move the legacy task block from `chanakya-master.md` to `chanakya-archive.md`, trimming Notes to max 5 lines (preserve first 3 + last 2 if longer). Also move any manual-verification child tasks (type `direct (user-run)`) whose parent is being archived. Cutover removes the legacy master/archive writes at Commit H.
 
 4. **Convert remaining done tasks to compact rows.** Tasks that are `done` but NOT archived (awaiting verification) get their full block preserved. But XS/direct tasks that have ≤3 lines of Notes can be converted to a compact table row format in a `## Done (Awaiting Verification)` table.
 
@@ -130,7 +153,7 @@ Full schema: `~/.claude/skills/_shared/schemas/master-plan.md`.
 
 When ALL tasks for a feature are `verified` (check after every inbox sweep and after every `review-feedback`):
 
-1. Read all debriefs from `chanakya-inbox/processed/` for this feature's tasks
+1. Read all debriefs for this feature's tasks. Post-migration: resolve each task's `links.debrief` to `plans/debriefs/<debrief-id>.yaml` and read the structured `key_learnings` / `decisions` / `follow_ups` fields directly. Legacy fallback: walk `chanakya-inbox/processed/` for `<task-id>-debrief.md` files during the Phase 2.6 transition.
 2. Compile **Key Learnings** from all debriefs into a summary
 3. Write a feature retrospective to project memory:
    - Path: `~/.claude/projects/-Users-vishalsingh-Documents-Turnip-gg-turnip-ios/memory/project_<feature_slug>.md`
