@@ -51,6 +51,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /achilles T001 --dry-run         # simulate every write + event; reads + LSP run normally
 /achilles next                   # auto-pick highest-priority ready task and execute
 /achilles build                  # on-demand build check at HEAD; auto-bisects on red
+/achilles debrief                # direct-debrief: capture in-chat bug-fix as YAML debrief (no brief, no worktree, no Argus)
 /chanakya status                 # tasks in flight + debt gauges + what's next
 /chanakya test-manifest          # per-task checklist → user-testing.md
 /chanakya test-flow              # journey-ordered walkthrough → round files

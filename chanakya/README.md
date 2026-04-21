@@ -34,6 +34,7 @@ All per-project artifacts live under `~/.dev-studio/<project>/` (outside `~/.cla
 | `/achilles next` | Auto-pick the highest-priority ready task and execute it |
 | `/achilles` | Direct mode — free-form task, no brief required |
 | `/achilles build` | On-demand build check at HEAD. Green resets debt; red auto-bisects and files a P0 fix. |
+| `/achilles debrief` | Direct-debrief: capture an in-chat bug-fix or quick-change into a YAML debrief (scans transcript + `git diff HEAD`, asks inline about tests). No brief, no worktree, no Argus, no git action. |
 
 ---
 

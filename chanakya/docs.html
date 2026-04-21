@@ -656,6 +656,10 @@
       <span>On-demand build check at HEAD. Green resets debt; red auto-bisects and files a P0 fix</span>
     </div>
     <div class="cmd-card achilles">
+      <code>/achilles debrief</code>
+      <span>Direct-debrief: capture an in-chat bug-fix or quick-change into a YAML debrief &mdash; scans transcript + <code>git diff HEAD</code>, asks inline about tests, writes to <code>plans/debriefs/</code>. No brief, no worktree, no Argus, no git action.</span>
+    </div>
+    <div class="cmd-card achilles">
       <code>/achilles push-tf</code>
       <span>Wraps <code>/pushTFBuild</code> &mdash; archives, uploads to TestFlight, then debriefs Chanakya with task-to-build mapping</span>
     </div>
