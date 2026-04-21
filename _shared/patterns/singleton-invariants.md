@@ -6,7 +6,7 @@ type: reference
 
 # Singleton Invariants
 
-Some agents in the studio must run as exactly one instance at a time. This file records which ones, why, and how to detect violations. Cross-referenced from `_shared/router-pattern.md` and any refactor touching these agents.
+Some agents in the studio must run as exactly one instance at a time. This file records which ones, why, and how to detect violations. Cross-referenced from `_shared/patterns/router-pattern.md` and any refactor touching these agents.
 
 ## Singletons
 

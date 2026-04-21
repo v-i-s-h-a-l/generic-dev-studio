@@ -19,7 +19,7 @@ Claude sessions and humans alike use this file to resolve failures without guess
 | Code | When | Fix recipe |
 |---|---|---|
 | `E_ROUTER_SIZE` | `<skill>/SKILL.md` prose exceeds 100 lines once a `modes/` subdir exists | Move mode-specific prose out of the router into `<skill>/modes/<pack>.md`. Router keeps frontmatter + one-paragraph intro + dispatch table + intent rules only. |
-| `E_CROSS_MODE_LOAD` | A file under `<skill>/modes/` references another path matching `modes/*.md` | Remove the import. Mode packs communicate via snapshots (filesystem artifacts), never by loading each other. See `_shared/router-pattern.md` §2. |
+| `E_CROSS_MODE_LOAD` | A file under `<skill>/modes/` references another path matching `modes/*.md` | Remove the import. Mode packs communicate via snapshots (filesystem artifacts), never by loading each other. See `_shared/patterns/router-pattern.md` §2. |
 | `E_MISSING_SNAPSHOTS_DECL` | A mode pack lacks a `snapshots:` key in its frontmatter | Add `snapshots: []` (empty) or list the snapshot filenames the mode reads/writes. Declaring this up front is part of the mode-pack contract. |
 | `E_FRONTMATTER` | A `_shared/*.md` or `*/modes/*.md` is missing required keys (`name`, `description`, `type`) | Add the missing keys at the top of the file between `---` fences. |
 | `E_SURFACE_REMOVED` | An entry disappears from `docs-surface.json` between HEAD and staged | Removing a sub-command or command is a breaking change per RELEASES.md. Either restore the entry or escalate to ask-tier review before proceeding. |
@@ -32,7 +32,7 @@ Claude sessions and humans alike use this file to resolve failures without guess
 |---|---|---|
 | `W_MODE_SIZE` | Mode pack prose between 400 and 600 lines | Plan a split at the next refactor. Not urgent. |
 | `W_SNAPSHOT_FRESHNESS` | Mode declares non-empty `snapshots:` but never mentions `stale` or `freshness` | Either add a freshness check section to the mode pack, or confirm the snapshot is always regenerated on read. |
-| `W_BUDGET_DRIFT` | Mode pack token estimate exceeds its `_shared/token-budgets.json` entry by more than 10% | Trim prose, or raise the budget deliberately if the mode genuinely grew. |
+| `W_BUDGET_DRIFT` | Mode pack token estimate exceeds its `_shared/schemas/token-budgets.json` entry by more than 10% | Trim prose, or raise the budget deliberately if the mode genuinely grew. |
 
 ## Emergency bypass
 
@@ -53,4 +53,4 @@ Bypass leaves a paper trail: the `ARCH_LINT=0` env is visible in the commit's re
 
 - Pre-commit hook runs the linter with `--staged`, so only files in the commit are evaluated for per-file checks.
 - Cross-file checks (`E_DUP_PROSE`, `E_SURFACE_REMOVED`) always scan the full tree — duplication and surface-removal are not local concerns.
-- `_shared/router-pattern.md` and `_shared/singleton-invariants.md` are the source of truth for why these rules exist. This file is the operational mapping.
+- `_shared/patterns/router-pattern.md` and `_shared/patterns/singleton-invariants.md` are the source of truth for why these rules exist. This file is the operational mapping.

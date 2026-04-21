@@ -89,7 +89,7 @@ Chanakya compact (`--sweep-artifacts`) scans all three slot files:
 - If the owning PID is dead and age > 24h → remove.
 - Log removed stale markers in the compact report.
 
-See `_shared/cleanup-policy.md` for the full sweep protocol.
+See `_shared/rules/cleanup-policy.md` for the full sweep protocol.
 
 ## Constraints
 

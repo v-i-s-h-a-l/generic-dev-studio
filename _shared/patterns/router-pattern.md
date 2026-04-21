@@ -41,7 +41,7 @@ The router does **not** contain mode-specific prose, workflows, or state manipul
 Responsibilities:
 - Declares which snapshots it needs (up front, in frontmatter or an opening block).
 - Full workflow for that mode.
-- Emits events per `_shared/events.md`.
+- Emits events per `_shared/contracts/events.md`.
 - Calls into other mode packs via filesystem artifacts (snapshots, briefs, design docs), **not** direct imports — mode packs don't load each other.
 
 Mode-pack size: no hard limit, but if one mode pack exceeds ~400 lines consider splitting further.
@@ -106,4 +106,4 @@ Removing or renaming a mode is a breaking change (user-invocable surface) — fo
 - Mode packs never cross-load other mode packs.
 - Snapshots always have a fallback path.
 - Every existing sub-command and flag is preserved through a router refactor — no renames, no removals without ask-tier review.
-- Singleton skills stay singleton — see `_shared/singleton-invariants.md`.
+- Singleton skills stay singleton — see `_shared/patterns/singleton-invariants.md`.

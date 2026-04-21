@@ -53,21 +53,21 @@ Write to `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md`. The
 
 ### 6A — Implementation brief (Type: feature | bugfix | refactor | direct)
 
-Write the brief following the template at `~/.claude/skills/_shared/brief-formats/impl-brief.md`.
+Write the brief following the template at `~/.claude/skills/_shared/contracts/brief-formats/impl-brief.md`.
 
-The `## Testability Requirements` section must include: SOLID principles, accessibility identifiers, localization (if task touches UI strings — see `~/.claude/skills/_shared/localization-rules.md` for the full ruleset), and test seams.
+The `## Testability Requirements` section must include: SOLID principles, accessibility identifiers, localization (if task touches UI strings — see `~/.claude/skills/_shared/rules/localization-rules.md` for the full ruleset), and test seams.
 
 ### 6B — Unit test brief (Type: test-unit)
 
-Write the brief following the template at `~/.claude/skills/_shared/brief-formats/unit-test-brief.md`.
+Write the brief following the template at `~/.claude/skills/_shared/contracts/brief-formats/unit-test-brief.md`.
 
 ### 6C — Integration test brief (Type: test-integration)
 
-Write the brief following the template at `~/.claude/skills/_shared/brief-formats/integration-test-brief.md`.
+Write the brief following the template at `~/.claude/skills/_shared/contracts/brief-formats/integration-test-brief.md`.
 
 ### 6D — UI test brief (Type: test-ui)
 
-Write the brief following the template at `~/.claude/skills/_shared/brief-formats/ui-test-brief.md`.
+Write the brief following the template at `~/.claude/skills/_shared/contracts/brief-formats/ui-test-brief.md`.
 
 ## Step 7 — Update master plan
 
@@ -107,10 +107,10 @@ Brief every `pending` task in the master plan, in priority order, without asking
 
 ## Brief formats (shared)
 
-Implementation brief format: `~/.claude/skills/_shared/brief-formats/impl-brief.md`
-Unit test brief format: `~/.claude/skills/_shared/brief-formats/unit-test-brief.md`
-Integration test brief format: `~/.claude/skills/_shared/brief-formats/integration-test-brief.md`
-UI test brief format: `~/.claude/skills/_shared/brief-formats/ui-test-brief.md`
-TDD brief format: `~/.claude/skills/_shared/brief-formats/tdd-brief.md`
+Implementation brief format: `~/.claude/skills/_shared/contracts/brief-formats/impl-brief.md`
+Unit test brief format: `~/.claude/skills/_shared/contracts/brief-formats/unit-test-brief.md`
+Integration test brief format: `~/.claude/skills/_shared/contracts/brief-formats/integration-test-brief.md`
+UI test brief format: `~/.claude/skills/_shared/contracts/brief-formats/ui-test-brief.md`
+TDD brief format: `~/.claude/skills/_shared/contracts/brief-formats/tdd-brief.md`
 
-Debrief format (for the `## Debrief Instructions` section in every brief): `~/.claude/skills/_shared/debrief-format.md`
+Debrief format (for the `## Debrief Instructions` section in every brief): `~/.claude/skills/_shared/contracts/debrief-format.md`

@@ -64,7 +64,7 @@ Record `WAIT_FOR_USER` (from `--wait` flag, else `no`). Do not prompt the user a
 
 ### Step 1.5 — Build-debt gate
 
-Schema, counter rules, banner text, and gate behavior: see `~/.claude/skills/_shared/build-debt-schema.md` (Achilles section).
+Schema, counter rules, banner text, and gate behavior: see `~/.claude/skills/_shared/schemas/build-debt.md` (Achilles section).
 
 ### Step 2 — Claim the task
 
@@ -124,7 +124,7 @@ When the brief includes `## Testability Requirements`:
    - Cover all interactive elements (buttons, text fields, toggles, pickers) and key display elements (labels, images that convey state)
    - Commit the identifier file as a separate, early commit — UI test tasks may depend on it
 
-3. **Localization** — When the task introduces or modifies any user-visible strings (brief's `### Localization` section present): follow all rules at `~/.claude/skills/_shared/localization-rules.md`.
+3. **Localization** — When the task introduces or modifies any user-visible strings (brief's `### Localization` section present): follow all rules at `~/.claude/skills/_shared/rules/localization-rules.md`.
 
 4. **Expose test seams** — For each item in the brief's Test Seams section:
    - Define the protocol with clear documentation
@@ -213,7 +213,7 @@ Before asking the user to look, review your own diff. Invoke the `simplify` skil
 - Verify all test seams from the brief are exposed (protocols defined, DI wired)
 - Check that no new singletons or static mutable state were introduced in business logic
 - Confirm the identifier enum file is committed separately from implementation
-- **Localization** (if brief has `### Localization`): apply the self-review checklist from `~/.claude/skills/_shared/localization-rules.md`.
+- **Localization** (if brief has `### Localization`): apply the self-review checklist from `~/.claude/skills/_shared/rules/localization-rules.md`.
 
 **Test review** (for test tasks):
 - Verify tests are independent (no shared mutable state, no ordering assumptions)
@@ -396,7 +396,7 @@ The committing inside the worktree is safe to run unlocked (each worktree has it
 
 ```bash
 # 1. Inside the worktree — safe to run unlocked
-# Pre-step: clear stale .git/index.lock if safe (see _shared/safe-git.md).
+# Pre-step: clear stale .git/index.lock if safe (see _shared/primitives/safe-git.md).
 cd "$WORKTREE"
 git add -A && CALLER_SKILL=achilles-merge safe_git_commit -m "<task-id>: <summary>"   # or several small commits
 
@@ -454,7 +454,7 @@ rm -rf /tmp/derived-data/<task-id>
 
 ### Step 10 — Debrief + short user summary
 
-Write debrief following the format at `~/.claude/skills/_shared/debrief-format.md`.
+Write debrief following the format at `~/.claude/skills/_shared/contracts/debrief-format.md`.
 
 **Debrief is load-bearing for worker-mode detection.** The worker wrapper (`scripts/achilles-worker.sh`) treats a `claude -p` exit with `rc=0` and no debrief at `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-debrief.md` as a silent-stuck state and routes the task to `rescue/<task-id>-stuck.md`. Any meaningful outcome — completion, blocked, failed — must write a debrief before exit. Clarifying questions exit one-shot subagents cleanly and trip this detector; prefer the autonomous-default pattern (pick the obvious default, proceed, note the assumption in the debrief) instead of asking.
 
@@ -487,7 +487,7 @@ Before sitting idle, **emit `agent_session_completed`** to close the session rec
 {"ts":"...","agent":"achilles","event":"agent_session_completed","task":"<task-id>","data":{"mode":"<task-id>","duration_s":<seconds_from_brief_started>,"files_read":<count>,"files_written":<count>}}
 ```
 
-Include `tokens` (`{input, output, cache_read, cache_write}`) if you have access to your own session token totals; omit otherwise. Duration alone is still useful for analysis. See `~/.claude/skills/_shared/events.md` → "Cross-agent events".
+Include `tokens` (`{input, output, cache_read, cache_write}`) if you have access to your own session token totals; omit otherwise. Duration alone is still useful for analysis. See `~/.claude/skills/_shared/contracts/events.md` → "Cross-agent events".
 
 After Step 10 + the session-completed event, **sit idle.** Do not self-select the next task. Do not schedule a wake. Do not prompt the user further.
 

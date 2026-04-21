@@ -51,4 +51,4 @@ Other domains auto-refresh via the consumer-side stale-read path: status mode fi
 
 ## Producer contract
 
-Writes are atomic (`mktemp` + `jq empty` validation + `mv`). On failure, the previous snapshot stays in place and a `snapshot_failed` event fires. See `_shared/events.md` §Snapshot events for the full emission catalog.
+Writes are atomic (`mktemp` + `jq empty` validation + `mv`). On failure, the previous snapshot stays in place and a `snapshot_failed` event fires. See `_shared/contracts/events.md` §Snapshot events for the full emission catalog.

@@ -1,6 +1,6 @@
 ---
 name: _shared Index
-description: Index of every file under _shared/ grouped by target subdir. Commit C moves files into subdirs and updates every reference; this index stays flat-path today and is rewritten then.
+description: Index of every file under _shared/, grouped by subdir. Points every agent + script + linter at the authoritative location for a given contract, schema, primitive, pattern, or rule.
 type: reference
 ---
 
@@ -8,23 +8,23 @@ type: reference
 
 Cross-agent contracts, state machines, schemas, primitives, patterns, and rules. Every agent references this tree; nothing here is agent-specific.
 
-**Layout note.** Files currently live at the flat `_shared/` path. Phase 2.5 Commit C reorganizes them into subdirectories (`contracts/`, `state-machines/`, `schemas/`, `primitives/`, `patterns/`, `rules/`). Grouping below follows the target layout so reference sweeps can be mechanical. See `PHASE-2-5-PLAN.md` §2.
+Post Phase 2.5 Commit C, layout is frozen: later phases land new files in existing subdirs; new subdirs need explicit justification.
 
-## Contracts — inter-agent interface definitions
+## `contracts/` — inter-agent interface definitions
 
 | File | Purpose |
 |---|---|
 | `message-contract.md` | Canonical envelope for every inter-agent message. |
 | `idempotency.md` | Key construction and dedupe rules for writable actions. |
 | `schema-version.md` | Object-form SemVer + `min_reader` + `deprecated_at`. |
-| `event-emission.md` | Producer-side event rules. Extracted from `chanakya-principles.md`. |
+| `event-emission.md` | Producer-side event rules. |
 | `read-write-decls.md` | Mode-pack frontmatter for declared reads / writes. |
 | `debrief-format.md` | Achilles → Chanakya debrief shape. |
-| `events.md` | Event log schema, atomicity, offset, and event catalog. |
+| `events.md` | Event log schema, atomicity, offset, event catalog. |
 | `build-message-format.md` | Producer → Slack build-posting contract. |
 | `brief-formats/` | Chanakya → Achilles brief templates per task type. |
 
-## State machines — lifecycles
+## `state-machines/` — lifecycles
 
 | File | Purpose |
 |---|---|
@@ -34,16 +34,16 @@ Cross-agent contracts, state machines, schemas, primitives, patterns, and rules.
 
 Deferred: `release-lifecycle.md` (ships in 2.6), `feedback-lifecycle.md` (ships in 2.7).
 
-## Schemas — structured data shapes
+## `schemas/` — structured data shapes
 
 | File | Purpose |
 |---|---|
-| `build-debt-schema.md` | Build-debt counter + threshold schema. |
-| `master-plan-format.md` | Master plan YAML shape. |
-| `test-flow-format.md` | Test-flow round document shape. |
+| `build-debt.md` | Build-debt counter + threshold schema. |
+| `master-plan.md` | Master plan YAML shape. |
+| `test-flow.md` | Test-flow round document shape. |
 | `token-budgets.json` | Per-mode token budget seed values. |
 
-## Primitives — reusable helpers
+## `primitives/` — reusable helpers
 
 | File | Purpose |
 |---|---|
@@ -56,7 +56,7 @@ Deferred: `release-lifecycle.md` (ships in 2.6), `feedback-lifecycle.md` (ships 
 | `file-locations.md` | Canonical root paths (tier 1 / 2 / 3). |
 | `turnip-project-config.md` | Flagged for move to `projects/turnip/` post-2.5. |
 
-## Patterns — architectural conventions
+## `patterns/` — architectural conventions
 
 | File | Purpose |
 |---|---|
@@ -68,7 +68,7 @@ Deferred: `release-lifecycle.md` (ships in 2.6), `feedback-lifecycle.md` (ships 
 | `multi-machine-sync.md` | Tier-3 partitioned-by-writer shared state. |
 | `capability-manifest.md` | Machine-readable roster regenerated from mode-pack frontmatter. |
 
-## Rules — enforcement, review, cleanup
+## `rules/` — enforcement, review, cleanup
 
 | File | Purpose |
 |---|---|
@@ -81,5 +81,3 @@ Deferred: `release-lifecycle.md` (ships in 2.6), `feedback-lifecycle.md` (ships 
 ## Why this index exists
 
 Agent sessions and pre-commit linters both rely on file references resolving. A central index surfaces what lives where so references are grounded in actual files — not inferred from memory of prior sessions.
-
-Commit C moves these files into subdirs; references in every agent + script get updated in the same commit.

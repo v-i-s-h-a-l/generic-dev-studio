@@ -20,7 +20,7 @@ When to trigger a review: any script change, any SKILL.md change, any `_shared/*
 ### R1 — Zero new permission surface (tier: **ask**)
 All runtime writes must stay under `~/.dev-studio/**` (already in allowlist). Any new path outside that tree — or any new Bash command pattern — is a block. Exception: genuinely critical system actions (installing hooks, modifying `~/.claude/settings.json`). Those must be explicit + documented in README.md's permissions section.
 
-**Why:** user operates remotely; a new permission prompt strands the pipeline. `_shared/file-locations.md` documents the two canonical roots.
+**Why:** user operates remotely; a new permission prompt strands the pipeline. `_shared/primitives/file-locations.md` documents the two canonical roots.
 
 **How to check:** grep the diff for writes to paths not under `~/.dev-studio/` or `/tmp/`. Grep for new `Bash(…)` patterns that aren't already in the README's allowlist snippet.
 

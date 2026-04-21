@@ -9,7 +9,7 @@ Archive the current branch and upload it to TestFlight, automatically bumping th
 
 ## Configuration
 
-See `_shared/turnip-project-config.md` for all project paths and identifiers (project, scheme, pbxproj, ASC key ID/issuer/key file, App ID, bundle ID, Crashlytics plist, xcpretty).
+See `_shared/primitives/turnip-project-config.md` for all project paths and identifiers (project, scheme, pbxproj, ASC key ID/issuer/key file, App ID, bundle ID, Crashlytics plist, xcpretty).
 
 ## Steps
 
@@ -19,7 +19,7 @@ Generate a JWT token and call the App Store Connect API to get:
 
 **a) Latest TestFlight build number** — call the builds endpoint, sort by uploadedDate descending, take the first result's `version` field (this is the build number).
 
-**Use the App Store Connect REST API directly** (JWT pattern from `_shared/appstore-connect-jwt.md`):
+**Use the App Store Connect REST API directly** (JWT pattern from `_shared/primitives/appstore-connect-jwt.md`):
 
 ```bash
 # Step 1a: Generate JWT using python3
@@ -79,7 +79,7 @@ Both values appear multiple times — update ALL occurrences using `replace_all`
 
 ### Step 5: Commit the version bump
 
-Pre-step: clear stale `.git/index.lock` if safe, then commit via `safe_git_commit` — see `_shared/safe-git.md` for rationale and the full helper.
+Pre-step: clear stale `.git/index.lock` if safe, then commit via `safe_git_commit` — see `_shared/primitives/safe-git.md` for rationale and the full helper.
 
 ```bash
 cd /Users/vishalsingh/Documents/Turnip.gg/turnip-ios
@@ -208,7 +208,7 @@ The Slack message should be composed from **the user's (vishal) commits only** o
 
 **Step 11a: Find the last build that was posted to #testing.** Fetch recent messages from #testing posted by Vishal-CLI (bot user `U0AJYVC8P8X`) and find the most recent build number mentioned.
 
-Load the Slack bot token using the pattern in `_shared/slack-post.md` (token path, missing-token error, and remediation are documented there).
+Load the Slack bot token using the pattern in `_shared/primitives/slack-post.md` (token path, missing-token error, and remediation are documented there).
 
 ```bash
 SLACK_BOT_TOKEN=$(cat ~/.claude/secrets/slack-bot-token)
@@ -229,7 +229,7 @@ Read the full commit messages (subject + body) to understand the user-facing imp
 
 ### Step 12: Compose the message
 
-Compose the message from vishal's commits **first**, before scanning for reporters. Follow `_shared/build-message-format.md` for the full composition rules — three-section shape (`*New*` / `*Fixed*` / `*Crash fixes*`, skip empty sections), feature rollup under *New*, crash-fix bare-link bullets, cc-mentions inline (TF-only, added in Step 13), and `• includes changes from <PREV_BUILD_NUMBER>` rollover when stacking on an unreleased TF.
+Compose the message from vishal's commits **first**, before scanning for reporters. Follow `_shared/contracts/build-message-format.md` for the full composition rules — three-section shape (`*New*` / `*Fixed*` / `*Crash fixes*`, skip empty sections), feature rollup under *New*, crash-fix bare-link bullets, cc-mentions inline (TF-only, added in Step 13), and `• includes changes from <PREV_BUILD_NUMBER>` rollover when stacking on an unreleased TF.
 
 Name regressions explicitly under *Fixed* as `• regression bug fix: <thing>` — testers need to see the net delta from the prior TF build.
 
@@ -270,4 +270,4 @@ curl -s -X POST https://slack.com/api/chat.postMessage \
 
 Replace `MESSAGE_HERE` with the final approved message text. Confirm to the user that the message was sent successfully.
 
-**Thread replies and `<!here>` rules:** See `_shared/slack-post.md`.
+**Thread replies and `<!here>` rules:** See `_shared/primitives/slack-post.md`.

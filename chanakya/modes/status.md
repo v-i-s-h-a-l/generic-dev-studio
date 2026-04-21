@@ -8,7 +8,7 @@ budget_tokens: 3000
 
 # Mode: Status
 
-Default Chanakya mode (no args). Reads four snapshots from `~/.dev-studio/<project>/.runtime/state/chanakya-snapshots/` and falls back to full-load per domain on miss/stale/corrupt. See `_shared/router-pattern.md` §Freshness and fallback for the contract.
+Default Chanakya mode (no args). Reads four snapshots from `~/.dev-studio/<project>/.runtime/state/chanakya-snapshots/` and falls back to full-load per domain on miss/stale/corrupt. See `_shared/patterns/router-pattern.md` §Freshness and fallback for the contract.
 
 ## Step 0 — Load snapshots (freshness window: 60s)
 
@@ -32,7 +32,7 @@ Parse `~/.dev-studio/<project>/plans/chanakya-master.md` directly. Walk `### Txx
 
 ### Step 0B — Full-load fallback: debt
 
-Read the `## Build Debt`, `### Unit Test Debt`, and `### UI Test Debt` blocks from the master plan. Banner thresholds are documented in `_shared/debt-tracking.md`.
+Read the `## Build Debt`, `### Unit Test Debt`, and `### UI Test Debt` blocks from the master plan. Banner thresholds are documented in `_shared/rules/debt-tracking.md`.
 
 ### Step 0C — Full-load fallback: feedback-inbox
 
@@ -115,4 +115,4 @@ When `done` tasks exist awaiting verification, suggest both paths:
 
 ## Cross-cutting
 
-Debt banners fire on every mode entry — see `_shared/debt-tracking.md`. Session-completion event emission and principles: `_shared/chanakya-principles.md`.
+Debt banners fire on every mode entry — see `_shared/rules/debt-tracking.md`. Session-completion event emission and principles: `_shared/patterns/chanakya-principles.md`.

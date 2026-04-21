@@ -12,9 +12,9 @@ Archive verified tasks, regenerate the dashboard and module index, and trim the 
 
 Snapshots: `snapshots/briefs.json` is consulted for the archive-eligibility pass (5-min freshness; stale or null → full master-plan parse). This mode is a producer for the briefs snapshot on completion — callers should run `scripts/chanakya-snap.sh briefs` after compact finishes.
 
-`--sweep-artifacts` (default on) also runs the artifact sweep: rotate event logs, prune old archives, clean stale markers, remove orphaned xcresult bundles and DerivedData, and clean gitignored Playwright MCP telemetry (`.playwright-mcp/`) via `git clean -fdX` (tracked files never touched). Pass `--no-sweep-artifacts` to skip. Full spec: `~/.claude/skills/_shared/cleanup-policy.md`.
+`--sweep-artifacts` (default on) also runs the artifact sweep: rotate event logs, prune old archives, clean stale markers, remove orphaned xcresult bundles and DerivedData, and clean gitignored Playwright MCP telemetry (`.playwright-mcp/`) via `git clean -fdX` (tracked files never touched). Pass `--no-sweep-artifacts` to skip. Full spec: `~/.claude/skills/_shared/rules/cleanup-policy.md`.
 
-`--auto-compact` prints cron setup instructions for nightly 03:00 local compact runs. Does not configure cron itself in v1. See `~/.claude/skills/_shared/cleanup-policy.md`.
+`--auto-compact` prints cron setup instructions for nightly 03:00 local compact runs. Does not configure cron itself in v1. See `~/.claude/skills/_shared/rules/cleanup-policy.md`.
 
 ## File Structure
 
@@ -80,7 +80,7 @@ chanakya-changelog.md       ← session changelog entries older than 7 days
 
 9. **Regenerate Parallelization Map.** Only include active tasks (pending/briefed/in-progress). Remove completed tasks from the map.
 
-10. **Artifact sweep** (when `--sweep-artifacts` is on, default): run all sweep steps from `~/.claude/skills/_shared/cleanup-policy.md` (Chanakya Compact Extension section). Capture freed space and removed counts for the report.
+10. **Artifact sweep** (when `--sweep-artifacts` is on, default): run all sweep steps from `~/.claude/skills/_shared/rules/cleanup-policy.md` (Chanakya Compact Extension section). Capture freed space and removed counts for the report.
 
 10a. **Feedback archive + index regen.** Implicitly run `feedback-archive` (without `--notify-slack`) to move any `verified`/`wontfix` F-records to `archive/build-<N>.md`, then regenerate `feedback/reporters/<slug>.md` for every reporter seen in active + archive. Regenerate any `feedback/root-causes/<pattern>.md` whose instance list changed. These indices are always rebuilt from primary data; hand-edits are overwritten.
 
@@ -105,7 +105,7 @@ When passed, compute all changes but don't write. Print the report showing what 
 
 ## `--auto-compact`
 
-Print cron setup instructions for nightly 03:00 local compact. Do not configure cron automatically. See `~/.claude/skills/_shared/cleanup-policy.md` for the exact crontab line.
+Print cron setup instructions for nightly 03:00 local compact. Do not configure cron automatically. See `~/.claude/skills/_shared/rules/cleanup-policy.md` for the exact crontab line.
 
 ## Auto-trigger hooks
 
@@ -120,7 +120,7 @@ On auto-trigger, run compact immediately (non-destructive — `--dry-run` is ava
 
 Post-compaction, the master plan gains a `## Dashboard`, `## Module Index`, and `## Blocked on External Input` block at the top, active tasks only in `## Active Tasks`, done-awaiting-verification in `## Done (Awaiting Verification)` (full blocks for M/L, compact table rows for XS/S), and a trimmed `## Changelog` (last 7 days only — older entries in `chanakya-changelog.md`).
 
-Full schema: `~/.claude/skills/_shared/master-plan-format.md`.
+Full schema: `~/.claude/skills/_shared/schemas/master-plan.md`.
 
 ## Post-Feature Wrap-Up
 

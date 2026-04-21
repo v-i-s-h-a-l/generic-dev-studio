@@ -31,8 +31,8 @@ Before executing ANY mode, check `~/.dev-studio/<project>/plans/chanakya-inbox/`
 2. Update the corresponding task in `chanakya-master.md`:
    - Set status to `done` (or `needs-review` if the debrief flags issues).
    - Record commit hashes and the merge commit from the Branch section.
-3. **Update the Build Debt block** (see `_shared/debt-tracking.md`) using the debrief's `build_gate:` field.
-4. **Update the Test Debt block** (see `_shared/debt-tracking.md`):
+3. **Update the Build Debt block** (see `_shared/rules/debt-tracking.md`) using the debrief's `build_gate:` field.
+4. **Update the Test Debt block** (see `_shared/rules/debt-tracking.md`):
    - If the task is an implementation type (feature/bugfix/refactor), check whether its unit test sub-task (same Group, `Type: test-unit`) is `done` or `verified`. If not, increment the unit test debt counter.
    - Same check for UI test sub-task (`Type: test-ui`) against UI test debt counter.
    - If the task IS a test sub-task (`test-unit`, `test-integration`, `test-ui`), decrement the appropriate counter and remove the parent task from `Untested since`.
@@ -57,7 +57,7 @@ Before executing ANY mode, check `~/.dev-studio/<project>/plans/chanakya-inbox/`
    - Add `- **Argus:** pending (not invoked in source session — run \`/argus <task-id>\`)` to the task entry in the master plan if the field isn't already present.
    - Append to the push queue so `--away` mode surfaces it.
 
-   `review_pending` is a new event type; add it to `~/.claude/skills/_shared/events.md` → "Cross-agent events" with handler: "Surface in next status output. Banner: `⚠️ Review pending: <task-id> merged without Argus. Run \`/argus <task-id>\` before user verification.`"
+   `review_pending` is a new event type; add it to `~/.claude/skills/_shared/contracts/events.md` → "Cross-agent events" with handler: "Surface in next status output. Banner: `⚠️ Review pending: <task-id> merged without Argus. Run \`/argus <task-id>\` before user verification.`"
 
 8. Move the debrief to `processed/`. Leave `*-tests.md` in place.
 9. Report: "Processed T001 — done, 2 follow-ups briefed (T014, T015). Build debt: 7/12. Unit test debt: 3/8. UI test debt: 2/6. Review pending: none." (or `Review pending: T001` when detected.)
@@ -174,7 +174,7 @@ Text descriptions (`original_message`, the "(deleted — …)" replacement strin
 
 ### 0E — Process event log
 
-Read new events from today's event log since the last offset. Schema and offset protocol: `~/.claude/skills/_shared/events.md`.
+Read new events from today's event log since the last offset. Schema and offset protocol: `~/.claude/skills/_shared/contracts/events.md`.
 
 ```bash
 PROJECT_MEMORY="$HOME/.claude/projects/-Users-vishalsingh-Documents-Turnip-gg-turnip-ios/memory"
@@ -306,5 +306,5 @@ Update master plan. Auto-regenerate any stale briefs (run Brief Generation mode 
 
 ## Cross-cutting
 
-Debt counter rules, banners, and brief-mode refusal: see `_shared/debt-tracking.md`.
-Principles (including Task Status Lifecycle and session-completion event): `_shared/chanakya-principles.md`.
+Debt counter rules, banners, and brief-mode refusal: see `_shared/rules/debt-tracking.md`.
+Principles (including Task Status Lifecycle and session-completion event): `_shared/patterns/chanakya-principles.md`.

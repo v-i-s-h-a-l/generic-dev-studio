@@ -14,9 +14,9 @@ All agents write to a shared append-only event log. Chanakya tails it on wake.
 <project-memory>/events/<YYYY-MM-DD>.jsonl
 ```
 
-`<project-memory>` = `~/.claude/projects/-Users-vishalsingh-Documents-Turnip-gg-turnip-ios/memory/` (resolved at runtime from `~/.claude/skills/_shared/file-locations.md`).
+`<project-memory>` = `~/.claude/projects/-Users-vishalsingh-Documents-Turnip-gg-turnip-ios/memory/` (resolved at runtime from `~/.claude/skills/_shared/primitives/file-locations.md`).
 
-One JSONL file per calendar day. Agents never rotate or delete these files — Chanakya compact handles rotation (see `_shared/cleanup-policy.md`).
+One JSONL file per calendar day. Agents never rotate or delete these files — Chanakya compact handles rotation (see `_shared/rules/cleanup-policy.md`).
 
 ## Event Schema
 
@@ -112,7 +112,7 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 
 ### Snapshot events (router-pattern)
 
-Emitted by `scripts/chanakya-snap.sh` (producer side) and by mode packs that consume snapshots (reader side). See `_shared/router-pattern.md` §Freshness and fallback for the contract. Agent field is `chanakya` on all five.
+Emitted by `scripts/chanakya-snap.sh` (producer side) and by mode packs that consume snapshots (reader side). See `_shared/patterns/router-pattern.md` §Freshness and fallback for the contract. Agent field is `chanakya` on all five.
 
 | Event | Emitted when | Typical `data` keys |
 |---|---|---|
@@ -129,7 +129,7 @@ Emitted by `scripts/chanakya-snap.sh` (producer side) and by mode packs that con
 | Event | Emitted when | Typical `data` keys |
 |---|---|---|
 | `agent_session_completed` | Final step of any agent session (any mode) | `mode` (e.g. `ship`, `T001`, `auto-sweep`), `duration_s`, `tokens` (`{input, output, cache_read, cache_write}` — best-effort; may be omitted if not available), `files_read` (count), `files_written` (count) |
-| `stale_index_lock_removed` | `safe_git_commit` (see `_shared/safe-git.md`) cleared a stale `.git/index.lock` with no live holder. Tracks frequency so the producer side can be root-caused if it rises. | `repo` (absolute path from `git rev-parse --show-toplevel`), `caller_skill` (e.g. `pushTFBuild`, `achilles-merge`, `gcpr`) |
+| `stale_index_lock_removed` | `safe_git_commit` (see `_shared/primitives/safe-git.md`) cleared a stale `.git/index.lock` with no live holder. Tracks frequency so the producer side can be root-caused if it rises. | `repo` (absolute path from `git rev-parse --show-toplevel`), `caller_skill` (e.g. `pushTFBuild`, `achilles-merge`, `gcpr`) |
 
 **Why `agent_session_completed`.** Without this we can't measure context cost or session duration per agent. Treat as required at the end of every Chanakya / Achilles / Argus session, regardless of how the session terminated. If token counts aren't available to the agent at emit time, omit the `tokens` key — duration alone is still useful.
 
@@ -161,4 +161,4 @@ OFFSET=$(wc -c < "$EVENT_FILE")
 
 ## Push Queue
 
-For push notifications, agents append to the per-project push queue at `~/.dev-studio/<project>/.runtime/state/push-queue.jsonl` (resolve via `scripts/lib-paths.sh resolve_push_queue`) — see `_shared/push-notifications.md`.
+For push notifications, agents append to the per-project push queue at `~/.dev-studio/<project>/.runtime/state/push-queue.jsonl` (resolve via `scripts/lib-paths.sh resolve_push_queue`) — see `_shared/primitives/push-notifications.md`.

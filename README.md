@@ -190,7 +190,7 @@ After cloning this repo to contribute back, enable the architecture + privacy pr
 git config core.hooksPath .githooks
 ```
 
-The hook regenerates `docs-surface.json`, runs `scripts/lint-architecture.sh --staged`, and blocks other-project runtime paths from leaking into commits. Error codes and fix recipes live in `_shared/enforcement-contract.md`. Emergency bypass: `ARCH_LINT=0 git commit ...` (hotfixes only).
+The hook regenerates `docs-surface.json`, runs `scripts/lint-architecture.sh --staged`, and blocks other-project runtime paths from leaking into commits. Error codes and fix recipes live in `_shared/rules/enforcement-contract.md`. Emergency bypass: `ARCH_LINT=0 git commit ...` (hotfixes only).
 
 ### One-time directories (per project)
 
@@ -250,7 +250,7 @@ To port to a non-iOS stack:
 1. Replace the Swift/SwiftUI skill table in `chanakya/SKILL.md` with your stack's equivalents.
 2. Replace `xcodebuild -derivedDataPath ...` in `achilles/modes/task.md` Step 6 with `cargo build`, `pnpm build`, `go build`, etc. Keep the per-task output-dir convention.
 3. Drop Figma calls from Brief Generation Step 3 if unused.
-4. Update `_shared/turnip-project-config.md` (or replace it) with your project's config.
+4. Update `_shared/primitives/turnip-project-config.md` (or replace it) with your project's config.
 
 ---
 

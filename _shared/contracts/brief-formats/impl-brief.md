@@ -72,7 +72,7 @@ Before starting, load these skills for guidance:
 - Key naming: camelCase with a feature prefix — e.g., `filterPresetsEmpty`.
 - New keys must be added to all three `.lproj` folders: `en.lproj`, `hi.lproj`, `uk.lproj`.
 - Format strings: `{placeholder}` tokens + `.replacingOccurrences(of:with:)`.
-- See `~/.claude/skills/_shared/localization-rules.md` for full rules.
+- See `~/.claude/skills/_shared/rules/localization-rules.md` for full rules.
 
 ### Test Seams
 - <Protocol/interface to expose for testing>
@@ -101,6 +101,6 @@ Before starting, load these skills for guidance:
 ## Debrief Instructions
 
 Write debrief to `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-debrief.md`.
-Format: see `~/.claude/skills/_shared/debrief-format.md`.
+Format: see `~/.claude/skills/_shared/contracts/debrief-format.md`.
 Then update master plan: status → `done`, record commit hashes.
 ```

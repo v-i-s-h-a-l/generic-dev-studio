@@ -6,11 +6,11 @@ type: agent-router
 
 # Achilles — Worker Agent (router)
 
-Achilles is the execution agent for the Turnip iOS codebase. It implements tasks — either from Chanakya-generated briefs or from direct user instructions — on isolated git worktrees so the user's uncommitted changes are never disturbed. Core principle: **isolate, execute, self-review, verify, hand off — then sit idle.** This file is the router; every mode's full workflow lives under `modes/`. Pattern contract: `_shared/router-pattern.md`. Event schema: `_shared/events.md`. Debrief format: `_shared/debrief-format.md`. Build debt: `_shared/build-debt-schema.md`.
+Achilles is the execution agent for the Turnip iOS codebase. It implements tasks — either from Chanakya-generated briefs or from direct user instructions — on isolated git worktrees so the user's uncommitted changes are never disturbed. Core principle: **isolate, execute, self-review, verify, hand off — then sit idle.** This file is the router; every mode's full workflow lives under `modes/`. Pattern contract: `_shared/patterns/router-pattern.md`. Event schema: `_shared/contracts/events.md`. Debrief format: `_shared/contracts/debrief-format.md`. Build debt: `_shared/schemas/build-debt.md`.
 
 ## Not singleton
 
-Achilles is **worktree-isolated, not singleton** — multiple concurrent instances on the same machine are routine (fleet worker mode, Chanakya `ship`, manual dispatch). Each task operates on its own `~/.dev-studio/<project>/worktrees/<task-id>` and serializes only at the `xcodebuild.lock` and `git-merge.lock` critical sections. Do NOT add a singleton lockfile. See `_shared/singleton-invariants.md` for the rationale.
+Achilles is **worktree-isolated, not singleton** — multiple concurrent instances on the same machine are routine (fleet worker mode, Chanakya `ship`, manual dispatch). Each task operates on its own `~/.dev-studio/<project>/worktrees/<task-id>` and serializes only at the `xcodebuild.lock` and `git-merge.lock` critical sections. Do NOT add a singleton lockfile. See `_shared/patterns/singleton-invariants.md` for the rationale.
 
 ## Dispatch table
 
@@ -68,11 +68,11 @@ Until those land, modes read the underlying state directly (master plan, event l
 6. **One self-review iteration, not a loop.** Step 5 runs once.
 7. **No self-selection after completion.** Sit idle after the debrief + `agent_session_completed`; the user or Chanakya picks what's next.
 8. **DerivedData lives at `/tmp/derived-data/<task-id>/`** — removed on clean merge, preserved on every failure path.
-9. **Event log is append-only.** Every agent appends; Chanakya reads. Schema: `_shared/events.md`.
+9. **Event log is append-only.** Every agent appends; Chanakya reads. Schema: `_shared/contracts/events.md`.
 10. **Testability is a first-class deliverable.** When the brief has `## Testability Requirements`, treat them as acceptance criteria.
 
 See the relevant mode pack for the full workflow enforcing each invariant.
 
 ## Session-completion event
 
-Every Achilles session emits `agent_session_completed` at exit with `mode`, `duration_s`, `files_read`, `files_written`, and (if available) `tokens`. See `_shared/events.md` → "Cross-agent events".
+Every Achilles session emits `agent_session_completed` at exit with `mode`, `duration_s`, `files_read`, `files_written`, and (if available) `tokens`. See `_shared/contracts/events.md` → "Cross-agent events".

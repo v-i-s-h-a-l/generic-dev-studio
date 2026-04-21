@@ -92,7 +92,7 @@ Argus passes `-resultBundlePath /tmp/argus-<task-id>.xcresult` to every `xcodebu
 - Flag verdict → delete after `review_approved` event from Chanakya (i.e., after the review file is archived).
 - Block verdict → retain for 48 hours (Chanakya compact sweeps after that).
 
-See `_shared/cleanup-policy.md` for the full retention table.
+See `_shared/rules/cleanup-policy.md` for the full retention table.
 
 ## Parallel Testing
 

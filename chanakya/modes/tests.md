@@ -207,7 +207,7 @@ Evidence:
 
 ## Step 7 — Write the file
 
-Ensure `~/.dev-studio/<project>/plans/user-testing-rounds/` directory exists. Write to `user-testing-round<N>.md` following the format at `~/.claude/skills/_shared/test-flow-format.md`.
+Ensure `~/.dev-studio/<project>/plans/user-testing-rounds/` directory exists. Write to `user-testing-round<N>.md` following the format at `~/.claude/skills/_shared/schemas/test-flow.md`.
 
 **Performance Checkpoints section:** Include a dedicated final section (before the crosswalk) for cross-cutting perf cases when any candidate task has performance-related test cases or debrief data (cold launch, memory ceiling, undo chain, pipeline throughput). Source baselines from debrief `## Key Learnings` or `## Performance` sections. If no data exists, omit `Perf baseline:` — the user fills in the first measurement.
 

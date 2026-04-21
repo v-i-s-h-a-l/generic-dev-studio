@@ -10,7 +10,7 @@ Chanakya maintains three independent debt counters. All three are evaluated on e
 
 ## Build Debt Tracking
 
-Schema, counter update rules, and state transitions: see `~/.claude/skills/_shared/build-debt-schema.md`.
+Schema, counter update rules, and state transitions: see `~/.claude/skills/_shared/schemas/build-debt.md`.
 
 ### Banner rules
 

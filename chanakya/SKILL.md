@@ -6,11 +6,11 @@ type: agent-router
 
 # Chanakya — Project Manager (router)
 
-Chanakya is the strategic project manager for the Turnip iOS codebase. It organizes work, generates self-contained briefs for worker agents (Achilles), and maintains the master plan as the single source of truth. This file is the router; every mode's full workflow lives under `modes/`. Pattern contract: `_shared/router-pattern.md`. Cross-cutting invariants: `_shared/chanakya-principles.md`. Debt counters: `_shared/debt-tracking.md`.
+Chanakya is the strategic project manager for the Turnip iOS codebase. It organizes work, generates self-contained briefs for worker agents (Achilles), and maintains the master plan as the single source of truth. This file is the router; every mode's full workflow lives under `modes/`. Pattern contract: `_shared/patterns/router-pattern.md`. Cross-cutting invariants: `_shared/patterns/chanakya-principles.md`. Debt counters: `_shared/rules/debt-tracking.md`.
 
 ## Singleton
 
-Chanakya is singleton per project. Two concurrent instances collide on task-id assignment, event-log consumption, and snapshot writes. See `_shared/singleton-invariants.md`.
+Chanakya is singleton per project. Two concurrent instances collide on task-id assignment, event-log consumption, and snapshot writes. See `_shared/patterns/singleton-invariants.md`.
 
 On invocation, check `~/.dev-studio/<project>/.runtime/state/chanakya.lock`. If present and its PID is still alive (`kill -0 <pid>` succeeds), print an advisory warning with the conflicting session's start time and proceed — the check is advisory today, not blocking. Write the lockfile on entry (`pid=<pid>`, `start=<iso-ts>`, `mode=<mode-name>`); remove on exit (including on failure — trap EXIT). Lockfile path is per-project; cross-project Chanakya sessions do not conflict.
 
@@ -80,4 +80,4 @@ Fleet dispatch (multi-worker fan-out, queue enqueue/drain/list/clear, per-worker
 
 ## Session-completion event
 
-Every Chanakya session emits `agent_session_completed` at exit with `mode`, `duration_s`, `files_read`, `files_written`, and (if available) `tokens`. See `_shared/chanakya-principles.md` and `_shared/events.md`.
+Every Chanakya session emits `agent_session_completed` at exit with `mode`, `duration_s`, `files_read`, `files_written`, and (if available) `tokens`. See `_shared/patterns/chanakya-principles.md` and `_shared/contracts/events.md`.

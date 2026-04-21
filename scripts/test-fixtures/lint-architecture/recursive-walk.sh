@@ -54,8 +54,8 @@ EOF
 # Deeper nesting — brief-formats style. Must be discovered but skipped by the
 # frontmatter check per the narrow carve-out. Intentionally missing frontmatter
 # to mirror the current brief-formats/ state.
-mkdir -p "$TMPROOT/_shared/brief-formats"
-cat >"$TMPROOT/_shared/brief-formats/legacy.md" <<'EOF'
+mkdir -p "$TMPROOT/_shared/contracts/brief-formats"
+cat >"$TMPROOT/_shared/contracts/brief-formats/legacy.md" <<'EOF'
 # Legacy brief format — no frontmatter (matches current tree).
 EOF
 

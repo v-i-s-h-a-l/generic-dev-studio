@@ -30,13 +30,13 @@ In week 1, only these checks produce **blocks**:
 
 Every other check — diff anomalies, edge-case gaps, test adequacy, regression risk — produces a **flag** in week 1. Merge proceeds; findings go in the review file for Chanakya to auto-file follow-ups.
 
-To promote a flag check to a block after week 1: edit the `Block?` column in `~/.claude/skills/_shared/review-rules.md`.
+To promote a flag check to a block after week 1: edit the `Block?` column in `~/.claude/skills/_shared/rules/review-rules.md`.
 
 ---
 
 ## Scope Caps (Token Ceiling Per Review)
 
-Apply these limits on every review to keep Argus fast and cost-bounded. The numeric limits are authoritative; `_shared/review-rules.md` mirrors them in its caps table.
+Apply these limits on every review to keep Argus fast and cost-bounded. The numeric limits are authoritative; `_shared/rules/review-rules.md` mirrors them in its caps table.
 
 | Cap | Limit | Rule |
 |---|---|---|
@@ -120,7 +120,7 @@ ADDED_LINES=$(git diff "$BASE_SHA" HEAD | grep '^+' | grep -v '^+++')
 
 ### Step 3 — Run all diff checks
 
-Run checks 1–6 from `~/.claude/skills/_shared/review-rules.md` in order. Collect findings into two lists:
+Run checks 1–6 from `~/.claude/skills/_shared/rules/review-rules.md` in order. Collect findings into two lists:
 - `BLOCKS` — verdicts that prevent merge (hard checks or promoted checks)
 - `FLAGS` — findings that should be recorded but don't block
 
@@ -134,18 +134,18 @@ Skip this step for XS/S.
 
 #### 4A — Acquire test slot
 
-See `~/.claude/skills/_shared/test-slot.md` for the full acquire protocol. Capture `SLOT` (path) and `SLOT_N` (number 1–3).
+See `~/.claude/skills/_shared/primitives/test-slot.md` for the full acquire protocol. Capture `SLOT` (path) and `SLOT_N` (number 1–3).
 
 ```bash
 SLOT_N=<acquired-slot-number>
 DEST="platform=iOS Simulator,name=Argus-${SLOT_N}"
 ```
 
-Boot simulator if needed (see `~/.claude/skills/_shared/derived-data.md`).
+Boot simulator if needed (see `~/.claude/skills/_shared/primitives/derived-data.md`).
 
 #### 4B — Staleness check
 
-See `~/.claude/skills/_shared/derived-data.md` — staleness guard procedure. Force rebuild if DerivedData is older than HEAD commit.
+See `~/.claude/skills/_shared/primitives/derived-data.md` — staleness guard procedure. Force rebuild if DerivedData is older than HEAD commit.
 
 #### 4C — Targeted test execution
 
@@ -210,7 +210,7 @@ Both empty → verdict = "approved"
 **Approve:** no file. Emit `review_approved` event. Delete `.argus-running` marker. Return `approved`.
 
 **Flag:**
-- Write `$REVIEWS_DIR/review_$TASK_ID.md` following the format in `~/.claude/skills/_shared/review-rules.md` (Review File Format section).
+- Write `$REVIEWS_DIR/review_$TASK_ID.md` following the format in `~/.claude/skills/_shared/rules/review-rules.md` (Review File Format section).
 - Delete result bundle immediately: `rm -rf "/tmp/argus-${TASK_ID}.xcresult"` (flagged = success path for bundle retention).
 - Emit `review_flagged` event with `review_file` and `finding_count`.
 - Append to push queue: **no** (flags don't push — only blocks push).
@@ -221,7 +221,7 @@ Both empty → verdict = "approved"
 - Write `$REVIEWS_DIR/review_$TASK_ID.md`.
 - Retain result bundle (do not delete — 48h retention policy).
 - Emit `review_blocked` event with `block_reason` and `review_file`.
-- Append to push queue (see `~/.claude/skills/_shared/push-notifications.md`).
+- Append to push queue (see `~/.claude/skills/_shared/primitives/push-notifications.md`).
 - Remove `.argus-running` marker.
 - Return `blocked` with the review file path and a human summary of the block reason.
 
@@ -243,7 +243,7 @@ Before returning, emit `agent_session_completed` so analysis can measure context
 {"ts":"...","agent":"argus","event":"agent_session_completed","task":"<TASK_ID>","data":{"mode":"review","duration_s":<seconds>,"files_read":<count>,"files_written":<count>,"verdict":"<approved|flagged|blocked>"}}
 ```
 
-Include `tokens` (`{input, output, cache_read, cache_write}`) if available; omit otherwise. See `~/.claude/skills/_shared/events.md` → "Cross-agent events".
+Include `tokens` (`{input, output, cache_read, cache_write}`) if available; omit otherwise. See `~/.claude/skills/_shared/contracts/events.md` → "Cross-agent events".
 
 ---
 

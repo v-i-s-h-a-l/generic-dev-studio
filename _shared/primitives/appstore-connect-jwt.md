@@ -7,7 +7,7 @@ type: reference
 # App Store Connect JWT Generation
 
 Generate a short-lived JWT for authenticating App Store Connect API calls.
-Credentials are in `_shared/turnip-project-config.md`.
+Credentials are in `_shared/primitives/turnip-project-config.md`.
 
 ```bash
 TOKEN=$(python3 -c "

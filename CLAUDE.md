@@ -102,4 +102,4 @@ Public issues describe **abstract patterns** (e.g. "Argus's secrets-in-diff rule
 
 ## Paths
 
-All runtime writes go under `~/.dev-studio/**`. Scripts resolve paths via `scripts/lib-paths.sh` — never hardcode. See `_shared/file-locations.md` for canonical roots.
+All runtime writes go under `~/.dev-studio/**`. Scripts resolve paths via `scripts/lib-paths.sh` — never hardcode. See `_shared/primitives/file-locations.md` for canonical roots.

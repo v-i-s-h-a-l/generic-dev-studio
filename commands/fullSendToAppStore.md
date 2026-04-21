@@ -9,7 +9,7 @@ Tag the current commit, create a GitHub draft release with playful release notes
 
 ## Configuration
 
-See `_shared/turnip-project-config.md` for all project paths and identifiers (repo root, pbxproj, ASC key ID/issuer/key file, App ID, bundle ID).
+See `_shared/primitives/turnip-project-config.md` for all project paths and identifiers (repo root, pbxproj, ASC key ID/issuer/key file, App ID, bundle ID).
 
 ## Step 1: Get current build number
 
@@ -53,7 +53,7 @@ Examples:
 
 Using the filtered and classified commits, write two outputs:
 
-**A) Slack parent body + GitHub release notes (unified)** — follow `_shared/build-message-format.md`: three-section shape `*New*` / `*Fixed*` / `*Crash fixes*`, skip empty sections, feature rollup under *New*, bare-link bullets under *Crash fixes*. The same text is used as both the Slack parent body (Step 15) and the GitHub release notes (Step 7) — they are not separate.
+**A) Slack parent body + GitHub release notes (unified)** — follow `_shared/contracts/build-message-format.md`: three-section shape `*New*` / `*Fixed*` / `*Crash fixes*`, skip empty sections, feature rollup under *New*, bare-link bullets under *Crash fixes*. The same text is used as both the Slack parent body (Step 15) and the GitHub release notes (Step 7) — they are not separate.
 
 Release-specific rules (beyond the shared doc):
 - **Drop regressions introduced and fixed within `PREV_TAG..HEAD`** — if commit A introduced a bug and commit B fixed it, and both fall in this range, the net user-visible delta is zero; emit nothing for either. Only bullets representing changes users will actually see from the last shipped version survive.
@@ -118,7 +118,7 @@ In the rare case the user wants to submit an older TestFlight build instead, the
 
 ## Step 9: Generate App Store Connect JWT
 
-Use the pattern in `_shared/appstore-connect-jwt.md` to generate `$TOKEN`. The `-sg` curl flag requirement documented there applies to all subsequent API calls in this command.
+Use the pattern in `_shared/primitives/appstore-connect-jwt.md` to generate `$TOKEN`. The `-sg` curl flag requirement documented there applies to all subsequent API calls in this command.
 
 ## Step 10: Find the build on App Store Connect
 
@@ -271,13 +271,13 @@ curl -sg -X PATCH "https://api.appstoreconnect.apple.com/v1/reviewSubmissions/$R
 
 Slack channel: `C01PVRBMFJ6` (#releases)
 
-Load the Slack bot token using the pattern in `_shared/slack-post.md` (token path, missing-token error, and remediation are documented there). The `thread_ts` and `<!here>` rules in that file also apply here.
+Load the Slack bot token using the pattern in `_shared/primitives/slack-post.md` (token path, missing-token error, and remediation are documented there). The `thread_ts` and `<!here>` rules in that file also apply here.
 
 ```bash
 SLACK_BOT_TOKEN=$(cat ~/.claude/secrets/slack-bot-token)
 ```
 
-**Main message** — headline + body (no `<!here>` on release parent, per `_shared/build-message-format.md`). The body is the three-section `*New*` / `*Fixed*` / `*Crash fixes*` text composed in Step 4A (the unified Slack-parent / GitHub-release-notes output — not a separate dump):
+**Main message** — headline + body (no `<!here>` on release parent, per `_shared/contracts/build-message-format.md`). The body is the three-section `*New*` / `*Fixed*` / `*Crash fixes*` text composed in Step 4A (the unified Slack-parent / GitHub-release-notes output — not a separate dump):
 ```
 [iOS] v<VERSION_STRING> (build <SUBMISSION_BUILD_NUMBER>) has been submitted for App Store review
 
@@ -292,7 +292,7 @@ PARENT_TS=$(curl -s -X POST https://slack.com/api/chat.postMessage \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['ts'])")
 ```
 
-Thread reply order (per `_shared/build-message-format.md` → Thread replies): App Store "What's New" first (highest product value), GitHub release URL second.
+Thread reply order (per `_shared/contracts/build-message-format.md` → Thread replies): App Store "What's New" first (highest product value), GitHub release URL second.
 
 **Reply 1** — App Store "What's New" with context header, two blank lines before the actual text:
 ```
@@ -317,7 +317,7 @@ curl -s -X POST https://slack.com/api/chat.postMessage \
   -d "{\"channel\":\"C01PVRBMFJ6\",\"thread_ts\":\"$PARENT_TS\",\"text\":\"<GITHUB_RELEASE_URL>\"}"
 ```
 
-See `_shared/slack-post.md` for the general curl pattern. Escape newlines as `\n` and any double quotes in the message text before embedding in the JSON `-d` payload.
+See `_shared/primitives/slack-post.md` for the general curl pattern. Escape newlines as `\n` and any double quotes in the message text before embedding in the JSON `-d` payload.
 
 ## Step 16: Arm the App Store watcher
 

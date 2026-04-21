@@ -10,7 +10,7 @@ budget_tokens: 1500
 
 Wraps the existing `/fullSendToAppStore` skill. Same wrapper pattern as TestFlight mode but captures additional App Store–specific data (git tag, GitHub release URL).
 
-Slack message format (used by `/fullSendToAppStore`) is defined in `_shared/build-message-format.md`; this mode does not duplicate or override it.
+Slack message format (used by `/fullSendToAppStore`) is defined in `_shared/contracts/build-message-format.md`; this mode does not duplicate or override it.
 
 ## AS1 — Pre-flight: collect shipping tasks
 

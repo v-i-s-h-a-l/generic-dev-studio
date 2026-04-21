@@ -26,4 +26,4 @@ Snapshots: `snapshots/debt.json` for counter state (5-min freshness; fallback: r
 
 If all three counters are in `silent` state: "All debt counters are green. Nothing to sweep."
 
-Full debt-counter schema + thresholds: `_shared/debt-tracking.md`.
+Full debt-counter schema + thresholds: `_shared/rules/debt-tracking.md`.

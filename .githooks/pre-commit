@@ -33,7 +33,7 @@ if [ -x "$SCRIPTS/lint-architecture.sh" ]; then
   "$SCRIPTS/lint-architecture.sh" --staged
   rc=$?
   if [ "$rc" -ne 0 ]; then
-    printf '\npre-commit: architecture violations above — see _shared/enforcement-contract.md\n' >&2
+    printf '\npre-commit: architecture violations above — see _shared/rules/enforcement-contract.md\n' >&2
     printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
     exit 1
   fi

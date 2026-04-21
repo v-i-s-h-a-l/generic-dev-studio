@@ -8,7 +8,7 @@
 # Exit 0 on pass (warnings allowed on stderr). Exit 1 on any block-tier
 # violation. Error lines follow:
 #   <CODE>:<file>[:<line>]:<detail> | <fix-hint>
-# See _shared/enforcement-contract.md for the full code table + fix recipes.
+# See _shared/rules/enforcement-contract.md for the full code table + fix recipes.
 
 set -u
 umask 022
@@ -168,7 +168,7 @@ check_snapshot_freshness() {
 # ---------- W_BUDGET_DRIFT ----------
 check_budget_drift() {
   local mode_file="$1" budgets_file key budget words est
-  budgets_file="$REPO_ROOT/_shared/token-budgets.json"
+  budgets_file="$REPO_ROOT/_shared/schemas/token-budgets.json"
   [ -f "$budgets_file" ] || return 0
   command -v jq >/dev/null 2>&1 || return 0
   # Key: "<agent>/<mode>" — derived from path */<agent>/modes/<mode>.md.
@@ -279,10 +279,10 @@ main() {
     [ -z "$file" ] && continue
     [ -f "$file" ] || continue
     case "$file" in
-      */_shared/brief-formats/*.md)
-        # Brief-format templates predate the frontmatter convention; they will
-        # be re-authored as proper contracts in Phase 2.5 Commit C. Skip for now
-        # so the widened walk stays a no-op on the current flat tree.
+      */_shared/contracts/brief-formats/*.md)
+        # Brief-format templates predate the frontmatter convention. Re-authoring
+        # is tracked separately; the carve-out keeps the walk green on the
+        # legacy templates.
         ;;
       */_shared/*.md)
         check_frontmatter "$file" "name description type"

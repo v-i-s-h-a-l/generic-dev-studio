@@ -10,7 +10,7 @@ budget_tokens: 1500
 
 Wraps the existing `/pushTFBuild` skill. Achilles adds pre-flight task collection and post-flight release debrief — the build workflow itself is unchanged.
 
-Slack message format (used by `/pushTFBuild`) is defined in `_shared/build-message-format.md`; this mode does not duplicate or override it.
+Slack message format (used by `/pushTFBuild`) is defined in `_shared/contracts/build-message-format.md`; this mode does not duplicate or override it.
 
 ## TF1 — Pre-flight: collect shipping tasks
 

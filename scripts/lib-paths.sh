@@ -82,7 +82,7 @@ resolve_dispatch_queue() {
 # Project memory dir — Claude Code auto-manages one of these per repo. Slug is
 # the repo toplevel path with `/` → `-` (leading slash included, so a repo at
 # `/Users/x/work/foo` maps to `-Users-x-work-foo`).
-# Read _shared/file-locations.md for the full scheme.
+# Read _shared/primitives/file-locations.md for the full scheme.
 # Used by scripts that need to append to the shared event log.
 resolve_project_memory() {
   local top
@@ -99,7 +99,7 @@ resolve_event_log() {
 
 # Append one JSONL event to today's event log. Caller provides agent, event,
 # task id, and a pre-formatted JSON `data` object (default `{}`). Keep the
-# entire line ≤ 4096 bytes so O_APPEND stays atomic (see _shared/events.md).
+# entire line ≤ 4096 bytes so O_APPEND stays atomic (see _shared/contracts/events.md).
 append_event() {
   local agent="${1:?append_event <agent> <event> <task> [data-json]}"
   local event="$2" task="${3:-}" data="${4:-\{\}}"

@@ -314,7 +314,7 @@ produce_debt() {
 # Producer: feedback-inbox
 # -----------------------------------------------------------------------------
 # Studio-feedback routes into the generic-dev-studio feedback-inbox scoped by
-# source project (see _shared/file-locations.md). For a non-gds consumer, we
+# source project (see _shared/primitives/file-locations.md). For a non-gds consumer, we
 # show feedback that originated in THIS project; for gds itself, we show
 # all scopes combined.
 produce_feedback_inbox() {

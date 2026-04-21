@@ -120,4 +120,4 @@ Auto-start briefing T001 immediately after printing this message.
 
 ## Master Plan Format
 
-Full schema: `~/.claude/skills/_shared/master-plan-format.md`.
+Full schema: `~/.claude/skills/_shared/schemas/master-plan.md`.

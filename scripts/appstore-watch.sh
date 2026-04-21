@@ -107,7 +107,7 @@ print(m.get('failures', 0))
 PY
 }
 
-# Generate ASC JWT (pattern from _shared/appstore-connect-jwt.md).
+# Generate ASC JWT (pattern from _shared/primitives/appstore-connect-jwt.md).
 TOKEN=$(python3 - "$KEY_PATH" "$ISSUER_ID" "$KEY_ID" <<'PY'
 import jwt, time, sys
 key_path, issuer, kid = sys.argv[1], sys.argv[2], sys.argv[3]

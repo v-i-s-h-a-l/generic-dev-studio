@@ -23,7 +23,7 @@ safe_git_commit() {
     if ! pgrep -f "git .* $repo" >/dev/null; then
       echo "Removing stale index.lock at $lock" >&2
       rm -f "$lock"
-      # Emit event so frequency is tracked; see _shared/events.md
+      # Emit event so frequency is tracked; see _shared/contracts/events.md
       local event_file
       event_file="$PROJECT_MEMORY/events/$(date -u +%Y-%m-%d).jsonl"
       mkdir -p "$(dirname "$event_file")"
@@ -34,7 +34,7 @@ safe_git_commit() {
 }
 ```
 
-Callers should export `CALLER_SKILL` (e.g. `pushTFBuild`, `achilles-merge`) before invoking so the event log attributes removals correctly. `PROJECT_MEMORY` resolves per `_shared/file-locations.md`; skip the event emit silently if unset.
+Callers should export `CALLER_SKILL` (e.g. `pushTFBuild`, `achilles-merge`) before invoking so the event log attributes removals correctly. `PROJECT_MEMORY` resolves per `_shared/primitives/file-locations.md`; skip the event emit silently if unset.
 
 ## Usage
 
@@ -53,4 +53,4 @@ The guard wraps the command, not the message — heredoc patterns are preserved.
 
 ## Event
 
-See `_shared/events.md` for the `stale_index_lock_removed` row.
+See `_shared/contracts/events.md` for the `stale_index_lock_removed` row.

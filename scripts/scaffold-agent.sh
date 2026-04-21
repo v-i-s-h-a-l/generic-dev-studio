@@ -45,9 +45,9 @@ type: agent-router
 
 # $NAME
 
-Router for the $NAME agent. Follows the convention in \`_shared/router-pattern.md\` — tiny router, on-demand mode packs, small per-domain snapshots.
+Router for the $NAME agent. Follows the convention in \`_shared/patterns/router-pattern.md\` — tiny router, on-demand mode packs, small per-domain snapshots.
 
-Singleton status: **not singleton** (update after evaluating against \`_shared/singleton-invariants.md\`).
+Singleton status: **not singleton** (update after evaluating against \`_shared/patterns/singleton-invariants.md\`).
 
 ## Dispatch
 
@@ -62,9 +62,9 @@ Intent detection order:
 
 ## References
 
-- Pattern contract: \`_shared/router-pattern.md\`.
-- Singleton rules: \`_shared/singleton-invariants.md\`.
-- Enforcement codes: \`_shared/enforcement-contract.md\`.
+- Pattern contract: \`_shared/patterns/router-pattern.md\`.
+- Singleton rules: \`_shared/patterns/singleton-invariants.md\`.
+- Enforcement codes: \`_shared/rules/enforcement-contract.md\`.
 EOF
 
 if [ -x "$SCRIPT_DIR/update-surface-manifest.sh" ]; then
@@ -75,7 +75,7 @@ fi
 if command -v gh >/dev/null 2>&1; then
   gh issue create \
     --title "Build out $NAME agent" \
-    --body "Scaffolded via \`scripts/scaffold-agent.sh $NAME\`. Next steps:\n\n- Add \`modes/<pack>.md\` files for each sub-command.\n- Fill in dispatch table and default mode in \`$NAME/SKILL.md\`.\n- Declare \`snapshots: []\` (or list) in every mode pack frontmatter.\n- Run \`scripts/lint-architecture.sh\` to verify.\n\nPattern: \`_shared/router-pattern.md\`." \
+    --body "Scaffolded via \`scripts/scaffold-agent.sh $NAME\`. Next steps:\n\n- Add \`modes/<pack>.md\` files for each sub-command.\n- Fill in dispatch table and default mode in \`$NAME/SKILL.md\`.\n- Declare \`snapshots: []\` (or list) in every mode pack frontmatter.\n- Run \`scripts/lint-architecture.sh\` to verify.\n\nPattern: \`_shared/patterns/router-pattern.md\`." \
     --label "enhancement,theme/internal" >/dev/null 2>&1 || \
     printf 'warn: could not create tracking issue (gh unauthed?)\n' >&2
 fi
