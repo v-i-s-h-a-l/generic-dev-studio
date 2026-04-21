@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Pre-commit hook for generic-dev-studio. Three gates in order:
-#   1. update-surface-manifest.sh — regenerate and auto-stage docs-surface.json.
-#   2. lint-architecture.sh --staged — router/frontmatter/dup/surface checks.
-#   3. privacy gate — reject if staged diff leaks another project's runtime.
+# Pre-commit hook for generic-dev-studio. Four gates in order:
+#   1.  update-surface-manifest.sh — regenerate + auto-stage docs-surface.json.
+#   1b. capability-manifest.sh --regen — regenerate + auto-stage the manifest.
+#   2.  lint-architecture.sh --staged — router/frontmatter/dup/surface checks.
+#   3.  privacy gate — reject if staged diff leaks another project's runtime.
 #
-# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2 and 3. Gate 1
-# (manifest regen) always runs because a stale manifest leaks downstream.
+# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2 and 3. Gate 1+1b
+# (manifest regens) always run because stale manifests leak downstream.
 
 set -u
 
@@ -20,6 +21,17 @@ if [ -x "$SCRIPTS/update-surface-manifest.sh" ]; then
   }
   if ! git diff --quiet -- "$REPO_ROOT/docs-surface.json" 2>/dev/null; then
     git add "$REPO_ROOT/docs-surface.json" 2>/dev/null || true
+  fi
+fi
+
+# Gate 1b — regenerate capability manifest + restage on drift. Mirrors 1.
+if [ -x "$SCRIPTS/capability-manifest.sh" ]; then
+  "$SCRIPTS/capability-manifest.sh" --regen >/dev/null || {
+    printf 'pre-commit: capability-manifest.sh --regen failed\n' >&2
+    exit 1
+  }
+  if ! git diff --quiet -- "$REPO_ROOT/_shared/schemas/capability-manifest.json" 2>/dev/null; then
+    git add "$REPO_ROOT/_shared/schemas/capability-manifest.json" 2>/dev/null || true
   fi
 fi
 

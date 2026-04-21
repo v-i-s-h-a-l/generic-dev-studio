@@ -1,0 +1,282 @@
+{
+  "schema_version": {
+    "name": "capability-manifest",
+    "version": "1.0.0",
+    "min_reader": "1.0.0",
+    "deprecated_at": null
+  },
+  "generated_at": "2026-04-21T20:20:43Z",
+  "agents": [
+    {
+      "name": "achilles",
+      "router": "achilles/SKILL.md",
+      "description": "Worker agent for the Turnip iOS codebase. Executes tasks from Chanakya-generated briefs or directly from user instructions. Handles implementation tasks (with SOLID/testability mandates, accessibility identifiers, DI-based test seams), unit test tasks, integration test tasks, UI test tasks, and TDD test-first tasks. Works on an isolated git worktree, self-reviews (including testability checks), invokes Argus pre-merge, merges locally, cleans up, and debriefs. XS/S tasks skip xcodebuild (LSP-only) and accumulate build debt; M/L tasks run the full build gate. Default is merge-immediately (no wait); pass --wait to block up to 10 minutes for user test feedback before merging. Emits events to the shared event log throughout. Invoke with /achilles <task-id> [--wait] [--force-build] [--ignore-build-debt] for brief-based work, /achilles [--wait] for direct mode, /achilles build for a manual build-verification run (auto-bisects on red), /achilles push-tf for TestFlight release (wraps /pushTFBuild + debrief), or /achilles app-store for App Store submission (wraps /fullSendToAppStore + debrief).",
+      "reads": [],
+      "writes": [],
+      "modes": [
+        {
+          "name": "app-store",
+          "path": "achilles/modes/app-store.md",
+          "type": "mode-pack",
+          "description": "App Store Release wrapper (`/achilles app-store`). Wraps the existing `/fullSendToAppStore` skill, captures App Store–specific data (git tag, GitHub release URL) alongside the release debrief that binds the submission to Chanakya's task tracking.",
+          "reads": [],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 1500
+        },
+        {
+          "name": "build",
+          "path": "achilles/modes/build.md",
+          "type": "mode-pack",
+          "description": "Manual build verification (`/achilles build`). One command: green resets the debt counter on Chanakya's next sweep; red auto-bisects to name the breaking commit and files a P0 fix task. No brief required. Never prompts the user.",
+          "reads": [],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 2500
+        },
+        {
+          "name": "group",
+          "path": "achilles/modes/group.md",
+          "type": "mode-pack",
+          "description": "Composite group mode (`/achilles group <task-id>`). Executes the implementation task, then auto-continues with its test sub-tasks sequentially — all in one session. Phased: unit → integration → UI. Bails at the first unrecoverable failure with a partial debrief.",
+          "reads": [],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 1500
+        },
+        {
+          "name": "next",
+          "path": "achilles/modes/next.md",
+          "type": "mode-pack",
+          "description": "Composite next mode (`/achilles next [N]`). Picks and executes the highest-priority ready task without the user specifying a task ID. With N>1, prints a dispatch plan for other tabs.",
+          "reads": [],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 1000
+        },
+        {
+          "name": "push-tf",
+          "path": "achilles/modes/push-tf.md",
+          "type": "mode-pack",
+          "description": "TestFlight Release wrapper (`/achilles push-tf`). Wraps the existing `/pushTFBuild` skill, adds pre-flight task collection and post-flight release debrief. The build workflow itself is unchanged — this mode exists to bind the release to Chanakya's task tracking.",
+          "reads": [],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 1500
+        },
+        {
+          "name": "studio-feedback",
+          "path": "achilles/modes/studio-feedback.md",
+          "type": "mode-pack",
+          "description": "Studio-feedback capture (`/achilles studio-feedback` or conversational \"capture this as feedback\"). Mirrors `/chanakya studio-feedback` exactly — writes a feedback file to the canonical inbox path. Subagents emit feedback directly to the filesystem during task execution when they notice studio-level issues.",
+          "reads": [],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 800
+        },
+        {
+          "name": "task",
+          "path": "achilles/modes/task.md",
+          "type": "mode-pack",
+          "description": "Execution pipeline for brief-based and direct-mode work. Handles all task types (feature / bugfix / refactor / test-unit / test-integration / test-ui / test-tdd / debug) through the shared Step 1–11 pipeline, including size-driven build gate, mandatory Argus pre-merge review, merge-lock serialization, and debrief.",
+          "reads": [],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 6000
+        },
+        {
+          "name": "test-suite",
+          "path": "achilles/modes/test-suite.md",
+          "type": "mode-pack",
+          "description": "Composite test-suite mode (`/achilles test-suite <unit|ui|all>`). Runs the full test suite (not individual task tests) against committed HEAD and produces a debrief that resets the corresponding debt counter on Chanakya's next sweep.",
+          "reads": [],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 1500
+        },
+        {
+          "name": "worker",
+          "path": "achilles/modes/worker.md",
+          "type": "mode-pack",
+          "description": "Fleet worker mode (`/achilles worker [N]`). Turns the current Claude session into a fleet pane — claims a slot atomically, starts a background watch loop, and spawns a fresh `claude -p \"/achilles <id>\"` per dispatched task. The session is the operator-facing wrapper; the bash watch loop is the IPC primitive.",
+          "reads": [],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 1500
+        }
+      ]
+    },
+    {
+      "name": "chanakya",
+      "router": "chanakya/SKILL.md",
+      "description": "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, processes the shared event log, and manages the user verification pipeline. Sub-commands: status, brief, review, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify, ingest-thread, ingest-dm, ingest-slack, report-design, report-product, feedback-archive, feedback-history. Do NOT trigger for bug fixes or one-file changes — those go to /achilles.",
+      "reads": [],
+      "writes": [],
+      "modes": [
+        {
+          "name": "brief",
+          "path": "chanakya/modes/brief.md",
+          "type": "mode-pack",
+          "description": "Brief Generation mode and Brief-All composite. Writes self-contained Achilles briefs with Figma context, codebase context, type-aware structure. Brief-All iterates brief generation across every pending task in priority order.",
+          "reads": [],
+          "writes": [],
+          "snapshots": ["briefs.json", "debt.json"],
+          "dry_run": false,
+          "budget_tokens": 4000
+        },
+        {
+          "name": "compact",
+          "path": "chanakya/modes/compact.md",
+          "type": "mode-pack",
+          "description": "Archive verified tasks, regenerate Dashboard + Module Index + Blocked list, trim changelog, optionally sweep artifacts. Includes implicit feedback-archive + index regeneration.",
+          "reads": [],
+          "writes": [],
+          "snapshots": ["briefs.json"],
+          "dry_run": false,
+          "budget_tokens": 3500
+        },
+        {
+          "name": "feedback-reports",
+          "path": "chanakya/modes/feedback-reports.md",
+          "type": "mode-pack",
+          "description": "Render reporter-facing feedback reports — design (category=design or UI/UX module) and product (category=clarification/enhancement). Read-only; writes a dated markdown file to chanakya-inbox. Sub-commands report-design and report-product.",
+          "reads": [],
+          "writes": [],
+          "snapshots": ["feedback-inbox.json"],
+          "dry_run": false,
+          "budget_tokens": 2500
+        },
+        {
+          "name": "feedback",
+          "path": "chanakya/modes/feedback.md",
+          "type": "mode-pack",
+          "description": "Review-Feedback (apply user-testing.md edits to master plan), Feedback-Archive (promote verified records to per-build archive), Feedback-History (search active + archive), Studio-Feedback (capture studio-internal feedback). The full feedback lifecycle except Slack ingestion (which lives in the ingest mode pack).",
+          "reads": [],
+          "writes": [],
+          "snapshots": ["briefs.json", "feedback-inbox.json"],
+          "dry_run": false,
+          "budget_tokens": 4000
+        },
+        {
+          "name": "ingest",
+          "path": "chanakya/modes/ingest.md",
+          "type": "mode-pack",
+          "description": "Slack-source feedback ingestion — thread, DM, channel. Pulls messages, classifies feedback vs conversation, mints F-ids, downloads attachments, dedupes, emits feedback_ingested.",
+          "reads": [],
+          "writes": [],
+          "snapshots": ["feedback-inbox.json"],
+          "dry_run": false,
+          "budget_tokens": 3000
+        },
+        {
+          "name": "intake",
+          "path": "chanakya/modes/intake.md",
+          "type": "mode-pack",
+          "description": "Initial task capture + planning — take a PRD or bullet points, tier into plan-worthy vs direct, expand into task groups with sub-task decisions (unit/integration/UI tests, TDD vs test-after), assign skills, write the master plan.",
+          "reads": [],
+          "writes": [],
+          "snapshots": ["briefs.json"],
+          "dry_run": false,
+          "budget_tokens": 4000
+        },
+        {
+          "name": "review",
+          "path": "chanakya/modes/review.md",
+          "type": "mode-pack",
+          "description": "Inbox sweep + event-log processing. Handles regular task debriefs, manual-build-check debriefs, release debriefs, App Store watcher, threshold actions, stale-artifact janitor, event log, feedback reminders, blind-spot detection, studio-feedback ingestion. Also the explicit `/chanakya review` PRD-delta sub-command.",
+          "reads": [],
+          "writes": [],
+          "snapshots": ["debt.json", "events-tail.json", "feedback-inbox.json"],
+          "dry_run": false,
+          "budget_tokens": 4000
+        },
+        {
+          "name": "ship",
+          "path": "chanakya/modes/ship.md",
+          "type": "mode-pack",
+          "description": "Brief + dispatch composite. Resolves targets, checks debt gates, briefs pending tasks, phases dispatch (fleet mode via work-stealing queue; single-session prints commands).",
+          "reads": [],
+          "writes": [],
+          "snapshots": ["briefs.json", "debt.json"],
+          "dry_run": false,
+          "budget_tokens": 2500
+        },
+        {
+          "name": "status",
+          "path": "chanakya/modes/status.md",
+          "type": "mode-pack",
+          "description": "Default mode. Renders master-plan summary, git state, blockers, push queue, test-flow round status, and release status.",
+          "reads": [],
+          "writes": [],
+          "snapshots": ["briefs.json", "debt.json", "feedback-inbox.json", "events-tail.json"],
+          "dry_run": false,
+          "budget_tokens": 3000
+        },
+        {
+          "name": "sweep-debt",
+          "path": "chanakya/modes/sweep-debt.md",
+          "type": "mode-pack",
+          "description": "Identify and dispatch all pending debt-reduction tasks (test sub-tasks + build checks) in one command.",
+          "reads": [],
+          "writes": [],
+          "snapshots": ["briefs.json", "debt.json"],
+          "dry_run": false,
+          "budget_tokens": 2000
+        },
+        {
+          "name": "sync-slack",
+          "path": "chanakya/modes/sync-slack.md",
+          "type": "mode-pack",
+          "description": "Sync a Slack Lists bug tracker with the Chanakya master plan — Status, Dev Notes, Fixed in Build. Token + project bootstrap flags included.",
+          "reads": [],
+          "writes": [],
+          "snapshots": ["briefs.json"],
+          "dry_run": false,
+          "budget_tokens": 3500
+        },
+        {
+          "name": "tests",
+          "path": "chanakya/modes/tests.md",
+          "type": "mode-pack",
+          "description": "Test-manifest (per-task checklist) + test-flow (journey-ordered walkthrough, with promote + diff modes). The two test-planning sub-commands are grouped because they are consulted together and share reads against processed debriefs and per-task test artifacts.",
+          "reads": [],
+          "writes": [],
+          "snapshots": ["briefs.json"],
+          "dry_run": false,
+          "budget_tokens": 4000
+        },
+        {
+          "name": "update",
+          "path": "chanakya/modes/update.md",
+          "type": "mode-pack",
+          "description": "Cross-reference git state with the master plan and auto-close tasks whose branches have merged.",
+          "reads": [],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 2000
+        },
+        {
+          "name": "verify",
+          "path": "chanakya/modes/verify.md",
+          "type": "mode-pack",
+          "description": "Guided single-sitting verification flow. Chains test-flow generation, user testing, then promotes + applies feedback.",
+          "reads": [],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 1500
+        }
+      ]
+    }
+  ]
+}
