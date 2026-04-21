@@ -19,9 +19,10 @@ Post Phase 2.5 Commit C, layout is frozen: later phases land new files in existi
 | `schema-version.md` | Object-form SemVer + `min_reader` + `deprecated_at`. |
 | `event-emission.md` | Producer-side event rules. |
 | `read-write-decls.md` | Mode-pack frontmatter for declared reads / writes. |
-| `debrief-format.md` | Achilles → Chanakya debrief shape. |
+| `debrief-format.md` | Achilles → Chanakya debrief shape (legacy markdown; superseded by `schemas/debrief.md` in 2.6). |
 | `events.md` | Event log schema, atomicity, offset, event catalog. |
 | `build-message-format.md` | Producer → Slack build-posting contract. |
+| `plans-index-validator.md` | Invariants + finding codes for `plans/index.yaml` and artifact cross-references. Phase 2.6. |
 | `brief-formats/` | Chanakya → Achilles brief templates per task type. |
 
 ## `state-machines/` — lifecycles
@@ -31,8 +32,8 @@ Post Phase 2.5 Commit C, layout is frozen: later phases land new files in existi
 | `task-lifecycle.md` | Proposed → briefed → dispatched → in-progress → reviewed → merged → verified / rejected → archived. |
 | `brief-lifecycle.md` | Draft → ready → dispatched → debriefed → superseded / archived. |
 | `review-lifecycle.md` | Pending → in-progress → approved / flagged / blocked → acknowledged. |
-
-Deferred: `release-lifecycle.md` (ships in 2.6), `feedback-lifecycle.md` (ships in 2.7).
+| `release-lifecycle.md` | Drafted → submitted → in-review → pending-developer-release → released / rejected / cancelled → archived. Phase 2.6. |
+| `feedback-lifecycle.md` | Ingested → triaged → linked → resolved / dismissed → archived. Minimal landing in 2.6; knowledge-layer expansion in 2.7. |
 
 ## `schemas/` — structured data shapes
 

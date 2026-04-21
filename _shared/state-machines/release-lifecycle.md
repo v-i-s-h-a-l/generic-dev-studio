@@ -1,0 +1,105 @@
+---
+name: Release Lifecycle State Machine
+description: States and transitions for a release artifact from drafted through released or rejected to archived. Owned by Achilles push-tf / app-store modes and scripts/appstore-watch.sh.
+type: reference
+---
+
+# Release Lifecycle
+
+Every release routed through the studio — TestFlight or App Store — traverses this state machine. The artifact is `plans/releases/<release-id>.yaml` (see `schemas/release.md`); its `state` field carries the current value from this enum. Transitions emit `release_state_changed` events per `contracts/events.md`.
+
+## States
+
+| State | Meaning | Who can enter |
+|---|---|---|
+| `drafted` | Release artifact created but not yet submitted to ASC. | Achilles `push-tf` / `app-store` modes pre-upload. |
+| `submitted` | Build uploaded to App Store Connect; ASC processing begins. | Achilles release modes post-upload. |
+| `in-review` | Apple has started formal review (App Store channel only). | `scripts/appstore-watch.sh` on ASC state `IN_REVIEW`. |
+| `pending-developer-release` | Apple approved; awaiting developer release (App Store channel only). | `scripts/appstore-watch.sh` on ASC state `PENDING_DEVELOPER_RELEASE`. |
+| `released` | Live on the channel. TestFlight: processed + available to testers. App Store: shipped to production. | `scripts/appstore-watch.sh` on ASC state `READY_FOR_SALE` (App Store) or `PROCESSED` for TestFlight. |
+| `rejected` | Apple rejected the submission (App Store channel only). | `scripts/appstore-watch.sh` on ASC state `DEVELOPER_REJECTED` / `REJECTED`. |
+| `cancelled` | User or agent cancelled the submission before review terminal. | Explicit cancellation by Chanakya or user. |
+| `archived` | Post-compact cold storage. Terminal. | Chanakya compact mode. |
+
+## Transitions
+
+```
+drafted               → submitted                 : build uploaded to ASC.
+submitted             → in-review                 : ASC state IN_REVIEW (App Store only).
+submitted             → released                  : ASC state PROCESSED / READY_FOR_SALE.
+in-review             → pending-developer-release : ASC state PENDING_DEVELOPER_RELEASE.
+in-review             → rejected                  : ASC state DEVELOPER_REJECTED / REJECTED.
+pending-developer-release → released              : developer-release action landed.
+rejected              → drafted                   : rework for resubmission; new release-id.
+any non-terminal      → cancelled                 : explicit cancel.
+released              → archived                  : compact sweep after N days.
+rejected              → archived                  : compact sweep.
+cancelled             → archived                  : compact sweep.
+```
+
+**Channel-specific notes:**
+
+- **TestFlight channel** typically transitions `drafted → submitted → released`. ASC may emit build-processing states (`PROCESSING`, `INVALID_BINARY`) during `submitted`; these stay inside `submitted` until a terminal TF state is observed.
+- **App Store channel** has the full review flow. `pending-developer-release` is the holdpoint where the release awaits the developer to push the "Release" button.
+
+## Required fields per transition event
+
+```json
+{
+  "ts": "2026-04-22T14:32:01Z",
+  "agent": "achilles",
+  "event": "release_state_changed",
+  "task": "TF-3047",
+  "data": {
+    "from_state": "drafted",
+    "to_state": "submitted",
+    "channel": "testflight",
+    "release_id": "0190f52a-9000-7f01-8aaa-77fe8fa99bbb",
+    "asc_state": "PROCESSING"
+  }
+}
+```
+
+`task` field of the event carries the release tag (TF-nnnn or AS-nnnn) for continuity with the legacy event shape. `data.release_id` is the UUIDv7 of the release artifact — the authoritative identifier.
+
+## Retry and backoff
+
+`scripts/appstore-watch.sh` polls ASC on a self-throttling schedule (`next_check_at` in `asc_metadata`). Consecutive failures increment `asc_metadata.consecutive_failures`; ≥ 3 failures flip `asc_metadata.stuck: true` and emit `appstore_watch_stuck` (per existing `contracts/events.md`). `stuck` is orthogonal to `state` — a stuck release remains in its current state until the watcher recovers.
+
+## Rejected → drafted (resubmission)
+
+A rejected release does not transition back to `submitted` — the rejection is terminal for the artifact. Resubmission requires a new release artifact (new `id`, new build number) pointing at the same tasks. The old release stays in `rejected` forever; compact archives it eventually.
+
+The rework relationship is tracked via an optional `rework_of: <prior-release-id>` field (additive — lands if needed; schemas/release.md does not require it yet).
+
+## Diagram
+
+```mermaid
+stateDiagram-v2
+  [*] --> drafted
+  drafted --> submitted: upload complete
+  submitted --> in_review: ASC IN_REVIEW
+  submitted --> released: TF PROCESSED / AS READY_FOR_SALE
+  in_review --> pending_developer_release: ASC PENDING_DEVELOPER_RELEASE
+  in_review --> rejected: ASC DEVELOPER_REJECTED
+  pending_developer_release --> released: developer released
+  released --> archived: compact
+  rejected --> archived: compact
+  cancelled --> archived: compact
+  drafted --> cancelled: user abort
+  submitted --> cancelled: user abort
+  in_review --> cancelled: user abort
+  archived --> [*]
+```
+
+## Pairing with task lifecycle
+
+- `task.links.release` points at the release-id. Bidirectional: `release.tasks[]` contains the task-id.
+- When a release enters `released`, the associated tasks' state is not automatically advanced — tasks follow their own lifecycle (user verification, etc.). A release's `released` is about the channel state, not task verification.
+
+## Related
+
+- `schemas/release.md` — release artifact shape; owner of the `state` field.
+- `contracts/events.md` — `release_state_changed`, `appstore_*` catalog entries.
+- `scripts/appstore-watch.sh` — ASC poller driving App Store transitions.
+- `state-machines/task-lifecycle.md` — task side of the release linkage.
