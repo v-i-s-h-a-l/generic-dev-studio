@@ -4,6 +4,8 @@ description: Studio-feedback capture (`/achilles studio-feedback` or conversatio
 type: mode-pack
 snapshots: []
 budget_tokens: 800
+reads: []
+writes: []
 ---
 
 # Mode: Studio-Feedback (`/achilles studio-feedback` or conversational "capture this as feedback")

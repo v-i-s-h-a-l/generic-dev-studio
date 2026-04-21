@@ -4,6 +4,8 @@ description: Sync a Slack Lists bug tracker with the Chanakya master plan — St
 type: mode-pack
 snapshots: [briefs.json]
 budget_tokens: 3500
+reads: []
+writes: []
 ---
 
 # Mode: Sync-Slack (`/chanakya sync-slack [--list <id>] [--build <number>]`)

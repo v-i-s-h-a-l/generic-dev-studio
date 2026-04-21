@@ -4,6 +4,8 @@ description: Inbox sweep + event-log processing. Handles regular task debriefs, 
 type: mode-pack
 snapshots: [debt.json, events-tail.json, feedback-inbox.json]
 budget_tokens: 4000
+reads: []
+writes: []
 ---
 
 # Mode: Review (inbox sweep + event processing + PRD delta)

@@ -4,6 +4,8 @@ description: Brief + dispatch composite. Resolves targets, checks debt gates, br
 type: mode-pack
 snapshots: [briefs.json, debt.json]
 budget_tokens: 2500
+reads: []
+writes: []
 ---
 
 # Composite: Ship (`/chanakya ship <target>`)

@@ -4,6 +4,8 @@ description: Cross-reference git state with the master plan and auto-close tasks
 type: mode-pack
 snapshots: []
 budget_tokens: 2000
+reads: []
+writes: []
 ---
 
 # Mode: Update (`/chanakya update`)

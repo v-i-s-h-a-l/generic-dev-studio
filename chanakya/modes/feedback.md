@@ -4,6 +4,8 @@ description: Review-Feedback (apply user-testing.md edits to master plan), Feedb
 type: mode-pack
 snapshots: [briefs.json, feedback-inbox.json]
 budget_tokens: 4000
+reads: []
+writes: []
 ---
 
 # Mode: Review-Feedback (`/chanakya review-feedback`)

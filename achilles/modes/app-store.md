@@ -4,6 +4,8 @@ description: App Store Release wrapper (`/achilles app-store`). Wraps the existi
 type: mode-pack
 snapshots: []
 budget_tokens: 1500
+reads: []
+writes: []
 ---
 
 # Mode: App Store Release (`/achilles app-store [--skip-debrief]`)

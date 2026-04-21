@@ -4,6 +4,8 @@ description: Fleet worker mode (`/achilles worker [N]`). Turns the current Claud
 type: mode-pack
 snapshots: []
 budget_tokens: 1500
+reads: []
+writes: []
 ---
 
 # Mode: Worker (`/achilles worker [N]`)

@@ -5,6 +5,8 @@ type: mode-pack
 snapshots: []
 budget_tokens: 6000
 dry_run: true
+reads: []
+writes: []
 ---
 
 # Mode: Task Execution (`/achilles <task-id>` and `/achilles` bare)

@@ -4,6 +4,8 @@ description: Composite group mode (`/achilles group <task-id>`). Executes the im
 type: mode-pack
 snapshots: []
 budget_tokens: 1500
+reads: []
+writes: []
 ---
 
 # Composite: Group Mode (`/achilles group <task-id>`)

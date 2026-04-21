@@ -4,6 +4,8 @@ description: Identify and dispatch all pending debt-reduction tasks (test sub-ta
 type: mode-pack
 snapshots: [briefs.json, debt.json]
 budget_tokens: 2000
+reads: []
+writes: []
 ---
 
 # Composite: Sweep-Debt (`/chanakya sweep-debt`)

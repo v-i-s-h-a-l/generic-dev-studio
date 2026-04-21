@@ -4,6 +4,8 @@ description: Composite test-suite mode (`/achilles test-suite <unit|ui|all>`). R
 type: mode-pack
 snapshots: []
 budget_tokens: 1500
+reads: []
+writes: []
 ---
 
 # Composite: Test-Suite Mode (`/achilles test-suite <unit | ui | all>`)

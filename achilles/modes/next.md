@@ -4,6 +4,8 @@ description: Composite next mode (`/achilles next [N]`). Picks and executes the 
 type: mode-pack
 snapshots: []
 budget_tokens: 1000
+reads: []
+writes: []
 ---
 
 # Composite: Next Mode (`/achilles next [N]`)

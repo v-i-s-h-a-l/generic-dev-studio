@@ -4,6 +4,8 @@ description: TestFlight Release wrapper (`/achilles push-tf`). Wraps the existin
 type: mode-pack
 snapshots: []
 budget_tokens: 1500
+reads: []
+writes: []
 ---
 
 # Mode: TestFlight Release (`/achilles push-tf [--skip-debrief]`)

@@ -4,6 +4,8 @@ description: Test-manifest (per-task checklist) + test-flow (journey-ordered wal
 type: mode-pack
 snapshots: [briefs.json]
 budget_tokens: 4000
+reads: []
+writes: []
 ---
 
 # Mode: Test-Manifest (`/chanakya test-manifest [--force]`)

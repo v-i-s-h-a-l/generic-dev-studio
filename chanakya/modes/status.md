@@ -4,6 +4,8 @@ description: Default mode. Renders master-plan summary, git state, blockers, pus
 type: mode-pack
 snapshots: [briefs.json, debt.json, feedback-inbox.json, events-tail.json]
 budget_tokens: 3000
+reads: []
+writes: []
 ---
 
 # Mode: Status

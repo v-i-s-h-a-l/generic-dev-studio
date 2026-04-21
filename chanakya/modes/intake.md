@@ -4,6 +4,8 @@ description: Initial task capture + planning — take a PRD or bullet points, ti
 type: mode-pack
 snapshots: [briefs.json]
 budget_tokens: 4000
+reads: []
+writes: []
 ---
 
 # Mode: Intake (`/chanakya intake` or `/chanakya` with no args)

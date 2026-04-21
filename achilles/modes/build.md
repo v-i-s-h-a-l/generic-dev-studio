@@ -4,6 +4,8 @@ description: Manual build verification (`/achilles build`). One command: green r
 type: mode-pack
 snapshots: []
 budget_tokens: 2500
+reads: []
+writes: []
 ---
 
 # Mode: Build (`/achilles build`)

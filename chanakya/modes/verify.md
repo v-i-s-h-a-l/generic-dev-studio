@@ -4,6 +4,8 @@ description: Guided single-sitting verification flow. Chains test-flow generatio
 type: mode-pack
 snapshots: []
 budget_tokens: 1500
+reads: []
+writes: []
 ---
 
 # Composite: Verify (`/chanakya verify [--round N]`)

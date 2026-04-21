@@ -1,0 +1,29 @@
+{
+  "schema_version": {
+    "name": "model-rates",
+    "version": "1.0.0",
+    "min_reader": "1.0.0",
+    "deprecated_at": null
+  },
+  "comment": "Per-model USD token rates (per million tokens). Used by budget-telemetry to derive cost_usd on agent_session_completed events. Rates as of 2026-04 — update when Anthropic publishes new pricing. Absence of a model entry → omit cost_usd (misleading to emit 0).",
+  "rates": {
+    "claude-opus-4-7": {
+      "input": 15.00,
+      "output": 75.00,
+      "cache_read": 1.50,
+      "cache_write": 18.75
+    },
+    "claude-sonnet-4-7": {
+      "input": 3.00,
+      "output": 15.00,
+      "cache_read": 0.30,
+      "cache_write": 3.75
+    },
+    "claude-haiku-4-7": {
+      "input": 0.80,
+      "output": 4.00,
+      "cache_read": 0.08,
+      "cache_write": 1.00
+    }
+  }
+}

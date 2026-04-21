@@ -4,6 +4,8 @@ description: Render reporter-facing feedback reports — design (category=design
 type: mode-pack
 snapshots: [feedback-inbox.json]
 budget_tokens: 2500
+reads: []
+writes: []
 ---
 
 # Mode: Report-Design (`/chanakya report-design [--build N]`)

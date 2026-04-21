@@ -23,13 +23,6 @@ if [ "${1:-}" = "--staged" ]; then
   STAGED=1
 fi
 
-# Strict mode promotes Phase 2.5 Commit D's new E_* codes from warn-only to
-# block. Flipped to block-by-default in Commit G after a soak window.
-STRICT=0
-if [ "${ARCH_LINT_LEVEL:-}" = "strict" ]; then
-  STRICT=1
-fi
-
 ERRORS=0
 WARNINGS=0
 
@@ -41,16 +34,6 @@ emit_error() {
 emit_warn() {
   printf '%s\n' "$1" >&2
   WARNINGS=$((WARNINGS + 1))
-}
-
-# For Phase 2.5 Commit D's new E_* codes: warn-only during soak, block under
-# ARCH_LINT_LEVEL=strict. Commit G flips the default to block.
-emit_block_or_warn() {
-  if [ "$STRICT" -eq 1 ]; then
-    emit_error "$1"
-  else
-    emit_warn "$1"
-  fi
 }
 
 # Resolve the file set to lint. Staged mode intersects the full candidate list
@@ -271,7 +254,7 @@ check_rw_decl() {
     missing="${missing:+$missing,}writes"
   fi
   if [ -n "$missing" ]; then
-    emit_block_or_warn "E_MISSING_RW_DECL:$mode_file:missing=$missing | add reads:/writes: keys (use [] for no surface) — see _shared/contracts/read-write-decls.md"
+    emit_error "E_MISSING_RW_DECL:$mode_file:missing=$missing | add reads:/writes: keys (use [] for no surface) — see _shared/contracts/read-write-decls.md"
   fi
 }
 
@@ -308,7 +291,7 @@ check_contract_refs() {
       # Strip trailing punctuation (period, comma, backtick, paren, etc.).
       target_path="${target_path%[.,\`\)\'\"]}"
       if [ ! -e "$target_path" ]; then
-        emit_block_or_warn "E_UNKNOWN_CONTRACT_REF:$file:$line_no:$normalized | reference does not resolve — move/rename or fix"
+        emit_error "E_UNKNOWN_CONTRACT_REF:$file:$line_no:$normalized | reference does not resolve — move/rename or fix"
       fi
     done < <(printf '%s\n' "${hit#*:}" | grep -oE '(~/\.claude/skills/)?_shared/[a-z-]+/[a-z0-9./_-]+\.(md|json)')
   done < <(grep -nE '(~/\.claude/skills/)?_shared/[a-z-]+/[a-z0-9./_-]+\.(md|json)' "$file" 2>/dev/null || true)

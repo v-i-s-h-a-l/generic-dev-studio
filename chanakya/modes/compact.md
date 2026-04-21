@@ -4,6 +4,8 @@ description: Archive verified tasks, regenerate Dashboard + Module Index + Block
 type: mode-pack
 snapshots: [briefs.json]
 budget_tokens: 3500
+reads: []
+writes: []
 ---
 
 # Mode: Compact (`/chanakya compact [--dry-run] [--sweep-artifacts] [--auto-compact]`)

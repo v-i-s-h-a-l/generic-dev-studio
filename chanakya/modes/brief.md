@@ -4,6 +4,8 @@ description: Brief Generation mode and Brief-All composite. Writes self-containe
 type: mode-pack
 snapshots: [briefs.json, debt.json]
 budget_tokens: 4000
+reads: []
+writes: []
 ---
 
 # Mode: Brief Generation (`/chanakya brief <task-id>`)

@@ -4,6 +4,8 @@ description: Slack-source feedback ingestion — thread, DM, channel. Pulls mess
 type: mode-pack
 snapshots: [feedback-inbox.json]
 budget_tokens: 3000
+reads: []
+writes: []
 ---
 
 # Ingest (Slack-source feedback minting)
