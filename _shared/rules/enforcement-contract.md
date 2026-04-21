@@ -25,6 +25,10 @@ Claude sessions and humans alike use this file to resolve failures without guess
 | `E_SURFACE_REMOVED` | An entry disappears from `docs-surface.json` between HEAD and staged | Removing a sub-command or command is a breaking change per RELEASES.md. Either restore the entry or escalate to ask-tier review before proceeding. |
 | `E_DUP_PROSE` | Two or more files share an identical 10-line window | Extract the duplicated passage into `_shared/<topic>.md` and reference it from both. Prevents the documentation rot the router pattern was introduced to fix. |
 | `E_MODE_SIZE` | A mode pack exceeds 600 lines of prose | Split the mode into two packs along a natural workflow boundary. 400–600 lines is a warning; above 600 is a hard block. |
+| `E_MISSING_RW_DECL`* | A `modes/*.md` lacks `reads:` or `writes:` frontmatter keys | Add `reads: []` / `writes: []` (empty list is a valid declaration — the key's presence is the point). Routers are exempt; their surfaces are auto-synthesized from mode packs. See `_shared/contracts/read-write-decls.md`. |
+| `E_UNKNOWN_CONTRACT_REF`* | A reference to `_shared/<subdir>/<file>` in prose does not resolve to an existing file | Move/rename the target, or fix the reference path. Matches repo-relative (`_shared/...`) and absolute (`~/.claude/skills/_shared/...`) forms. |
+
+\* _Warn-only during the Phase 2.5 Commit D soak window. Promoted to block under `ARCH_LINT_LEVEL=strict` and by default after Commit G._
 
 ## Warn-tier (W_) — stderr only, commit proceeds
 
@@ -33,6 +37,7 @@ Claude sessions and humans alike use this file to resolve failures without guess
 | `W_MODE_SIZE` | Mode pack prose between 400 and 600 lines | Plan a split at the next refactor. Not urgent. |
 | `W_SNAPSHOT_FRESHNESS` | Mode declares non-empty `snapshots:` but never mentions `stale` or `freshness` | Either add a freshness check section to the mode pack, or confirm the snapshot is always regenerated on read. |
 | `W_BUDGET_DRIFT` | Mode pack token estimate exceeds its `_shared/schemas/token-budgets.json` entry by more than 10% | Trim prose, or raise the budget deliberately if the mode genuinely grew. |
+| `W_CAPABILITY_STALE` | `_shared/schemas/capability-manifest.json` is older than any `modes/*.md` file | Run `scripts/capability-manifest.sh --regen`. Never promoted to block — user regenerates intentionally during analysis sessions. |
 
 ## Emergency bypass
 
@@ -52,5 +57,6 @@ Bypass leaves a paper trail: the `ARCH_LINT=0` env is visible in the commit's re
 ## Scope
 
 - Pre-commit hook runs the linter with `--staged`, so only files in the commit are evaluated for per-file checks.
-- Cross-file checks (`E_DUP_PROSE`, `E_SURFACE_REMOVED`) always scan the full tree — duplication and surface-removal are not local concerns.
+- Cross-file checks (`E_DUP_PROSE`, `E_SURFACE_REMOVED`, `W_CAPABILITY_STALE`) always scan the full tree — duplication, surface-removal, and manifest staleness are not local concerns.
+- `ARCH_LINT_LEVEL=strict` promotes the Phase 2.5 Commit D `E_*` codes (`E_MISSING_RW_DECL`, `E_UNKNOWN_CONTRACT_REF`) from warn-only to block. Commit G flips the default to block.
 - `_shared/patterns/router-pattern.md` and `_shared/patterns/singleton-invariants.md` are the source of truth for why these rules exist. This file is the operational mapping.
