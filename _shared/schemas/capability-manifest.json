@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-04-21T20:20:43Z",
+  "generated_at": "2026-04-21T20:25:40Z",
   "agents": [
     {
       "name": "achilles",
@@ -88,7 +88,7 @@
           "reads": [],
           "writes": [],
           "snapshots": [],
-          "dry_run": false,
+          "dry_run": true,
           "budget_tokens": 6000
         },
         {

@@ -27,7 +27,9 @@ Achilles is **worktree-isolated, not singleton** — multiple concurrent instanc
 | `worker [N]` | `modes/worker.md` |
 | `studio-feedback` / "capture this as feedback" | `modes/studio-feedback.md` |
 
-Flags route into the dispatched mode without changing the pack: `--wait`, `--force-build`, `--ignore-build-debt` apply to `modes/task.md`; `--skip-debrief` applies to `modes/push-tf.md` and `modes/app-store.md`.
+Flags route into the dispatched mode without changing the pack: `--wait`, `--force-build`, `--ignore-build-debt`, `--dry-run` apply to `modes/task.md`; `--skip-debrief` applies to `modes/push-tf.md` and `modes/app-store.md`.
+
+`--dry-run` is the Phase 2.5 pilot — Achilles simulates every write and event but performs reads + LSP normally. Contract: `_shared/patterns/dry-run.md`. Exit code 0 on clean simulation, 2 if dry-run surfaced a problem. Other modes adopt the pattern in 2.6.
 
 ## Intent detection
 

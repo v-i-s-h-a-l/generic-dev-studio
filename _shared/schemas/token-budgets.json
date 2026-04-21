@@ -1,7 +1,37 @@
 {
   "schema": 1,
-  "mode_budgets": {},
-  "router_budgets": {},
+  "comment": "Seed values derived from current mode-pack frontmatter (Phase 2.5 Commit F). Iterate post-launch — convergence is not stop-improving. Router budgets cover the agent's SKILL.md prose; mode budgets cover one mode-pack prose load.",
+  "mode_budgets": {
+    "achilles/task": 6000,
+    "achilles/build": 2500,
+    "achilles/push-tf": 1500,
+    "achilles/app-store": 1500,
+    "achilles/next": 1000,
+    "achilles/group": 1500,
+    "achilles/test-suite": 1500,
+    "achilles/worker": 1500,
+    "achilles/studio-feedback": 800,
+
+    "chanakya/brief": 4000,
+    "chanakya/compact": 3500,
+    "chanakya/feedback": 4000,
+    "chanakya/feedback-reports": 2500,
+    "chanakya/ingest": 3000,
+    "chanakya/intake": 4000,
+    "chanakya/review": 4000,
+    "chanakya/ship": 2500,
+    "chanakya/status": 3000,
+    "chanakya/sweep-debt": 2000,
+    "chanakya/sync-slack": 3500,
+    "chanakya/tests": 4000,
+    "chanakya/update": 2000,
+    "chanakya/verify": 1500
+  },
+  "router_budgets": {
+    "achilles": 1500,
+    "argus": 3500,
+    "chanakya": 2500
+  },
   "default_mode_budget": 4000,
-  "default_router_budget": 1000
+  "default_router_budget": 1500
 }

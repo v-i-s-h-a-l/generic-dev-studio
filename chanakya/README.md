@@ -30,6 +30,7 @@ All per-project artifacts live under `~/.dev-studio/<project>/` (outside `~/.cla
 | `/achilles T001 --wait` | Same pipeline but pauses up to 10 min for test feedback before merging |
 | `/achilles T001 --force-build` | Force full `xcodebuild` even for XS/S tasks |
 | `/achilles T001 --ignore-build-debt` | Override build-debt block (discouraged; logged in debrief) |
+| `/achilles T001 --dry-run` | Simulate every write + event; reads + LSP run normally. Exit 0 if wet-run would succeed, 2 if surfaced a problem. Phase 2.5 pilot. |
 | `/achilles next` | Auto-pick the highest-priority ready task and execute it |
 | `/achilles` | Direct mode — free-form task, no brief required |
 | `/achilles build` | On-demand build check at HEAD. Green resets debt; red auto-bisects and files a P0 fix. |

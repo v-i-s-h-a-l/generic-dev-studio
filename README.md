@@ -48,6 +48,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /achilles T001                   # execute (XS/S: lsp-only, M/L: full build; merges immediately)
 /achilles T001 --wait            # execute, pause up to 10 min for feedback before merging
 /achilles T001 --force-build     # override size-driven gate; run full xcodebuild
+/achilles T001 --dry-run         # simulate every write + event; reads + LSP run normally
 /achilles next                   # auto-pick highest-priority ready task and execute
 /achilles build                  # on-demand build check at HEAD; auto-bisects on red
 /chanakya status                 # tasks in flight + debt gauges + what's next

@@ -4,11 +4,12 @@ description: Execution pipeline for brief-based and direct-mode work. Handles al
 type: mode-pack
 snapshots: []
 budget_tokens: 6000
+dry_run: true
 ---
 
 # Mode: Task Execution (`/achilles <task-id>` and `/achilles` bare)
 
-Primary Achilles mode. Executes either a Chanakya-generated brief (`/achilles <task-id>`) or direct user instructions (`/achilles` with free-text). Both paths share the same pipeline; brief mode just starts from a richer spec. Flags `--wait`, `--force-build`, `--ignore-build-debt` apply here.
+Primary Achilles mode. Executes either a Chanakya-generated brief (`/achilles <task-id>`) or direct user instructions (`/achilles` with free-text). Both paths share the same pipeline; brief mode just starts from a richer spec. Flags `--wait`, `--force-build`, `--ignore-build-debt`, `--dry-run` apply here.
 
 This mode covers all task types (`feature` / `bugfix` / `refactor` / `direct` / `test-unit` / `test-integration` / `test-ui` / `test-tdd` / `debug`) because they share worktree isolation, self-review, Argus gate, and merge scaffolding. The Step 4 sub-steps branch on task type.
 
@@ -48,6 +49,53 @@ The worker script exports `ACHILLES_AUTONOMOUS=1` automatically for every dispat
 The worker's missing-debrief detector won't trip because the debrief is written. Chanakya processes the event + debrief on next sweep and pushes the question to the user.
 
 **Never** end a session with no debrief in autonomous mode. That's what the silent-stuck detector catches, and it means the task costs a full dispatch cycle without any record of what happened. The debrief is the communication channel — use it.
+
+---
+
+## `--dry-run` mode (Phase 2.5 pilot)
+
+`/achilles <task-id> --dry-run` runs the full pipeline with **every write replaced by a log line**. Reads, LSP, static analysis, and computed decisions run normally. Writes, event appends, merges, and external side effects do not happen. Contract: `_shared/patterns/dry-run.md`.
+
+Set `DRY_RUN=1` for the session when `--dry-run` is passed. Every writable step below branches:
+
+```bash
+if [ "${DRY_RUN:-0}" = "1" ]; then
+  printf 'DRY-RUN write path=%s bytes=%d idempotency_key=%s\n' \
+    "$target" "$(printf '%s' "$payload" | wc -c)" "$idem_key" >&2
+else
+  printf '%s' "$payload" > "$target"
+  append_event achilles "$event" "$task_id" "$data"
+fi
+```
+
+Per-step adaptations under `DRY_RUN=1`:
+
+- **Step 2 — Claim:** log `DRY-RUN write path=<master-plan> …` in place of the status update.
+- **Step 3 — Worktree:** log `DRY-RUN git worktree add <WORKTREE> -b achilles/<task-id> <ORIG_HEAD>`; skip the real `git worktree add`. All subsequent file paths under `$WORKTREE` are simulated; edits are computed and logged per file but not written.
+- **Step 4 — Implement:** compute the change plan from the brief. For each file that would be written, emit one `DRY-RUN write path=… bytes=<estimated>` line with the planned byte delta (use `wc -c` on the in-memory payload).
+- **Step 5 — Self-review:** runs normally; read-only.
+- **Step 6 — Build gate:** LSP path runs normally (read-only). `full-green` path logs `DRY-RUN xcodebuild scheme=<s> destination=<d> -derivedDataPath=<tmp>` and skips the real xcodebuild. Build-debt counters are NOT incremented in dry-run.
+- **Step 7 — Test cases:** log both write targets (`<task-id>-tests.md` in debrief + standalone artifact). Do not create the files.
+- **Step 8 — Optional wait:** dry-run treats `--wait` as a no-op (the scheduled wake is a write).
+- **Step 8.5 — Argus:** if Argus does not yet support `--dry-run` (adoption lands in 2.6), emit `DRY-RUN skip argus reason=not-yet-supported` and proceed as if Argus returned `approved`. A real wet-run still invokes Argus — this simulation only.
+- **Step 9 — Commit + merge:** log `DRY-RUN commit message=<m>`, `DRY-RUN merge achilles/<task-id> → <base>`, and `DRY-RUN worktree remove <WORKTREE>`. Do not touch the repo state. DerivedData cleanup is also skipped.
+- **Step 10 — Debrief:** log the write target; do not write the debrief. Do not update master plan.
+- **Events:** every `append_event` call collects the event into an in-memory buffer instead of writing to the log. At end-of-session (before Step 11), print:
+  ```
+  DRY-RUN events (N):
+    <one per line, full JSON envelope>
+  ```
+
+**Exit codes:**
+
+- `0` — dry-run ran to completion; a wet-run on the same inputs would succeed.
+- `2` — dry-run surfaced a problem (ambiguous brief, missing upstream, LSP errors, would-block at a gate). Distinct from `1` (crash / bug).
+
+**Idempotency keys match wet-run byte-for-byte.** Keys logged by dry-run are the same keys a wet-run would write, so dry-run output is `diff`-friendly against wet-run artifacts.
+
+**Session-completion event** is also buffered (not appended). The buffered line prints in the closing `DRY-RUN events (N):` block.
+
+This pilot catches contract bugs before 2.6 rewrites apply `--dry-run` to 30+ modes. Report any surprises in the debrief's `## Assumptions` block — a real wet-run uses the same code paths.
 
 ---
 
