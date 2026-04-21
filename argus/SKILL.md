@@ -211,25 +211,40 @@ BLOCKS empty + FLAGS non-empty → verdict = "flagged"
 Both empty → verdict = "approved"
 ```
 
-### Step 7 — Write review file and emit event
+### Step 7 — Write review artifact and emit event
 
-**Approve:** no file. Emit `review_approved` event. Delete `.argus-running` marker. Return `approved`.
+Post-migration canonical path: every review — approved, flagged, or blocked — writes a `plans/reviews/<review-id>.yaml` artifact per schema `_shared/schemas/review.md` (`review@1.0.0`). The verdict-to-state mapping follows `_shared/state-machines/review-lifecycle.md`. Mint `id` as a UUIDv7 at the start of Step 7. Populate `schema_version`, `subject: {kind: task, id: <TASK_UUID>}`, `reviewer: argus`, `requested_at` (from Step 1 event time), `completed_at` (now), `scope: {diff_size: <line-count>, file_count: <count>, caps_triggered: [<cap objects>]}`, `checks_run: [{name: <check-id>, result: <pass|fail|skip|warn>}…]`, `findings: [{rule, tier, message, path}…]`, and `notes` (optional reviewer commentary). The verdict is derived from findings per the schema's §Verdict derivation table.
+
+**Approve:**
+- `state: approved`, `verdict: approved`, `findings: []`, `checks_run` all `pass`.
+- Write `plans/reviews/<review-id>.yaml`. Emit `review_approved` event via `scripts/write-event.sh` (per `_shared/contracts/events.md` + `_shared/contracts/event-emission.md`) with `data.review_id` for join-keys.
+- Delete `.argus-running` marker.
+- Regenerate `plans/index.yaml` via `scripts/rebuild-index.sh`.
+- Return `approved`.
+
+**Phase 2.6 transition note (approve):** pre-2.6 Argus skipped writing any file on approve — that kept the fast path fast. Writing a YAML artifact on approve is a net-new surface under 2.6, justified by the plans-index validator enforcing bidirectional consistency (every `task.links.reviews` entry must resolve to a real review artifact) and by dashboard consumers (Phase 6) needing a uniform read shape. The artifact is ~200 bytes with all checks passing; the cost is negligible.
 
 **Flag:**
-- Write `$REVIEWS_DIR/review_$TASK_ID.md` following the format in `~/.claude/skills/_shared/rules/review-rules.md` (Review File Format section).
-- Delete result bundle immediately: `rm -rf "/tmp/argus-${TASK_ID}.xcresult"` (flagged = success path for bundle retention).
-- Emit `review_flagged` event with `review_file` and `finding_count`.
+- `state: flagged`, `verdict: flagged`, `findings` populated with `tier: ask|warn` entries.
+- Write `plans/reviews/<review-id>.yaml`. Delete result bundle immediately: `rm -rf "/tmp/argus-${TASK_ID}.xcresult"` (flagged = success path for bundle retention).
+- Emit `review_flagged` event with `data.review_id` and `data.finding_count`.
 - Append to push queue: **no** (flags don't push — only blocks push).
 - Remove `.argus-running` marker.
+- Regenerate `plans/index.yaml`.
 - Return `flagged`.
 
 **Block:**
-- Write `$REVIEWS_DIR/review_$TASK_ID.md`.
-- Retain result bundle (do not delete — 48h retention policy).
-- Emit `review_blocked` event with `block_reason` and `review_file`.
+- `state: blocked`, `verdict: blocked`, at least one finding at `tier: block`.
+- Write `plans/reviews/<review-id>.yaml`. Retain result bundle (48h retention policy).
+- Emit `review_blocked` event with `data.review_id`, `data.block_reason`.
 - Append to push queue (see `~/.claude/skills/_shared/primitives/push-notifications.md`).
 - Remove `.argus-running` marker.
+- Regenerate `plans/index.yaml`.
 - Return `blocked` with the review file path and a human summary of the block reason.
+
+**Back-reference maintenance (all verdicts).** Per §2.2 of the Phase 2.6 plan, the writer that creates a link maintains the counterparty. Append `<review-id>` to the parent task's `plans/tasks/<TASK_UUID>.yaml` `links.reviews` array and bump `updated_at`. Bidirectional consistency is enforced by `_shared/contracts/plans-index-validator.md`.
+
+**Phase 2.6 transition note (flag + block):** also write the legacy markdown review file at `<project-memory>/reviews/review_<task-id>.md` (format per `_shared/rules/review-rules.md` Review File Format section) so in-flight Chanakya sessions' legacy `task_verified` archival path and external tooling still see it. Cutover removes the legacy write at Commit H once migration lands.
 
 ### Step 8 — Return verdict to Achilles
 
@@ -269,9 +284,10 @@ Include `tokens` (`{input, output, cache_read, cache_write}`) if available; omit
 
 | Artifact | Path |
 |---|---|
-| Review files | `<project-memory>/reviews/review_<task-id>.md` |
-| Archived reviews | `<project-memory>/reviews/archive/review_<task-id>.md` |
-| Event log | `<project-memory>/events/<YYYY-MM-DD>.jsonl` |
+| Review artifact (post-migration) | `~/.dev-studio/<project>/plans/reviews/<review-id>.yaml` (schema: `_shared/schemas/review.md`) |
+| Review file (legacy, retained until Commit H) | `<project-memory>/reviews/review_<task-id>.md` |
+| Archived legacy reviews | `<project-memory>/reviews/archive/review_<task-id>.md` |
+| Event log | `~/.dev-studio/<project>/events/<YYYY-MM-DD>.jsonl` (via `scripts/write-event.sh` / `scripts/read-events.sh`) |
 | Test result bundle | `/tmp/argus-<task-id>.xcresult` |
 | Test slot dir | `~/.claude/locks/test-slots/` |
 | DerivedData | `/tmp/derived-data/<task-id>/` |
@@ -279,13 +295,16 @@ Include `tokens` (`{input, output, cache_read, cache_write}`) if available; omit
 | Running marker | `<worktree>/.argus-running` |
 
 Schemas and protocols: `~/.claude/skills/_shared/`:
-- `events.md` — event schema, atomicity rules, offset marker
-- `review-rules.md` — full check procedures and verdict guidance
-- `test-slot.md` — semaphore acquire/release protocol
-- `derived-data.md` — DerivedData paths, staleness guard, simulator setup
-- `push-notifications.md` — push queue format and trigger rules
-- `cleanup-policy.md` — ownership table and retention tiers
-- `file-locations.md` — project slug and all standard paths
+- `schemas/review.md` — post-migration review artifact shape (`review@1.0.0`).
+- `state-machines/review-lifecycle.md` — review state transitions (pending → in-progress → approved/flagged/blocked → acknowledged).
+- `contracts/events.md` / `contracts/event-emission.md` — event schema, atomicity rules, writer wrapper.
+- `contracts/plans-index-validator.md` — bidirectional consistency between `task.links.reviews` and `review.subject`.
+- `rules/review-rules.md` — full check procedures and verdict guidance.
+- `primitives/test-slot.md` — semaphore acquire/release protocol.
+- `primitives/derived-data.md` — DerivedData paths, staleness guard, simulator setup.
+- `primitives/push-notifications.md` — push queue format and trigger rules.
+- `rules/cleanup-policy.md` — ownership table and retention tiers.
+- `primitives/file-locations.md` — project slug and all standard paths.
 
 ---
 
