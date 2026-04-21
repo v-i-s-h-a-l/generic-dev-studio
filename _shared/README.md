@@ -38,10 +38,21 @@ Deferred: `release-lifecycle.md` (ships in 2.6), `feedback-lifecycle.md` (ships 
 
 | File | Purpose |
 |---|---|
+| `task.md` | Per-task YAML artifact (`task@1.0.0`). Phase 2.6. |
+| `brief.md` | Chanakya → Achilles brief contract instance (`brief@3.1.0`). Phase 2.6. |
+| `debrief.md` | Achilles → Chanakya debrief artifact (`debrief@2.0.0`). Phase 2.6. |
+| `review.md` | Argus / user verdict artifact (`review@1.0.0`). Phase 2.6. |
+| `round.md` | User-testing round aggregate (`round@1.0.0`). Phase 2.6. |
+| `release.md` | TestFlight / App Store release artifact (`release@1.0.0`). Phase 2.6. |
+| `feedback.md` | Ingested feedback record (`feedback@1.0.0`). Phase 2.6. |
+| `crash.md` | Crashlytics-derived crash record (`crash@1.0.0`, writer lands in Phase 5). |
 | `build-debt.md` | Build-debt counter + threshold schema. |
-| `master-plan.md` | Master plan YAML shape. |
-| `test-flow.md` | Test-flow round document shape. |
+| `master-plan.md` | Master plan YAML shape (legacy; 2.6 supersedes with per-task files). |
+| `test-flow.md` | Test-flow round document shape (legacy; superseded by `round.md` in 2.6). |
 | `token-budgets.json` | Per-mode token budget seed values. |
+| `capability-manifest.json` | Machine-readable agent + mode-pack roster (regenerated). |
+| `capability-manifest-CHANGELOG.md` | Human-readable capability-change log. |
+| `model-rates.json` | Per-model token pricing for budget telemetry. |
 
 ## `primitives/` — reusable helpers
 
