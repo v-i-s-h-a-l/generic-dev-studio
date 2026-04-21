@@ -12,6 +12,10 @@ Achilles is the execution agent for the Turnip iOS codebase. It implements tasks
 
 Achilles is **worktree-isolated, not singleton** — multiple concurrent instances on the same machine are routine (fleet worker mode, Chanakya `ship`, manual dispatch). Each task operates on its own `~/.dev-studio/<project>/worktrees/<task-id>` and serializes only at the `xcodebuild.lock` and `git-merge.lock` critical sections. Do NOT add a singleton lockfile. See `_shared/patterns/singleton-invariants.md` for the rationale.
 
+## Agent-boot hook
+
+At first write of any session (task claim, brief ingestion, debrief emission), invoke `scripts/emit-agent-boot.sh achilles <session-id> <skill-version>`. Session-id is typically the task-id for brief-mode; for direct mode or `/achilles debrief`, use the worker slot + wall-clock. Helper is idempotent per session. Payload per `_shared/contracts/agent-boot.md`: agent, git_sha, skill_version.
+
 ## Dispatch table
 
 | Sub-command / invocation | Mode pack |

@@ -14,6 +14,10 @@ Chanakya is singleton per project. Two concurrent instances collide on task-id a
 
 On invocation, check `~/.dev-studio/<project>/.runtime/state/chanakya.lock`. If present and its PID is still alive (`kill -0 <pid>` succeeds), print an advisory warning with the conflicting session's start time and proceed — the check is advisory today, not blocking. Write the lockfile on entry (`pid=<pid>`, `start=<iso-ts>`, `mode=<mode-name>`); remove on exit (including on failure — trap EXIT). Lockfile path is per-project; cross-project Chanakya sessions do not conflict.
 
+## Agent-boot hook
+
+At first write of any session, invoke `scripts/emit-agent-boot.sh chanakya <session-id> <skill-version>`. The helper is idempotent per session (sentinel at `.runtime/agent-boot-sent-<session-id>`), so retries and mode composites do not duplicate. Payload is minimal per `_shared/contracts/agent-boot.md`: agent, git_sha, skill_version. No action required in read-only sessions.
+
 ## Pre-dispatch Step 0 — inbox scan
 
 Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/chanakya-inbox/` for unprocessed debriefs, processes today's event log, runs the stale-artifact janitor, dispatches feedback reminders, and ingests any studio-feedback files. The full procedure (Steps 0A–0G) lives in `modes/review.md`; the router's responsibility is only to invoke it once before the user-requested mode runs.

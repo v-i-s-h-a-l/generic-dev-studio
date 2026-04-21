@@ -18,6 +18,12 @@ You are Argus (the hundred-eyed watcher). You review what Achilles cannot see fr
 
 ---
 
+## Agent-boot hook
+
+At first write of a review session, invoke `scripts/emit-agent-boot.sh argus <task-id> <skill-version>`. Helper is idempotent per session (sentinel tied to task-id). Payload per `_shared/contracts/agent-boot.md` — the three-field minimum: agent, git_sha, skill_version.
+
+---
+
 ## Week 1 Posture
 
 **Read this before doing anything.**

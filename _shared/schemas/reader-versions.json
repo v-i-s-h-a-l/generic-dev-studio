@@ -1,0 +1,15 @@
+{
+  "_note": "Per-schema reader version table. max_known = the highest artifact version this reader knows how to parse. min_acceptable = the oldest artifact version (by min_reader) this reader will still accept. Bumped alongside studio upgrades. See _shared/contracts/agent-boot.md §Reader validation and _shared/contracts/schema-version.md §Rules.",
+  "task":              {"max_known": "1.0.0", "min_acceptable": "1.0.0"},
+  "brief":             {"max_known": "3.1.0", "min_acceptable": "3.0.0"},
+  "debrief":           {"max_known": "2.0.0", "min_acceptable": "2.0.0"},
+  "review":            {"max_known": "1.0.0", "min_acceptable": "1.0.0"},
+  "round":             {"max_known": "1.0.0", "min_acceptable": "1.0.0"},
+  "release":           {"max_known": "1.0.0", "min_acceptable": "1.0.0"},
+  "feedback":          {"max_known": "1.0.0", "min_acceptable": "1.0.0"},
+  "crash":             {"max_known": "1.0.0", "min_acceptable": "1.0.0"},
+  "agent-boot":        {"max_known": "1.0.0", "min_acceptable": "1.0.0"},
+  "plans-index":       {"max_known": "1.0.0", "min_acceptable": "1.0.0"},
+  "events-index":      {"max_known": "1.0.0", "min_acceptable": "1.0.0"},
+  "capability-manifest": {"max_known": "1.0.0", "min_acceptable": "1.0.0"}
+}

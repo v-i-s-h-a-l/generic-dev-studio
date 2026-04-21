@@ -23,6 +23,7 @@ Post Phase 2.5 Commit C, layout is frozen: later phases land new files in existi
 | `events.md` | Event log schema, atomicity, offset, event catalog. |
 | `build-message-format.md` | Producer → Slack build-posting contract. |
 | `plans-index-validator.md` | Invariants + finding codes for `plans/index.yaml` and artifact cross-references. Phase 2.6. |
+| `agent-boot.md` | Per-session `agent_boot` event emitted at first write. Minimal payload — agent, git_sha, skill_version. Phase 2.6. |
 | `brief-formats/` | Chanakya → Achilles brief templates per task type. |
 
 ## `state-machines/` — lifecycles
@@ -54,6 +55,7 @@ Post Phase 2.5 Commit C, layout is frozen: later phases land new files in existi
 | `capability-manifest.json` | Machine-readable agent + mode-pack roster (regenerated). |
 | `capability-manifest-CHANGELOG.md` | Human-readable capability-change log. |
 | `model-rates.json` | Per-model token pricing for budget telemetry. |
+| `reader-versions.json` | Per-schema reader version table — `validate-schema.sh` reads this. Phase 2.6. |
 
 ## `primitives/` — reusable helpers
 
