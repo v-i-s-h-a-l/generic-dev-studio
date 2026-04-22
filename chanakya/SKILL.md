@@ -1,6 +1,6 @@
 ---
 name: chanakya
-description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, processes the shared event log, and manages the user verification pipeline. Sub-commands: status, brief, review, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify, ingest-thread, ingest-dm, ingest-slack, report-design, report-product, feedback-archive, feedback-history. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
+description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, processes the shared event log, and manages the user verification pipeline. Sub-commands: status, brief, review, sweep, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify, ingest-thread, ingest-dm, ingest-slack, report-design, report-product, feedback-archive, feedback-history. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
 type: agent-router
 ---
 
@@ -20,7 +20,7 @@ At first write of any session, invoke `scripts/emit-agent-boot.sh chanakya <sess
 
 ## Pre-dispatch Step 0 — inbox scan
 
-Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debriefs/*.yaml` (filter: `state: emitted`) + legacy `plans/chanakya-inbox/` for unprocessed debriefs, processes today's event log, runs the stale-artifact janitor, dispatches feedback reminders, and ingests any studio-feedback files. The full procedure (Steps 0A–0G) lives in `modes/review.md`; the router's responsibility is only to invoke it once before the user-requested mode runs.
+Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debriefs/*.yaml` (filter: `state: emitted`) + legacy `plans/chanakya-inbox/` for unprocessed debriefs, processes today's event log, runs the stale-artifact janitor, dispatches feedback reminders, and ingests any studio-feedback files. The full procedure (Steps 0A–0G) lives in `modes/inbox-sweep.md`; the router's responsibility is only to invoke it once before the user-requested mode runs. Sweep-only invocation: `/chanakya sweep` runs Step 0 and exits.
 
 ## Dispatch table
 
@@ -32,6 +32,7 @@ Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debri
 | `brief <task-id>` | `modes/brief.md` |
 | `brief-all` | `modes/brief.md` (composite) |
 | `review` | `modes/review.md` (PRD-delta sub-command) |
+| `sweep` | `modes/sweep.md` (Step 0 only, no status render) |
 | `update` | `modes/update.md` |
 | `test-manifest [--force]` | `modes/tests.md` |
 | `test-flow [flags]` | `modes/tests.md` |
@@ -49,9 +50,9 @@ Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debri
 | `feedback-archive [flags]` | `modes/feedback.md` |
 | `feedback-history [filters]` | `modes/feedback.md` |
 | `studio-feedback` / "capture this as feedback" | `modes/feedback.md` |
-| `auto-sweep` | `modes/review.md` (Step 0 re-run + backoff) |
+| `auto-sweep` | `modes/inbox-sweep.md` (Step 0 re-run + backoff) |
 
-Session-level flags (`--at-laptop`, `--away`, `--auto-sweep`, `--watch`, `--ship-mode`) modify invocation behavior across all modes — they persist to `chanakya_mode.md` and `auto_sweep_state.md` and are honored by every mode pack. `--auto-sweep` specifically re-enters `modes/review.md` on each tick with adaptive backoff (15→30→60→120 min on consecutive blank sweeps; resets to 15 on any activity).
+Session-level flags (`--at-laptop`, `--away`, `--auto-sweep`, `--watch`, `--ship-mode`) modify invocation behavior across all modes — they persist to `chanakya_mode.md` and `auto_sweep_state.md` and are honored by every mode pack. `--auto-sweep` specifically re-enters `modes/inbox-sweep.md` on each tick with adaptive backoff (15→30→60→120 min on consecutive blank sweeps; resets to 15 on any activity).
 
 ## Intent detection
 

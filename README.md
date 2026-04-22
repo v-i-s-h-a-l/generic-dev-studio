@@ -53,6 +53,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /achilles build                  # on-demand build check at HEAD; auto-bisects on red
 /achilles debrief                # direct-debrief: capture in-chat bug-fix as YAML debrief (no brief, no worktree, no Argus)
 /chanakya status                 # tasks in flight + debt gauges + what's next
+/chanakya sweep                  # Step 0 inbox sweep only, no status table (lighter)
 /chanakya test-manifest          # per-task checklist → user-testing.md
 /chanakya test-flow              # journey-ordered walkthrough → round files
 /chanakya review-feedback        # promote passing tasks to verified; file follow-ups for failures

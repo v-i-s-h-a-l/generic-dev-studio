@@ -18,6 +18,7 @@ All per-project artifacts live under `~/.dev-studio/<project>/` (outside `~/.cla
 | `/chanakya sweep-debt` | Identify and dispatch all pending test sub-tasks and build checks |
 | `/chanakya verify` | Guided flow: test-flow → you test → promote → review-feedback |
 | `/chanakya review` | Diff updated PRD against existing tasks |
+| `/chanakya sweep` | Run Step 0 inbox sweep only — no status table (lighter for smoke-tests / pre-dispatch warm-ups) |
 | `/chanakya update` | Sync master plan with git state |
 | `/chanakya test-manifest` | Per-task verification checklist → `user-testing.md` |
 | `/chanakya test-flow` | Journey-ordered single-sitting walkthrough → numbered round files |
