@@ -183,6 +183,15 @@ preflight_check() {
     failed=1
   fi
 
+  # 3b. jq is installed. transform_events normalizes legacy pre-2.5 event
+  #     shapes (.type→.event, .task_id→.task) via jq (see #71); without jq,
+  #     the normalization silently no-ops and migrated events keep the
+  #     wrong field names.
+  if ! command -v jq >/dev/null 2>&1; then
+    log "  FAIL: jq not installed. Install with 'brew install jq' — required for event normalization."
+    failed=1
+  fi
+
   # 4. No uncommitted changes in any worktree under $PROJECT_ROOT/worktrees.
   local worktree_dirs
   worktree_dirs=$(find "$PROJECT_ROOT/worktrees" -maxdepth 2 -type d -name '.git' 2>/dev/null \
@@ -507,6 +516,16 @@ transform_events() {
     }
   ' "$tmp_merged" > "$tmp_dedup"
 
+  # Normalize legacy pre-2.5 field names (.type→.event, .task_id→.task) so the
+  # merged corpus matches the events.md schema. Upstream merge already filters
+  # non-JSON lines, so jq is safe to run in batch mode here.
+  local tmp_normalized
+  tmp_normalized=$(mktemp)
+  jq -c '
+    (if has("type")    and (has("event") | not) then .event = .type    | del(.type)    else . end)
+    | (if has("task_id") and (has("task")  | not) then .task  = .task_id | del(.task_id) else . end)
+  ' "$tmp_dedup" > "$tmp_normalized"
+
   # Day-partition: bucket by UTC date from ts field. Events without a parseable
   # ts land in a sentinel file (unbucketed-events.jsonl under archive/unparseable).
   mkdir -p "$EVENTS_NEW"
@@ -521,7 +540,8 @@ transform_events() {
       continue
     fi
     printf '%s\n' "$line" >> "$EVENTS_NEW/$day.jsonl"
-  done < "$tmp_dedup"
+  done < "$tmp_normalized"
+  rm -f "$tmp_normalized"
 
   # Sort each day file by ts (stable).
   for daily in "$EVENTS_NEW"/????-??-??.jsonl; do

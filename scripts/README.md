@@ -12,7 +12,7 @@ per project. Cross-project one-offs: `ACHILLES_PROJECT=<slug>`.
 ## Setup
 
 ```sh
-brew install fswatch coreutils yq   # coreutils gives gtimeout; yq drives post-2.6 YAML reads + rebuild-index.sh
+brew install fswatch coreutils yq jq   # coreutils gives gtimeout; yq drives post-2.6 YAML reads; jq drives event normalization + read-events.sh
 chmod +x scripts/*.sh
 ```
 

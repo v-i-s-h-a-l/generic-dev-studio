@@ -115,6 +115,7 @@ EOF
 cat > "$PROJ_ROOT/plans/chanakya-events.jsonl" <<'EOF'
 {"ts":"2026-04-19T08:00:00Z","agent":"chanakya","event":"brief_started","task":"T001","data":{},"idempotency_key":"chanakya:brief:T001:111"}
 {"ts":"bogus-ts","agent":"chanakya","event":"bad","task":"","data":{}}
+{"ts":"2026-04-19T08:05:00Z","agent":"chanakya","type":"memo_archived","task_id":"T999","data":{}}
 EOF
 
 # Feedback layout — reports/ has content; placeholders are .gitkeep only.
@@ -249,6 +250,16 @@ assert "#11 feedback/archive preserved (has real content)" \
 
 assert "#11 feedback_placeholder_pruned event emitted" \
   "grep -q '\"event\":\"feedback_placeholder_pruned\"' '$PROJ_ROOT/events/'*.jsonl"
+
+# ---- #11b event field normalization (#71) ----
+assert "#11b legacy {type:memo_archived} rewritten to event field" \
+  "grep -q '\"event\":\"memo_archived\"' '$PROJ_ROOT/events/2026-04-19.jsonl'"
+
+assert "#11b legacy {type:…} field removed after normalization" \
+  "! grep -q '\"type\":\"memo_archived\"' '$PROJ_ROOT/events/2026-04-19.jsonl'"
+
+assert "#11b legacy task_id rewritten to task field" \
+  "grep -q '\"task\":\"T999\"' '$PROJ_ROOT/events/2026-04-19.jsonl'"
 
 # ---- #12 plans/index.yaml rebuilt post-migration ----
 if command -v yq >/dev/null 2>&1; then
