@@ -41,7 +41,7 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 PROJECT=""
 FORCE=0
 DRY_RUN=0
-PHASES="pre-flight,backup,transform,verify,report"
+PHASES="pre-flight,backup,transform,verify,cleanup,report"
 
 usage() {
   sed -n '3,/^$/p' "$0" | sed 's/^# \{0,1\}//'
@@ -253,6 +253,8 @@ COUNT_EVENTS=0
 COUNT_FEEDBACK=0
 COUNT_MISFILED_DEBRIEFS=0
 COUNT_UNPARSEABLE=0
+COUNT_RETIRED=0
+COUNT_RETIRE_SKIPPED=0
 
 # Write one line to the migration report. Created on first call.
 report() {
@@ -622,6 +624,121 @@ do_verify() {
 # than performing the edit — cutover must be reviewable, and the commit that
 # prunes legacy paths is the authoritative signal that migration is complete.
 
+# -------- Phase 5.5: cleanup — retire legacy event-log siblings --------
+#
+# The transform merges-and-dedupes nine legacy event sources into canonical
+# events/<YYYY-MM-DD>.jsonl but leaves the originals in place, so the live
+# project dir still has orphan event-log files post-migration. This phase
+# verifies parity against the canonical corpus, then MOVES (not deletes)
+# each verified source to archive/2026-pre-2.6/legacy-event-sources/ — one
+# more undo step for the operator.
+#
+# Parity check:
+#   jsonl sources — wc -l of the source ≤ total wc -l across canonical day
+#     files. Dedupe-driven shortfalls are legitimate (dup line collapsed
+#     into one canonical line), so the check is "canonical has at least as
+#     many lines as legacy had".
+#   events.log (text variant) — grep-for-event-markers, same comparison.
+# On parity fail, the file is left in place with a warning; operator
+# inspects manually rather than losing data.
+
+LEGACY_RETIRE_DIR="$ARCHIVE_ROOT/legacy-event-sources"
+
+# Total line count across all canonical day files. Recomputed each call;
+# the count grows as retirement events get appended during this same phase,
+# which is harmless for parity (a larger canonical denominator only ever
+# helps the `canonical >= source` check).
+canonical_event_lines() {
+  local total=0 f lines
+  for f in "$EVENTS_NEW"/????-??-??.jsonl; do
+    [ -f "$f" ] || continue
+    lines=$(wc -l < "$f" | tr -d ' ')
+    total=$(( total + lines ))
+  done
+  printf '%s' "$total"
+}
+
+# Append a legacy_event_source_retired event to today's canonical day file.
+# Intentionally writes to $EVENTS_NEW (post-migration canonical location),
+# not resolve_event_log() which points at project-memory.
+emit_retirement_event() {
+  local src="$1" source_lines="$2" canonical_lines="$3"
+  local today ts day_file
+  today=$(date -u +%Y-%m-%d)
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  day_file="$EVENTS_NEW/$today.jsonl"
+  mkdir -p "$EVENTS_NEW"
+  # Relative source path keeps the payload inside the 4KB atomicity budget
+  # even when $PROJECT_ROOT is long (enterprise-workspace layouts, CI mounts).
+  local rel="${src#$PROJECT_ROOT/}"
+  printf '{"ts":"%s","agent":"chanakya","event":"legacy_event_source_retired","task":"","data":{"source":"%s","source_lines":%s,"canonical_lines":%s}}\n' \
+    "$ts" "$rel" "$source_lines" "$canonical_lines" >> "$day_file"
+}
+
+# Count lines that look like event records. For jsonl, that's any non-blank
+# line starting with `{`. For events.log (text), that's any line containing
+# the `"event":` marker (conservative — matches both JSON and the legacy
+# "event=foo" text format which also uses `event:` as a separator).
+count_source_records() {
+  local src="$1"
+  case "$src" in
+    *events.log) grep -c '"event":\|event=' "$src" 2>/dev/null || printf '0' ;;
+    *) grep -c '^{' "$src" 2>/dev/null || printf '0' ;;
+  esac
+}
+
+retire_one() {
+  local src="$1"
+  [ -f "$src" ] || return 0
+  local source_lines canonical_lines
+  source_lines=$(count_source_records "$src")
+  canonical_lines=$(canonical_event_lines)
+  if [ "$source_lines" -gt 0 ] && [ "$canonical_lines" -lt "$source_lines" ]; then
+    log "  WARN: parity failed for $src (source=$source_lines canonical=$canonical_lines) — leaving in place"
+    report "- cleanup-skipped: $src (source_lines=$source_lines canonical_lines=$canonical_lines)"
+    COUNT_RETIRE_SKIPPED=$((COUNT_RETIRE_SKIPPED + 1))
+    return 0
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "  DRY-RUN would retire: $src (source=$source_lines canonical=$canonical_lines)"
+    COUNT_RETIRED=$((COUNT_RETIRED + 1))
+    return 0
+  fi
+  # Preserve the source's relative layout under legacy-event-sources/ so a
+  # post-hoc diff against the archive stays obvious.
+  local rel="${src#$PROJECT_ROOT/}"
+  local dest="$LEGACY_RETIRE_DIR/$rel"
+  mkdir -p "$(dirname "$dest")"
+  mv "$src" "$dest" 2>/dev/null || {
+    log "  ERROR: mv failed for $src — leaving in place"
+    return 0
+  }
+  emit_retirement_event "$src" "$source_lines" "$canonical_lines"
+  report "- legacy-event-source-retired: $rel (source_lines=$source_lines canonical_lines=$canonical_lines)"
+  COUNT_RETIRED=$((COUNT_RETIRED + 1))
+}
+
+do_cleanup() {
+  log "phase: cleanup (retire legacy event-log siblings)"
+  if [ ! -d "$EVENTS_NEW" ]; then
+    log "  no canonical events/ dir — transform must run first, skipping"
+    return 0
+  fi
+  local src
+  for src in \
+    "$PROJECT_ROOT/event-log.jsonl" \
+    "$PROJECT_ROOT/events.jsonl" \
+    "$PROJECT_ROOT/events.log" \
+    "$PROJECT_ROOT/events/agents.jsonl" \
+    "$PROJECT_ROOT/events/events.jsonl" \
+    "$PROJECT_ROOT/.runtime/events.jsonl" \
+    "$PROJECT_ROOT/.runtime/events.ndjson" \
+    "$PROJECT_ROOT/plans/chanakya-events.jsonl" ; do
+    retire_one "$src"
+  done
+  log "  retired $COUNT_RETIRED source(s); skipped $COUNT_RETIRE_SKIPPED on parity fail"
+}
+
 # -------- Phase 6: report --------
 
 emit_report() {
@@ -635,6 +752,8 @@ emit_report() {
   report "- events merged: $COUNT_EVENTS"
   report "- feedback records transformed: $COUNT_FEEDBACK"
   report "- unparseable artifacts: $COUNT_UNPARSEABLE"
+  report "- legacy event-log sources retired: $COUNT_RETIRED"
+  report "- legacy event-log sources skipped (parity fail): $COUNT_RETIRE_SKIPPED"
   report ""
   report "## Next steps"
   report ""
@@ -651,6 +770,7 @@ phase_enabled pre-flight && preflight_check
 phase_enabled backup     && backup_project
 phase_enabled transform  && do_transform
 phase_enabled verify     && do_verify
+phase_enabled cleanup    && do_cleanup
 phase_enabled report     && emit_report
 
 log "done"

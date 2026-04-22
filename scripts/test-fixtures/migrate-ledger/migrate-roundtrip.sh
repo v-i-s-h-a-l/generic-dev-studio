@@ -202,6 +202,32 @@ assert "#7 placeholder reporters/ dir pruned" \
 assert "#7 feedback report transformed (content dir preserved)" \
   "find '$PROJ_ROOT/plans/feedback' -name '*.yaml' -print0 2>/dev/null | xargs -0 grep -l 'F-001' >/dev/null"
 
+# ---- Cleanup phase (issue #68): legacy event-log siblings retired ----
+
+assert "#10 event-log.jsonl moved out of project root" \
+  "[ ! -f '$PROJ_ROOT/event-log.jsonl' ]"
+
+assert "#10 .runtime/events.jsonl moved out" \
+  "[ ! -f '$PROJ_ROOT/.runtime/events.jsonl' ]"
+
+assert "#10 plans/chanakya-events.jsonl moved out" \
+  "[ ! -f '$PROJ_ROOT/plans/chanakya-events.jsonl' ]"
+
+assert "#10 retired files landed under legacy-event-sources/" \
+  "[ -f '$PROJ_ROOT/archive/2026-pre-2.6/legacy-event-sources/event-log.jsonl' ]"
+
+assert "#10 retired files preserve relative subpath" \
+  "[ -f '$PROJ_ROOT/archive/2026-pre-2.6/legacy-event-sources/.runtime/events.jsonl' ]"
+
+assert "#10 legacy_event_source_retired event emitted" \
+  "grep -q '\"event\":\"legacy_event_source_retired\"' '$PROJ_ROOT/events/'*.jsonl"
+
+assert "#10 retirement event carries parity metrics" \
+  "grep -q '\"source_lines\":' '$PROJ_ROOT/events/'*.jsonl && grep -q '\"canonical_lines\":' '$PROJ_ROOT/events/'*.jsonl"
+
+assert "#10 no event-log files outside events/ post-cleanup" \
+  "[ -z \"\$(find '$PROJ_ROOT' -maxdepth 4 -type f \\( -name 'event-log.jsonl' -o -name 'events.ndjson' -o -name 'chanakya-events.jsonl' \\) -not -path '*/archive/*' 2>/dev/null)\" ]"
+
 # ---- #8 verify-ledger passes ----
 # Capture rc without triggering `set -e` on a non-zero exit.
 set +e
