@@ -103,6 +103,15 @@ scripts/sweep-feedback-reminders.sh                     # Step 0E2 — emits fee
 scripts/sweep-adaptive-backoff.sh 1                     # Step 0G — 900→1800→3600→7200 on blank; reset 900 on activity
 scripts/push-queue.sh append --kind review_blocked --task T001 --text "..."   # used by sweep + argus
 
+# Chanakya test-manifest + test-flow — extractions from modes/tests.md (Phase 2.6.5):
+scripts/tests-dirty-state-check.sh <path>               # exit 2 if user-testing.md has checked boxes or Notes
+scripts/tests-scan-candidates.sh                        # enumerate merged + user-verifying tasks
+scripts/tests-pull-cases.sh <task-id>                   # YAML `cases:` block from debrief (YAML + legacy fallback)
+scripts/tests-write-manifest.sh [--force]               # stdin YAML → plans/user-testing.md
+scripts/tests-write-round.sh <N> <scope> <tasks-csv> <body-file>   # round artifact via lib-ledger write_round_artifact
+scripts/tests-promote-round.sh <N>                      # gate-check + pre-checked manifest; exit 3 on gate fail
+scripts/tests-diff-rounds.sh <A> <B>                    # markdown diff between rounds
+
 # Studio-feedback ingestion (auto-fires via SessionStart hook + Chanakya Step 0F):
 scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
 

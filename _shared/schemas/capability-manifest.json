@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-04-22T20:17:14Z",
+  "generated_at": "2026-04-22T20:30:06Z",
   "agents": [
     {
       "name": "achilles",
@@ -285,7 +285,7 @@
           "writes": ["plans/rounds/<round-id>.yaml                   # post-migration canonical (schema: _shared/schemas/round.md, round@1.0.0)", "plans/user-testing.md                          # per-task manifest (user-facing checklist surface)", "plans/user-testing-rounds/user-testing-round<N>.md   # legacy round markdown during Phase 2.6 transition", "plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes", "events/<date>.jsonl                            # via scripts/write-event.sh"],
           "snapshots": ["briefs.json"],
           "dry_run": false,
-          "budget_tokens": 4000
+          "budget_tokens": 2500
         },
         {
           "name": "update",
