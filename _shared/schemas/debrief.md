@@ -22,6 +22,7 @@ id: 0190f52a-79aa-7d02-8b88-33ce5fe65e66        # UUIDv7
 task_id: 0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11   # UUIDv7 | null
 brief_id: 0190f52a-6e11-7c01-8a77-11a05a9e2b4c  # UUIDv7 | null
 mode: task                                       # task | direct-debrief
+state: emitted                                   # emitted | ingested | superseded
 completed_at: 2026-04-22T12:40:51Z
 branch:
   worked_on: achilles/T001
@@ -83,6 +84,7 @@ argus_review:
 | `task_id` | UUIDv7 \| null | yes | Null iff `mode: direct-debrief`. |
 | `brief_id` | UUIDv7 \| null | yes | Null iff `mode: direct-debrief` or rework with no formal brief. |
 | `mode` | enum | yes | `task` \| `direct-debrief`. Governs which fields are meaningful. |
+| `state` | enum | yes | `emitted` \| `ingested` \| `superseded`. Lifecycle: Achilles writes `emitted`; Chanakya's debrief-ingest flips to `ingested` after minting follow-ups; a later debrief covering the same work may flip a prior one to `superseded`. The sweep filters on `state: emitted` to find unprocessed artifacts — no separate sidecar or event-log lookup required. |
 | `completed_at` | RFC3339 UTC | yes | When the debrief was written. |
 | `branch` | object | yes | `{worked_on, merged_into, merge_sha}`. Direct-debrief may set all three to null if no merge happened. |
 | `commits` | array | yes | Per-commit `{sha, message}`. Empty array for no-commit direct-debrief sessions. |
@@ -132,6 +134,7 @@ The 141 processed debriefs in `chanakya-inbox/processed/` are **copied as-is** t
 
 | Version | Landed | Changes |
 |---|---|---|
+| 2.0.1 | 2026-04-22 | Non-breaking: add `state` field (`emitted` \| `ingested` \| `superseded`). Missing `state` is read as `emitted` for back-compat. Motivated by direct-debriefs having no parent-task history to mark as ingested. |
 | 2.0.0 | 2026-04-22 | Breaking: full YAML shape replaces markdown. `mode` field distinguishes task vs direct-debrief. `testability` becomes a typed object. `build_gate` / `build_debt_override` promoted to first-class fields. |
 | 1.x | pre-2026-04-22 | Markdown with section headers (`contracts/debrief-format.md`); legacy. |
 

@@ -75,11 +75,12 @@ If the user does not answer within the current turn, record `skipped_because: "n
 Write to `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml` where `<debrief-id>` is a fresh UUIDv7. Shape per `_shared/schemas/debrief.md` with these direct-debrief specifics:
 
 ```yaml
-schema_version: {name: debrief, version: 2.0.0, min_reader: 2.0.0, deprecated_at: null}
+schema_version: {name: debrief, version: 2.0.1, min_reader: 2.0.0, deprecated_at: null}
 id: <uuidv7>
 task_id: null
 brief_id: null
 mode: direct-debrief
+state: emitted
 completed_at: <rfc3339-utc>
 branch:
   worked_on: <current-branch>       # from `git rev-parse --abbrev-ref HEAD`

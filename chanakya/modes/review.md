@@ -47,9 +47,9 @@ Read `chanakya_mode.md` to determine current mode. If the file is missing, write
 
 ## Step 0 — Auto-Inbox Sweep (ALWAYS do this first)
 
-Before executing ANY mode, enumerate unprocessed debrief artifacts. Post-migration surface: `scripts/query-plans.sh --kind=debrief --unprocessed` returns debriefs at `plans/debriefs/<debrief-id>.yaml` whose parent task (via `task_id` / `links.debrief`) has not yet been ingested — see the `processed` marker the ingester sets on the task's state history. Legacy surface: walk `~/.dev-studio/<project>/plans/chanakya-inbox/` for unprocessed files (regular task debriefs `<task-id>-debrief.md`, manual-build-check debriefs `build-*-debrief.md` with `Type: manual-build-check`, release debriefs `tf-*-debrief.md` with `Type: testflight-release`, `release-*-debrief.md` with `Type: appstore-release`; ignore `processed/` and `*-tests.md`). Emit one `legacy_artifact_read` event per legacy-surface hit so the transition is visible.
+Before executing ANY mode, enumerate unprocessed debrief artifacts. Post-migration surface: glob `~/.dev-studio/<project>/plans/debriefs/*.yaml` and filter to those with `state: emitted` (missing `state` field reads as `emitted` for pre-2.0.1 back-compat). The `state` field replaces the earlier "lookup via parent-task history" scheme — it works uniformly for both task-mode debriefs (which also have parent-task history) and direct-debriefs (which don't). Legacy surface: walk `~/.dev-studio/<project>/plans/chanakya-inbox/` for unprocessed files (regular task debriefs `<task-id>-debrief.md`, manual-build-check debriefs `build-*-debrief.md` with `Type: manual-build-check`, release debriefs `tf-*-debrief.md` with `Type: testflight-release`, `release-*-debrief.md` with `Type: appstore-release`; ignore `processed/` and `*-tests.md`). Emit one `legacy_artifact_read` event per legacy-surface hit so the transition is visible.
 
-**Uniform debrief ingest (task + direct-debrief).** Debriefs authored by Achilles in either `task` mode (with `task_id` + `brief_id` set) or the new `direct-debrief` mode (both null; surface: `/achilles debrief`) share the same schema (`debrief@2.0.0`). Ingest reads them uniformly — no branching on `mode`. A direct-debrief with `task_id: null` skips Step 0A's task-linkage steps and is absorbed into the knowledge layer (Phase 2.7); its `follow_ups[]` still feed Step 0A.5 follow-up minting.
+**Uniform debrief ingest (task + direct-debrief).** Debriefs authored by Achilles in either `task` mode (with `task_id` + `brief_id` set) or the new `direct-debrief` mode (both null; surface: `/achilles debrief`) share the same schema (`debrief@2.0.1`). Ingest reads them uniformly — no branching on `mode`. A direct-debrief with `task_id: null` skips Step 0A's task-linkage steps (steps 1–4) and goes straight to follow-up minting (step 5) + state flip (step 8). Semantic linking against prior debriefs and open issues (`similar_to`, `duplicate_of`, `part_of`) is Phase 2.7 scope — current sweep only does the mechanical ingest.
 
 ### 0A — Process each regular task debrief
 
@@ -60,7 +60,7 @@ Before executing ANY mode, enumerate unprocessed debrief artifacts. Post-migrati
    - If the task is an implementation type (feature/bugfix/refactor), check whether its unit test sub-task (sibling by title-prefix, type `test-unit`) is `merged`/`verified`. If not, increment the unit test debt counter.
    - Same check for UI test sub-task (type `test-ui`) against UI test debt counter.
    - If the task IS a test sub-task (`test-unit`, `test-integration`, `test-ui`), decrement the appropriate counter and remove the parent from `Untested since`.
-5. For every item in the debrief's `follow_ups[]` array (YAML) / `## Follow-up Tasks` section (legacy), mint a **new** task entry: post-migration writes a fresh `plans/tasks/<new-task-id>.yaml` per schema with `state: proposed`, title referencing the originating task, `links.feedback` empty; legacy fallback writes a new row into `chanakya-master.md` with `Source: <task-id>`, status `pending`.
+5. For every item in the debrief's `follow_ups[]` array (YAML) / `## Follow-up Tasks` section (legacy), mint a **new** task entry: post-migration writes a fresh `plans/tasks/<new-task-id>.yaml` per schema with `state: proposed`, title referencing the originating task, `links.feedback` empty; legacy fallback writes a new row into `chanakya-master.md` with `Source: <task-id>`, status `pending`. **For direct-debriefs** (`task_id: null`), use the debrief-id as the source reference (`links.source_debrief: <debrief-id>` in the new task's YAML, `Source: <debrief-id[:8]>` in the legacy row) — there is no originating task to reference.
 6. If the debrief has substantive follow-ups, immediately generate briefs for them (invoke Brief Generation mode). Post-migration: brief mode transitions the new task's state to `briefed` and writes `plans/briefs/<brief-id>.yaml`; legacy path sets status to `briefed` in the master plan.
 7. **Argus-skip detection.** Read the debrief's `argus_review` object (YAML) or `## Argus Review` section (legacy). A debrief counts as *Argus-skipped* when any of these is true:
    - Post-migration: `argus_review.status == not-invoked` and the task's type is NOT in the exemption list.
@@ -80,8 +80,16 @@ Before executing ANY mode, enumerate unprocessed debrief artifacts. Post-migrati
 
    `review_pending` is a new event type; add it to `~/.claude/skills/_shared/contracts/events.md` → "Cross-agent events" with handler: "Surface in next status output. Banner: `⚠️ Review pending: <task-id> merged without Argus. Run \`/argus <task-id>\` before user verification.`"
 
-8. Mark the debrief as processed. Post-migration: append an `ingested_at` marker in the task's `history:` (the `plans/debriefs/<debrief-id>.yaml` file stays in place — its state is implicit in the parent task's `links.debrief` and the rebuilt index). Legacy fallback still moves the markdown debrief to `chanakya-inbox/processed/`. Leave `*-tests.md` in place.
-9. Report: "Processed T001 — done, 2 follow-ups briefed (T014, T015). Build debt: 7/12. Unit test debt: 3/8. UI test debt: 2/6. Review pending: none." (or `Review pending: T001` when detected.)
+8. Mark the debrief as processed. Post-migration: flip `state: emitted → ingested` on the debrief YAML (Edit the file in place — single-field mutation, no schema change) and append an `ingested_at` marker in the task's `history:` when the debrief has a parent task. Then emit a `debrief_ingested` event:
+   ```json
+   {"ts":"…","agent":"chanakya","event":"debrief_ingested","task":"<task-id-or-empty>","data":{"debrief_id":"<uuidv7>","mode":"<task|direct-debrief>","follow_ups_minted":<N>}}
+   ```
+   For direct-debriefs (`task_id: null`), the event's `task` field is the empty string and the `ingested_at` task-history step is skipped. Legacy fallback still moves the markdown debrief to `chanakya-inbox/processed/`. Leave `*-tests.md` in place.
+9. Report: "Processed T001 — done, 2 follow-ups briefed (T014, T015). Build debt: 7/12. Unit test debt: 3/8. UI test debt: 2/6. Review pending: none." (or `Review pending: T001` when detected.) For a direct-debrief, replace the task-id with `<debrief-id[:8]>` and drop the dashboard deltas: "Ingested direct-debrief `e7756f35`, 2 follow-ups minted (T266, T267)."
+
+### 0A.5 — Regenerate index
+
+If any debrief was processed in 0A (task-mode or direct-debrief), run `scripts/rebuild-index.sh` once at the end of the batch. Skipping this leaves `plans/index.yaml` stale — downstream readers (`query-plans.sh`, snapshots) silently serve outdated rows. Idempotent; always safe to run.
 
 ### 0B — Process each manual-build-check debrief
 
