@@ -45,26 +45,51 @@ Cross-project one-offs: set `ACHILLES_PROJECT=<slug>` before invoking any fleet 
 
 ## File Locations
 
-| Artifact | Path |
-|---|---|
-| Root | `~/.dev-studio/<project>/` |
-| Master plan | `~/.dev-studio/<project>/plans/chanakya-master.md` |
-| Task briefs | `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md` |
-| Debrief inbox | `~/.dev-studio/<project>/plans/chanakya-inbox/` |
-| Processed debriefs | `~/.dev-studio/<project>/plans/chanakya-inbox/processed/` |
-| Test-case artifacts | `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-tests.md` |
-| User test manifest | `~/.dev-studio/<project>/plans/user-testing.md` |
-| Test-flow rounds | `~/.dev-studio/<project>/plans/user-testing-rounds/user-testing-round<N>.md` |
-| Journey map (optional) | `~/.dev-studio/<project>/journey-map.md` |
-| Worktrees | `~/.dev-studio/<project>/worktrees/<task-id>/` |
-| Locks | `~/.dev-studio/<project>/locks/` |
-| Per-task DerivedData | `/tmp/derived-data/<task-id>/` |
-| Project memory | `~/.claude/projects/<sluggified-repo-path>/memory/` — e.g. `/Users/you/work/foo-app` → `-Users-you-work-foo-app`. Claude Code manages this dir automatically per project; each project gets its own event log and review archive for free. |
-| Event log | `<project-memory>/events/<YYYY-MM-DD>.jsonl` |
-| Event offset marker | `<project-memory>/events_offset.md` |
-| Review files | `<project-memory>/reviews/review_<task-id>.md` |
-| Review archive | `<project-memory>/reviews/archive/` |
-| Fleet inbox root | `~/.dev-studio/<project>/.runtime/achilles-inbox/` |
-| Push queue | `~/.dev-studio/<project>/.runtime/state/push-queue.jsonl` |
-| Test-slot semaphore (global) | `~/.dev-studio/.runtime/locks/test-slots/` |
-| Argus result bundles | `/tmp/argus-<task-id>.xcresult` |
+### Canonical layout (post-Phase 2.6)
+
+Phase 2.6 introduced a uniform per-artifact YAML layout under `plans/` + a single day-partitioned event log under `events/`. Schemas live in `_shared/schemas/`. The migration that moves legacy state to this layout is `scripts/migrate-ledger.sh` (project-scoped, big-bang, idempotent). First-party migration landed 2026-04-22 on turnip-ios.
+
+| Artifact | Path | Schema |
+|---|---|---|
+| Root | `~/.dev-studio/<project>/` | — |
+| Plans index | `~/.dev-studio/<project>/plans/index.yaml` | `_shared/contracts/plans-index-validator.md` |
+| Task artifacts | `~/.dev-studio/<project>/plans/tasks/<task-id>.yaml` | `_shared/schemas/task.md` |
+| Brief artifacts | `~/.dev-studio/<project>/plans/briefs/<brief-id>.yaml` | `_shared/schemas/brief.md` |
+| Debrief artifacts | `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml` | `_shared/schemas/debrief.md` |
+| Review artifacts | `~/.dev-studio/<project>/plans/reviews/<review-id>.yaml` | `_shared/schemas/review.md` |
+| Round artifacts | `~/.dev-studio/<project>/plans/rounds/<round-id>.yaml` | `_shared/schemas/round.md` |
+| Release artifacts | `~/.dev-studio/<project>/plans/releases/<release-id>.yaml` | `_shared/schemas/release.md` |
+| Feedback artifacts | `~/.dev-studio/<project>/plans/feedback/<feedback-id>.yaml` | `_shared/schemas/feedback.md` |
+| Crash artifacts | `~/.dev-studio/<project>/plans/crashes/<crash-id>.yaml` | `_shared/schemas/crash.md` |
+| Event log | `~/.dev-studio/<project>/events/<YYYY-MM-DD>.jsonl` | `_shared/contracts/events.md` |
+| Events index | `~/.dev-studio/<project>/events/index.yaml` | — |
+| Pre-migration archive | `~/.dev-studio/<project>/archive/2026-pre-2.6/` | frozen |
+| Worktrees | `~/.dev-studio/<project>/worktrees/<task-id>/` | — |
+| Locks | `~/.dev-studio/<project>/locks/` | — |
+| Per-task DerivedData | `/tmp/derived-data/<task-id>/` | — |
+| Project memory | `~/.claude/projects/<sluggified-repo-path>/memory/` — e.g. `/Users/you/work/foo-app` → `-Users-you-work-foo-app`. Claude Code manages this dir automatically per project. | — |
+| Review files (legacy archive) | `<project-memory>/reviews/review_<task-id>.md` | — |
+| Review archive (legacy) | `<project-memory>/reviews/archive/` | — |
+| Fleet inbox root | `~/.dev-studio/<project>/.runtime/achilles-inbox/` | — |
+| Push queue | `~/.dev-studio/<project>/.runtime/state/push-queue.jsonl` | — |
+| Test-slot semaphore (global) | `~/.dev-studio/.runtime/locks/test-slots/` | — |
+| Argus result bundles | `/tmp/argus-<task-id>.xcresult` | — |
+
+Queries against the ledger go through `scripts/query-plans.sh --kind=<artifact-kind>` (glob-free; joins via `plans/index.yaml`). Event reads go through `scripts/read-events.sh`. Never glob `plans/**` directly in new code.
+
+### Legacy layout (pre-Phase 2.6, preserved)
+
+Kept for callers that still read historical state until every project has migrated and runtime scripts (`scripts/detect-edits.sh`, `scripts/achilles-worker.sh`) upgrade to the YAML shape. On a migrated project these paths retain pre-cutover artifacts (and `chanakya-inbox/processed/` per Q18 archive-as-is). They are no longer written to.
+
+| Artifact | Path (legacy) | Status |
+|---|---|---|
+| Master plan | `~/.dev-studio/<project>/plans/chanakya-master.md` | Read-only post-migration; replaced by `plans/index.yaml` + `plans/tasks/*.yaml`. |
+| Task briefs | `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md` | Read-only post-migration; replaced by `plans/briefs/*.yaml`. |
+| Debrief inbox | `~/.dev-studio/<project>/plans/chanakya-inbox/` | Still holds `assets/` + `*-tests.md` (not migrated by 2.6). `processed/*-debrief.md` preserved per Q18. New debriefs write to `plans/debriefs/*.yaml`. |
+| Test-case artifacts | `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-tests.md` | Still written here (migration didn't scope test-case artifacts). |
+| User test manifest | `~/.dev-studio/<project>/plans/user-testing.md` | Read-only post-migration; superseded by `plans/rounds/*.yaml`. |
+| Test-flow rounds | `~/.dev-studio/<project>/plans/user-testing-rounds/user-testing-round<N>.md` | Read-only post-migration; superseded by `plans/rounds/*.yaml`. |
+| Journey map (optional) | `~/.dev-studio/<project>/journey-map.md` | Unchanged — not in ledger scope. |
+| Legacy event files | `~/.dev-studio/<project>/{event-log,events,agents}.{jsonl,log,ndjson}` and `plans/chanakya-events.jsonl` | Read-only post-migration; consolidated into `events/<date>.jsonl`. Migration left the originals in place for recovery; safe to remove in a follow-up sweep. |
+
+Every legacy path above is supported by a deprecated resolver in `scripts/lib-paths.sh` (flagged via comment — removed once the last caller upgrades). New code must target the canonical layout.
