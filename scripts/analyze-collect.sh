@@ -59,7 +59,7 @@ MEMORY=$(find_memory "$PROJECT") || {
   exit 1
 }
 
-EVENT_DIR="$MEMORY/events"
+EVENT_DIR=$(resolve_events_dir_for "$PROJECT")
 REVIEW_DIR="$MEMORY/reviews"
 PROJECT_ROOT=$(resolve_project_root_for "$PROJECT")
 # Post-2.6: canonical debriefs live at plans/debriefs/*.yaml. Pre-2.6
@@ -92,6 +92,15 @@ else
 fi
 echo
 
+# Day-partitioned filename check — YYYY-MM-DD.jsonl only. Skips pre-2.6
+# siblings (events.jsonl, agents.jsonl) that share the post-2.6 events dir.
+is_day_partition() {
+  case "$1" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 echo "## Event counts (by type)"
 if [ -d "$EVENT_DIR" ]; then
   # JSONL filenames are YYYY-MM-DD.jsonl — lexicographic compare == date compare.
@@ -99,6 +108,7 @@ if [ -d "$EVENT_DIR" ]; then
     for f in "$EVENT_DIR"/*.jsonl; do
       [ -f "$f" ] || continue
       d=$(basename "$f" .jsonl)
+      is_day_partition "$d" || continue
       [ "$d" \< "$SINCE" ] && continue
       cat "$f"
     done | sed -n 's/.*"event":"\([^"]*\)".*/\1/p' | sort | uniq -c | sort -rn
@@ -114,17 +124,65 @@ fi
 echo
 
 echo "## Review verdict rates"
-if [ -d "$REVIEW_DIR" ]; then
-  # Argus writes `Verdict: <state>` as a top-of-file body line (not YAML
-  # frontmatter). Case-insensitive + anchored-after-whitespace match.
-  approved=$(grep -lEi '^[[:space:]]*verdict:[[:space:]]*approved' "$REVIEW_DIR"/*.md "$REVIEW_DIR"/archive/*.md 2>/dev/null | wc -l | tr -d ' ')
-  flagged=$(grep -lEi '^[[:space:]]*verdict:[[:space:]]*flagged' "$REVIEW_DIR"/*.md "$REVIEW_DIR"/archive/*.md 2>/dev/null | wc -l | tr -d ' ')
-  blocked=$(grep -lEi '^[[:space:]]*verdict:[[:space:]]*blocked' "$REVIEW_DIR"/*.md "$REVIEW_DIR"/archive/*.md 2>/dev/null | wc -l | tr -d ' ')
-  echo "approved: $approved"
-  echo "flagged:  $flagged"
-  echo "blocked:  $blocked"
-else
-  echo "(no review dir at $REVIEW_DIR)"
+# Source of truth: Argus-emitted verdict events in the event log. Approved
+# reviews aren't persisted as files (argus/rules: silent on approve), so any
+# file-scan count is structurally incomplete — #21. File-scan stays as a
+# sanity cross-check for flagged/blocked; drift surfaces via reconcile lines.
+count_verdict_events() {
+  local verdict="$1" f d
+  [ -d "$EVENT_DIR" ] || { echo 0; return; }
+  for f in "$EVENT_DIR"/*.jsonl; do
+    [ -f "$f" ] || continue
+    d=$(basename "$f" .jsonl)
+    # Skip pre-2.6 siblings (events.jsonl, agents.jsonl) and out-of-window days.
+    is_day_partition "$d" || continue
+    [ "$d" \< "$SINCE" ] && continue
+    cat "$f"
+  done | grep -F "\"event\":\"review_${verdict}\"" \
+       | grep -F "\"agent\":\"argus\"" \
+       | wc -l | tr -d ' '
+}
+
+# File-scan cross-check. Hardened regex accepts plain `Verdict: x`, bold
+# `**Verdict:** x`, and lowercase variants (#21). Approved files are usually
+# absent (argus skips them), so the approved cross-check is expected to lag.
+# Two anchored alternatives rather than one loose pattern — keeps the match
+# tight (requires a colon) while accepting both styles we see in practice.
+count_verdict_files() {
+  local verdict="$1"
+  [ -d "$REVIEW_DIR" ] || { echo 0; return; }
+  grep -lEi "^[[:space:]]*(verdict:|\*\*verdict:\*\*)[[:space:]]+$verdict" \
+    "$REVIEW_DIR"/*.md "$REVIEW_DIR"/archive/*.md 2>/dev/null \
+    | wc -l | tr -d ' '
+}
+
+ev_approved=$(count_verdict_events approved)
+ev_flagged=$(count_verdict_events flagged)
+ev_blocked=$(count_verdict_events blocked)
+fs_approved=$(count_verdict_files approved)
+fs_flagged=$(count_verdict_files flagged)
+fs_blocked=$(count_verdict_files blocked)
+
+echo "source: event log (argus-emitted, canonical)"
+echo "approved: $ev_approved"
+echo "flagged:  $ev_flagged"
+echo "blocked:  $ev_blocked"
+echo
+echo "cross-check: filesystem ($REVIEW_DIR)"
+echo "approved: $fs_approved  (expected ≤ event count; argus rarely writes approved files)"
+echo "flagged:  $fs_flagged"
+echo "blocked:  $fs_blocked"
+
+# Reconcile. Event log wins; surface drift rather than hide it. Approved is
+# one-sided (file ≤ events is normal); flagged/blocked should match closely.
+reconcile=""
+[ "$fs_approved" -gt "$ev_approved" ] && reconcile="${reconcile}approved fs>ev (${fs_approved} vs ${ev_approved}); "
+[ "$fs_flagged" != "$ev_flagged" ] && reconcile="${reconcile}flagged drift (ev=${ev_flagged} fs=${fs_flagged}); "
+[ "$fs_blocked" != "$ev_blocked" ] && reconcile="${reconcile}blocked drift (ev=${ev_blocked} fs=${fs_blocked}); "
+if [ -n "$reconcile" ]; then
+  echo
+  echo "reconcile: ${reconcile%; }"
+  echo "  (event log is authoritative; investigate if flagged/blocked diverge materially)"
 fi
 echo
 
