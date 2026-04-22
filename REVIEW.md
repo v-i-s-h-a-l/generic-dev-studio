@@ -76,6 +76,18 @@ SKILL.md files load wholesale into every session that invokes the skill. Long pr
 
 **How to check:** after any SKILL.md edit, note the line-count delta. Flag additions >50 lines for a second look.
 
+### R9 — Dual-write preserved during Phase 2.6 transition (tier: **block + auto-fix**)
+Any mode pack or script that mutates a Phase 2.6 artifact (tasks / briefs / rounds / releases / debriefs / reviews) MUST preserve the dual-write contract per `_shared/patterns/dual-write-transition.md`: YAML first, legacy counterpart second, partial-failure loud (`dual_write_partial` event + exit 3). AND, not OR.
+
+**Why:** `scripts/verify-ledger.sh` caught T218a drift (#76) because a writer mutated the legacy brief markdown without the paired YAML update. The `lib-ledger.sh` helpers (`transition_*`, `write_*_artifact`) make this structurally impossible when used correctly; this rule catches regressions that bypass the helpers.
+
+**How to check:**
+- New mode pack writing a Phase 2.6 artifact? Check frontmatter has `transition_notes: _shared/patterns/dual-write-transition.md`. Grep-checkable.
+- New script mutating `plans/<kind>/*.yaml`? Check it uses the `lib-ledger.sh` writers, not ad-hoc `yq -i`. If ad-hoc, must explicitly call the paired `legacy_*` helper before returning success.
+- Any `OR`/`fallback`/`if YAML unavailable` language in prose around a dual-writer? That's the T218a shape. Tighten to explicit AND.
+
+**Fix pattern:** replace ad-hoc YAML writes with `lib-ledger.sh` helper calls; add `transition_notes` frontmatter to the mode pack; tighten prose to AND-not-OR.
+
 ## Deferred / known gaps
 
 Not rules yet — track here so we remember:
