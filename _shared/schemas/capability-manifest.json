@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-04-22T18:54:16Z",
+  "generated_at": "2026-04-22T19:03:21Z",
   "agents": [
     {
       "name": "achilles",
@@ -241,7 +241,7 @@
           "writes": [".runtime/state/push-queue.jsonl                # marks entries displayed"],
           "snapshots": ["briefs.json", "debt.json", "feedback-inbox.json", "events-tail.json"],
           "dry_run": false,
-          "budget_tokens": 3000
+          "budget_tokens": 1500
         },
         {
           "name": "sweep-debt",

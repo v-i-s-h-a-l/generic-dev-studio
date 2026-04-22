@@ -74,6 +74,15 @@ scripts/write-event.sh --agent achilles --event task_completed --task T001 \
 #   scripts/lib-ledger.sh       dual-write helpers for plans/<kind>/*.yaml + legacy surfaces
 #   scripts/lib-fixtures.sh     scrub-timestamps + YAML/event multiset asserts for fixture replay
 
+# Chanakya status mode — mechanical extractions from modes/status.md (Phase 2.6.5):
+scripts/status-load-snapshots.sh                        # 4-domain freshness + detached rewarms; prints {domain: {state, age_s, payload}}
+scripts/status-fallback-loaders.sh briefs               # full-load when snapshot misses: briefs|debt|feedback|events-tail
+scripts/status-render-tasks.sh < briefs-payload         # stdin JSON → markdown task table
+scripts/push-queue.sh list                              # unread entries on stdout
+scripts/push-queue.sh mark-displayed <id>...            # clear after surfacing
+scripts/status-domain.sh rounds                         # one-line round summary (prefers YAML; legacy fallback)
+scripts/status-domain.sh releases                       # one-line release summary + push-tf suggestion
+
 # Studio-feedback ingestion (auto-fires via SessionStart hook + Chanakya Step 0F):
 scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
 

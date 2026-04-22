@@ -2,8 +2,9 @@
 name: Chanakya Status
 description: Default mode. Renders master-plan summary, git state, blockers, push queue, test-flow round status, and release status.
 type: mode-pack
+transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [briefs.json, debt.json, feedback-inbox.json, events-tail.json]
-budget_tokens: 3000
+budget_tokens: 1500
 reads:
   - plans/index.yaml                               # post-migration task index (schema: _shared/schemas/task.md via plans-index-validator)
   - plans/tasks/*.yaml                             # post-migration per-task artifacts
@@ -20,106 +21,51 @@ writes:
 
 # Mode: Status
 
-Default Chanakya mode (no args). Reads four snapshots from `~/.dev-studio/<project>/.runtime/state/chanakya-snapshots/` and falls back to full-load per domain on miss/stale/corrupt. See `_shared/patterns/router-pattern.md` §Freshness and fallback for the contract.
+Default Chanakya mode (no args). Mostly orchestration: scripts do the mechanical freshness + parsing work; this mode owns the judgment calls (which blockers matter, which next action to suggest).
 
-## Step 0 — Load snapshots (freshness window: 60s)
-
-For each of `briefs.json`, `debt.json`, `feedback-inbox.json`, `events-tail.json`:
-
-1. Read `~/.dev-studio/<project>/.runtime/state/chanakya-snapshots/<domain>.json` (resolve the project root via `scripts/lib-paths.sh resolve_project_root_for`).
-2. Parse `generated_at` (ISO-8601 UTC). Compute `age_seconds = now - generated_at`.
-3. Classify:
-   - **Missing file / empty / not valid JSON** → miss. Emit `snapshot_miss` with `reason=missing_file` or `corrupt`. Fall back to the full-load path for that domain only (see Step 0A–0D below).
-   - **`generated_at` is null** → miss with `reason=not_generated`. Fall back.
-   - **`age_seconds > 60`** → stale. Emit `snapshot_stale` with `age_seconds` and `staleness_window_seconds=60`. Fall back.
-   - **`age_seconds ≤ 60`** → hit. Emit `snapshot_hit` with `domain` + `age_seconds`. Use the snapshot exclusively for that domain.
-4. Event emission uses the `append_event` helper from `scripts/lib-paths.sh` (agent=`chanakya`, task=`""`).
-5. At the end of Step 0, if **any** domain was stale/missing, fire `scripts/chanakya-snap.sh <domain> &` for each such domain in the background — detached, no wait — so the next invocation hits a fresh snapshot. Use `&` (single-domain) rather than `all` to keep the background cost proportional to what actually fell behind.
-
-**Why 60s.** Status tolerates recent activity but users expect fresh numbers; a minute is short enough that a newly-merged task or ingested feedback record surfaces on the next invocation, long enough that a quick sequence of `/chanakya` calls all hit the same snapshot.
-
-### Step 0A — Full-load fallback: briefs
-
-Post-migration: read `~/.dev-studio/<project>/plans/index.yaml` (authoritative) + `plans/tasks/*.yaml` per entry; query via `scripts/query-plans.sh --kind=task` rather than globbing. During Phase 2.6 transition, fall back to `plans/chanakya-master.md` when `plans/index.yaml` is absent — walk `### Txxx — title` blocks, extract Status / Priority / Complexity / Branch.
-
-### Step 0B — Full-load fallback: debt
-
-Read the `## Build Debt`, `### Unit Test Debt`, and `### UI Test Debt` blocks from the master plan. Banner thresholds are documented in `_shared/rules/debt-tracking.md`.
-
-### Step 0C — Full-load fallback: feedback-inbox
-
-Walk `~/.dev-studio/generic-dev-studio/feedback-inbox/<project>/*.md` (or all scopes when running from gds itself). Count unprocessed files (exclude `processed/` subtree).
-
-### Step 0D — Full-load fallback: events-tail
-
-Read the last 25 lines of today's event log at `~/.dev-studio/<project>/events/<YYYY-MM-DD>.jsonl` (resolve via `resolve_event_log`).
-
-## Step 1 — Render task table (from briefs snapshot or fallback)
-
-Render a table of active tasks:
+## Step 0 — Load snapshots
 
 ```
-| ID   | Title                  | Priority | Status      | Complexity | Branch          |
-|------|------------------------|----------|-------------|------------|-----------------|
-| T001 | Export flow            | P0       | verified    | L          | —               |
-| T002 | FAB redesign           | P1       | done        | M          | —               |
-| T003 | HEIF encoder           | P1       | in-progress | S          | achilles/T003   |
+scripts/status-load-snapshots.sh
 ```
 
-If the snapshot was a hit, use `tasks[]` + `by_status`. If fallback, parse the master plan directly.
+Returns a JSON blob `{briefs, debt, feedback-inbox, events-tail}` where each domain is `{state: hit|stale|miss, age_s, payload}`. The script emits `snapshot_hit`/`snapshot_stale`/`snapshot_miss` events and fires detached `chanakya-snap.sh <domain>` rewarms for non-hit domains so the next invocation is warm. Freshness window is fixed at 60s per `_shared/patterns/router-pattern.md`.
 
-Flag `done` tasks (awaiting user verification) so the user can run `/chanakya test-manifest` to consolidate them.
+For any domain whose state is not `hit`, full-load via `scripts/status-fallback-loaders.sh <briefs|debt|feedback|events-tail>` — same JSON shape the snapshot would have produced.
 
-## Step 2 — Check git state (if tasks are in-progress)
+**Why 60s.** Short enough that a newly-merged task or ingested feedback record surfaces on the next invocation; long enough that a quick sequence of `/chanakya` calls all hit the same snapshot.
 
-For in-progress tasks with branches:
-- `git log --oneline -3 <branch>` for recent activity
-- Flag stale tasks (in-progress but no commits in 24+ hours)
-
-## Step 3 — Surface blockers
-
-Identify tasks blocked by dependencies. Highlight them. Surface `done` tasks awaiting verification.
-
-## Step 3A — Surface push queue and recent events
-
-Read `~/.dev-studio/<project>/.runtime/state/push-queue.jsonl` (if it exists; resolve via `scripts/lib-paths.sh resolve_push_queue`). Show any entries not yet marked displayed:
+## Step 1 — Render task table
 
 ```
-Pending notifications:
-- [2026-04-18 14:32] argus: review_blocked — T001: secrets found in FilterApplier.swift:42
-- [2026-04-18 15:01] achilles: merge_conflict — T003: branch left intact
+scripts/status-render-tasks.sh < <(briefs-payload)
 ```
 
-For recent events, use the events-tail snapshot (`events[]`) or fallback. Summarize agent activity:
-> "Recent activity: Argus reviewed T001 (flagged, 3 findings), T002 merged at 14:45."
+Flag `done` tasks awaiting user verification so the user can run `/chanakya test-manifest` to consolidate them.
 
-Mark displayed push queue entries after showing them.
+## Step 2 — Git state for in-progress tasks
 
-## Step 3B — Feedback inbox banner
+For in-progress tasks with branches: `git log --oneline -3 <branch>` for recent activity; flag stale tasks (in-progress but no commits in 24+ hours). Pure judgment — no script.
 
-Use the feedback-inbox snapshot (`total_pending`, `by_scope`) or fallback. If `total_pending > 0`, surface a one-liner:
-> "Feedback inbox: 3 pending (2 from turnip-ios, 1 from web). Run `/chanakya feedback` to triage."
+## Step 3 — Surface blockers + push queue + feedback
 
-## Step 3C — Test-flow round status
+1. **Blockers.** Identify tasks blocked by dependencies; highlight them. Surface `done` tasks awaiting verification.
 
-Post-migration: scan `~/.dev-studio/<project>/plans/rounds/*.yaml` (schema: `_shared/schemas/round.md`) via `scripts/query-plans.sh --kind=round`. Legacy fallback during Phase 2.6 transition: `plans/user-testing-rounds/*.md` + `plans/user-testing.md`.
-- Report total rounds and when the latest was generated (from the `generated_at` field / legacy `Generated:` header).
-- If the latest round has unchecked cases (some `[ ] pass` remaining), report: "Round N is partially completed (K/M cases checked)."
-- If the latest round is fully completed (all cases checked), report: "Round N completed — consider `--promote` to feed into review-feedback, or generate a new round."
+2. **Push queue.** `scripts/push-queue.sh list` prints unread entries as JSONL. Show them, then `scripts/push-queue.sh mark-displayed <id>...` to clear. Summarize recent events from the events-tail payload: "Argus reviewed T001 (flagged, 3 findings), T002 merged at 14:45."
 
-## Step 3D — Release status
+3. **Feedback inbox banner.** If the feedback-inbox snapshot's `total_pending > 0`:
+   > "Feedback inbox: 3 pending (2 from turnip-ios, 1 from web). Run `/chanakya feedback` to triage."
 
-Post-migration: read `plans/releases/*.yaml` (schema: `_shared/schemas/release.md`) via `scripts/query-plans.sh --kind=release`. Legacy fallback: `## Release Log` from `plans/chanakya-master.md`.
-- Report the latest TestFlight and App Store releases (build number, version, date).
-- Count tasks with status `done` or `verified` whose `Released in:` field does NOT contain a `TF-` entry — these have merged since the last TestFlight build.
-- If the count is > 0, suggest: "N tasks merged since last TestFlight (build <LAST_BUILD>). Run `/achilles push-tf` when ready."
-
-Example output:
-> "Latest TestFlight: build 3031 (v26.3.1, 2026-04-16). Latest App Store: build 3028 (v26.2.0, 2026-04-10). 3 tasks merged since last TestFlight — consider `/achilles push-tf`."
+4. **Rounds + releases.**
+   ```
+   scripts/status-domain.sh rounds
+   scripts/status-domain.sh releases
+   ```
+   Each prints a single human-readable line. `releases` appends a `/achilles push-tf` suggestion when tasks have merged since the last TestFlight build.
 
 ## Step 4 — Suggest next action
 
-When `done` tasks exist awaiting verification, suggest both paths:
+Judgment call. When `done` tasks exist awaiting verification, suggest both paths:
 
 "T004 and T006 are `done` awaiting manual verification:
 - `/chanakya test-manifest` — per-task verification checklist (feeds into `review-feedback`)
