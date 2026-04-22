@@ -199,6 +199,19 @@ preflight_check() {
 
 # -------- Phase 2: backup --------
 
+# Ledger-state whitelist. The earlier full-tree copy (mindepth 1, exclude
+# archive/) dragged in `derived-data/` (207k Xcode files on turnip-ios,
+# ~27GB, ~50-min digest) and `worktrees/` — neither are ledger state. Only
+# these subpaths are authoritative ledger state that the rollback would
+# need. Everything else is derived, transient, or already versioned in git.
+#
+# Dirs (relative to $PROJECT_ROOT). `feedback-inbox/` is the pre-2.6 legacy
+# location; `feedback/` exists only if an older run already migrated.
+BACKUP_DIRS="plans events feedback feedback-inbox .runtime/state"
+# Top-level legacy event-log sibling files (cleanup phase also moves these
+# once parity is confirmed, but backup captures them first for rollback).
+BACKUP_FILES="event-log.jsonl events.jsonl events.log events.ndjson agents.jsonl"
+
 backup_project() {
   log "phase: backup to $ARCHIVE_ROOT"
   if [ -d "$ARCHIVE_ROOT" ] && [ -f "$ARCHIVE_ROOT/.digest" ]; then
@@ -207,14 +220,23 @@ backup_project() {
     return 0
   fi
   if [ "$DRY_RUN" -eq 1 ]; then
-    log "  DRY-RUN would cp -R $PROJECT_ROOT/ (excluding archive/) → $ARCHIVE_ROOT/"
+    log "  DRY-RUN would copy ledger whitelist → $ARCHIVE_ROOT/ (dirs=[$BACKUP_DIRS] files=[$BACKUP_FILES])"
     return 0
   fi
   local tmp="$ARCHIVE_ROOT.tmp.$$"
   mkdir -p "$tmp"
-  # Copy everything except the archive dir itself (avoid recursion).
-  find "$PROJECT_ROOT" -mindepth 1 -maxdepth 1 ! -name archive -print0 2>/dev/null \
-    | xargs -0 -I{} cp -R '{}' "$tmp/" 2>/dev/null || true
+  local sub f src
+  for sub in $BACKUP_DIRS; do
+    src="$PROJECT_ROOT/$sub"
+    [ -e "$src" ] || continue
+    mkdir -p "$tmp/$(dirname "$sub")"
+    cp -R "$src" "$tmp/$sub" 2>/dev/null || true
+  done
+  for f in $BACKUP_FILES; do
+    src="$PROJECT_ROOT/$f"
+    [ -f "$src" ] || continue
+    cp "$src" "$tmp/$f" 2>/dev/null || true
+  done
   # Digest manifest for idempotency check on re-run.
   (cd "$tmp" && find . -type f 2>/dev/null | sort | xargs -I{} shasum -a 256 '{}' 2>/dev/null) \
     > "$tmp/.digest" 2>/dev/null || true
