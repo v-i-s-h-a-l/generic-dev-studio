@@ -274,6 +274,9 @@ COUNT_UNPARSEABLE=0
 COUNT_RETIRED=0
 COUNT_RETIRE_SKIPPED=0
 COUNT_FEEDBACK_PRUNED=0
+COUNT_TASKS=0
+COUNT_ROUNDS=0
+COUNT_RELEASES=0
 
 # Write one line to the migration report. Created on first call.
 report() {
@@ -627,14 +630,276 @@ transform_feedback() {
   done
 }
 
+# ---- Task transform: chanakya-master.md "### T<id> — <title>" rows → plans/tasks/<uuidv7>.yaml ----
+#
+# Parses per-task sections from the legacy master plan. Captures the fields the
+# post-2.6 schema requires (id, title, state, size) with best-effort mapping
+# from legacy status/complexity. Legacy prose is preserved in `legacy_row:` as
+# the full markdown chunk so later enrichment (priority, type, source links) is
+# lossless — the schema's minimal shape is deliberate (Phase 2.6 §2.1).
+#
+# Status mapping (legacy → post-2.6 task-lifecycle states):
+#   pending      → proposed
+#   briefed      → briefed
+#   in-progress  → in-progress
+#   done         → merged
+#   verified     → verified
+#   blocked      → blocked
+#   cancelled    → cancelled
+#   deferred     → blocked       (reason kept in legacy_row)
+#   absorbed/closed/obsoleted/superseded* → archived
+#   anything else → proposed     (logged as unparseable status)
+transform_tasks() {
+  local master="$PROJECT_ROOT/plans/chanakya-master.md"
+  [ -f "$master" ] || { log "  no chanakya-master.md — skipping tasks"; return 0; }
+
+  # One temp file per task — awk splits on `### T<id>` boundaries. Using plain
+  # pattern matching (BWK awk on macOS lacks match() with captures). Task-id +
+  # title are parsed from the filename/header in shell below.
+  local split_dir
+  split_dir=$(mktemp -d)
+  awk -v dir="$split_dir" '
+    /^### T[0-9a-z]+ — / {
+      # Derive id by stripping "### " prefix and everything from " — " onward.
+      line = $0
+      id = line
+      sub(/^### /, "", id)
+      sub(/ — .*$/, "", id)
+      # Title is everything after " — ".
+      title = line
+      sub(/^### T[0-9a-z]+ — /, "", title)
+      cur_file = dir "/" id ".section"
+      print title > (dir "/" id ".title")
+      in_section = 1
+      next
+    }
+    /^### / || /^## / { in_section = 0; next }
+    in_section { print >> cur_file }
+  ' "$master"
+
+  local section_file task_id title body status complexity type priority state size uuid out
+  for section_file in "$split_dir"/*.section; do
+    [ -f "$section_file" ] || continue
+    task_id=$(basename "$section_file" .section)
+    title=$(cat "$split_dir/$task_id.title" 2>/dev/null)
+    body=$(cat "$section_file")
+
+    # Extract the common fields. Bold `**Foo:**` then value up to end-of-line
+    # or HTML-comment start. `tr -d` strips the bold markers post-match.
+    status=$(printf '%s' "$body" | grep -m1 -E '^- \*\*Status:\*\*' | sed -E 's/^- \*\*Status:\*\*[[:space:]]*//; s/[[:space:]]*(\(.*|<!--.*)//' | tr -d ' ')
+    complexity=$(printf '%s' "$body" | grep -m1 -E '^- \*\*Complexity:\*\*' | sed -E 's/^- \*\*Complexity:\*\*[[:space:]]*//; s/[[:space:]]*\(.*//; s/[[:space:]]*$//')
+    type=$(printf '%s' "$body" | grep -m1 -E '^- \*\*Type:\*\*' | sed -E 's/^- \*\*Type:\*\*[[:space:]]*//; s/[[:space:]]*\(.*//; s/[[:space:]]*$//')
+    priority=$(printf '%s' "$body" | grep -m1 -E '^- \*\*Priority:\*\*' | sed -E 's/^- \*\*Priority:\*\*[[:space:]]*//; s/[[:space:]]*$//')
+
+    # Map status → state.
+    case "$status" in
+      pending)                state="proposed" ;;
+      briefed)                state="briefed" ;;
+      in-progress)            state="in-progress" ;;
+      done)                   state="merged" ;;
+      verified)               state="verified" ;;
+      blocked)                state="blocked" ;;
+      cancelled|canceled)     state="cancelled" ;;
+      deferred)               state="blocked" ;;
+      absorbed|closed|obsoleted) state="archived" ;;
+      superseded*)            state="archived" ;;
+      "")                     state="proposed" ;;
+      *)                      state="proposed"
+                              log "  warn: task $task_id unparseable status '$status' — defaulting to proposed" ;;
+    esac
+
+    # Map complexity → size (XS→xs, S→s, M→m, L/XL→l). Default m.
+    case "$complexity" in
+      XS|xs) size="xs" ;;
+      S|s)   size="s" ;;
+      M|m)   size="m" ;;
+      L|l|XL|xl) size="l" ;;
+      "")    size="m" ;;
+      *)     size="m" ;;
+    esac
+
+    uuid=$(derive_uuid "task:$task_id")
+    out="$PLANS_NEW/tasks/$uuid.yaml"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      log "  DRY-RUN write task: $task_id ($state/$size) → $out"
+    else
+      mkdir -p "$(dirname "$out")"
+      # Indent legacy body for YAML block scalar.
+      local indented_body
+      indented_body=$(printf '%s' "$body" | sed 's/^/  /')
+      local ts
+      ts=$(date -u -r "$(mtime "$master")" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
+      local history_uuid
+      history_uuid=$(derive_uuid "task-history:$task_id")
+      {
+        printf 'schema_version: {name: task, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}\n'
+        printf 'id: %s\n' "$uuid"
+        printf 'title: %s\n' "$(yaml_quote "$title")"
+        printf 'state: %s\n' "$state"
+        printf 'size: %s\n' "$size"
+        printf 'created_at: %s\n' "$ts"
+        printf 'updated_at: %s\n' "$ts"
+        printf 'links:\n'
+        printf '  brief: null\n'
+        printf '  debrief: null\n'
+        printf '  reviews: []\n'
+        printf '  release: null\n'
+        printf '  feedback: []\n'
+        printf 'history:\n'
+        printf '  - {from: null, to: %s, actor: chanakya, at: %s, event_id: %s, reason: "migrated from chanakya-master.md"}\n' \
+          "$state" "$ts" "$history_uuid"
+        printf 'legacy_task_id: "%s"\n' "$task_id"
+        [ -n "$priority" ]   && printf 'legacy_priority: %s\n' "$(yaml_quote "$priority")"
+        [ -n "$type" ]       && printf 'legacy_type: %s\n' "$(yaml_quote "$type")"
+        [ -n "$complexity" ] && printf 'legacy_complexity: %s\n' "$(yaml_quote "$complexity")"
+        [ -n "$status" ]     && printf 'legacy_status: %s\n' "$(yaml_quote "$status")"
+        printf 'legacy_row: |\n%s\n' "$indented_body"
+      } > "$out"
+    fi
+    COUNT_TASKS=$((COUNT_TASKS + 1))
+  done
+  rm -rf "$split_dir"
+  log "  transformed $COUNT_TASKS task(s)"
+}
+
+# Quote a string for YAML inline scalar. Double-quotes with " and \ escaped.
+yaml_quote() {
+  local s="$1"
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  printf '"%s"' "$s"
+}
+
+# ---- Round transform: plans/user-testing-rounds/user-testing-round<N>.md → plans/rounds/<uuidv7>.yaml ----
+#
+# Minimal-fidelity: round_number from filename, scope + state defaulted, cases
+# left as an empty array (parsing the checklist structure reliably is brittle;
+# the full markdown body is kept verbatim in legacy_body for re-hydration).
+transform_rounds() {
+  local legacy_dir="$PROJECT_ROOT/plans/user-testing-rounds"
+  [ -d "$legacy_dir" ] || { log "  no user-testing-rounds — skipping rounds"; return 0; }
+  local f round_num uuid out ts body
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    [ -f "$f" ] || continue
+    round_num=$(basename "$f" .md | sed -E 's/^user-testing-round([0-9]+)$/\1/')
+    [ -z "$round_num" ] && { unparseable "$f" "filename does not match user-testing-round<N>.md"; continue; }
+    uuid=$(derive_uuid "round:$round_num")
+    out="$PLANS_NEW/rounds/$uuid.yaml"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      log "  DRY-RUN write round: $f (round $round_num) → $out"
+    else
+      mkdir -p "$(dirname "$out")"
+      ts=$(date -u -r "$(mtime "$f")" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
+      body=$(sed 's/^/  /' "$f")
+      {
+        printf 'schema_version: {name: round, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}\n'
+        printf 'id: %s\n' "$uuid"
+        printf 'round_number: %s\n' "$round_num"
+        printf 'state: closed\n'         # historical rounds treated as closed on migration
+        printf 'scope: new\n'            # conservative; real values extractable later
+        printf 'generated_at: %s\n' "$ts"
+        printf 'closed_at: %s\n' "$ts"
+        printf 'previous_round: null\n'
+        printf 'tested_on: {device: "unknown", os_version: "unknown"}\n'
+        printf 'tasks: []\n'
+        printf 'reviews: []\n'
+        printf 'cases: []\n'
+        printf 'legacy_path: "%s"\n' "$f"
+        printf 'legacy_round_number: %s\n' "$round_num"
+        printf 'legacy_body: |\n%s\n' "$body"
+      } > "$out"
+    fi
+    COUNT_ROUNDS=$((COUNT_ROUNDS + 1))
+  done < <(find "$legacy_dir" -maxdepth 1 -type f -name 'user-testing-round*.md' 2>/dev/null)
+  log "  transformed $COUNT_ROUNDS round(s)"
+}
+
+# ---- Release transform: `## Release Log` table in chanakya-master.md → plans/releases/<uuidv7>.yaml ----
+#
+# The table is `| Build | Branch | Date | Key tasks |`. Each row becomes one
+# release artifact. Build column carries `TF-<n>` or `AS-<n>` → channel + build
+# number. Key-tasks column lists `T<nnn>` refs — stored as legacy_task_ids for
+# later reverse-mapping to YAML task UUIDs.
+transform_releases() {
+  local master="$PROJECT_ROOT/plans/chanakya-master.md"
+  [ -f "$master" ] || { log "  no chanakya-master.md — skipping releases"; return 0; }
+
+  # Extract the Release Log section rows between `## Release Log` and the next
+  # `## ` heading (or EOF). Skip the table header + separator rows.
+  local table
+  table=$(awk '/^## Release Log/{in_log=1; next} /^## / && in_log{exit} in_log' "$master" \
+    | grep -E '^\| (TF-|AS-)')
+  [ -z "$table" ] && { log "  no Release Log rows — skipping releases"; return 0; }
+
+  local row build branch date_str tasks tag channel build_num uuid out ts
+  while IFS= read -r row; do
+    [ -z "$row" ] && continue
+    # Split on `|` — fields are: "", build, branch, date, tasks, "". sed-trim leading/trailing space.
+    build=$(printf '%s' "$row"   | awk -F '\\|' '{gsub(/^ +| +$/, "", $2); print $2}')
+    branch=$(printf '%s' "$row"  | awk -F '\\|' '{gsub(/^ +| +$/, "", $3); print $3}')
+    date_str=$(printf '%s' "$row"| awk -F '\\|' '{gsub(/^ +| +$/, "", $4); print $4}')
+    tasks=$(printf '%s' "$row"   | awk -F '\\|' '{gsub(/^ +| +$/, "", $5); print $5}')
+    tag="$build"
+    case "$build" in
+      TF-*)  channel="testflight"; build_num="${build#TF-}" ;;
+      AS-*)  channel="appstore";   build_num="${build#AS-}" ;;
+      *)     channel="testflight"; build_num="${build#*-}" ;;
+    esac
+    # Truncate build_num to digits only (some rows have "3150 (v26.4.15, LIVE)" style).
+    build_num=$(printf '%s' "$build_num" | sed -E 's/[^0-9].*$//')
+    [ -z "$build_num" ] && continue
+
+    uuid=$(derive_uuid "release:$channel:$build_num")
+    out="$PLANS_NEW/releases/$uuid.yaml"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      log "  DRY-RUN write release: $tag → $out"
+    else
+      mkdir -p "$(dirname "$out")"
+      ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      # Extract task-id list (T<nnn> tokens only).
+      local task_list
+      task_list=$(printf '%s' "$tasks" | grep -oE 'T[0-9]+[a-z]*' | sort -u | paste -sd, -)
+      {
+        printf 'schema_version: {name: release, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}\n'
+        printf 'id: %s\n' "$uuid"
+        printf 'channel: %s\n' "$channel"
+        printf 'state: released\n'         # historical entries in the log have shipped; best-effort
+        printf 'build_number: %s\n' "$build_num"
+        printf 'version: "unknown"\n'       # version not in table; enrich later from debriefs
+        printf 'tag: "%s"\n' "$tag"
+        printf 'commit_sha: ""\n'
+        printf 'submitted_at: "%sT00:00:00Z"\n' "$date_str"
+        printf 'last_state_checked_at: %s\n' "$ts"
+        printf 'released_at: null\n'
+        printf 'tasks: []\n'                # legacy_task_ids preserved below; backfill in a follow-up pass
+        printf 'reviews: []\n'
+        printf 'asc_metadata: null\n'
+        printf 'slack: null\n'
+        printf 'notes: null\n'
+        printf 'legacy_tag: "%s"\n' "$tag"
+        printf 'legacy_branch: "%s"\n' "$branch"
+        printf 'legacy_date: "%s"\n' "$date_str"
+        printf 'legacy_task_ids: "%s"\n' "$task_list"
+        printf 'legacy_key_tasks_raw: %s\n' "$(yaml_quote "$tasks")"
+      } > "$out"
+    fi
+    COUNT_RELEASES=$((COUNT_RELEASES + 1))
+  done <<< "$table"
+  log "  transformed $COUNT_RELEASES release(s)"
+}
+
 do_transform() {
   log "phase: transform"
   mkdir -p "$PLANS_NEW"/{tasks,briefs,debriefs,reviews,rounds,releases,feedback,crashes}
   mkdir -p "$EVENTS_NEW"
+  transform_tasks
   transform_briefs
   transform_debriefs
   transform_events
   transform_feedback
+  transform_rounds
+  transform_releases
 }
 
 # -------- Phase 4: verify (delegate to verify-ledger.sh) --------

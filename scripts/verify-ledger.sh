@@ -93,9 +93,13 @@ verify_briefs() {
     legacy_id=$(sed -n 's/^legacy_task_id: "\(.*\)"/\1/p' "$f" | head -n 1)
     local type
     type=$(sed -n 's/^type: //p' "$f" | head -n 1)
-    if [ -z "$legacy_id" ] || [ -z "$type" ]; then
+    if [ -z "$legacy_id" ]; then
+      # Post-cutover brief (no legacy source) — skip rather than flag.
+      continue
+    fi
+    if [ -z "$type" ]; then
       UNPARSEABLE=$((UNPARSEABLE + 1))
-      emit_diff "$f" "missing legacy_task_id or type — cannot reverse-map"
+      emit_diff "$f" "missing type — cannot reverse-map"
       continue
     fi
     legacy_path="$ARCHIVE_ROOT/plans/chanakya-tasks/${legacy_id}-${type}.md"
@@ -129,8 +133,9 @@ verify_debriefs() {
     [ -f "$f" ] || continue
     legacy_id=$(sed -n 's/^legacy_task_id: "\(.*\)"/\1/p' "$f" | head -n 1)
     if [ -z "$legacy_id" ]; then
-      UNPARSEABLE=$((UNPARSEABLE + 1))
-      emit_diff "$f" "missing legacy_task_id"
+      # Post-cutover artifacts (e.g. direct-debriefs from /achilles debrief)
+      # have no legacy source to verify against. Skip rather than flag — verify
+      # is a migration audit, not a runtime-integrity check.
       continue
     fi
     # Legacy path: the file was either in the inbox root or a subdir.
