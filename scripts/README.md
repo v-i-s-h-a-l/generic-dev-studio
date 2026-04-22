@@ -83,6 +83,14 @@ scripts/push-queue.sh mark-displayed <id>...            # clear after surfacing
 scripts/status-domain.sh rounds                         # one-line round summary (prefers YAML; legacy fallback)
 scripts/status-domain.sh releases                       # one-line release summary + push-tf suggestion
 
+# Argus review pipeline — mechanical extractions from argus/SKILL.md (Phase 2.6.5):
+eval "$(scripts/argus-setup.sh T001 S /path/to/worktree)"           # marker + review_requested + trap line
+TASK_ID=T001 eval "$(scripts/argus-diff-extract.sh /path main)"     # BASE_SHA + DIFF_PATH + scope-cap events
+scripts/argus-run-tests.sh T001 MyScheme MyTests                    # xcodebuild + test-slot mgmt; exit 0 green, 3 red
+scripts/argus-verify-tdd.sh T001 /path main MyScheme MyTests        # red→green verify; exit 0 ok, 2 flag, 3 block
+scripts/argus-emit-verdict.sh T001 approved '[]' --task-uuid <uuid> # YAML + legacy md + back-ref + verdict event + stdout line
+scripts/emit-agent-session-completed.sh argus review T001 42 --verdict approved   # shared session-close (any agent)
+
 # Studio-feedback ingestion (auto-fires via SessionStart hook + Chanakya Step 0F):
 scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
 
