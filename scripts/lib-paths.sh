@@ -28,6 +28,8 @@
 #   resolve_events_dir       events/ root for the current project
 #   resolve_events_dir_for   events/ root for a given slug
 #   resolve_event_log        today's events/<YYYY-MM-DD>.jsonl
+#   resolve_auto_sweep_state per-project auto-sweep backoff state file
+#   resolve_derived_data_for per-worktree Xcode DerivedData root (machine-global)
 #
 # Project resolution order:
 #   1. ACHILLES_PROJECT env var (escape hatch for cross-project dispatch / testing)
@@ -225,6 +227,22 @@ resolve_plans_index_for()  { printf '%s\n' "$(resolve_plans_dir_for    "${1:?slu
 resolve_project_root_for() {
   local project="${1:?usage: resolve_project_root_for <slug>}"
   printf '%s\n' "$HOME/.dev-studio/$project"
+}
+
+# Auto-sweep backoff state — persists the next-sweep delay computed by
+# scripts/sweep-adaptive-backoff.sh so subsequent sweeps honor the backoff.
+resolve_auto_sweep_state() {
+  local project
+  project=$(resolve_project) || return 1
+  printf '%s\n' "$HOME/.dev-studio/$project/.runtime/state/auto_sweep_state.md"
+}
+
+# DerivedData root for a given worktree slug. Xcode per-worker isolation —
+# each worker's xcodebuild run points DerivedDataPath at this dir to prevent
+# index contention across parallel workers.
+resolve_derived_data_for() {
+  local worktree_slug="${1:?usage: resolve_derived_data_for <worktree-slug>}"
+  printf '%s\n' "$HOME/.dev-studio/.runtime/derived-data/$worktree_slug"
 }
 
 resolve_project_root() {

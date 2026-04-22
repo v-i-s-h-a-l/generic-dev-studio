@@ -66,6 +66,14 @@ scripts/read-events.sh                                  # current project, dedup
 scripts/read-events.sh --agent achilles --event task_completed --tail 20
 scripts/read-events.sh --project turnip-ios --since 2026-04-18 --until 2026-04-22
 
+# Event writer — CLI wrapper over emit_event_keyed; validates JSON + 4KB cap.
+scripts/write-event.sh --agent achilles --event task_completed --task T001 \
+    --data '{"merge_sha":"abc1234"}' --mode task
+
+# Ledger library (sourced by extraction scripts; see _shared/patterns/dual-write-transition.md):
+#   scripts/lib-ledger.sh       dual-write helpers for plans/<kind>/*.yaml + legacy surfaces
+#   scripts/lib-fixtures.sh     scrub-timestamps + YAML/event multiset asserts for fixture replay
+
 # Studio-feedback ingestion (auto-fires via SessionStart hook + Chanakya Step 0F):
 scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
 
