@@ -103,8 +103,7 @@ has_leaky_tokens() {
 build_issue_body() {
   local file="$1" ts="$2" kind="$3"
   local body
-  body=$(awk 'BEGIN{skip=1} /^---[[:space:]]*$/ { if (skip<2) {skip++; next} }
-              skip>=2 { print }' "$file")
+  body=$(awk '/^---[[:space:]]*$/ { n++; next } n>=2 { print }' "$file")
   printf '%s\n\n---\n\nOriginated from a studio-feedback record on %s (kind: %s). Sanitized per CLAUDE.md privacy rules.\n' \
     "$body" "$ts" "$kind"
 }
