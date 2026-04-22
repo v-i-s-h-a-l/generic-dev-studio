@@ -52,7 +52,7 @@ Walk `~/.dev-studio/generic-dev-studio/feedback-inbox/<project>/*.md` (or all sc
 
 ### Step 0D — Full-load fallback: events-tail
 
-Read the last 25 lines of today's event log at `<project-memory>/events/<YYYY-MM-DD>.jsonl` (resolve via `resolve_event_log`).
+Read the last 25 lines of today's event log at `~/.dev-studio/<project>/events/<YYYY-MM-DD>.jsonl` (resolve via `resolve_event_log`).
 
 ## Step 1 — Render task table (from briefs snapshot or fallback)
 

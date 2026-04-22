@@ -13,7 +13,7 @@ How generic-dev-studio observes itself. Runs **from this repo**, never from the 
 | # | Source | Path | What it tells you |
 |---|---|---|---|
 | 1 | **Feedback inbox** | `~/.dev-studio/generic-dev-studio/feedback-inbox/<project>/*.md` | User-authored records of rule gaps, rule misses, bugs, ideas. Highest signal per token — already distilled, often with proposed designs. Read **first**. |
-| 2 | Event log | `~/.claude/projects/<slug>/memory/events/*.jsonl` | Task lifecycle, review verdicts, dispatch events. Primary mechanical signal. |
+| 2 | Event log | `~/.dev-studio/<project>/events/*.jsonl` | Task lifecycle, review verdicts, dispatch events. Primary mechanical signal. |
 | 3 | Debriefs | `~/.dev-studio/<project>/plans/chanakya-inbox/processed/*-debrief.md` | What Achilles wrote when the work landed. Look for patterns in "Key Learnings" + "Blockers". |
 | 4 | Argus reviews | `~/.claude/projects/<slug>/memory/reviews/*.md` + `reviews/archive/` | Flag/block frequency by rule. Feeds REVIEW.md rule evolution. |
 | 5 | Worker logs | `~/.dev-studio/<project>/.runtime/achilles-inbox/worker-*/worker.log` | Per-task timing, stuck states, rescue events. |

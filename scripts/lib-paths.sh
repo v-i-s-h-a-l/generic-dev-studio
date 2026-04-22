@@ -25,6 +25,9 @@
 #   resolve_feedback_dir_for plans/feedback/
 #   resolve_crashes_dir_for  plans/crashes/
 #   resolve_plans_index_for  plans/index.yaml
+#   resolve_events_dir       events/ root for the current project
+#   resolve_events_dir_for   events/ root for a given slug
+#   resolve_event_log        today's events/<YYYY-MM-DD>.jsonl
 #
 # Project resolution order:
 #   1. ACHILLES_PROJECT env var (escape hatch for cross-project dispatch / testing)
@@ -94,7 +97,11 @@ resolve_dispatch_queue() {
 # the repo toplevel path with `/` → `-` (leading slash included, so a repo at
 # `/Users/x/work/foo` maps to `-Users-x-work-foo`).
 # Read _shared/primitives/file-locations.md for the full scheme.
-# Used by scripts that need to append to the shared event log.
+#
+# LEGACY ROOT. Under ~/.claude/, outside the studio's ~/.dev-studio/ allowlist.
+# Kept only for legacy readers (migrate-ledger consolidating pre-2.6 events,
+# Claude Code's own auto-managed memory). New runtime writes must go under
+# ~/.dev-studio/<project>/ via resolve_events_dir / resolve_project_root_for.
 resolve_project_memory() {
   local top
   top=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
@@ -102,10 +109,24 @@ resolve_project_memory() {
   printf '%s\n' "$HOME/.claude/projects/${slug}/memory"
 }
 
+# Per-project events dir — post-2.6 canonical location for the day-partitioned
+# event log (~/.dev-studio/<project>/events/). Both writers (append_event) and
+# readers (read-events.sh, budget-report.sh, chanakya-snap.sh) resolve here.
+resolve_events_dir_for() {
+  local project="${1:?usage: resolve_events_dir_for <slug>}"
+  printf '%s\n' "$HOME/.dev-studio/$project/events"
+}
+
+resolve_events_dir() {
+  local project
+  project=$(resolve_project) || return 1
+  resolve_events_dir_for "$project"
+}
+
 resolve_event_log() {
-  local memory
-  memory=$(resolve_project_memory) || return 1
-  printf '%s\n' "$memory/events/$(date -u +%Y-%m-%d).jsonl"
+  local dir
+  dir=$(resolve_events_dir) || return 1
+  printf '%s\n' "$dir/$(date -u +%Y-%m-%d).jsonl"
 }
 
 # Append one JSONL event to today's event log. Caller provides agent, event,
@@ -126,9 +147,8 @@ append_event() {
 # N days of event logs (default 14). Empty output if nothing matches.
 find_recent_event_ts() {
   local target_event="$1" target_task="$2" days="${3:-14}"
-  local memory events_dir f
-  memory=$(resolve_project_memory) || return 1
-  events_dir="$memory/events"
+  local events_dir f
+  events_dir=$(resolve_events_dir) || return 1
   [ -d "$events_dir" ] || return 1
   # Filenames are YYYY-MM-DD.jsonl — lexicographic sort == date sort.
   ls -r "$events_dir"/*.jsonl 2>/dev/null | head -n "$days" | while IFS= read -r f; do

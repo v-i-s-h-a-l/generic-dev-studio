@@ -159,7 +159,7 @@ DerivedData is reused from Achilles's build — no recompile. A staleness guard 
 All agents write structured events to a daily append-only JSONL file:
 
 ```
-~/.claude/projects/-Users-.../memory/events/<YYYY-MM-DD>.jsonl
+~/.dev-studio/<project>/events/<YYYY-MM-DD>.jsonl
 ```
 
 Each line: `{"ts":"ISO8601","agent":"achilles|argus|chanakya","event":"<name>","task":"T001","data":{...}}`

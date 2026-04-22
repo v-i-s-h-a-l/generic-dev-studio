@@ -3,7 +3,8 @@
 # days and print a per-(agent, mode) roll-up: run count, p50/p95 tokens, seed
 # budget, p95/budget ratio, cache_hit_rate, ctx_util_pct.
 #
-# Reads events from `resolve_project_memory()/events/YYYY-MM-DD.jsonl`. Emits
+# Reads events from `resolve_events_dir()/YYYY-MM-DD.jsonl` (post-2.6 canonical
+# root under ~/.dev-studio/<project>/events/). Emits
 # a human-readable table to stdout. Intended to be wired into Chanakya's
 # compact mode so the user sees the report on every sweep (see
 # _shared/patterns/budget-telemetry.md).
@@ -44,11 +45,10 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 2
 fi
 
-memory=$(resolve_project_memory 2>/dev/null) || {
-  printf 'budget-report: no project memory resolved — run from inside a project git repo\n' >&2
+events_dir=$(resolve_events_dir 2>/dev/null) || {
+  printf 'budget-report: no project resolved — run from inside a project git repo\n' >&2
   exit 1
 }
-events_dir="$memory/events"
 if [ ! -d "$events_dir" ]; then
   printf 'budget-report: no events dir at %s (empty report)\n' "$events_dir" >&2
   printf 'Budget report (last %d days)\n(no events)\n' "$DAYS"
