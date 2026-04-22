@@ -110,6 +110,8 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `appstore_released` | Watcher observed terminal state (`PENDING_DEVELOPER_RELEASE` / `READY_FOR_SALE`) and finalized: draft published, Slack reply posted, marker deleted. | `final_state`, `tag` |
 | `appstore_watch_stuck` | Watcher hit ≥3 consecutive failures (JWT, ASC query, `gh release edit`, or Slack post). Marker's `stuck: true` flag is set; next sweep will surface a banner and retry. | `reason`, `failures`, `state` (optional — present when failure was during finalize) |
 | `legacy_artifact_read` | A runtime script fell back to a pre-Phase-2.6 path because the post-2.6 ledger shape was unavailable (`plans/index.yaml` missing, `plans/debriefs/` absent, or `yq` unavailable on the machine). One emit per sweep per domain — makes the transition to the canonical layout observable. Task field is empty. | `domain` (`briefs`\|`debriefs`), `reason` (`plans_index_missing`\|`plans_debriefs_missing`\|`yq_unavailable`), `caller` (script name) |
+| `legacy_event_source_retired` | `scripts/migrate-ledger.sh` cleanup phase moved a pre-2.6 event-log sibling (e.g. `event-log.jsonl`, `events.log`) to `archive/2026-pre-2.6/legacy-event-sources/` after verifying parity against the canonical day-partitioned files. Task field is empty. | `source` (relative path), `source_lines`, `canonical_lines` |
+| `feedback_placeholder_pruned` | `scripts/migrate-ledger.sh` cleanup phase removed a `.gitkeep`-only subdir under `feedback/` (e.g. `feedback/root-causes/`). Recreated lazily on first real write. Task field is empty. | `path` (relative path) |
 
 ### Snapshot events (router-pattern)
 

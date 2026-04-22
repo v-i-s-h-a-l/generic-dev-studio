@@ -130,6 +130,15 @@ cat > "$PROJ_ROOT/feedback-inbox/turnip-ios/reports/F-001.md" <<'EOF'
 Reporter: @user1
 EOF
 
+# Post-migration layout (feedback/) with placeholder subdirs that the cleanup
+# phase should prune, and one content-bearing subdir that must survive.
+mkdir -p "$PROJ_ROOT/feedback/root-causes"
+mkdir -p "$PROJ_ROOT/feedback/reporters"
+mkdir -p "$PROJ_ROOT/feedback/archive"
+touch "$PROJ_ROOT/feedback/root-causes/.gitkeep"
+touch "$PROJ_ROOT/feedback/reporters/.gitkeep"
+printf 'build 3146 feedback\n' > "$PROJ_ROOT/feedback/archive/build-3146.md"
+
 # Dirty the mtimes so pre-flight's 60s check passes (synthetic files are
 # brand-new). Use touch -t with an old timestamp.
 find "$PROJ_ROOT" -type f -exec touch -t 202604220000 '{}' \; 2>/dev/null || true
@@ -227,6 +236,19 @@ assert "#10 retirement event carries parity metrics" \
 
 assert "#10 no event-log files outside events/ post-cleanup" \
   "[ -z \"\$(find '$PROJ_ROOT' -maxdepth 4 -type f \\( -name 'event-log.jsonl' -o -name 'events.ndjson' -o -name 'chanakya-events.jsonl' \\) -not -path '*/archive/*' 2>/dev/null)\" ]"
+
+# ---- #11 feedback/ placeholder pruning (new layout) ----
+assert "#11 feedback/root-causes pruned (placeholder only)" \
+  "[ ! -d '$PROJ_ROOT/feedback/root-causes' ]"
+
+assert "#11 feedback/reporters pruned (placeholder only)" \
+  "[ ! -d '$PROJ_ROOT/feedback/reporters' ]"
+
+assert "#11 feedback/archive preserved (has real content)" \
+  "[ -f '$PROJ_ROOT/feedback/archive/build-3146.md' ]"
+
+assert "#11 feedback_placeholder_pruned event emitted" \
+  "grep -q '\"event\":\"feedback_placeholder_pruned\"' '$PROJ_ROOT/events/'*.jsonl"
 
 # ---- #8 verify-ledger passes ----
 # Capture rc without triggering `set -e` on a non-zero exit.

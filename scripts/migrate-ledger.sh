@@ -255,6 +255,7 @@ COUNT_MISFILED_DEBRIEFS=0
 COUNT_UNPARSEABLE=0
 COUNT_RETIRED=0
 COUNT_RETIRE_SKIPPED=0
+COUNT_FEEDBACK_PRUNED=0
 
 # Write one line to the migration report. Created on first call.
 report() {
@@ -737,6 +738,41 @@ do_cleanup() {
     retire_one "$src"
   done
   log "  retired $COUNT_RETIRED source(s); skipped $COUNT_RETIRE_SKIPPED on parity fail"
+
+  prune_feedback_placeholders
+  log "  pruned $COUNT_FEEDBACK_PRUNED feedback placeholder dir(s)"
+}
+
+# Prune .gitkeep-only subdirs under the post-migration feedback/ tree.
+# Placeholders are created once by scaffolding and reappear lazily on first
+# real write — keeping them in the live tree post-cutover is cosmetic clutter
+# that makes the new layout look busier than it is.
+#
+# Safety: skips any dir with non-.gitkeep content. Emits a
+# feedback_placeholder_pruned event per removed dir so consumers can see the
+# change land.
+prune_feedback_placeholders() {
+  local fb_root="$PROJECT_ROOT/feedback"
+  [ -d "$fb_root" ] || return 0
+  local d content_count rel ts day_file
+  while IFS= read -r d; do
+    [ -d "$d" ] || continue
+    content_count=$(find "$d" -type f ! -name '.gitkeep' 2>/dev/null | head -n 1 | wc -l | tr -d ' ')
+    [ "$content_count" -gt 0 ] && continue
+    rel="${d#$PROJECT_ROOT/}"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      log "  DRY-RUN would prune placeholder: $rel"
+    else
+      rm -rf "$d"
+      ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      day_file="$EVENTS_NEW/$(date -u +%Y-%m-%d).jsonl"
+      mkdir -p "$EVENTS_NEW"
+      printf '{"ts":"%s","agent":"chanakya","event":"feedback_placeholder_pruned","task":"","data":{"path":"%s"}}\n' \
+        "$ts" "$rel" >> "$day_file"
+    fi
+    report "- pruned feedback placeholder: $rel"
+    COUNT_FEEDBACK_PRUNED=$((COUNT_FEEDBACK_PRUNED + 1))
+  done < <(find "$fb_root" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
 }
 
 # -------- Phase 6: report --------
@@ -754,6 +790,7 @@ emit_report() {
   report "- unparseable artifacts: $COUNT_UNPARSEABLE"
   report "- legacy event-log sources retired: $COUNT_RETIRED"
   report "- legacy event-log sources skipped (parity fail): $COUNT_RETIRE_SKIPPED"
+  report "- feedback placeholder dirs pruned: $COUNT_FEEDBACK_PRUNED"
   report ""
   report "## Next steps"
   report ""
