@@ -12,7 +12,7 @@ Every agent — Chanakya, Achilles, Argus, and anything later — emits events t
 
 1. **Every event carries `producer`.** The envelope has `{agent, mode, instance_id}`. `instance_id` distinguishes parallel workers on the same agent. Without `producer`, cross-agent debugging degenerates into guessing.
 2. **Every event carries `idempotency_key` when the emitting action is writable.** Construction per `idempotency.md`. Session-lifecycle events (`agent_session_completed`, `snapshot_generated`) do not need keys — they do not represent a dedupable write.
-3. **Reader-side dedupe on `(producer.agent, idempotency_key)`.** Best-effort: duplicates are rare at single-user scale. A 50-line reader primitive is deferred (see `PHASE-2-5-PLAN.md` §8) — ad-hoc consumers apply the rule by hand until then.
+3. **Reader-side dedupe on `(producer.agent, idempotency_key)`.** Best-effort: duplicates are rare at single-user scale. Use `scripts/read-events.sh` (first-occurrence wins); events without `idempotency_key` — session lifecycle (`agent_session_completed`) and snapshot events — pass through unchanged.
 4. **≤ 4096 bytes per line.** POSIX `O_APPEND` is atomic only under `PIPE_BUF`. Long payloads truncate strings at 200 chars or link to artifact files (`review_file`, `debrief_path`).
 5. **Append pattern is `printf >>`.** Not `echo`, not buffered. See `events.md` for the pattern.
 6. **Emit before sitting idle.** `agent_session_completed` is mandatory at the end of every agent session (any mode). Duration alone is still useful if token counts are unavailable.

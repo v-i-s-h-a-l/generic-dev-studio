@@ -61,6 +61,11 @@ scripts/achilles-queue.sh clear                # wipe queue (abort scenarios onl
 scripts/analyze-collect.sh --project turnip-ios         # stats dump for a usage-analysis pass
 scripts/analyze-collect.sh --project turnip-ios --since 2026-04-01
 
+# Event log reader (dedupes on producer.agent + idempotency_key; see _shared/contracts/event-emission.md):
+scripts/read-events.sh                                  # current project, deduped
+scripts/read-events.sh --agent achilles --event task_completed --tail 20
+scripts/read-events.sh --project turnip-ios --since 2026-04-18 --until 2026-04-22
+
 # Studio-feedback ingestion (auto-fires via SessionStart hook + Chanakya Step 0F):
 scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
 

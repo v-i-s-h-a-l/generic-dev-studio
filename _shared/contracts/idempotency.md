@@ -21,7 +21,7 @@ Single-user workflows still produce retries — a worker restart, a dispatched t
    - Not found → perform the write.
    **No locks.** Single-writer-per-subject is enforced by the upstream state machine (e.g. one Achilles worktree per task).
 4. **Retries MUST reuse the original key.** If a producer retries after a crash, it recomputes the key from the same inputs and lands on the same value. Never regenerate a key with `uuidgen` on retry.
-5. **Event log is best-effort append.** Appends are not deduped at write time — two writers racing on the same key will both land. Readers (see `event-emission.md`) dedupe on `(producer.agent, idempotency_key)` when they care. At this project's scale (single-user serial workflow), duplicates are rare; the reader primitive is deferred (see `PHASE-2-5-PLAN.md` §8).
+5. **Event log is best-effort append.** Appends are not deduped at write time — two writers racing on the same key will both land. Readers (see `event-emission.md`) dedupe on `(producer.agent, idempotency_key)` via `scripts/read-events.sh` when they care. At this project's scale (single-user serial workflow), duplicates are rare; the reader is a thin wrapper rather than a critical path.
 6. **Partial-failure recovery.** A producer that crashed mid-write re-runs with the same key. If the first attempt landed, §3 catches it; if it didn't, the retry completes the write.
 
 ## Key-construction examples
