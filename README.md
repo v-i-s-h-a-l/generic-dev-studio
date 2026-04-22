@@ -181,8 +181,10 @@ chmod +x ~/.claude/skills/scripts/*.sh
 ### Fleet prerequisites (only if you'll use multi-worker mode)
 
 ```bash
-brew install fswatch coreutils
+brew install fswatch coreutils yq
 ```
+
+`yq` (v4+) is required by `scripts/rebuild-index.sh`, `scripts/query-plans.sh`, and `scripts/detect-edits.sh` — post-2.6 artifacts are YAML. Without it, `scripts/migrate-ledger.sh` fails pre-flight and legacy-fallback paths fire on every read.
 
 ### Git hooks (contributors only)
 

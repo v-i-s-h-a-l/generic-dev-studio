@@ -41,7 +41,7 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 PROJECT=""
 FORCE=0
 DRY_RUN=0
-PHASES="pre-flight,backup,transform,verify,cleanup,report"
+PHASES="pre-flight,backup,transform,verify,cleanup,index,report"
 
 usage() {
   sed -n '3,/^$/p' "$0" | sed 's/^# \{0,1\}//'
@@ -174,7 +174,16 @@ preflight_check() {
     fi
   done <<< "$alive_candidates"
 
-  # 3. No uncommitted changes in any worktree under $PROJECT_ROOT/worktrees.
+  # 3. yq is installed. Without it, rebuild-index.sh cannot write plans/index.yaml,
+  #    which leaves the post-migration tree in a broken half-state where every
+  #    query-plans.sh call fails. Surfacing this up-front is worth much more than
+  #    the silent index gap it replaces (see #70).
+  if ! command -v yq >/dev/null 2>&1; then
+    log "  FAIL: yq not installed. Install with 'brew install yq' — required for plans/index.yaml."
+    failed=1
+  fi
+
+  # 4. No uncommitted changes in any worktree under $PROJECT_ROOT/worktrees.
   local worktree_dirs
   worktree_dirs=$(find "$PROJECT_ROOT/worktrees" -maxdepth 2 -type d -name '.git' 2>/dev/null \
     | sed 's|/\.git$||' || true)
@@ -775,6 +784,34 @@ prune_feedback_placeholders() {
   done < <(find "$fb_root" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
 }
 
+# -------- Phase 5.75: rebuild-index — materialize plans/index.yaml --------
+#
+# Without this, the post-migration tree has per-artifact YAML files under
+# plans/*/ but no relational join table, so `scripts/query-plans.sh` errors
+# and every downstream consumer that expects the index falls back to legacy
+# globs. Invoking rebuild-index.sh here makes the migration atomic: either
+# the project is fully on the post-2.6 layout or the run errors.
+
+do_rebuild_index() {
+  log "phase: index (rebuild plans/index.yaml)"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "  DRY-RUN skip: would invoke rebuild-index.sh --project $PROJECT"
+    return 0
+  fi
+  local rebuild_script="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/rebuild-index.sh"
+  if [ ! -x "$rebuild_script" ]; then
+    log "  WARN: rebuild-index.sh not executable ($rebuild_script) — skipping"
+    return 0
+  fi
+  if ! ACHILLES_PROJECT_ROOT="$PROJECT_ROOT" "$rebuild_script" --project "$PROJECT" >/dev/null 2>&1; then
+    log "  ERROR: rebuild-index.sh failed. plans/index.yaml may be stale or missing."
+    report "- index-rebuild-failed: plans/index.yaml may be stale or missing"
+    return 0
+  fi
+  log "  plans/index.yaml rebuilt"
+  report "- plans/index.yaml rebuilt"
+}
+
 # -------- Phase 6: report --------
 
 emit_report() {
@@ -808,6 +845,7 @@ phase_enabled backup     && backup_project
 phase_enabled transform  && do_transform
 phase_enabled verify     && do_verify
 phase_enabled cleanup    && do_cleanup
+phase_enabled index      && do_rebuild_index
 phase_enabled report     && emit_report
 
 log "done"

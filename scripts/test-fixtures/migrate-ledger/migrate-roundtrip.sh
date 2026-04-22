@@ -250,6 +250,16 @@ assert "#11 feedback/archive preserved (has real content)" \
 assert "#11 feedback_placeholder_pruned event emitted" \
   "grep -q '\"event\":\"feedback_placeholder_pruned\"' '$PROJ_ROOT/events/'*.jsonl"
 
+# ---- #12 plans/index.yaml rebuilt post-migration ----
+if command -v yq >/dev/null 2>&1; then
+  assert "#12 plans/index.yaml exists post-migration" \
+    "[ -f '$PROJ_ROOT/plans/index.yaml' ]"
+  assert "#12 plans/index.yaml is valid YAML" \
+    "yq '.' '$PROJ_ROOT/plans/index.yaml' >/dev/null 2>&1"
+else
+  printf 'SKIP: yq not installed — skipping #12 plans/index.yaml assertions\n'
+fi
+
 # ---- #8 verify-ledger passes ----
 # Capture rc without triggering `set -e` on a non-zero exit.
 set +e
