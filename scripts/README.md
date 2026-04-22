@@ -112,6 +112,17 @@ scripts/tests-write-round.sh <N> <scope> <tasks-csv> <body-file>   # round artif
 scripts/tests-promote-round.sh <N>                      # gate-check + pre-checked manifest; exit 3 on gate fail
 scripts/tests-diff-rounds.sh <A> <B>                    # markdown diff between rounds
 
+# Achilles task mode — mechanical extractions from modes/task.md (Phase 2.6.5):
+eval "$(scripts/task-load-spec.sh T001)"                # TASK_MODE/BRIEF_PATH/SIZE/TYPE/ACCEPTANCE_JSON
+scripts/task-build-debt-gate.sh [--override]            # exit 2 if blocked; emits build_debt_blocked
+scripts/task-claim.sh <task-uuid> <brief-uuid> <size> <gate>   # task + brief state transitions
+eval "$(scripts/task-worktree-setup.sh T001 /repo)"     # PROJECT/ORIG_BRANCH/ORIG_HEAD/WORKTREE
+scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" # xcodebuild + lock
+scripts/task-write-test-cases.sh T001 '[{...}]'         # twin-write standalone + stdout YAML
+scripts/task-invoke-argus.sh T001 /wt main S            # emits review_requested (Argus invoked via Agent tool)
+scripts/task-merge.sh T001 /wt feature-branch           # merge lock + merge + worktree remove + DerivedData clean
+scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # YAML + legacy md + state flips
+
 # Studio-feedback ingestion (auto-fires via SessionStart hook + Chanakya Step 0F):
 scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
 

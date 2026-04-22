@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# task-worktree-setup.sh — Step 3 of the Achilles task mode.
+#
+# Captures the pre-dispatch ORIG_BRANCH + ORIG_HEAD from the shared main
+# checkout (so the uncommitted working tree stays untouched) and creates the
+# isolated worktree at `~/.dev-studio/<project>/worktrees/<task-id>`. Prints
+# eval-able export lines the caller sources — matches argus-setup.sh's
+# contract so downstream steps can pick up PROJECT/ORIG_BRANCH/ORIG_HEAD/
+# WORKTREE without re-forking git.
+#
+# Usage:
+#   eval "$(scripts/task-worktree-setup.sh <task-id> <repo-root>)"
+#
+# Exit codes:
+#   0  worktree created (or simulated under DRY_RUN=1)
+#   2  missing args, repo-root not a git repo, or worktree add failed
+
+set -u
+umask 022
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+# shellcheck source=lib-paths.sh
+. "$SCRIPT_DIR/lib-paths.sh"
+
+TASK_ID="${1:?usage: task-worktree-setup.sh <task-id> <repo-root>}"
+REPO_ROOT="${2:?repo-root required}"
+
+[ -d "$REPO_ROOT/.git" ] || git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1 || {
+  printf 'error: %s is not a git repo\n' "$REPO_ROOT" >&2
+  exit 2
+}
+
+PROJECT=$(basename "$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)") \
+  || { printf 'error: cannot resolve project slug from %s\n' "$REPO_ROOT" >&2; exit 2; }
+ORIG_BRANCH=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null) \
+  || { printf 'error: git rev-parse --abbrev-ref HEAD failed\n' >&2; exit 2; }
+ORIG_HEAD=$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null) \
+  || { printf 'error: git rev-parse HEAD failed\n' >&2; exit 2; }
+
+WORKTREE="$HOME/.dev-studio/$PROJECT/worktrees/$TASK_ID"
+BRANCH="achilles/$TASK_ID"
+
+if [ "${DRY_RUN:-0}" = "1" ]; then
+  # Honors patterns/dry-run.md — log the mutation, still export the variables
+  # so downstream dry-run steps have a stable $WORKTREE value to log against.
+  printf 'DRY-RUN git worktree add %s -b %s %s\n' "$WORKTREE" "$BRANCH" "$ORIG_HEAD" >&2
+else
+  mkdir -p "$(dirname "$WORKTREE")" || {
+    printf 'error: mkdir -p %s failed\n' "$(dirname "$WORKTREE")" >&2
+    exit 2
+  }
+  # If the branch already exists (retry after crash), -B would clobber it;
+  # prefer to fail loudly and let the caller decide. Keeping behavior parity
+  # with the prose pre-extraction.
+  if ! git -C "$REPO_ROOT" worktree add "$WORKTREE" -b "$BRANCH" "$ORIG_HEAD" >/dev/null 2>&1; then
+    printf 'error: git worktree add %s -b %s %s failed\n' "$WORKTREE" "$BRANCH" "$ORIG_HEAD" >&2
+    exit 2
+  fi
+fi
+
+printf 'export PROJECT=%s\n' "$PROJECT"
+printf 'export ORIG_BRANCH=%s\n' "$ORIG_BRANCH"
+printf 'export ORIG_HEAD=%s\n' "$ORIG_HEAD"
+printf 'export WORKTREE=%s\n' "$WORKTREE"

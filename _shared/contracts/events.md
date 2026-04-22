@@ -68,8 +68,11 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `review_flagged` | Argus returned flag | `review_file`, `finding_count` |
 | `review_blocked` | Argus returned block | `review_file`, `block_reason` |
 | `merge_conflict` | Merge failed with conflict | `branch`, `files` |
+| `build_check_started` | Step 6 build gate entry — LSP or xcodebuild run begins | `mode` (`lsp-only`\|`full-green`), `worktree` |
+| `build_check_passed` | Step 6 build gate green — gate clears the task for merge | `mode`, `files` (lsp-only) \| `warnings` (full-green), `scheme` (full-green) |
+| `build_check_failed` | Step 6 build gate red — blocks merge; task left in-flight for the user to resolve | `mode`, `errors`, `warnings` (full-green), `reason` (`locked_out` iff lock wait exceeded), `scheme` (full-green) |
 | `build_debt_warned` | Build debt crosses warn threshold | `counter`, `threshold` |
-| `build_debt_blocked` | Build debt crosses block threshold | `counter` |
+| `build_debt_blocked` | Build debt crosses block threshold | `counter`, `override_attempted` (true when Achilles ran with `--ignore-build-debt` against an already-blocked counter) |
 | `task_awaiting_user` | Subagent cannot pick a default and must block for user input. Always paired with a debrief at `status: blocked_awaiting_input`. | `question` (≤200 chars), `brief_excerpt` (≤200 chars, the Phase-0 block or the ambiguous spec line), `mode` (`autonomous`\|`interactive`) |
 | `task_cancelled` | User cancelled a pending or in-flight task (`scripts/achilles-cancel.sh` or an Achilles abort). Paired with no `task_completed`. | `stage` (`pending`\|`in_flight`\|`merged`), `reason` (`user_abort`\|`replaced`\|`stale_brief`\|`other`), `worker` (`worker-N` if known) |
 | `task_rescued` | Worker moved a task to `rescue/` — either `timeout` (rc=124 from `gtimeout`) or `silent_stuck` (rc=0 with no debrief written). Emitted by `scripts/achilles-worker.sh`. Visible equivalent of the rescue file, so Chanakya can surface + push without polling worker directories. | `reason` (`timeout`\|`silent_stuck`), `timeout_s` (only on timeout), `rc`, `debrief_written` (0\|1), `worker` (`worker-N`) |
