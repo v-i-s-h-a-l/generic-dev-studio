@@ -61,7 +61,12 @@ MEMORY=$(find_memory "$PROJECT") || {
 
 EVENT_DIR="$MEMORY/events"
 REVIEW_DIR="$MEMORY/reviews"
-INBOX_PROCESSED="$(resolve_chanakya_inbox_for "$PROJECT")/processed"
+PROJECT_ROOT=$(resolve_project_root_for "$PROJECT")
+# Post-2.6: canonical debriefs live at plans/debriefs/*.yaml. Pre-2.6
+# artifacts were archived as-is in plans/chanakya-inbox/processed/ per Q18
+# — analysis tools walk both to preserve historical continuity.
+DEBRIEFS_DIR_NEW="$PROJECT_ROOT/plans/debriefs"
+DEBRIEFS_DIR_LEGACY="$PROJECT_ROOT/plans/chanakya-inbox/processed"
 FLEET_ROOT=$(resolve_inbox_root_for "$PROJECT")
 FEEDBACK_INBOX=$(resolve_feedback_inbox_for "$PROJECT")
 
@@ -124,14 +129,23 @@ fi
 echo
 
 echo "## Debriefs processed"
-if [ -d "$INBOX_PROCESSED" ]; then
-  count=$(find "$INBOX_PROCESSED" -name '*-debrief.md' -type f 2>/dev/null | wc -l | tr -d ' ')
-  echo "count: $count"
-  echo "most recent:"
-  find "$INBOX_PROCESSED" -name '*-debrief.md' -type f 2>/dev/null \
-    | xargs ls -lt 2>/dev/null | head -5 | awk '{print "  "$NF}'
+new_count=0
+legacy_count=0
+[ -d "$DEBRIEFS_DIR_NEW" ] && \
+  new_count=$(find "$DEBRIEFS_DIR_NEW" -maxdepth 1 -name '*.yaml' -type f 2>/dev/null | wc -l | tr -d ' ')
+[ -d "$DEBRIEFS_DIR_LEGACY" ] && \
+  legacy_count=$(find "$DEBRIEFS_DIR_LEGACY" -name '*-debrief.md' -type f 2>/dev/null | wc -l | tr -d ' ')
+total=$(( new_count + legacy_count ))
+if [ "$total" -eq 0 ]; then
+  echo "(no debriefs under $DEBRIEFS_DIR_NEW or $DEBRIEFS_DIR_LEGACY)"
 else
-  echo "(no inbox at $INBOX_PROCESSED)"
+  echo "count: $total (canonical=$new_count legacy=$legacy_count)"
+  echo "most recent:"
+  # Union both dirs, sort by mtime, show top 5.
+  {
+    [ -d "$DEBRIEFS_DIR_NEW" ] && find "$DEBRIEFS_DIR_NEW" -maxdepth 1 -name '*.yaml' -type f 2>/dev/null
+    [ -d "$DEBRIEFS_DIR_LEGACY" ] && find "$DEBRIEFS_DIR_LEGACY" -name '*-debrief.md' -type f 2>/dev/null
+  } | xargs ls -lt 2>/dev/null | head -5 | awk '{print "  "$NF}'
 fi
 echo
 

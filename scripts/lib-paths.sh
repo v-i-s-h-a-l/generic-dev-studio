@@ -26,12 +26,6 @@
 #   resolve_crashes_dir_for  plans/crashes/
 #   resolve_plans_index_for  plans/index.yaml
 #
-# DEPRECATED (Phase 2.6 cutover, 2026-04-22) — retained until the last caller
-# upgrades to the YAML shape; see inline comments for removal criteria:
-#   resolve_chanakya_inbox[_for] — legacy plans/chanakya-inbox/ (still holds
-#                                  assets/ + *-tests.md + processed/)
-#   resolve_briefs_dir           — legacy plans/chanakya-tasks/ (pre-migration briefs)
-#
 # Project resolution order:
 #   1. ACHILLES_PROJECT env var (escape hatch for cross-project dispatch / testing)
 #   2. basename of git rev-parse --show-toplevel (normal case)
@@ -181,25 +175,6 @@ emit_predispatch_signals() {
   fi
 }
 
-# DEPRECATED (Phase 2.6 cutover, 2026-04-22): legacy chanakya-inbox root.
-# Post-migration, debriefs live at plans/debriefs/<debrief-id>.yaml (use
-# resolve_debriefs_dir_for). The directory itself is retained because
-# chanakya-inbox/assets/ (Slack screenshots) and *-tests.md (test-case
-# artifacts) were not in-scope for 2.6 migration; chanakya-inbox/processed/
-# holds pre-migration debriefs archived-as-is per Q18. Remove these
-# resolvers when scripts/detect-edits.sh and scripts/achilles-worker.sh
-# upgrade to the YAML shape — tracked as a follow-up issue.
-resolve_chanakya_inbox_for() {
-  local project="${1:?usage: resolve_chanakya_inbox_for <slug>}"
-  printf '%s\n' "$HOME/.dev-studio/$project/plans/chanakya-inbox"
-}
-
-resolve_chanakya_inbox() {
-  local project
-  project=$(resolve_project) || return 1
-  resolve_chanakya_inbox_for "$project"
-}
-
 # Plans dir for a given project — root of the post-2.6 canonical layout.
 # Callers typically glob plans/tasks/*.yaml, plans/briefs/*.yaml, etc., or
 # (preferred) go through scripts/query-plans.sh --kind=<kind>.
@@ -245,19 +220,6 @@ resolve_project_root() {
 resolve_feedback_inbox_for() {
   local project="${1:?usage: resolve_feedback_inbox_for <source-slug>}"
   printf '%s\n' "$HOME/.dev-studio/generic-dev-studio/feedback-inbox/$project"
-}
-
-# DEPRECATED (Phase 2.6 cutover, 2026-04-22): legacy briefs dir.
-# Post-migration, briefs live at plans/briefs/<brief-id>.yaml (use
-# resolve_briefs_dir_for or scripts/query-plans.sh --kind=brief).
-# This returns the pre-migration path because scripts/detect-edits.sh
-# still scans it for brief-mtime diffs against preserved-legacy artifacts.
-# Remove when the last caller upgrades to the YAML shape.
-resolve_briefs_dir() {
-  local project root
-  project=$(resolve_project) || return 1
-  root=$(resolve_project_root_for "$project")
-  printf '%s\n' "$root/plans/chanakya-tasks"
 }
 
 # Friendly display name. Auto-derived in this order:

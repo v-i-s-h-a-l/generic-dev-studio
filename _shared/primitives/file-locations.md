@@ -79,17 +79,17 @@ Queries against the ledger go through `scripts/query-plans.sh --kind=<artifact-k
 
 ### Legacy layout (pre-Phase 2.6, preserved)
 
-Kept for callers that still read historical state until every project has migrated and runtime scripts (`scripts/detect-edits.sh`, `scripts/achilles-worker.sh`) upgrade to the YAML shape. On a migrated project these paths retain pre-cutover artifacts (and `chanakya-inbox/processed/` per Q18 archive-as-is). They are no longer written to.
+Kept for historical reads on migrated projects — the directories still hold pre-cutover artifacts (and `chanakya-inbox/processed/` per Q18 archive-as-is). They are no longer written to.
 
 | Artifact | Path (legacy) | Status |
 |---|---|---|
 | Master plan | `~/.dev-studio/<project>/plans/chanakya-master.md` | Read-only post-migration; replaced by `plans/index.yaml` + `plans/tasks/*.yaml`. |
-| Task briefs | `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md` | Read-only post-migration; replaced by `plans/briefs/*.yaml`. |
-| Debrief inbox | `~/.dev-studio/<project>/plans/chanakya-inbox/` | Still holds `assets/` + `*-tests.md` (not migrated by 2.6). `processed/*-debrief.md` preserved per Q18. New debriefs write to `plans/debriefs/*.yaml`. |
+| Task briefs | `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md` | Read-only post-migration; replaced by `plans/briefs/*.yaml`. Direct-path access only (no resolver — #67 retired `resolve_briefs_dir()` on 2026-04-22). |
+| Debrief inbox | `~/.dev-studio/<project>/plans/chanakya-inbox/` | Still holds `assets/` + `*-tests.md` (not migrated by 2.6). `processed/*-debrief.md` preserved per Q18. New debriefs write to `plans/debriefs/*.yaml`. Direct-path access only (no resolver — #67 retired `resolve_chanakya_inbox[_for]()` on 2026-04-22). |
 | Test-case artifacts | `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-tests.md` | Still written here (migration didn't scope test-case artifacts). |
 | User test manifest | `~/.dev-studio/<project>/plans/user-testing.md` | Read-only post-migration; superseded by `plans/rounds/*.yaml`. |
 | Test-flow rounds | `~/.dev-studio/<project>/plans/user-testing-rounds/user-testing-round<N>.md` | Read-only post-migration; superseded by `plans/rounds/*.yaml`. |
 | Journey map (optional) | `~/.dev-studio/<project>/journey-map.md` | Unchanged — not in ledger scope. |
 | Legacy event files | `~/.dev-studio/<project>/{event-log,events,agents}.{jsonl,log,ndjson}` and `plans/chanakya-events.jsonl` | Read-only post-migration; consolidated into `events/<date>.jsonl`. Migration left the originals in place for recovery; safe to remove in a follow-up sweep. |
 
-Every legacy path above is supported by a deprecated resolver in `scripts/lib-paths.sh` (flagged via comment — removed once the last caller upgrades). New code must target the canonical layout.
+**Resolver status.** The deprecated `resolve_briefs_dir()`, `resolve_chanakya_inbox()`, and `resolve_chanakya_inbox_for()` were retired on 2026-04-22 (#67) after `scripts/detect-edits.sh`, `scripts/achilles-worker.sh`, and `scripts/analyze-collect.sh` upgraded to the YAML shape. Runtime scripts that still need to read the legacy paths (analysis/backfill tools) compose them directly off `resolve_project_root_for()` and emit `legacy_artifact_read` on fallback. New code must target the canonical layout.
