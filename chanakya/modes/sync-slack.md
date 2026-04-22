@@ -2,6 +2,7 @@
 name: Chanakya Sync-Slack
 description: Sync a Slack Lists bug tracker with the Chanakya master plan — Status, Dev Notes, Fixed in Build. Token + project bootstrap flags included.
 type: mode-pack
+transition_notes: _shared/patterns/dual-write-transition.md   # YAML counterpart for `sync.slack_last_synced` lands in Commit G; legacy-only write is waived until then (structural partial, not a drift).
 snapshots: [briefs.json]
 budget_tokens: 3500
 reads:

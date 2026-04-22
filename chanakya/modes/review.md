@@ -2,6 +2,7 @@
 name: Chanakya Review (PRD delta)
 description: Explicit `/chanakya review` sub-command — user pastes updated PRD and Chanakya diffs it against the current master plan / task index, marking affected tasks as `needs-rework`, regenerating stale briefs, and adding new task entries for new requirements. The pre-dispatch inbox sweep (Steps 0A–0G) has moved to `modes/inbox-sweep.md` — this mode pack only loads when the user explicitly runs `/chanakya review`.
 type: mode-pack
+transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [briefs.json]
 budget_tokens: 800
 reads:
@@ -13,6 +14,8 @@ writes:
   - plans/tasks/<task-id>.yaml                     # state transitions (→ needs-rework) and delta notes
   - plans/tasks/<new-task-id>.yaml                 # newly-minted tasks for requirements not present before
   - plans/briefs/<brief-id>.yaml                   # regenerated briefs for stale ones
+  - plans/chanakya-master.md                       # legacy master-plan row mutation during Phase 2.6 transition (dual-write)
+  - plans/chanakya-tasks/<task-id>-<slug>.md       # legacy regenerated brief markdown during Phase 2.6 transition (dual-write, via delegated brief-mode regeneration)
   - plans/index.yaml                               # via scripts/rebuild-index.sh
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---

@@ -2,6 +2,7 @@
 name: Achilles Test-Suite
 description: Composite test-suite mode (`/achilles test-suite <unit|ui|all>`). Runs the full test suite (not individual task tests) against committed HEAD and produces a debrief that resets the corresponding debt counter on Chanakya's next sweep.
 type: mode-pack
+transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: []
 budget_tokens: 1500
 reads:

@@ -2,6 +2,7 @@
 name: Achilles App-Store
 description: App Store Release wrapper (`/achilles app-store`). Wraps the existing `/fullSendToAppStore` skill, captures App Store–specific data (git tag, GitHub release URL) alongside the release artifact + release debrief that bind the submission to Chanakya's task tracking.
 type: mode-pack
+transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: []
 budget_tokens: 1500
 reads:

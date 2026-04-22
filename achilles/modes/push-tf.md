@@ -2,6 +2,7 @@
 name: Achilles Push-TF
 description: TestFlight Release wrapper (`/achilles push-tf`). Wraps the existing `/pushTFBuild` skill, adds pre-flight task collection and post-flight release artifact + debrief. The build workflow itself is unchanged — this mode exists to bind the release to Chanakya's task tracking.
 type: mode-pack
+transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: []
 budget_tokens: 1500
 reads:

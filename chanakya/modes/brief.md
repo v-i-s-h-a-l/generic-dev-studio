@@ -2,6 +2,7 @@
 name: Chanakya Brief
 description: Brief Generation mode and Brief-All composite. Writes self-contained Achilles briefs with Figma context, codebase context, type-aware structure. Brief-All iterates brief generation across every pending task in priority order.
 type: mode-pack
+transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [briefs.json, debt.json]
 budget_tokens: 4000
 reads:

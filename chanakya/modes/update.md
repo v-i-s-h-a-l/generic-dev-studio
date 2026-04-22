@@ -2,6 +2,7 @@
 name: Chanakya Update
 description: Cross-reference git state with the master plan and auto-close tasks whose branches have merged.
 type: mode-pack
+transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: []
 budget_tokens: 2000
 reads:

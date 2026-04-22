@@ -2,6 +2,7 @@
 name: argus
 version: 1.0.0
 description: "Reviewer agent for the Turnip iOS codebase. Runs between Achilles self-review and merge. Checks cross-file regression risk, edge-case coverage, test adequacy, diff anomalies, base-branch staleness, and secrets in diff. Invoked automatically by Achilles pre-merge, or standalone with /argus [<task-id>] on the current worktree. Returns approved|flagged|blocked verdict. XS/S: diff-only (fast). M/L: diff + targeted xcodebuild test run. TDD: additionally verifies red→green transition."
+transition_notes: _shared/patterns/dual-write-transition.md
 ---
 
 # Argus — Reviewer Agent
