@@ -91,6 +91,18 @@ scripts/argus-verify-tdd.sh T001 /path main MyScheme MyTests        # red→gree
 scripts/argus-emit-verdict.sh T001 approved '[]' --task-uuid <uuid> # YAML + legacy md + back-ref + verdict event + stdout line
 scripts/emit-agent-session-completed.sh argus review T001 42 --verdict approved   # shared session-close (any agent)
 
+# Chanakya inbox sweep — mechanical extractions from modes/inbox-sweep.md (Phase 2.6.5):
+scripts/sweep-enumerate-debriefs.sh                     # classify inbox debriefs → task-debrief/build-check/release/direct-debrief
+scripts/sweep-ingest.sh debrief <path> [--argus-exempt] # Step 0A — task + direct-debrief ingest (follow-ups, back-refs, state flip)
+scripts/sweep-ingest.sh build-check <path>              # Step 0B — debt counter reset/hold, TBUILD auto-file on red
+scripts/sweep-ingest.sh release <path>                  # Step 0B2 — release artifact + per-task release back-ref
+scripts/sweep-threshold-actions.sh                      # Step 0C — warn@6 files TBUILD, block@12 sets state flag
+scripts/sweep-janitor.sh all                            # Step 0D — worktrees/feedback-assets/orphans/scaling-alerts (honors DRY_RUN)
+scripts/sweep-process-events.sh                         # Step 0E — event fan-out (drain / push-queue / follow-ups / drift log)
+scripts/sweep-feedback-reminders.sh                     # Step 0E2 — emits feedback_reminder_due for past-due rows
+scripts/sweep-adaptive-backoff.sh 1                     # Step 0G — 900→1800→3600→7200 on blank; reset 900 on activity
+scripts/push-queue.sh append --kind review_blocked --task T001 --text "..."   # used by sweep + argus
+
 # Studio-feedback ingestion (auto-fires via SessionStart hook + Chanakya Step 0F):
 scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
 
