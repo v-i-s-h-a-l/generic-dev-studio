@@ -115,6 +115,26 @@ Every completion-style claim in a debrief (YAML or prose) must cite a specific, 
 
 **Gate taxonomy (issue #84).** The `brief_completed.gate` event field distinguishes four outcomes: `verified` (build green + tests ran + Argus approved), `build-only` (build green, suite disabled), `waived` (build green, Argus skipped on a non-exempt path), `lsp-only` (LSP gate). Use this vocabulary in reviews + debriefs — "full-green" is legacy and ambiguous. A debrief reading `gate: build-only` or `gate: waived` without a matching explanation in `key_learnings` / `decisions` is an R10 hit: the structural signal is present but the WHY is missing. See `_shared/contracts/events.md` → `brief_completed.gate` taxonomy for source-signal rules.
 
+### R11 — No studio-initiated pushes to base branches (tier: **block + auto-fix**)
+
+Scripts and mode prose must never run `git push origin main` (or `master`, or any equivalent integration/base branch) against a project or studio repo. Remote base branches advance **only** through PR merges. Studio-initiated pushes may target feature branches (`push -u origin HEAD`, `push origin <feature-branch>`) or tags (`push origin <tag>`). Integration happens via `gh pr create` / `gh pr merge`, never direct ref advancement.
+
+**Why:** a studio-initiated `git push origin main` was observed bypassing an open PR (#3150), silently advancing the remote while review was still in flight. The PR-gated integration workflow is load-bearing for Argus review, CI, and human sign-off; direct base pushes erase all three gates.
+
+**How to check:**
+- `grep -rnE 'git\s+push.*(origin|upstream).*(main|master|trunk|develop)' scripts/ commands/ chanakya/ achilles/ argus/ _shared/` — expected: zero hits.
+- `git push -u origin HEAD` while on a base branch counts as a violation. Scripts must guard with `[ "$(git symbolic-ref --short HEAD)" != "main" ]` or equivalent before any `push -u HEAD`.
+- Any prose in a SKILL.md or mode file instructing the agent to "push to main" / "update remote main" / "push the merge" is a violation — replace with "open a PR" or "merge via `gh pr merge`".
+
+**Exception:** partition-sync repos (e.g. `scripts/sync-shared-remote.sh` against `~/.dev-studio/.cache/…`) where `main` is the data-store trunk and each machine writes to a disjoint subdirectory. The exception applies only when the push target is a dedicated sync/data repo — never a code repo.
+
+**Fix pattern:** replace `git push origin main` with the PR flow:
+```
+git push -u origin "$FEATURE_BRANCH"
+gh pr create --base main --head "$FEATURE_BRANCH" ...   # or gh pr edit if it exists
+```
+If the intent was to land an already-merged commit, the merge should have happened via `gh pr merge` in the first place — the rule catches the rationalization.
+
 ## Deferred / known gaps
 
 Not rules yet — track here so we remember:
