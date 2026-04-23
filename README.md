@@ -132,6 +132,9 @@ scripts/                # multi-worker fleet (BETA)
 .githooks/
   pre-commit            # architecture linter + privacy gate (enable via core.hooksPath)
 
+hooks/
+  session-start         # Claude Code SessionStart hook — injects router-bootstrap context on startup|resume|clear|compact
+
 _shared/                # reusable primitives (symlinked from ~/.claude/skills/_shared/)
   file-locations.md          # project slug computation + file paths (incl. events/, reviews/)
   build-debt-schema.md       # build debt counter rules + state transitions

@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# session-start — Claude Code SessionStart hook.
+#
+# Reads the router-bootstrap primitive and returns it as `additionalContext`
+# so routing rules, iron laws, and agent roster survive startup / clear /
+# compact events. Without this, long sessions can drop the CLAUDE.md
+# context after /compact, and the next turn loses the invariants.
+#
+# Contract (Claude Code hooks JSON):
+#   stdout must be JSON with:
+#     {
+#       "hookSpecificOutput": {
+#         "hookEventName": "SessionStart",
+#         "additionalContext": "<text to prepend>"
+#       }
+#     }
+#
+# Exit 0 always. Failure modes (missing file, unreadable) emit empty context
+# rather than failing the hook — a degraded session beats a blocked one.
+
+set -u
+umask 022
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+BOOTSTRAP="$REPO_ROOT/_shared/primitives/router-bootstrap.md"
+
+ctx=""
+if [ -f "$BOOTSTRAP" ]; then
+  # Strip YAML frontmatter; keep the prose. Prose is what the session needs;
+  # the name/description/type keys are linter-relevant only.
+  ctx=$(awk '
+    BEGIN { in_fm=0; done=0 }
+    NR==1 && $0=="---" { in_fm=1; next }
+    in_fm==1 && $0=="---" { in_fm=0; done=1; next }
+    in_fm==1 { next }
+    done==1 { print }
+    done==0 && in_fm==0 { print }
+  ' "$BOOTSTRAP")
+fi
+
+# JSON-escape the context (quotes, backslashes, newlines, tabs).
+json_escape() {
+  local s="$1"
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//	/\\t}
+  s=${s//$'\r'/}
+  # Replace actual newlines with literal \n for JSON.
+  s=$(printf '%s' "$s" | awk 'BEGIN { ORS="" } { if (NR>1) printf "\\n"; printf "%s", $0 }')
+  printf '%s' "$s"
+}
+
+escaped=$(json_escape "$ctx")
+
+printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$escaped"
