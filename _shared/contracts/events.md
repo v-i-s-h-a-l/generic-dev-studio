@@ -68,6 +68,8 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `review_flagged` | Argus returned flag | `review_file`, `finding_count`, `stage` (`spec`\|`quality`) |
 | `review_blocked` | Argus returned block | `review_file`, `block_reason`, `stage` (`spec`\|`quality`) |
 | `merge_conflict` | Merge failed with conflict | `branch`, `files` |
+| `base_refreshed` | Step 8.4 auto-refreshed the worktree base (commits-behind ≥ threshold, merge clean). Idempotent: no event when below threshold. | `worktree`, `base_branch`, `commits_pulled`, `threshold` |
+| `base_refresh_conflict` | Step 8.4 attempted a refresh merge and hit conflicts; merge aborted, worktree left clean, Argus not invoked. Caller surfaces to user. | `worktree`, `base_branch`, `commits_pulled`, `threshold`, `files` |
 | `build_check_started` | Step 6 build gate entry — LSP or xcodebuild run begins | `mode` (`lsp-only`\|`full-green`), `worktree` |
 | `build_check_passed` | Step 6 build gate green — gate clears the task for merge | `mode`, `files` (lsp-only) \| `warnings` (full-green), `scheme` (full-green) |
 | `build_check_failed` | Step 6 build gate red — blocks merge; task left in-flight for the user to resolve | `mode`, `errors`, `warnings` (full-green), `reason` (`locked_out` iff lock wait exceeded), `scheme` (full-green) |
