@@ -37,7 +37,7 @@ Accept any format. For each task, extract:
 
 ## Step 2 — Read existing tasks
 
-Post-migration surface: list existing tasks via `scripts/query-plans.sh --kind=task` against `plans/tasks/*.yaml`. Merge new tasks with existing ones; resolve ID collisions by issuing fresh UUIDv7 `id`s and continuing the human-readable `T<nnn>` title prefix from the highest existing sequence.
+Post-migration surface: list existing tasks via `scripts/query-plans.sh --kind=task` against `plans/tasks/*.yaml`. Merge new tasks with existing ones; resolve ID collisions by issuing fresh UUIDv7 `id`s. The human-readable `T<nnn>` prefix comes from `scripts/next-task-id.sh` — see Step 6. Do not infer it from context here.
 
 **Phase 2.6 transition:** if no YAML task artifacts exist yet (migration not run), read `~/.dev-studio/<project>/plans/chanakya-master.md` and emit one `legacy_artifact_read` event so the fallback is visible. Cutover removes the legacy read at Commit H.
 
@@ -111,6 +111,7 @@ Apply the skill assignments and record them in the write summary.
 For each newly-captured task (implementation + any sub-tasks), author one `plans/tasks/<task-id>.yaml` file per schema `_shared/schemas/task.md` (`task@1.0.0`):
 
 - Mint a UUIDv7 for `id` per task.
+- Allocate the human-readable `legacy_task_id` via `scripts/next-task-id.sh` — one call per implementation task; use the returned value (e.g. `T268`). Sub-tasks append a letter suffix to the parent's `legacy_task_id` (`T268a`, `T268b`). **Never guess the T-number from in-context samples** — the allocator scans YAML + master plan + legacy dir + event log and is the only authoritative source. Pass the value through as `legacy_task_id=T268` when calling `write_task_artifact` so the dual-write to `chanakya-master.md` fires.
 - Set `title` to the human-readable label from Step 1.
 - Set `state: proposed` (initial state per `_shared/state-machines/task-lifecycle.md`).
 - Set `size` from the complexity estimate (S/M/L/XL map to `s`/`m`/`l`; XS is introduced separately for trivial direct tasks).

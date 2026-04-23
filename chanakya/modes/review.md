@@ -52,6 +52,8 @@ PRD Delta:
 
 Update the task artifacts (post-migration: `plans/tasks/<task-id>.yaml` state + `history`; legacy: `chanakya-master.md` row). Auto-regenerate any stale briefs (invoke Brief Generation mode for each). Regenerate `plans/index.yaml` via `scripts/rebuild-index.sh`. Emit `task_state_changed` events for each mutated task.
 
+For **NEW** tasks from Step 2, allocate each `legacy_task_id` via `scripts/next-task-id.sh` (one call per new task; each returns the next sequential T-number). Never pick a T-number from context — the script is the authoritative source across YAML + master plan + legacy dir + event log.
+
 Report which briefs were updated and which tasks were marked `needs-rework`.
 
 ## Cross-cutting
