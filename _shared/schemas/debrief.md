@@ -4,7 +4,7 @@ description: YAML shape for Achilles-authored debriefs under plans/debriefs/<deb
 type: reference
 ---
 
-# Debrief Schema (`debrief@2.0.0`)
+# Debrief Schema (`debrief@2.0.2`)
 
 Per-debrief artifact written to `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml`. Replaces the markdown debriefs that previously landed at `plans/chanakya-inbox/<task-id>-debrief.md`. Authored by Achilles in `task` mode (paired with a brief) or in `debrief` mode (direct-debrief, no brief).
 
@@ -73,6 +73,7 @@ argus_review:
   status: approved                                # approved | flagged | blocked | skipped | not-invoked
   review_id: 0190f52a-7a11-7e03-8c99-44df6fd77a77 # null if not-invoked
   notes: null
+report_state: done                                # done | done_with_concerns | blocked | needs_context — see contracts/worker-report.md
 ```
 
 ## Fields
@@ -101,6 +102,7 @@ argus_review:
 | `follow_ups` | array of strings | yes | Future-task hints. Chanakya's debrief-ingest mode may mint tasks from these. |
 | `open_questions` | array of strings | yes | Direct-debrief mode uses this for inline questions the user answered. Usually empty for task mode. |
 | `argus_review` | object | yes | `{status, review_id, notes}`. Status `not-invoked` only valid when Argus was bypassed (xs-skip or direct-debrief). |
+| `report_state` | enum \| absent | no | `done` \| `done_with_concerns` \| `blocked` \| `needs_context`. Worker-report contract — see `contracts/worker-report.md`. Absent in pre-2.0.2 debriefs; readers infer from other fields for back-compat. |
 
 ## Modes
 
@@ -134,6 +136,7 @@ The 141 processed debriefs in `chanakya-inbox/processed/` are **copied as-is** t
 
 | Version | Landed | Changes |
 |---|---|---|
+| 2.0.2 | 2026-04-23 | Non-breaking: add optional `report_state` field (4-state worker-report enum). Back-compat reader rule in `contracts/worker-report.md`. Drawn from obra/superpowers. |
 | 2.0.1 | 2026-04-22 | Non-breaking: add `state` field (`emitted` \| `ingested` \| `superseded`). Missing `state` is read as `emitted` for back-compat. Motivated by direct-debriefs having no parent-task history to mark as ingested. |
 | 2.0.0 | 2026-04-22 | Breaking: full YAML shape replaces markdown. `mode` field distinguishes task vs direct-debrief. `testability` becomes a typed object. `build_gate` / `build_debt_override` promoted to first-class fields. |
 | 1.x | pre-2026-04-22 | Markdown with section headers (`contracts/debrief-format.md`); legacy. |

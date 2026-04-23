@@ -279,6 +279,19 @@ Print a short message to the user:
 
 ### Step 11 — Signal completion; sit idle
 
+Before writing the debrief, pick a `report_state` from the 4-state worker-report contract (`_shared/contracts/worker-report.md`):
+
+| State | Pick when |
+|---|---|
+| `done` | Merged clean, Argus approved (or skipped for XS), all `debt.*: false`, no deferred tests |
+| `done_with_concerns` | Merged, but at least one of: build debt accrued, tests skipped, Argus flagged, known issues surfaced |
+| `blocked` | No merge — hard stop on external dependency, unresolvable state, or Argus `blocked` verdict |
+| `needs_context` | No merge — brief missing information (ambiguous spec, absent reference, unstated decision) |
+
+Pass `report_state=<value>` to `write_debrief_artifact` (via the debrief path documented in `_shared/schemas/debrief.md`). The helper validates the enum and refuses invalid values.
+
+**Iron Law (REVIEW.md R10).** Never pick `done` to make a red build look green. If xcodebuild did not run or failed, the state is at most `done_with_concerns` (with `debt.build: true`). If tests were skipped, the state is at most `done_with_concerns` (with `tests.skipped_because` populated). Structural honesty — prose cannot paper over a missing field.
+
 ```bash
 scripts/emit-agent-session-completed.sh achilles task "$TASK_ID" "$DURATION_S" --verdict "$VERDICT"
 ```

@@ -39,7 +39,18 @@ Run `scripts/sweep-enumerate-debriefs.sh`. Output is tab-separated `<kind>\t<pat
 
 ### 0A — Uniform debrief ingest (task + direct-debrief)
 
-Debriefs from `task` mode (with `task_id` + `brief_id` set) and `direct-debrief` mode (both null; surface: `/achilles debrief`) share `debrief@2.0.1`. The script branches on `mode` + `task_id` null-state; direct-debriefs skip task-linkage and go straight to follow-up minting. Semantic linking against prior debriefs and open issues (`similar_to`, `duplicate_of`, `part_of`) is Phase 2.7 scope.
+Debriefs from `task` mode (with `task_id` + `brief_id` set) and `direct-debrief` mode (both null; surface: `/achilles debrief`) share `debrief@2.0.2`. The script branches on `mode` + `task_id` null-state; direct-debriefs skip task-linkage and go straight to follow-up minting. Semantic linking against prior debriefs and open issues (`similar_to`, `duplicate_of`, `part_of`) is Phase 2.7 scope.
+
+**Worker-report routing (`report_state`).** Per `_shared/contracts/worker-report.md`, every debrief carries one of four states that deterministically routes what Chanakya does next — no prose parsing:
+
+| `report_state` | Task transition | Surface |
+|---|---|---|
+| `done` | `done` | Normal close; no banner |
+| `done_with_concerns` | `done` | Append to status dashboard; push-queue entry if debt crosses threshold per 0C |
+| `blocked` | `blocked` | Push-queue entry + banner; do not re-dispatch |
+| `needs_context` | `needs_brief_rework` | Regenerate brief filling the gap named in `open_questions`; re-dispatch on next sweep once brief returns to `ready` |
+
+Pre-2.0.2 debriefs lack `report_state`; infer per the back-compat rule in the worker-report contract (typically `done_with_concerns` as the conservative default).
 
 **Argus-skip detection (judgment retained in this mode pack).** A debrief counts as Argus-skipped when `argus_review.status == not-invoked` (YAML) or the legacy `## Argus Review` section matches `not invoked|skipped|bypassed|did not run`. Exemptions, never flagged:
 

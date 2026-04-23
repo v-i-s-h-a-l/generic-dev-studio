@@ -640,10 +640,31 @@ write_brief_artifact() {
   _maybe_rebuild_index
 }
 
+_validate_report_state() {
+  # Enforce the worker-report enum per _shared/contracts/worker-report.md.
+  # Empty/unset is allowed (back-compat; readers infer from other fields).
+  local v="${1:-}"
+  [ -z "$v" ] && return 0
+  case "$v" in
+    done|done_with_concerns|blocked|needs_context) return 0 ;;
+    *) printf 'lib-ledger: invalid report_state=%s (want: done|done_with_concerns|blocked|needs_context)\n' "$v" >&2
+       return 1 ;;
+  esac
+}
+
 write_debrief_artifact() {
   local uuid="${1:?write_debrief_artifact <uuid> <task-uuid|null> <brief-uuid|null> <mode> <state> [k=v...]}"
   local task_uuid="${2:-null}" brief_uuid="${3:-null}" mode="${4:?}" state="${5:?}"
   shift 5
+
+  # Worker-report contract: scan args for report_state, validate if present.
+  local _pair _report_state=""
+  for _pair in "$@"; do
+    case "$_pair" in
+      report_state=*) _report_state="${_pair#report_state=}" ;;
+    esac
+  done
+  _validate_report_state "$_report_state" || return 2
 
   local f ts
   f=$(_artifact_path debriefs "$uuid") || return 2
@@ -665,7 +686,7 @@ write_debrief_artifact() {
 
   local payload
   payload=$({
-    printf 'schema_version: {name: debrief, version: 2.0.1, min_reader: 2.0.0, deprecated_at: null}\n'
+    printf 'schema_version: {name: debrief, version: 2.0.2, min_reader: 2.0.0, deprecated_at: null}\n'
     printf 'id: %s\n' "$uuid"
     printf '%s\n' "$task_line"
     printf '%s\n' "$brief_line"
@@ -716,7 +737,12 @@ write_debrief_artifact() {
   fi
 
   local data
-  data=$(printf '{"mode":"%s","state":"%s"}' "$(_json_escape "$mode")" "$(_json_escape "$state")")
+  if [ -n "$_report_state" ]; then
+    data=$(printf '{"mode":"%s","state":"%s","report_state":"%s"}' \
+      "$(_json_escape "$mode")" "$(_json_escape "$state")" "$(_json_escape "$_report_state")")
+  else
+    data=$(printf '{"mode":"%s","state":"%s"}' "$(_json_escape "$mode")" "$(_json_escape "$state")")
+  fi
   emit_event_keyed achilles debrief debrief_emitted "$uuid" "$data" --idem-key "$idem" >/dev/null || return $?
   _maybe_rebuild_index
 }
