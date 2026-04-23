@@ -27,6 +27,7 @@ Claude sessions and humans alike use this file to resolve failures without guess
 | `E_MODE_SIZE` | A mode pack exceeds 600 lines of prose | Split the mode into two packs along a natural workflow boundary. 400–600 lines is a warning; above 600 is a hard block. |
 | `E_MISSING_RW_DECL` | A `modes/*.md` lacks `reads:` or `writes:` frontmatter keys | Add `reads: []` / `writes: []` (empty list is a valid declaration — the key's presence is the point). Routers are exempt; their surfaces are auto-synthesized from mode packs. See `_shared/contracts/read-write-decls.md`. |
 | `E_UNKNOWN_CONTRACT_REF` | A reference to `_shared/<subdir>/<file>` in prose does not resolve to an existing file | Move/rename the target, or fix the reference path. Matches repo-relative (`_shared/...`) and absolute (`~/.claude/skills/_shared/...`) forms. |
+| `E_ORPHAN_FIXTURE` | A file under `tests/mode-packs/` names a `pack:` that no longer exists, or omits the `pack` field | Pack was renamed/removed — update the fixture's `pack:` field to match, or delete the fixture if the pack is gone. See `_shared/primitives/skill-testing.md`. |
 
 ## Warn-tier (W_) — stderr only, commit proceeds
 
@@ -36,6 +37,7 @@ Claude sessions and humans alike use this file to resolve failures without guess
 | `W_SNAPSHOT_FRESHNESS` | Mode declares non-empty `snapshots:` but never mentions `stale` or `freshness` | Either add a freshness check section to the mode pack, or confirm the snapshot is always regenerated on read. |
 | `W_BUDGET_DRIFT` | Mode pack token estimate exceeds its `_shared/schemas/token-budgets.json` entry by more than 10% | Trim prose, or raise the budget deliberately if the mode genuinely grew. |
 | `W_CAPABILITY_STALE` | `_shared/schemas/capability-manifest.json` is older than any `modes/*.md` file | Run `scripts/capability-manifest.sh --regen`. Never promoted to block — user regenerates intentionally during analysis sessions. |
+| `W_MISSING_PACK_FIXTURE` | A mode pack (or agent `SKILL.md` with a sibling `modes/` dir) has no fixture at `tests/mode-packs/<agent>/<name>.yaml` | Author a fixture per `_shared/primitives/skill-testing.md` — `scripts/test-mode-pack.sh scaffold <agent>/<name>` writes a skeleton. Warn-tier by design; onboarding gradient, not a hard gate. |
 
 ## Emergency bypass
 

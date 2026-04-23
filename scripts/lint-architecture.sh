@@ -121,14 +121,39 @@ check_router_size() {
 }
 
 # ---------- E_CROSS_MODE_LOAD ----------
+# Flag only lines that *load* another mode pack — not prose references or
+# frontmatter description hits. A load looks like one of:
+#   Read("path/modes/X.md")
+#   Load: path/modes/X.md
+#   Source: path/modes/X.md
+#   - Read … modes/X.md
+# Plain "see modes/review.md" in description prose is a pointer, not an import.
+#
+# Fix for #77: previous impl used `grep | while` which forked a subshell —
+# `emit_error`'s $ERRORS increment was lost, producing the "prints errors but
+# reports 0 errors" contradiction. Switched to process substitution so the
+# loop body runs in the current shell.
 check_cross_mode_load() {
-  local mode_file="$1" line matches
-  matches=$(grep -nE 'modes/[a-z0-9-]+\.md' "$mode_file" 2>/dev/null || true)
-  [ -z "$matches" ] && return 0
-  printf '%s\n' "$matches" | while IFS= read -r line; do
-    local ln="${line%%:*}"
+  local mode_file="$1" line ln
+  # Single awk pass: track frontmatter + fenced-code state, emit only prose
+  # lines that both reference `modes/<name>.md` AND carry a load-directive
+  # keyword. "See modes/X.md" prose is intentionally not flagged.
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    ln="${line%%:*}"
     emit_error "E_CROSS_MODE_LOAD:$mode_file:$ln | mode packs communicate via snapshots, not imports"
-  done
+  done < <(
+    awk '
+      BEGIN { in_fm=0; in_code=0 }
+      NR==1 && $0=="---" { in_fm=1; next }
+      in_fm==1 && $0=="---" { in_fm=0; next }
+      in_fm==1 { next }
+      /^```/ { in_code = 1 - in_code; next }
+      in_code==1 { next }
+      /modes\/[a-z0-9-]+\.md/ &&
+        /(^|[^a-zA-Z])(Read\(|Load:|Source:|Import:|Source )/ { print NR":"$0 }
+    ' "$mode_file" 2>/dev/null || true
+  )
 }
 
 # ---------- E_MISSING_SNAPSHOTS_DECL ----------
@@ -326,6 +351,52 @@ mtime_secs() {
   stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
 }
 
+# ---------- W_MISSING_PACK_FIXTURE / E_ORPHAN_FIXTURE ----------
+# Per _shared/primitives/skill-testing.md: every mode pack should have a
+# fixture at tests/mode-packs/<agent>/<mode>.yaml. Missing fixture is a warn
+# (onboarding gradient). Orphan fixture (pack no longer exists) is a block.
+check_pack_fixtures() {
+  local fixture_root="$REPO_ROOT/tests/mode-packs"
+  local pack rel agent mode fixture
+  # Every pack (modes/*.md + agent SKILL.md post-refactor) → expected fixture.
+  while IFS= read -r pack; do
+    [ -z "$pack" ] && continue
+    case "$pack" in
+      */SKILL.md)
+        local agent_dir
+        agent_dir=$(dirname "$pack")
+        [ -d "$agent_dir/modes" ] || continue
+        ;;
+    esac
+    rel="${pack#"$REPO_ROOT/"}"
+    agent="${rel%%/*}"
+    mode=$(basename "$rel" .md)
+    fixture="$fixture_root/$agent/$mode.yaml"
+    if [ ! -f "$fixture" ]; then
+      emit_warn "W_MISSING_PACK_FIXTURE:$rel:expected=$fixture | author a fixture per _shared/primitives/skill-testing.md"
+    fi
+  done < <(
+    find "$REPO_ROOT" -mindepth 3 -maxdepth 3 -type f -path '*/modes/*.md' 2>/dev/null
+    find "$REPO_ROOT" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' 2>/dev/null
+  )
+  # Orphan check: every fixture names a pack that must exist.
+  [ -d "$fixture_root" ] || return 0
+  command -v yq >/dev/null 2>&1 || return 0
+  local f pack_rel pack_abs
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    pack_rel=$(yq -r '.pack // ""' "$f" 2>/dev/null)
+    if [ -z "$pack_rel" ]; then
+      emit_error "E_ORPHAN_FIXTURE:${f#"$REPO_ROOT/"}:missing .pack field | add pack: <agent>/<mode>.md per _shared/primitives/skill-testing.md"
+      continue
+    fi
+    pack_abs="$REPO_ROOT/$pack_rel"
+    if [ ! -f "$pack_abs" ]; then
+      emit_error "E_ORPHAN_FIXTURE:${f#"$REPO_ROOT/"}:pack=$pack_rel not found | pack was renamed/removed — update or delete fixture"
+    fi
+  done < <(find "$fixture_root" -type f -name '*.yaml' 2>/dev/null)
+}
+
 # ---------- E_SURFACE_REMOVED ----------
 check_surface_removed() {
   local manifest="$REPO_ROOT/docs-surface.json"
@@ -399,6 +470,7 @@ main() {
   check_dup_prose
   check_surface_removed
   check_capability_stale
+  check_pack_fixtures
 
   printf '%d errors, %d warnings\n' "$ERRORS" "$WARNINGS" >&2
   [ "$ERRORS" -eq 0 ]

@@ -1,0 +1,27 @@
+# Skill-testing fixture for chanakya/modes/tests.md
+# Proves: dirty-state guard + candidate scan + round linkage.
+schema: 1
+pack: chanakya/modes/tests.md
+scenario: |
+  The user runs `/chanakya test-manifest` to regenerate the per-task
+  verification checklist. The file `plans/user-testing.md` already exists
+  and has user-edited Notes on one row. Describe:
+    1. What must happen before any regeneration occurs (and what the user
+       sees if their edits are about to be discarded).
+    2. Which script produces the dirty-state signal, and what exit code
+       means "has pending feedback".
+    3. What the `--force` flag changes.
+  Be specific about script names and exit codes.
+failure_signals:
+  - "(?i)(overwrite|regenerate|replace).*(without|always|by default)"
+  - "(?i)back.?up.*(before|first)"
+  - "(?i)(ask|prompt) the user.*(confirmation|y/n|yes/no)"
+success_signals:
+  - "tests-dirty-state-check"
+  - "(?i)exit.?2"
+  - "--force"
+  - "(?i)(pending|user) (feedback|edits)"
+notes: |
+  The dirty-state guard + --force escape hatch is exactly the "don't clobber
+  user edits" policy. A fresh subagent will invent a backup-then-overwrite
+  flow, which is explicitly NOT what this mode does.

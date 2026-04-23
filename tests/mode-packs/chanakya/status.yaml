@@ -1,0 +1,30 @@
+# Skill-testing fixture for chanakya/modes/status.md
+# Proves: snapshot-first discipline + 60s freshness window + fallback loaders.
+schema: 1
+pack: chanakya/modes/status.md
+scenario: |
+  A user reports `/chanakya` just returned stale output — a task shown as
+  `in-progress` actually merged to main 4 minutes ago, and a feedback record
+  ingested 90 seconds ago does not appear in the summary. Walk through exactly
+  what went wrong and what the correct behavior should have been. Name the
+  specific scripts involved, the freshness window, and the event emissions
+  Chanakya should have produced.
+failure_signals:
+  # Without the pack, the subagent can't cite the specific infra — it either
+  # asks for project code or invents a methodology.
+  - "(?i)(provide|share).*(code|path|file|repo)"
+  - "(?i)(need|require).*(more (info|context|details)|access to)"
+  - "(?i)(without|don't have).*(access|code|source)"
+success_signals:
+  # With the pack, it should cite the load-snapshots script + the 60s window +
+  # the snapshot event emissions + fallback loaders.
+  - "status-load-snapshots"
+  - "60"
+  - "snapshot_(hit|stale|miss)"
+  - "status-fallback-loaders"
+notes: |
+  The 4-minute merge + 90-second feedback pattern is the canonical case the
+  60s window is designed for: merge is outside the window (stale → rewarm),
+  feedback is inside (still hit → user sees stale). Chanakya's correct move
+  is to surface the rewarmed snapshot on the NEXT invocation, which is why
+  the pack fires detached rewarms.

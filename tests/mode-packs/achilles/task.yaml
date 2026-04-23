@@ -1,0 +1,32 @@
+# Skill-testing fixture for achilles/modes/task.md
+# Proves: size-driven build gate + mandatory Argus pre-merge + merge-lock.
+schema: 1
+pack: achilles/modes/task.md
+scenario: |
+  You are Achilles, just completed implementation on a task in an isolated
+  worktree. Task size is M. LSP is clean; xcodebuild hasn't run yet. Walk
+  through exactly what happens between "implementation done" and "merged
+  to base branch". Specifically:
+    1. Does xcodebuild run for this task, or is it deferred? Cite the size
+       policy.
+    2. What is the pre-merge review gate, and is it optional?
+    3. How do you prevent concurrent Achilles workers from clobbering each
+       other's merges?
+    4. What dual-write happens at debrief emission time?
+  Name scripts and state transitions.
+failure_signals:
+  - "(?i)(push|merge) (directly|straight).*(to|into).*(main|base)"
+  - "(?i)(skip|bypass).*(review|argus|build)"
+  - "(?i)(optional|manual).*(review|merge|test)"
+success_signals:
+  # The pack enforces: M/L runs build; Argus is mandatory; merge-lock
+  # serializes; debrief dual-writes YAML + legacy markdown.
+  - "(?i)(M|medium|large|L).*(build|xcodebuild)"
+  - "(?i)argus"
+  - "(?i)merge.?lock"
+  - "(?i)(dual.?write|debrief)"
+notes: |
+  The size → build-gate matrix (XS/S skip, M/L enforce) and the
+  merge-lock pattern are not inferrable from general engineering intuition.
+  A fresh subagent will either gate every task on build (overshooting) or
+  skip everything (undershooting). Pack encodes the specific policy.

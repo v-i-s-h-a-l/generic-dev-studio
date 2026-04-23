@@ -1,0 +1,27 @@
+# Skill-testing fixture for chanakya/modes/inbox-sweep.md
+# Proves: Step 0A–0G enumeration, uniform debrief ingest, event-driven flow.
+schema: 1
+pack: chanakya/modes/inbox-sweep.md
+scenario: |
+  The user just ran `/chanakya`. Before you dispatch to their mode, you must
+  run the pre-dispatch inbox sweep. Describe in order:
+    1. The enumeration step that produces the debrief worklist.
+    2. The ingest path for a regular task debrief vs. a direct-debrief vs.
+       a release debrief — what differs.
+    3. Which Step 0 sub-step handles App Store watcher output, and which
+       handles stale-artifact cleanup.
+  Name the scripts and the sub-step letters (0A / 0B / ...).
+failure_signals:
+  - "(?i)(provide|share|paste).*(inbox|debrief|file)"
+  - "(?i)(typical|generic|standard).*(sweep|inbox|process)"
+  - "(?i)not (sure|clear|familiar).*(with|about).*(inbox|sweep|debrief)"
+success_signals:
+  # The pack structures Step 0 as 0A–0G with specific scripts per sub-step.
+  - "sweep-enumerate-debriefs"
+  - "sweep-ingest"
+  - "0[A-G]"
+  - "(?i)(appstore|app.store).*watcher"
+notes: |
+  The enumeration-then-ingest split (0 + 0A) and the sub-step lettering are
+  the non-obvious structure. A fresh subagent will describe a sweep but
+  won't land on the specific sub-step taxonomy.
