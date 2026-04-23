@@ -25,6 +25,30 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 BOOTSTRAP="$REPO_ROOT/_shared/primitives/router-bootstrap.md"
 
+# Optional: surface any active review-waives for the current project. Best
+# effort — failures (no project resolvable, yq missing, no waive dir) all
+# collapse to silent skip. The bootstrap prose must still land even if this
+# stage errors.
+waive_banner() {
+  # shellcheck source=../scripts/lib-paths.sh
+  . "$REPO_ROOT/scripts/lib-paths.sh" 2>/dev/null || return 0
+  local waive_dir f gate started count trigger date_only
+  waive_dir=$(resolve_waive_dir 2>/dev/null) || return 0
+  [ -d "$waive_dir" ] || return 0
+  command -v yq >/dev/null 2>&1 || return 0
+  for f in "$waive_dir"/*.yaml; do
+    [ -f "$f" ] || continue
+    gate=$(yq -r '.gate // ""' "$f" 2>/dev/null)
+    started=$(yq -r '.started_at // ""' "$f" 2>/dev/null)
+    count=$(yq -r '.accumulated_count // 0' "$f" 2>/dev/null)
+    trigger=$(yq -r '.sunset_trigger // ""' "$f" 2>/dev/null)
+    [ -z "$gate" ] && gate=$(basename "$f" .yaml)
+    date_only="${started%%T*}"
+    printf '\n\n*%s paused since %s* - %s tasks merged without review; revisit trigger: %s' \
+      "$gate" "${date_only:-unknown}" "${count:-0}" "${trigger:-(not set)}"
+  done
+}
+
 ctx=""
 if [ -f "$BOOTSTRAP" ]; then
   # Strip YAML frontmatter; keep the prose. Prose is what the session needs;
@@ -37,6 +61,11 @@ if [ -f "$BOOTSTRAP" ]; then
     done==1 { print }
     done==0 && in_fm==0 { print }
   ' "$BOOTSTRAP")
+fi
+
+banner=$(waive_banner 2>/dev/null || true)
+if [ -n "$banner" ]; then
+  ctx="${ctx}${banner}"
 fi
 
 # JSON-escape the context (quotes, backslashes, newlines, tabs).

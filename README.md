@@ -81,6 +81,10 @@ scripts/achilles-queue.sh drain          # hand head-of-queue to each free worke
 scripts/worker-status.sh                 # one-shot fleet table
 scripts/achilles-cancel.sh T001          # remove pending dispatch
 scripts/fleet-cleanup.sh [--dry-run|--all]  # soft sweep / full teardown
+
+# Review-waive lifecycle (per-project pause of a gate like argus)
+scripts/waive-start.sh argus "<reason>" "<sunset_trigger>"  # open a structured pause
+scripts/waive-lift.sh argus                                 # lift the pause; reports merges-skipped count
 ```
 
 **Minimal-intervention by default.** Chanakya runs end-to-end without stopping for confirmation. The only points where it pauses are: Slack publish, first-time config writes (`--configure-token`, `--configure`), merge conflicts, and `--wait` mode feedback windows.
