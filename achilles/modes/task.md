@@ -225,6 +225,22 @@ Twin-writes `plans/chanakya-inbox/<task-id>-tests.md` (Chanakya's `/chanakya tes
 
 Cleanup is guaranteed in every non-rejected branch — the wake exists so `--wait` cannot hang forever.
 
+### Step 8.4 — Base-branch refresh (pre-review)
+
+Only if Step 6 is green and the task is not on the XS-trivial path that skips Argus entirely. Argus blocks on base staleness in Stage 2 — cheap to avoid by refreshing the worktree first on drift above a small threshold.
+
+```bash
+scripts/achilles-refresh-base.sh "$TASK_ID" "$WORKTREE" "$ORIG_BRANCH" || exit $?
+```
+
+The script fetches `origin/$ORIG_BRANCH`, counts commits behind, and no-ops if below `ACHILLES_BASE_REFRESH_THRESHOLD` (default `2`). Above threshold it `git merge --no-ff origin/$ORIG_BRANCH` into the worktree branch — merge, not rebase, to match Step 9's convention and to avoid rewriting mid-task commits the debrief references. Exit codes: `0` fresh or refreshed cleanly; `2` merge conflict (script aborted the merge; worktree clean); `3` missing args / worktree gone.
+
+- **Clean refresh:** emits `base_refreshed` with `commits_pulled`. Proceed to Step 8.5.
+- **Fresh (below threshold):** silent no-op, no event. Proceed to Step 8.5.
+- **Conflict:** emits `base_refresh_conflict`. Do **not** call Argus. Surface to user; include the conflict in the debrief (`report_state: blocked`, `debt.base_refresh_conflict: true`). Do not auto-resolve.
+
+Override: `ACHILLES_BASE_REFRESH_THRESHOLD=<int>` env var (e.g. `0` disables the no-op band — always refresh on any drift; large value effectively disables the pre-refresh). Honors `DRY_RUN`.
+
 ### Step 8.5 — Argus pre-merge gate (two stages)
 
 Only if Step 6 is green. **This gate runs on every dispatch path — interactive, worker-mode, `--wait`, `--no-wait`. No exceptions except `build-mode` and `test-suite-mode`.** Autonomous-vs-interactive governs clarifying-question latitude only, not compliance. Self-review has known blind spots (cross-file regressions, test adequacy, base staleness, spec divergence) that persist regardless of whether a human is watching. If Argus is genuinely unavailable, surface as a block and stop before merge.
