@@ -63,10 +63,10 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `task_started` | Step 2 — task claimed, branch created | `branch`, `base_sha` |
 | `task_completed` | Step 9 — merge succeeded | `merge_sha` |
 | `task_merged` | Merge lock released | `merge_sha` |
-| `review_requested` | Achilles calls Argus before merge | `worktree`, `derived_data` |
-| `review_approved` | Argus returned approve | `review_file` |
-| `review_flagged` | Argus returned flag | `review_file`, `finding_count` |
-| `review_blocked` | Argus returned block | `review_file`, `block_reason` |
+| `review_requested` | Achilles calls Argus before merge | `worktree`, `derived_data`, `stage` (`spec`\|`quality`) |
+| `review_approved` | Argus returned approve | `review_file`, `stage` (`spec`\|`quality`) |
+| `review_flagged` | Argus returned flag | `review_file`, `finding_count`, `stage` (`spec`\|`quality`) |
+| `review_blocked` | Argus returned block | `review_file`, `block_reason`, `stage` (`spec`\|`quality`) |
 | `merge_conflict` | Merge failed with conflict | `branch`, `files` |
 | `build_check_started` | Step 6 build gate entry — LSP or xcodebuild run begins | `mode` (`lsp-only`\|`full-green`), `worktree` |
 | `build_check_passed` | Step 6 build gate green — gate clears the task for merge | `mode`, `files` (lsp-only) \| `warnings` (full-green), `scheme` (full-green) |
@@ -81,10 +81,10 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 
 | Event | Emitted when | Typical `data` keys |
 |---|---|---|
-| `review_requested` | Argus begins review | `task`, `size`, `worktree` |
-| `review_approved` | All checks pass | `checks_run` |
-| `review_flagged` | Non-blocking findings | `findings` (array of strings) |
-| `review_blocked` | Hard block — cannot merge | `block_reason`, `check` |
+| `review_requested` | Argus begins review | `task`, `size`, `worktree`, `stage` (`spec`\|`quality`) |
+| `review_approved` | All checks pass | `checks_run`, `stage` |
+| `review_flagged` | Non-blocking findings | `findings` (array of strings), `stage` |
+| `review_blocked` | Hard block — cannot merge | `block_reason`, `check`, `stage` |
 | `test_run_started` | Test phase begins (M/L only) | `slot`, `suite` |
 | `test_run_passed` | Tests green | `duration_s`, `test_count` |
 | `test_run_failed` | Tests red | `failing_tests` (array) |

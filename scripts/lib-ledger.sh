@@ -748,21 +748,27 @@ write_debrief_artifact() {
 }
 
 write_review_artifact() {
-  local uuid="${1:?write_review_artifact <uuid> <subject-kind> <subject-uuid> <verdict> <findings-json>}"
+  local uuid="${1:?write_review_artifact <uuid> <subject-kind> <subject-uuid> <verdict> <findings-json> [stage]}"
   local subject_kind="${2:?}" subject_uuid="${3:?}" verdict="${4:?}" findings_json="${5:-[]}"
+  local stage="${6:-quality}"
+  case "$stage" in
+    spec|quality) ;;
+    *) printf 'lib-ledger: invalid stage=%s (want spec|quality)\n' "$stage" >&2; return 2 ;;
+  esac
 
   local f ts
   f=$(_artifact_path reviews "$uuid") || return 2
   ts=$(iso_ts_now)
   local idem
-  idem=$(idem_key argus review "$subject_uuid" "verdict=$verdict")
+  idem=$(idem_key argus review "$subject_uuid" "verdict=$verdict;stage=$stage")
 
   local payload
   payload=$({
-    printf 'schema_version: {name: review, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}\n'
+    printf 'schema_version: {name: review, version: 1.1.0, min_reader: 1.0.0, deprecated_at: null}\n'
     printf 'id: %s\n' "$uuid"
     printf 'subject: {kind: %s, id: %s}\n' "$subject_kind" "$subject_uuid"
     printf 'reviewer: argus\n'
+    printf 'stage: %s\n' "$stage"
     printf 'state: %s\n' "$verdict"
     printf 'requested_at: %s\n' "$ts"
     printf 'completed_at: %s\n' "$ts"
@@ -790,8 +796,8 @@ write_review_artifact() {
   fi
 
   local data
-  data=$(printf '{"subject_kind":"%s","subject_uuid":"%s","verdict":"%s"}' \
-    "$(_json_escape "$subject_kind")" "$(_json_escape "$subject_uuid")" "$(_json_escape "$verdict")")
+  data=$(printf '{"subject_kind":"%s","subject_uuid":"%s","verdict":"%s","stage":"%s"}' \
+    "$(_json_escape "$subject_kind")" "$(_json_escape "$subject_uuid")" "$(_json_escape "$verdict")" "$(_json_escape "$stage")")
   local event_name
   case "$verdict" in
     approved) event_name=review_approved ;;

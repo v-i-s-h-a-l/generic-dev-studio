@@ -225,21 +225,36 @@ Twin-writes `plans/chanakya-inbox/<task-id>-tests.md` (Chanakya's `/chanakya tes
 
 Cleanup is guaranteed in every non-rejected branch — the wake exists so `--wait` cannot hang forever.
 
-### Step 8.5 — Argus pre-merge gate
+### Step 8.5 — Argus pre-merge gate (two stages)
 
-Only if Step 6 is green. **This gate runs on every dispatch path — interactive, worker-mode, `--wait`, `--no-wait`. No exceptions except `build-mode` and `test-suite-mode`.** Autonomous-vs-interactive governs clarifying-question latitude only, not compliance. Self-review has known blind spots (cross-file regressions, test adequacy, base staleness) that persist regardless of whether a human is watching. If Argus is genuinely unavailable, surface as a block and stop before merge.
+Only if Step 6 is green. **This gate runs on every dispatch path — interactive, worker-mode, `--wait`, `--no-wait`. No exceptions except `build-mode` and `test-suite-mode`.** Autonomous-vs-interactive governs clarifying-question latitude only, not compliance. Self-review has known blind spots (cross-file regressions, test adequacy, base staleness, spec divergence) that persist regardless of whether a human is watching. If Argus is genuinely unavailable, surface as a block and stop before merge.
 
 ```bash
 eval "$(scripts/task-invoke-argus.sh "$TASK_ID" "$WORKTREE" "$ORIG_BRANCH" "$SIZE")"
 ```
 
-Emits `review_requested` and exports `ACHILLES_REVIEW_REQUESTED_AT` (carried into the debrief for verdict-timing correlation). The `/argus <task-id>` invocation happens via Claude's Agent tool — not reachable from shell — with `ACHILLES_WORKTREE` + `ACHILLES_BASE_BRANCH` + `TASK_SIZE` in context. Parse Argus's `ARGUS_VERDICT=…` stdout line:
+Emits `review_requested` and exports `ACHILLES_REVIEW_REQUESTED_AT` (carried into the debrief for verdict-timing correlation).
 
-- **`approved`:** Argus's `argus-emit-verdict.sh` already emitted `review_approved`. Proceed to Step 9.
-- **`flagged`:** `review_flagged` with `review_file` + `finding_count` emitted. Proceed to Step 9 (merge). Include a `## Argus Review` block in the debrief referencing the review file + finding count. Chanakya's sweep processes the findings into follow-ups.
-- **`blocked`:** `review_blocked` emitted. Do **not** merge. Surface block reason + review file. Attempt to fix — **base staleness:** rebase, re-run Steps 5–8.5; **compile/test failure Achilles can fix:** fix, re-run Steps 5–6, re-run Step 8.5; **secrets in diff:** remove, re-commit, re-run Step 8.5; **cannot address** (scope creep, config secrets needing product input): surface, do not merge, debrief with `state: blocked`.
+Argus runs in **two sequential stages** (both via Claude's Agent tool — not reachable from shell):
 
-Maximum 3 fix-and-re-review cycles before surfacing to the user as unresolvable.
+#### Stage 1 — spec-compliance
+
+Dispatch `/argus spec-compliance <task-id>` with `ACHILLES_WORKTREE` + `ACHILLES_BASE_BRANCH` + `TASK_SIZE` in context. Narrow question: does the diff match the brief? Parse the `ARGUS_VERDICT=<v> stage=spec …` stdout line.
+
+- **`approved`** or **`flagged`:** proceed to Stage 2. Carry Stage 1 findings forward into the debrief.
+- **`blocked`:** do NOT run Stage 2 — the spec is wrong at the structural level, re-reviewing code doesn't help. Surface block reason; attempt to fix (see below) or debrief with `report_state: blocked`.
+
+#### Stage 2 — code-quality
+
+Only if Stage 1 returned `approved` or `flagged`. Dispatch `/argus code-quality <task-id>` with the same context. Broad question: cross-file regression risk, edge cases, diff anomalies, secrets, base staleness, test run (M/L). Parse the `ARGUS_VERDICT=<v> stage=quality …` stdout line.
+
+- **`approved`:** proceed to Step 9.
+- **`flagged`:** proceed to Step 9 (merge). Include a `## Argus Review` block in the debrief referencing both stages' review files + combined finding count.
+- **`blocked`:** do NOT merge. Surface block reason + review file. Attempt to fix — **base staleness:** rebase, re-run Steps 5–8.5; **compile/test failure Achilles can fix:** fix, re-run Steps 5–6, re-run Step 8.5 (both stages); **secrets in diff:** remove, re-commit, re-run Step 8.5; **cannot address:** surface, do not merge, debrief with `report_state: blocked`.
+
+Two `review_approved` / `review_flagged` / `review_blocked` events land per task (one per stage, distinguished by `stage: spec | quality`). Chanakya's inbox sweep reads both — see `chanakya/modes/inbox-sweep.md` Step 0A.
+
+Maximum 3 fix-and-re-review cycles before surfacing to the user as unresolvable (cycle count spans both stages).
 
 ### Step 9 — Commit, merge back, clean up
 

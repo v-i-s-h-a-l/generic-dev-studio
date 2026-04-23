@@ -1,0 +1,31 @@
+# Skill-testing fixture for argus/modes/spec-compliance.md
+# Proves: narrow spec-match verdict + no cross-file / test-run / secrets behavior.
+schema: 1
+pack: argus/modes/spec-compliance.md
+scenario: |
+  A brief asks: "Add `FilterPresetStore` with three presets, wire it into
+  `FilterView`, add one unit test for preset selection." Achilles delivers
+  a diff across 6 files: the store, the view, the unit test — and also
+  renames `FilterManager` to `LegacyFilterManager`, adds a new `FilterProtocol`
+  interface, and removes three unused helpers in a different module.
+  You are Argus in spec-compliance mode. Produce the verdict, list the
+  findings, and say what you do NOT do in this stage.
+failure_signals:
+  # Without the pack, the subagent will run a generic "code review" —
+  # checking for bugs, style, tests, secrets — mixing spec and quality.
+  - "(?i)(secrets|credentials|api.?key)"
+  - "(?i)(xcodebuild|test run|run the tests)"
+  - "(?i)(cross.?file|neighbor|regression risk)"
+success_signals:
+  # With the pack, it stays narrow: flags the renames + new protocol +
+  # unrelated deletions as over-building / extra scope, and explicitly
+  # skips code-quality concerns.
+  - "(?i)(over.?build|extra scope|scope (creep|match))"
+  - "(?i)flagged"
+  - "(?i)(stage|code.?quality).*(next|stage 2|follow|then)"
+notes: |
+  The brief asks for 3 deliverables; the diff includes 3 unrequested
+  changes (rename, new protocol, unrelated deletions). A spec-compliance
+  reviewer should flag over-building cleanly. A general-purpose reviewer
+  without the pack will mix in secrets/test-run/cross-file observations
+  that belong to Stage 2.

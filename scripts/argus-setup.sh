@@ -8,7 +8,10 @@
 # (Behavior Rule 5).
 #
 # Usage:
-#   eval "$(scripts/argus-setup.sh <task-id> <size> <worktree>)"
+#   eval "$(scripts/argus-setup.sh <task-id> <size> <worktree> [stage])"
+#
+# Stage: spec | quality (default: quality for back-compat with pre-2-stage
+# callers). Tags the `review_requested` event with the current stage.
 #
 # Exit codes:
 #   0  setup OK
@@ -23,9 +26,14 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
 
-TASK_ID="${1:?usage: argus-setup.sh <task-id> <size> <worktree>}"
+TASK_ID="${1:?usage: argus-setup.sh <task-id> <size> <worktree> [stage]}"
 SIZE="${2:?size required (XS|S|M|L)}"
 WORKTREE="${3:?worktree required}"
+STAGE="${4:-quality}"
+case "$STAGE" in
+  spec|quality) ;;
+  *) printf 'error: invalid stage %s (want spec|quality)\n' "$STAGE" >&2; exit 2 ;;
+esac
 
 [ -d "$WORKTREE" ] || { printf 'error: worktree not a directory: %s\n' "$WORKTREE" >&2; exit 2; }
 
@@ -44,7 +52,7 @@ mkdir -p "$REVIEWS_DIR" "$REVIEWS_DIR/archive" || { printf 'error: mkdir %s fail
 MARKER="$WORKTREE/.argus-running"
 printf '%s:%s\n' "$$" "$(iso_ts_now)" > "$MARKER" || { printf 'error: cannot write marker %s\n' "$MARKER" >&2; exit 2; }
 
-data=$(printf '{"size":"%s","worktree":"%s"}' "$SIZE" "$WORKTREE")
+data=$(printf '{"size":"%s","worktree":"%s","stage":"%s"}' "$SIZE" "$WORKTREE" "$STAGE")
 emit_event_keyed argus review review_requested "$TASK_ID" "$data" >/dev/null || {
   # Event-emit failure is not a setup-blocker — the review can still run and
   # the next emit (verdict) will surface on the log. But we log for observability.

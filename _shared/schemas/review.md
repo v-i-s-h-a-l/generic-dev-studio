@@ -4,7 +4,7 @@ description: YAML shape for Argus and user verdicts under plans/reviews/<review-
 type: reference
 ---
 
-# Review Schema (`review@1.0.0`)
+# Review Schema (`review@1.1.0`)
 
 Per-review artifact written to `~/.dev-studio/<project>/plans/reviews/<review-id>.yaml`. Each review targets a subject (a task, a round, a release) and carries a verdict + findings list. Argus emits reviews on task merges; Chanakya emits them on round aggregates; the user emits them via `/chanakya review-feedback`.
 
@@ -13,7 +13,7 @@ Per-review artifact written to `~/.dev-studio/<project>/plans/reviews/<review-id
 ```yaml
 schema_version:
   name: review
-  version: 1.0.0
+  version: 1.1.0
   min_reader: 1.0.0
   deprecated_at: null
 id: 0190f52a-7a11-7e03-8c99-44df6fd77a77        # UUIDv7
@@ -21,6 +21,7 @@ subject:
   kind: task                                     # task | round | release
   id: 0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11       # UUIDv7 of the subject
 reviewer: argus                                  # argus | user | chanakya
+stage: quality                                   # spec | quality (Argus two-stage; omit for user/chanakya reviewers)
 state: approved                                  # pending | in-progress | approved | flagged | blocked | acknowledged
 requested_at: 2026-04-22T12:41:10Z
 completed_at: 2026-04-22T12:45:30Z
@@ -46,8 +47,9 @@ notes: null
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `schema_version` | object | yes | Per `contracts/schema-version.md`. |
+| `schema_version` | object | yes | Per `contracts/schema-version.md`. Version 1.1.0 adds `stage` for Argus two-stage reviews. |
 | `id` | string (UUIDv7) | yes | |
+| `stage` | enum \| absent | no | `spec` \| `quality`. Set for Argus two-stage reviews (see `argus/modes/{spec-compliance,code-quality}.md`). Absent for user/chanakya reviewers. Missing in pre-1.1.0 reviews is read as `quality` for back-compat. |
 | `subject` | object | yes | `{kind, id}`. `kind ∈ {task, round, release}`. `id` must resolve to an artifact of that kind. |
 | `reviewer` | enum | yes | `argus` \| `user` \| `chanakya`. User-emitted reviews come from `/chanakya review-feedback`. |
 | `state` | enum | yes | Per `state-machines/review-lifecycle.md`: `pending` \| `in-progress` \| `approved` \| `flagged` \| `blocked` \| `acknowledged`. |

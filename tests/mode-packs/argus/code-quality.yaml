@@ -1,0 +1,29 @@
+# Skill-testing fixture for argus/modes/code-quality.md
+# Proves: scope caps + week-1 block-vs-flag + NO spec-matching (Stage 1 owns that).
+schema: 1
+pack: argus/modes/code-quality.md
+scenario: |
+  You are Argus in code-quality mode, called as Stage 2 after spec-compliance
+  returned `approved`. Task is M-size, 1200-line diff across 14 files, self-
+  review green. Describe:
+    1. What you load (with numeric caps).
+    2. Which findings BLOCK and which only FLAG in week 1.
+    3. What you explicitly do NOT re-check from Stage 1.
+    4. How base-branch staleness is detected and what event fires when hit.
+  Be specific — name scripts, numeric caps, and event names.
+failure_signals:
+  - "(?i)(does|does not|doesn't).*match.*brief"
+  - "(?i)(scope|extra scope|over.?build|under.?build)"
+  - "(?i)depend(s|ing) on (the|your) (codebase|project|standards)"
+success_signals:
+  - "10 .*(neighbor|file)"
+  - "50 line"
+  - "500"
+  - "(?i)week.1"
+  - "review_scoped"
+notes: |
+  The key signal: code-quality is SEPARATE from spec-match. A correct
+  code-quality reviewer describes cross-file / edge-case / secrets / tests
+  and explicitly says scope-matching was Stage 1's job. A reviewer without
+  the pack will re-do spec matching, which is the exact double-work the
+  split was designed to eliminate.

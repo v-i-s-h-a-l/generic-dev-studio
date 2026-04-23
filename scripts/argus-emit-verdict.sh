@@ -40,14 +40,20 @@ esac
 TASK_UUID=""
 LEGACY_PATH_OVERRIDE=""
 BLOCK_REASON=""
+STAGE="quality"
 while [ $# -gt 0 ]; do
   case "$1" in
     --task-uuid)          TASK_UUID="${2:?}";            shift 2 ;;
     --review-file-legacy) LEGACY_PATH_OVERRIDE="${2:?}"; shift 2 ;;
     --block-reason)       BLOCK_REASON="${2:?}";         shift 2 ;;
+    --stage)              STAGE="${2:?}";                shift 2 ;;
     *) printf 'error: unknown flag %s\n' "$1" >&2; exit 2 ;;
   esac
 done
+case "$STAGE" in
+  spec|quality) ;;
+  *) printf 'error: unknown stage %s (want spec|quality)\n' "$STAGE" >&2; exit 2 ;;
+esac
 
 PROJECT=$(resolve_project 2>/dev/null) || { printf 'error: no project resolved\n' >&2; exit 2; }
 
@@ -72,7 +78,7 @@ REVIEW_ID=$(mint_uuidv7)
 # Primary write: YAML artifact + verdict event. lib-ledger attempts the
 # legacy dual-write via the stubbed helper (returns 9, swallowed via `|| true`
 # inside write_review_artifact).
-write_review_artifact "$REVIEW_ID" task "$TASK_UUID" "$VERDICT" "$FINDINGS_JSON"
+write_review_artifact "$REVIEW_ID" task "$TASK_UUID" "$VERDICT" "$FINDINGS_JSON" "$STAGE"
 rc=$?
 if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
   # rc=3 is `dual_write_partial` and is expected here because the legacy
@@ -89,7 +95,8 @@ if [ -n "$LEGACY_PATH_OVERRIDE" ]; then
 else
   PROJECT_MEMORY=$(resolve_project_memory 2>/dev/null || echo "")
   if [ -n "$PROJECT_MEMORY" ]; then
-    LEGACY_REVIEW_FILE="$PROJECT_MEMORY/reviews/review_${TASK_ID}.md"
+    # Stage suffix keeps Stage 1 and Stage 2 legacy reviews distinct.
+    LEGACY_REVIEW_FILE="$PROJECT_MEMORY/reviews/review_${TASK_ID}_${STAGE}.md"
   else
     # No git context; fall back to skipping legacy write. Post-2.6 YAML is
     # the source of truth anyway.
@@ -102,8 +109,9 @@ if [ -n "$LEGACY_REVIEW_FILE" ]; then
   finding_count=$(printf '%s' "$FINDINGS_JSON" | jq 'length' 2>/dev/null || echo 0)
   ts=$(iso_ts_now)
   {
-    printf '# Argus Review: %s\n' "$TASK_ID"
+    printf '# Argus Review (%s): %s\n' "$STAGE" "$TASK_ID"
     printf 'Reviewed: %s\n' "$ts"
+    printf 'Stage: %s\n' "$STAGE"
     printf 'Verdict: %s\n' "$VERDICT"
     [ -n "$BLOCK_REASON" ] && printf 'Block reason: %s\n' "$BLOCK_REASON"
     printf 'Review UUID: %s\n\n' "$REVIEW_ID"
@@ -161,12 +169,12 @@ rm -f "$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)/.argus-running" 2>
 # Step 8 — stdout contract. Achilles parses this line.
 case "$VERDICT" in
   approved)
-    printf 'ARGUS_VERDICT=approved review_file=%s findings=%s\n' "${LEGACY_REVIEW_FILE:-}" "${finding_count:-0}"
+    printf 'ARGUS_VERDICT=approved stage=%s review_file=%s findings=%s\n' "$STAGE" "${LEGACY_REVIEW_FILE:-}" "${finding_count:-0}"
     ;;
   flagged)
-    printf 'ARGUS_VERDICT=flagged review_file=%s findings=%s\n' "${LEGACY_REVIEW_FILE:-}" "${finding_count:-0}"
+    printf 'ARGUS_VERDICT=flagged stage=%s review_file=%s findings=%s\n' "$STAGE" "${LEGACY_REVIEW_FILE:-}" "${finding_count:-0}"
     ;;
   blocked)
-    printf 'ARGUS_VERDICT=blocked block_reason="%s" review_file=%s\n' "${BLOCK_REASON:-}" "${LEGACY_REVIEW_FILE:-}"
+    printf 'ARGUS_VERDICT=blocked stage=%s block_reason="%s" review_file=%s\n' "$STAGE" "${BLOCK_REASON:-}" "${LEGACY_REVIEW_FILE:-}"
     ;;
 esac
