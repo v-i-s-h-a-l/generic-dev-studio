@@ -44,6 +44,10 @@ Fields `ts` / `agent` / `event` / `task` / `data` are the pre-existing `events.m
 - Exactly-once delivery semantics. The reader dedupes; the writer is best-effort.
 - Write-time locking. Locks cost more than double-processing at this scale.
 
+## Enum faithfulness
+
+Where an event's `data` field carries an outcome enum (e.g. `brief_completed.gate`), the emitter computes the specific value from the strongest available signal — never collapses distinct outcomes into a coarser label for convenience. If the contract defines four values, the emitter picks one of the four. If back-compat requires a coarser alias for legacy consumers, emit it as a sibling field (e.g. `gate_legacy`), not as a degraded `gate`. See `events.md` → `brief_completed.gate` taxonomy for the worked example.
+
 ## Related
 
 - `events.md` — schema, atomicity, offset, event catalog.

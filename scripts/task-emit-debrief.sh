@@ -123,10 +123,65 @@ if [ -n "$BRIEF_UUID" ]; then
 fi
 
 # brief_completed carries the summary signal Chanakya's sweep keys on.
-# Include gate when supplied in fields-json (e.g. build_gate=full-green).
-gate=$(printf '%s' "$FIELDS_JSON" | jq -r '.build_gate // "lsp-only"' 2>/dev/null || echo lsp-only)
+#
+# Gate taxonomy (per events.md, issue #84). The debrief's `build_gate` field
+# is the *selected* gate mode (lsp-only | full-green). The event's `gate`
+# field is the *outcome* — it splits full-green into three cases so analytics
+# + humans can tell "really verified" apart from "build green but tests
+# disabled" and "build green but review waived":
+#
+#   verified    build-green + tests executed + Argus approved/flagged
+#   build-only  build-green + tests suite disabled (tests.skipped_because set)
+#   waived      build-green + Argus skipped/not-invoked on a non-exempt path
+#   lsp-only    LSP-only gate (unchanged)
+#
+# Ordering matters: waived takes precedence over build-only when both apply —
+# a disabled-tests suite with a waived review is the least-verified of the
+# three, and the review waiver is the signal most likely to surface policy
+# drift. `gate_legacy` is emitted alongside as the pre-#84 value so any
+# consumer still matching on `full-green` / `lsp-only` keeps working.
+build_gate=$(printf '%s' "$FIELDS_JSON" | jq -r '.build_gate // "lsp-only"' 2>/dev/null || echo lsp-only)
+argus_status=$(printf '%s' "$FIELDS_JSON" | jq -r '.argus_review.status // "not-invoked"' 2>/dev/null || echo "not-invoked")
+tests_skipped=$(printf '%s' "$FIELDS_JSON" | jq -r '.tests.skipped_because // ""' 2>/dev/null || echo "")
 merge_sha=$(printf '%s' "$FIELDS_JSON" | jq -r '.branch.merge_sha // ""' 2>/dev/null || echo "")
-data=$(printf '{"gate":"%s","merge_sha":"%s","debrief_id":"%s"}' "$gate" "$merge_sha" "$DEBRIEF_UUID")
+
+case "$build_gate" in
+  lsp-only)
+    gate="lsp-only"
+    gate_legacy="lsp-only"
+    ;;
+  full-green)
+    gate_legacy="full-green"
+    case "$argus_status" in
+      skipped|not-invoked)
+        # `not-invoked` on the task-mode path (as opposed to build/test-suite
+        # modes which are Argus-exempt and route through different emitters)
+        # means the gate was waived. Build / test-suite modes don't land here.
+        gate="waived"
+        ;;
+      approved|flagged)
+        if [ -n "$tests_skipped" ]; then
+          gate="build-only"
+        else
+          gate="verified"
+        fi
+        ;;
+      blocked|*)
+        # `blocked` shouldn't reach brief_completed (merge wouldn't happen),
+        # but if it does, treat as waived — the merge bypassed a hard stop.
+        gate="waived"
+        ;;
+    esac
+    ;;
+  *)
+    # Unknown build_gate — preserve raw value for debugging; legacy mirrors it.
+    gate="$build_gate"
+    gate_legacy="$build_gate"
+    ;;
+esac
+
+data=$(printf '{"gate":"%s","gate_legacy":"%s","merge_sha":"%s","debrief_id":"%s"}' \
+  "$gate" "$gate_legacy" "$merge_sha" "$DEBRIEF_UUID")
 emit_event_keyed achilles task brief_completed "$TASK_UUID" "$data" >/dev/null 2>&1 || true
 
 # Flush the index now that the batch is done.

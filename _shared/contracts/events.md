@@ -58,7 +58,7 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | Event | Emitted when | Typical `data` keys |
 |---|---|---|
 | `brief_started` | Achilles begins Step 1 (load spec) | `size`, `gate_selected` |
-| `brief_completed` | All steps done, debrief written | `gate`, `merge_sha` |
+| `brief_completed` | All steps done, debrief written | `gate`, `gate_legacy`, `merge_sha`, `debrief_id` |
 | `brief_failed` | Any unrecoverable failure | `reason`, `step` |
 | `task_started` | Step 2 — task claimed, branch created | `branch`, `base_sha` |
 | `task_completed` | Step 9 — merge succeeded | `merge_sha` |
@@ -116,6 +116,23 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `legacy_artifact_read` | A runtime script fell back to a pre-Phase-2.6 path because the post-2.6 ledger shape was unavailable (`plans/index.yaml` missing, `plans/debriefs/` absent, or `yq` unavailable on the machine). One emit per sweep per domain — makes the transition to the canonical layout observable. Task field is empty. | `domain` (`briefs`\|`debriefs`), `reason` (`plans_index_missing`\|`plans_debriefs_missing`\|`yq_unavailable`), `caller` (script name) |
 | `legacy_event_source_retired` | `scripts/migrate-ledger.sh` cleanup phase moved a pre-2.6 event-log sibling (e.g. `event-log.jsonl`, `events.log`) to `archive/2026-pre-2.6/legacy-event-sources/` after verifying parity against the canonical day-partitioned files. Task field is empty. | `source` (relative path), `source_lines`, `canonical_lines` |
 | `feedback_placeholder_pruned` | `scripts/migrate-ledger.sh` cleanup phase removed a `.gitkeep`-only subdir under `feedback/` (e.g. `feedback/root-causes/`). Recreated lazily on first real write. Task field is empty. | `path` (relative path) |
+
+#### `brief_completed.gate` taxonomy (issue #84)
+
+Pre-#84 the `gate` field collapsed three distinct outcomes into one `full-green` literal. The expanded enum keeps the verification axis observable without parsing prose:
+
+| `gate` value | Meaning | Source signals |
+|---|---|---|
+| `verified` | Build green + tests executed + Argus approved or flagged | `build_gate: full-green`, `argus_review.status ∈ {approved, flagged}`, `tests.skipped_because == null` |
+| `build-only` | Build green but the test suite was disabled at suite level (no runtime execution) | `build_gate: full-green`, `argus_review.status ∈ {approved, flagged}`, `tests.skipped_because` non-null |
+| `waived` | Build green but Argus was skipped / not-invoked on a non-exempt task-mode path | `build_gate: full-green`, `argus_review.status ∈ {skipped, not-invoked}` |
+| `lsp-only` | XS/S task — LSP gate only, no xcodebuild, no merge-blocking Argus | `build_gate: lsp-only` |
+
+Precedence: `waived` beats `build-only` when both apply. A waived review is the stronger drift signal, and the user needs to see waivers regardless of test-suite state.
+
+**Backward compatibility.** The event also carries `gate_legacy` ∈ `{lsp-only, full-green}` — the pre-#84 value. Consumers that matched on the old literal keep working; consumers that want the verification split read `gate`. Both fields are emitted unconditionally. `gate_legacy` is a transitional field and may be removed once no consumer depends on it — track under a follow-up issue before deletion.
+
+**Out of scope for this event:** `brief_started.gate_selected` still records the *selected* gate mode (`lsp-only | full-green`) — that's the input side and intentionally distinct from the outcome.
 
 ### Snapshot events (router-pattern)
 
