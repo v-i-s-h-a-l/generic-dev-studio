@@ -109,7 +109,8 @@ Ordered plan for the intent-router + ledger + knowledge refactor, as of 2026-04-
 
 - **Phase 2.5** — Router contract extensions. Must-haves: message contracts, state machines, idempotency, schema versioning, read/write declarations. Ship-alongside: capability manifest, dry-run, budget telemetry. Reorganize `_shared/` into subdirectories (`patterns/`, `contracts/`, `state-machines/`, `schemas/`, `primitives/`, `rules/`). Linter extends with ~5 new codes. No mode-pack changes yet.
 - **Phase 2.6** — Ledger overhaul. All artifacts → structured YAML (tasks, designs, rounds, releases, debriefs, reviews, crashes). `plans/index.yaml` + inline relational links. Single canonical event log at `events/YYYY-MM-DD.jsonl`; six other locations consolidated + archived. Migration script for turnip-ios (backup → transform → cutover). Every Chanakya and Achilles mode pack rewritten against new contracts. Agent-versioning hooks. **Also:** add Achilles `debrief` mode (`/achilles debrief`) for direct-to-Claude bug fixes that bypass the brief → worktree → Argus pipeline — scans conversation + staged diff, emits a debrief in the new YAML schema; user tells it whether tests are needed.
-- **Phase 2.7** — Knowledge layer. `_shared/project-memory.md` + `scripts/memory-query.sh`. Chanakya `modes/knowledge.md` for synthesis. Slack-ingest index joins the memory layer. Cross-refs from Lu Ban / Achilles / Argus.
+- **Phase 2.6.6** — Skill-testing primitive (inserted 2026-04-23 after `obra/superpowers` analysis). `scripts/test-mode-pack.sh` + `_shared/primitives/skill-testing.md` encoding the discipline: for every mode pack, script a baseline scenario where a fresh subagent WITHOUT the pack fails the task, then verify that loading the pack makes it pass. Retroactively validates Phase 2.6.5's ~12K-token extractions AND gates every future mode-pack edit (including all of Phase 2.7's knowledge-layer prose) against regression. Gates Phase 2.7.
+- **Phase 2.7** — Knowledge layer. `_shared/project-memory.md` + `scripts/memory-query.sh`. Chanakya `modes/knowledge.md` for synthesis. Slack-ingest index joins the memory layer. Cross-refs from Lu Ban / Achilles / Argus. Every new mode-pack authored here ships with a test-mode-pack fixture (per Phase 2.6.6).
 - **Phase 3** — Prompt-caching instrumentation + schedule-driven automation. Stable-prefix caching design. Daily/weekly/monthly/quarterly crons via `/schedule` and `/loop`. `modes/test-health.md`. Weekly narrative auto-post.
 - **Phase 4** — Lu Ban greenfield (`/luban`). Multi-file designs from day 1. ADR auto-write on `status: approved`. `_shared/architecture-catalog.md`. Integration with Chanakya Step 0 scan.
 - **Phase 5** — Crashlytics auto-brief loop + Argus `smoke` mode (synthetic-QA capability folded into Argus; right-sizing — no fifth agent). 3-step gate for crash fixes. `scripts/crash-watch.sh` modeled on `appstore-watch.sh`.
@@ -126,6 +127,7 @@ Autonomous improvement loop, agent rollback via semver, studio as shippable publ
 
 - 2.5 gates 2.6 (contracts before the overhaul conforming to them).
 - 2.6 gates 2.7 (structured data before the knowledge layer indexing it).
+- 2.6.6 gates 2.7 (skill-testing discipline before the synthesis-heavy knowledge layer).
 - 2.7 and 3 are parallelizable.
 - Lu Ban (4) lands on 2.5 + 2.6 foundation.
 - Argus smoke mode (5) independent of Lu Ban.
