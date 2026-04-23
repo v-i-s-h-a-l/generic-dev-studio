@@ -10,6 +10,12 @@ Prior planning sessions cascaded: each surfaced one new dimension (Superpowers p
 
 ---
 
+## Session model
+
+**One arc-session = one Claude Code session.** Fresh context per session. Handoff is strictly file-based: each session reads the prior session's exit artifact(s) cold, produces its own exit artifact, commits, ends. No mega-session accumulation.
+
+Within a single arc-session, parallelization is allowed (e.g., Session B runs 4 parallel audit subagents). Synthesis of subagent returns happens in the *next* Claude session, reading persisted partial files — not in the same session that launched the subagents. This preserves the "fresh context per synthesis" discipline.
+
 ## The arc (7 sessions)
 
 | # | Session | Scope | Exit artifact | Gate |
