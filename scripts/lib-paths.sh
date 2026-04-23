@@ -229,6 +229,21 @@ resolve_project_root_for() {
   printf '%s\n' "$HOME/.dev-studio/$project"
 }
 
+# Per-session start-timestamp scratch file. Stamped at session boot
+# (emit-agent-boot.sh) with epoch seconds, consumed at session completion
+# (emit-agent-session-completed.sh) to compute duration_s. Co-located with
+# agent-boot's sentinel directory so one session has one place for its scratch.
+#
+# Why a scratch file, not the dispatch event: session start is earlier than
+# dispatch on waive/direct/rescue paths. Stamping at the unconditional
+# first-write hook (agent-boot) is the one place every path passes through.
+resolve_session_start_stamp() {
+  local session_id="${1:?usage: resolve_session_start_stamp <session-id>}"
+  local project
+  project=$(resolve_project) || return 1
+  printf '%s\n' "$HOME/.dev-studio/$project/.runtime/state/sessions/${session_id}.start"
+}
+
 # Auto-sweep backoff state — persists the next-sweep delay computed by
 # scripts/sweep-adaptive-backoff.sh so subsequent sweeps honor the backoff.
 resolve_auto_sweep_state() {
