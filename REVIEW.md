@@ -88,6 +88,31 @@ Any mode pack or script that mutates a Phase 2.6 artifact (tasks / briefs / roun
 
 **Fix pattern:** replace ad-hoc YAML writes with `lib-ledger.sh` helper calls; add `transition_notes` frontmatter to the mode pack; tighten prose to AND-not-OR.
 
+### R10 — No completion claims without fresh verification evidence (tier: **block + auto-fix**)
+
+**Iron Law: NO "task complete" / "green build" / "tests pass" / "merge clean" / "no regressions" CLAIM WITHOUT FRESH EVIDENCE IN THE DEBRIEF.**
+
+Every completion-style claim in a debrief (YAML or prose) must cite a specific, timestamped artifact. Claims without evidence are hallucinations; the dual-write has to fail loudly rather than encode a lie.
+
+| Claim | Required evidence |
+|---|---|
+| "build passes" | `xcodebuild` exit 0 captured in debrief's `build_log` field; timestamp within the last 10 min |
+| "tests pass" | Test runner output captured with pass/fail counts; timestamp within last 10 min |
+| "merge clean" | `git status` output showing clean tree and branch up-to-date |
+| "no regressions" | Argus verdict = `approved` referenced by `review_id` |
+| "LSP-clean only" | Build-debt acknowledged in `build_debt` field (XS/S tasks that skipped xcodebuild) |
+
+**Why:** prose claims drift; structured fields don't. A debrief that reads "all tests pass" without a matching `tests_output` is indistinguishable from an honest green run — until the next session reads it, trusts it, and acts on a false floor. The Iron Law punches through the failure mode of rationalizing skipped verification.
+
+**How to check:**
+- In a debrief diff, every `status: done` (or equivalent) must be paired with `build_log`, `tests_output`, or `build_debt` — not all three required, but at least one must carry fresh timestamp + real content.
+- Prose like "confirmed passing" or "all green" that doesn't reference a field → reject; ask where the evidence is.
+- XS/S tasks that skipped xcodebuild must emit `done_with_concerns`-equivalent state and `build_debt: acknowledged` — they may not self-claim unqualified "passing".
+
+**Fix pattern:** either capture the evidence and paste it into the debrief, or downgrade the claim to "LSP-clean, build-debt acknowledged" with the matching field set. Never rewrite the claim to pass the rule — the claim is the symptom; the missing evidence is the failure.
+
+**Interaction:** when the 4-state worker-report contract (#79) lands, `done` vs `done_with_concerns` becomes the structural enforcement of this rule. Until then, R10 is the prose-level gate.
+
 ## Deferred / known gaps
 
 Not rules yet — track here so we remember:
