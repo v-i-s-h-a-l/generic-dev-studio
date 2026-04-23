@@ -16,7 +16,7 @@ Step 0 (the inbox sweep) is the pre-dispatch step that fires before every mode �
 
 **This mode pack does nothing beyond what Step 0 already did.** After Step 0 completes:
 
-1. Report the sweep summary — what got processed, what got minted, what got flagged. Same format as the sweep-summary portion of `/chanakya status`, but without the trailing status table / dashboard / blockers / release rows.
+1. Report the sweep summary — mirror the `inbox_sweep_completed` payload emitted in Step 0G1. **Name orphan-backfill and legacy-pickup counts explicitly when non-zero** ("0 new + 3 orphans back-filled" beats a flat "0 ingested"). Same format as the sweep-summary portion of `/chanakya status`, but without the trailing status table / dashboard / blockers / release rows.
 2. Exit.
 
 Skip: rendering the master plan, reading `plans/rounds/*.yaml`, computing blockers, displaying debt counters beyond the changes this sweep made, test-flow round status, release status, push-queue surface.

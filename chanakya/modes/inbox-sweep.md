@@ -65,6 +65,18 @@ Pass `--argus-exempt` to `sweep-ingest.sh debrief` when the task matches an exem
 
 After the loop, run `scripts/rebuild-index.sh` once if any debrief was processed — skipping it leaves `plans/index.yaml` stale.
 
+### 0A.1 — Orphan-debrief backfill (double-miss guard)
+
+Step 0A's `state: emitted` filter permanently skips any debrief that previously flipped to `done`/`ingested` without landing a row in `chanakya-master.md`. To catch that silent double-miss, run:
+
+```bash
+scripts/backfill-orphan-debriefs.sh --apply --quiet
+```
+
+The script scans `plans/debriefs/*.yaml` for entries with `state: done|ingested`, `mode: task`, and no corresponding `### <legacy_task_id>` section in the master plan, and back-fills the missing row (title, priority, type, status mapped from `report_state`, optional merge SHA / concerns / follow-ups annotations). Idempotent — subsequent runs find nothing. Captures `backfilled_count` on stdout for the summary in §Step 0H.
+
+For a one-shot recovery pass over pre-existing orphans (e.g. after the bug lands), the user can run `scripts/backfill-orphan-debriefs.sh` without `--apply` first to preview, then with `--apply` to commit.
+
 ### 0B2 — Release debrief Slack sync
 
 After `sweep-ingest.sh release` processes a TestFlight release debrief:
@@ -125,6 +137,39 @@ Offset update is atomic (tmp + mv).
 ## Step 0F — Studio-feedback inbox
 
 `scripts/ingest-feedback.sh`. The script is gated on `resolve_project == generic-dev-studio` — any other project silent-exits. Also auto-runs on SessionStart here (`.claude/settings.json`). Re-running is idempotent.
+
+## Step 0G1 — Sweep completion event + honest summary
+
+Emit `inbox_sweep_completed` with the counts collected across Steps 0A–0F, regardless of whether any artifacts were processed. The event is the primary sweep-run telemetry signal and anchors the summary the user sees:
+
+```bash
+scripts/write-event.sh --agent chanakya --mode inbox-sweep \
+  --event inbox_sweep_completed \
+  --data "$(printf '{"debriefs_ingested":%d,"orphans_backfilled":%d,"legacy_pickups":%d,"events_processed":%d,"reminders_fired":%d}' \
+    "$debriefs_ingested" "$orphans_backfilled" "$legacy_pickups" "$events_processed" "$reminders_fired")"
+```
+
+Counts to populate:
+
+- `debriefs_ingested` — count of `state: emitted → ingested` transitions in Step 0A.
+- `orphans_backfilled` — stdout of `scripts/backfill-orphan-debriefs.sh --apply --quiet` in Step 0A.1.
+- `legacy_pickups` — count of `mode=legacy` lines from `sweep-enumerate-debriefs.sh` that got ingested in Step 0A.
+- `events_processed` — rows the event fan-out in Step 0E handled.
+- `reminders_fired` — `feedback_reminder_due` emits in Step 0E2.
+
+Then render the summary. **If orphans or legacy pickups are non-zero, call them out explicitly** — never collapse to "0 ingested" when the sweep actually recovered work:
+
+```
+Sweep: 2 debriefs ingested + 3 orphans back-filled (was silently skipped by prior sweep). 1 legacy .md debrief picked up. 0 reminders.
+```
+
+vs. a truly empty sweep:
+
+```
+Sweep: 0 new. Inbox clean.
+```
+
+Naming the orphan/legacy counts is load-bearing — the earlier bug report documented three tasks that stayed invisible for a full day because every sweep summary reported "0 ingested" while orphans compounded.
 
 ## Step 0G — Adaptive backoff (auto-sweep only)
 

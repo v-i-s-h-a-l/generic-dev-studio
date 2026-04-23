@@ -33,6 +33,21 @@ Post-migration surface: resolve the task via `scripts/query-plans.sh --kind=task
 
 **Phase 2.6 transition:** if the YAML artifact is absent (migration has not run), fall back to `~/.dev-studio/<project>/plans/chanakya-master.md` and emit one `legacy_artifact_read` event so the fallback is visible. Cutover removes the legacy read at Commit H.
 
+## Step 1A — Master-plan registration gate
+
+Before anything else, ensure the task has a `### <legacy-task-id>` section in `chanakya-master.md`. Tasks briefed directly (without running `/chanakya intake`) otherwise dispatch and complete invisibly — when Achilles drops a debrief, the sweep has no master-plan row to update, the debrief flips `emitted → ingested`, and on every subsequent sweep the `state: emitted` filter skips it permanently. This is the "silent double-miss" the 2026-04-23 bug reports documented.
+
+Resolve the task's `legacy_task_id` (from Step 1's task YAML). If `grep -q "^### $legacy_id " chanakya-master.md` returns non-zero, write a stub row immediately:
+
+```bash
+scripts/lib-ledger.sh  # sourced helper
+legacy_master_plan_append_row "$legacy_id" "$title" "$priority" "$type" "brief:stub" "briefed"
+```
+
+The helper is idempotent — a re-brief no-ops if the section already exists. Use `brief:stub` as the `Source:` field so the row is recognizable as brief-time provenance rather than intake-time.
+
+If `legacy_task_id` is empty (UUID-only task), skip — nothing to key the section on. Callers who want master-plan visibility must supply a legacy id.
+
 ## Step 2 — File overlap detection
 
 Check if the task's likely target files overlap with files listed in any `in-progress` task's brief. Post-migration surface: `scripts/query-plans.sh --kind=brief --state=dispatched` enumerates the active briefs; match the union of each brief's `writes:` + `reads:` arrays against the new task's expected targets. Legacy fallback scans the brief markdown under `plans/chanakya-tasks/`. On overlap warn the user:
