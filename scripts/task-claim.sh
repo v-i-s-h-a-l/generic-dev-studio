@@ -8,7 +8,7 @@
 # Status rows), so the brief transition is YAML-only.
 #
 # Usage:
-#   scripts/task-claim.sh <task-uuid> <brief-uuid> <size> <gate-mode>
+#   scripts/task-claim.sh <task-uuid> <brief-uuid> <size>
 #
 # Exit codes:
 #   0  both transitions applied + event emitted
@@ -24,10 +24,9 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
 
-TASK_UUID="${1:?usage: task-claim.sh <task-uuid> <brief-uuid> <size> <gate>}"
+TASK_UUID="${1:?usage: task-claim.sh <task-uuid> <brief-uuid> <size>}"
 BRIEF_UUID="${2:?brief-uuid required (empty string OK for direct mode)}"
 SIZE="${3:?size required}"
-GATE="${4:?gate required (lsp-only|full-green)}"
 
 # Task flip first — the task's legacy dual-write (master-plan Status) lives
 # here, so a crash between the two transitions leaves the post-migration
@@ -50,6 +49,9 @@ if [ -n "$BRIEF_UUID" ]; then
 fi
 
 # brief_started carries the Step 2 handoff signal for analysis. Keyed by
-# task-uuid so the `task` field joins cleanly to downstream events.
-data=$(printf '{"size":"%s","gate_selected":"%s"}' "$SIZE" "$GATE")
+# task-uuid so the `task` field joins cleanly to downstream events. Gate is
+# intentionally absent here — it can escalate mid-task (lsp-only → full-green),
+# which made the brief_started copy silently stale. `brief_completed.gate` is
+# the sole source of truth (see #86).
+data=$(printf '{"size":"%s"}' "$SIZE")
 emit_event_keyed achilles task brief_started "$TASK_UUID" "$data" >/dev/null

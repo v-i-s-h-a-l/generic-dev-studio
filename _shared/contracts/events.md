@@ -57,7 +57,7 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 
 | Event | Emitted when | Typical `data` keys |
 |---|---|---|
-| `brief_started` | Achilles begins Step 1 (load spec) | `size`, `gate_selected` |
+| `brief_started` | Achilles begins Step 1 (load spec) | `size` |
 | `brief_completed` | All steps done, debrief written | `gate`, `merge_sha` |
 | `brief_failed` | Any unrecoverable failure | `reason`, `step` |
 | `task_started` | Step 2 — task claimed, branch created | `branch`, `base_sha` |

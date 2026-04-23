@@ -115,7 +115,7 @@ scripts/tests-diff-rounds.sh <A> <B>                    # markdown diff between 
 # Achilles task mode — mechanical extractions from modes/task.md (Phase 2.6.5):
 eval "$(scripts/task-load-spec.sh T001)"                # TASK_MODE/BRIEF_PATH/SIZE/TYPE/ACCEPTANCE_JSON
 scripts/task-build-debt-gate.sh [--override]            # exit 2 if blocked; emits build_debt_blocked
-scripts/task-claim.sh <task-uuid> <brief-uuid> <size> <gate>   # task + brief state transitions
+scripts/task-claim.sh <task-uuid> <brief-uuid> <size>   # task + brief state transitions
 eval "$(scripts/task-worktree-setup.sh T001 /repo)"     # PROJECT/ORIG_BRANCH/ORIG_HEAD/WORKTREE
 scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" # xcodebuild + lock
 scripts/task-write-test-cases.sh T001 '[{...}]'         # twin-write standalone + stdout YAML
