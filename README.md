@@ -16,9 +16,10 @@ timeline
     Apr 2026 : v0.1.0-beta.1 — Three-agent system + multi-worker fleet
              : v0.1.0-beta.2 — In-Claude worker mode + collision-safe slot claims
              : v0.2.0-beta.1 — Per-project fleets + review and release tooling
-    Coming next : Internal craft — analysis loop, faster/leaner agents
+             : v0.3.0 — Structured ledger + router pattern + two-stage Argus + skill testing
+    Coming next : Knowledge layer — memory-query + synthesis across debriefs
+                : Lu Ban — a dedicated architect agent for design dialogue
                 : iOS depth — first-class Swift/SwiftUI/UIKit intelligence
-                : Release pipeline — TestFlight + App Store with zero touches
     Long term : External integrations (Crashlytics, Linear, …)
               : Design pipeline — Figma → code with high fidelity
               : Conversational planning from ambient input
@@ -26,6 +27,7 @@ timeline
 
 ### Story so far
 
+- **[v0.3.0](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.3.0)** — Sessions cost ~12K fewer tokens per dispatch because mode packs load on demand instead of the old monolithic skill files. Argus splits into two sequential stages so scope drift and over-building surface cleanly. Every debrief carries a 4-state worker report code so Chanakya routes deterministically. Plans and debriefs become structured YAML under `plans/`; the master plan is a generated view. A new `/achilles debrief` captures in-chat fixes, REVIEW R10 blocks unsupported completion claims, and a SessionStart hook keeps routing intact through `/compact`.
 - **[v0.2.0-beta.1](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.2.0-beta.1)** — Each project you use the studio on now runs its own independent fleet — workers, inboxes, queues all scoped per project. Terminal panes self-label so you can tell at a glance which project they belong to. Plus the review and release rulebooks (`REVIEW.md`, `RELEASES.md`) that future sessions auto-pick-up.
 - **[v0.1.0-beta.2](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.1.0-beta.2)** — Workers can run as real Claude sessions (`/achilles worker`), broadcast across N panes with collision-safe slot claiming. Fleet cleanup script for between-session sweeps.
 - **[v0.1.0-beta.1](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.1.0-beta.1)** — First beta. Three Claude agents — Chanakya plans, Achilles writes, Argus reviews — coordinated over a file-based inbox so work survives Claude restarts. Multi-worker fan-out for parallel tasks.
