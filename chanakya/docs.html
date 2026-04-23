@@ -928,6 +928,23 @@ chmod +x scripts/*.sh</code></pre>
   <pre><code>scripts/waive-start.sh argus "broad refactor in flight" "rebase of main complete"
 scripts/waive-lift.sh argus    # reports N tasks merged without review during the pause</code></pre>
   <p>While a waive is active, every <code>review_pending</code> emission from <code>sweep-ingest.sh</code> bumps <code>accumulated_count</code> atomically. The SessionStart hook surfaces a one-line banner on every new session so a pause can't become invisible. Closes <a href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/83">#83</a>.</p>
+
+  <h3 style="margin-top: 32px;">Orphan-debrief backfill</h3>
+  <p>Recover tasks that completed and emitted a debrief but never landed a row in the master plan — a "silent double-miss" where prior sweeps flipped <code>state: emitted → done</code> without updating the plan, then subsequent sweeps skipped the already-done debrief permanently.</p>
+  <pre><code>scripts/backfill-orphan-debriefs.sh           # dry-run: preview what would be back-filled
+scripts/backfill-orphan-debriefs.sh --apply   # write missing rows to chanakya-master.md
+scripts/backfill-orphan-debriefs.sh --apply --quiet  # machine-readable count (used by sweep)</code></pre>
+  <p>Runs automatically as Step 0A.1 on every <code>/chanakya sweep</code>. Idempotent — re-runs find nothing if the plan is already up to date. Emits <code>debrief_backfilled</code> per recovery. The sweep summary names the count explicitly: "2 new + 3 orphans back-filled". Closes <a href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/91">#91</a> <a href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/92">#92</a>.</p>
+
+  <h3 style="margin-top: 32px;">Achilles base-branch auto-refresh</h3>
+  <p>Before handing off to Argus (Step 8.5), Achilles fetches and merges the base branch if the worktree has fallen behind by more than a configurable threshold (default: 2 commits). Prevents stale-merge false blocks from Argus — previously required a manual re-run.</p>
+  <pre><code># Invoked automatically by Achilles Step 8.4 — not usually run directly.
+# Override the threshold:
+ACHILLES_BASE_REFRESH_THRESHOLD=5 /achilles T001
+
+# On conflict, Achilles aborts cleanly and surfaces report_state: blocked.
+scripts/achilles-refresh-base.sh &lt;worktree&gt; [--dry-run]</code></pre>
+  <p>Emits <code>base_refreshed</code> (merge clean) or <code>base_refresh_conflict</code> (aborted). No-ops when the worktree is already up to date — the event is only emitted on an actual merge.</p>
 </section>
 
 <!-- Flow -->

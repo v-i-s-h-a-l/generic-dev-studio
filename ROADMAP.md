@@ -105,6 +105,7 @@ Ordered plan for the intent-router + ledger + knowledge refactor, as of 2026-04-
 - **Phase 2 (snap)** ✓ Real snapshot producers + SessionStart prewarm + status-mode consumption + invalidation.
 - **Phase 3 (Achilles)** ✓ Achilles router refactor — router 51 lines + 9 mode packs.
 - **Phase 2.6.6** ✓ Skill-testing primitive + four obra/superpowers adaptations. `scripts/test-mode-pack.sh` + `_shared/primitives/skill-testing.md` + 5 retroactive fixtures + `W_MISSING_PACK_FIXTURE` lint gate. Two-stage Argus (spec-compliance → code-quality). 4-state worker-report contract. REVIEW R10 Iron Law. SessionStart router-bootstrap hook. Folded in #77 lint hygiene fix.
+- **v0.4.0 follow-ups** ✓ Sweep reliability bundle: orphan-debrief backfill (`scripts/backfill-orphan-debriefs.sh`), `inbox_sweep_completed` telemetry restored, brief-time master-plan registration (closes #91 #92). Achilles Step 8.4 base-branch auto-refresh pre-Argus (`scripts/achilles-refresh-base.sh`). Review-waive lifecycle (`scripts/waive-start.sh`, `scripts/waive-lift.sh`) with SessionStart banner and per-session accumulated-count (closes #83). REVIEW R11.
 
 ### Planned
 
