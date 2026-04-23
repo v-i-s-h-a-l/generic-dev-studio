@@ -42,6 +42,18 @@ if [ -f "$SENTINEL" ]; then
   exit 0
 fi
 
+# Stamp session start-ts unconditionally — every path (task-mode dispatch,
+# waived merge, direct mode, rescue) flows through this hook before any other
+# session write. Downstream emit-agent-session-completed.sh reads this file
+# to compute duration_s. Kept separate from the agent-boot event payload so
+# the event stays minimal per _shared/contracts/agent-boot.md.
+START_STAMP=$(resolve_session_start_stamp "$SESSION_ID" 2>/dev/null) || START_STAMP=""
+if [ -n "$START_STAMP" ]; then
+  mkdir -p "$(dirname "$START_STAMP")" 2>/dev/null || true
+  # Only stamp if absent — idempotent like the sentinel.
+  [ -f "$START_STAMP" ] || date -u +%s > "$START_STAMP" 2>/dev/null || true
+fi
+
 # Resolve git_sha of the studio repo. Caller may override via
 # ACHILLES_STUDIO_REPO; otherwise walk up from this script to find a git dir.
 # Final fallback is the current working git repo.

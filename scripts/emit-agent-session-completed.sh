@@ -12,6 +12,17 @@
 #       [--tokens-input <n>] [--tokens-output <n>] \
 #       [--tokens-cache-read <n>] [--tokens-cache-write <n>]
 #
+# `<duration_s>` accepts either:
+#   - a non-negative integer (legacy caller-measured form), or
+#   - `auto:<session-id>` — resolves the session-start stamp written by
+#     `emit-agent-boot.sh` at first-write and computes `now - start`. Use this
+#     from any agent session-completion path (task, waived merge, direct,
+#     rescue) — the stamp is captured unconditionally at session start, so
+#     duration_s is never null regardless of which path the session took
+#     through the lifecycle. Falls back to 0 (with a stderr warn) if the
+#     stamp is missing, since completion without prior first-write is a
+#     read-only session anomaly worth seeing rather than swallowing.
+#
 # Exit codes:
 #   0  event appended (or logged under DRY_RUN=1)
 #   2  missing/invalid args
@@ -44,10 +55,33 @@ case "$AGENT" in
   *) printf 'error: invalid agent "%s"\n' "$AGENT" >&2; exit 2 ;;
 esac
 
-# Duration must be numeric — non-negative int. Float would bloat the JSON and
-# is never what a shell-time subtraction produces.
+# `auto:<session-id>` form: read the start-ts stamped by emit-agent-boot.sh
+# and compute now - start. This is the unconditional-stamp path — works for
+# task, waived merge, direct, and rescue sessions because all four pass
+# through agent-boot at first write. Legacy integer form still accepted so
+# existing callers (argus-run-tests.sh) don't churn.
 case "$DURATION_S" in
-  ''|*[!0-9]*) printf 'error: duration_s must be a non-negative integer, got %s\n' "$DURATION_S" >&2; exit 2 ;;
+  auto:*)
+    SESSION_ID="${DURATION_S#auto:}"
+    [ -z "$SESSION_ID" ] && { printf 'error: auto: form requires a session-id (got empty)\n' >&2; exit 2; }
+    START_STAMP=$(resolve_session_start_stamp "$SESSION_ID" 2>/dev/null) || START_STAMP=""
+    START_S=""
+    if [ -n "$START_STAMP" ] && [ -r "$START_STAMP" ]; then
+      START_S=$(cat "$START_STAMP" 2>/dev/null | tr -d '[:space:]')
+    fi
+    case "$START_S" in
+      ''|*[!0-9]*)
+        printf 'warn: no session-start stamp for "%s" — duration_s defaulting to 0 (agent-boot was not invoked; read-only session?)\n' "$SESSION_ID" >&2
+        DURATION_S=0
+        ;;
+      *)
+        NOW_S=$(date -u +%s)
+        DURATION_S=$(( NOW_S - START_S ))
+        [ "$DURATION_S" -lt 0 ] && DURATION_S=0
+        ;;
+    esac
+    ;;
+  ''|*[!0-9]*) printf 'error: duration_s must be a non-negative integer or auto:<session-id>, got %s\n' "$DURATION_S" >&2; exit 2 ;;
 esac
 
 VERDICT=""

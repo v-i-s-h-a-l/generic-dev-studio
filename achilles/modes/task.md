@@ -308,8 +308,10 @@ Pass `report_state=<value>` to `write_debrief_artifact` (via the debrief path do
 **Iron Law (REVIEW.md R10).** Never pick `done` to make a red build look green. If xcodebuild did not run or failed, the state is at most `done_with_concerns` (with `debt.build: true`). If tests were skipped, the state is at most `done_with_concerns` (with `tests.skipped_because` populated). Structural honesty — prose cannot paper over a missing field.
 
 ```bash
-scripts/emit-agent-session-completed.sh achilles task "$TASK_ID" "$DURATION_S" --verdict "$VERDICT"
+scripts/emit-agent-session-completed.sh achilles task "$TASK_ID" "auto:$TASK_ID" --verdict "$VERDICT"
 ```
+
+The `auto:<session-id>` form reads the start-ts stamped by `emit-agent-boot.sh` at first-write and computes `now - start`. Every session path (normal dispatch, waived merge, direct, rescue) passes through agent-boot, so `duration_s` is populated unconditionally — no null on waive/direct. Callers that already track wall-clock may pass a pre-computed integer instead.
 
 Supports optional `--tokens-input/--tokens-output/--tokens-cache-read/--tokens-cache-write` flags. Duration alone is still useful when token counts aren't available. See `~/.claude/skills/_shared/contracts/events.md` → "Cross-agent events".
 

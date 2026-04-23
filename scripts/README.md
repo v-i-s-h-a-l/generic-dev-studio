@@ -89,7 +89,7 @@ TASK_ID=T001 eval "$(scripts/argus-diff-extract.sh /path main)"     # BASE_SHA +
 scripts/argus-run-tests.sh T001 MyScheme MyTests                    # xcodebuild + test-slot mgmt; exit 0 green, 3 red
 scripts/argus-verify-tdd.sh T001 /path main MyScheme MyTests        # red→green verify; exit 0 ok, 2 flag, 3 block
 scripts/argus-emit-verdict.sh T001 approved '[]' --task-uuid <uuid> # YAML + legacy md + back-ref + verdict event + stdout line
-scripts/emit-agent-session-completed.sh argus review T001 42 --verdict approved   # shared session-close (any agent)
+scripts/emit-agent-session-completed.sh argus review T001 auto:T001 --verdict approved   # shared session-close (any agent); auto: resolves start-ts from emit-agent-boot stamp
 
 # Chanakya inbox sweep — mechanical extractions from modes/inbox-sweep.md (Phase 2.6.5):
 scripts/sweep-enumerate-debriefs.sh                     # classify inbox debriefs → task-debrief/build-check/release/direct-debrief

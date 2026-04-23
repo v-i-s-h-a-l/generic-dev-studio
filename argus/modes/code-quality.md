@@ -136,8 +136,10 @@ ARGUS_VERDICT=blocked stage=quality block_reason="<reason>" review_file=<path>
 ### Step 9 — Emit session-completed event
 
 ```bash
-scripts/emit-agent-session-completed.sh argus review "$TASK_ID" "$DURATION_S" --verdict "$VERDICT"
+scripts/emit-agent-session-completed.sh argus review "$TASK_ID" "auto:$TASK_ID" --verdict "$VERDICT"
 ```
+
+The `auto:<session-id>` form reads the start-ts stamped by `emit-agent-boot.sh` at Step 1's first-write and computes `now - start` — `duration_s` is populated regardless of which path the review took (approved, flagged, blocked).
 
 Pass `--tokens-input` / `--tokens-output` / `--tokens-cache-{read,write}` if available; omit the tokens sub-object otherwise (see `_shared/contracts/events.md` § Cross-agent events).
 
