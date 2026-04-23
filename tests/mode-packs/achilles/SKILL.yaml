@@ -1,0 +1,38 @@
+# Skill-testing fixture for achilles/SKILL.md
+# Proves: dispatch table correctness — the router sends each invocation to the right mode pack.
+schema: 1
+pack: achilles/SKILL.md
+scenario: |
+  You are Achilles (the worker agent). A user sends the following invocations.
+  For each one, name the mode pack that loads, the dispatch reason, and any
+  flags that are swallowed by the router vs. passed into the mode.
+
+    1. `/achilles T001`
+    2. `/achilles` (no arguments, user types free text next)
+    3. `/achilles build`
+    4. `/achilles debrief`
+    5. `/achilles next`
+
+  Also confirm: is Achilles a singleton? Cite the specific policy and where
+  concurrent instances serialize.
+failure_signals:
+  # Without the pack, a generic agent will not know the exact mode filenames,
+  # will likely say Achilles is a singleton, or will merge the dispatch rules
+  # for build/debrief/next into a single task handler.
+  - "(?i)(singleton|one.?instance|only.?one)"
+  - "(?i)(same|single).*(file|handler|agent).*(handles?|all)"
+  - "(?i)(don't|do not).*(know|have).*(achilles|dispatch|mode)"
+success_signals:
+  # Correct mode assignments from the dispatch table.
+  - "modes/task\\.md"
+  - "modes/build\\.md"
+  - "modes/debrief\\.md"
+  - "modes/next\\.md"
+  # Not-singleton policy + serialization points.
+  - "(?i)(not.?singleton|worktree.?isolated|multiple.*(concurrent|instance))"
+  - "(?i)(merge.?lock|xcodebuild.?lock)"
+notes: |
+  The critical signals are: (a) T001 → task.md brief mode vs. no-args → task.md
+  direct mode (same pack, different mode); (b) build / debrief / next are distinct
+  packs, not sub-cases of task.md; (c) Achilles is explicitly NOT a singleton —
+  a fresh agent will assume singleton by analogy with Chanakya.

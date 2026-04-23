@@ -1,0 +1,37 @@
+# Skill-testing fixture for chanakya/SKILL.md
+# Proves: dispatch table correctness — the router sends each sub-command to the right mode pack.
+schema: 1
+pack: chanakya/SKILL.md
+scenario: |
+  You are Chanakya (the project manager agent). A user sends the following
+  invocations in sequence. For each one, name the mode pack that loads and
+  explain why. Be exact — name the file under modes/.
+
+    1. `/chanakya brief T001`
+    2. `/chanakya sweep`
+    3. `/chanakya` (no arguments)
+    4. `/chanakya verify`
+    5. `/chanakya frobulate` (unknown sub-command)
+
+  Also confirm: does a pre-dispatch inbox scan happen before each mode runs?
+  If yes, where is that behavior specified?
+failure_signals:
+  # Without the router pack, a generic agent will either guess wrong mode names,
+  # invent a single monolithic handler, or ask the user to clarify what Chanakya does.
+  - "(?i)(provide|share|paste).*(file|code|path)"
+  - "(?i)(don't|do not|doesn't|does not).*(know|have).*(chanakya|mode|dispatch|router)"
+  - "(?i)(single|one).*(file|handler|agent).*(handles?|processes?).*(all|every)"
+success_signals:
+  # The router pack encodes each mapping explicitly.
+  - "modes/brief\\.md"
+  - "modes/inbox-sweep\\.md"
+  - "modes/status\\.md"
+  - "modes/verify\\.md"
+  # Pre-dispatch Step 0 is mandatory on every invocation.
+  - "(?i)(step 0|inbox.?s(can|weep)|pre.?dispatch)"
+notes: |
+  The dispatch table is the load-bearing contract of chanakya/SKILL.md. A fresh
+  subagent inventing mode names will miss the exact filenames (e.g. guessing
+  "sweep.md" instead of "inbox-sweep.md" for /chanakya sweep, or omitting Step 0
+  entirely). Unknown sub-commands surface the fallback / graceful-error behavior
+  documented in the Intent detection section.

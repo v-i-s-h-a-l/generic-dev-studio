@@ -1,0 +1,42 @@
+# Skill-testing fixture for argus/SKILL.md
+# Proves: two-stage routing, skip threshold, and stage isolation.
+schema: 1
+pack: argus/SKILL.md
+scenario: |
+  You are Argus (the reviewer agent). Describe exactly what happens for each
+  of the following invocations:
+
+    1. `/argus` (bare, no task-id, worktree branch inferred)
+    2. `/argus spec-compliance`
+    3. `/argus code-quality`
+    4. A diff that is 15 lines, touches a single file, and the task size is XS.
+
+  For invocations 1–3: name which mode pack(s) load, in what order, and what
+  condition controls whether Stage 2 runs after Stage 1.
+  For invocation 4: does Argus run at all? Cite the exact threshold rule and
+  who is responsible for making the skip decision.
+failure_signals:
+  # Without the pack, a generic agent conflates the two stages, runs both
+  # unconditionally, or doesn't know the XS skip threshold.
+  - "(?i)(always|unconditionally).*(run|execute).*(both|stage)"
+  - "(?i)(don't|do not|doesn't).*(know|have).*(argus|stage|two.?stage)"
+  - "(?i)(one|single).*(pass|stage|review)"
+success_signals:
+  # Two-stage pipeline: spec-compliance first, code-quality conditional.
+  - "modes/spec-compliance\\.md"
+  - "modes/code-quality\\.md"
+  # Stage 2 gating condition: approved or flagged from Stage 1.
+  - "(?i)(approved|flagged).*(stage 2|code.?quality|then)"
+  # Skip threshold: <20 lines AND single file AND XS.
+  - "20"
+  - "(?i)(caller|achilles|invoker).*(skip|decision)"
+notes: |
+  The key non-obvious facts encoded only in the SKILL.md router:
+  (a) Stage 2 runs only when Stage 1 returns approved|flagged — blocked at Stage
+      1 short-circuits the expensive test run.
+  (b) The XS trivial-diff skip is the CALLER's decision, not Argus's — Argus
+      doesn't self-skip; it's never invoked when the threshold is met.
+  (c) /argus code-quality runs Stage 2 standalone without a preceding Stage 1 —
+      the user explicitly takes responsibility for spec already being clear.
+  A fresh agent will either always run both stages or implement the skip
+  inside Argus itself.
