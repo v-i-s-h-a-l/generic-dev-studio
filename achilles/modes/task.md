@@ -96,7 +96,7 @@ No flag → silent pass. Flag present without `--override` → exit 2 and stop (
 ### Step 2 — Claim the task
 
 ```bash
-scripts/task-claim.sh "$TASK_UUID" "$BRIEF_UUID" "$SIZE" "$GATE"
+scripts/task-claim.sh "$TASK_UUID" "$BRIEF_UUID" "$SIZE"
 ```
 
 Flips `tasks/<uuid>.yaml` to `in-progress` (with legacy master-plan Status dual-write) and `briefs/<uuid>.yaml` to `dispatched`. Emits `brief_started`. Direct mode passes empty `$BRIEF_UUID` and the brief transition is skipped.
