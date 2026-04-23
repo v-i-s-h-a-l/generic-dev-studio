@@ -34,6 +34,10 @@ Every agent — Chanakya, Achilles, Argus, and anything later — emits events t
 
 Fields `ts` / `agent` / `event` / `task` / `data` are the pre-existing `events.md` shape. `producer` and `idempotency_key` are additive (minor version bump). `agent` at the top level remains for reader-side filter convenience; `producer.agent` is the authoritative emitter identity.
 
+### Synthetic task ids for sessionless work
+
+Events produced by work that has no owning task-UUID — currently `debrief_emitted` from `/achilles debrief` (direct-debrief mode) — carry a synthetic `task` of the form `direct:<debrief-uuid>` rather than the empty string. The slug after `direct:` is the debrief UUIDv7 (same id that appears in the debrief filename `plans/debriefs/<debrief-id>.yaml`). This keeps every `debrief_emitted` row joinable on `task` across task-mode and direct-debrief-mode without consumers needing a mode-specific branch. Any future sessionless event should follow the same `<origin>:<stable-slug>` convention.
+
 ## What this replaces
 
 - Implicit producer identity (previously inferred from `agent` field — fine until two Achilles workers emitted identical events and reader couldn't tell them apart).

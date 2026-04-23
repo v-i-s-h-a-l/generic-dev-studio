@@ -104,10 +104,10 @@ argus_review: {status: not-invoked, review_id: null, notes: null}
 
 ### D6 — Emit event
 
-Via `scripts/write-event.sh`:
+Via `scripts/write-event.sh`. The `task` field carries a synthetic id of the form `direct:<debrief-id>` — same slug that appears in the debrief filename, prefixed with `direct:` to disambiguate from real task UUIDs. This keeps `debrief_emitted` joinable by `task` across task-mode and direct-debrief-mode uniformly; consumers don't need a mode-specific branch.
 
 ```json
-{"ts": "…", "agent": "achilles", "event": "debrief_emitted", "task": "", "data": {"debrief_id": "<uuidv7>", "mode": "direct-debrief", "files_touched": <N>}}
+{"ts": "…", "agent": "achilles", "event": "debrief_emitted", "task": "direct:<debrief-id>", "data": {"debrief_id": "<uuidv7>", "mode": "direct-debrief", "files_touched": <N>}}
 ```
 
 ### D7 — Report
