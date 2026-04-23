@@ -49,6 +49,28 @@ case "$SRC" in
   *.yaml) is_yaml=1 ;;
 esac
 
+# Atomically bump `accumulated_count` on an active waive file for the given
+# gate. No-op if the file is absent (normal unwaived state). yq-based read +
+# tmp+mv write preserves the read-mutate-atomic-write invariant used across
+# lib-ledger. Failures are swallowed by the caller — accumulator drift is
+# strictly less important than the caller's main emission.
+bump_waive_counter() {
+  local gate="${1:?bump_waive_counter <gate>}"
+  local f
+  f=$(resolve_waive_file "$gate" 2>/dev/null) || return 1
+  [ -f "$f" ] || return 0
+  command -v yq >/dev/null 2>&1 || return 0
+  local current new ts tmp
+  current=$(yq -r '.accumulated_count // 0' "$f" 2>/dev/null || echo 0)
+  case "$current" in ''|*[!0-9]*) current=0 ;; esac
+  new=$((current + 1))
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  tmp="$f.tmp.$$"
+  yq ".accumulated_count = $new | .updated_at = \"$ts\"" "$f" > "$tmp" 2>/dev/null \
+    && mv "$tmp" "$f" \
+    || { rm -f "$tmp"; return 1; }
+}
+
 # Resolve a task UUID from a legacy task id by scanning plans/tasks/*.yaml.
 # Same pattern as `argus-emit-verdict.sh`; cheap enough per-sweep without an
 # index lookup.
@@ -177,6 +199,10 @@ ingest_debrief() {
     esc_sha=${merge_sha//\"/\\\"}
     pending_data=$(printf '{"merge_sha":"%s","reason":"argus_skipped_in_debrief"}' "$esc_sha")
     emit_event_keyed chanakya inbox-sweep review_pending "$event_task" "$pending_data" >/dev/null || true
+    # Accumulator bump — if a structured waive is active for the argus gate,
+    # count this merge against it. Waive file is created by waive-start.sh;
+    # missing file is the normal (unwaived) case and a no-op.
+    bump_waive_counter argus 2>/dev/null || true
   fi
 }
 

@@ -922,6 +922,12 @@ chmod +x scripts/*.sh</code></pre>
   <div class="callout" style="margin-top: 20px;">
     <strong>Events stay on the existing log.</strong> <code>worker.log</code> is operator-facing only. Achilles inside the worker still emits <code>task_started</code>, <code>task_completed</code>, <code>review_blocked</code>, etc. Chanakya consumes them in Step 0E exactly as today &mdash; the worker layer is invisible to the event pipeline.
   </div>
+
+  <h3 style="margin-top: 32px;">Review-waive lifecycle</h3>
+  <p>Pause a review gate (e.g. Argus) during a broad refactor, with a sunset trigger and an auto-incrementing "merges skipped" counter. State lives per-project at <code>~/.dev-studio/&lt;project&gt;/state/waives/&lt;gate&gt;.yaml</code>.</p>
+  <pre><code>scripts/waive-start.sh argus "broad refactor in flight" "rebase of main complete"
+scripts/waive-lift.sh argus    # reports N tasks merged without review during the pause</code></pre>
+  <p>While a waive is active, every <code>review_pending</code> emission from <code>sweep-ingest.sh</code> bumps <code>accumulated_count</code> atomically. The SessionStart hook surfaces a one-line banner on every new session so a pause can't become invisible. Closes <a href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/83">#83</a>.</p>
 </section>
 
 <!-- Flow -->

@@ -30,6 +30,10 @@
 #   resolve_event_log        today's events/<YYYY-MM-DD>.jsonl
 #   resolve_auto_sweep_state per-project auto-sweep backoff state file
 #   resolve_derived_data_for per-worktree Xcode DerivedData root (machine-global)
+#   resolve_waive_dir        review-waive state dir for the current project
+#   resolve_waive_dir_for    review-waive state dir for a given slug
+#   resolve_waive_file       review-waive state file for current project + gate
+#   resolve_waive_file_for   review-waive state file for a given slug + gate
 #
 # Project resolution order:
 #   1. ACHILLES_PROJECT env var (escape hatch for cross-project dispatch / testing)
@@ -235,6 +239,34 @@ resolve_auto_sweep_state() {
   local project
   project=$(resolve_project) || return 1
   printf '%s\n' "$HOME/.dev-studio/$project/.runtime/state/auto_sweep_state.md"
+}
+
+# Review-waive state file for a given project + gate. Captures a structured
+# pause of a review gate (e.g. argus) — reason, started_at, sunset_trigger,
+# accumulated_count. See _shared/contracts/events.md `review_pending` row.
+# Path is per-project (waives don't cross projects).
+resolve_waive_dir_for() {
+  local project="${1:?usage: resolve_waive_dir_for <slug>}"
+  printf '%s\n' "$HOME/.dev-studio/$project/state/waives"
+}
+
+resolve_waive_dir() {
+  local project
+  project=$(resolve_project) || return 1
+  resolve_waive_dir_for "$project"
+}
+
+resolve_waive_file_for() {
+  local project="${1:?usage: resolve_waive_file_for <slug> <gate>}"
+  local gate="${2:?usage: resolve_waive_file_for <slug> <gate>}"
+  printf '%s\n' "$(resolve_waive_dir_for "$project")/$gate.yaml"
+}
+
+resolve_waive_file() {
+  local gate="${1:?usage: resolve_waive_file <gate>}"
+  local project
+  project=$(resolve_project) || return 1
+  resolve_waive_file_for "$project" "$gate"
 }
 
 # DerivedData root for a given worktree slug. Xcode per-worker isolation —
