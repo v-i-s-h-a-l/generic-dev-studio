@@ -743,7 +743,16 @@ write_debrief_artifact() {
   else
     data=$(printf '{"mode":"%s","state":"%s"}' "$(_json_escape "$mode")" "$(_json_escape "$state")")
   fi
-  emit_event_keyed achilles debrief debrief_emitted "$uuid" "$data" --idem-key "$idem" >/dev/null || return $?
+  # Event `task` field: direct-debrief sessions (task_uuid=null) carry a
+  # synthetic `direct:<debrief-uuid>` id so `debrief_emitted` is joinable by
+  # `task` uniformly across modes instead of landing as the empty string. See
+  # issue #87. Task-mode debriefs retain the debrief UUID as the event key
+  # (same as the idempotency key) to avoid touching a separate concern.
+  local event_task="$uuid"
+  if [ "$task_uuid" = "null" ] || [ -z "$task_uuid" ]; then
+    event_task="direct:$uuid"
+  fi
+  emit_event_keyed achilles debrief debrief_emitted "$event_task" "$data" --idem-key "$idem" >/dev/null || return $?
   _maybe_rebuild_index
 }
 
