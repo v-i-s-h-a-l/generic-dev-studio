@@ -1,0 +1,44 @@
+# Skill-testing fixture for _shared/primitives/design-time-skill-routing.md
+# Proves: Step 4.0 / 5.0 / 3.5 dispatch + verdict schema + fix-then-rerun rule + commit-note invariant.
+schema: 1
+pack: _shared/primitives/design-time-skill-routing.md
+scenario: |
+  You are Achilles, about to start a task on a Swift iOS project. The diff
+  will add a new `public actor ExportQueue` type with an `async` export API,
+  plus a new SwiftUI view `ExportProgressView` that observes its state.
+  Walk through exactly:
+    1. At which step (by name/number) do you invoke design-level skills,
+       and is it BEFORE or AFTER writing code? Name the skills you'd load
+       for this specific diff.
+    2. After writing the code, what happens in self-review? If one of the
+       skills returns a "material" finding, what do you do?
+    3. What does your first commit message carry that Argus will read, and
+       what happens if that section is missing when Argus runs Stage 2?
+    4. Name the three possible verdict states a skill can emit in self-review.
+  Be specific — name steps, verdict states, and the fix-then-rerun rule.
+failure_signals:
+  # A subagent without the primitive guesses ad-hoc: skill-invocation is
+  # "opportunistic", no verdict schema, no fix-then-rerun, no commit note.
+  - "(?i)(as needed|opportunistic|if.*seems.*relevant|depending on)"
+  - "(?i)(log|note|track) (it|the finding) (as|in) (a )?follow.?up"
+  - "(?i)(skip|defer|ignore).*(skill|review)"
+success_signals:
+  # Named steps, named skills, verdict states, fix-then-rerun, commit note.
+  - "(?i)step 4\\.0"
+  - "(?i)step 5\\.0"
+  - "(?i)(before|pre).?edit"
+  - "(?i)swift-concurrency-pro"
+  - "(?i)swiftui-pro"
+  - "(?i)swift-architecture"
+  - "(?i)(clean|minor|material)"
+  - "(?i)fix.?then.?rerun"
+  - "(?i)design.choice"
+  - "(?i)design-drift|design-accountability"
+notes: |
+  The primitive encodes a specific multi-step invocation contract that a
+  fresh subagent will not reconstruct: three invocation points (4.0 / 5.0 /
+  3.5), three verdict states (clean / minor / material), the fix-then-rerun
+  rule on `material`, and the commit-note invariant that ties Achilles's
+  design decisions to Argus's review. Without the primitive, the subagent
+  falls back on "invoke skills if relevant" which is exactly the failure
+  mode (opportunistic invocation) this primitive was written to replace.

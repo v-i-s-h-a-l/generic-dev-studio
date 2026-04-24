@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-04-23T06:48:30Z",
+  "generated_at": "2026-04-24T09:10:27Z",
   "agents": [
     {
       "name": "achilles",
@@ -123,6 +123,37 @@
           "snapshots": [],
           "dry_run": false,
           "budget_tokens": 1500
+        }
+      ]
+    },
+    {
+      "name": "argus",
+      "router": "argus/SKILL.md",
+      "description": "Reviewer agent for the Turnip iOS codebase. Runs between Achilles self-review and merge in TWO stages: spec-compliance (does the diff match the brief?) then code-quality (cross-file regression, edge cases, secrets, staleness, tests). Stage 2 runs iff Stage 1 is approved|flagged; blocked at Stage 1 skips Stage 2. Invoked automatically by Achilles pre-merge, or standalone with /argus [<task-id>] (runs both) or /argus <stage> [<task-id>] (runs one). XS-trivial diffs skip Argus entirely.",
+      "reads": ["events/<date>.jsonl                            # prior review events for this task", "plans/briefs/<brief-id>.yaml                   # context only; spec matching is Stage 1's job", "plans/briefs/<brief-id>.yaml                   # what the task was supposed to do", "plans/chanakya-tasks/<task-id>-*.md            # legacy brief fallback", "plans/tasks/<task-id>.yaml", "plans/tasks/<task-id>.yaml                     # size + type context"],
+      "writes": ["events/<date>.jsonl                            # review_requested (stage: quality), review_{approved,flagged,blocked} (stage: quality)", "events/<date>.jsonl                            # review_requested (stage: spec), review_{approved,flagged,blocked} (stage: spec)", "plans/reviews/<review-id>.yaml                 # review artifact (schema: review@1.1.0)", "plans/tasks/<task-id>.yaml                     # back-ref: links.reviews append"],
+      "modes": [
+        {
+          "name": "code-quality",
+          "path": "argus/modes/code-quality.md",
+          "type": "mode-pack",
+          "description": "Stage 2 of the two-stage Argus review. Cross-file regression risk, edge-case coverage, diff anomalies, secrets in diff, base-branch staleness, test-run (M/L), TDD red→green verification. Runs iff Stage 1 (spec-compliance) returned approved or flagged. Previously the sole Argus pass; split 2026-04-23.",
+          "reads": ["plans/tasks/<task-id>.yaml", "plans/briefs/<brief-id>.yaml                   # context only; spec matching is Stage 1's job", "events/<date>.jsonl                            # prior review events for this task"],
+          "writes": ["plans/reviews/<review-id>.yaml                 # review artifact (schema: review@1.1.0)", "plans/tasks/<task-id>.yaml                     # back-ref: links.reviews append", "events/<date>.jsonl                            # review_requested (stage: quality), review_{approved,flagged,blocked} (stage: quality)"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 2000
+        },
+        {
+          "name": "spec-compliance",
+          "path": "argus/modes/spec-compliance.md",
+          "type": "mode-pack",
+          "description": "Stage 1 of the two-stage Argus review. Narrow check — does the diff match the brief? Nothing extra, nothing missed. Runs before code-quality. Drawn from obra/superpowers/subagent-driven-development.",
+          "reads": ["plans/briefs/<brief-id>.yaml                   # what the task was supposed to do", "plans/tasks/<task-id>.yaml                     # size + type context", "plans/chanakya-tasks/<task-id>-*.md            # legacy brief fallback"],
+          "writes": ["events/<date>.jsonl                            # review_requested (stage: spec), review_{approved,flagged,blocked} (stage: spec)"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 1200
         }
       ]
     },

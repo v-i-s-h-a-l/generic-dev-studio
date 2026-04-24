@@ -81,7 +81,7 @@ eval "$(scripts/task-load-spec.sh <task-id-or-empty>)"
 
 Sets `TASK_MODE` (`brief` | `direct`), `BRIEF_PATH`, `BRIEF_UUID`, `SIZE`, `TYPE`, `ACCEPTANCE_JSON`. Resolves the post-migration YAML brief first; falls back to legacy `plans/chanakya-tasks/<task-id>-*.md` and emits `legacy_artifact_read` on the fallback. Exits 2 with a helpful hint when a non-empty task-id has no brief — surface the message to the user and stop.
 
-Read the brief body at `$BRIEF_PATH` for the narrative context. Invoke any skills the brief lists (`swiftui-pro`, `figma-to-swiftui`, …).
+Read the brief body at `$BRIEF_PATH` for the narrative context. If the brief lists `## Required Skills`, invocation is MANDATORY — load them before Step 4. Additional skills are routed at Step 4.0 via `_shared/primitives/design-time-skill-routing.md`. If a listed skill is unavailable in the current host, surface via `report_state: needs_context` rather than proceeding without it.
 
 Record `WAIT_FOR_USER` (from `--wait`, else `no`). Don't prompt — the flag is the only opt-in.
 
@@ -120,6 +120,12 @@ Work methodically through the brief's acceptance criteria (or the user's direct-
 - **`test-ui`** → Step 4C.
 - **`test-tdd`** → Step 4D.
 - **`debug`** → Step 4A semantics with an emphasis on regression coverage. Reproduce the bug, isolate the cause, write a regression test first if possible, then fix.
+
+#### Step 4.0 — Design-time skill routing (runs BEFORE the first production edit)
+
+Read `_shared/primitives/design-time-skill-routing.md` and the matching stack routing table (Swift: `_shared/rules/swift-skill-routing.md`). Match the anticipated diff shape against the signal column; load every matching skill; apply guidance while writing. Carry a 2–4-line "Design choices" note in the first commit message per the primitive's commit-note invariant.
+
+Briefs with an explicit `## Required Skills` section take precedence — load those plus whatever the routing table adds.
 
 #### Step 4A — Implementation with testability
 
@@ -173,7 +179,11 @@ If size is ambiguous, **treat it as M** — err toward more compiler feedback, n
 
 ### Step 5 — Self-review pass
 
-Before asking the user to look, review your own diff. Invoke the `simplify` skill on changed files. Target: duplication, dead code, over-abstraction; obvious regressions in neighboring paths; missing error handling at genuine boundaries; naming + Swift API guideline fit.
+Before asking the user to look, review your own diff.
+
+**Step 5.0 — Re-invoke Step 4.0 skills against the actual diff.** Per `_shared/primitives/design-time-skill-routing.md`: walk the stack routing table against the real diff, run each matched skill's review lens, record per-skill verdict (`clean` / `minor` / `material`) in the debrief's `## Self-Review` block. A `material` finding triggers fix-then-rerun — don't rationalize it away.
+
+**Step 5.1 — Invoke the `simplify` skill** on changed files. Target: duplication, dead code, over-abstraction; obvious regressions in neighboring paths; missing error handling at genuine boundaries; naming + Swift API guideline fit.
 
 **Testability review** (implementation tasks with `## Testability Requirements`):
 - Verify all brief-listed accessibility IDs are defined + applied.

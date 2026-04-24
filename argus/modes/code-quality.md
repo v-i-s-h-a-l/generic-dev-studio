@@ -87,6 +87,18 @@ Reference the review rules file for per-check procedures. An erroring check is l
 
 **Scope check is NOT here** — that's Stage 1 (spec-compliance). If spec-compliance already passed, assume scope is fine and focus on quality.
 
+### Step 3.5 — Design-time skill review (Swift diffs only)
+
+Per `_shared/primitives/design-time-skill-routing.md`: if the diff touches Swift, walk the Swift routing table at `_shared/rules/swift-skill-routing.md` against the actual diff, invoke each matched skill, and emit findings to `FLAGS` tagged `rule: design/<category>` (category column). Never `BLOCKS` in week-1 posture.
+
+Also read Achilles's "Design choices" commit note (first commit on the task branch):
+
+- Present and matches the diff → no finding.
+- Present but contradicts the diff → `design-drift` flag.
+- Missing on a diff that triggers at least one routing row → `design-accountability-missing` flag.
+
+This step does not re-run SOLID / accessibility / localization (Behavior Rule 1).
+
 ### Step 4 — Test run (M/L only; skip XS/S)
 
 ```bash
@@ -145,7 +157,7 @@ Pass `--tokens-input` / `--tokens-output` / `--tokens-cache-{read,write}` if ava
 
 ## Behavior Rules
 
-1. **Do not re-run SOLID, localization, or accessibility checks.** Achilles self-reviews those. Re-running is redundant noise.
+1. **Do not re-run SOLID, localization, or accessibility checks.** Achilles self-reviews those. Re-running is redundant noise. (Swift API-design, architecture, concurrency, SwiftUI-idiom, and IMGLY-correctness review *is* Argus's job — see Step 3.5 and `_shared/primitives/design-time-skill-routing.md`.)
 2. **Do not re-run spec/scope matching.** That's Stage 1's job; you trust its verdict.
 3. **Week 1: flag-only for all non-hard checks.** Hard checks (compile, test, secrets, staleness) block. Everything else flags.
 4. **Never acquire the Achilles xcodebuild.lock.** Argus uses the test-slot semaphore. These are independent locks.
