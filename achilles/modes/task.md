@@ -211,7 +211,7 @@ Select the gate from the brief's `Size:` field (or infer for direct mode). The j
 scripts/task-build-gate.sh "$GATE" "$TASK_ID" "$WORKTREE" "$SCHEME" "$DESTINATION"
 ```
 
-The script emits `build_check_started` on entry and `build_check_passed` / `build_check_failed` on exit. Full-green owns the atomic `mkdir`-based xcodebuild lock under `~/.dev-studio/.runtime/xcodebuild-lock/` with 45-minute staleness reclaim, per-task `-derivedDataPath`, and a trap that releases the lock on any exit. Exit codes: `0` green, `2` red, `3` locked-out (30-minute wait exceeded).
+The script emits `build_check_started` on entry and `build_check_passed` / `build_check_failed` on exit, or `build_check_aborted` if it exits between start and the normal terminal (arg failure, signal, unhandled exception — see events.md #106). `build_check_started` carries an `attempt` counter: 1 for a cold start, 2+ when a prior build-check for the same task emitted `started` without a paired terminal (e.g. a process that died, then got re-invoked). The counter resets on any terminal event. Full-green owns the atomic `mkdir`-based xcodebuild lock under `~/.dev-studio/.runtime/xcodebuild-lock/` with 45-minute staleness reclaim, per-task `-derivedDataPath`, and a trap that releases the lock on any exit. Exit codes: `0` green, `2` red, `3` locked-out (30-minute wait exceeded).
 
 **Red-gate handling:** stop — do **not** merge; leave branch + DerivedData intact; surface to user. If the fix is straightforward, fix, re-run Steps 5–6. Don't spiral. Never bypass the lock.
 

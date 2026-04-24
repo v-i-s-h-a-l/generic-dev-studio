@@ -46,9 +46,51 @@ esac
 
 [ -d "$WORKTREE" ] || { printf 'error: worktree not a directory: %s\n' "$WORKTREE" >&2; exit 2; }
 
-# Announce the attempt so analysis can bucket red gates by mode.
-start_data=$(printf '{"mode":"%s","worktree":"%s"}' "$MODE" "$WORKTREE")
+# Per-task attempt counter. Distinguishes a cold start (1) from a retry
+# (2+) so analytics can compute first-try success rate. State lives under
+# the project-scoped runtime dir; reset when a terminal event lands. See
+# issue #106.
+PROJECT=$(resolve_project 2>/dev/null || echo unknown)
+ATTEMPTS_DIR="$(resolve_project_root_for "$PROJECT")/.runtime/state/build-check-attempts"
+ATTEMPTS_FILE="$ATTEMPTS_DIR/$TASK_ID"
+mkdir -p "$ATTEMPTS_DIR" 2>/dev/null || true
+ATTEMPT=1
+if [ -r "$ATTEMPTS_FILE" ]; then
+  prev=$(tr -d '[:space:]' < "$ATTEMPTS_FILE" 2>/dev/null || echo 0)
+  case "$prev" in ''|*[!0-9]*) prev=0 ;; esac
+  ATTEMPT=$((prev + 1))
+fi
+printf '%s\n' "$ATTEMPT" > "$ATTEMPTS_FILE" 2>/dev/null || true
+
+# Trap-based terminal-span closure. Without this, any exit path between
+# build_check_started and the pass/fail emit (cd failures, missing args,
+# SIGKILL, stale-lock retry-loop bail-outs) would leave an open span that
+# analytics can't distinguish from "still running". See issue #106.
+TERMINAL_EMITTED=0
+_emit_aborted_if_open() {
+  local rc=$?
+  [ "$TERMINAL_EMITTED" = "1" ] && return 0
+  local data
+  data=$(printf '{"mode":"%s","attempt":%s,"exit_code":%s}' "$MODE" "$ATTEMPT" "$rc")
+  emit_event_keyed achilles task build_check_aborted "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
+}
+
+# Emit pass/fail, mark the span closed, and reset the attempt counter so the
+# next build-check cycle starts fresh at 1. Callers pass the event name and
+# the pre-built data payload.
+_emit_terminal() {
+  local event="${1:?}"
+  local data="${2:?}"
+  emit_event_keyed achilles task "$event" "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  TERMINAL_EMITTED=1
+  rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
+}
+
+# Announce the attempt so analysis can bucket red gates by mode + retry.
+start_data=$(printf '{"mode":"%s","worktree":"%s","attempt":%s}' "$MODE" "$WORKTREE" "$ATTEMPT")
 emit_event_keyed achilles task build_check_started "$TASK_ID" "$start_data" >/dev/null 2>&1 || true
+trap _emit_aborted_if_open EXIT INT TERM
 
 # ---------- lsp-only ----------
 #
@@ -68,8 +110,7 @@ if [ "$MODE" = "lsp-only" ]; then
   CHANGED=$(git diff --name-only "$MERGE_BASE" HEAD -- '*.swift' 2>/dev/null)
   if [ -z "$CHANGED" ]; then
     # No swift files changed — LSP has nothing to say; gate is trivially green.
-    emit_event_keyed achilles task build_check_passed "$TASK_ID" \
-      '{"mode":"lsp-only","files":0}' >/dev/null 2>&1 || true
+    _emit_terminal build_check_passed '{"mode":"lsp-only","files":0,"attempt":'"$ATTEMPT"'}'
     exit 0
   fi
 
@@ -101,12 +142,12 @@ EOF
   fi
 
   if [ "$errors" -gt 0 ]; then
-    data=$(printf '{"mode":"lsp-only","files":%s,"errors":%s}' "$file_count" "$errors")
-    emit_event_keyed achilles task build_check_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+    data=$(printf '{"mode":"lsp-only","files":%s,"errors":%s,"attempt":%s}' "$file_count" "$errors" "$ATTEMPT")
+    _emit_terminal build_check_failed "$data"
     exit 2
   fi
-  data=$(printf '{"mode":"lsp-only","files":%s}' "$file_count")
-  emit_event_keyed achilles task build_check_passed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  data=$(printf '{"mode":"lsp-only","files":%s,"attempt":%s}' "$file_count" "$ATTEMPT")
+  _emit_terminal build_check_passed "$data"
   exit 0
 fi
 
@@ -128,8 +169,8 @@ mkdir -p "$(dirname "$LOCK")" 2>/dev/null || { printf 'error: mkdir %s failed\n'
 if [ "${DRY_RUN:-0}" = "1" ]; then
   printf 'DRY-RUN xcodebuild scheme=%s destination=%s -derivedDataPath=%s\n' \
     "$SCHEME" "$DESTINATION" "$DERIVED" >&2
-  emit_event_keyed achilles task build_check_passed "$TASK_ID" \
-    "$(printf '{"mode":"full-green","dry_run":true,"scheme":"%s"}' "$SCHEME")" >/dev/null 2>&1 || true
+  _emit_terminal build_check_passed \
+    "$(printf '{"mode":"full-green","dry_run":true,"scheme":"%s","attempt":%s}' "$SCHEME" "$ATTEMPT")"
   exit 0
 fi
 
@@ -153,8 +194,8 @@ while true; do
   fi
   if [ "$wait_seconds" -ge "$wait_cap" ]; then
     printf 'error: xcodebuild lock wait exceeded %ss\n' "$wait_cap" >&2
-    data=$(printf '{"mode":"full-green","reason":"locked_out","waited_s":%s}' "$wait_seconds")
-    emit_event_keyed achilles task build_check_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+    data=$(printf '{"mode":"full-green","reason":"locked_out","waited_s":%s,"attempt":%s}' "$wait_seconds" "$ATTEMPT")
+    _emit_terminal build_check_failed "$data"
     exit 3
   fi
   sleep "$backoff"
@@ -163,7 +204,10 @@ done
 
 # Trap registered inside the script — the caller invokes synchronously so
 # EXIT fires once this script returns. Internal handler is sufficient.
-trap 'rm -rf "$LOCK" 2>/dev/null' EXIT INT TERM
+# Composite: first emit an aborted event iff no terminal was sent, THEN
+# release the lock — preserves the span-close invariant for the full-green
+# branch even when the earlier outer trap got overridden by this one.
+trap '_emit_aborted_if_open; rm -rf "$LOCK" 2>/dev/null' EXIT INT TERM
 
 cd "$WORKTREE" || { printf 'error: cd %s failed\n' "$WORKTREE" >&2; exit 2; }
 
@@ -185,12 +229,12 @@ warn_count=$(grep -cE '(^|: )warning:' "$build_log" 2>/dev/null || echo 0)
 rm -f "$build_log" 2>/dev/null || true
 
 if [ "$BUILD_STATUS" -ne 0 ]; then
-  data=$(printf '{"mode":"full-green","errors":%s,"warnings":%s,"scheme":"%s"}' \
-    "$err_count" "$warn_count" "$SCHEME")
-  emit_event_keyed achilles task build_check_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  data=$(printf '{"mode":"full-green","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s}' \
+    "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT")
+  _emit_terminal build_check_failed "$data"
   exit 2
 fi
 
-data=$(printf '{"mode":"full-green","warnings":%s,"scheme":"%s"}' "$warn_count" "$SCHEME")
-emit_event_keyed achilles task build_check_passed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+data=$(printf '{"mode":"full-green","warnings":%s,"scheme":"%s","attempt":%s}' "$warn_count" "$SCHEME" "$ATTEMPT")
+_emit_terminal build_check_passed "$data"
 exit 0

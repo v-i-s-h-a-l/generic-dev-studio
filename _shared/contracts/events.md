@@ -70,9 +70,10 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `merge_conflict` | Merge failed with conflict | `branch`, `files` |
 | `base_refreshed` | Step 8.4 auto-refreshed the worktree base (commits-behind ≥ threshold, merge clean). Idempotent: no event when below threshold. | `worktree`, `base_branch`, `commits_pulled`, `threshold` |
 | `base_refresh_conflict` | Step 8.4 attempted a refresh merge and hit conflicts; merge aborted, worktree left clean, Argus not invoked. Caller surfaces to user. | `worktree`, `base_branch`, `commits_pulled`, `threshold`, `files` |
-| `build_check_started` | Step 6 build gate entry — LSP or xcodebuild run begins | `mode` (`lsp-only`\|`full-green`), `worktree` |
-| `build_check_passed` | Step 6 build gate green — gate clears the task for merge | `mode`, `files` (lsp-only) \| `warnings` (full-green), `scheme` (full-green) |
-| `build_check_failed` | Step 6 build gate red — blocks merge; task left in-flight for the user to resolve | `mode`, `errors`, `warnings` (full-green), `reason` (`locked_out` iff lock wait exceeded), `scheme` (full-green) |
+| `build_check_started` | Step 6 build gate entry — LSP or xcodebuild run begins | `mode` (`lsp-only`\|`full-green`), `worktree`, `attempt` (1 for cold start, 2+ for retries within the same build-gate cycle; resets on any terminal event) |
+| `build_check_passed` | Step 6 build gate green — gate clears the task for merge | `mode`, `attempt`, `files` (lsp-only) \| `warnings` (full-green), `scheme` (full-green) |
+| `build_check_failed` | Step 6 build gate red — blocks merge; task left in-flight for the user to resolve | `mode`, `attempt`, `errors`, `warnings` (full-green), `reason` (`locked_out` iff lock wait exceeded), `scheme` (full-green) |
+| `build_check_aborted` | Step 6 build gate exited without a pass/fail verdict — `cd` failure, missing arg after start, signal (SIGINT/SIGTERM), or any other exit path between `build_check_started` and the normal terminal emitters. Closes the open span so dashboards can distinguish "still running" from "died silently". See #106. | `mode`, `attempt`, `exit_code` (process exit status at trap time) |
 | `build_debt_warned` | Build debt crosses warn threshold | `counter`, `threshold` |
 | `build_debt_blocked` | Build debt crosses block threshold | `counter`, `override_attempted` (true when Achilles ran with `--ignore-build-debt` against an already-blocked counter) |
 | `task_awaiting_user` | Subagent cannot pick a default and must block for user input. Always paired with a debrief at `status: blocked_awaiting_input`. | `question` (≤200 chars), `brief_excerpt` (≤200 chars, the Phase-0 block or the ambiguous spec line), `mode` (`autonomous`\|`interactive`) |
