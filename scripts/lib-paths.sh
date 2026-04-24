@@ -295,6 +295,17 @@ resolve_waive_file() {
   resolve_waive_file_for "$project" "$gate"
 }
 
+# True iff a structured waive file exists for <gate> in the current project.
+# Presence = active; the schema has no expiry field (sunset_trigger is a
+# free-text predicate evaluated by humans / higher layers). Callers use this
+# to suppress reminder events while a waive is live.
+is_waive_active() {
+  local gate="${1:?usage: is_waive_active <gate>}"
+  local f
+  f=$(resolve_waive_file "$gate" 2>/dev/null) || return 1
+  [ -f "$f" ]
+}
+
 # DerivedData root for a given worktree slug. Xcode per-worker isolation —
 # each worker's xcodebuild run points DerivedDataPath at this dir to prevent
 # index contention across parallel workers.

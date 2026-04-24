@@ -63,6 +63,8 @@ Pass `--argus-exempt` to `sweep-ingest.sh debrief` when the task matches an exem
 ⚠️ Review pending: <task-id> merged without Argus. Run `/argus <task-id>` before user verification.
 ```
 
+**Waive suppression.** When a structured waive file exists at `~/.dev-studio/<project>/state/waives/argus.yaml` (created via `scripts/waive-start.sh argus <reason> [sunset_trigger]`), `sweep-ingest.sh` silences the per-merge `review_pending` emit but still bumps the waive's `accumulated_count` so merge-volume remains visible for the summary banner. This is the "stop nagging" half of issues #83 / #103 — it is gate-agnostic (lives on `is_waive_active`) so future gates get the same behavior for free.
+
 After the loop, run `scripts/rebuild-index.sh` once if any debrief was processed — skipping it leaves `plans/index.yaml` stale.
 
 ### 0A.1 — Orphan-debrief backfill (double-miss guard)

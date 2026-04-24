@@ -195,15 +195,19 @@ ingest_debrief() {
   emit_event_keyed chanakya inbox-sweep debrief_ingested "$event_task" "$data" >/dev/null || true
 
   # review_pending — unless the caller flagged `--argus-exempt` (the mode
-  # pack matches the exemption list in prose; we just honor the flag).
+  # pack matches the exemption list in prose; we just honor the flag), or a
+  # structured waive is active for the argus gate (the "stop nagging" half of
+  # issue #83 / #103). Counter bump stays unconditional so active waives
+  # continue to accumulate merges even while suppression is on.
   if [ "$argus_exempt" = "0" ] && [ "$argus_status" = "not-invoked" ]; then
-    esc_sha=${merge_sha//\"/\\\"}
-    pending_data=$(printf '{"merge_sha":"%s","reason":"argus_skipped_in_debrief"}' "$esc_sha")
-    emit_event_keyed chanakya inbox-sweep review_pending "$event_task" "$pending_data" >/dev/null || true
-    # Accumulator bump — if a structured waive is active for the argus gate,
-    # count this merge against it. Waive file is created by waive-start.sh;
-    # missing file is the normal (unwaived) case and a no-op.
-    bump_waive_counter argus 2>/dev/null || true
+    if is_waive_active argus 2>/dev/null; then
+      bump_waive_counter argus 2>/dev/null || true
+    else
+      esc_sha=${merge_sha//\"/\\\"}
+      pending_data=$(printf '{"merge_sha":"%s","reason":"argus_skipped_in_debrief"}' "$esc_sha")
+      emit_event_keyed chanakya inbox-sweep review_pending "$event_task" "$pending_data" >/dev/null || true
+      bump_waive_counter argus 2>/dev/null || true
+    fi
   fi
 }
 
