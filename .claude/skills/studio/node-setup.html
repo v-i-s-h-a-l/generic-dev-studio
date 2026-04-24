@@ -283,33 +283,50 @@
 <!-- TL;DR ============================================================== -->
 <section id="tldr">
   <div class="container">
-    <h2>TL;DR</h2>
+    <h2>TL;DR — the one-shot path</h2>
+    <p>On the Mac you're onboarding, clone this repo and run the interactive wizard. It walks you through every step below — auto-runs what can be automated, pauses for the manual bits (Xcode install, Tailscale browser login, laptop-pubkey paste), and finishes by printing the exact <code>nodes.json</code> entry to copy to your laptop.</p>
+    <pre><code>git clone https://github.com/v-i-s-h-a-l/generic-dev-studio.git ~/studio-tmp
+cd ~/studio-tmp
+./scripts/bootstrap-node.sh</code></pre>
+
+    <p>The wizard handles 8 steps in order:</p>
     <ol class="steps">
       <li>
-        <div class="step-title">Tailscale on both machines <span class="badge manual">manual</span></div>
-        <div class="step-body">Install the app, sign in on the same tailnet. One browser login per device.</div>
+        <div class="step-title">Node identity <span class="badge auto">auto</span></div>
+        <div class="step-body">Defaults id from hostname; you confirm and pick which roles this node can serve.</div>
       </li>
       <li>
-        <div class="step-title">SSH server on the node <span class="badge auto">auto</span></div>
-        <div class="step-body"><code>sudo systemsetup -setremotelogin on</code> via bootstrap script.</div>
+        <div class="step-title">Tailscale <span class="badge mixed">mixed</span></div>
+        <div class="step-body">Detects + offers to install via brew; you do the one-time browser sign-in.</div>
       </li>
       <li>
-        <div class="step-title">Key-auth from laptop → node <span class="badge mixed">mixed</span></div>
-        <div class="step-body">Bootstrap script prints the pubkey line; you paste it into the node's <code>~/.ssh/authorized_keys</code>.</div>
+        <div class="step-title">SSH (Remote Login) <span class="badge auto">auto</span></div>
+        <div class="step-body"><code>sudo systemsetup -setremotelogin on</code> — prompts for your sudo password once.</div>
       </li>
       <li>
-        <div class="step-title">Toolchain on the node <span class="badge mixed">mixed</span></div>
-        <div class="step-body">Xcode / CLT via App Store (manual); Homebrew + <code>jq rsync coreutils fswatch</code> auto.</div>
+        <div class="step-title">Laptop pubkey <span class="badge mixed">mixed</span></div>
+        <div class="step-body">You paste it from the laptop (<code>cat ~/.ssh/id_ed25519.pub</code>); the wizard appends to <code>authorized_keys</code> with correct perms.</div>
       </li>
       <li>
-        <div class="step-title">Register with the studio <span class="badge auto">auto</span></div>
-        <div class="step-body">Add one entry to <code>~/.dev-studio/.runtime/nodes.json</code> on the laptop (script prints it pre-filled).</div>
+        <div class="step-title">Xcode toolchain <span class="badge mixed">mixed</span></div>
+        <div class="step-body">Detects + offers <code>xcode-select --install</code> for CLT; flags missing <code>Xcode.app</code> if role <code>xcodebuild</code> was picked.</div>
       </li>
       <li>
-        <div class="step-title">Smoke-test <span class="badge auto">auto</span></div>
-        <div class="step-body"><code>scripts/node-health.sh</code> → healthy, <code>scripts/node-pick.sh xcodebuild</code> → node id.</div>
+        <div class="step-title">Homebrew + packages <span class="badge auto">auto</span></div>
+        <div class="step-body">Offers to install brew, then <code>jq rsync coreutils fswatch git</code>. Skips anything already present.</div>
+      </li>
+      <li>
+        <div class="step-title"><code>pmset</code> keep-awake <span class="badge auto">auto</span></div>
+        <div class="step-body">Applies the recommended no-sleep settings. Asks if it's an always-on box and points at the extra flags if so.</div>
+      </li>
+      <li>
+        <div class="step-title">Emit registration <span class="badge auto">auto</span></div>
+        <div class="step-body">Prints the exact <code>nodes.json</code> entry for your laptop — pre-filled with detected hostname, user, roles — plus the verify commands.</div>
       </li>
     </ol>
+    <div class="callout">
+      <strong>Dry-run first?</strong> <code>./scripts/bootstrap-node.sh --dry-run</code> walks through the same prompts but won't execute any mutation (no sudo, no brew install, no pubkey append). Good for scanning what'll happen before committing.
+    </div>
     <div class="callout">
       <strong>No fallback footgun.</strong> Every step of this setup is opt-in. If you skip it entirely, <code>node-pick</code> returns <code>local</code> and all dispatches run on the laptop — identical to pre-onboarding behaviour.
     </div>
@@ -392,7 +409,7 @@
       <p>Note the node's <strong>MagicDNS name</strong> (e.g. <code>mini</code>, or <code>mini.tail-XXXXX.ts.net</code>). You'll use it below.</p>
 
       <h3>1.2 · Enable SSH + Remote Login <span class="badge auto">auto</span></h3>
-      <p>Once <code>scripts/bootstrap-node.sh</code> ships (see <a class="inline" href="#followups">follow-up issues</a>), this is one command. Until then, manually:</p>
+      <p>The bootstrap wizard handles this as step 3. Manual equivalent:</p>
       <pre><code>sudo systemsetup -setremotelogin on</code></pre>
       <p>Or via UI: <em>System Settings → General → Sharing → Remote Login: ON</em>.</p>
 
@@ -455,7 +472,7 @@ xcodebuild -version</code></pre>
       </div>
 
       <h3>2.3 · Homebrew + required packages <span class="badge auto">auto</span></h3>
-      <p>Bootstrap script does this. Manual equivalent:</p>
+      <p>Bootstrap wizard handles this as step 6. Manual equivalent:</p>
       <pre><code># Homebrew install (if missing)
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
@@ -689,11 +706,15 @@ sudo tailscale up --ssh</code></pre>
 <section id="followups">
   <div class="container">
     <h2>Planned follow-ups</h2>
-    <p>Three scripts that'll collapse this runbook down to ~3 commands end-to-end. Tracking issues in <a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues">the repo</a>:</p>
+    <p>The bootstrap wizard is shipped. Remaining automation to close the offload loop — tracking issues in <a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues">the repo</a>:</p>
     <ul>
-      <li><strong><code>scripts/bootstrap-node.sh</code></strong> — run on the node, enables SSH + installs Homebrew + deps + prints the pubkey-paste instruction + prints the <code>nodes.json</code> entry for the laptop.</li>
       <li><strong><code>scripts/node-parity.sh</code></strong> — run on the laptop, SSHes each registered node, reports tool-version deltas (Xcode, Swift, simulators, packages).</li>
       <li><strong>Auto-rsync in <code>task-build-gate.sh</code> + <code>swift-test-gate.sh</code></strong> — before the remote invocation, sync the worktree to the node. Closes the <a class="inline" href="#source-sync">source-sync gap</a> for pre-Commit-H use.</li>
+      <li><strong>Runaway-build guard</strong> — configurable timeout on remote dispatch so a hung <code>xcodebuild</code> doesn't pin the dispatcher forever.</li>
+      <li><strong>Remote-node teardown</strong> — extend Achilles Step 9 cleanup to wipe <code>DerivedData</code> + worktree on nodes where dispatch ran.</li>
+      <li><strong>Machine-aware gate decisions</strong> — let Achilles Step 6 factor in available nodes, not just task size.</li>
+      <li><strong>Dispatch telemetry</strong> — log tags on every routing decision so the system can analyse where offload wins vs loses and propose tuning.</li>
+      <li>… plus diagnostic / warm-up / selective-rsync / Xcode-version-guard / janitor / monitoring / signing-Stage-3 / artifact-retrieval / parity-auto-fix.</li>
     </ul>
   </div>
 </section>
