@@ -207,15 +207,36 @@ Select the gate from the brief's `Size:` field (or infer for direct mode). The j
 
 `--force-build` → force `full-green`. `--ignore-build-debt` → keeps default gate (the override bypasses the debt block, not the gate).
 
+**Package-only fast path (#110).** Before the size-driven gate, try `swift-test-gate.sh`. When the diff lives entirely under a single SPM package directory it runs `swift test --package-path <pkg>` (no simulator, no xcodebuild lock) and the verdict stands; otherwise it exits 1 and the size-driven gate runs as the fallback. Skipped under `--force-build` since the user is opting in to xcodebuild explicitly.
+
+**Snapshot reference sync (#113).** If the diff touches snapshot tests, pull the canonical reference images down first so the assertion compares against the canonical bytes rather than whatever is stale on this machine. Detection is name-based (`__Snapshots__/` directory or a path matching `*Snapshot*`), framework-agnostic. `snapshot-sync.sh` is a silent no-op when no canonical node is registered or reachable — infrastructure prep that will become load-bearing once the project adopts a snapshot framework.
+
 ```bash
-scripts/task-build-gate.sh "$GATE" "$TASK_ID" "$WORKTREE" "$SCHEME" "$DESTINATION"
+if git diff --name-only "$(git merge-base HEAD "origin/${BASE:-main}")" HEAD \
+   | grep -qE '(__Snapshots__/|Snapshot)' ; then
+  scripts/snapshot-sync.sh
+fi
+
+if [ "${FORCE_BUILD:-0}" = "0" ]; then
+  scripts/swift-test-gate.sh "$TASK_ID" "$WORKTREE"
+  rc=$?
+  case $rc in
+    0) GATE=swift-test ;;
+    1) scripts/task-build-gate.sh "$GATE" "$TASK_ID" "$WORKTREE" "$SCHEME" "$DESTINATION" ;;
+    *) exit $rc ;;
+  esac
+else
+  scripts/task-build-gate.sh "$GATE" "$TASK_ID" "$WORKTREE" "$SCHEME" "$DESTINATION"
+fi
 ```
 
-The script emits `build_check_started` on entry and `build_check_passed` / `build_check_failed` on exit, or `build_check_aborted` if it exits between start and the normal terminal (arg failure, signal, unhandled exception — see events.md #106). `build_check_started` carries an `attempt` counter: 1 for a cold start, 2+ when a prior build-check for the same task emitted `started` without a paired terminal (e.g. a process that died, then got re-invoked). The counter resets on any terminal event. Full-green owns the atomic `mkdir`-based xcodebuild lock under `~/.dev-studio/.runtime/xcodebuild-lock/` with 45-minute staleness reclaim, per-task `-derivedDataPath`, and a trap that releases the lock on any exit. Exit codes: `0` green, `2` red, `3` locked-out (30-minute wait exceeded).
+The script emits `build_check_started` on entry and `build_check_passed` / `build_check_failed` on exit, or `build_check_aborted` if it exits between start and the normal terminal (arg failure, signal, unhandled exception — see events.md #106). `build_check_started` carries an `attempt` counter: 1 for a cold start, 2+ when a prior build-check for the same task emitted `started` without a paired terminal (e.g. a process that died, then got re-invoked). The counter resets on any terminal event. Full-green owns the atomic `mkdir`-based xcodebuild lock under `~/.dev-studio/.runtime/xcodebuild-lock/<node-id>/` — scoped per dispatch target so a laptop-local build and a mini-dispatched build don't serialize on each other — with 45-minute staleness reclaim, per-task `-derivedDataPath`, and a trap that releases the lock on any exit. Exit codes: `0` green, `2` red, `3` locked-out (30-minute wait exceeded).
+
+**Node dispatch (#112).** Both `swift-test-gate.sh` and `task-build-gate.sh` full-green mode route through `scripts/node-pick.sh` — the swift-test gate asks for a `swift-test`-tagged node, the full-green gate asks for `xcodebuild`. When a healthy remote node answers (see `~/.dev-studio/.runtime/nodes.json`), the compile + test cost lands on that node over SSH. When no remote is registered, reachable, or role-matching, `node-pick` returns `local` and the gate runs on the laptop with no behavioural change. Fallback is silent — unreachable-but-configured is routine, not an error. The `node` field on `build_check_passed` / `build_check_failed` records where each attempt actually ran so debug sessions can distinguish local-red from mini-red without guessing.
 
 **Red-gate handling:** stop — do **not** merge; leave branch + DerivedData intact; surface to user. If the fix is straightforward, fix, re-run Steps 5–6. Don't spiral. Never bypass the lock.
 
-Record `GATE = "lsp-only" | "full-green"` for the debrief's `## Build Verification` block.
+Record `GATE = "lsp-only" | "full-green" | "swift-test"` for the debrief's `## Build Verification` block.
 
 ### Step 7 — Write test cases
 

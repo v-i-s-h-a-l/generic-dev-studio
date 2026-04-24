@@ -1,0 +1,37 @@
+# Skill-testing fixture for the package-only fast path in achilles/modes/task.md
+# Step 6 (#110). Proves: when the diff lives entirely under one SPM package,
+# Achilles routes through swift-test-gate.sh instead of task-build-gate.sh, and
+# the slow path is the explicit fallback rather than the default.
+schema: 1
+pack: achilles/modes/task.md
+scenario: |
+  You are Achilles, mid-Step 6, on a task whose diff is entirely under
+  zaps-app/Core/ (one SPM package — Package.swift sits at zaps-app/Core/).
+  Task size is M. No --force-build flag set. Walk through what gate runs
+  for this task and why. Specifically:
+    1. Which script does Step 6 invoke first, and what does its 0/1/2
+       exit code mean for the next action?
+    2. Does xcodebuild run on this task? Why or why not?
+    3. Does this script acquire the xcodebuild lock? Why or why not?
+    4. If a sibling Achilles worker is mid-xcodebuild on a different
+       task, does this task wait?
+    5. What `GATE` value lands in the debrief?
+failure_signals:
+  - "(?i)xcodebuild.*(runs|invoked|required) (for|on) this task"
+  - "(?i)acquires?.*xcodebuild.?lock"
+  - "(?i)(waits|blocks|queues) (for|on|behind).*(xcodebuild|build) lock"
+  - "(?i)full.?green"
+success_signals:
+  # The pack must encode: try swift-test-gate first, exit 0 = green,
+  # exit 1 = escalate to task-build-gate, no lock contention, GATE=swift-test.
+  - "(?i)swift.?test.?gate"
+  - "(?i)swift test --package-path"
+  - "(?i)(no|without|skips?).*lock"
+  - "(?i)gate.*swift.?test"
+notes: |
+  The fast-path / slow-path routing in Step 6 is not inferrable from the
+  size matrix alone — a fresh subagent will either always run xcodebuild
+  (overshooting, restoring the lock contention this issue closed) or
+  always run swift test (undershooting, breaking xcodebuild-only repos
+  and consumers downstream of the package). The exit-1 fallback shape
+  is the load-bearing contract.
