@@ -46,7 +46,7 @@ Every wrapper that reads / writes contract-governed artifacts invokes it through
 
 ### Cross-file `$ref` resolution
 
-Each schema's `$id` is its bare filename (`debrief.schema.json` etc.), and cross-schema `$ref` uses filename-relative URIs (`debrief.schema.json#/$defs/uuidv7`). This keeps the schemas portable — they don't embed absolute URLs or host-specific paths. **The validator must run with `_shared/contracts/` as the working directory so relative refs resolve to sibling files.** `scripts/validate-contract.sh` handles this via `cd` before invoking `check-jsonschema`; direct invocations must do the same.
+Each schema's `$id` is its bare filename (`debrief.schema.json` etc.), and cross-schema `$ref` uses filename-relative URIs (`debrief.schema.json#/$defs/uuidv7`). This keeps the schemas portable — they don't embed absolute URLs or host-specific paths. **The validator must resolve relative refs against `_shared/contracts/`** — either by `cd`-ing there or by passing `--base-uri "file://<repo>/_shared/contracts/"`. `scripts/validate-contract.sh` uses the latter; direct invocations must do one or the other.
 
 ## Bump workflow (writer side)
 
