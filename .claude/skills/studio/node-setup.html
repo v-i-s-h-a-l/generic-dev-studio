@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Studio — Adding a worker node</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-hover: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #2fd9c6;
+    --accent-subtle: rgba(47, 217, 198, 0.13);
+    --blue: #58a6ff;
+    --green: #3fb950;
+    --purple: #bc8cff;
+    --red: #f85149;
+    --yellow: #d29922;
+    --warn-subtle: rgba(210, 153, 34, 0.13);
+    --red-subtle: rgba(248, 81, 73, 0.12);
+    --code-bg: #0d1117;
+    --studio: #2fd9c6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .hero {
+    background: linear-gradient(135deg, #0f1a1a 0%, #0d1117 50%, #0a1616 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 64px 0 44px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background: radial-gradient(circle at 60% 40%, rgba(47, 217, 198, 0.06) 0%, transparent 50%),
+                radial-gradient(circle at 30% 70%, rgba(88, 166, 255, 0.04) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .hero h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 10px;
+    position: relative;
+  }
+  .hero h1 .studio-name { color: var(--studio); }
+  .hero .tagline {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    max-width: 680px;
+    margin: 0 auto;
+    position: relative;
+  }
+  .hero .subtagline {
+    margin-top: 10px;
+    font-size: 0.86rem;
+    color: var(--text-muted);
+    opacity: 0.75;
+    position: relative;
+  }
+
+  .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+  .nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(13, 17, 23, 0.88);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+  .nav-inner {
+    max-width: 960px; margin: 0 auto;
+    display: flex; gap: 0;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .nav-inner::-webkit-scrollbar { display: none; }
+  .nav a {
+    color: var(--text-muted); text-decoration: none;
+    padding: 14px 16px;
+    font-size: 0.875rem; font-weight: 500;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .nav a:hover { color: var(--text); border-bottom-color: var(--border); }
+
+  section { padding: 48px 0; }
+  section + section { border-top: 1px solid var(--border); }
+
+  h2 { font-size: 1.6rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 18px; }
+  h3 { font-size: 1.1rem; font-weight: 600; margin: 26px 0 8px; color: var(--text); }
+  h4 { font-size: 0.9rem; font-weight: 600; margin: 18px 0 6px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+  p  { margin-bottom: 12px; color: var(--text-muted); }
+  p strong { color: var(--text); }
+  ul, ol { margin-bottom: 12px; padding-left: 22px; color: var(--text-muted); }
+  li { margin-bottom: 5px; }
+  li strong { color: var(--text); }
+
+  a.inline { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--border); }
+  a.inline:hover { border-bottom-color: var(--accent); }
+
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.84rem;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin: 14px 0;
+    overflow-x: auto;
+    font-size: 0.84rem;
+    line-height: 1.6;
+  }
+  pre code { background: transparent; padding: 0; border: none; font-size: inherit; }
+
+  /* Stage card */
+  .stage {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 20px 0;
+  }
+  .stage h3 { margin-top: 0; color: var(--studio); }
+  .stage .stage-meta {
+    display: inline-block;
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* Step bullets */
+  ol.steps { list-style: none; padding-left: 0; counter-reset: step; }
+  ol.steps > li {
+    padding: 10px 0 10px 40px;
+    position: relative;
+    color: var(--text);
+    border-bottom: 1px dashed var(--border);
+  }
+  ol.steps > li:last-child { border-bottom: none; }
+  ol.steps > li::before {
+    counter-increment: step;
+    content: counter(step);
+    position: absolute; left: 0; top: 10px;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--accent-subtle);
+    color: var(--studio);
+    font-weight: 700; font-size: 0.82rem;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid rgba(47, 217, 198, 0.3);
+  }
+  ol.steps > li > .step-title {
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  ol.steps > li > .step-body {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+  ol.steps > li .badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: 8px;
+    vertical-align: 2px;
+  }
+  .badge.auto   { background: rgba(63, 185, 80, 0.15);  color: var(--green);  border: 1px solid rgba(63,185,80,0.3); }
+  .badge.manual { background: rgba(210, 153, 34, 0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3); }
+  .badge.mixed  { background: rgba(88, 166, 255, 0.15); color: var(--blue);   border: 1px solid rgba(88,166,255,0.3); }
+
+  /* Callouts */
+  .callout {
+    background: var(--accent-subtle);
+    border: 1px solid rgba(47, 217, 198, 0.3);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 16px 0;
+    font-size: 0.88rem;
+    color: var(--text);
+  }
+  .callout strong { color: var(--studio); }
+  .callout.warn { background: var(--warn-subtle); border-color: rgba(210, 153, 34, 0.3); }
+  .callout.warn strong { color: var(--yellow); }
+  .callout.red { background: var(--red-subtle); border-color: rgba(248, 81, 73, 0.3); }
+  .callout.red strong { color: var(--red); }
+
+  /* Tables */
+  table {
+    width: 100%; border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.88rem;
+  }
+  th, td {
+    border-bottom: 1px solid var(--border);
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: top;
+    color: var(--text-muted);
+  }
+  th {
+    color: var(--text);
+    font-weight: 600;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  td strong { color: var(--text); }
+
+  /* Troubleshoot Q/A */
+  .qa { border-top: 1px solid var(--border); padding: 16px 0; }
+  .qa:last-child { border-bottom: 1px solid var(--border); }
+  .qa .q { font-weight: 600; color: var(--text); font-size: 0.94rem; margin-bottom: 6px; }
+  .qa .q::before { content: 'Q. '; color: var(--studio); font-weight: 700; }
+  .qa .a { color: var(--text-muted); font-size: 0.89rem; }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 28px 0;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="container">
+    <h1>Adding a <span class="studio-name">worker node</span></h1>
+    <p class="tagline">Onboard a headless Mac (mini, studio, any future host) so the studio can dispatch compile + test work to it over SSH — and free the laptop for editing.</p>
+    <p class="subtagline">Host-agnostic. ~20 minutes end-to-end, ~5 minutes hands-on.</p>
+  </div>
+</header>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#tldr">TL;DR</a>
+    <a href="#why">Why / how it works</a>
+    <a href="#prereqs">Prerequisites</a>
+    <a href="#stage-1">Stage 1 — Network + SSH</a>
+    <a href="#stage-2">Stage 2 — Toolchain</a>
+    <a href="#stage-3">Stage 3 — Register</a>
+    <a href="#verify">Verify</a>
+    <a href="#maintenance">Maintenance</a>
+    <a href="#always-on">Always-on node</a>
+    <a href="#troubleshoot">Troubleshoot</a>
+  </div>
+</nav>
+
+<!-- TL;DR ============================================================== -->
+<section id="tldr">
+  <div class="container">
+    <h2>TL;DR</h2>
+    <ol class="steps">
+      <li>
+        <div class="step-title">Tailscale on both machines <span class="badge manual">manual</span></div>
+        <div class="step-body">Install the app, sign in on the same tailnet. One browser login per device.</div>
+      </li>
+      <li>
+        <div class="step-title">SSH server on the node <span class="badge auto">auto</span></div>
+        <div class="step-body"><code>sudo systemsetup -setremotelogin on</code> via bootstrap script.</div>
+      </li>
+      <li>
+        <div class="step-title">Key-auth from laptop → node <span class="badge mixed">mixed</span></div>
+        <div class="step-body">Bootstrap script prints the pubkey line; you paste it into the node's <code>~/.ssh/authorized_keys</code>.</div>
+      </li>
+      <li>
+        <div class="step-title">Toolchain on the node <span class="badge mixed">mixed</span></div>
+        <div class="step-body">Xcode / CLT via App Store (manual); Homebrew + <code>jq rsync coreutils fswatch</code> auto.</div>
+      </li>
+      <li>
+        <div class="step-title">Register with the studio <span class="badge auto">auto</span></div>
+        <div class="step-body">Add one entry to <code>~/.dev-studio/.runtime/nodes.json</code> on the laptop (script prints it pre-filled).</div>
+      </li>
+      <li>
+        <div class="step-title">Smoke-test <span class="badge auto">auto</span></div>
+        <div class="step-body"><code>scripts/node-health.sh</code> → healthy, <code>scripts/node-pick.sh xcodebuild</code> → node id.</div>
+      </li>
+    </ol>
+    <div class="callout">
+      <strong>No fallback footgun.</strong> Every step of this setup is opt-in. If you skip it entirely, <code>node-pick</code> returns <code>local</code> and all dispatches run on the laptop — identical to pre-onboarding behaviour.
+    </div>
+  </div>
+</section>
+
+<!-- WHY / HOW ========================================================== -->
+<section id="why">
+  <div class="container">
+    <h2>Why + how it works</h2>
+    <p>The studio's build-gate scripts (<code>swift-test-gate.sh</code>, <code>task-build-gate.sh</code>) call <code>scripts/node-pick.sh &lt;role&gt;</code> before running. If a healthy remote node with the matching role is registered, the compile + test cost lands there over SSH; otherwise it runs locally. The laptop keeps Xcode / simulators responsive; the node handles the heat.</p>
+
+    <h3>The moving parts</h3>
+    <table>
+      <thead><tr><th>Piece</th><th>Where</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>nodes.json</code></td><td>Laptop, <code>~/.dev-studio/.runtime/</code></td><td>Registry of reachable worker nodes (id, host, user, roles)</td></tr>
+        <tr><td><code>node-pick.sh &lt;role&gt;</code></td><td>Laptop</td><td>Least-loaded healthy node with that role, else <code>local</code></td></tr>
+        <tr><td><code>node-dispatch.sh &lt;id&gt;</code></td><td>Laptop</td><td>SSHs the command; falls back to local if unreachable</td></tr>
+        <tr><td><code>node-health.sh [id]</code></td><td>Laptop</td><td>Reachability + load-avg via <code>ssh … uptime</code></td></tr>
+        <tr><td>Tailscale</td><td>Both machines</td><td>Stable mesh network — node reachable by hostname from anywhere</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Tailscale vs local SSH</h3>
+    <p><strong>Use Tailscale.</strong> Free (personal tier: 100 devices, 3 users). Works across networks, through NAT, with stable MagicDNS hostnames. Local <code>.local</code> (Bonjour) is flaky across some wifi / VPN setups and hostnames can shift. The small extra install cost pays back the first time you try to build from a cafe.</p>
+
+    <h3>Roles</h3>
+    <p>A node advertises which kinds of work it can absorb via a <code>roles</code> array in <code>nodes.json</code>. The gate that wants the work asks for its role:</p>
+    <table>
+      <thead><tr><th>Role</th><th>Requested by</th><th>Node needs</th></tr></thead>
+      <tbody>
+        <tr><td><code>swift-test</code></td><td><code>swift-test-gate.sh</code></td><td>Swift toolchain (comes with Xcode CLT)</td></tr>
+        <tr><td><code>xcodebuild</code></td><td><code>task-build-gate.sh</code> full-green</td><td>Full Xcode + matching simulators</td></tr>
+        <tr><td><code>snapshot-canonical</code></td><td><code>snapshot-sync.sh</code></td><td>Fixed Xcode/sim — reference-image generator</td></tr>
+      </tbody>
+    </table>
+    <p>A node can hold any subset. Mini with full Xcode typically holds all three. A Linux worker would only hold <code>swift-test</code>.</p>
+  </div>
+</section>
+
+<!-- PREREQS ============================================================ -->
+<section id="prereqs">
+  <div class="container">
+    <h2>Prerequisites</h2>
+
+    <h3>On the laptop (your main machine)</h3>
+    <ul>
+      <li>The studio repo cloned (<code>generic-dev-studio</code>).</li>
+      <li>Tailscale installed and signed into your tailnet (you already did this for yourself if you travel).</li>
+      <li>An SSH keypair (<code>~/.ssh/id_ed25519</code> or <code>id_rsa</code>). If missing:
+        <pre><code>ssh-keygen -t ed25519 -C "vishalsingh" -f ~/.ssh/id_ed25519</code></pre></li>
+    </ul>
+
+    <h3>On the node (the Mac you're onboarding)</h3>
+    <ul>
+      <li>macOS, admin account you can log into physically <em>or</em> via screen sharing for the first 5 minutes.</li>
+      <li>Network reachable (wifi or ethernet; Tailscale handles the rest).</li>
+      <li>At least 60 GB free for Xcode + DerivedData + simulator runtimes (if the node will run <code>xcodebuild</code>).</li>
+    </ul>
+
+    <div class="callout warn">
+      <strong>Same username tip.</strong> Keep the same macOS short-username on the node as on the laptop when possible. Your project worktree lives at an absolute path that includes <code>$HOME</code>; same username on both sides means the path resolves identically, which is exactly what the dispatch layer assumes today.
+    </div>
+  </div>
+</section>
+
+<!-- STAGE 1 ============================================================ -->
+<section id="stage-1">
+  <div class="container">
+    <h2>Stage 1 — Network + SSH</h2>
+    <p>Goal: <code>ssh &lt;node-hostname&gt; true</code> from the laptop succeeds without a password prompt.</p>
+
+    <div class="stage">
+      <div class="stage-meta">On the node</div>
+      <h3>1.1 · Install Tailscale <span class="badge manual">manual</span></h3>
+      <p>Download from <a class="inline" href="https://tailscale.com/download/mac">tailscale.com/download/mac</a>. Open the app, sign in with the same account you use on the laptop. Accept the "Add this machine" prompt in the admin console if shown.</p>
+      <p>Verify:</p>
+      <pre><code>tailscale status        # should list this node + your laptop</code></pre>
+      <p>Note the node's <strong>MagicDNS name</strong> (e.g. <code>mini</code>, or <code>mini.tail-XXXXX.ts.net</code>). You'll use it below.</p>
+
+      <h3>1.2 · Enable SSH + Remote Login <span class="badge auto">auto</span></h3>
+      <p>Once <code>scripts/bootstrap-node.sh</code> ships (see <a class="inline" href="#followups">follow-up issues</a>), this is one command. Until then, manually:</p>
+      <pre><code>sudo systemsetup -setremotelogin on</code></pre>
+      <p>Or via UI: <em>System Settings → General → Sharing → Remote Login: ON</em>.</p>
+
+      <div class="callout">
+        <strong>Security note.</strong> Remote Login accepts anyone with SSH credentials. With Tailscale in front, "anyone" narrows to devices on your tailnet. Still: use key-auth only, disable password-auth (below), and consider restricting the Remote Login to specific users in the Sharing pane.
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-meta">On the laptop</div>
+      <h3>1.3 · Copy the laptop pubkey to the node <span class="badge mixed">mixed</span></h3>
+      <p>Easy path — requires one password entry:</p>
+      <pre><code>ssh-copy-id &lt;user&gt;@&lt;tailscale-hostname&gt;
+# e.g.
+ssh-copy-id vishalsingh@mini</code></pre>
+
+      <p>If that fails (missing <code>ssh-copy-id</code>, or you want manual control):</p>
+      <pre><code># Print the pubkey on the laptop:
+cat ~/.ssh/id_ed25519.pub
+
+# Then on the node, append it to authorized_keys:
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+cat &gt;&gt; ~/.ssh/authorized_keys &lt;&lt;'KEY'
+ssh-ed25519 AAAAC3Nza... vishalsingh       # paste the line
+KEY
+chmod 600 ~/.ssh/authorized_keys</code></pre>
+
+      <h3>1.4 · Confirm BatchMode auth works <span class="badge auto">auto</span></h3>
+      <pre><code>ssh -o BatchMode=yes &lt;user&gt;@&lt;host&gt; true &amp;&amp; echo "OK"</code></pre>
+      <p>If this prints <code>OK</code> without prompting, SSH is done.</p>
+
+      <div class="callout warn">
+        <strong>First-connection TOFU.</strong> The very first <code>ssh</code> asks you to verify the host fingerprint. BatchMode=yes will fail on that prompt. Run one non-batch <code>ssh &lt;host&gt; true</code> first to accept the key into <code>known_hosts</code>; after that, batch mode works silently.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STAGE 2 ============================================================ -->
+<section id="stage-2">
+  <div class="container">
+    <h2>Stage 2 — Toolchain parity</h2>
+    <p>Goal: the node can build + test the same code the laptop builds. That needs matching Xcode, simulators, and a handful of Unix tools.</p>
+
+    <div class="stage">
+      <div class="stage-meta">On the node</div>
+
+      <h3>2.1 · Xcode Command Line Tools <span class="badge manual">manual</span></h3>
+      <p>Minimum for the <code>swift-test</code> role:</p>
+      <pre><code>xcode-select --install    # opens a GUI installer prompt</code></pre>
+
+      <h3>2.2 · Full Xcode.app <span class="badge manual">manual</span></h3>
+      <p>Required for the <code>xcodebuild</code> role. Install from the App Store, or download a specific version from <a class="inline" href="https://developer.apple.com/download/all/?q=Xcode">Apple Developer Downloads</a> if you need an older release.</p>
+      <p>After install, point <code>xcode-select</code> at it:</p>
+      <pre><code>sudo xcode-select -s /Applications/Xcode.app
+xcodebuild -version</code></pre>
+
+      <div class="callout warn">
+        <strong>Xcode version parity matters.</strong> Different Xcode = different SDK = different binaries. Builds dispatched to the node can diverge silently if the node is on an older Xcode. Keep them in sync; <code>node-parity.sh</code> (see follow-ups) will catch drift.
+      </div>
+
+      <h3>2.3 · Homebrew + required packages <span class="badge auto">auto</span></h3>
+      <p>Bootstrap script does this. Manual equivalent:</p>
+      <pre><code># Homebrew install (if missing)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Packages the studio scripts rely on
+brew install jq rsync coreutils fswatch git</code></pre>
+      <p><strong>Why each:</strong></p>
+      <ul>
+        <li><code>jq</code> — node registry parsing in dispatch scripts.</li>
+        <li><code>rsync</code> — reference-image sync (and future source-sync work).</li>
+        <li><code>coreutils</code> — gives you <code>gtimeout</code> for the SSH probe bounds.</li>
+        <li><code>fswatch</code> — if the node will ever run Achilles workers locally.</li>
+        <li><code>git</code> — Apple's shipped git is fine; brew's is fresher.</li>
+      </ul>
+
+      <h3>2.4 · Simulator runtimes <span class="badge manual">manual</span></h3>
+      <p>Open Xcode on the node, go to <em>Settings → Platforms</em>, and install the same iOS simulator runtimes your laptop has. <code>xcrun simctl list runtimes</code> on both machines — they should match. Any runtime missing on the node will make <code>xcodebuild -destination</code> lookups fail.</p>
+    </div>
+  </div>
+</section>
+
+<!-- STAGE 3 ============================================================ -->
+<section id="stage-3">
+  <div class="container">
+    <h2>Stage 3 — Register with the studio</h2>
+    <p>Goal: the laptop's dispatch scripts know about the node.</p>
+
+    <div class="stage">
+      <div class="stage-meta">On the laptop</div>
+
+      <h3>3.1 · Create or edit <code>nodes.json</code> <span class="badge mixed">mixed</span></h3>
+      <pre><code>mkdir -p ~/.dev-studio/.runtime
+
+cat &gt; ~/.dev-studio/.runtime/nodes.json &lt;&lt;'JSON'
+{
+  "schema": 1,
+  "nodes": [
+    {
+      "id": "mini",
+      "host": "mini",
+      "user": "vishalsingh",
+      "roles": ["swift-test", "xcodebuild", "snapshot-canonical"],
+      "enabled": true
+    }
+  ]
+}
+JSON</code></pre>
+
+      <p>Field reference:</p>
+      <table>
+        <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>id</code></td><td>Studio-internal name; shows up in event payloads + lock-dir names. Use <code>mini</code>, <code>studio</code>, <code>home-box</code> etc.</td></tr>
+          <tr><td><code>host</code></td><td>What SSH / rsync connect to. Your Tailscale MagicDNS name.</td></tr>
+          <tr><td><code>user</code></td><td>macOS short-username on the node. Usually matches laptop's.</td></tr>
+          <tr><td><code>roles</code></td><td>Workload tags the node can take. Drop roles the node isn't equipped for (e.g. no <code>xcodebuild</code> if you only installed CLT).</td></tr>
+          <tr><td><code>enabled</code></td><td>Set <code>false</code> to pause the node without deleting its entry (maintenance / reboot).</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>Preference model — worth internalising.</strong> When multiple nodes advertise the same role, <code>node-pick</code> returns the least-loaded healthy one. When <em>no</em> remote advertises the role (or none are healthy), it returns <code>local</code> — that is, your laptop is always the implicit fallback, never a registered peer. "Keep the laptop free" is a real preference, not load-balancing.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- VERIFY ============================================================= -->
+<section id="verify">
+  <div class="container">
+    <h2>Verify</h2>
+    <p>Three quick checks from the laptop:</p>
+
+    <h3>Reachability</h3>
+    <pre><code>scripts/node-health.sh mini
+# expected: mini    healthy    0.42    mini</code></pre>
+
+    <h3>Role-based pick</h3>
+    <pre><code>scripts/node-pick.sh swift-test      # should print: mini
+scripts/node-pick.sh xcodebuild      # should print: mini
+scripts/node-pick.sh gpu             # should print: local (no node advertises this)</code></pre>
+
+    <h3>End-to-end dispatch</h3>
+    <pre><code>scripts/node-dispatch.sh mini echo "hello from $(hostname)"
+# expected: hello from mini.local   (remote hostname, not the laptop's)</code></pre>
+
+    <p>If all three pass: onboarding is complete. The next build that runs on a <code>swift-test</code> package or in <code>full-green</code> mode will land on the node.</p>
+  </div>
+</section>
+
+<!-- MAINTENANCE ======================================================== -->
+<section id="maintenance">
+  <div class="container">
+    <h2>Ongoing maintenance</h2>
+
+    <h3>Keep the node awake</h3>
+    <p>macOS aggressively sleeps by default — including SSH sessions. On the node:</p>
+    <pre><code>sudo pmset -a sleep 0          # never sleep the whole system
+sudo pmset -a displaysleep 10  # screen can sleep — system stays up
+sudo pmset -a disksleep 0      # don't spin disks down</code></pre>
+
+    <h3>Xcode / CLT parity drift</h3>
+    <p>When you update Xcode on the laptop, the node falls behind and builds diverge silently. A future <code>scripts/node-parity.sh</code> will report the delta; until then, manually:</p>
+    <pre><code>xcodebuild -version                                   # laptop
+ssh mini "xcodebuild -version"                        # node
+# If they differ → update Xcode on the node</code></pre>
+
+    <h3>DerivedData cleanup</h3>
+    <p>The node accumulates DerivedData per dispatched task. Monthly-ish:</p>
+    <pre><code>ssh mini "du -sh ~/.dev-studio/.runtime/derived-data"
+# If &gt; 20 GB, clean:
+ssh mini "rm -rf ~/.dev-studio/.runtime/derived-data/*"</code></pre>
+
+    <h3>Pause the node without de-registering</h3>
+    <p>Edit <code>~/.dev-studio/.runtime/nodes.json</code> on the laptop, flip <code>"enabled": true</code> to <code>false</code>. Dispatches fall back to local until you flip it back. Useful when the node is rebooting or you're mid-Xcode-update.</p>
+  </div>
+</section>
+
+<!-- ALWAYS-ON ========================================================== -->
+<section id="always-on">
+  <div class="container">
+    <h2>Always-on node (office Mac Studio)</h2>
+    <p>A node you want permanently reachable — e.g. a Mac Studio in an office you occasionally visit — has a few extra settings beyond the home-mini case.</p>
+
+    <h3>Auto-power-on after outage</h3>
+    <pre><code>sudo pmset -a autorestart 1    # boot automatically when AC returns</code></pre>
+
+    <h3>Auto-login</h3>
+    <p>So the machine comes up fully operational after reboot, not stuck at the login screen. Carefully:</p>
+    <ul>
+      <li><em>System Settings → Users &amp; Groups → Login Options → Automatically log in as…</em></li>
+      <li>Filevault complicates this — if Filevault is on, first-boot-after-power-loss still requires password unless you've configured Filevault unlock credentials.</li>
+    </ul>
+    <div class="callout warn">
+      <strong>Physical access = full access.</strong> Auto-login + no Filevault means anyone at the machine can read everything. For an office context, weigh this against the operational benefit. At minimum: strong tailnet ACLs, full-disk encryption with institutional recovery, and <em>no</em> source credentials stored locally (signing certs / API keys are their own threat model — see Stage 3 onboarding).
+    </div>
+
+    <h3>Tailscale as a system service</h3>
+    <p>macOS Tailscale app quits when the user logs out. For an always-on worker, install the CLI variant as a system service:</p>
+    <pre><code>brew install tailscale
+sudo tailscaled install-system-daemon
+sudo tailscale up --ssh</code></pre>
+    <p>This keeps the tailnet connection alive even without a logged-in GUI user.</p>
+
+    <h3>Monitoring</h3>
+    <p>For a node you can't walk over to, set up <em>some</em> ping of "is it alive":</p>
+    <ul>
+      <li>Tailscale's admin console shows last-seen time — an alert on &gt; 6-hour silence catches most failures.</li>
+      <li>A laptop-side cron that runs <code>scripts/node-health.sh</code> hourly and pings you (iMessage / Slack) on <code>unreachable</code>.</li>
+    </ul>
+
+    <h3>OS updates</h3>
+    <p>Major macOS updates require user-at-the-keyboard confirmation. Plan a quarterly "visit the office node" window.</p>
+  </div>
+</section>
+
+<!-- TROUBLESHOOT ======================================================= -->
+<section id="troubleshoot">
+  <div class="container">
+    <h2>Troubleshooting</h2>
+
+    <div class="qa">
+      <div class="q"><code>ssh &lt;host&gt; true</code> hangs then fails</div>
+      <div class="a">Host isn't reachable on the tailnet. <code>tailscale status</code> on both machines — both should list each other. If not, re-login on whichever shows <code>offline</code>. If Tailscale is fine but SSH still hangs: Remote Login isn't enabled on the node. Stage 1.2.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q"><code>Permission denied (publickey)</code> on SSH</div>
+      <div class="a">Pubkey not installed, or installed for the wrong user. On the node: <code>cat ~/.ssh/authorized_keys</code> should contain the exact line from the laptop's <code>~/.ssh/id_ed25519.pub</code>. Permissions matter: <code>~/.ssh</code> must be 700, <code>authorized_keys</code> must be 600.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q"><code>Host key verification failed</code></div>
+      <div class="a">First-connect TOFU wasn't done. Run <code>ssh &lt;host&gt; true</code> without BatchMode, accept the fingerprint prompt, then retry. If the node was reinstalled, its host key changed — remove the stale entry: <code>ssh-keygen -R &lt;host&gt;</code>.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q"><code>node-pick.sh &lt;role&gt;</code> prints <code>local</code> when you expected the node</div>
+      <div class="a">Run <code>scripts/node-health.sh</code> with no args. Look for the node's row:
+        <ul>
+          <li><code>unreachable</code> → SSH / Tailscale problem (above).</li>
+          <li><code>disabled</code> → <code>nodes.json</code> has <code>"enabled": false</code>.</li>
+          <li><code>unknown</code> → wrong id in your command (spelling).</li>
+          <li>Healthy but <code>node-pick</code> still says local → role missing from the node's <code>roles</code> array.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="q">Dispatch works for <code>echo</code> but <code>xcodebuild</code> on the remote fails</div>
+      <div class="a">Usual culprits: (1) project source not present on the node at the same path — that's the <a class="inline" href="#source-sync">source-sync gap</a>, unsolved pre-Phase-2.5-H + pending <code>auto-rsync</code> work; (2) Xcode version mismatch; (3) missing simulator runtime. Compare <code>xcodebuild -version</code> and <code>xcrun simctl list runtimes</code> on both sides.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">MagicDNS name doesn't resolve</div>
+      <div class="a">On the laptop: <em>System Settings → Network → your connection → DNS → Search Domains</em> should include your tailnet name (e.g. <code>tail-XXXXX.ts.net</code>). Tailscale adds this automatically but some VPN or corporate-network configs strip it. Workaround: use the full FQDN (<code>mini.tail-XXXXX.ts.net</code>) in <code>nodes.json</code>.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">Builds are slower on the node than on the laptop</div>
+      <div class="a">Expected on the first build — DerivedData is cold. Subsequent builds should match or exceed the laptop depending on silicon. If consistently slow: (1) check <code>node-health</code>'s load-avg — another process may be hogging CPU; (2) verify the node has enough RAM (8 GB is tight for modern Xcode); (3) check disk is SSD, not spinning.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">SSH works but rsync fails</div>
+      <div class="a">rsync defaults don't carry over <code>BatchMode</code>. Test with <code>rsync -av -e "ssh -o BatchMode=yes" /tmp/test.txt &lt;host&gt;:/tmp/</code>. If that fails, either rsync isn't installed on the node (<code>brew install rsync</code>) or the remote shell profile is printing something to stdout (check <code>~/.zshrc</code> / <code>~/.bash_profile</code> for echoes on non-interactive sessions — strip them).</div>
+    </div>
+  </div>
+</section>
+
+<!-- SOURCE SYNC ======================================================== -->
+<section id="source-sync">
+  <div class="container">
+    <h2>Source-code sync (the honest gap)</h2>
+    <p>Your project's source tree lives on the laptop. When a build dispatches to the node, the node needs that tree at the same absolute path or <code>xcodebuild</code> fails.</p>
+
+    <p>Today: <strong>not solved automatically</strong>. Options until it is:</p>
+    <table>
+      <thead><tr><th>Approach</th><th>Pros</th><th>Cons</th></tr></thead>
+      <tbody>
+        <tr><td>Manual <code>rsync</code> before dispatch</td><td>Works for uncommitted code</td><td>You have to remember</td></tr>
+        <tr><td>Git clone on the node + <code>git pull</code> before dispatch</td><td>Free if you're already pushing</td><td>Uncommitted changes invisible</td></tr>
+        <tr><td>iCloud Drive shared folder</td><td>Transparent</td><td>File locks + <code>xcodebuild</code> = pain</td></tr>
+        <tr><td><strong>Planned:</strong> auto-rsync inside <code>task-build-gate.sh</code></td><td>Transparent, handles uncommitted code</td><td>Not shipped yet (see follow-up issues)</td></tr>
+      </tbody>
+    </table>
+    <p>Phase 2.5 Commit H ships cross-machine state sync (events, plans) — <em>not</em> project source sync. The auto-rsync follow-up is orthogonal and can ship first.</p>
+  </div>
+</section>
+
+<!-- FOLLOW-UPS ========================================================= -->
+<section id="followups">
+  <div class="container">
+    <h2>Planned follow-ups</h2>
+    <p>Three scripts that'll collapse this runbook down to ~3 commands end-to-end. Tracking issues in <a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues">the repo</a>:</p>
+    <ul>
+      <li><strong><code>scripts/bootstrap-node.sh</code></strong> — run on the node, enables SSH + installs Homebrew + deps + prints the pubkey-paste instruction + prints the <code>nodes.json</code> entry for the laptop.</li>
+      <li><strong><code>scripts/node-parity.sh</code></strong> — run on the laptop, SSHes each registered node, reports tool-version deltas (Xcode, Swift, simulators, packages).</li>
+      <li><strong>Auto-rsync in <code>task-build-gate.sh</code> + <code>swift-test-gate.sh</code></strong> — before the remote invocation, sync the worktree to the node. Closes the <a class="inline" href="#source-sync">source-sync gap</a> for pre-Commit-H use.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- LINKS ============================================================== -->
+<section id="links">
+  <div class="container">
+    <h2>Links</h2>
+    <ul>
+      <li><a class="inline" href="./docs.html">/studio docs</a> — router + modes + rulebooks</li>
+      <li><a class="inline" href="../../../chanakya/docs.html">Agent orchestration docs</a> — Chanakya / Achilles / Argus</li>
+      <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues?q=label%3Atrack%3Abuild-opt">Track B — build-opt issues</a> — B1 → B4 that shipped this substrate</li>
+      <li><a class="inline" href="https://tailscale.com/kb">Tailscale KB</a> — networking reference</li>
+      <li><a class="inline" href="https://developer.apple.com/documentation/xcode">Xcode docs</a> — Apple official</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>Worker-node onboarding guide · part of <code>/studio</code> documentation.</p>
+    <p>Open via <code>/studio-node-setup</code> any time. Edit at <code>.claude/skills/studio/node-setup.html</code>.</p>
+  </div>
+</footer>
+
+</body>
+</html>
