@@ -51,7 +51,7 @@ title=$(printf '%s' "$issue_json" | python3 -c "import sys,json; d=json.load(sys
 body=$(printf '%s' "$issue_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['body'])")
 
 # Claim it
-gh issue edit "$number" --assignee "@me" --repo "$REPO" >/dev/null
+gh issue edit "$number" --add-assignee "@me" --repo "$REPO" >/dev/null
 
 printf '=== TRACK WORK DIRECTIVE ===\n'
 printf 'track:   %s\n' "$TRACK"
