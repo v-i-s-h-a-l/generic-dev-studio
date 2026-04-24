@@ -1,0 +1,35 @@
+# Skill-testing fixture for studio/modes/resume-plan.md
+# Proves: arc-vs-roadmap detection + fixed report order + stop-before-phase-work.
+schema: 1
+pack: studio/modes/resume-plan.md
+scenario: |
+  The user opens a fresh session and says "where were we?"
+  The repo has:
+    - A `studio-consolidation/` directory with files `00-plan.md`, `01-audit.md`,
+      `03-target-architecture.md`, `04-approved.md`, and `parking-lot.md` (empty).
+    - `ROADMAP.md` with a Phase sequence section listing Phase 2.5, 2.6, 2.6.6 as
+      Completed and Phase 2.7 as next Planned.
+    - Memory pointer `project_consolidation_arc.md` saying Sessions A-E complete.
+    - Current branch `main`, 4 commits ahead of origin/main tagged F1-F4.
+  Describe your response:
+    1. Which plan is in flight (arc or roadmap phase sequence)? How do you
+       decide?
+    2. What do you report, in what order?
+    3. What do you NOT do before the user answers?
+failure_signals:
+  # Without the mode pack, subagent will either jump straight into phase work
+  # or dump raw file contents, or report in ad-hoc order.
+  - "(?i)(let me start|let's begin|i'll start) (working on|implement|the next)"
+  - "(?i)(kicking off|starting|proceeding with) (phase|session|F\\d|task)"
+  - "(?i)here.s what (roadmap|architecture) says.*\\n.*\\n.*\\n"
+success_signals:
+  - "(?i)(arc|consolidation).*(active|in flight|ongoing)"
+  - "(?i)(04-approved|session (e|f))"
+  - "(?i)(4 commits|commits ahead)"
+  - "(?i)(wait|stop|before proceeding|before phase work)"
+notes: |
+  The mode pack encodes a specific detection rule (arc overrides roadmap if
+  unsigned-off arc artifacts exist), a specific report order (branch, state,
+  pending, parking), and a specific stopping discipline (no phase work
+  before user answer). A fresh subagent will conflate these signals or
+  charge ahead — both are the failure modes this mode exists to prevent.

@@ -1,0 +1,35 @@
+# Skill-testing fixture for studio/modes/ingest.md
+# Proves: 4-way classification + privacy scrub before public output + correct routing vs /chanakya.
+schema: 1
+pack: studio/modes/ingest.md
+scenario: |
+  The user pastes: "Hey, I noticed Argus flagged the Turnip photo-filter
+  secret-rotation branch as having secrets in the diff, but it was just a
+  test fixture using fake AWS keys. Task T-4719 debrief has the details.
+  This seems to be a pattern — maybe Argus should exempt *Tests.swift files
+  from the secrets check."
+
+  Describe:
+    1. Which of the four classifications does this fall into (public issue,
+       private analysis, parking-lot, direct rule change)? Why?
+    2. What specific details from the paste MUST be stripped before any
+       public output? Name them.
+    3. What does the resulting public artifact (if any) contain?
+    4. Is this studio-ingest or should it route to /chanakya? Why?
+failure_signals:
+  # Without the pack, subagent will paste verbatim to a public issue, or route
+  # to chanakya feedback, or pick the wrong classification.
+  - "(?i)(T-4719|Turnip|AWS keys)"  # leakage after "scrub" claim
+  - "(?i)/chanakya (studio-feedback|ingest)"  # wrong route
+  - "(?i)(paste|include) (the|that) (quote|details|commit)"
+success_signals:
+  - "(?i)(abstract pattern|public issue)"
+  - "(?i)(strip|remove|scrub|anonymize)"
+  - "(?i)(task id|feedback id|project name|commit)"
+  - "(?i)(\\*Tests\\.swift|test fixture)"
+notes: |
+  This fixture's key signal: a subagent WITHOUT the pack will paste the
+  task ID and project name verbatim into a public issue (privacy leak), OR
+  route to /chanakya because "feedback" is in the input, both of which the
+  mode pack explicitly corrects. The 4-way classification + privacy scrub
+  is load-bearing for the public/private output split.

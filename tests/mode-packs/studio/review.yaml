@@ -1,0 +1,33 @@
+# Skill-testing fixture for studio/modes/review.md
+# Proves: REVIEW.md is authoritative + tier-driven action + trigger criteria.
+schema: 1
+pack: studio/modes/review.md
+scenario: |
+  The user says "review this" with the following pending diff on the studio
+  repo itself (not a user-project diff):
+    - Modifies `scripts/achilles-refresh-base.sh` — adds a new `git push origin
+      main` call after a local fast-forward.
+    - Modifies `README.md` — updates a version number in one line.
+    - Total: ~40 lines changed across 2 files.
+  Describe:
+    1. Does this diff trigger review? Why / why not? Cite the trigger criteria.
+    2. Walk the rules and name the one that fires most urgently. What tier?
+    3. What is the correct action per that tier — auto-fix, ask, or warn?
+    4. Where does the note about this finding end up (chat, commit, both)?
+failure_signals:
+  # Without the mode pack, subagent will review generically or miss R11 entirely.
+  - "(?i)looks (good|fine|ok)"
+  - "(?i)(no issues|no problems|nothing blocking)"
+  - "(?i)general code review"
+success_signals:
+  - "(?i)REVIEW\\.md"
+  - "(?i)(R11|push.*main)"
+  - "(?i)(block|auto.?fix)"
+  - "(?i)(scripts|_shared|SKILL)"
+  - "(?i)(chat|commit message)"
+notes: |
+  R11 (no studio-initiated pushes to base branches) is the key rule here —
+  it's the one a fresh subagent without REVIEW.md will miss entirely,
+  because a `git push origin main` looks routine to generic engineering
+  intuition. The pack makes REVIEW.md authoritative for this repo and
+  ensures tier-driven action, not free-form commentary.

@@ -1,0 +1,30 @@
+# Skill-testing fixture for studio/modes/release.md
+# Proves: RELEASES.md is authoritative + never auto-tag + outcome-first bullets.
+schema: 1
+pack: studio/modes/release.md
+scenario: |
+  The user says "should we tag a release? draft some notes."
+  The repo has 12 commits since the last tag v0.3.0, covering: a new primitive,
+  3 bug fixes, a script flag addition, and 4 doc updates. `RELEASES.md` exists
+  at the repo root with a specific template and tone rules.
+  Describe:
+    1. Would you run `git tag` or `gh release create` yourself? Why / why not?
+    2. What do you consult before writing the draft?
+    3. Produce one example bullet from the draft — what style does it use?
+    4. After the user approves and tags, what else must you update?
+failure_signals:
+  # Without the pack, subagent will draft marketing copy, auto-tag, or skip README update.
+  - "(?i)(exciting|introducing|thrilled|proud to announce)"
+  - "(?i)(i'?ll|let me).*(tag|create the release|push the tag)"
+  - "(?i)(emoji|🎉|🚀|✨)"
+success_signals:
+  - "(?i)RELEASES\\.md"
+  - "(?i)(never|do not|won'?t) (auto.?tag|tag without)"
+  - "(?i)outcome.?first"
+  - "(?i)(README|timeline|story so far)"
+notes: |
+  Three failure modes the pack prevents: (a) drafting marketing copy, which
+  the RELEASES.md tone rules explicitly forbid; (b) auto-tagging without
+  user input, a destructive action; (c) forgetting the README timeline +
+  Story-so-far update after ship. All three are learned conventions a
+  fresh subagent will not reproduce.
