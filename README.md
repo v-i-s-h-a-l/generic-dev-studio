@@ -51,6 +51,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /studio ingest                   # capture studio-level patterns / rule-tweak proposals
 /studio help                     # open the studio docs page in your browser
 /studio-help                     # slash-command shortcut for /studio help
+/studio-node-setup               # open the worker-node onboarding guide (mini / studio / any headless mac)
 
 /argus                           # review current worktree (auto-invoked by Achilles pre-merge)
 /argus T001                      # review a specific task's worktree standalone
@@ -136,6 +137,7 @@ achilles/
 
 .claude/commands/       # project-scoped slash commands (fire only when cwd is this repo)
   studio-help.md        # /studio-help — opens studio docs.html in browser
+  studio-node-setup.md  # /studio-node-setup — opens the worker-node onboarding guide
   resume-plan.md        # /resume-plan — forwards to studio/modes/resume-plan.md
   capture.md            # /capture — retrospective session scan → IDEAS.md
 
