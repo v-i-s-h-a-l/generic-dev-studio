@@ -22,7 +22,7 @@ Within a single arc-session, parallelization is allowed (e.g., Session B runs 4 
 |---|---|---|---|---|
 | A | Plan the arc | This doc | `00-plan.md` + memory + commit | User approves (this turn) |
 | B | Internal audit | Inventory `_shared/**`, agents, docs, issues, memory | `01-audit.md` | Auto (me, on agent returns) |
-| C | External research (conditional) | Only if B surfaces external gaps | `02-research.md` or skipped | Auto (me, at end of B) |
+| C | External research (conditional) | Only if B surfaces external gaps | `02-research.md` — or a documented no-gaps decision recorded in `01-audit.md` §3 (that *is* C's deliverable when B shows no gaps) | Auto (me, at end of B) |
 | D | Synthesis | Integrate audit + research + prior revisions → one target architecture | `03-target-architecture.md` | Auto (me) |
 | E | Verification / review | User reads cold, amends, signs off | `04-approved.md` | **User** |
 | F | Pre-implementation setup | Build `studio` skill + Tier 1 modes + CLAUDE.md triggers | Skills committed, dogfood run | Auto (me) |

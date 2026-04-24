@@ -1,6 +1,6 @@
 # Studio Consolidation — Session B: Internal Audit (stitched)
 
-**Session B exit artifact.** Stitched synthesis of four parallel audit partials (shared substrate / agents / root docs / external state), plus cross-domain drift catalog and Session C gap decision. Supersedes no prior artifact; is input to Session D synthesis.
+**Session B exit artifact + Session C in-line completion.** Stitched synthesis of four parallel audit partials (shared substrate / agents / root docs / external state), plus cross-domain drift catalog and Session C completion record (null-research outcome, §3). Supersedes no prior artifact; is input to Session D synthesis.
 
 **Source partials (read these for the raw inventory; this doc is the synthesis lens):**
 - `01-audit-partial-shared.md` — 70 files across `_shared/{contracts,patterns,primitives,rules,state-machines,schemas}`
@@ -135,7 +135,9 @@ Signals that only surface when crossing domains. Ordered by synthesis-impact.
 
 ---
 
-## 3. Session C gap decision
+## 3. Session C — completed in-line (no external-research gaps)
+
+Session C's purpose is to close external-research gaps if B surfaces them. B surfaced none; recording that decision here *is* C's terminal artifact. C is complete, not skipped — no separate `02-research.md` is produced.
 
 **Gate:** `Session C runs only if B surfaces external gaps.` — `00-plan.md`.
 
@@ -150,7 +152,7 @@ Signals that only surface when crossing domains. Ordered by synthesis-impact.
 | Integration-surface hardening cluster (#90, #93, #94, #73, #74, #75) | **No — off-arc** | Backlog, not architecture. |
 | Parking-lot A + B | **No** | Synthesis decides; research already done for A; B is internal design. |
 
-**Decision: Session C is SKIPPED.** Proxy-user auto-decides. External research would be make-work; all open design questions are synthesis-resolvable from in-tree inputs + existing memory + the two parking-lot entries.
+**Decision: Session C is COMPLETE with null-research outcome.** Proxy-user auto-decides. External research would be make-work; all open design questions are synthesis-resolvable from in-tree inputs + existing memory + the two parking-lot entries. This §3 *is* C's exit artifact.
 
 **Next Claude session:** Session D synthesis — reads `00-plan.md`, this file, `parking-lot.md`, the 4 partials, ARCHITECTURE §Design Vision, ROADMAP §Phase sequence, issue #88, memory `project_host_agnostic_workers.md`. Produces `03-target-architecture.md`. **Does not** also execute Session F implementation.
 
@@ -187,4 +189,4 @@ No new items parked during Session B (audit was read-only by design). Existing e
 
 ## Summary
 
-Studio is internally coherent: 70-file substrate with zero contradictions, 28 mode packs cleanly referencing shipped contracts, 70 scripts host-clean. Two ROADMAP phases (2.5 + 2.6) are shipped but documented planned — cosmetic drift. Host-coupling is surgically bounded to 3 prose sites, making #88 tractable. Parking-lot A and B are the live design questions for Session D; no external research needed. Session C skipped. Next: Session D synthesis in a fresh Claude session.
+Studio is internally coherent: 70-file substrate with zero contradictions, 28 mode packs cleanly referencing shipped contracts, 70 scripts host-clean. Two ROADMAP phases (2.5 + 2.6) are shipped but documented planned — cosmetic drift. Host-coupling is surgically bounded to 3 prose sites, making #88 tractable. Parking-lot A and B are the live design questions for Session D; no external research needed. Session C completed in-line with null-research outcome (§3). Next: Session D synthesis in a fresh Claude session.
