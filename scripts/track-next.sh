@@ -61,7 +61,7 @@ import json, os, re, subprocess, sys
 issues = json.loads(os.environ["ISSUES_JSON"])
 issues.sort(key=lambda it: it["number"])
 repo = os.environ["REPO"]
-blocked_pat = re.compile(r'Blocked by:\s*((?:#\d+[\s,and]*)+)', re.IGNORECASE)
+blocked_line_pat = re.compile(r'Blocked by:([^\n]+)', re.IGNORECASE)
 num_pat = re.compile(r'#(\d+)')
 
 def is_open(n):
@@ -71,15 +71,16 @@ def is_open(n):
             capture_output=True, text=True, check=True,
         )
         return json.loads(r.stdout)["state"] == "OPEN"
-    except Exception:
-        # If we can't resolve it, assume not-blocked rather than blocking
-        # forever on a transient error. The worker will surface real issues.
+    except subprocess.CalledProcessError as e:
+        # Issue not found or auth failure — treat as closed so we don't
+        # block forever on a stale dep reference. The claim step will
+        # surface real problems.
         return False
 
 for it in issues:
     body = it.get("body") or ""
     deps = set()
-    for m in blocked_pat.finditer(body):
+    for m in blocked_line_pat.finditer(body):
         for n in num_pat.findall(m.group(1)):
             deps.add(int(n))
     if not any(is_open(n) for n in deps):
