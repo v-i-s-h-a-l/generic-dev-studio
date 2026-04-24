@@ -207,15 +207,27 @@ Select the gate from the brief's `Size:` field (or infer for direct mode). The j
 
 `--force-build` → force `full-green`. `--ignore-build-debt` → keeps default gate (the override bypasses the debt block, not the gate).
 
+**Package-only fast path (#110).** Before the size-driven gate, try `swift-test-gate.sh`. When the diff lives entirely under a single SPM package directory it runs `swift test --package-path <pkg>` (no simulator, no xcodebuild lock) and the verdict stands; otherwise it exits 1 and the size-driven gate runs as the fallback. Skipped under `--force-build` since the user is opting in to xcodebuild explicitly.
+
 ```bash
-scripts/task-build-gate.sh "$GATE" "$TASK_ID" "$WORKTREE" "$SCHEME" "$DESTINATION"
+if [ "${FORCE_BUILD:-0}" = "0" ]; then
+  scripts/swift-test-gate.sh "$TASK_ID" "$WORKTREE"
+  rc=$?
+  case $rc in
+    0) GATE=swift-test ;;
+    1) scripts/task-build-gate.sh "$GATE" "$TASK_ID" "$WORKTREE" "$SCHEME" "$DESTINATION" ;;
+    *) exit $rc ;;
+  esac
+else
+  scripts/task-build-gate.sh "$GATE" "$TASK_ID" "$WORKTREE" "$SCHEME" "$DESTINATION"
+fi
 ```
 
 The script emits `build_check_started` on entry and `build_check_passed` / `build_check_failed` on exit, or `build_check_aborted` if it exits between start and the normal terminal (arg failure, signal, unhandled exception — see events.md #106). `build_check_started` carries an `attempt` counter: 1 for a cold start, 2+ when a prior build-check for the same task emitted `started` without a paired terminal (e.g. a process that died, then got re-invoked). The counter resets on any terminal event. Full-green owns the atomic `mkdir`-based xcodebuild lock under `~/.dev-studio/.runtime/xcodebuild-lock/` with 45-minute staleness reclaim, per-task `-derivedDataPath`, and a trap that releases the lock on any exit. Exit codes: `0` green, `2` red, `3` locked-out (30-minute wait exceeded).
 
 **Red-gate handling:** stop — do **not** merge; leave branch + DerivedData intact; surface to user. If the fix is straightforward, fix, re-run Steps 5–6. Don't spiral. Never bypass the lock.
 
-Record `GATE = "lsp-only" | "full-green"` for the debrief's `## Build Verification` block.
+Record `GATE = "lsp-only" | "full-green" | "swift-test"` for the debrief's `## Build Verification` block.
 
 ### Step 7 — Write test cases
 
