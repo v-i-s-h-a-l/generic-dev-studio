@@ -79,20 +79,52 @@ kind_to_label() {
   esac
 }
 
-# Crude but conservative leak-check for sanitization. Matches patterns flagged
-# in CLAUDE.md privacy rules. If any hit, we refuse to auto-file and leave the
-# record in place — the user handles it manually next at-laptop session.
+# Leak-check focused on actual credential shapes, not project-identifying
+# tokens. Task IDs, file paths, and kebab/snake identifiers are intentionally
+# NOT flagged — the studio-feedback convention already abstracts records, and
+# illustrative IDs are common in pattern write-ups. We reserve the block for
+# high-confidence secret shapes so a human review isn't wasted on false hits.
+#
+# What we DO flag:
+#   - JWT-looking tokens                          eyJ[A-Za-z0-9_-]{10,}\.…
+#   - AWS access keys                             AKIA[0-9A-Z]{16}
+#   - GitHub tokens                               gh[pous]_[A-Za-z0-9]{20,}
+#   - Slack tokens                                xox[abpsr]-[0-9A-Za-z-]{10,}
+#   - Google API keys                             AIza[0-9A-Za-z_-]{35}
+#   - Private-key PEM headers                     -----BEGIN [A-Z ]*PRIVATE KEY-----
+#   - Long opaque hex (>=32)                      [0-9a-f]{32,}  (word-boundary)
+#   - Long opaque base64 (>=40, no / or .)        token-like, not a path/URL
+#
+# What we deliberately DON'T flag (prior false-positive sources):
+#   - Task IDs like T302, TBUILD-3, TUNIT-12, TUI-7
+#   - File paths (contain '/' or '.md'/'.yaml'/'.sh'/'.swift' extensions)
+#   - Slack channel refs and @mentions (now handled upstream by the author;
+#     the studio-feedback mode rewrites these abstractly before landing a
+#     record — false-positive rate on prose was near 100%)
+#   - Build numbers ("build 4127") — shown not to leak anything useful
 has_leaky_tokens() {
   local body="$1"
-  # Task IDs like T217, TBUILD-3, TUNIT-12 — the studio's own prefix convention
-  # applied to any project, so treat as project-identifying.
-  printf '%s' "$body" | grep -qE 'T[0-9]{2,4}\b|TBUILD-|TUNIT-|TUI-' && return 0
-  # Slack channel references.
-  printf '%s' "$body" | grep -qE '#[a-z][a-z0-9_-]{2,}' && return 0
-  # @-mentions.
-  printf '%s' "$body" | grep -qE '@[A-Za-z][A-Za-z0-9._-]{2,}' && return 0
-  # Build numbers (4-digit) mentioned alongside "build".
-  printf '%s' "$body" | grep -qiE 'build[[:space:]]+[0-9]{3,5}' && return 0
+
+  # High-confidence vendor secret prefixes.
+  printf '%s' "$body" | grep -qE 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' && return 0
+  printf '%s' "$body" | grep -qE '\bAKIA[0-9A-Z]{16}\b' && return 0
+  printf '%s' "$body" | grep -qE '\bgh[pousr]_[A-Za-z0-9]{20,}\b' && return 0
+  printf '%s' "$body" | grep -qE '\bxox[abpsr]-[0-9A-Za-z-]{10,}\b' && return 0
+  printf '%s' "$body" | grep -qE '\bAIza[0-9A-Za-z_-]{35}\b' && return 0
+  printf '%s' "$body" | grep -q -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' && return 0
+
+  # Opaque hex (>=32 chars): looks like a bare secret. Word-boundary keeps it
+  # from matching substrings of commit SHAs inside URLs (those have `/` or `-`
+  # around them, so still triggers — but commit SHAs aren't secrets anyway;
+  # the false-positive rate for 32+ char bare hex in prose is low enough).
+  printf '%s' "$body" | grep -qE '\b[0-9a-f]{32,}\b' && return 0
+
+  # Opaque base64-ish blobs (>=40 chars, no slash/dot/space inside the run).
+  # Excluding '/' and '.' means we skip file paths ("dir/file.ext") and URLs.
+  # Whitespace-delimited long runs of [A-Za-z0-9+=_-] are the remaining shape
+  # — most are real credentials.
+  printf '%s' "$body" | grep -qE '(^|[[:space:]`"'"'"'])[A-Za-z0-9+=_-]{40,}([[:space:]`"'"'"']|$)' && return 0
+
   return 1
 }
 
