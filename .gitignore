@@ -1,0 +1,7 @@
+# Local worklog for multi-session architecture arcs — session plans, audit
+# partials, parking-lot entries, approved-decisions files. Outcomes graduate
+# into ARCHITECTURE.md / ROADMAP.md / _shared/ primitives; the scratch trail
+# stays local.
+studio-consolidation/
+
+.DS_Store
