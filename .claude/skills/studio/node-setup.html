@@ -276,6 +276,7 @@
     <a href="#verify">Verify</a>
     <a href="#maintenance">Maintenance</a>
     <a href="#always-on">Always-on node</a>
+    <a href="#security">Security</a>
     <a href="#troubleshoot">Troubleshoot</a>
   </div>
 </nav>
@@ -625,6 +626,96 @@ sudo tailscale up --ssh</code></pre>
 
     <h3>OS updates</h3>
     <p>Major macOS updates require user-at-the-keyboard confirmation. Plan a quarterly "visit the office node" window.</p>
+  </div>
+</section>
+
+<!-- SECURITY POSTURE =================================================== -->
+<section id="security">
+  <div class="container">
+    <h2>Security posture</h2>
+    <p>A worker node accepts SSH from your laptop and runs build commands. That changes the machine's threat surface slightly — worth understanding what you're opting into and what mitigates it.</p>
+
+    <h3>Two distinct threat axes</h3>
+    <ul>
+      <li><strong>Network</strong> — who can reach the node over the wire.</li>
+      <li><strong>Physical</strong> — who can sit at the keyboard or pull the disk.</li>
+    </ul>
+    <p>They're orthogonal. A mini on your home network (shared wifi with a family member's laptop) has weak network isolation by default; a locked mini at an office has strong physical but potentially-weak network. Tailscale and FileVault each address one axis.</p>
+
+    <h3>Network perimeter — Tailscale is the fence</h3>
+    <p>With Tailscale in front, the node's SSH port is <em>only</em> reachable from devices signed into your tailnet. A family member on the same home wifi, not signed into your Tailscale account, cannot reach the mini's SSH — the port is invisible to them. That's the primary network mitigation. The alternative (raw SSH on the LAN IP) exposes the port to every device on the wifi; works, but weaker.</p>
+    <div class="callout">
+      <strong>Tailscale ACLs</strong> can further restrict which tailnet devices can reach which — e.g. only the laptop can SSH the mini, other devices on your tailnet cannot. Default ACLs allow all-to-all within a personal tailnet; tighten via the admin console if you want defense in depth.
+    </div>
+
+    <h3>Physical posture — two recipes</h3>
+    <table>
+      <thead><tr><th>Scenario</th><th>Recommended settings</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Home mini</strong> (physically accessible family space)</td>
+          <td>
+            <ul>
+              <li>FileVault <strong>ON</strong> — disk encrypted at rest.</li>
+              <li>Strong user password.</li>
+              <li>Auto-login <strong>OFF</strong> — someone at the keyboard sees the lock screen.</li>
+              <li><code>pmset -a sleep 0</code> so SSH stays reachable even while the console is locked.</li>
+              <li>Tailscale optional but recommended (shields from others on the wifi).</li>
+            </ul>
+            <em>Trade-off:</em> if the mini reboots (power outage), it sits at login until you type the password in. Acceptable for home because outages are rare.
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Office studio</strong> (physically-controlled space, expected always-on)</td>
+          <td>
+            <ul>
+              <li>FileVault ON.</li>
+              <li>Auto-login <strong>ON</strong> for a dedicated worker account (not your personal admin).</li>
+              <li><code>pmset -a autorestart 1</code> + <code>pmset -a sleep 0</code> so a power blip → auto-reboot → auto-login → worker online within a minute.</li>
+              <li><code>sudo tailscaled install-system-daemon</code> so Tailscale stays up regardless of GUI login state.</li>
+              <li>Keep signing keys / API tokens off this box unless they're in a service-account keychain you can rotate.</li>
+            </ul>
+            <em>Trade-off:</em> anyone with physical access to the office gets a logged-in session. Accept only if the office itself is trusted.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Multi-user isolation on the node</h3>
+    <p>If other people have accounts on the same mini (e.g. shared home machine), macOS's per-user isolation protects most of your work — but some things leak across user boundaries even without admin privileges.</p>
+    <table>
+      <thead><tr><th>Visible to any logged-in user</th><th>Protected (requires your password or admin)</th></tr></thead>
+      <tbody>
+        <tr><td>Process list + command-line args (<code>ps aux</code>) — <strong>your project name + paths leak here</strong></td><td>Contents of files under your <code>~/</code></td></tr>
+        <tr><td>SSH-session presence (<code>who</code>, <code>w</code>, <code>last</code>)</td><td>DerivedData + build outputs</td></tr>
+        <tr><td>CPU / memory / network activity (Activity Monitor)</td><td>Your keychain (signing certs, etc.)</td></tr>
+        <tr><td>Aggregate disk usage (<code>df</code>)</td><td>SSH authorized_keys, known_hosts</td></tr>
+        <tr><td>Outbound network connections (<code>lsof -i</code>)</td><td>Shell history, browser state</td></tr>
+      </tbody>
+    </table>
+    <div class="callout warn">
+      <strong>Admin = game over.</strong> Any user with <code>sudo</code> can read everything on the disk. Only grant admin to accounts whose work you'd be comfortable reading in return. For a shared home mini: you're admin, everyone else is a Standard user.
+    </div>
+
+    <h3>What the SSH layer itself does + doesn't change</h3>
+    <ul>
+      <li><strong>Enabling Remote Login does not grant new physical access.</strong> Someone at the keyboard still needs your password to unlock the console; they can't use your SSH session from the desk.</li>
+      <li><strong>SSH runs as a system daemon</strong> — you don't need to be logged in at the console for the laptop to dispatch jobs. The daemon accepts authenticated key-auth connections independent of GUI login state.</li>
+      <li><strong>BatchMode=yes + key-only auth</strong> (what the bootstrap wizard configures) means passwords aren't in the picture for remote access at all — only holders of your private key (you) can reach SSH, even from inside the tailnet.</li>
+    </ul>
+
+    <h3>Threat-model decision tree</h3>
+    <p>Pick the row that matches and the posture largely falls out:</p>
+    <table>
+      <thead><tr><th>If</th><th>Then</th></tr></thead>
+      <tbody>
+        <tr><td>Home. You live alone (or with fully-trusted people).</td><td>FileVault on, no auto-login, don't sweat multi-user. Tailscale optional. Done in 5 min.</td></tr>
+        <tr><td>Home. Family / roommates have their own accounts on the mini.</td><td>Above + make them Standard users (not admin). Accept that project names leak via <code>ps</code>; nothing else does.</td></tr>
+        <tr><td>Home. Family on the same wifi, but only you use this mini.</td><td>Above + Tailscale strongly recommended (hides the SSH port from their laptops).</td></tr>
+        <tr><td>Office. Physical space is controlled, you want always-on.</td><td>Dedicated worker account + auto-login + autorestart + system-daemon Tailscale. Don't store signing material here until you've thought through rotation.</td></tr>
+        <tr><td>Office. Shared co-working space or untrusted physical access.</td><td>Same as home. Skip always-on convenience; pay the cost of re-login after reboots in exchange for physical safety.</td></tr>
+      </tbody>
+    </table>
   </div>
 </section>
 
