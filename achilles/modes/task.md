@@ -209,7 +209,14 @@ Select the gate from the brief's `Size:` field (or infer for direct mode). The j
 
 **Package-only fast path (#110).** Before the size-driven gate, try `swift-test-gate.sh`. When the diff lives entirely under a single SPM package directory it runs `swift test --package-path <pkg>` (no simulator, no xcodebuild lock) and the verdict stands; otherwise it exits 1 and the size-driven gate runs as the fallback. Skipped under `--force-build` since the user is opting in to xcodebuild explicitly.
 
+**Snapshot reference sync (#113).** If the diff touches snapshot tests, pull the canonical reference images down first so the assertion compares against the canonical bytes rather than whatever is stale on this machine. Detection is name-based (`__Snapshots__/` directory or a path matching `*Snapshot*`), framework-agnostic. `snapshot-sync.sh` is a silent no-op when no canonical node is registered or reachable — infrastructure prep that will become load-bearing once the project adopts a snapshot framework.
+
 ```bash
+if git diff --name-only "$(git merge-base HEAD "origin/${BASE:-main}")" HEAD \
+   | grep -qE '(__Snapshots__/|Snapshot)' ; then
+  scripts/snapshot-sync.sh
+fi
+
 if [ "${FORCE_BUILD:-0}" = "0" ]; then
   scripts/swift-test-gate.sh "$TASK_ID" "$WORKTREE"
   rc=$?
