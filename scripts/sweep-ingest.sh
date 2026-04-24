@@ -99,6 +99,7 @@ ingest_debrief() {
 
   if [ "$is_yaml" = "1" ]; then
     command -v yq >/dev/null 2>&1 || { printf 'ingest_debrief: yq required for YAML surface\n' >&2; return 2; }
+    yaml_parse_check "$SRC" sweep-ingest-debrief || return 2
     debrief_uuid=$(yq -r '.id // ""' "$SRC" 2>/dev/null || echo "")
     task_uuid=$(yq -r '.task_id // ""' "$SRC" 2>/dev/null || echo "")
     [ "$task_uuid" = "null" ] && task_uuid=""
@@ -212,6 +213,7 @@ ingest_build_check() {
   local master="$PROJECT_ROOT/plans/chanakya-master.md"
   if [ "$is_yaml" = "1" ]; then
     command -v yq >/dev/null 2>&1 || return 2
+    yaml_parse_check "$SRC" sweep-ingest-build-check || return 2
     result=$(yq -r '.result // .build_gate // ""' "$SRC" 2>/dev/null || echo "")
     broken_sha=$(yq -r '.broken_commit_sha // ""' "$SRC" 2>/dev/null || echo "")
   else
@@ -320,6 +322,7 @@ ingest_release() {
   local tag="" build_num="" channel="" version="" head_sha="" tasks_csv=""
   if [ "$is_yaml" = "1" ]; then
     command -v yq >/dev/null 2>&1 || return 2
+    yaml_parse_check "$SRC" sweep-ingest-release || return 2
     tag=$(yq -r '.tag // ""' "$SRC" 2>/dev/null || echo "")
     build_num=$(yq -r '.build_number // ""' "$SRC" 2>/dev/null || echo "")
     channel=$(yq -r '.channel // ""' "$SRC" 2>/dev/null || echo "")

@@ -14,6 +14,7 @@
 #   detect_stack             prints ios|web|rust|python|go|mixed|unknown
 #   list_fleet_projects      prints every project with an active fleet
 #   mtime                    cross-platform file mtime (stat -f %m / -c %Y)
+#   yaml_parse_check         loud YAML parse gate (stderr + event on failure)
 #
 # Post-2.6 canonical layout (see _shared/primitives/file-locations.md):
 #   resolve_plans_dir        plans/ root for the current project
@@ -407,3 +408,30 @@ list_fleet_projects() {
 
 # Portable file mtime (epoch seconds). macOS uses stat -f, GNU uses stat -c.
 mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
+
+# Parse-check a YAML file loud. yq's `// default` fallback masks parse errors —
+# callers reading `.state // "emitted"` get "emitted" from a malformed file
+# just as they do from a valid one that omits the key. Use this before any
+# trust-bearing read so broken YAML surfaces as a signal instead of silently
+# defaulting through. Returns 0 on success; non-zero + stderr + event on fail.
+#
+#   caller: short tag embedded in the event so downstream readers know where
+#           the parse error surfaced from (e.g. "sweep-enumerate").
+yaml_parse_check() {
+  local f="${1:?usage: yaml_parse_check <file> [caller]}" caller="${2:-unknown}"
+  [ -f "$f" ] || return 2
+  command -v yq >/dev/null 2>&1 || return 0
+  local err
+  if err=$(yq 'length' "$f" 2>&1 >/dev/null); then
+    return 0
+  fi
+  printf 'yaml_parse_check: %s: %s\n' "$f" "$err" >&2
+  # Best-effort escape for JSON — collapse backslash/quote/tab/newline so the
+  # event line stays well-formed even when yq's error includes multiline diags.
+  local esc
+  esc=$(printf '%s' "$err" | head -c 300 | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/ /g' | tr '\n' ' ')
+  append_event chanakya debrief_parse_error "" \
+    "{\"path\":\"$f\",\"yq_error\":\"$esc\",\"caller\":\"$caller\"}" \
+    2>/dev/null || true
+  return 2
+}

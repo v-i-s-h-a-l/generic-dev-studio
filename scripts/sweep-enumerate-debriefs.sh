@@ -61,6 +61,9 @@ DEBRIEFS_DIR=$(resolve_debriefs_dir_for "$PROJECT" 2>/dev/null || echo "")
 if [ -n "$DEBRIEFS_DIR" ] && [ -d "$DEBRIEFS_DIR" ] && command -v yq >/dev/null 2>&1; then
   for yaml in "$DEBRIEFS_DIR"/*.yaml; do
     [ -f "$yaml" ] || continue
+    # Parseability gate — malformed YAML used to silently default through
+    # `.state // "emitted"` and poison the sweep queue. Skip+signal instead.
+    yaml_parse_check "$yaml" sweep-enumerate || continue
     state=$(yq -r '.state // "emitted"' "$yaml" 2>/dev/null || echo emitted)
     [ "$state" = "emitted" ] || continue
     mode=$(yq -r '.mode // "task"' "$yaml" 2>/dev/null || echo task)
