@@ -1,0 +1,58 @@
+# Skill-testing fixture for chanakya/modes/brief-review.md
+# Proves: the checklist fires on the right defect IDs, warn-tier framing
+# (not block), and the event-emission contract.
+schema: 1
+pack: chanakya/modes/brief-review.md
+scenario: |
+  The user just ran `/chanakya brief-review T214`. You've loaded the brief
+  via task-load-spec.sh and see the following excerpts:
+
+    Acceptance:
+      - Caching logic feels snappy
+      - Works smoothly on slow networks
+      - Integrates cleanly with T214-a's flag
+
+    Implementation:
+      - Use an `actor` to serialize mutations
+      - Files to create: PhotoFilterCache.swift (new)
+
+    (No "## Non-goals" section anywhere.)
+    (No concurrency / memory / crash-recovery stance — this is a `size: m`
+    refactor.)
+
+  Note: `PhotoFilterCache.swift` already exists in the repo at
+  `Sources/Rooms/…/Cache/`.
+
+  Walk the checklist. For EACH finding, give:
+    1. The C-item ID (C1..C10).
+    2. One line quoting the defect.
+    3. One line on impact.
+  Then:
+    4. Report the total finding count.
+    5. Describe what event you'd emit, which fields carry the finding IDs,
+       and whether the brief is still dispatchable.
+
+failure_signals:
+  - "(?i)(provide|share|paste).*(brief|file|yaml)"
+  - "(?i)block(s|ed)? (the )?(dispatch|merge|worker)"
+  - "(?i)rewrite the brief"
+  - "(?i)not (sure|clear|familiar).*(with|about).*(checklist|brief)"
+
+success_signals:
+  # Must land the specific C-IDs for each defect in the scenario.
+  - "C1"   # subjective acceptance ("snappy", "smoothly")
+  - "C2"   # prescriptive `actor` without justification
+  - "C4"   # deliverable-path collision (PhotoFilterCache.swift already exists)
+  - "C5"   # task-ID leakage in acceptance ("T214-a's flag")
+  - "C6"   # missing concurrency/memory/crash-recovery stance
+  - "C7"   # no non-goals section
+  - "brief_review_flagged"
+  - "(?i)warn[- ]tier"
+  - "(?i)(still )?dispatchable|not (a )?block"
+
+notes: |
+  The non-obvious part is pinning each defect to the correct C-item ID and
+  declining to rewrite the brief. A fresh subagent may produce a generic
+  critique that misses the ID mapping, or may over-reach and edit the
+  brief. The scenario deliberately includes five distinct defects so
+  the subagent can't scrape by on one lucky keyword match.

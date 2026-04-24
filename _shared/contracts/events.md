@@ -88,6 +88,7 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `review_approved` | All checks pass | `checks_run`, `stage` |
 | `review_flagged` | Non-blocking findings | `findings` (array of strings), `stage` |
 | `review_blocked` | Hard block — cannot merge | `block_reason`, `check`, `stage` |
+| `brief_review_flagged` | Chanakya brief-review (#104) found one or more checklist defects in an authored brief. Warn-tier; dispatch is not blocked. Empty `findings` is not emitted (clean runs don't emit). | `brief_uuid`, `finding_count`, `findings` (comma-joined C-item IDs, e.g. `"C1,C4,C7"`), `size`, `type` |
 | `test_run_started` | Test phase begins (M/L only) | `slot`, `suite` |
 | `test_run_passed` | Tests green | `duration_s`, `test_count` |
 | `test_run_failed` | Tests red | `failing_tests` (array) |

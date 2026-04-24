@@ -1,6 +1,6 @@
 ---
 name: chanakya
-description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, processes the shared event log, and manages the user verification pipeline. Sub-commands: status, brief, review, sweep, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify, ingest-thread, ingest-dm, ingest-slack, report-design, report-product, feedback-archive, feedback-history. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
+description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, processes the shared event log, and manages the user verification pipeline. Sub-commands: status, brief, brief-review, review, sweep, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify, ingest-thread, ingest-dm, ingest-slack, report-design, report-product, feedback-archive, feedback-history. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
 type: agent-router
 ---
 
@@ -31,6 +31,7 @@ Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debri
 | `status` | `modes/status.md` |
 | `brief <task-id>` | `modes/brief.md` |
 | `brief-all` | `modes/brief.md` (composite) |
+| `brief-review <task-id>` | `modes/brief-review.md` (checklist pre-dispatch; warn-tier) |
 | `review` | `modes/review.md` (PRD-delta sub-command) |
 | `sweep` | `modes/sweep.md` (Step 0 only, no status render) |
 | `update` | `modes/update.md` |

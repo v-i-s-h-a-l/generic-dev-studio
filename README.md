@@ -56,6 +56,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /argus T001                      # review a specific task's worktree standalone
 /chanakya                        # describe features → get a master plan
 /chanakya brief T001             # generate a self-contained worker brief
+/chanakya brief-review T001      # checklist pass over an authored brief (warn-tier, pre-dispatch)
 /chanakya ship T001,T002         # brief + dispatch to Achilles in one step
 /chanakya brief-all              # brief every pending task in priority order
 /chanakya sweep-debt             # brief + dispatch all pending debt tasks
