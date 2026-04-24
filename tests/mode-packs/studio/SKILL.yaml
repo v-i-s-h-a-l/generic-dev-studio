@@ -1,8 +1,8 @@
-# Skill-testing fixture for studio/SKILL.md
+# Skill-testing fixture for .claude/skills/studio/SKILL.md
 # Proves: dispatch-table correctness — the studio router sends each sub-command
 # to the right mode pack, and correctly refuses task-level work.
 schema: 1
-pack: studio/SKILL.md
+pack: .claude/skills/studio/SKILL.md
 scenario: |
   You are the studio router. A user sends the following invocations in sequence.
   For each one, name the mode pack that loads (exact file under modes/) or, if
@@ -14,8 +14,10 @@ scenario: |
     4. "should we tag?" after landing three commits on main
     5. `/studio help`
     6. "show me the docs"
-    7. `/studio` with no argument
-    8. `/studio brief T001` (user wants to brief a task on their iOS project)
+    7. `/studio audit` (or conversational "audit the arc")
+    8. `/studio guard "host-agnostic workers"` (or "has this been done?")
+    9. `/studio` with no argument
+    10. `/studio brief T001` (user wants to brief a task on their iOS project)
 
   Also confirm: is the studio router singleton? Does it emit `agent_boot` events?
 failure_signals:
@@ -30,11 +32,13 @@ success_signals:
   - "modes/review\\.md"
   - "modes/release\\.md"
   - "modes/help\\.md"
+  - "modes/audit\\.md"
+  - "modes/guard\\.md"
   - "(?i)(not singleton|no lock|no agent_boot)"
   - "(?i)(chanakya|achilles).*(brief|task|dispatch)"
   - "(?i)(default|no arg).*(resume-plan|pickup)"
 notes: |
-  The load-bearing properties of studio/SKILL.md that this fixture catches:
+  The load-bearing properties of .claude/skills/studio/SKILL.md that this fixture catches:
     - Explicit arg wins: `/studio resume-plan` → modes/resume-plan.md.
     - Intent routing: "where were we" → resume-plan; "should we tag?" → release;
       "show me the docs" → help.

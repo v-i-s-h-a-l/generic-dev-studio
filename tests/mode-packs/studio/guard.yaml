@@ -1,0 +1,41 @@
+# Skill-testing fixture for .claude/skills/studio/modes/guard.md
+# Proves: the guard mode is invoked BEFORE proposing work, surfaces all
+# three channels separately, and never auto-proceeds when hits exist.
+schema: 1
+pack: .claude/skills/studio/modes/guard.md
+scenario: |
+  The user says "let's plan work to add host-agnostic workers." Before
+  proposing a plan, the studio guard runs.
+
+    1. What exact command does the mode run to check for prior mentions?
+    2. If `scripts/studio-guard.sh "host-agnostic workers"` exits with code 1
+       and prints:
+         G1 already shipped (git log/tags):
+           1234abc studio-consolidation F1: land ARCHITECTURE.md §Host-agnosticism
+         G2 already tried (memory):
+           project_host_agnostic_workers — Implementation release is next
+         G3 already in backlog (gh issues):
+           #88 [OPEN] Host-Agnostic Workers v1 (Achilles + Argus)
+       What do you do next?
+    3. If the script exits 0 with "no prior mentions found", what do you do?
+    4. Are you allowed to invoke guard with a single-word query like "refactor"?
+    5. Who resolves a G3 hit — the mode or the user?
+failure_signals:
+  - "(?i)auto(-| )(close|merge|proceed)"
+  - "(?i)let me (close|update) issue #?[0-9]+"
+  - "(?i)(ignore|skip) (the|prior) (hits|mentions)"
+  - "(?i)guard.*\"(fix|add|refactor|update)\""
+success_signals:
+  - "(?i)scripts/studio-guard\\.sh"
+  - "(?i)G1.*G2.*G3|three channels"
+  - "(?i)(ask|surface|user decides|stop)"
+  - "(?i)(too (vague|broad|generic)|needs keywords|clarify)"
+  - "(?i)(distinct|merge|drop)"
+notes: |
+  The load-bearing properties:
+    - Guard is a PRE-work gate, not a post-hoc audit.
+    - Three channels surfaced separately — hits in G1 vs G2 vs G3 mean
+      different things (shipped code, prior decision, open backlog).
+    - Never auto-proceeds past hits: user decides continue/merge/drop.
+    - Refuses vague single-word queries (grep noise would swamp signal).
+    - G3 (gh issue list) is remote; silent skip if gh isn't authenticated.

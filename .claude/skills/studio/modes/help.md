@@ -5,29 +5,22 @@ type: mode-pack
 budget_tokens: 300
 snapshots: []
 reads:
-  - studio/docs.html (existence check only; content not loaded into context)
+  - .claude/skills/studio/docs.html (existence check only; content not loaded into context)
 writes: []
 ---
 
 # Mode: Help (Studio)
 
-Opens `studio/docs.html` in the user's default browser and reports the path. Context-cheap: the HTML is rendered in the browser, not loaded into the session.
+Opens `.claude/skills/studio/docs.html` in the user's default browser and reports the path. Context-cheap: the HTML is rendered in the browser, not loaded into the session.
 
 ## Step 1 — Resolve the docs path
 
-Prefer the installed symlink; fall back to the repo-local path.
+Studio is project-scoped — resolve via git repo-toplevel. No global symlink fallback (studio never lives under `~/.claude/skills/`).
 
 ```bash
-DOCS_SYMLINK="$HOME/.claude/skills/studio/docs.html"
-DOCS_LOCAL="$(git -C "$(pwd)" rev-parse --show-toplevel 2>/dev/null)/studio/docs.html"
-
-if [ -L "$DOCS_SYMLINK" ] || [ -f "$DOCS_SYMLINK" ]; then
-  DOCS_PATH="$DOCS_SYMLINK"
-elif [ -f "$DOCS_LOCAL" ]; then
-  DOCS_PATH="$DOCS_LOCAL"
-else
-  DOCS_PATH=""
-fi
+REPO_ROOT="$(git -C "$(pwd)" rev-parse --show-toplevel 2>/dev/null)"
+DOCS_PATH="$REPO_ROOT/.claude/skills/studio/docs.html"
+[ -f "$DOCS_PATH" ] || DOCS_PATH=""
 ```
 
 If neither exists, tell the user the docs page is missing — do not guess a path.
@@ -44,7 +37,7 @@ macOS-only (`open`). Linux / WSL is not a supported host today — if that chang
 
 One line to the user:
 
-> Docs opened. You can also reach them anytime at `~/.claude/skills/studio/docs.html` (or `studio/docs.html` in the repo).
+> Docs opened. Path in the repo: `.claude/skills/studio/docs.html`.
 
 If the user had a more specific question ("how do I dispatch a task?" / "what's REVIEW R11?"), answer it directly from the loaded SKILL.md / mode context *after* opening the page — don't make them hunt the HTML for something you can already answer.
 
@@ -60,4 +53,4 @@ This mode is chosen by the studio router for explicit `help` / `/studio help` / 
 
 ## Fixture
 
-`tests/mode-packs/studio/help.yaml` — subagent must open `studio/docs.html` via `open` and refer to the studio docs path, not generic "Claude help" output.
+`tests/mode-packs/studio/help.yaml` — subagent must open `.claude/skills/studio/docs.html` via `open` and refer to the studio docs path, not generic "Claude help" output.

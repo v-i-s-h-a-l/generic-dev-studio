@@ -1,8 +1,8 @@
-# Skill-testing fixture for studio/modes/help.md
-# Proves: mode opens studio/docs.html (not a generic help dump) and does not
+# Skill-testing fixture for .claude/skills/studio/modes/help.md
+# Proves: mode opens .claude/skills/studio/docs.html (not a generic help dump) and does not
 # load the HTML contents into context.
 schema: 1
-pack: studio/modes/help.md
+pack: .claude/skills/studio/modes/help.md
 scenario: |
   The user says "show me the studio docs" with no prior context. Describe:
     1. What exact command does the mode run to fulfill this request?

@@ -126,15 +126,20 @@ chanakya/
 achilles/
   SKILL.md         # worker agent — isolated execution pipeline + Argus pre-merge gate
 
-studio/
+.claude/skills/studio/    # project-scoped vendor skill — auto-loads when cwd is in this repo
   SKILL.md         # cross-agent router — studio-level ops (resume-plan, review, release,
-                   #   ingest, help); not for task work
-  modes/           # Tier-1 mode packs — resume-plan, review, release, ingest, help
+                   #   ingest, help, audit, guard); not for task work
+  modes/           # Tier-1 mode packs — resume-plan, review, release, ingest, help,
+                   #   audit (plan-drift probes), guard (pre-work "already-shipped" probes)
   docs.html        # studio docs page — capabilities, workflows, tips, troubleshooting
 
-commands/
-  chanakya-help.md      # /chanakya-help — opens chanakya docs.html in browser
+.claude/commands/       # project-scoped slash commands (fire only when cwd is this repo)
   studio-help.md        # /studio-help — opens studio docs.html in browser
+  resume-plan.md        # /resume-plan — forwards to studio/modes/resume-plan.md
+  capture.md            # /capture — retrospective session scan → IDEAS.md
+
+commands/               # globally-installed slash commands (see scripts/install.sh)
+  chanakya-help.md      # /chanakya-help — opens chanakya docs.html in browser
   pushTFBuild.md        # /pushTFBuild — archive + upload to TestFlight
   fullSendToAppStore.md # /fullSendToAppStore — submit build to App Store review
 
@@ -187,32 +192,21 @@ _shared/                # reusable primitives (symlinked from ~/.claude/skills/_
 
 ## Install
 
-### Option 1 — symlink (recommended, tracks repo updates)
-
 ```bash
-ln -s "$PWD/chanakya"   ~/.claude/skills/chanakya
-ln -s "$PWD/achilles"   ~/.claude/skills/achilles
-ln -s "$PWD/argus"      ~/.claude/skills/argus
-ln -s "$PWD/studio"     ~/.claude/skills/studio
-ln -s "$PWD/_shared"    ~/.claude/skills/_shared
-ln -s "$PWD/commands/chanakya-help.md"        ~/.claude/commands/chanakya-help.md
-ln -s "$PWD/commands/studio-help.md"          ~/.claude/commands/studio-help.md
-ln -s "$PWD/commands/pushTFBuild.md"          ~/.claude/commands/pushTFBuild.md
-ln -s "$PWD/commands/fullSendToAppStore.md"   ~/.claude/commands/fullSendToAppStore.md
-ln -s "$PWD/scripts"   ~/.claude/skills/scripts    # required for /achilles worker mode
+./scripts/install.sh          # idempotent — re-run safely after pulls
+./scripts/verify-install.sh   # reports any drift between repo and ~/.claude/
 ```
 
-### Option 2 — copy
+`install.sh` symlinks the **globally-installed** agents (`chanakya`, `achilles`, `argus`, `_shared`, `scripts`) into `~/.claude/skills/` and the corresponding slash commands into `~/.claude/commands/`. These reach you from anywhere — including your iOS project — because that is where you use them.
+
+The `studio` skill is **not** installed globally. It lives at `.claude/skills/studio/` inside this repo and auto-loads only when your working directory is inside `generic-dev-studio`. Studio ops act on the studio itself; firing them outside this repo would be a misfire.
+
+Fresh-clone workflow:
 
 ```bash
-cp -r argus/     ~/.claude/skills/argus/
-cp -r chanakya/  ~/.claude/skills/chanakya/
-cp -r achilles/  ~/.claude/skills/achilles/
-cp -r studio/    ~/.claude/skills/studio/
-cp -r _shared/   ~/.claude/skills/_shared/
-cp commands/*.md ~/.claude/commands/
-cp -r scripts/   ~/.claude/skills/scripts/         # required for /achilles worker mode
-chmod +x ~/.claude/skills/scripts/*.sh
+git clone <this-repo> && cd generic-dev-studio
+./scripts/install.sh
+# /studio is already live here; /chanakya /achilles /argus live everywhere
 ```
 
 ### Fleet prerequisites (only if you'll use multi-worker mode)

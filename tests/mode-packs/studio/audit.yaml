@@ -1,0 +1,40 @@
+# Skill-testing fixture for .claude/skills/studio/modes/audit.md
+# Proves: the audit mode reports drift faithfully, refuses to auto-edit
+# ROADMAP/memory, and distinguishes the three probes (A1/A2/A3).
+schema: 1
+pack: .claude/skills/studio/modes/audit.md
+scenario: |
+  The user says "run the studio audit" (or the SessionStart hook invokes
+  scripts/studio-audit.sh --silent on session boot). Describe:
+
+    1. What exact command does the mode run to perform the audit?
+    2. Which flag do you use on auto-invocation from SessionStart, and why?
+    3. The script output is:
+         studio-audit: 2 drift item(s).
+         [warn] A2: Phase 3 marked ✓ without citeable evidence (no commit/tag/issue/path/metric)
+         [warn] A3: Arc(s) marked CLOSED but studio-consolidation/parking-lot.md has 2 open item(s)
+       What do you report to the user, and do you auto-edit ROADMAP or
+       parking-lot.md to resolve the findings?
+    4. The next session the script says "studio-audit: clean. 3 probes ran, 0 drift."
+       What do you surface to the user?
+failure_signals:
+  # Without the mode pack, a subagent will often try to read and rewrite
+  # ROADMAP.md or invent probe names / severity levels.
+  - "(?i)(edit|rewrite|fix|patch) .*ROADMAP\\.md"
+  - "(?i)(edit|rewrite|remove) .*parking-lot\\.md"
+  - "(?i)probe [BDE]|severity (fatal|critical|emergency)"
+  - "(?i)let me (read|load|open) ROADMAP"
+success_signals:
+  - "(?i)scripts/studio-audit\\.sh"
+  - "(?i)--silent"
+  - "(?i)(A[123]|probe A[123])"
+  - "(?i)(clean|no drift|silent)"
+  - "(?i)(ask|surface|user decides|not auto)"
+notes: |
+  The load-bearing properties:
+    - SessionStart auto-invokes with --silent; clean runs produce no output.
+    - Findings cite the probe label (A1/A2/A3) + a one-line message.
+    - Mode is READ-ONLY: it never edits ROADMAP, memory, or parking-lot.
+    - Fixes are surfaced as ask-tier — the user decides to edit ROADMAP,
+      add a memory pointer, or process parking-lot items.
+    - Exit code 1 on drift, 0 on clean (integration hint for hooks).

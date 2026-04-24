@@ -1,7 +1,7 @@
-# Skill-testing fixture for studio/modes/resume-plan.md
+# Skill-testing fixture for .claude/skills/studio/modes/resume-plan.md
 # Proves: arc-vs-roadmap detection + fixed report order + stop-before-phase-work.
 schema: 1
-pack: studio/modes/resume-plan.md
+pack: .claude/skills/studio/modes/resume-plan.md
 scenario: |
   The user opens a fresh session and says "where were we?"
   The repo has:

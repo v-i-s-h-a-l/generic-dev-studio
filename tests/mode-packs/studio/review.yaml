@@ -1,7 +1,7 @@
-# Skill-testing fixture for studio/modes/review.md
+# Skill-testing fixture for .claude/skills/studio/modes/review.md
 # Proves: REVIEW.md is authoritative + tier-driven action + trigger criteria.
 schema: 1
-pack: studio/modes/review.md
+pack: .claude/skills/studio/modes/review.md
 scenario: |
   The user says "review this" with the following pending diff on the studio
   repo itself (not a user-project diff):

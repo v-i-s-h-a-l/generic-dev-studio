@@ -100,7 +100,7 @@ Ordered plan for the intent-router + ledger + knowledge refactor, as of 2026-04-
 ### Completed (branch `refactor/intent-router`)
 
 - **Phase 1** ✓ Foundation docs — `_shared/router-pattern.md`, `_shared/singleton-invariants.md`.
-- **Phase 1.5** ✓ Enforcement layer — linter, pre-commit hook, scaffold, graduation scan, surface manifest.
+- **Phase 1.5** ✓ Enforcement layer — `scripts/lint-architecture.sh` (linter), `.githooks/pre-commit`, `scripts/scaffold-agent.sh`, `scripts/graduation-scan.sh`, `scripts/update-surface-manifest.sh`.
 - **Phase 2** ✓ Chanakya router refactor — router 55 lines + 14 mode packs + snapshot skeletons.
 - **Phase 2 (snap)** ✓ Real snapshot producers + SessionStart prewarm + status-mode consumption + invalidation.
 - **Phase 3 (Achilles)** ✓ Achilles router refactor — router 51 lines + 9 mode packs.
@@ -113,8 +113,9 @@ Ordered plan for the intent-router + ledger + knowledge refactor, as of 2026-04-
 
 ### Planned
 
+- **Phase 2.6.7** — Studio self-hosting + planning-quality layer. Vendor-ship `studio` as a project-scoped skill at `.claude/skills/studio/` (no more global symlink drift). `scripts/install.sh` + `scripts/verify-install.sh` for the globally-installed agents. New studio modes `audit` (A1 decision-ledger consistency, A2 claim-evidence, A3 arc-exit checklist) and `guard` (G1 already-shipped, G2 already-tried, G3 already-in-backlog) backed by `scripts/studio-audit.sh` + `scripts/studio-guard.sh` — grep-only, sub-second. `hooks/session-start` auto-invokes audit silently; findings surface only on drift. Extends R10 Iron Law from debrief-level claims to plan-level claims. Gates the host-agnostic-workers-v1 release.
 - **Phase 2.7** — Knowledge layer. `_shared/project-memory.md` + `scripts/memory-query.sh`. Chanakya `modes/knowledge.md` for synthesis. Slack-ingest index joins the memory layer. Cross-refs from Lu Ban / Achilles / Argus. Every new mode-pack authored here ships with a test-mode-pack fixture (per Phase 2.6.6).
-- **Release — host-agnostic-workers-v1** — Named release (not a phase). Implements issue #88: Achilles + Argus portability, `scripts/test-host.sh` conformance matrix, JSON Schema contracts at handoff boundaries, graceful-degradation principle, per-host event telemetry. Realizes the `ARCHITECTURE.md §Host-agnosticism` principle landed during the consolidation arc. Chanakya portability follows as a subsequent release.
+- **Release — host-agnostic-workers-v1** — Named release (not a phase). Implements issue #88: Achilles + Argus portability, `scripts/test-host.sh` conformance matrix, JSON Schema contracts at handoff boundaries, graceful-degradation principle, per-host event telemetry. Realizes the `ARCHITECTURE.md §Host-agnosticism` principle landed during the consolidation arc. Chanakya portability follows as a subsequent release. Gated on Phase 2.6.7 so host-detection piggy-backs on the install-script surface.
 - **Phase 3** — Prompt-caching instrumentation + schedule-driven automation. Stable-prefix caching design. Daily/weekly/monthly/quarterly crons via `/schedule` and `/loop`. `modes/test-health.md`. Weekly narrative auto-post.
 - **Phase 4** — Lu Ban greenfield (`/luban`). Multi-file designs from day 1. ADR auto-write on `status: approved`. `_shared/architecture-catalog.md`. Integration with Chanakya Step 0 scan.
 - **Phase 5** — Crashlytics auto-brief loop + Argus `smoke` mode (synthetic-QA capability folded into Argus; right-sizing — no fifth agent). 3-step gate for crash fixes. `scripts/crash-watch.sh` modeled on `appstore-watch.sh`.
@@ -132,6 +133,7 @@ Autonomous improvement loop, agent rollback via semver, studio as shippable publ
 - 2.5 gates 2.6 (contracts before the overhaul conforming to them).
 - 2.6 gates 2.7 (structured data before the knowledge layer indexing it).
 - 2.6.6 gates 2.7 (skill-testing discipline before the synthesis-heavy knowledge layer).
+- 2.6.7 gates host-agnostic-workers-v1 (vendor-install + planning probes before host-detection).
 - 2.7 and 3 are parallelizable.
 - Lu Ban (4) lands on 2.5 + 2.6 foundation.
 - Argus smoke mode (5) independent of Lu Ban.

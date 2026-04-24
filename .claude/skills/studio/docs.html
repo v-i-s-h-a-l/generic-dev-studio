@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Studio — Documentation</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-hover: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #2fd9c6;
+    --accent-subtle: rgba(47, 217, 198, 0.13);
+    --blue: #58a6ff;
+    --green: #3fb950;
+    --purple: #bc8cff;
+    --red: #f85149;
+    --yellow: #d29922;
+    --code-bg: #0d1117;
+    --studio: #2fd9c6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .hero {
+    background: linear-gradient(135deg, #0f1a1a 0%, #0d1117 50%, #0a1616 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 80px 0 56px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 60% 40%, rgba(47, 217, 198, 0.06) 0%, transparent 50%),
+                radial-gradient(circle at 30% 70%, rgba(88, 166, 255, 0.04) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  .hero h1 {
+    font-size: 3rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 12px;
+    position: relative;
+  }
+
+  .hero h1 .studio-name { color: var(--studio); }
+
+  .hero .tagline {
+    font-size: 1.2rem;
+    color: var(--text-muted);
+    position: relative;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  .hero .subtagline {
+    margin-top: 14px;
+    font-size: 0.92rem;
+    color: var(--text-muted);
+    position: relative;
+    opacity: 0.75;
+  }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(13, 17, 23, 0.88);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+
+  .nav-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nav-inner::-webkit-scrollbar { display: none; }
+
+  .nav a {
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 14px 16px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .nav a:hover { color: var(--text); border-bottom-color: var(--border); }
+
+  section { padding: 56px 0; }
+  section + section { border-top: 1px solid var(--border); }
+
+  h2 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 22px;
+  }
+
+  h3 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 28px 0 10px;
+    color: var(--text);
+  }
+
+  h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 20px 0 8px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  p { margin-bottom: 14px; color: var(--text-muted); }
+  p strong { color: var(--text); }
+  ul, ol { margin-bottom: 14px; padding-left: 20px; color: var(--text-muted); }
+  li { margin-bottom: 6px; }
+  li strong { color: var(--text); }
+
+  a.inline { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--border); }
+  a.inline:hover { border-bottom-color: var(--accent); }
+
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.85rem;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin: 16px 0;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+
+  pre code {
+    background: transparent;
+    padding: 0;
+    border: none;
+    font-size: inherit;
+  }
+
+  /* Mode cards */
+  .mode-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 18px 0;
+  }
+  @media (max-width: 640px) { .mode-grid { grid-template-columns: 1fr; } }
+
+  .mode-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .mode-card:hover { border-color: var(--studio); background: var(--surface-hover); }
+
+  .mode-card code {
+    font-family: 'SF Mono', monospace;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--studio);
+    display: block;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin-bottom: 4px;
+  }
+
+  .mode-card .triggers {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-bottom: 8px;
+  }
+
+  .mode-card .what {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+
+  /* Rulebook rows */
+  .rule-row {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 18px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: start;
+  }
+  .rule-row:last-child { border-bottom: none; }
+  @media (max-width: 640px) { .rule-row { grid-template-columns: 1fr; gap: 6px; } }
+
+  .rule-name {
+    font-family: 'SF Mono', monospace;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--studio);
+  }
+  .rule-desc { color: var(--text-muted); font-size: 0.9rem; }
+
+  /* Callout */
+  .callout {
+    background: var(--accent-subtle);
+    border: 1px solid rgba(47, 217, 198, 0.3);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 20px 0;
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+  .callout strong { color: var(--studio); }
+
+  /* Troubleshoot Q/A */
+  .qa { border-top: 1px solid var(--border); padding: 18px 0; }
+  .qa:last-child { border-bottom: 1px solid var(--border); }
+  .qa .q {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 0.95rem;
+    margin-bottom: 8px;
+  }
+  .qa .q::before { content: 'Q. '; color: var(--studio); font-weight: 700; }
+  .qa .a { color: var(--text-muted); font-size: 0.9rem; }
+  .qa .a::before { content: 'A. '; color: var(--text-muted); font-weight: 700; }
+
+  /* Footer */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 0;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="container">
+    <h1><span class="studio-name">/studio</span></h1>
+    <p class="tagline">Project-scoped router for operations on <code>generic-dev-studio</code> itself — resume a plan, review this repo's diffs, draft its releases, audit arc drift, guard against repeated work.</p>
+    <p class="subtagline">Auto-loads from <code>.claude/skills/studio/</code>; silent outside this repo.</p>
+  </div>
+</header>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#overview">Overview</a>
+    <a href="#modes">Modes</a>
+    <a href="#rulebooks">Rulebooks</a>
+    <a href="#install">Install</a>
+    <a href="#extend">Extend</a>
+    <a href="#troubleshoot">Troubleshoot</a>
+    <a href="#links">Links</a>
+  </div>
+</nav>
+
+<section id="overview">
+  <div class="container">
+    <h2>What /studio is</h2>
+    <p><code>/studio</code> is a <strong>project-scoped skill</strong> shipped at <code>.claude/skills/studio/</code>. It auto-loads when your working directory is inside <code>generic-dev-studio</code>, and does nothing anywhere else. Its responsibility is <em>the studio itself</em>: the rules, conventions, release cadence, planning ledger, and cross-session arc state of this repo.</p>
+    <p>It is a thin router. A sub-command or conversational trigger dispatches into one mode pack under <code>modes/</code>, which carries the procedure. The router contract lives in <code>_shared/patterns/router-pattern.md</code>.</p>
+    <div class="callout">
+      <strong>Not for user-project task work.</strong> Implementing features, fixing bugs, reviewing an iOS diff — those route to the <em>agent</em> layer (<code>/chanakya</code>, <code>/achilles</code>, <code>/argus</code>), documented separately at <a class="inline" href="../../../chanakya/docs.html">chanakya/docs.html</a>. <code>/studio</code> acts <em>on the studio</em>; the agents act <em>on your project</em>. If in doubt: are you editing a file in this repo? It's studio territory. Are you editing code in your app? It's agent territory.
+    </div>
+    <h3>When /studio fires</h3>
+    <ul>
+      <li>Explicit: <code>/studio &lt;mode&gt;</code>, <code>/studio-help</code>, <code>/resume-plan</code>.</li>
+      <li>Conversational: "where were we?", "review this diff", "should we tag?", "audit the arc", "has this been done?".</li>
+      <li>Automatic: <code>hooks/session-start</code> runs the <code>audit</code> mode silently on every session boot — output only when drift is detected.</li>
+    </ul>
+    <h3>What it does not do</h3>
+    <ul>
+      <li>No task dispatch, no worktree management, no build gates, no TestFlight/App Store, no Slack ingest — that is Chanakya / Achilles / Argus territory.</li>
+      <li>No singleton lock, no <code>agent_boot</code> telemetry — studio is a conversational tool, not a fleet worker.</li>
+      <li>No writes outside <code>~/.dev-studio/&lt;project&gt;/audit/</code> (audit reports in <code>--report</code> mode). Everything else is read-only chat output + file edits you approve.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="modes">
+  <div class="container">
+    <h2>Tier 1 modes</h2>
+    <p>Shipped today. Each is a mode pack at <code>.claude/skills/studio/modes/&lt;name&gt;.md</code>; the router's dispatch table is the single source of truth for triggers. Every mode has a <code>tests/mode-packs/studio/&lt;name&gt;.yaml</code> fixture per the Phase 2.6.6 skill-testing gate.</p>
+    <div class="mode-grid">
+      <div class="mode-card">
+        <code>/studio resume-plan</code>
+        <div class="triggers">"where were we", "pick up from", "/resume-plan"</div>
+        <div class="what">Loads <code>ROADMAP.md §Phase sequence</code> + <code>ARCHITECTURE.md §Design Vision</code> + pending memory files. Reports current branch, last completed phase, next planned phase, and any deferred questions. Default mode when <code>/studio</code> is invoked with no argument.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio review</code>
+        <div class="triggers">"review this", "check this", "any issues?", "/simplify" on a studio-repo diff</div>
+        <div class="what">Walks <code>REVIEW.md</code> rules R1–R11 against the pending diff. Auto-fixes the <strong>block+auto-fix</strong> tier silently; surfaces <strong>ask</strong> tier before changing; notes <strong>warn</strong> tier in the commit message. Scoped to this repo — Turnip diffs go to Argus.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio release</code>
+        <div class="triggers">"draft release notes", "what's new", "should we tag?"</div>
+        <div class="what">Consults <code>RELEASES.md</code> for the template and tone rules. Evaluates whether <code>main</code> has crossed a tag-worthy threshold. Drafts outcome-first bullets. Never auto-tags — explicit user go-ahead required.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio ingest</code>
+        <div class="triggers">"add to parking lot", "file a pattern", "capture this for the studio"</div>
+        <div class="what">Studio-level capture — patterns observed across projects, rule-tweak proposals, parking-lot entries for an in-flight arc. Strips project-specific identifiers before anything becomes public (GitHub issue, PR description). User-project feedback routes to <code>/chanakya ingest-*</code> instead.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio help</code>
+        <div class="triggers">"show me the docs", "how does this work?", "/studio-help"</div>
+        <div class="what">Opens this page in the default browser. Context-cheap — the HTML is rendered by the browser, not loaded into the session.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio audit</code>
+        <div class="triggers">"audit the arc", "check plan drift" — also auto-runs on SessionStart</div>
+        <div class="what">Three grep-only probes. <strong>A1</strong> decision-ledger consistency (ROADMAP phases ↔ memory pointers). <strong>A2</strong> claim-evidence (phases marked ✓ must cite a commit / tag / issue / file path / metric — R10 Iron Law at the plan layer). <strong>A3</strong> arc-exit checklist (arcs marked CLOSED must have empty parking-lot and no pending-questions memory files). Silent when clean.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio guard "&lt;topic&gt;"</code>
+        <div class="triggers">"has this been done?", "are we repeating work?"</div>
+        <div class="what">Before proposing new work, searches three channels. <strong>G1</strong> git log + tags (already shipped). <strong>G2</strong> memory files (already tried / prior decisions). <strong>G3</strong> <code>gh issue list --state all</code> (already in backlog). Surfaces hits separately; user decides continue / merge / drop. Refuses vague single-word queries.</div>
+      </div>
+    </div>
+
+    <h3>Tier 2 modes (planned, not shipped)</h3>
+    <p><code>backlog</code> (GitHub issue triage with privacy scrubbing) and <code>scaffold</code> (generate a new mode pack / primitive skeleton). If a user intent suggests one, the router notes the gap and falls back to the closest Tier 1 mode.</p>
+  </div>
+</section>
+
+<section id="rulebooks">
+  <div class="container">
+    <h2>Rulebooks studio modes enforce</h2>
+    <p>Studio is the dispatch layer; the rulebooks are the content. A mode pack walks its rulebook against the situation at hand. Rulebooks are versioned plain-text; when a correction happens, the rulebook is what changes.</p>
+    <div class="rule-row">
+      <div class="rule-name">REVIEW.md</div>
+      <div class="rule-desc">Repo-specific review rules (R1–R11) the <code>review</code> mode walks against a diff. Covers path-resolver discipline (R3), dual-write preservation (R9), the R10 Iron Law (no completion claim without evidence), R11 no base-branch pushes.</div>
+    </div>
+    <div class="rule-row">
+      <div class="rule-name">RELEASES.md</div>
+      <div class="rule-desc">When to tag, version math, release-note template and tone. Outcome-first bullets with the user as implied subject. No marketing language, no emojis unless asked.</div>
+    </div>
+    <div class="rule-row">
+      <div class="rule-name">CLAUDE.md</div>
+      <div class="rule-desc">Project-level conventions: which studio triggers route to which mode, docs-sync rules (what HTML/README surfaces update together), backlog rules (when to open a GH issue), auto-apply tiers (what Claude commits silently vs. asks about), briefing convention, privacy rules for analysis sessions.</div>
+    </div>
+    <div class="rule-row">
+      <div class="rule-name">ARCHITECTURE.md</div>
+      <div class="rule-desc">Design vision and host-agnosticism principle. Informs <code>resume-plan</code> when re-establishing arc context.</div>
+    </div>
+    <div class="rule-row">
+      <div class="rule-name">ROADMAP.md</div>
+      <div class="rule-desc">Themed vision + Phase sequence (Completed / Planned / Later + Dependencies). Read by <code>resume-plan</code> and <code>audit</code>.</div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="container">
+    <h2>Install</h2>
+    <p><code>/studio</code> installs itself. It lives at <code>.claude/skills/studio/</code> inside this repo; Claude Code auto-loads project-scoped skills when your working directory is in the repo. Fresh clone → <code>/studio</code> is live:</p>
+    <pre><code>git clone &lt;this-repo&gt; &amp;&amp; cd generic-dev-studio
+# /studio is already reachable here — try /studio-help</code></pre>
+    <p>No symlink, no <code>~/.claude/skills/studio</code> entry. Studio firing outside this repo would be a misfire (it acts on the studio itself; running it against, say, your iOS project has no well-defined meaning).</p>
+    <h3>Installing the rest of the system</h3>
+    <p>The agent layer (Chanakya / Achilles / Argus) is <em>global</em> — installed at <code>~/.claude/skills/</code> so <code>/chanakya</code>, <code>/achilles</code>, <code>/argus</code> reach you from any repo. Run the installer once:</p>
+    <pre><code>./scripts/install.sh            # idempotent — re-run safely after pulls
+./scripts/verify-install.sh     # reports any drift</code></pre>
+    <p>Details in <a class="inline" href="../../../README.md">README.md</a>. Agent docs live at <a class="inline" href="../../../chanakya/docs.html">chanakya/docs.html</a>.</p>
+  </div>
+</section>
+
+<section id="extend">
+  <div class="container">
+    <h2>Extending /studio</h2>
+    <h3>Add a new mode pack</h3>
+    <ol>
+      <li>Drop a file at <code>.claude/skills/studio/modes/&lt;name&gt;.md</code> with frontmatter (<code>name</code>, <code>description</code>, <code>type: mode-pack</code>, <code>budget_tokens</code>, <code>reads</code>, <code>writes</code>).</li>
+      <li>Add a row to the dispatch table in <code>.claude/skills/studio/SKILL.md</code> with trigger phrases.</li>
+      <li>Write a fixture at <code>tests/mode-packs/studio/&lt;name&gt;.yaml</code> — required by the lint gate <code>W_MISSING_PACK_FIXTURE</code>.</li>
+      <li>Regenerate the capability manifest: <code>./scripts/capability-manifest.sh --regen</code>.</li>
+      <li>Update this page and <code>CLAUDE.md</code>'s studio-router trigger table.</li>
+    </ol>
+    <h3>Add a new audit probe</h3>
+    <p>Audit probes live in <code>scripts/studio-audit.sh</code>. Each probe is a function that calls <code>add_finding &lt;probe-id&gt; &lt;severity&gt; "&lt;msg&gt;"</code> when drift is detected. Keep it grep-only and sub-second — no LLM calls. The probe must calibrate to clean on the current repo state (add evidence to ROADMAP, or tighten the regex, or add memory pointers — do not weaken the probe).</p>
+    <h3>Add a new guard channel</h3>
+    <p>Guard channels live in <code>scripts/studio-guard.sh</code> (<code>probe_g1</code> / <code>probe_g2</code> / <code>probe_g3</code>). A new channel needs a grep source (git log, memory, gh, Slack archive, etc.) and a unique label so hits surface separately.</p>
+    <h3>Auto-apply tiers</h3>
+    <ul>
+      <li><strong>Auto-apply</strong> — rule-wording tweaks in REVIEW / RELEASES / CLAUDE, threshold tuning backed by data, brief-template additions, skill-prose trimming, dead-code removal, GH issue creation on explicitly-agreed work, README timeline updates on releases.</li>
+      <li><strong>Ask-first</strong> — changing how agents hand off, removing or renaming rules / sub-commands, anything touching runtime behavior in the user's actual project, permission / secrets / auth changes, breaking changes, deleting issues or releases.</li>
+    </ul>
+    <p>Details in <code>CLAUDE.md §Auto-apply tiers</code>. Adaptive trust: if a class of change has zero reverts after five applications, the auto-apply criteria loosen for that class.</p>
+  </div>
+</section>
+
+<section id="troubleshoot">
+  <div class="container">
+    <h2>Troubleshoot</h2>
+    <div class="qa">
+      <div class="q"><code>/studio</code> doesn't appear as a skill in my session.</div>
+      <div class="a">Studio is project-scoped. It only registers when your working directory is inside <code>generic-dev-studio</code>. If you're in that repo and it's still missing, check that <code>.claude/skills/studio/SKILL.md</code> exists and has valid frontmatter (<code>name</code>, <code>description</code>, <code>type</code>), and that your Claude Code session was started from within the repo.</div>
+    </div>
+    <div class="qa">
+      <div class="q">SessionStart reported <em>studio-audit: drift detected</em>. What now?</div>
+      <div class="a">Read the findings — each cites a probe (A1 / A2 / A3) and a one-line message. A1 = ROADMAP phases lack memory pointers; A2 = phases marked ✓ without citeable evidence; A3 = an arc is marked CLOSED but its parking-lot or pending-questions memory isn't clean. Fix the underlying state (add evidence to ROADMAP, add a memory pointer, process the parking-lot). Do not silence the probe without fixing the cause.</div>
+    </div>
+    <div class="qa">
+      <div class="q"><code>/studio guard</code> keeps finding noise on my queries.</div>
+      <div class="a">Vague single-word queries like <code>"fix"</code> or <code>"refactor"</code> will match everything. Use a distinctive phrase (<code>"host-agnostic workers"</code>, <code>"auto-sweep backoff"</code>). If all three channels return hits for a legitimate new piece of work, the hits are informative, not blocking — ask whether the new work is distinct, a merge, or a duplicate.</div>
+    </div>
+    <div class="qa">
+      <div class="q">Can I run <code>/studio</code> against my iOS project?</div>
+      <div class="a">No. Studio acts on the studio — this repo's rules, plans, releases, arcs. For user-project work (implementing features, fixing bugs, reviewing your app's diffs) use <code>/chanakya</code>, <code>/achilles</code>, <code>/argus</code>. Studio's <code>review</code> mode walks <code>REVIEW.md</code> which is specific to this repo's invariants; applying it to app code would be nonsense.</div>
+    </div>
+    <div class="qa">
+      <div class="q"><code>/studio-help</code> says "docs file missing."</div>
+      <div class="a">The mode resolves the docs path via <code>git rev-parse --show-toplevel</code> + <code>/.claude/skills/studio/docs.html</code>. If that path doesn't exist, something was moved or deleted. Re-run <code>git status</code> to see what's changed; <code>docs.html</code> should be checked in.</div>
+    </div>
+    <div class="qa">
+      <div class="q">I added a new mode and the linter says <code>W_MISSING_PACK_FIXTURE</code>.</div>
+      <div class="a">Every mode pack must ship a fixture at <code>tests/mode-packs/studio/&lt;name&gt;.yaml</code>. See <code>_shared/primitives/skill-testing.md</code> for the schema. The linter gate is load-bearing; do not disable it.</div>
+    </div>
+    <div class="qa">
+      <div class="q">Audit drift report writes under <code>~/.dev-studio/</code> — is that right?</div>
+      <div class="a">Yes. Audit reports are per-project private artifacts resolved via <code>scripts/lib-paths.sh</code>'s <code>resolve_audit_root</code>. They're never committed. Runtime writes live under <code>~/.dev-studio/&lt;project&gt;/</code> by R3; audit reports follow the same rule.</div>
+    </div>
+  </div>
+</section>
+
+<section id="links">
+  <div class="container">
+    <h2>Links</h2>
+    <ul>
+      <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio">Repository</a> — source, issues, releases</li>
+      <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues">Open issues</a> — actionable backlog</li>
+      <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/releases">Releases</a> — version history + notes</li>
+      <li><a class="inline" href="../../../chanakya/docs.html">Agent orchestration docs</a> — Chanakya / Achilles / Argus</li>
+      <li><a class="inline" href="../../../README.md">README.md</a> — install + repo layout</li>
+      <li><a class="inline" href="../../../ROADMAP.md">ROADMAP.md</a> — themed vision + phase sequence</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p><code>/studio</code> — project-scoped skill at <code>.claude/skills/studio/</code>. Part of the Generic Dev Studio orchestration system, but scoped to operations on the studio itself.</p>
+  </div>
+</footer>
+
+</body>
+</html>

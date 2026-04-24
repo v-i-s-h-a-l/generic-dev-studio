@@ -1,12 +1,12 @@
 ---
 name: studio
-description: "Cross-agent studio router. Handles studio-level operations that span agents or concern the project's own conventions (not the user's iOS project). Tier 1 sub-commands: resume-plan, review, release, ingest, help. Do NOT use for task-level work — that goes to /chanakya, /achilles, /argus."
+description: "Cross-agent studio router. Handles studio-level operations that span agents or concern the project's own conventions (not the user's iOS project). Tier 1 sub-commands: resume-plan, review, release, ingest, help, audit, guard. Do NOT use for task-level work — that goes to /chanakya, /achilles, /argus."
 type: agent-router
 ---
 
 # Studio — Router
 
-Studio-level operations for `generic-dev-studio` itself (not the user's project). Invoked when the user wants to act on the *studio's* state: resume an in-flight architecture arc, walk this repo's review rules against a diff, draft release notes for the studio, or ingest something studio-flavored.
+Studio-level operations for `generic-dev-studio` itself (not the user's project). This is a **project-scoped vendor skill** shipped at `.claude/skills/studio/`; it auto-loads when your cwd is in this repo and is silent everywhere else. Invoked when the user wants to act on the studio's state: resume an in-flight architecture arc, walk this repo's review rules against a diff, draft release notes for the studio, ingest something studio-flavored, audit plan-vs-memory drift, or guard against repeated work.
 
 Pattern contract: `_shared/patterns/router-pattern.md`. Router <100 lines.
 
@@ -23,8 +23,10 @@ Task-level work on the user's iOS project (`/chanakya`, `/achilles`, `/argus` ow
 | `release` / "draft release notes" / "what's new" / "should we tag?" | `modes/release.md` |
 | `ingest` / "ingest this" / studio-flavored capture outside chanakya's inbox | `modes/ingest.md` |
 | `help` / `/studio-help` / "show me the docs" / "how does this work?" | `modes/help.md` |
+| `audit` / "audit the arc" / "check plan drift" / auto-invoked by SessionStart | `modes/audit.md` |
+| `guard <keywords>` / "has this been done?" / "are we repeating work?" | `modes/guard.md` |
 
-Tier 2 modes (not shipped today; spawn on demand): `backlog` (gh issue triage), `audit` (architecture audit run), `scaffold` (new mode pack / primitive scaffold).
+Tier 2 modes (not shipped today; spawn on demand): `backlog` (gh issue triage), `scaffold` (new mode pack / primitive scaffold).
 
 ## Intent detection
 

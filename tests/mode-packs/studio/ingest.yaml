@@ -1,7 +1,7 @@
-# Skill-testing fixture for studio/modes/ingest.md
+# Skill-testing fixture for .claude/skills/studio/modes/ingest.md
 # Proves: 4-way classification + privacy scrub before public output + correct routing vs /chanakya.
 schema: 1
-pack: studio/modes/ingest.md
+pack: .claude/skills/studio/modes/ingest.md
 scenario: |
   The user pastes: "Hey, I noticed Argus flagged the Turnip photo-filter
   secret-rotation branch as having secrets in the diff, but it was just a

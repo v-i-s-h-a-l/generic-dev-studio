@@ -5,8 +5,94 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-04-24T11:48:28Z",
+  "generated_at": "2026-04-24T15:22:49Z",
   "agents": [
+    {
+      "name": "studio",
+      "router": ".claude/skills/studio/SKILL.md",
+      "description": "Cross-agent studio router. Handles studio-level operations that span agents or concern the project's own conventions (not the user's iOS project). Tier 1 sub-commands: resume-plan, review, release, ingest, help, audit, guard. Do NOT use for task-level work — that goes to /chanakya, /achilles, /argus.",
+      "reads": ["_shared/** (when diff touches it, for cross-ref)", ".claude/skills/studio/docs.html (existence check only; content not loaded into context)", "~/.claude-personal/projects/<project-hash>/memory/*.md", "~/.claude-personal/projects/<project-hash>/memory/MEMORY.md", "~/.claude-personal/projects/<project-hash>/memory/project_*_pending.md", "~/.dev-studio/<project>/analysis/*.md (private analysis reports)", "ARCHITECTURE.md", "CHANGELOG or release notes history (if present)", "CLAUDE.md", "diff under review (via `git diff`)", "gh issue list (if gh authenticated; remote call)", "git log --all (read-only)", "git log since last tag", "git tag (read-only, with subjects)", "git tags + git log (read-only)", "README.md", "RELEASES.md", "REVIEW.md", "ROADMAP.md", "studio-consolidation/00-plan.md (if present)", "studio-consolidation/latest exit artifact (if present)", "studio-consolidation/parking-lot.md (if arc active)", "studio-consolidation/parking-lot.md (if present)"],
+      "writes": ["~/.dev-studio/<project>/analysis/<date>.md (private, never committed)", "~/.dev-studio/<project>/audit/<date>.md (only in --report mode, private)", "GitHub issues (abstract patterns only, privacy-scrubbed)", "README.md (only after a release actually ships)", "release draft (chat output; user decides to tag)", "studio-consolidation/parking-lot.md (if arc active; append-only)"],
+      "modes": [
+        {
+          "name": "audit",
+          "path": ".claude/skills/studio/modes/audit.md",
+          "type": "mode-pack",
+          "description": "Arc-coherence audit — runs three probes (A1 decision-ledger consistency, A2 claim-evidence, A3 arc-exit) against ROADMAP.md + memory + git history. Silent when clean; emits drift findings when a phase/arc has fallen out of sync. Auto-invoked by SessionStart; also available on demand.",
+          "reads": ["ROADMAP.md", "~/.claude-personal/projects/<project-hash>/memory/*.md", "studio-consolidation/parking-lot.md (if present)", "git tags + git log (read-only)"],
+          "writes": ["~/.dev-studio/<project>/audit/<date>.md (only in --report mode, private)"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 400
+        },
+        {
+          "name": "guard",
+          "path": ".claude/skills/studio/modes/guard.md",
+          "type": "mode-pack",
+          "description": "Pre-work guard — before starting new work, greps git log, memory, and the GitHub backlog for prior mentions. Catches the \"I forgot we shipped this\" / \"I forgot we tried this and it didn't work\" / \"I forgot there's an issue open\" classes of errors. On-demand only; not auto-invoked.",
+          "reads": ["git log --all (read-only)", "git tag (read-only, with subjects)", "~/.claude-personal/projects/<project-hash>/memory/*.md", "gh issue list (if gh authenticated; remote call)"],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 400
+        },
+        {
+          "name": "help",
+          "path": ".claude/skills/studio/modes/help.md",
+          "type": "mode-pack",
+          "description": "Open the studio documentation page in the default browser. Tier-1 mode. Triggers when the user asks \"how does this work?\", \"show me the docs\", or runs `/studio help` / `/studio-help`.",
+          "reads": [".claude/skills/studio/docs.html (existence check only; content not loaded into context)"],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 300
+        },
+        {
+          "name": "ingest",
+          "path": ".claude/skills/studio/modes/ingest.md",
+          "type": "mode-pack",
+          "description": "Studio-level ingest — inputs that concern the studio's own evolution (analysis reports from running on real projects, pattern observations, parking-lot candidates) rather than user-project feedback. Routes user-project feedback to `/chanakya ingest-*` instead.",
+          "reads": ["~/.dev-studio/<project>/analysis/*.md (private analysis reports)", "studio-consolidation/parking-lot.md (if arc active)"],
+          "writes": ["GitHub issues (abstract patterns only, privacy-scrubbed)", "studio-consolidation/parking-lot.md (if arc active; append-only)", "~/.dev-studio/<project>/analysis/<date>.md (private, never committed)"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 800
+        },
+        {
+          "name": "release",
+          "path": ".claude/skills/studio/modes/release.md",
+          "type": "mode-pack",
+          "description": "Draft release notes per `RELEASES.md` template, evaluate if the repo has crossed a release-worthy threshold, and update README's Mermaid timeline + Story so far when a release actually ships. Never auto-tags.",
+          "reads": ["RELEASES.md", "README.md", "git log since last tag", "CHANGELOG or release notes history (if present)"],
+          "writes": ["release draft (chat output; user decides to tag)", "README.md (only after a release actually ships)"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 1000
+        },
+        {
+          "name": "resume-plan",
+          "path": ".claude/skills/studio/modes/resume-plan.md",
+          "type": "mode-pack",
+          "description": "Report where the studio's multi-session architecture arc is, and ask any pending questions the previous session left. Authoritative procedure — the thin `.claude/commands/resume-plan.md` slash command forwards to this mode.",
+          "reads": ["ROADMAP.md", "ARCHITECTURE.md", "CLAUDE.md", "~/.claude-personal/projects/<project-hash>/memory/MEMORY.md", "~/.claude-personal/projects/<project-hash>/memory/project_*_pending.md", "studio-consolidation/00-plan.md (if present)", "studio-consolidation/latest exit artifact (if present)"],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 800
+        },
+        {
+          "name": "review",
+          "path": ".claude/skills/studio/modes/review.md",
+          "type": "mode-pack",
+          "description": "Walk `REVIEW.md` at the repo root against the current diff. Auto-fix `block + auto-fix` tier, surface `ask` tier before changing, note `warn` tier. For the studio's own repo — not the user's iOS project (that's Argus's job).",
+          "reads": ["REVIEW.md", "diff under review (via `git diff`)", "_shared/** (when diff touches it, for cross-ref)"],
+          "writes": [],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 1200
+        }
+      ]
+    },
     {
       "name": "achilles",
       "router": "achilles/SKILL.md",
@@ -339,70 +425,6 @@
           "snapshots": [],
           "dry_run": false,
           "budget_tokens": 1500
-        }
-      ]
-    },
-    {
-      "name": "studio",
-      "router": "studio/SKILL.md",
-      "description": "Cross-agent studio router. Handles studio-level operations that span agents or concern the project's own conventions (not the user's iOS project). Tier 1 sub-commands: resume-plan, review, release, ingest, help. Do NOT use for task-level work — that goes to /chanakya, /achilles, /argus.",
-      "reads": ["_shared/** (when diff touches it, for cross-ref)", "~/.claude-personal/projects/<project-hash>/memory/MEMORY.md", "~/.claude-personal/projects/<project-hash>/memory/project_*_pending.md", "~/.dev-studio/<project>/analysis/*.md (private analysis reports)", "ARCHITECTURE.md", "CHANGELOG or release notes history (if present)", "CLAUDE.md", "diff under review (via `git diff`)", "git log since last tag", "README.md", "RELEASES.md", "REVIEW.md", "ROADMAP.md", "studio-consolidation/00-plan.md (if present)", "studio-consolidation/latest exit artifact (if present)", "studio-consolidation/parking-lot.md (if arc active)", "studio/docs.html (existence check only; content not loaded into context)"],
-      "writes": ["~/.dev-studio/<project>/analysis/<date>.md (private, never committed)", "GitHub issues (abstract patterns only, privacy-scrubbed)", "README.md (only after a release actually ships)", "release draft (chat output; user decides to tag)", "studio-consolidation/parking-lot.md (if arc active; append-only)"],
-      "modes": [
-        {
-          "name": "help",
-          "path": "studio/modes/help.md",
-          "type": "mode-pack",
-          "description": "Open the studio documentation page in the default browser. Tier-1 mode. Triggers when the user asks \"how does this work?\", \"show me the docs\", or runs `/studio help` / `/studio-help`.",
-          "reads": ["studio/docs.html (existence check only; content not loaded into context)"],
-          "writes": [],
-          "snapshots": [],
-          "dry_run": false,
-          "budget_tokens": 300
-        },
-        {
-          "name": "ingest",
-          "path": "studio/modes/ingest.md",
-          "type": "mode-pack",
-          "description": "Studio-level ingest — inputs that concern the studio's own evolution (analysis reports from running on real projects, pattern observations, parking-lot candidates) rather than user-project feedback. Routes user-project feedback to `/chanakya ingest-*` instead.",
-          "reads": ["~/.dev-studio/<project>/analysis/*.md (private analysis reports)", "studio-consolidation/parking-lot.md (if arc active)"],
-          "writes": ["GitHub issues (abstract patterns only, privacy-scrubbed)", "studio-consolidation/parking-lot.md (if arc active; append-only)", "~/.dev-studio/<project>/analysis/<date>.md (private, never committed)"],
-          "snapshots": [],
-          "dry_run": false,
-          "budget_tokens": 800
-        },
-        {
-          "name": "release",
-          "path": "studio/modes/release.md",
-          "type": "mode-pack",
-          "description": "Draft release notes per `RELEASES.md` template, evaluate if the repo has crossed a release-worthy threshold, and update README's Mermaid timeline + Story so far when a release actually ships. Never auto-tags.",
-          "reads": ["RELEASES.md", "README.md", "git log since last tag", "CHANGELOG or release notes history (if present)"],
-          "writes": ["release draft (chat output; user decides to tag)", "README.md (only after a release actually ships)"],
-          "snapshots": [],
-          "dry_run": false,
-          "budget_tokens": 1000
-        },
-        {
-          "name": "resume-plan",
-          "path": "studio/modes/resume-plan.md",
-          "type": "mode-pack",
-          "description": "Report where the studio's multi-session architecture arc is, and ask any pending questions the previous session left. Authoritative procedure — the thin `.claude/commands/resume-plan.md` slash command forwards to this mode.",
-          "reads": ["ROADMAP.md", "ARCHITECTURE.md", "CLAUDE.md", "~/.claude-personal/projects/<project-hash>/memory/MEMORY.md", "~/.claude-personal/projects/<project-hash>/memory/project_*_pending.md", "studio-consolidation/00-plan.md (if present)", "studio-consolidation/latest exit artifact (if present)"],
-          "writes": [],
-          "snapshots": [],
-          "dry_run": false,
-          "budget_tokens": 800
-        },
-        {
-          "name": "review",
-          "path": "studio/modes/review.md",
-          "type": "mode-pack",
-          "description": "Walk `REVIEW.md` at the repo root against the current diff. Auto-fix `block + auto-fix` tier, surface `ask` tier before changing, note `warn` tier. For the studio's own repo — not the user's iOS project (that's Argus's job).",
-          "reads": ["REVIEW.md", "diff under review (via `git diff`)", "_shared/** (when diff touches it, for cross-ref)"],
-          "writes": [],
-          "snapshots": [],
-          "dry_run": false,
-          "budget_tokens": 1200
         }
       ]
     }

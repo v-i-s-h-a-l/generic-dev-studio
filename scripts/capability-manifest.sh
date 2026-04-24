@@ -196,7 +196,12 @@ emit_manifest() {
 
     printf '\n      ]\n'
     printf '    }'
-  done < <(find "$REPO_ROOT" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' 2>/dev/null | sort)
+  done < <(
+    {
+      find "$REPO_ROOT" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' 2>/dev/null
+      find "$REPO_ROOT/.claude/skills" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' 2>/dev/null
+    } | sort -u
+  )
 
   printf '\n  ]\n'
   printf '}\n'

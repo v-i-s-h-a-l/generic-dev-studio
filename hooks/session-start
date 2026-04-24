@@ -68,6 +68,26 @@ if [ -n "$banner" ]; then
   ctx="${ctx}${banner}"
 fi
 
+# Studio-audit: surface planning-quality drift as part of bootstrap context.
+# Silent when clean (sub-second grep probes). On drift, append a one-line
+# summary + the findings so the next turn inherits the signal without
+# the user having to ask. Failure modes (script missing, grep error) all
+# collapse to silent skip — the bootstrap prose must still land.
+audit_banner() {
+  local audit_script="$REPO_ROOT/scripts/studio-audit.sh"
+  [ -x "$audit_script" ] || return 0
+  local output exit_code
+  output=$("$audit_script" --silent 2>/dev/null || true)
+  exit_code=$?
+  [ -z "$output" ] && return 0
+  printf '\n\n---\n\n**studio-audit (SessionStart):** drift detected — review before acting on plan-level claims.\n\n```\n%s\n```' "$output"
+}
+
+audit_out=$(audit_banner 2>/dev/null || true)
+if [ -n "$audit_out" ]; then
+  ctx="${ctx}${audit_out}"
+fi
+
 # JSON-escape the context (quotes, backslashes, newlines, tabs).
 json_escape() {
   local s="$1"

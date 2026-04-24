@@ -1,7 +1,7 @@
-# Skill-testing fixture for studio/modes/release.md
+# Skill-testing fixture for .claude/skills/studio/modes/release.md
 # Proves: RELEASES.md is authoritative + never auto-tag + outcome-first bullets.
 schema: 1
-pack: studio/modes/release.md
+pack: .claude/skills/studio/modes/release.md
 scenario: |
   The user says "should we tag a release? draft some notes."
   The repo has 12 commits since the last tag v0.3.0, covering: a new primitive,
