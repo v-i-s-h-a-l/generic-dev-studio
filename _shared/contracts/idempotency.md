@@ -46,6 +46,52 @@ Single-user workflows still produce retries — a worker restart, a dispatched t
 - Deterministic tests. Same inputs → same key → same observable effect.
 - Safe remote orchestration. A cross-machine retry after a sync delay does not double-write.
 
+## Per-step retry classification
+
+Every cross-boundary write in the worker loop, classified for retry behavior. Workers consult this table when deciding whether to re-attempt a failed step or require compensation before re-entry.
+
+| Write | Classification | Rationale |
+|---|---|---|
+| Debrief emit (`scripts/task-emit-debrief.sh`) | `retry-safe` | Atomic rename (`.tmp` → final path). A failed mid-write leaves a `.tmp` that the next run overwrites cleanly. |
+| Worker-report field within debrief | `retry-safe` | Covered by debrief atomicity. The field is part of the same atomic file. |
+| Review verdict emit (`scripts/argus-emit-verdict.sh`) | `retry-safe` | Atomic rename, same pattern as debrief. Re-emit lands same verdict file. |
+| Event log append (`scripts/emit-event.sh`) | `retry-unsafe` at write; dedup at read | Two concurrent emitters can both land. Reader dedupes on `(task_id, event_type, step_ordinal)` via `scripts/read-events.sh`. See §5. |
+| Git merge (`scripts/task-merge.sh`) | `retry-safe` | Content-addressed; re-merging the same commits lands the same SHA. Git rejects a second merge as a no-op if already applied. |
+| GH issue mutations (`gh issue close/edit`) | `retry-safe` | GitHub state transitions are idempotent: closing an already-closed issue is a no-op; editing the same label set is a no-op. |
+| Snapshot refresh | `retry-safe` | Atomic rename. Identical inputs produce identical snapshot file. |
+| Slack posts | `requires-compensation` | Not idempotent. Covered by external Slack message IDs (already documented in §Non-idempotent corners). Do not retry without first checking for a prior message ID. |
+| Argus spawn via `dispatch-review.sh` | `retry-unsafe` pre-spawn; `retry-safe` after verdict | Guarded by `--idempotency-key` scan before spawn. See §Dispatch keying. |
+
+### step_ordinal convention
+
+`step_ordinal` is a monotonic integer per `(task_id, event_type)` pair. It is assigned by the emitter (not a central counter) — emitters start at 1 and increment locally. On retry, the emitter re-emits with the same `step_ordinal` it used on the first attempt (derived from attempt number passed by the caller). Readers treat duplicate `(task_id, event_type, step_ordinal)` tuples as a single logical event, keeping the first seen.
+
+## Dispatch keying
+
+`dispatch-review.sh` participates in idempotency through an explicit key scan before every spawn.
+
+### Key format
+
+```
+--idempotency-key <task-id>:<stage>:<attempt>
+```
+
+- `task-id` — the task identifier (e.g. `T001`).
+- `stage` — `spec-compliance` or `code-quality`.
+- `attempt` — monotonic integer; first attempt is `1`.
+
+The caller (Achilles Step 8.5) constructs the key. `dispatch-review.sh` does not synthesize it.
+
+### Behavior
+
+1. Before spawning an Argus worker, `dispatch-review.sh` reads today's event log for a `review_approved`, `review_flagged`, or `review_blocked` event whose `idempotency_key` matches the supplied key.
+2. **Found** → return the prior verdict without spawning. Emit `action_deduped` event with the matching key.
+3. **Not found** → spawn Argus, emit the verdict event with the key attached.
+
+### Why today's log only
+
+Argus verdicts are scoped to a task's active session. A verdict from a prior session (different day) for the same task is stale — the diff may have changed. Scoping to today's log prevents stale-verdict reuse across sessions.
+
 ## Related
 
 - `message-contract.md` — where the key lives on the envelope.
