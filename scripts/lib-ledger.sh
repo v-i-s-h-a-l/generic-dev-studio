@@ -163,10 +163,23 @@ emit_event_keyed() {
 
   local ts line
   ts=$(iso_ts_now)
+
+  # OTel GenAI semantic convention attributes (contracts/events.md §OTel GenAI conformance).
+  # STUDIO_HOST is set by the spawning process (hooks/session-start, H8); default claude-code.
+  local otel_system otel_agent_name otel_op_name
+  otel_system="${STUDIO_HOST:-claude-code}"
+  otel_agent_name="$agent"
+  case "$event" in
+    *handoff*)                        otel_op_name="handoff" ;;
+    agent_boot|agent_session_completed) otel_op_name="create_agent" ;;
+    *)                                otel_op_name="invoke_agent" ;;
+  esac
+
   # Build envelope. `producer` is always present; `idempotency_key` only if set
   # (session-lifecycle events per contracts/event-emission.md §2 omit it).
+  # OTel attrs are always top-level for third-party dashboard compatibility.
   if [ -n "$idem" ]; then
-    line=$(printf '{"ts":"%s","agent":"%s","event":"%s","task":"%s","data":%s,"producer":{"agent":"%s","mode":"%s","instance_id":"%s"},"idempotency_key":"%s"}' \
+    line=$(printf '{"ts":"%s","agent":"%s","event":"%s","task":"%s","data":%s,"producer":{"agent":"%s","mode":"%s","instance_id":"%s"},"idempotency_key":"%s","gen_ai.system":"%s","gen_ai.agent.name":"%s","gen_ai.operation.name":"%s"}' \
       "$ts" \
       "$(_json_escape "$agent")" \
       "$(_json_escape "$event")" \
@@ -175,9 +188,12 @@ emit_event_keyed() {
       "$(_json_escape "$agent")" \
       "$(_json_escape "$mode")" \
       "$(_json_escape "$instance_id")" \
-      "$(_json_escape "$idem")")
+      "$(_json_escape "$idem")" \
+      "$(_json_escape "$otel_system")" \
+      "$(_json_escape "$otel_agent_name")" \
+      "$(_json_escape "$otel_op_name")")
   else
-    line=$(printf '{"ts":"%s","agent":"%s","event":"%s","task":"%s","data":%s,"producer":{"agent":"%s","mode":"%s","instance_id":"%s"}}' \
+    line=$(printf '{"ts":"%s","agent":"%s","event":"%s","task":"%s","data":%s,"producer":{"agent":"%s","mode":"%s","instance_id":"%s"},"gen_ai.system":"%s","gen_ai.agent.name":"%s","gen_ai.operation.name":"%s"}' \
       "$ts" \
       "$(_json_escape "$agent")" \
       "$(_json_escape "$event")" \
@@ -185,7 +201,10 @@ emit_event_keyed() {
       "$data" \
       "$(_json_escape "$agent")" \
       "$(_json_escape "$mode")" \
-      "$(_json_escape "$instance_id")")
+      "$(_json_escape "$instance_id")" \
+      "$(_json_escape "$otel_system")" \
+      "$(_json_escape "$otel_agent_name")" \
+      "$(_json_escape "$otel_op_name")")
   fi
 
   # O_APPEND atomicity cap — PIPE_BUF on macOS/Linux.

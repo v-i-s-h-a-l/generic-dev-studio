@@ -75,3 +75,4 @@ Each schema's `$id` is its bare filename (`debrief.schema.json` etc.), and cross
 - `contracts/review-verdict.schema.json` — Argus verdict.
 - `contracts/handoff.schema.json` — typed handoff envelope (dispatch-review.sh, spawn-worker.sh).
 - `contracts/idempotency.md` — retry classification + key construction.
+- `contracts/events.md §OTel GenAI conformance` — top-level attribute set stamped on every JSONL event; `studio.*` namespace for non-conforming fields.
