@@ -1,25 +1,38 @@
 #!/usr/bin/env bash
-# session-start — Claude Code SessionStart hook.
+# session-start — host-agnostic session-start hook.
 #
-# Reads the router-bootstrap primitive and returns it as `additionalContext`
-# so routing rules, iron laws, and agent roster survive startup / clear /
-# compact events. Without this, long sessions can drop the CLAUDE.md
-# context after /compact, and the next turn loses the invariants.
+# Reads the router-bootstrap primitive and emits it as session-start
+# additional context so routing rules, iron laws, and agent roster survive
+# startup / clear / compact events. Without this, long sessions can drop
+# the root-instructions context after compaction, and the next turn loses
+# the invariants.
 #
-# Contract (Claude Code hooks JSON):
-#   stdout must be JSON with:
-#     {
-#       "hookSpecificOutput": {
-#         "hookEventName": "SessionStart",
-#         "additionalContext": "<text to prepend>"
-#       }
-#     }
+# Host dispatch (env-var → canonical STUDIO_HOST):
+#   $CLAUDE_PLUGIN_ROOT set  → STUDIO_HOST=claude-code  (current contract)
+#   $CODEX_PLUGIN_ROOT  set  → STUDIO_HOST=codex        (v0.120+; H10 verifies)
+#   Neither set              → hook-less host: exit 0 silently. The prose
+#                              preamble in achilles/SKILL.md and argus/SKILL.md
+#                              is the fallback entry point on those hosts.
 #
-# Exit 0 always. Failure modes (missing file, unreadable) emit empty context
-# rather than failing the hook — a degraded session beats a blocked one.
+# Output schemas (stdout JSON):
+#   claude-code: {"hookSpecificOutput":{"hookEventName":"SessionStart",
+#                                       "additionalContext":"<text>"}}
+#   codex:       {"additionalContext":"<text>"}  (subject to H10 verification)
+#
+# Exit 0 always. Failure modes (missing file, unreadable) emit empty
+# context rather than failing the hook — a degraded session beats a
+# blocked one.
 
 set -u
 umask 022
+
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  export STUDIO_HOST="claude-code"
+elif [ -n "${CODEX_PLUGIN_ROOT:-}" ]; then
+  export STUDIO_HOST="codex"
+else
+  exit 0
+fi
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
@@ -123,4 +136,11 @@ json_escape() {
 
 escaped=$(json_escape "$ctx")
 
-printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$escaped"
+case "$STUDIO_HOST" in
+  claude-code)
+    printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$escaped"
+    ;;
+  codex)
+    printf '{"additionalContext":"%s"}\n' "$escaped"
+    ;;
+esac
