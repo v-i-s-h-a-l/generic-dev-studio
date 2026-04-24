@@ -76,3 +76,4 @@ fi
 - `message-contract.md` — envelope carries `schema_version`.
 - `idempotency.md` — content-hash is computed post-normalization against the schema.
 - `schemas/` — one file per schema `name`, each with its own history.
+- `EVOLUTION.md` — FULL_TRANSITIVE + additive-only rules for the formal `*.schema.json` files under this directory. Names the canonical integer `schema: <int>` form on schema docs and the transition from object-form `schema_version` on payloads.

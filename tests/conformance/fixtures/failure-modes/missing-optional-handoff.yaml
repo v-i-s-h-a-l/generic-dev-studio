@@ -1,0 +1,11 @@
+schema_version:
+  name: handoff
+  version: "1.0.0"
+  min_reader: "1.0.0"
+from: chanakya
+to: argus
+task_id: 0190f52a-6e0c-7b3c-9a1d-000000000098
+reason: "Missing-optional fixture (Criterion 7) — clean parse, defaults applied."
+payload_ref:
+  stage: spec
+idempotency_key: "argus:review:missing-optional:spec:1"

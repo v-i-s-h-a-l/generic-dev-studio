@@ -1,0 +1,316 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review-verdict.schema.json",
+  "schema": 1,
+  "title": "Review Verdict",
+  "description": "YAML shape Argus (and user/chanakya reviewers) emit per review. Formalizes schemas/review.md. Scoped to the verdict artifact written to plans/reviews/<review-id>.yaml; the event-log view of reviews is covered by contracts/events.md. The idempotency_key is required \u2014 dispatch-review.sh uses it to dedup repeat dispatches.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "subject",
+    "reviewer",
+    "state",
+    "requested_at",
+    "completed_at",
+    "verdict",
+    "findings",
+    "checks_run",
+    "scope",
+    "idempotency_key"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "debrief.schema.json#/$defs/schemaVersion"
+    },
+    "id": {
+      "$ref": "debrief.schema.json#/$defs/uuidv7"
+    },
+    "stage": {
+      "description": "Argus two-stage reviews only. Absent for user / chanakya reviewers. Pre-1.1.0 reviews with no stage field read as `quality` for back-compat.",
+      "enum": [
+        "spec",
+        "quality"
+      ]
+    },
+    "subject": {
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "task",
+            "round",
+            "release"
+          ]
+        },
+        "id": {
+          "$ref": "debrief.schema.json#/$defs/uuidv7"
+        }
+      }
+    },
+    "reviewer": {
+      "enum": [
+        "argus",
+        "user",
+        "chanakya"
+      ]
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "in-progress",
+        "approved",
+        "flagged",
+        "blocked",
+        "acknowledged"
+      ]
+    },
+    "requested_at": {
+      "$ref": "debrief.schema.json#/$defs/rfc3339"
+    },
+    "completed_at": {
+      "oneOf": [
+        {
+          "$ref": "debrief.schema.json#/$defs/rfc3339"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "verdict": {
+      "oneOf": [
+        {
+          "enum": [
+            "approved",
+            "flagged",
+            "blocked"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "rule",
+          "tier",
+          "message"
+        ],
+        "properties": {
+          "rule": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tier": {
+            "enum": [
+              "block",
+              "auto-fix",
+              "ask",
+              "warn"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "checks_run": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "result"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "result": {
+            "enum": [
+              "pass",
+              "fail",
+              "skip",
+              "warn"
+            ]
+          }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "required": [
+        "diff_size",
+        "file_count",
+        "caps_triggered"
+      ],
+      "properties": {
+        "diff_size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "file_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "caps_triggered": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "cap",
+              "value",
+              "limit"
+            ],
+            "properties": {
+              "cap": {
+                "type": "string"
+              },
+              "value": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "Per contracts/idempotency.md: `<agent>:<mode>:<stable-subject>:<content-hash>`. dispatch-review.sh additionally accepts the simpler `<task-id>:<stage>:<attempt>` form.",
+      "minLength": 1
+    }
+  },
+  "allOf": [
+    {
+      "description": "Terminal states require a non-null completed_at and a non-null verdict.",
+      "if": {
+        "properties": {
+          "state": {
+            "enum": [
+              "approved",
+              "flagged",
+              "blocked",
+              "acknowledged"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "completed_at": {
+            "$ref": "debrief.schema.json#/$defs/rfc3339"
+          },
+          "verdict": {
+            "enum": [
+              "approved",
+              "flagged",
+              "blocked"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "Verdict derivation: any block tier finding \u21d2 blocked state.",
+      "if": {
+        "properties": {
+          "findings": {
+            "type": "array",
+            "contains": {
+              "properties": {
+                "tier": {
+                  "const": "block"
+                }
+              },
+              "required": [
+                "tier"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "state": {
+            "const": "blocked"
+          },
+          "verdict": {
+            "const": "blocked"
+          }
+        }
+      }
+    }
+  ],
+  "examples": [
+    {
+      "schema_version": {
+        "name": "review",
+        "version": "1.1.0",
+        "min_reader": "1.0.0",
+        "deprecated_at": null
+      },
+      "id": "0190f52a-7a11-7e03-8c99-44df6fd77a77",
+      "stage": "quality",
+      "subject": {
+        "kind": "task",
+        "id": "0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11"
+      },
+      "reviewer": "argus",
+      "state": "approved",
+      "requested_at": "2026-04-22T12:41:10Z",
+      "completed_at": "2026-04-22T12:45:30Z",
+      "verdict": "approved",
+      "findings": [],
+      "checks_run": [
+        {
+          "name": "regression_risk",
+          "result": "pass"
+        },
+        {
+          "name": "secrets_in_diff",
+          "result": "pass"
+        },
+        {
+          "name": "base_staleness",
+          "result": "pass"
+        },
+        {
+          "name": "edge_case_coverage",
+          "result": "pass"
+        }
+      ],
+      "scope": {
+        "diff_size": 187,
+        "file_count": 4,
+        "caps_triggered": []
+      },
+      "notes": null,
+      "idempotency_key": "argus:review:0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11:quality:1"
+    }
+  ]
+}

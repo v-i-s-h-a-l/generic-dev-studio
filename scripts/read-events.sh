@@ -9,12 +9,17 @@
 #   scripts/read-events.sh --agent achilles|argus|chanakya
 #   scripts/read-events.sh --event task_completed
 #   scripts/read-events.sh --task T001
+#   scripts/read-events.sh --gen-ai-system claude-code|codex  # filter by OTel gen_ai.system
 #   scripts/read-events.sh --tail 20
 #   scripts/read-events.sh --no-dedupe                        # raw stream
 #
 # Dedupe rule: first occurrence of (producer.agent, idempotency_key) wins.
 # Events without idempotency_key pass through unchanged (session/snapshot events).
 # See _shared/contracts/event-emission.md.
+#
+# OTel backward-compat: pre-H5 events have no gen_ai.* attrs. --gen-ai-system
+# treats a missing gen_ai.system field as "claude-code" (the only host that
+# existed before host-agnostic workers v1 shipped).
 #
 # Emits one JSON event per line. Requires `jq`.
 
@@ -32,6 +37,7 @@ UNTIL=""
 AGENT=""
 EVENT=""
 TASK=""
+GEN_AI_SYSTEM=""
 DEDUPE=1
 TAIL=""
 
@@ -55,6 +61,8 @@ while [ $# -gt 0 ]; do
     --event)      EVENT="${2:?--event requires value}"; shift 2 ;;
     --task=*)     TASK="${1#--task=}"; shift ;;
     --task)       TASK="${2:?--task requires value}"; shift 2 ;;
+    --gen-ai-system=*) GEN_AI_SYSTEM="${1#--gen-ai-system=}"; shift ;;
+    --gen-ai-system)   GEN_AI_SYSTEM="${2:?--gen-ai-system requires value}"; shift 2 ;;
     --tail=*)     TAIL="${1#--tail=}"; shift ;;
     --tail)       TAIL="${2:?--tail requires N}"; shift 2 ;;
     --no-dedupe)  DEDUPE=0; shift ;;
@@ -111,9 +119,11 @@ for v in "$AGENT" "$EVENT" "$TASK"; do
 done
 
 JQ_FILTER='.'
-[ -n "$AGENT" ] && JQ_FILTER="$JQ_FILTER | select((.producer.agent // .agent // \"\") == \"$AGENT\")"
-[ -n "$EVENT" ] && JQ_FILTER="$JQ_FILTER | select(.event == \"$EVENT\")"
-[ -n "$TASK" ]  && JQ_FILTER="$JQ_FILTER | select(.task == \"$TASK\")"
+[ -n "$AGENT" ]          && JQ_FILTER="$JQ_FILTER | select((.producer.agent // .agent // \"\") == \"$AGENT\")"
+[ -n "$EVENT" ]          && JQ_FILTER="$JQ_FILTER | select(.event == \"$EVENT\")"
+[ -n "$TASK" ]           && JQ_FILTER="$JQ_FILTER | select(.task == \"$TASK\")"
+# gen_ai.system filter: missing attr treated as "claude-code" (backward-compat for pre-H5 events).
+[ -n "$GEN_AI_SYSTEM" ]  && JQ_FILTER="$JQ_FILTER | select((.\"gen_ai.system\" // \"claude-code\") == \"$GEN_AI_SYSTEM\")"
 
 stream() {
   cat "${FILES[@]}" | jq -c "$JQ_FILTER" 2>/dev/null

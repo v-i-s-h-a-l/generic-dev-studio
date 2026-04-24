@@ -1,0 +1,17 @@
+# Reference host adapter — Claude Code (claude.ai/code CLI)
+#
+# This is the primary development environment. It declares host-native +
+# inherit-env, which does NOT satisfy the Achilles security floor defined
+# in hosts/ADAPTER-SPEC.md. The security floor is met here through human
+# oversight and Claude Code's built-in permission prompt system, not
+# mechanical isolation.
+#
+# Do NOT copy these values when authoring a new adapter. New adapters must
+# declare sandbox_profile ∈ {workspace-write, full} and secret_scope ∈
+# {cwd-only, none}. See hosts/ADAPTER-SPEC.md for the full spec.
+supports_hooks: true
+spawn_command: "claude -p"
+block_for_event_strategy: tail
+tool_dialect: claude
+sandbox_profile: host-native
+secret_scope: inherit-env

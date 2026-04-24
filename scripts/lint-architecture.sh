@@ -472,6 +472,17 @@ main() {
   check_capability_stale
   check_pack_fixtures
 
+  # Host-agnostic sub-linter. Pass through --staged flag so pre-commit mode
+  # applies block-tier prose checks; standalone allows pre-sweep warnings.
+  local ha_lint="$SCRIPT_DIR/lint-host-agnostic.sh"
+  if [ -x "$ha_lint" ]; then
+    local ha_args=()
+    [ "$STAGED" -eq 1 ] && ha_args=("--staged")
+    if ! "$ha_lint" ${ha_args[@]+"${ha_args[@]}"} 2>&1; then
+      ERRORS=$((ERRORS + 1))
+    fi
+  fi
+
   printf '%d errors, %d warnings\n' "$ERRORS" "$WARNINGS" >&2
   [ "$ERRORS" -eq 0 ]
 }

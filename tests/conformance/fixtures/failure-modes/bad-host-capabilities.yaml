@@ -1,0 +1,10 @@
+# Security-floor violation fixture (Criterion 8).
+# This manifest declares sandbox_profile=host-native on a non-reference host
+# AND inherit-env, which violates BOTH the Achilles and Argus floors per
+# hosts/ADAPTER-SPEC.md. lint-host-agnostic.sh must reject loudly.
+supports_hooks: true
+spawn_command: "fake-host exec"
+block_for_event_strategy: tail
+tool_dialect: openai
+sandbox_profile: host-native
+secret_scope: inherit-env
