@@ -8,6 +8,23 @@ A multi-session refactor is in progress. Before taking any architectural action,
 
 If the user asks "where were we" or similar, invoke `/resume-plan` — it reads the above and reports.
 
+## Studio router (systematic triggers)
+
+The `studio/` skill is the cross-agent router for studio-level operations. Its Tier 1 modes cover the four most common studio-scoped user intents. When any of the phrases below fire, dispatch into the matching mode (slash commands are thin wrappers — the mode pack is authoritative):
+
+| User intent | Trigger phrases | Dispatch |
+|---|---|---|
+| Resume in-flight arc / "where were we" | "where were we", "pick up from", "resume", `/resume-plan` | `studio/modes/resume-plan.md` |
+| Review a studio-repo diff | "review this", "check this", "any issues", "self-review", `/simplify` *on a studio-repo diff* | `studio/modes/review.md` |
+| Draft release notes / evaluate tagging | "what's new", "draft release notes", "should we tag", "release" | `studio/modes/release.md` |
+| Studio-level capture (patterns, analysis, parking-lot, rule tweaks) | "add to parking lot", "file a pattern", "capture this for the studio" | `studio/modes/ingest.md` |
+
+**Do not dispatch through `studio/` for user-project task work.** Task-level intents (implement X, fix bug Y, review Turnip diff) route to `/chanakya`, `/achilles`, `/argus` directly. The `studio` router is deliberately scoped to operations that concern the studio itself or cut across agents.
+
+Tier 2 modes (`backlog`, `audit`, `scaffold`) are not shipped today; if a user intent suggests one, note the gap and route to the closest Tier 1 mode.
+
+The rulebook sections below (**Reviews**, **Releases**, **Docs sync**, **Backlog**) remain authoritative for the *content* of each mode — the studio router is just the dispatch surface.
+
 ## Reviews
 
 When the user asks to review a diff (any phrasing — "review", "self-review", "check this", "any issues", or invoking `/simplify`), **read `REVIEW.md` at the repo root first** and walk its rules against the diff. Auto-fix the `block + auto-fix` tier silently; surface `ask` tier before changing; note `warn` tier either way.
