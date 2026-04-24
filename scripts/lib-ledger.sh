@@ -756,6 +756,16 @@ write_debrief_artifact() {
   if [ "${DRY_RUN:-0}" = "1" ]; then
     _dry_write_log "$f" "$payload" "$idem"
   else
+    # Validate debrief payload against the JSON Schema contract before writing.
+    # Rejections never auto-retry — per idempotency.md §Per-step retry classification.
+    local _validate_tmp
+    _validate_tmp=$(mktemp "${TMPDIR:-/tmp}/validate-debrief-XXXXXX")
+    printf '%s\n' "$payload" > "$_validate_tmp"
+    if ! "$SCRIPT_DIR/validate-contract.sh" debrief "$_validate_tmp" 2>&1; then
+      rm -f "$_validate_tmp"
+      return 2
+    fi
+    rm -f "$_validate_tmp"
     _atomic_write "$f" "$payload" || return 2
   fi
 
@@ -827,11 +837,22 @@ write_review_artifact() {
     printf 'checks_run: []\n'
     printf 'scope: {diff_size: 0, file_count: 0, caps_triggered: []}\n'
     printf 'notes: null\n'
+    printf 'idempotency_key: "%s"\n' "$idem"
   })
 
   if [ "${DRY_RUN:-0}" = "1" ]; then
     _dry_write_log "$f" "$payload" "$idem"
   else
+    # Validate verdict payload against the JSON Schema contract before writing.
+    # Rejections never auto-retry — per idempotency.md §Per-step retry classification.
+    local _validate_tmp
+    _validate_tmp=$(mktemp "${TMPDIR:-/tmp}/validate-verdict-XXXXXX")
+    printf '%s\n' "$payload" > "$_validate_tmp"
+    if ! "$SCRIPT_DIR/validate-contract.sh" review-verdict "$_validate_tmp" 2>&1; then
+      rm -f "$_validate_tmp"
+      return 2
+    fi
+    rm -f "$_validate_tmp"
     _atomic_write "$f" "$payload" || return 2
   fi
 
