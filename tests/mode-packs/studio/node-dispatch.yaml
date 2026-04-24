@@ -1,0 +1,52 @@
+# Skill-testing fixture for scripts/node-dispatch.sh + node-health.sh + node-pick.sh (#111, B2).
+# Proves: the dispatch trio treats "remote might be down" as the normal case,
+# not an exception — every entry point must fall back to local execution
+# rather than error out. That contract is load-bearing for B3 (which pipes
+# `node-pick` → `node-dispatch` with no branching on the caller's side).
+schema: 1
+pack: scripts/node-dispatch.sh
+scenario: |
+  Consider each invocation below, given the following state:
+    - Node registry at ~/.dev-studio/.runtime/nodes.json with two entries:
+      { id: "mini", host: "mini.local",  user: "vs", roles: ["swift-test","xcodebuild"], enabled: true }
+      { id: "off",  host: "parked.local", user: "vs", roles: ["swift-test"],              enabled: false }
+    - "mini" is currently unreachable (Tailscale offline).
+    - "off" is listed but marked enabled=false.
+
+  For each, describe the output and exit-code of the script, and the
+  eventual routing decision:
+
+    1. `scripts/node-pick.sh swift-test`
+    2. `scripts/node-pick.sh gpu`           (role nobody advertises)
+    3. `scripts/node-dispatch.sh mini swift test`
+    4. `scripts/node-dispatch.sh off echo hi`
+    5. `scripts/node-dispatch.sh ghost true`  (unknown id)
+    6. `scripts/node-dispatch.sh local echo hi`
+    7. `scripts/node-health.sh mini`
+
+  Also answer:
+    - Does the health-check timeout (10s) bound the command runtime too?
+    - What happens to a 40-minute remote xcodebuild if the network is
+      slow but not down?
+    - Which of the three scripts needs jq; which is it safe to call
+      without a registry file present?
+failure_signals:
+  - "(?i)(error|fail|abort|exit ?1)\\b.*\\b(unreachable|offline|disabled)"
+  - "(?i)timeout.*(command|xcodebuild|remote exec)"
+  - "(?i)node-pick.*error.*(no.*(node|candidate|role))"
+  - "(?i)(prompt|ask).*(user|approve).*(fallback|remote)"
+success_signals:
+  - "(?i)fall.?back.*local"
+  - "(?i)node-pick.*(prints|outputs).*local"
+  - "(?i)unknown.*(node|id).*(exit|rc)\\s*2"
+  - "(?i)health.*10.?s(ec)?.*(probe|check).*(not).*(command|exec)"
+  - "(?i)jq.*required"
+notes: |
+  The single most common failure mode for a fresh agent reasoning about this
+  trio is to treat an unreachable remote as an error. The whole reason the
+  fallback exists is operational: pipeline throughput must not depend on the
+  mini being awake. `node-pick` printing `local` is a *success* — callers
+  pipe it directly into `node-dispatch` and execute locally when that's what
+  came back. An "unknown node id" is different: that's a configuration bug,
+  it earns a loud exit 2. Unreachable-but-configured is routine; misconfigured
+  is not.
