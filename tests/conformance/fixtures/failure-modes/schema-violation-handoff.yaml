@@ -1,0 +1,12 @@
+schema_version:
+  name: handoff
+  version: "1.0.0"
+  min_reader: "1.0.0"
+from: alien-agent
+to: argus
+task_id: 0190f52a-6e0c-7b3c-9a1d-000000000099
+reason: "Schema-violation fixture (Criterion 7) — `from` is not in the agentName enum, validator must refuse loudly."
+payload_ref:
+  stage: spec
+idempotency_key: "argus:review:schema-violation:spec:1"
+occurred_at: "2026-04-25T12:00:00Z"

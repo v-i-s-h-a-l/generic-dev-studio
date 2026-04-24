@@ -1,0 +1,17 @@
+schema_version:
+  name: brief
+  version: "1.0.0"
+  min_reader: "1.0.0"
+id: 0190f52a-6e0c-7b3c-9a1d-000000000001
+task_id: 0190f52a-6e0c-7b3c-9a1d-000000000001
+title: "XS trivial — typo fix in README"
+size: XS
+trivial: true
+files:
+  - README.md
+acceptance:
+  - "README.md typo corrected"
+notes: |
+  Fixture for H10 conformance task 1. XS-trivial diffs skip Argus per
+  achilles/modes/task.md §Pre-merge review gate. The harness asserts that
+  rule is present in the mode pack — it does not actually run achilles.
