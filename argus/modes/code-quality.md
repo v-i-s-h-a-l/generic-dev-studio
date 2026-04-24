@@ -87,6 +87,8 @@ Reference the review rules file for per-check procedures. An erroring check is l
 
 **Scope check is NOT here** — that's Stage 1 (spec-compliance). If spec-compliance already passed, assume scope is fine and focus on quality.
 
+**Missing-test findings are conditional on `churn_layer`** per `_shared/rules/test-strategy.md`: `core` flags `missing-unit-test`; `adapter` flags `missing-contract-test`; `ui` never flags missing unit tests (snapshot / XCUITest coverage only); `exploratory` flags nothing. If the brief lacks `churn_layer`, treat as `core` and surface `missing-churn-layer` as an `accountability` flag.
+
 ### Step 3.5 — Design-time skill review (Swift diffs only)
 
 Per `_shared/primitives/design-time-skill-routing.md`: if the diff touches Swift, walk the Swift routing table at `_shared/rules/swift-skill-routing.md` against the actual diff, invoke each matched skill, and emit findings to `FLAGS` tagged `rule: design/<category>` (category column). Never `BLOCKS` in week-1 posture.

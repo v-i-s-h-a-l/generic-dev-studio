@@ -1,0 +1,44 @@
+# Skill-testing fixture for _shared/rules/test-strategy.md
+# Proves: 4-layer churn model + correct routing per layer + Argus conditional missing-test behavior.
+schema: 1
+pack: _shared/rules/test-strategy.md
+scenario: |
+  You are selecting the test approach for three diffs on an iOS project:
+
+    A) A new `public func parseLUTCube(_ data: Data) throws -> [LUTEntry]`
+       — pure Swift parser, no external dependencies.
+
+    B) A new wrapper type `IMGLYExportBridge` with an `async export(...)` method
+       that calls into the IMGLY SDK's engine and maps errors to a project-local
+       enum.
+
+    C) A full-screen SwiftUI rewrite of the editor's filter picker, with new
+       `@Observable` view-model, navigation glue, and three new views.
+
+  For EACH diff, answer:
+    1. Which churn layer does it belong to? Why?
+    2. What test type is appropriate? (Unit / contract / snapshot+XCUITest /
+       manual only)
+    3. If the diff were reviewed by Argus and the production code shipped with
+       ZERO tests, which finding (if any) should Argus emit?
+failure_signals:
+  # A subagent without the rule defaults to "write unit tests for each diff."
+  - "(?i)(unit test|unit-test).*(filter picker|picker|view|@Observable)"
+  - "(?i)(default|should).*write unit tests for all"
+  - "(?i)(same|identical) (approach|strategy) for all three"
+success_signals:
+  - "(?i)(core)"
+  - "(?i)(adapter|contract)"
+  - "(?i)(ui|snapshot|xcuitest)"
+  - "(?i)missing-unit-test"
+  - "(?i)missing-contract-test"
+  # UI diff must NOT fire missing-unit-test — signal the rule's key override.
+  - "(?i)(not|never|don'?t).*flag.*(unit).*(ui|view|snapshot)"
+notes: |
+  The 4-layer churn model and the conditional Argus flag pattern are NOT
+  inferrable from general engineering intuition. A fresh subagent will
+  either (a) write unit tests for everything, calcifying the UI rewrite,
+  or (b) refuse to test the adapter because "it calls into the SDK", both
+  of which the rule explicitly corrects. The `missing-unit-test` vs
+  `missing-contract-test` vs `nothing` decision tree is the load-bearing
+  insight.

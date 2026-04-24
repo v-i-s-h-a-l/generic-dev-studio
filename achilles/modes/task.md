@@ -148,6 +148,7 @@ Don't over-engineer. Pure functions need no protocols. Simple value types need n
 
 #### Step 4B — Writing unit / integration tests
 
+0. **Check the parent brief's `churn_layer`** per `_shared/rules/test-strategy.md`. If `ui` or `exploratory`, stop — unit tests are the wrong layer; escalate to Chanakya rather than silently writing unit tests that will calcify.
 1. **Read the parent implementation first.** Check that the parent task (from `Group:` field) is `done` / `verified`. If still in-progress, stop: "Parent task <id> hasn't landed yet — cannot write tests against unmerged code."
 2. **Scan existing tests.** Find the test target structure (`*Tests/`, `*UITests/`); identify reusable helpers, mocks, fixtures; check for a shared mock/stub library.
 3. **Follow the brief's structure:** file placement per `## Test Organization`; descriptive names that read as specifications; Arrange/Act/Assert; no shared mutable state; mock external dependencies for unit tests, only external boundaries for integration tests.

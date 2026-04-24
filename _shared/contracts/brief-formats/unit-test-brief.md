@@ -6,6 +6,7 @@
 **Generated:** <YYYY-MM-DD HH:mm IST>
 **Parent task:** <parent-task-id>
 **Implementation brief:** <path to parent's brief>
+**Churn layer:** core   <!-- unit-test briefs require `core` per `_shared/rules/test-strategy.md`; surface a warning if the parent brief's `churn_layer` is not `core` -->
 
 ---
 

@@ -20,6 +20,10 @@ Write to `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md`:
 - **Complexity:** L
 - **Size:** XS | S | M | L   <!-- drives Achilles' Step 6 gate: XS/S → lsp-only, M/L → full-green -->
 
+## Churn Layer
+
+- **`churn_layer`:** core | adapter | ui | exploratory   <!-- see `_shared/rules/test-strategy.md`; drives which test brief spawns and what Argus expects -->
+
 ## Branch
 
 - **Base:** `<base-branch>`

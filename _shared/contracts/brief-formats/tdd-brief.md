@@ -7,6 +7,7 @@ Used for `Type: test-tdd` tasks, where tests are written before the implementati
 
 **Generated:** <YYYY-MM-DD HH:mm IST>
 **Implementation task:** <impl-task-id> (blocked by this task)
+**Churn layer:** core | adapter   <!-- TDD on `ui` / `exploratory` is almost always wrong; see `_shared/rules/test-strategy.md` -->
 
 ---
 
