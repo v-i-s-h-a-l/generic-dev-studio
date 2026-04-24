@@ -5,15 +5,18 @@
 #
 #   lsp-only    — per-file swift-lsp diagnostics. No xcodebuild, no lock, no
 #                 DerivedData. Red if any .swift file surfaces errors.
-#   full-green  — xcodebuild under the machine-global xcodebuild-lock with
+#   full-green  — xcodebuild under a per-dispatch-target lock with
 #                 45-minute staleness reclaim, per-task DerivedData isolation,
 #                 and a trap that releases the lock on any exit. Red if the
 #                 build exits non-zero.
 #
-# The lock is machine-global (the serialized resource is the SPM cache +
-# Clang module cache + simulator locks — all process-wide), so it lives under
-# `~/.dev-studio/.runtime/xcodebuild-lock/` rather than per-project. This is
-# a R4-exempted carve-out documented in file-locations.md.
+# The lock lives under `~/.dev-studio/.runtime/xcodebuild-lock/<node-id>/`
+# — machine-global scope (the serialized resource is the SPM cache + Clang
+# module cache + simulator locks, all process-wide on the node that runs
+# the build) but keyed by dispatch target so a laptop-local build and a
+# mini-dispatched build don't serialize on each other. `<node-id>` is
+# `local` when no remote is picked, preserving pre-B3 behaviour. This is
+# an R4-exempted carve-out documented in file-locations.md.
 #
 # Usage:
 #   scripts/task-build-gate.sh <mode> <task-id> <worktree> <scheme> <destination>
@@ -158,8 +161,18 @@ fi
 [ -n "$SCHEME" ] || { printf 'error: scheme required for full-green mode\n' >&2; exit 2; }
 [ -n "$DESTINATION" ] || { printf 'error: destination required for full-green mode\n' >&2; exit 2; }
 
+# Route xcodebuild through node-dispatch so an SSH-reachable mini (or any
+# future node tagged `xcodebuild`) can absorb the M/L build cost. The lock
+# is scoped per node: two workers dispatching to `mini` still serialize on
+# the mini's cache + simulator resources, but a laptop-local build running
+# against `local` runs in parallel with a mini build — different machines,
+# different serialized resources. `node-pick` returns `local` when no
+# remote is registered or healthy, so hosts without a registry keep the
+# pre-B3 behaviour bit-for-bit under `xcodebuild-lock/local/`.
+NODE_ID=$("$SCRIPT_DIR/node-pick.sh" xcodebuild 2>/dev/null || echo local)
+
 LOCK_ROOT="$(resolve_runtime_global)/xcodebuild-lock"
-LOCK="$LOCK_ROOT"
+LOCK="$LOCK_ROOT/$NODE_ID"
 DERIVED=$(resolve_derived_data_for "$TASK_ID")
 mkdir -p "$DERIVED" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$DERIVED" >&2; exit 2; }
 mkdir -p "$(dirname "$LOCK")" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$(dirname "$LOCK")" >&2; exit 2; }
@@ -167,10 +180,10 @@ mkdir -p "$(dirname "$LOCK")" 2>/dev/null || { printf 'error: mkdir %s failed\n'
 # DRY-RUN — log the invocation, skip the lock + xcodebuild. Idempotency key
 # matches the wet-run's path so diff-comparison works (patterns/dry-run.md).
 if [ "${DRY_RUN:-0}" = "1" ]; then
-  printf 'DRY-RUN xcodebuild scheme=%s destination=%s -derivedDataPath=%s\n' \
-    "$SCHEME" "$DESTINATION" "$DERIVED" >&2
+  printf 'DRY-RUN xcodebuild node=%s scheme=%s destination=%s -derivedDataPath=%s\n' \
+    "$NODE_ID" "$SCHEME" "$DESTINATION" "$DERIVED" >&2
   _emit_terminal build_check_passed \
-    "$(printf '{"mode":"full-green","dry_run":true,"scheme":"%s","attempt":%s}' "$SCHEME" "$ATTEMPT")"
+    "$(printf '{"mode":"full-green","node":"%s","dry_run":true,"scheme":"%s","attempt":%s}' "$NODE_ID" "$SCHEME" "$ATTEMPT")"
   exit 0
 fi
 
@@ -209,18 +222,34 @@ done
 # branch even when the earlier outer trap got overridden by this one.
 trap '_emit_aborted_if_open; rm -rf "$LOCK" 2>/dev/null' EXIT INT TERM
 
-cd "$WORKTREE" || { printf 'error: cd %s failed\n' "$WORKTREE" >&2; exit 2; }
+# Local branch still needs to cd before invoking xcodebuild. Remote branch
+# delegates the cd to the remote shell below — the dispatch still happens
+# from whatever cwd the caller had.
+if [ "$NODE_ID" = "local" ]; then
+  cd "$WORKTREE" || { printf 'error: cd %s failed\n' "$WORKTREE" >&2; exit 2; }
+fi
 
 # Run the build. Output is captured for downstream analysis (error-line count
 # in the data payload) but not stored — we trust xcodebuild's exit status.
 build_log=$(mktemp 2>/dev/null || printf '/tmp/xcb-%s.log' "$$")
-xcodebuild \
-  -scheme "$SCHEME" \
-  -destination "$DESTINATION" \
-  -derivedDataPath "$DERIVED" \
-  build \
-  >"$build_log" 2>&1
-BUILD_STATUS=$?
+if [ "$NODE_ID" = "local" ]; then
+  xcodebuild \
+    -scheme "$SCHEME" \
+    -destination "$DESTINATION" \
+    -derivedDataPath "$DERIVED" \
+    build \
+    >"$build_log" 2>&1
+  BUILD_STATUS=$?
+else
+  # Remote shell owns the cd + xcodebuild invocation. %q keeps every path
+  # safe through the SSH argv round trip. DerivedData on the remote uses
+  # the remote's $HOME (which resolves from the laptop's absolute path
+  # when usernames match — the common case) — an unexpected location is
+  # auto-created rather than failing.
+  "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "cd $(printf '%q' "$WORKTREE") && xcodebuild -scheme $(printf '%q' "$SCHEME") -destination $(printf '%q' "$DESTINATION") -derivedDataPath $(printf '%q' "$DERIVED") build" \
+    >"$build_log" 2>&1
+  BUILD_STATUS=$?
+fi
 
 # Parse error + warning counts. Cheap and well-defined — xcodebuild's error
 # lines match `error:` case-insensitively and begin at column 0 or after a path.
@@ -229,12 +258,12 @@ warn_count=$(grep -cE '(^|: )warning:' "$build_log" 2>/dev/null || echo 0)
 rm -f "$build_log" 2>/dev/null || true
 
 if [ "$BUILD_STATUS" -ne 0 ]; then
-  data=$(printf '{"mode":"full-green","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s}' \
-    "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT")
+  data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s}' \
+    "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT")
   _emit_terminal build_check_failed "$data"
   exit 2
 fi
 
-data=$(printf '{"mode":"full-green","warnings":%s,"scheme":"%s","attempt":%s}' "$warn_count" "$SCHEME" "$ATTEMPT")
+data=$(printf '{"mode":"full-green","node":"%s","warnings":%s,"scheme":"%s","attempt":%s}' "$NODE_ID" "$warn_count" "$SCHEME" "$ATTEMPT")
 _emit_terminal build_check_passed "$data"
 exit 0
