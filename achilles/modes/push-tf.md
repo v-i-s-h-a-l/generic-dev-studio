@@ -40,6 +40,32 @@ Run `/pushTFBuild` exactly as-is. Do not modify any step, prompt, or behavior. T
 
 If the skill fails at any point, stop. Do not write a debrief. Report: "TestFlight build failed. No debrief written."
 
+### TF2a — Monitoring a backgrounded archive
+
+When `xcodebuild archive` is run in the background and watched with the Monitor tool, **do not grep the log for completion strings.** The raw `** ARCHIVE SUCCEEDED **` marker is swallowed by xcpretty (which formats it as `▸ Archive Succeeded`); any grep pattern is fragile against xcpretty format changes. Use the filesystem directly:
+
+```bash
+# Check presence of the archive's Products/ subtree — present iff archive succeeded.
+ARCHIVE_PATH="/tmp/<SCHEME>-<BUILD_NUMBER>.xcarchive"
+[ -d "$ARCHIVE_PATH/Products" ]
+```
+
+**Polling shape:** filesystem check + timeout, never log grep + infinite loop.
+
+```bash
+elapsed=0
+until [ -d "$ARCHIVE_PATH/Products" ]; do
+  [ "$elapsed" -ge 1200 ] && {
+    printf 'archive not complete after 20 min — check log at %s\n' "$LOG_PATH" >&2
+    exit 2
+  }
+  sleep 15
+  elapsed=$((elapsed + 15))
+done
+```
+
+Archives typically take 8–15 min. The 20-min cap is a stuck-detection signal, not a hard deadline — surface via stderr so the user sees it and can inspect.
+
 ## TF3 — Capture outputs
 
 After `/pushTFBuild` completes successfully, extract:
