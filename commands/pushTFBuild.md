@@ -7,6 +7,14 @@ allowed-tools: [Bash, Read, Edit, Grep]
 
 Archive the current branch and upload it to TestFlight, automatically bumping the build number and version if needed.
 
+## Arguments
+
+- `--scheme <name>` *(optional, default `Zaps`)* — which Xcode scheme to archive. Use `Zaps-Internal` to ship an internal-tester build with the `INTERNAL_BUILD` compile flag defined (HUD-enabled). The archive path and status banner echo the chosen scheme; all other steps are unchanged. If omitted, the default `Zaps` / `Release` flow is preserved exactly.
+
+Derive `CONFIGURATION` from the scheme:
+- `Zaps` → `Release`
+- `Zaps-Internal` → `Internal`
+
 ## Configuration
 
 See `_shared/primitives/turnip-project-config.md` for all project paths and identifiers (project, scheme, pbxproj, ASC key ID/issuer/key file, App ID, bundle ID, Crashlytics plist, xcpretty).
@@ -65,8 +73,10 @@ Parse the JSON responses to extract:
 Print a one-line summary, then proceed without asking for confirmation:
 
 ```
-Pushing build 3031 (v26.3.1, branch <branch>, scheme Zaps)
+Pushing build 3031 (v26.3.1, branch <branch>, scheme <SCHEME>)
 ```
+
+Echo the resolved `SCHEME` (default `Zaps`, or whatever `--scheme` selected).
 
 The user opted into the release by running the command — no confirmation prompt. If they want a custom version, they can re-invoke with the version flag or abort now.
 
@@ -107,9 +117,9 @@ git push -u origin HEAD
 cd /Users/vishalsingh/Documents/Turnip.gg/turnip-ios
 xcodebuild archive \
   -project zaps-app/Turnip.xcodeproj \
-  -scheme Zaps \
-  -configuration Release \
-  -archivePath /tmp/Zaps-<NEW_BUILD_NUMBER>.xcarchive \
+  -scheme <SCHEME> \
+  -configuration <CONFIGURATION> \
+  -archivePath /tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive \
   -allowProvisioningUpdates \
   -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8 \
   -authenticationKeyID WJQ6D76K8R \
@@ -120,7 +130,7 @@ xcodebuild archive \
 
 This step takes several minutes. Keep the user informed that archiving is in progress.
 
-**Verify:** After archiving, confirm the `.xcarchive` exists at `/tmp/Zaps-<NEW_BUILD_NUMBER>.xcarchive`. If it does not exist, the archive failed — stop here and report the error to the user. Do NOT continue to export or upload.
+**Verify:** After archiving, confirm the `.xcarchive` exists at `/tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive`. If it does not exist, the archive failed — stop here and report the error to the user. Do NOT continue to export or upload.
 
 ### Step 8: Export and Upload to App Store Connect
 
@@ -145,8 +155,8 @@ cat > /tmp/ExportOptions.plist <<'PLIST'
 PLIST
 
 xcodebuild -exportArchive \
-  -archivePath /tmp/Zaps-<NEW_BUILD_NUMBER>.xcarchive \
-  -exportPath /tmp/Zaps-<NEW_BUILD_NUMBER>-export \
+  -archivePath /tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive \
+  -exportPath /tmp/<SCHEME>-<NEW_BUILD_NUMBER>-export \
   -exportOptionsPlist /tmp/ExportOptions.plist \
   -allowProvisioningUpdates \
   -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8 \
@@ -173,7 +183,7 @@ The `xcodebuild -exportArchive` pipeline does not trigger the Crashlytics run sc
 ```bash
 UPLOAD_SYMBOLS=$(find ~/Library/Developer/Xcode/DerivedData/Turnip-*/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/upload-symbols -maxdepth 0 2>/dev/null | head -1)
 GSIP="/Users/vishalsingh/Documents/Turnip.gg/turnip-ios/zaps-app/Zaps/Firebase/Prod/GoogleService-Info.plist"
-DSYMS_DIR="/tmp/Zaps-<NEW_BUILD_NUMBER>.xcarchive/dSYMs"
+DSYMS_DIR="/tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive/dSYMs"
 
 failed=()
 for dsym in "$DSYMS_DIR"/*.dSYM; do
@@ -194,7 +204,7 @@ else
 fi
 ```
 
-If `UPLOAD_SYMBOLS` is empty (DerivedData was cleaned), report that dSYMs could not be uploaded but continue — it's non-blocking. The archive at `/tmp/Zaps-<NEW_BUILD_NUMBER>.xcarchive` will be available for manual upload later.
+If `UPLOAD_SYMBOLS` is empty (DerivedData was cleaned), report that dSYMs could not be uploaded but continue — it's non-blocking. The archive at `/tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive` will be available for manual upload later.
 
 ### Step 10: Compose Slack notification
 
