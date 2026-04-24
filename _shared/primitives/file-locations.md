@@ -74,6 +74,7 @@ Phase 2.6 introduced a uniform per-artifact YAML layout under `plans/` + a singl
 | Push queue | `~/.dev-studio/<project>/.runtime/state/push-queue.jsonl` | — |
 | Test-slot semaphore (global) | `~/.dev-studio/.runtime/locks/test-slots/` | — |
 | Node registry (global) | `~/.dev-studio/.runtime/nodes.json` — worker nodes reachable over SSH; consumed by `scripts/node-dispatch.sh` / `node-health.sh` / `node-pick.sh` | — |
+| Snapshot references | `~/.dev-studio/<project>/snapshots/references/` — canonical reference images for snapshot tests; generated on the node tagged `snapshot-canonical` and pulled locally via `scripts/snapshot-sync.sh` | — |
 | Argus result bundles | `/tmp/argus-<task-id>.xcresult` | — |
 
 Queries against the ledger go through `scripts/query-plans.sh --kind=<artifact-kind>` (glob-free; joins via `plans/index.yaml`). Event reads go through `scripts/read-events.sh`. Never glob `plans/**` directly in new code.
