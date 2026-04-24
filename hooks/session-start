@@ -88,6 +88,27 @@ if [ -n "$audit_out" ]; then
   ctx="${ctx}${audit_out}"
 fi
 
+# Track-work auto-start: if STUDIO_TRACK is set, claim the next issue and
+# inject a work directive so Claude starts immediately without user input.
+track_banner() {
+  [ -n "${STUDIO_TRACK:-}" ] || return 0
+  local track_script="$REPO_ROOT/scripts/track-next.sh"
+  [ -x "$track_script" ] || return 0
+  local output
+  output=$("$track_script" "$STUDIO_TRACK" 2>/dev/null) || {
+    # exit 1 = track complete; exit 2 = bad args — both surface cleanly
+    printf '\n\nSTUDIO_TRACK=%s is set but track-next.sh exited non-zero. Check branch exists and gh auth is valid.' "$STUDIO_TRACK"
+    return 0
+  }
+  printf '\n\n---\n\n**Auto-work mode (STUDIO_TRACK=%s):** Issue claimed — implement it now, commit to the track branch, close the issue, then call `scripts/track-next.sh %s` to claim the next one.\n\n```\n%s\n```' \
+    "$STUDIO_TRACK" "$STUDIO_TRACK" "$output"
+}
+
+track_out=$(track_banner 2>/dev/null || true)
+if [ -n "$track_out" ]; then
+  ctx="${ctx}${track_out}"
+fi
+
 # JSON-escape the context (quotes, backslashes, newlines, tabs).
 json_escape() {
   local s="$1"

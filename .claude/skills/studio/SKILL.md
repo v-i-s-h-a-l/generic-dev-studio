@@ -26,6 +26,8 @@ Task-level work on the user's iOS project (`/chanakya`, `/achilles`, `/argus` ow
 | `audit` / "audit the arc" / "check plan drift" / auto-invoked by SessionStart | `modes/audit.md` |
 | `guard <keywords>` / "has this been done?" / "are we repeating work?" | `modes/guard.md` |
 
+| `work <track>` / `STUDIO_TRACK=<track>` auto-start | `modes/work.md` |
+
 Tier 2 modes (not shipped today; spawn on demand): `backlog` (gh issue triage), `scaffold` (new mode pack / primitive scaffold).
 
 ## Intent detection
