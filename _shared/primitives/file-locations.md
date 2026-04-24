@@ -23,7 +23,7 @@ All agents read and write under exactly two roots — both inside `~/.dev-studio
 | Root | Scope | Contents |
 |---|---|---|
 | `~/.dev-studio/<project>/` | Per-project | Plans, worktrees, per-project derived-data, per-project locks, logs, **fleet inbox** (`<project>/.runtime/achilles-inbox/`), **push queue** (`<project>/.runtime/state/push-queue.jsonl`) |
-| `~/.dev-studio/.runtime/` | Machine-global (cross-project) | Only true machine resources — **test-slot semaphore** (`locks/test-slots/`), since simulator count is fixed on the machine |
+| `~/.dev-studio/.runtime/` | Machine-global (cross-project) | Only true machine resources — **test-slot semaphore** (`locks/test-slots/`), since simulator count is fixed on the machine, and the **node registry** (`nodes.json`) describing worker machines reachable from this host |
 
 **Split invariant.** Anything that belongs to a single project's workflow goes under `<project>/` — including each project's fleet of Achilles workers (one Chanakya + one worker pool per project). Only resources physically shared by every project on this machine (simulators, eventually shared device pools, future GPU queues) live under `.runtime/`. When in doubt: per-project.
 
@@ -73,6 +73,7 @@ Phase 2.6 introduced a uniform per-artifact YAML layout under `plans/` + a singl
 | Fleet inbox root | `~/.dev-studio/<project>/.runtime/achilles-inbox/` | — |
 | Push queue | `~/.dev-studio/<project>/.runtime/state/push-queue.jsonl` | — |
 | Test-slot semaphore (global) | `~/.dev-studio/.runtime/locks/test-slots/` | — |
+| Node registry (global) | `~/.dev-studio/.runtime/nodes.json` — worker nodes reachable over SSH; consumed by `scripts/node-dispatch.sh` / `node-health.sh` / `node-pick.sh` | — |
 | Argus result bundles | `/tmp/argus-<task-id>.xcresult` | — |
 
 Queries against the ledger go through `scripts/query-plans.sh --kind=<artifact-kind>` (glob-free; joins via `plans/index.yaml`). Event reads go through `scripts/read-events.sh`. Never glob `plans/**` directly in new code.
