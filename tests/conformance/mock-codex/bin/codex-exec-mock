@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# codex-exec-mock — deterministic shim for the H10 conformance harness.
+#
+# Stands in for `codex exec` in CI. When invoked, it parses the prompt
+# (`/achilles <id>` or `/argus <id> <stage>`) and emits the corresponding
+# event-log entry the real session would have produced — without spawning
+# anything heavy. dispatch-review.sh and spawn-worker.sh treat this shim
+# the same as a real Codex CLI.
+#
+# Required env (passed by spawn-worker / dispatch-review):
+#   ACHILLES_PROJECT       — scratch project slug for log routing
+#   STUDIO_TEST_TASK_ID    — task UUID to report against
+#   STUDIO_TEST_VERDICT    — approved | flagged | blocked (Argus shim only)
+
+set -u
+umask 022
+
+prompt="${1:-}"
+: "${ACHILLES_PROJECT:?codex-exec-mock: ACHILLES_PROJECT required}"
+task="${STUDIO_TEST_TASK_ID:-mock-task}"
+verdict="${STUDIO_TEST_VERDICT:-approved}"
+
+# Resolve event-log path through lib-paths so the mock and the production
+# emitters agree on layout (R3 — no hardcoded ~/.dev-studio/<slug>/...).
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/../../../.." && pwd)
+. "$REPO_ROOT/scripts/lib-paths.sh"
+log=$(resolve_event_log)
+mkdir -p "$(dirname "$log")"
+
+ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+case "$prompt" in
+  /argus*spec*)
+    printf '{"ts":"%s","agent":"argus","event":"review_%s","task":"%s","data":{"stage":"spec","mock":true}}\n' \
+      "$ts" "$verdict" "$task" >> "$log"
+    ;;
+  /argus*quality*)
+    printf '{"ts":"%s","agent":"argus","event":"review_%s","task":"%s","data":{"stage":"quality","mock":true}}\n' \
+      "$ts" "$verdict" "$task" >> "$log"
+    ;;
+  /achilles*)
+    printf '{"ts":"%s","agent":"achilles","event":"agent_boot","task":"%s","data":{"mock":true}}\n' \
+      "$ts" "$task" >> "$log"
+    printf '{"ts":"%s","agent":"achilles","event":"agent_session_completed","task":"%s","data":{"mock":true}}\n' \
+      "$ts" "$task" >> "$log"
+    ;;
+  *)
+    printf 'codex-exec-mock: unrecognised prompt: %s\n' "$prompt" >&2
+    exit 2
+    ;;
+esac

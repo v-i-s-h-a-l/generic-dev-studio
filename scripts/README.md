@@ -13,6 +13,7 @@ per project. Cross-project one-offs: `ACHILLES_PROJECT=<slug>`.
 
 ```sh
 brew install fswatch coreutils yq jq   # coreutils gives gtimeout; yq drives post-2.6 YAML reads; jq drives event normalization + read-events.sh
+pip install check-jsonschema           # JSON Schema contract validation (validate-contract.sh); pip3 works too
 chmod +x scripts/*.sh
 ```
 

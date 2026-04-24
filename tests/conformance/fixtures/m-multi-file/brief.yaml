@@ -1,0 +1,16 @@
+schema_version:
+  name: brief
+  version: "1.0.0"
+  min_reader: "1.0.0"
+id: 0190f52a-6e0c-7b3c-9a1d-000000000002
+task_id: 0190f52a-6e0c-7b3c-9a1d-000000000002
+title: "M multi-file — extract helper across two modules"
+size: M
+trivial: false
+files:
+  - src/foo.swift
+  - src/bar.swift
+acceptance:
+  - "Tests green"
+  - "xcodebuild exit 0"
+  - "Argus approved"

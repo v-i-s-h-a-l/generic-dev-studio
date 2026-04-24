@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "handoff.schema.json",
+  "schema": 1,
+  "title": "Handoff",
+  "description": "Typed handoff envelope dispatch-review.sh and spawn-worker.sh validate before spawning. Makes the file + event-log substrate a typed handoff bus with zero new infra. The payload_ref field is inline for payloads \u2264 4KB and a file-path string for payloads above that threshold \u2014 EVOLUTION.md documents the threshold rationale. New in host-agnostic v1 (pass-2).",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "from",
+    "to",
+    "task_id",
+    "reason",
+    "payload_ref",
+    "idempotency_key"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "debrief.schema.json#/$defs/schemaVersion"
+    },
+    "from": {
+      "$ref": "#/$defs/agentName"
+    },
+    "to": {
+      "$ref": "#/$defs/agentName"
+    },
+    "task_id": {
+      "description": "Task ID associated with this handoff. Null only for pre-task bootstrap handoffs (e.g. chanakya\u2192chanakya session seed).",
+      "oneOf": [
+        {
+          "$ref": "debrief.schema.json#/$defs/uuidv7"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "description": "Short, human-readable why. \u2264 200 chars. Drives routing visibility in dashboards.",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "payload_ref": {
+      "$ref": "#/$defs/payloadRef"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "Per contracts/idempotency.md: `<agent>:<mode>:<stable-subject>:<content-hash>`. Retries on the same inputs produce the same key and are deduped on the receiver side.",
+      "minLength": 1
+    },
+    "occurred_at": {
+      "$ref": "debrief.schema.json#/$defs/rfc3339"
+    }
+  },
+  "allOf": [
+    {
+      "description": "Worker\u2192worker handoffs forbidden per REVIEW.md (pass-2). Argus never handoffs to achilles directly \u2014 verdict returns to chanakya. Achilles never handoffs to argus directly \u2014 chanakya routes via dispatch-review.sh.",
+      "not": {
+        "anyOf": [
+          {
+            "properties": {
+              "from": {
+                "const": "achilles"
+              },
+              "to": {
+                "const": "argus"
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ]
+          },
+          {
+            "properties": {
+              "from": {
+                "const": "argus"
+              },
+              "to": {
+                "const": "achilles"
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "agentName": {
+      "enum": [
+        "chanakya",
+        "achilles",
+        "argus",
+        "luban",
+        "chiron"
+      ],
+      "description": "Known agent roster. luban and chiron don't exist yet but are reserved to prevent future enum churn."
+    },
+    "payloadRef": {
+      "description": "Inline object when payload serializes to \u2264 4KB. File path (relative to project root) otherwise. The 4KB threshold matches the PIPE_BUF atomicity limit on events.md and keeps small handoffs fully self-describing on the wire.",
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "Inline payload. Serializer must verify \u2264 4KB before emitting."
+        },
+        {
+          "type": "string",
+          "description": "File path (relative or absolute) to a payload file. The receiver reads and validates.",
+          "minLength": 1,
+          "pattern": "^[^\\s].*"
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "schema_version": {
+        "name": "handoff",
+        "version": "1.0.0",
+        "min_reader": "1.0.0",
+        "deprecated_at": null
+      },
+      "from": "chanakya",
+      "to": "achilles",
+      "task_id": "0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11",
+      "reason": "Dispatching T001 brief",
+      "payload_ref": "~/.dev-studio/turnip-ios/plans/briefs/0190f52a-6e11-7c01-8a77-11a05a9e2b4c.yaml",
+      "idempotency_key": "chanakya:brief:T001:a1b2c3d4",
+      "occurred_at": "2026-04-22T14:32:01Z"
+    },
+    {
+      "schema_version": {
+        "name": "handoff",
+        "version": "1.0.0",
+        "min_reader": "1.0.0",
+        "deprecated_at": null
+      },
+      "from": "chanakya",
+      "to": "argus",
+      "task_id": "0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11",
+      "reason": "Stage-1 spec-compliance review for T001",
+      "payload_ref": {
+        "stage": "spec",
+        "worktree": "turnip-ios/worktrees/T001",
+        "diff_cap": 500
+      },
+      "idempotency_key": "argus:review:0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11:spec:1",
+      "occurred_at": "2026-04-22T14:40:00Z"
+    }
+  ]
+}

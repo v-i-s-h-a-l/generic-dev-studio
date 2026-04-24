@@ -283,18 +283,36 @@ eval "$(scripts/task-invoke-argus.sh "$TASK_ID" "$WORKTREE" "$ORIG_BRANCH" "$SIZ
 
 Emits `review_requested` and exports `ACHILLES_REVIEW_REQUESTED_AT` (carried into the debrief for verdict-timing correlation).
 
-Argus runs in **two sequential stages** (both via Claude's Agent tool — not reachable from shell):
+Argus runs in **two sequential stages**, both dispatched via `scripts/dispatch-review.sh`. The script handles host adapter selection (Claude Code / Codex / future), env-scrubs the spawn (no API keys, no GH tokens), validates the handoff payload against `_shared/contracts/handoff.schema.json`, and tails the event log for the verdict — the contract is shell-reachable on every supported host.
 
 #### Stage 1 — spec-compliance
 
-Dispatch `/argus spec-compliance <task-id>` with `ACHILLES_WORKTREE` + `ACHILLES_BASE_BRANCH` + `TASK_SIZE` in context. Narrow question: does the diff match the brief? Parse the `ARGUS_VERDICT=<v> stage=spec …` stdout line.
+```bash
+SPEC_KEY="$TASK_ID:spec:1"
+spec_out=$(scripts/dispatch-review.sh "$TASK_ID" spec --idempotency-key "$SPEC_KEY") \
+  || { echo "spec-compliance dispatch failed; surface to user"; exit 1; }
+eval "$spec_out"   # exports ARGUS_VERDICT=<approved|flagged|blocked>
+```
+
+Narrow question: does the diff match the brief?
 
 - **`approved`** or **`flagged`:** proceed to Stage 2. Carry Stage 1 findings forward into the debrief.
 - **`blocked`:** do NOT run Stage 2 — the spec is wrong at the structural level, re-reviewing code doesn't help. Surface block reason; attempt to fix (see below) or debrief with `report_state: blocked`.
 
+Retry policy: validator rejection never auto-retries (per `_shared/contracts/idempotency.md`). Transient failures (timeout, spawn fork) may retry once with `--attempt 2` and a fresh idempotency-key suffix.
+
 #### Stage 2 — code-quality
 
-Only if Stage 1 returned `approved` or `flagged`. Dispatch `/argus code-quality <task-id>` with the same context. Broad question: cross-file regression risk, edge cases, diff anomalies, secrets, base staleness, test run (M/L). Parse the `ARGUS_VERDICT=<v> stage=quality …` stdout line.
+Only if Stage 1 returned `approved` or `flagged`.
+
+```bash
+QUAL_KEY="$TASK_ID:quality:1"
+qual_out=$(scripts/dispatch-review.sh "$TASK_ID" quality --idempotency-key "$QUAL_KEY") \
+  || { echo "code-quality dispatch failed; surface to user"; exit 1; }
+eval "$qual_out"
+```
+
+Broad question: cross-file regression risk, edge cases, diff anomalies, secrets, base staleness, test run (M/L).
 
 - **`approved`:** proceed to Step 9.
 - **`flagged`:** proceed to Step 9 (merge). Include a `## Argus Review` block in the debrief referencing both stages' review files + combined finding count.

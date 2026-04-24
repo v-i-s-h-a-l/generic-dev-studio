@@ -1,0 +1,13 @@
+# Mock Codex adapter — deterministic shim for H10 conformance harness.
+#
+# Satisfies the Achilles + Argus security floor declared in
+# hosts/ADAPTER-SPEC.md (workspace-write + cwd-only). The spawn_command
+# resolves to a relative shim under this directory at harness setup time;
+# scripts/test-host.sh sets STUDIO_HOST_DIR to this path and exports
+# PATH so the shim is found.
+supports_hooks: true
+spawn_command: "codex-exec-mock"
+block_for_event_strategy: tail
+tool_dialect: openai
+sandbox_profile: workspace-write
+secret_scope: cwd-only

@@ -165,6 +165,54 @@ Emitted by `scripts/chanakya-snap.sh` (producer side) and by mode packs that con
 
 **Why `agent_session_completed`.** Without this we can't measure context cost or session duration per agent. Treat as required at the end of every Chanakya / Achilles / Argus session, regardless of how the session terminated. If token counts aren't available to the agent at emit time, omit the `tokens` key — duration alone is still useful.
 
+## OTel GenAI conformance
+
+Every event emitted by `scripts/lib-ledger.sh::emit_event_keyed` (and therefore by `scripts/write-event.sh`) carries three top-level OTel GenAI semantic convention attributes alongside the existing fields. Attribute placement is **top-level** — not nested under `data:` — for maximum compatibility with third-party dashboards (Datadog, Langfuse, Arize Phoenix, Traceloop) that consume the OTel GenAI span model natively.
+
+Transport stays JSONL. These are attribute names, not a protocol change.
+
+### Attribute set
+
+| Attribute | Type | Values | Source | Notes |
+|---|---|---|---|---|
+| `gen_ai.system` | string | `claude-code` \| `codex` \| `aider-like` | `$STUDIO_HOST` env var (default `claude-code`) | Replaces the bespoke `host:` field that was planned but not shipped. Set by the spawning process (`hooks/session-start`, H8). |
+| `gen_ai.agent.name` | string | `achilles` \| `argus` \| `chanakya` | `--agent` positional arg | Mirrors the existing top-level `agent` field; both are kept for back-compat during transition. |
+| `gen_ai.operation.name` | string | `invoke_agent` \| `create_agent` \| `handoff` | Mapped from event name | See mapping table below. |
+
+**Best-effort attributes** (add when available; omit when not):
+
+| Attribute | Notes |
+|---|---|
+| `gen_ai.agent.id` | Task ID or round ID for the current operation. |
+| `gen_ai.conversation.id` | Same as task ID — the logical conversation thread. |
+| `gen_ai.request.model` | Model identifier (e.g. `claude-opus-4-7`). |
+| `gen_ai.usage.input_tokens` | Integer. Omit when not available (e.g. most mid-session events). |
+| `gen_ai.usage.output_tokens` | Integer. Omit when not available. |
+
+Best-effort attributes are **not** stamped by `emit_event_keyed` automatically — callers include them in the `data:` payload or as future top-level extensions. The three required attributes above are stamped on every event.
+
+### `gen_ai.operation.name` mapping
+
+| Event pattern | Mapped value |
+|---|---|
+| Event name contains `handoff` | `handoff` |
+| `agent_boot`, `agent_session_completed` | `create_agent` |
+| All other events | `invoke_agent` |
+
+### Non-conforming studio fields — `studio.*` namespace
+
+Studio-specific fields that have no OTel GenAI equivalent live under the `studio.*` namespace in `data:`:
+
+```json
+{"data": {"studio.worktree": "/path/to/wt", "studio.brief_id": "..."}}
+```
+
+Never invent `gen_ai.*` attributes — use `studio.*` for anything not in the OTel GenAI spec.
+
+### Backward compatibility
+
+Pre-H5 events (written before host-agnostic workers v1) have no `gen_ai.*` attributes. Consumers must treat a missing `gen_ai.system` as `"claude-code"` — the only host that existed before v1. `scripts/read-events.sh --gen-ai-system <value>` applies this default automatically.
+
 ## Offset Marker (Consumer Pattern)
 
 Chanakya maintains a byte offset in project memory to avoid re-processing events on every wake:
