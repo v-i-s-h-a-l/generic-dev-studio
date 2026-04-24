@@ -524,7 +524,6 @@
 <nav class="nav">
   <div class="nav-inner">
     <a href="#commands">Commands</a>
-    <a href="#studio">Studio</a>
     <a href="#composites">Composites</a>
     <a href="#fleet">Fleet</a>
     <a href="#flow">How It Works</a>
@@ -542,39 +541,6 @@
 </nav>
 
 <main class="container">
-
-<!-- Studio pointer -->
-<section id="studio" style="padding: 40px 0 0;">
-  <h2>Studio-level operations</h2>
-  <p>The commands below are for <em>task-level work</em> on your project. For operations that concern the studio itself — resuming an in-flight architecture arc, walking this repo's review rules, drafting release notes, capturing patterns — use the <strong>studio router</strong>.</p>
-  <div class="cmd-grid">
-    <div class="cmd-card">
-      <code>/studio resume-plan</code>
-      <span>Load ROADMAP + ARCHITECTURE + pending memory; report current branch, last phase, next planned phase.</span>
-    </div>
-    <div class="cmd-card">
-      <code>/studio review</code>
-      <span>Walk REVIEW.md against the pending diff. Block+auto-fix tier applied silently; ask-tier surfaces first.</span>
-    </div>
-    <div class="cmd-card">
-      <code>/studio release</code>
-      <span>Draft release notes per RELEASES.md; evaluate tag threshold. Never auto-tags.</span>
-    </div>
-    <div class="cmd-card">
-      <code>/studio ingest</code>
-      <span>Capture studio-level patterns, analyses, or rule-tweak proposals. Privacy-stripped before anything public.</span>
-    </div>
-    <div class="cmd-card">
-      <code>/studio help</code>
-      <span>Open the dedicated studio docs page — capabilities, workflows, tips, troubleshooting.</span>
-    </div>
-    <div class="cmd-card">
-      <code>/studio-help</code>
-      <span>Slash-command shortcut for the same page. Also reachable at <code>&lt;repo&gt;/.claude/skills/studio/docs.html</code>.</span>
-    </div>
-  </div>
-  <p style="margin-top: 8px; font-size: 0.9rem;"><strong>Don't dispatch through /studio for task work.</strong> Implementing a feature or fixing a bug goes to <code>/chanakya</code>, <code>/achilles</code>, or <code>/argus</code> directly.</p>
-</section>
 
 <!-- Commands -->
 <section id="commands">

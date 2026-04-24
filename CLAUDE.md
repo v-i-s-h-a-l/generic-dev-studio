@@ -57,6 +57,18 @@ After updating HTML, open it in Safari once (`open -a Safari "file://…/chanaky
 
 Pure rule/doc edits (REVIEW.md, RELEASES.md, CLAUDE.md, THEMES.md, ARCHITECTURE.md) do **not** trigger this — they have no user-facing command surface.
 
+### Layer-separation rule (no cross-pollution)
+
+The **agent layer** (`chanakya/`, `achilles/`, `argus/` — their SKILL.md, docs.html, README, mode packs) and the **studio layer** (`.claude/skills/studio/` — its SKILL.md, docs.html, mode packs) are separate user-facing surfaces. Keep their reference content disjoint:
+
+- **Never** add `/studio*` command reference cards or sub-command tables to chanakya/achilles/argus docs, SKILL.md, or mode packs. And vice versa — **never** add `/chanakya*`, `/achilles*`, `/argus*` reference cards to studio docs/SKILL/modes.
+- **Do** use one-line *scope pointers* ("for X, route to /other-layer") when the user might mis-route — these prevent lost intent, they don't duplicate surface. Example that's fine: studio/SKILL.md says "task-level work goes to /chanakya etc." A pointer, not a table.
+- Cross-links between the two docs.html pages are fine (`<a href="../../../chanakya/docs.html">`). Duplicating the *contents* of those pages is not.
+
+**Why:** cards grow out of sync, command enum drift introduces broken references, and users who land on one page expect the commands listed there to actually route through that layer. Mixing surfaces makes every future dispatch-table edit a multi-file coordination problem it doesn't need to be.
+
+This rule applies retroactively: when touching any doc surface, if existing cross-layer cards are present, strip them in the same commit.
+
 ## Backlog
 
 When the user agrees on new work in chat (explicitly: "let's do X", "let's plan Y for later") — **open a GitHub issue** for it via `gh issue create` with the appropriate label (`phase-2`, `roadmap`, `enhancement`, `bug`, `polish`). No need to ask permission for items the user has explicitly discussed and agreed to.
