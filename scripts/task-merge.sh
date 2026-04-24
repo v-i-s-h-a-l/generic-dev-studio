@@ -66,6 +66,7 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   printf 'DRY-RUN git -C %s merge --no-ff %s -m "%s"\n' "$REPO_ROOT" "$BRANCH" "$MERGE_MSG" >&2
   printf 'DRY-RUN git worktree remove %s\n' "$WORKTREE" >&2
   printf 'DRY-RUN rm -rf %s\n' "$DERIVED" >&2
+  printf 'DRY-RUN git branch -d %s\n' "$BRANCH" >&2
   exit 0
 fi
 
@@ -140,6 +141,13 @@ git worktree remove --force "$WORKTREE" >/dev/null 2>&1 || {
   printf 'warn: git worktree remove %s failed; continuing\n' "$WORKTREE" >&2
 }
 rm -rf "$DERIVED" 2>/dev/null || true
+
+# Branch is now fully merged into ORIG_BRANCH (merge commit above). -d (not -D)
+# refuses if git sees any non-fast-forward state — the happy path always
+# succeeds, any refusal surfaces as a warning without losing work.
+git branch -d "$BRANCH" >/dev/null 2>&1 || {
+  printf 'warn: git branch -d %s refused (not fully merged?); leaving branch alive\n' "$BRANCH" >&2
+}
 
 data=$(printf '{"merge_sha":"%s","branch":"%s"}' "$MERGE_SHA" "$BRANCH")
 emit_event_keyed achilles task task_merged "$TASK_ID" "$data" >/dev/null 2>&1 || true
