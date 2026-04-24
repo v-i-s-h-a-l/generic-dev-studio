@@ -374,19 +374,39 @@ cd ~/studio-tmp
   <div class="container">
     <h2>Prerequisites</h2>
 
-    <h3>On the laptop (your main machine)</h3>
+    <div class="callout">
+      <strong>Two machines, two different setups.</strong> The <strong>laptop</strong> is the <em>primary</em> — it runs Claude Code sessions, hosts the agent skills, clones the studio repo, and dispatches commands. The <strong>node</strong> is a worker — it receives commands over SSH and runs compile/test workloads. Don't install the laptop stack on the node; don't expect the node to do agent work.
+    </div>
+
+    <h3>On the laptop (one-time, before onboarding any node)</h3>
+    <p>This is your primary dev machine — where you run <code>/chanakya</code>, <code>/achilles</code>, <code>/argus</code>, where your iOS project lives, where Xcode is your editor. Setup checklist:</p>
     <ul>
-      <li>The studio repo cloned (<code>generic-dev-studio</code>).</li>
-      <li>Tailscale installed and signed into your tailnet (you already did this for yourself if you travel).</li>
-      <li>An SSH keypair (<code>~/.ssh/id_ed25519</code> or <code>id_rsa</code>). If missing:
-        <pre><code>ssh-keygen -t ed25519 -C "vishalsingh" -f ~/.ssh/id_ed25519</code></pre></li>
+      <li><strong>Claude Code CLI</strong> installed and signed in. The agent layer runs inside a Claude Code session on this machine.</li>
+      <li><strong>This repo cloned</strong>: <code>git clone git@github.com:v-i-s-h-a-l/generic-dev-studio.git</code></li>
+      <li><strong>Agent skills installed</strong> globally:
+        <pre><code>cd generic-dev-studio
+./scripts/install.sh
+./scripts/verify-install.sh</code></pre>
+        Symlinks <code>chanakya</code>, <code>achilles</code>, <code>argus</code> + <code>_shared</code> + <code>scripts</code> into <code>~/.claude/skills/</code> so they reach you from inside your iOS project. <code>/studio</code> is deliberately <em>not</em> installed globally — it auto-loads only when cwd is inside this repo.</li>
+      <li><strong>Homebrew + studio deps</strong> (required for fleet / multi-worker mode, recommended for everyone):
+        <pre><code>brew install fswatch coreutils yq jq rsync</code></pre></li>
+      <li><strong>Tailscale</strong> — installed, signed into your tailnet. (Optional for same-LAN-only setups; strongly recommended otherwise.)</li>
+      <li><strong>SSH keypair</strong>. If missing:
+        <pre><code>ssh-keygen -t ed25519 -C "vishalsingh" -f ~/.ssh/id_ed25519</code></pre>
+        The node will accept this key during onboarding.</li>
+      <li><strong>Xcode.app</strong> — needed for local fallback (when no node is registered or all are unreachable) and as the Xcode-version baseline every node should match.</li>
+      <li><strong>Your iOS project's source repo</strong> cloned, working tree on your preferred branch.</li>
     </ul>
 
+    <p>If you're coming to the studio fresh, see <a class="inline" href="../../../README.md">README.md</a> for the full install walkthrough including git hooks (for contributors) and fleet-prerequisite options.</p>
+
     <h3>On the node (the Mac you're onboarding)</h3>
+    <p>A worker node is an <em>extension</em> of your laptop, not a second dev machine. It does not need Claude Code, doesn't host agent skills, doesn't run your shell profile. The <a class="inline" href="#tldr">bootstrap wizard</a> handles the software install; this section lists what the physical machine needs before you can run the wizard.</p>
     <ul>
-      <li>macOS, admin account you can log into physically <em>or</em> via screen sharing for the first 5 minutes.</li>
-      <li>Network reachable (wifi or ethernet; Tailscale handles the rest).</li>
-      <li>At least 60 GB free for Xcode + DerivedData + simulator runtimes (if the node will run <code>xcodebuild</code>).</li>
+      <li><strong>macOS</strong>, admin account you can log into physically or via screen sharing for the first 5 minutes (to run the wizard).</li>
+      <li><strong>Network reachable</strong> (wifi or ethernet; Tailscale handles the rest once installed during Stage 1).</li>
+      <li><strong>Disk space</strong> — at least 60 GB free for Xcode + DerivedData + simulator runtimes (for the <code>xcodebuild</code> role). ~10 GB is enough if the node only runs <code>swift-test</code>.</li>
+      <li><strong>You do NOT need</strong>: Claude Code, agent skills, the studio repo cloned long-term (only during the bootstrap run — the wizard is self-contained), your iOS project's source, your editor setup.</li>
     </ul>
 
     <div class="callout warn">
