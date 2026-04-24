@@ -91,6 +91,24 @@ Each extraction has cost (briefing the new artifact, drift risk, debugging). Ext
 
 Iterating on extraction is harder than adding inline; default to inline until pain is concrete.
 
+### Host-agnosticism
+
+**Principle.** Every agent is host-agnostic. No agent capability may depend on Claude-Code-specific primitives — hooks, the Agent subagent tool, tool-name dialects ("use the Read tool"), or SessionStart injection — in its load-bearing path. Host adapters provide ergonomic optimizations; they never provide required functionality. Portability is a tested invariant, not aspiration.
+
+**Substrate.** A portable agent is allowed to assume: file I/O on the repo and `~/.dev-studio/**`; a POSIX shell; a single model session with system prompt + turn loop; read/write tools in whatever dialect the host exposes. That's it. Everything above is our protocol.
+
+**Contract-first, not prose-first.** Inter-agent handoffs (briefs, debriefs, verdicts) validate against JSON Schemas at `_shared/contracts/<kind>.schema.json`. Validators reject malformed output *before* it reaches the next agent. Borrowed from CrewAI (`output_pydantic`) and AutoGen (typed message bus) — both independently converged on strict schemas as the stable cross-model substrate. Aider's `model-settings.yml` lesson reinforces: codify per-model quirks as data, never as branching code.
+
+**Adapter shape.** Canonical content at top-level `skills/` / `agents/` / `commands/` equivalents; host packaging under `.<host>/` dotdirectories mirroring each host's native config location; root instruction files named by each host's convention (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) with shared content. Hook scripts canonical; per-host hook-schema JSON points at the same script; prose-preamble fallback carries hosts without hook support. Shape validated across seven hosts by Superpowers (`obra/superpowers`).
+
+**Zero third-party runtime deps.** Worker-facing code paths stay on POSIX + `jq` + `yq`. Host adapters may use host-native tooling; core scripts may not introduce package managers, brokers, or libraries. Borrowed verbatim from Superpowers' contributor rule — same substrate bar.
+
+**Enforcement.** Verified by `scripts/test-host.sh` (delivered in the host-agnostic-workers-v1 release per issue #88), which runs a canned conformance matrix (XS / M / TDD tasks) end-to-end against each declared host and asserts: debrief lands, schema validates, review gate fires, merge completes. Host manifests carry a conformance-passed stamp; regressions block release.
+
+**Staging.** Workers ship first (Achilles + Argus together — half-portable review gate is worse than none). Chanakya portability follows in a later release; it's a scope-staging choice, not a technical constraint. Rationale: surface area (16 modes vs. 10), model-quality sensitivity (orchestration judgment leans harder on model capability than mechanical edits), conformance-test design (worker I/O is bounded, orchestrator I/O is open-ended), and prompt-cache economics (Chanakya sessions are longest — defer host-swap until Phase 3 cache strategy lands). New agents (Lu Ban, Chiron) are born portable.
+
+**Explicitly not adopted.** LiteLLM-style universal model routers (hosts own inference). MCP as the worker tool transport (file I/O + shell already works). Framework adoption (AutoGen / LangGraph / CrewAI) — we steal patterns, not dependencies. Marketplace publishing per host (we're not shipping to marketplaces; conformance testing replaces it).
+
 ---
 
 ## Design Vision (2026-04-20 synthesis)

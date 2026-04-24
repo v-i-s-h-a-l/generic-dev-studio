@@ -7,23 +7,6 @@ description: Pre-arc drafts and mid-arc dimensions surfaced out-of-band. Session
 
 Per `00-plan.md` §No-cascade rule: dimensions surfaced outside the synthesis moment are parked here and reviewed exactly once at Session D. Entries are proposals — Session D decides adopt / reshape / drop.
 
-## A — Host-agnosticism architectural principle *(drafted pre-arc, 2026-04-23)*
-
-**Shape.** 18-line §Host-agnosticism section for `ARCHITECTURE.md`. Declares portability as a tested invariant (not aspiration), scopes the allowed portable substrate (file I/O + POSIX + single model session + read/write tools), mandates contract-first handoffs via JSON Schemas at `_shared/contracts/<kind>.schema.json`, specifies adapter shape (canonical `skills/agents/commands/`, per-host `.<host>/` dotdirs, per-host root instruction files), bars third-party runtime deps from worker paths, defines enforcement via `scripts/test-host.sh` running a canned simple-edit task against each declared host, and stages workers (Achilles + Argus together) before Chanakya.
-
-**Provenance.** Memory entry `project_host_agnostic_workers.md` recorded "audit done, OSS research pending." The draft is the research output. Borrows from CrewAI (`output_pydantic`), AutoGen (typed message bus), Aider (`model-settings.yml`), Superpowers (POSIX + `jq` + `yq` substrate bar, seven-host adapter shape).
-
-**Why parked, not committed.** Session D is the arc's explicit redesign moment; load-bearing principles short-circuit synthesis if committed pre-emptively. The external audit partial (`01-audit-partial-external.md`) already flagged host-coupling hotspots; Session D should decide whether the principle as drafted matches the audit's findings or wants reshaping.
-
-**Diff location.** Stashed — see the entry named `park-A-arch-host-agnosticism` in `git stash list`.
-
-**Session D decision needed.**
-1. Adopt the principle as-is, with reshaping, or drop.
-2. If adopt: does the worker-first staging match the audit's host-coupling hotspots (SessionStart hook, Argus-via-Agent-tool)?
-3. `scripts/test-host.sh` enforcement — in-scope for this arc or defer to a follow-up?
-
----
-
 ## B — Design-time skill-invocation upgrade *(drafted pre-arc)*
 
 **Shape.** Paired behavior change across Achilles and Argus mode packs:
