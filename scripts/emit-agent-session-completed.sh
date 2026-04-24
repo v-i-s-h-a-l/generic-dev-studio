@@ -55,6 +55,17 @@ case "$AGENT" in
   *) printf 'error: invalid agent "%s"\n' "$AGENT" >&2; exit 2 ;;
 esac
 
+# Plausibility guards for the computed duration. `EPOCH_FLOOR` rejects a
+# stamp file containing 0 or a sub-2020 value — the `NOW - 0` bug produced
+# ~56-year durations (issue #107). `DURATION_CAP` (24h) rejects runaway
+# values from any other arithmetic error. When the computed value fails
+# either guard, we OMIT duration_s from the event rather than emit garbage
+# — readers then see "session recorded but timing unreliable" instead of a
+# plausible-looking lie.
+EPOCH_FLOOR=1577836800          # 2020-01-01T00:00:00Z
+DURATION_CAP=86400              # 24 hours
+DURATION_OK=1                   # set to 0 when the computed value is rejected
+
 # `auto:<session-id>` form: read the start-ts stamped by emit-agent-boot.sh
 # and compute now - start. This is the unconditional-stamp path — works for
 # task, waived merge, direct, and rescue sessions because all four pass
@@ -71,17 +82,38 @@ case "$DURATION_S" in
     fi
     case "$START_S" in
       ''|*[!0-9]*)
-        printf 'warn: no session-start stamp for "%s" — duration_s defaulting to 0 (agent-boot was not invoked; read-only session?)\n' "$SESSION_ID" >&2
-        DURATION_S=0
+        printf 'warn: no session-start stamp for "%s" — omitting duration_s (agent-boot was not invoked; read-only session?)\n' "$SESSION_ID" >&2
+        DURATION_OK=0
         ;;
       *)
-        NOW_S=$(date -u +%s)
-        DURATION_S=$(( NOW_S - START_S ))
-        [ "$DURATION_S" -lt 0 ] && DURATION_S=0
+        if [ "$START_S" -lt "$EPOCH_FLOOR" ]; then
+          printf 'warn: session-start stamp for "%s" is pre-%s (%s) — omitting duration_s (stamp file corrupt?)\n' \
+            "$SESSION_ID" "$EPOCH_FLOOR" "$START_S" >&2
+          DURATION_OK=0
+        else
+          NOW_S=$(date -u +%s)
+          DURATION_S=$(( NOW_S - START_S ))
+          if [ "$DURATION_S" -lt 0 ]; then
+            DURATION_S=0
+          elif [ "$DURATION_S" -gt "$DURATION_CAP" ]; then
+            printf 'warn: computed duration_s=%s exceeds %ss cap for "%s" — omitting (clock skew or stale stamp?)\n' \
+              "$DURATION_S" "$DURATION_CAP" "$SESSION_ID" >&2
+            DURATION_OK=0
+          fi
+        fi
         ;;
     esac
     ;;
   ''|*[!0-9]*) printf 'error: duration_s must be a non-negative integer or auto:<session-id>, got %s\n' "$DURATION_S" >&2; exit 2 ;;
+  *)
+    # Caller-supplied integer form — still clamp to the upper cap. Below-zero
+    # is impossible here (non-negative-integer regex above).
+    if [ "$DURATION_S" -gt "$DURATION_CAP" ]; then
+      printf 'warn: caller-supplied duration_s=%s exceeds %ss cap — omitting\n' \
+        "$DURATION_S" "$DURATION_CAP" >&2
+      DURATION_OK=0
+    fi
+    ;;
 esac
 
 VERDICT=""
@@ -107,8 +139,15 @@ done
 
 # Build the data JSON via printf concatenation — avoids jq/python for a
 # fixed-shape payload. Optional fields elided rather than `null` so readers
-# can distinguish "not measured" from "zero".
-data='{"mode":"'"$MODE"'","duration_s":'"$DURATION_S"
+# can distinguish "not measured" from "zero". duration_s is omitted entirely
+# when DURATION_OK=0 (see plausibility guards above) — readers then treat
+# the event as "session recorded, timing unreliable" rather than trust a
+# fabricated number.
+if [ "$DURATION_OK" = "1" ]; then
+  data='{"mode":"'"$MODE"'","duration_s":'"$DURATION_S"
+else
+  data='{"mode":"'"$MODE"'"'
+fi
 
 [ -n "$VERDICT" ]       && data+=',"verdict":"'"$VERDICT"'"'
 [ -n "$FILES_READ" ]    && data+=',"files_read":'"$FILES_READ"
