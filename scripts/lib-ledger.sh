@@ -508,6 +508,38 @@ _append_kv_lines() {
   done
 }
 
+# Separates `body=<inline>` / `body_file=<path>` pairs from the rest of the
+# args. Sets globals (arrays are painful across bash function boundaries):
+#   _LW_BODY       — resolved inline body content (empty if neither given)
+#   _LW_REST_ARGS  — remaining pairs, safe to pass through _append_kv_lines
+# `body_file=` takes precedence when both are provided; file-based form lets
+# callers pass multi-KB markdown without shell-arg bloat or re-escaping.
+_extract_body_and_rest() {
+  _LW_BODY=""
+  _LW_REST_ARGS=()
+  local _p _bf
+  for _p in "$@"; do
+    case "$_p" in
+      body=*)      _LW_BODY="${_p#body=}" ;;
+      body_file=*) _bf="${_p#body_file=}"
+                   if [ -n "$_bf" ] && [ -f "$_bf" ]; then
+                     _LW_BODY=$(cat "$_bf")
+                   fi ;;
+      *)           _LW_REST_ARGS+=("$_p") ;;
+    esac
+  done
+}
+
+# Emits `body: |` block-scalar (indented 2 spaces) when body is non-empty;
+# no-op otherwise. _append_kv_lines can't produce block-scalar form — flat
+# yaml_quote on multi-line content produces YAML that round-trips wrong, so
+# body is special-cased.
+_emit_body_block() {
+  local _b="${1:-}"
+  [ -z "$_b" ] && return 0
+  printf 'body: |\n%s\n' "$(printf '%s' "$_b" | sed 's/^/  /')"
+}
+
 # ---------- Artifact writers ----------
 #
 # Same shape as _transition_artifact — YAML-first, legacy second, event last.
@@ -583,6 +615,11 @@ write_brief_artifact() {
   local task_uuid="${2:?}" type="${3:?}" size="${4:?}"
   shift 4
 
+  # Body (multi-line markdown) is special-cased: block-scalar YAML in the
+  # canonical file; flat string copy for the legacy markdown dual-write.
+  # body_file=<path> lets callers pass large renders without shell-arg bloat.
+  _extract_body_and_rest "$@"
+
   local f ts
   f=$(_artifact_path briefs "$uuid") || return 2
   ts=$(iso_ts_now)
@@ -605,7 +642,8 @@ write_brief_artifact() {
     printf 'acceptance: []\n'
     printf 'testability: []\n'
     printf 'rework_of: null\n'
-    _append_kv_lines "$@"
+    _append_kv_lines "${_LW_REST_ARGS[@]+"${_LW_REST_ARGS[@]}"}"
+    _emit_body_block "$_LW_BODY"
   })
 
   if [ "${DRY_RUN:-0}" = "1" ]; then
@@ -615,17 +653,16 @@ write_brief_artifact() {
   fi
 
   if _lw_dual_write_enabled; then
-    local legacy_task_id="" slug="$type" body=""
+    local legacy_task_id="" slug="$type"
     local pair
     for pair in "$@"; do
       case "$pair" in
         legacy_task_id=*) legacy_task_id="${pair#legacy_task_id=}" ;;
         slug=*)           slug="${pair#slug=}" ;;
-        body=*)           body="${pair#body=}" ;;
       esac
     done
     if [ -n "$legacy_task_id" ]; then
-      if ! legacy_brief_write_markdown "$legacy_task_id" "$slug" "$body"; then
+      if ! legacy_brief_write_markdown "$legacy_task_id" "$slug" "$_LW_BODY"; then
         local project legacy_path
         project=$(resolve_project 2>/dev/null || echo unknown)
         legacy_path="$(resolve_plans_dir_for "$project")/chanakya-tasks/${legacy_task_id}-${slug}.md"
@@ -684,6 +721,10 @@ write_debrief_artifact() {
     brief_line="brief_id: $brief_uuid"
   fi
 
+  # Same body-as-block-scalar treatment as write_brief_artifact. See notes on
+  # _extract_body_and_rest / _emit_body_block above.
+  _extract_body_and_rest "$@"
+
   local payload
   payload=$({
     printf 'schema_version: {name: debrief, version: 2.0.2, min_reader: 2.0.0, deprecated_at: null}\n'
@@ -708,7 +749,8 @@ write_debrief_artifact() {
     printf 'follow_ups: []\n'
     printf 'open_questions: []\n'
     printf 'argus_review: {status: not-invoked, review_id: null, notes: null}\n'
-    _append_kv_lines "$@"
+    _append_kv_lines "${_LW_REST_ARGS[@]+"${_LW_REST_ARGS[@]}"}"
+    _emit_body_block "$_LW_BODY"
   })
 
   if [ "${DRY_RUN:-0}" = "1" ]; then
@@ -718,19 +760,18 @@ write_debrief_artifact() {
   fi
 
   if _lw_dual_write_enabled; then
-    local legacy_task_id="" body=""
+    local legacy_task_id=""
     local pair
     for pair in "$@"; do
       case "$pair" in
         legacy_task_id=*) legacy_task_id="${pair#legacy_task_id=}" ;;
-        body=*)           body="${pair#body=}" ;;
       esac
     done
     if [ -n "$legacy_task_id" ]; then
       local project legacy_path
       project=$(resolve_project 2>/dev/null || echo unknown)
       legacy_path="$(resolve_plans_dir_for "$project")/chanakya-inbox/${legacy_task_id}-debrief.md"
-      if ! legacy_inbox_write_debrief "$legacy_task_id" "$legacy_path" "$body"; then
+      if ! legacy_inbox_write_debrief "$legacy_task_id" "$legacy_path" "$_LW_BODY"; then
         _emit_dual_write_partial achilles debrief debrief "$uuid" "$legacy_path" "legacy_inbox_write_debrief_failed" || return 3
       fi
     fi

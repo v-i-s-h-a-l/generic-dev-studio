@@ -59,19 +59,25 @@ ACCEPTANCE_JSON='[]'
 if command -v yq >/dev/null 2>&1; then
   briefs_dir=$(resolve_briefs_dir_for "$PROJECT")
   if [ -d "$briefs_dir" ]; then
-    # Fan across briefs — cheap at <500 artifacts, one grep pass.
-    match=$(grep -l "^legacy_task_id: \"$TASK_ID\"$" "$briefs_dir"/*.yaml 2>/dev/null | head -1)
-    if [ -n "$match" ]; then
-      state=$(yq -r '.state // "null"' "$match" 2>/dev/null || echo null)
+    # Walk all briefs carrying this legacy_task_id; pick the first in a
+    # dispatchable state. Re-briefs leave the old brief in `debriefed` and
+    # mint a new one in `ready` — `head -1` alone could pick either by
+    # filesystem order and mask the live brief behind a stale one, forcing
+    # a legacy fallback even when a valid YAML brief exists.
+    match=""
+    while IFS= read -r candidate; do
+      [ -z "$candidate" ] && continue
+      state=$(yq -r '.state // "null"' "$candidate" 2>/dev/null || echo null)
       case "$state" in
-        ready|dispatched|draft)
-          BRIEF_PATH="$match"
-          BRIEF_UUID=$(yq -r '.id // ""' "$match" 2>/dev/null || echo "")
-          SIZE=$(yq -r '.size // ""' "$match" 2>/dev/null || echo "")
-          TYPE=$(yq -r '.type // ""' "$match" 2>/dev/null || echo "")
-          ACCEPTANCE_JSON=$(yq -o=json -I=0 '.acceptance // []' "$match" 2>/dev/null || echo '[]')
-          ;;
+        ready|dispatched|draft) match="$candidate"; break ;;
       esac
+    done < <(grep -l "^legacy_task_id: \"$TASK_ID\"$" "$briefs_dir"/*.yaml 2>/dev/null)
+    if [ -n "$match" ]; then
+      BRIEF_PATH="$match"
+      BRIEF_UUID=$(yq -r '.id // ""' "$match" 2>/dev/null || echo "")
+      SIZE=$(yq -r '.size // ""' "$match" 2>/dev/null || echo "")
+      TYPE=$(yq -r '.type // ""' "$match" 2>/dev/null || echo "")
+      ACCEPTANCE_JSON=$(yq -o=json -I=0 '.acceptance // []' "$match" 2>/dev/null || echo '[]')
     fi
   fi
 fi
@@ -84,8 +90,12 @@ if [ -z "$BRIEF_PATH" ]; then
     if [ -n "$legacy_match" ]; then
       BRIEF_PATH="$legacy_match"
       # Make the fallback observable so the migration's long tail is visible.
+      # Reason is `no_yaml_brief_for_legacy_id` — accurate: we grep briefs/ by
+      # legacy_task_id, not via plans/index.yaml (which exists). The prior
+      # `plans_index_missing` reason was a misnomer that drowned real legacy
+      # pickups in happy-path noise; see issue #105 root-cause trace.
       emit_event_keyed achilles task legacy_artifact_read "$TASK_ID" \
-        '{"domain":"briefs","reason":"plans_index_missing","caller":"task-load-spec.sh"}' \
+        '{"domain":"briefs","reason":"no_yaml_brief_for_legacy_id","caller":"task-load-spec.sh"}' \
         >/dev/null 2>&1 || true
       # Extract size/type from the legacy markdown header (`Size: S`, `Type: feature`).
       SIZE=$(awk '

@@ -108,22 +108,30 @@ Apply the skill assignments and record them in the write summary.
 
 ## Step 6 — Write task artifacts
 
-For each newly-captured task (implementation + any sub-tasks), author one `plans/tasks/<task-id>.yaml` file per schema `_shared/schemas/task.md` (`task@1.0.0`):
+For each newly-captured task (implementation + any sub-tasks), call `write_task_artifact` from lib-ledger — it dual-writes the YAML canonical form (schema `_shared/schemas/task.md`, `task@1.0.0`) and the legacy master-plan row in one shot, seeds `history:`, emits `task_state_changed null → proposed`, and regenerates `plans/index.yaml`. Do not hand-write the YAML.
 
-- Mint a UUIDv7 for `id` per task.
-- Allocate the human-readable `legacy_task_id` via `scripts/next-task-id.sh` — one call per implementation task; use the returned value (e.g. `T268`). Sub-tasks append a letter suffix to the parent's `legacy_task_id` (`T268a`, `T268b`). **Never guess the T-number from in-context samples** — the allocator scans YAML + master plan + legacy dir + event log and is the only authoritative source. Pass the value through as `legacy_task_id=T268` when calling `write_task_artifact` so the dual-write to `chanakya-master.md` fires.
-- Set `title` to the human-readable label from Step 1.
-- Set `state: proposed` (initial state per `_shared/state-machines/task-lifecycle.md`).
-- Set `size` from the complexity estimate (S/M/L/XL map to `s`/`m`/`l`; XS is introduced separately for trivial direct tasks).
-- Set `created_at`/`updated_at` to the same RFC3339 UTC timestamp.
-- Initialize `links.brief = null`, `links.debrief = null`, `links.reviews = []`, `links.release = null`, `links.feedback = []`.
-- Seed `history:` with the initial `from: null, to: proposed, actor: chanakya, at: <ts>, event_id: <uuidv7>` entry.
+**Concrete invocation** (run in the Bash tool):
 
-For sub-task groupings (T015a/b/c under T015), the parent/child relationship lives in the human-readable title (prefix shares the parent ID) and in the `plans/index.yaml` rollup (the index generator clusters on title prefix). `task@1.0.0` does not encode a `group` field — keeping the schema narrow is deliberate (Phase 2.6 plan §2.1).
+```bash
+source scripts/lib-paths.sh
+source scripts/lib-ledger.sh
 
-Emit `task_state_changed` events for each new task via `scripts/write-event.sh`, then regenerate `plans/index.yaml` via `scripts/rebuild-index.sh`.
+# Allocate the human-readable T-number. Scans YAML + master plan + legacy dir +
+# event log; the only authoritative source — never guess from in-context samples.
+LEGACY_ID=$(scripts/next-task-id.sh)   # e.g. "T268"
 
-**Phase 2.6 transition note:** also write/update `~/.dev-studio/<project>/plans/chanakya-master.md` using the legacy format so in-flight consumers still see the task list. Task groups are written with the parent task first, followed by its sub-tasks indented under it. Cutover removes the legacy write at Commit H.
+TASK_UUID=$(mint_uuidv7)
+write_task_artifact "$TASK_UUID" proposed "<title>" \
+  legacy_task_id="$LEGACY_ID" \
+  size=<s|m|l> \
+  type=<feature|bugfix|refactor|test-unit|test-integration|test-ui|direct>
+```
+
+The helper initializes `links.{brief,debrief,reviews,release,feedback}` to their zero values, seeds the first `history:` entry, and sets `created_at`/`updated_at` to a single RFC3339 UTC timestamp.
+
+For sub-tasks (T268a/b/c under T268), call `write_task_artifact` once per sub-task with `legacy_task_id=T268a` etc. The parent/child relationship lives in the human-readable title prefix and in the `plans/index.yaml` rollup (the index generator clusters on title prefix). `task@1.0.0` does not encode a `group` field — keeping the schema narrow is deliberate (Phase 2.6 plan §2.1).
+
+**XS tasks.** `size=xs` is introduced separately for trivial direct tasks. Emit `type=direct` together with `size=xs` for those.
 
 ## Step 7 — Propose parallelization
 

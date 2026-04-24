@@ -81,11 +81,34 @@ Use Glob and Grep to find:
 
 ## Step 6 — Write the brief (type-aware)
 
-Write the brief as YAML to `~/.dev-studio/<project>/plans/briefs/<brief-id>.yaml` per schema `_shared/schemas/brief.md` (`brief@3.1.0`). Mint `id` as a UUIDv7; populate `schema_version`, `task_id` (the parent task's UUIDv7), `type`, `size` (mirrors the parent task's size), `state: ready`, `created_at`/`updated_at` (RFC3339 UTC), `figma`, `reads`, `writes`, `acceptance`, `testability`, `rework_of`. The type-specific narrative — rendered from the template corresponding to the task type — goes into the `body:` multi-line string.
+Render the type-specific narrative from the template corresponding to the task type (see §6A-D below) into a tempfile, then call `write_brief_artifact` — it dual-writes the YAML canonical form (schema `_shared/schemas/brief.md`, `brief@3.1.0`) and the legacy markdown at `plans/chanakya-tasks/<task-id>-<slug>.md` in one shot, emits `brief_state_changed null → draft`, and regenerates `plans/index.yaml`.
 
-State transitions follow `_shared/state-machines/brief-lifecycle.md`: initial state is `ready` (`draft → ready`); dispatch flips it to `dispatched` when Achilles claims the brief.
+**Concrete invocation** (run in the Bash tool; all paths are resolver-derived per REVIEW.md R3):
 
-**Phase 2.6 transition note:** also write the legacy markdown form at `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md` for one cycle so in-flight consumers (direct `cat` reads from older sessions or stale worker wrappers) still see the brief. Cutover removes the legacy write at Commit H.
+```bash
+source scripts/lib-paths.sh
+source scripts/lib-ledger.sh
+
+PROJECT_ROOT=$(resolve_project_root)
+mkdir -p "$PROJECT_ROOT/.runtime/tmp"
+BODY_FILE="$PROJECT_ROOT/.runtime/tmp/brief-body-<LEGACY_ID>.md"
+
+# Use Write tool to author $BODY_FILE with the rendered §6A-D body.
+# Then:
+
+BRIEF_UUID=$(mint_uuidv7)
+write_brief_artifact "$BRIEF_UUID" "<parent-task-uuid>" "<type>" "<size>" \
+  legacy_task_id=<T-number> \
+  slug=<short-kebab-slug> \
+  body_file="$BODY_FILE"
+
+# Flip draft → ready so the brief becomes claimable.
+transition_brief_state "$BRIEF_UUID" ready chanakya "authored by $USER"
+```
+
+The helper special-cases `body_file=` (and `body=` for inline) — the YAML emits `body: |` block-scalar and the legacy markdown gets the same content verbatim. Do not hand-write the YAML via the Write tool; the helper owns schema + dual-write + event + index-rebuild as a unit. If you're tempted to bypass it, REVIEW.md R9 (dual-write AND-not-OR) is what you're violating.
+
+State transitions follow `_shared/state-machines/brief-lifecycle.md`: `write_brief_artifact` leaves the brief in `draft`; `transition_brief_state … ready` marks it claimable. Dispatch (`ready → dispatched`) happens when Achilles claims.
 
 ### 6A — Implementation brief (Type: feature | bugfix | refactor | direct)
 
@@ -105,17 +128,17 @@ Render the body from the template at `~/.claude/skills/_shared/contracts/brief-f
 
 Render the body from the template at `~/.claude/skills/_shared/contracts/brief-formats/ui-test-brief.md`.
 
-## Step 7 — Update task and regenerate index
+## Step 7 — Update task back-reference and state
 
-Update the parent task at `~/.dev-studio/<project>/plans/tasks/<task-id>.yaml`:
+Use `set_task_link` and `transition_task_state` from lib-ledger — both dual-write (YAML + legacy master-plan), emit the right event, and rebuild the index. Do not hand-edit the task YAML via `yq -i` or Write.
 
-- Set `links.brief = <brief-id>` (back-reference per §2.2 of the Phase 2.6 plan — the writer that creates the link maintains the counterparty).
-- Append a `history:` entry for `proposed → briefed` (or `briefed → briefed` on re-brief — treat re-brief as a same-state update with the new brief-id in `links.brief`).
-- Bump `updated_at`.
+```bash
+# Still in the Bash tool session from Step 6 (helpers already sourced).
+set_task_link "<parent-task-uuid>" brief "$BRIEF_UUID"
+transition_task_state "<parent-task-uuid>" briefed chanakya "brief minted"
+```
 
-Emit `brief_state_changed` (from null to `ready`) and `task_state_changed` per `_shared/contracts/events.md` via `scripts/write-event.sh`. Then regenerate `plans/index.yaml` via `scripts/rebuild-index.sh` (the pre-commit hook from Commit D handles staged artifacts; modes call it directly for non-committed writes).
-
-**Phase 2.6 transition note:** also mutate `plans/chanakya-master.md` (set the legacy task row's status to `briefed`, record the legacy brief path) until Commit H cutover.
+On re-brief (task already in `briefed`), `set_task_link` overwrites `links.brief` with the new brief-id and `transition_task_state briefed chanakya` is a same-state no-op — safe to call.
 
 ## Step 7A — Invalidate briefs snapshot
 
