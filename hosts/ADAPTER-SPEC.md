@@ -73,6 +73,26 @@ secret_scope = none
 
 **Why:** Argus consumes diffs and emits verdicts. It never calls an external API, reads user credentials, or writes to cloud services. Injecting any secret into an Argus session is unnecessary surface — a future prompt-injection in a diff could exfiltrate it.
 
+### Env-scrub at Argus dispatch
+
+`scripts/dispatch-review.sh` enforces the Argus floor at spawn time by env-scrubbing the subprocess. Only PATH/HOME/LANG/USER, the host plugin-root, and explicit task-context vars cross the boundary; `ANTHROPIC_API_KEY`, `GH_TOKEN`/`GITHUB_TOKEN`, and arbitrary inherited env are dropped. The host CLI re-authenticates from its own keychain inside the spawned session.
+
+```bash
+env -i \
+  PATH="$PATH" HOME="$HOME" LANG="${LANG:-C.UTF-8}" USER="${USER:-}" \
+  STUDIO_HOST="$HOST" \
+  CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}" \
+  CODEX_PLUGIN_ROOT="${CODEX_PLUGIN_ROOT:-}" \
+  TASK_ID="$TASK_ID" STAGE="$STAGE" \
+  ARGUS_IDEMPOTENCY_KEY="$IDEM_KEY" \
+  ACHILLES_WORKTREE="$WORKTREE" \
+  ACHILLES_BASE_BRANCH="$BASE_BRANCH" \
+  TASK_SIZE="$SIZE" \
+  "${spawn_argv[@]}" "/argus $STAGE $TASK_ID"
+```
+
+`.netrc` is filesystem-resident, not env-resident, so env-scrub alone doesn't isolate it — the adapter's `sandbox_profile` is responsible for that boundary (Codex's `workspace-write` keeps `~/.netrc` out of the worker's view; Claude Code's `host-native` relies on the documented reference-host exemption).
+
 ### Claude Code reference host
 
 Claude Code (`.claude-plugin/capabilities.yaml`) declares `host-native` + `inherit-env`. This violates the Achilles security floor. The reference host is explicitly exempted because it is the primary development environment where the security constraints are enforced by human oversight rather than mechanical isolation. **Do not use the reference host's values as a template for new adapters.**
