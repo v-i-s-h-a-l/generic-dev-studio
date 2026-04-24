@@ -283,7 +283,7 @@ eval "$(scripts/task-invoke-argus.sh "$TASK_ID" "$WORKTREE" "$ORIG_BRANCH" "$SIZ
 
 Emits `review_requested` and exports `ACHILLES_REVIEW_REQUESTED_AT` (carried into the debrief for verdict-timing correlation).
 
-Argus runs in **two sequential stages** (both via Claude's Agent tool — not reachable from shell):
+Argus runs in **two sequential stages** (both dispatched via `scripts/dispatch-review.sh`, which the host's adapter routes to its review primitive — not reachable from a plain shell command):
 
 #### Stage 1 — spec-compliance
 
