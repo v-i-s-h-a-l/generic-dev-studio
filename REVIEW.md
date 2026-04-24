@@ -135,6 +135,57 @@ gh pr create --base main --head "$FEATURE_BRANCH" ...   # or gh pr edit if it ex
 ```
 If the intent was to land an already-merged commit, the merge should have happened via `gh pr merge` in the first place — the rule catches the rationalization.
 
+### R12 — Portability: new capabilities via file I/O + shell + single session only (tier: **block**)
+
+Every worker capability must be implementable via file I/O on the repo + `~/.dev-studio/**`, a POSIX shell, and a single model session with a system-prompt + turn loop. No new capability may depend on a host primitive that isn't available across all declared adapters in `hosts/ADAPTER-SPEC.md`.
+
+**Commit signal:** authors add `portable: yes` in the commit message for any new capability. Reviewers reject when the implementation depends on Claude-Code-specific primitives not available in every adapter.
+
+**How to check:** grep the diff for tool-name dialects (`Agent tool`, `Read tool`, `Write tool`, `Edit tool`, `Bash tool`), `SessionStart hook` (when load-bearing, not as fallback description), `subagent primitive`, `CLAUDE_PLUGIN_ROOT`. `scripts/lint-host-agnostic.sh --staged` catches these automatically in pre-commit.
+
+### R13 — Zero new third-party runtime deps in worker paths (tier: **block**)
+
+Worker-facing code paths (`achilles/`, `argus/`) stay on POSIX + `jq` + `yq` + `check-jsonschema` — the set frozen at host-agnostic v1. Adding a runtime dependency requires an ADR filed as a GitHub issue before the commit lands. Infrastructure scripts (`scripts/`) may use additional tools; they are not worker code.
+
+**How to check:** `scripts/lint-host-agnostic.sh --staged` greps for `npm install`, `pip install`, `brew install`, `gem install` in `achilles/` and `argus/`. Any new package-manager invocation outside a comment is a block.
+
+### R14 — Graceful degradation as loud failure, never silent skip (tier: **block + auto-fix**)
+
+Any capability a host adapter cannot fulfill must fail loud — exit non-zero with a clear message — not silently degrade or no-op. Specifically: if a host declares `supports_hooks: false` and a worker step depends on a hook for correctness, the step must detect the absent capability and refuse, not silently skip the hook and proceed.
+
+**How to check:** grep the diff for `|| true`, `2>/dev/null`, `|| :` immediately following a step that reads from adapter capabilities. A silent swallow on a capability-gated path is the failure mode. Exception: best-effort telemetry (`emit_event_keyed ... >/dev/null 2>&1 || true`) — event loss is acceptable; logic loss is not.
+
+**Fix pattern:** replace silent fallback with an explicit capability check:
+```bash
+if [ "$(yaml_field "$CAPS" supports_hooks)" != "true" ]; then
+  printf 'error: this step requires hooks; host does not support them\n' >&2; exit 1
+fi
+```
+
+### R15 — Single retry layer: at most one retry, no inner retries (tier: **ask**)
+
+`dispatch-review.sh` and `spawn-worker.sh` retry a failed spawn at most once. No worker script may implement its own inner retry loop. Validator rejections never auto-retry (per `_shared/contracts/idempotency.md §Per-step retry classification`). Prevents cascading retry amplification that could double-emit events or consume API quota unexpectedly.
+
+**How to check:** grep the diff for `for _ in 1 2`, `while retry`, `attempt=`, or `RETRY_COUNT` patterns in `scripts/*.sh`. If a loop implements retry semantics that isn't the single allowed outer retry in dispatch/spawn scripts, flag for review.
+
+### R16 — Worker-to-worker handoffs forbidden; all routing through Chanakya (tier: **ask**)
+
+Workers (Achilles, Argus) do not route to each other directly. Argus's verdict returns to Chanakya (via the event log and verdict artifact), not directly to Achilles. Achilles dispatches Argus via `dispatch-review.sh`, which emits a handoff event that Chanakya observes — the architecture remains hub-and-spoke, not peer-to-peer.
+
+**How to check:** grep the diff for direct Achilles→Argus calls that bypass the event log (e.g., `argus-emit-verdict.sh` called from `achilles-worker.sh` instead of via `task-invoke-argus.sh`). Any path where Argus mutates state that only Chanakya should own is a violation.
+
+### R17 — Ownership of mutations (tier: **ask**)
+
+| Actor | What it may mutate |
+|---|---|
+| Achilles | Worktree files, task state, debriefs |
+| Chanakya | `briefs/`, task state (via `plans/`), event sweeps |
+| Argus | Verdict events and artifacts only; read-only on the diff |
+
+Argus must not write to `briefs/`, `debriefs/`, task YAML, or the worktree. Achilles must not write to `briefs/`. Chanakya must not write to the worktree. `scripts/lint-host-agnostic.sh` enforces path-ownership greps; flag any diff that crosses these lines.
+
+**How to check:** in a diff that touches argus modes or argus-emit-verdict.sh, verify no writes reach `plans/briefs/` or worktree paths. In Achilles diffs, verify no `briefs/` mutations.
+
 ## Deferred / known gaps
 
 Not rules yet — track here so we remember:
