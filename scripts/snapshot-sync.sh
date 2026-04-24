@@ -95,7 +95,11 @@ if ! $TIMEOUT_BIN ssh $SSH_OPTS "${USER_}@${HOST}" true >/dev/null 2>&1; then
   exit 0
 fi
 
-REMOTE_REFS="$HOME/.dev-studio/$PROJECT/snapshots/references/"
+# Both sides resolve through resolve_project_root_for so R3 (no hardcoded
+# ~/.dev-studio paths) stays clean. The remote accepts the laptop's
+# absolute path because this whole design assumes $HOME parity between
+# the dispatcher and the canonical node (same username on both).
+REMOTE_REFS="$(resolve_project_root_for "$PROJECT")/snapshots/references/"
 LOCAL_REFS="$(resolve_project_root_for "$PROJECT")/snapshots/references/"
 mkdir -p "$LOCAL_REFS" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$LOCAL_REFS" >&2; exit 2; }
 
