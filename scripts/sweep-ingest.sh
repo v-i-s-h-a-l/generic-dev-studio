@@ -96,6 +96,7 @@ ingest_debrief() {
   local debrief_uuid="" legacy_task_id="" merge_sha="" task_uuid=""
   local argus_status="not-invoked" review_uuid="" follow_ups_count=0
   local to_state="merged" errors_present="" mode="task"
+  local merged_into="" argus_reason="" argus_notes=""
 
   if [ "$is_yaml" = "1" ]; then
     command -v yq >/dev/null 2>&1 || { printf 'ingest_debrief: yq required for YAML surface\n' >&2; return 2; }
@@ -105,7 +106,13 @@ ingest_debrief() {
     [ "$task_uuid" = "null" ] && task_uuid=""
     legacy_task_id=$(yq -r '.legacy_task_id // ""' "$SRC" 2>/dev/null || echo "")
     merge_sha=$(yq -r '.branch.merge_sha // ""' "$SRC" 2>/dev/null || echo "")
+    merged_into=$(yq -r '.branch.merged_into // ""' "$SRC" 2>/dev/null || echo "")
+    [ "$merged_into" = "null" ] && merged_into=""
     argus_status=$(yq -r '.argus_review.status // "not-invoked"' "$SRC" 2>/dev/null || echo "not-invoked")
+    argus_reason=$(yq -r '.argus_review.reason // ""' "$SRC" 2>/dev/null || echo "")
+    [ "$argus_reason" = "null" ] && argus_reason=""
+    argus_notes=$(yq -r '.argus_review.notes // ""' "$SRC" 2>/dev/null || echo "")
+    [ "$argus_notes" = "null" ] && argus_notes=""
     review_uuid=$(yq -r '.argus_review.review_id // ""' "$SRC" 2>/dev/null || echo "")
     [ "$review_uuid" = "null" ] && review_uuid=""
     follow_ups_count=$(yq -r '.follow_ups // [] | length' "$SRC" 2>/dev/null || echo 0)
@@ -208,6 +215,28 @@ ingest_debrief() {
       emit_event_keyed chanakya inbox-sweep review_pending "$event_task" "$pending_data" >/dev/null || true
       bump_waive_counter argus 2>/dev/null || true
     fi
+  fi
+
+  # Protected-branch ungated-merge audit (#108). Fires iff a debrief records a
+  # merge into a policy-protected integration branch (main, master, release/*,
+  # v/*, hotfix/*) with argus_review.status=not-invoked AND no external-review
+  # citation in argus_review.reason / .notes. External-agent peer reviews are
+  # fine — they just have to show their work with a URL or `#<issue-or-pr>`.
+  # Post-fact audit, not a pre-merge block; the latter requires git hooks in
+  # the target repo and is tracked separately.
+  if [ "$argus_status" = "not-invoked" ] && [ -n "$merged_into" ] && is_protected_branch "$merged_into"; then
+    combined_citation="$argus_reason $argus_notes"
+    case "$combined_citation" in
+      *https://*|*http://*|*\#[0-9]*) ;;  # external citation present — ok
+      *)
+        esc_sha=${merge_sha//\"/\\\"}
+        esc_branch=${merged_into//\"/\\\"}
+        esc_mode=${mode//\"/\\\"}
+        audit_data=$(printf '{"merge_sha":"%s","merged_into":"%s","mode":"%s","reason":"argus_not_invoked_no_citation"}' \
+          "$esc_sha" "$esc_branch" "$esc_mode")
+        emit_event_keyed chanakya inbox-sweep direct_main_ungated_merge "$event_task" "$audit_data" >/dev/null || true
+        ;;
+    esac
   fi
 }
 

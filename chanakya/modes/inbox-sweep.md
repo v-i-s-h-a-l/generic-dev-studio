@@ -65,6 +65,8 @@ Pass `--argus-exempt` to `sweep-ingest.sh debrief` when the task matches an exem
 
 **Waive suppression.** When a structured waive file exists at `~/.dev-studio/<project>/state/waives/argus.yaml` (created via `scripts/waive-start.sh argus <reason> [sunset_trigger]`), `sweep-ingest.sh` silences the per-merge `review_pending` emit but still bumps the waive's `accumulated_count` so merge-volume remains visible for the summary banner. This is the "stop nagging" half of issues #83 / #103 — it is gate-agnostic (lives on `is_waive_active`) so future gates get the same behavior for free.
 
+**Protected-branch ungated-merge audit (#108).** Independently of the `review_pending` / waive logic, `sweep-ingest.sh` emits `direct_main_ungated_merge` when an ingested debrief records `branch.merged_into` in the policy-protected set (`main`, `master`, `release/*`, `v/*`, `hotfix/*` — see `is_protected_branch` in `lib-paths.sh`) with `argus_review.status: not-invoked` AND no external-review citation (a URL or `#<issue-or-pr>`) in `argus_review.reason` / `.notes`. Observational — does not block ingest. Analysts look at the event when characterizing direct-mode's reach; the fix surfaces the pattern rather than prevents it (pre-merge prevention requires git hooks in the target repo, tracked separately).
+
 After the loop, run `scripts/rebuild-index.sh` once if any debrief was processed — skipping it leaves `plans/index.yaml` stale.
 
 ### 0A.1 — Orphan-debrief backfill (double-miss guard)

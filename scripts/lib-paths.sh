@@ -306,6 +306,21 @@ is_waive_active() {
   [ -f "$f" ]
 }
 
+# True iff <branch-name> is a policy-protected integration branch — one that
+# advances only via review (human, Argus, external-agent PR). Used by
+# sweep-ingest's ungated-merge audit (#108) to gate post-fact warning events.
+# The set is small and repo-conventional; extend here when a new release-line
+# convention lands rather than scattering branch-pattern checks across callers.
+is_protected_branch() {
+  local name="${1:-}"
+  [ -z "$name" ] && return 1
+  case "$name" in
+    main|master|trunk|develop) return 0 ;;
+    release/*|releases/*|v/*|hotfix/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # DerivedData root for a given worktree slug. Xcode per-worker isolation —
 # each worker's xcodebuild run points DerivedDataPath at this dir to prevent
 # index contention across parallel workers.
