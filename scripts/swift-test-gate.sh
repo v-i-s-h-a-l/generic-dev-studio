@@ -152,14 +152,35 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   exit 0
 fi
 
-if ! command -v swift >/dev/null 2>&1; then
-  data=$(printf '{"mode":"swift-test","reason":"swift_unavailable","package":"%s","attempt":%s}' "$PKG_ROOT" "$ATTEMPT")
-  _emit_terminal build_check_failed "$data"
-  exit 2
+# Route the test run through node-dispatch so an SSH-reachable worker
+# node tagged `swift-test` absorbs the compile + test cost. `node-pick`
+# returns `local` when no remote is registered or healthy, which keeps
+# hosts without a node registry running bit-for-bit the old behaviour.
+NODE_ID=$("$SCRIPT_DIR/node-pick.sh" swift-test 2>/dev/null || echo local)
+
+if [ "$NODE_ID" = "local" ]; then
+  # Local swift is only required on the local branch — if we're dispatching
+  # to a remote node, the remote's toolchain is what matters and its
+  # absence surfaces as a non-zero remote exit code below.
+  if ! command -v swift >/dev/null 2>&1; then
+    data=$(printf '{"mode":"swift-test","reason":"swift_unavailable","package":"%s","attempt":%s}' "$PKG_ROOT" "$ATTEMPT")
+    _emit_terminal build_check_failed "$data"
+    exit 2
+  fi
 fi
 
 test_log=$(mktemp 2>/dev/null || printf '/tmp/swift-test-%s.log' "$$")
-swift test --package-path "$PKG_ROOT" >"$test_log" 2>&1
+
+if [ "$NODE_ID" = "local" ]; then
+  swift test --package-path "$PKG_ROOT" >"$test_log" 2>&1
+else
+  # Remote shell must cd into the worktree itself — otherwise the relative
+  # `--package-path` would resolve against the remote $HOME. printf %q
+  # keeps spaces / special chars intact through SSH's argv-joining.
+  "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" \
+    sh -c "cd $(printf '%q' "$WORKTREE") && swift test --package-path $(printf '%q' "$PKG_ROOT")" \
+    >"$test_log" 2>&1
+fi
 TEST_STATUS=$?
 
 # Counts kept cheap and well-defined: swift-test surfaces failures via
@@ -169,13 +190,13 @@ warn_count=$(grep -cE '(^|: )warning:' "$test_log" 2>/dev/null || echo 0)
 rm -f "$test_log" 2>/dev/null || true
 
 if [ "$TEST_STATUS" -ne 0 ]; then
-  data=$(printf '{"mode":"swift-test","errors":%s,"warnings":%s,"package":"%s","attempt":%s}' \
-    "$err_count" "$warn_count" "$PKG_ROOT" "$ATTEMPT")
+  data=$(printf '{"mode":"swift-test","node":"%s","errors":%s,"warnings":%s,"package":"%s","attempt":%s}' \
+    "$NODE_ID" "$err_count" "$warn_count" "$PKG_ROOT" "$ATTEMPT")
   _emit_terminal build_check_failed "$data"
   exit 2
 fi
 
-data=$(printf '{"mode":"swift-test","warnings":%s,"package":"%s","files":%s,"attempt":%s}' \
-  "$warn_count" "$PKG_ROOT" "$file_count" "$ATTEMPT")
+data=$(printf '{"mode":"swift-test","node":"%s","warnings":%s,"package":"%s","files":%s,"attempt":%s}' \
+  "$NODE_ID" "$warn_count" "$PKG_ROOT" "$file_count" "$ATTEMPT")
 _emit_terminal build_check_passed "$data"
 exit 0
