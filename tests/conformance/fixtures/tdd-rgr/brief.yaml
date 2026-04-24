@@ -1,0 +1,18 @@
+schema_version:
+  name: brief
+  version: "1.0.0"
+  min_reader: "1.0.0"
+id: 0190f52a-6e0c-7b3c-9a1d-000000000003
+task_id: 0190f52a-6e0c-7b3c-9a1d-000000000003
+title: "TDD red-green-refactor — date formatter rounding"
+size: S
+mode: tdd
+trivial: false
+files:
+  - src/date_formatter.swift
+  - tests/date_formatter_tests.swift
+acceptance:
+  - "Failing test landed first (red)"
+  - "Implementation makes test pass (green)"
+  - "Refactor preserves green"
+  - "Argus spec-compliance approved"

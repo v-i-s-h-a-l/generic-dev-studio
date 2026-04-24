@@ -60,12 +60,17 @@ if ! command -v check-jsonschema >/dev/null 2>&1; then
   exit 2
 fi
 
-# All studio contracts are YAML. Pass --format=yaml unconditionally so the
-# caller doesn't need to rename temp files to .yaml for format detection.
-# Run the validator. Capture output — surface only the one-line summary on
-# failure to keep the signal-to-noise ratio high for callers.
-if ! result=$(check-jsonschema --format=yaml --schemafile "$SCHEMA_FILE" \
-    --base-uri "file://$REPO_ROOT/_shared/contracts/" "$ARTIFACT" 2>&1); then
+# All studio contracts are YAML. --force-filetype yaml so callers don't need
+# to rename temp files for format detection. urllib3 LibreSSL warnings emitted
+# by stock-macOS Python land on stderr but are not validation errors — strip
+# them after capturing the validator's real exit status (a pipe through grep
+# would clobber the exit code that drives this gate).
+raw=$(PYTHONWARNINGS=ignore check-jsonschema --force-filetype yaml \
+    --schemafile "$SCHEMA_FILE" \
+    --base-uri "file://$REPO_ROOT/_shared/contracts/" "$ARTIFACT" 2>&1)
+rc=$?
+result=$(printf '%s\n' "$raw" | grep -v -E 'NotOpenSSLWarning|urllib3|warnings\.warn' || true)
+if [ "$rc" -ne 0 ]; then
   # Extract the first "Schema violation" or "ValidationError" line for the
   # one-liner. Fall back to the full output if parsing fails.
   one_line=$(printf '%s\n' "$result" \

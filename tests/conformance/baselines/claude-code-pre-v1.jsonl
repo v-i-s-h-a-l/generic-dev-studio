@@ -1,0 +1,8 @@
+{"ts":"2026-04-15T10:00:00Z","agent":"chanakya","event":"task_dispatched","task":"T-baseline","data":{"size":"M"}}
+{"ts":"2026-04-15T10:00:01Z","agent":"achilles","event":"agent_boot","task":"T-baseline","data":{"agent_version":"0.4.0"}}
+{"ts":"2026-04-15T10:05:00Z","agent":"achilles","event":"build_completed","task":"T-baseline","data":{"exit":0}}
+{"ts":"2026-04-15T10:06:00Z","agent":"argus","event":"review_approved","task":"T-baseline","data":{"stage":"spec"}}
+{"ts":"2026-04-15T10:07:00Z","agent":"argus","event":"review_approved","task":"T-baseline","data":{"stage":"quality"}}
+{"ts":"2026-04-15T10:08:00Z","agent":"achilles","event":"merge_completed","task":"T-baseline","data":{"sha":"abc123"}}
+{"ts":"2026-04-15T10:08:01Z","agent":"achilles","event":"agent_session_completed","task":"T-baseline","data":{}}
+{"ts":"2026-04-15T10:08:02Z","agent":"achilles","event":"brief_completed","task":"T-baseline","data":{"gate":"verified"}}

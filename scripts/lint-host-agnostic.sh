@@ -124,6 +124,12 @@ yaml_field() {
 
 check_capability_security_floor() {
   local manifest host_dir sandbox secret
+  # LINT_HOST_AGNOSTIC_EXTRA_DIR: optional comma-separated list of additional
+  # adapter dirs to scan (used by tests/conformance harness).
+  local extra_dirs=()
+  if [ -n "${LINT_HOST_AGNOSTIC_EXTRA_DIR:-}" ]; then
+    IFS=',' read -r -a extra_dirs <<<"$LINT_HOST_AGNOSTIC_EXTRA_DIR"
+  fi
   while IFS= read -r manifest; do
     [ -f "$manifest" ] || continue
     host_dir=$(basename "$(dirname "$manifest")")
@@ -153,7 +159,7 @@ check_capability_security_floor() {
       emit_warn "W_ARGUS_SECRET_SCOPE:$host_dir/capabilities.yaml:secret_scope=cwd-only | Argus dispatch on this host requires secret_scope: none; add a dedicated Argus adapter or route Argus to a none-scoped host"
     fi
   done < <(
-    find "$REPO_ROOT/.codex" "$REPO_ROOT/.claude-plugin" \
+    find "$REPO_ROOT/.codex" "$REPO_ROOT/.claude-plugin" "${extra_dirs[@]+"${extra_dirs[@]}"}" \
       -maxdepth 1 -name 'capabilities.yaml' 2>/dev/null
   )
 }
