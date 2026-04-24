@@ -7,6 +7,8 @@
 #   resolve_inbox_root       prints the current project's achilles-inbox root
 #   resolve_inbox_root_for   prints the achilles-inbox root for a given slug
 #   resolve_feedback_inbox_for prints the studio-self feedback inbox for a source slug
+#   resolve_feedback_inbox_root prints the studio-self feedback inbox root
+#   resolve_analysis_root    prints the studio-self private analysis root
 #   resolve_runtime_global   prints the machine-global runtime root
 #   resolve_push_queue       prints the per-project push-queue path
 #   detect_stack             prints ios|web|rust|python|go|mixed|unknown
@@ -304,7 +306,18 @@ resolve_project_root() {
 # studio's own issues and improvements get filed.
 resolve_feedback_inbox_for() {
   local project="${1:?usage: resolve_feedback_inbox_for <source-slug>}"
-  printf '%s\n' "$HOME/.dev-studio/generic-dev-studio/feedback-inbox/$project"
+  printf '%s\n' "$(resolve_feedback_inbox_root)/$project"
+}
+
+# Root of the studio-self feedback inbox (parent of per-source subfolders).
+resolve_feedback_inbox_root() {
+  printf '%s\n' "$(resolve_project_root_for generic-dev-studio)/feedback-inbox"
+}
+
+# Studio-self analysis root — private, never-committed reports (see CLAUDE.md
+# "Analysis sessions and privacy" → "Detailed analysis report").
+resolve_analysis_root() {
+  printf '%s\n' "$(resolve_project_root_for generic-dev-studio)/analysis"
 }
 
 # Friendly display name. Auto-derived in this order:

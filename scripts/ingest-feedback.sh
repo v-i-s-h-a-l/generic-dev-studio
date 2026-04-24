@@ -25,10 +25,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PROJECT=$(resolve_project 2>/dev/null) || exit 0
 [ "$PROJECT" = "generic-dev-studio" ] || exit 0
 
-INBOX_BASE="$HOME/.dev-studio/generic-dev-studio/feedback-inbox"
+INBOX_BASE=$(resolve_feedback_inbox_root)
 [ -d "$INBOX_BASE" ] || exit 0
 
-ANALYSIS_DIR="$HOME/.dev-studio/generic-dev-studio/analysis"
+ANALYSIS_DIR=$(resolve_analysis_root)
 ANALYSIS_FILE="$ANALYSIS_DIR/$(date -u +%Y-%m-%d).md"
 mkdir -p "$ANALYSIS_DIR"
 
@@ -144,9 +144,10 @@ processed_count=0
 upstream_count=0
 skipped_count=0
 
+STUDIO_ROOT=$(resolve_project_root_for generic-dev-studio)
 printf '%s\n' "$FILES" | while IFS= read -r file; do
   [ -n "$file" ] || continue
-  rel="${file#$HOME/.dev-studio/generic-dev-studio/}"
+  rel="${file#$STUDIO_ROOT/}"
   src_dir=$(dirname "$file")
   src_proj=$(basename "$src_dir")
   fname=$(basename "$file")
