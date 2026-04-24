@@ -30,9 +30,9 @@ From the arg or `STUDIO_TRACK` env var. Validate against `TRACKS.md` (branch mus
 Run `scripts/track-next.sh <track>`.
 
 - Exit 0: directive printed — read it, proceed to Step 3.
-- Exit 1 (`TRACK_COMPLETE`): all issues done. Report to user, stop.
+- Exit 1: either `TRACK_COMPLETE` (all issues done — stop) or `TRACK_BLOCKED` (every open issue has an open `Blocked by:` dependency — stop and report).
 
-The script handles branch checkout, `git pull`, GH assignment atomically. Do not repeat those steps manually.
+The script handles branch checkout, `git pull`, GH assignment, and `Blocked by: #N` filtering atomically. Do not repeat those steps manually.
 
 ## Step 3 — Implement
 
@@ -86,4 +86,4 @@ In all cases: report clearly what was done, what was left, and what the user nee
 
 ## Cross-track dependency
 
-If an issue body says `Blocked by: #N` and #N is still open, skip that issue (do not assign it), try the next one. If all remaining issues are blocked, stop and report.
+`scripts/track-next.sh` already filters out issues whose `Blocked by: #N` references are still open — the loop never claims a blocked issue. If every open issue on the track is blocked, the script exits with `TRACK_BLOCKED`; report the state to the user (usually means work on a prerequisite track stalled).

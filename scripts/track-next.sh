@@ -33,12 +33,17 @@ fi
 git pull --quiet origin "$BRANCH" 2>/dev/null || true
 
 # Find next unassigned open issue for this track
+# Fetch ALL open unassigned issues on the track. We sort by issue number
+# ascending in python below — foundational work is almost always filed
+# first, so lowest number is a good tiebreaker when Blocked-by is absent.
+# The Blocked-by filter is the correctness guarantee; number-order is the
+# pick heuristic when multiple issues are unblocked.
 issue_json=$(gh issue list \
   --repo "$REPO" \
   --label "$LABEL" \
   --assignee "" \
   --state open \
-  --limit 1 \
+  --limit 100 \
   --json number,title,body 2>/dev/null)
 
 if [ -z "$issue_json" ] || [ "$issue_json" = "[]" ]; then
@@ -46,9 +51,54 @@ if [ -z "$issue_json" ] || [ "$issue_json" = "[]" ]; then
   exit 1
 fi
 
-number=$(printf '%s' "$issue_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['number'])")
-title=$(printf '%s' "$issue_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['title'])")
-body=$(printf '%s' "$issue_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['body'])")
+# Pick the first issue whose "Blocked by: #N" references are all closed.
+# "Blocked by:" may appear on its own line, inside tables, or inline —
+# pattern match case-insensitively on `Blocked by:` followed by #<digits>,
+# take the union of all such numbers, and check each is closed via gh.
+pick_json=$(REPO="$REPO" ISSUES_JSON="$issue_json" python3 <<'PY'
+import json, os, re, subprocess, sys
+
+issues = json.loads(os.environ["ISSUES_JSON"])
+issues.sort(key=lambda it: it["number"])
+repo = os.environ["REPO"]
+blocked_pat = re.compile(r'Blocked by:\s*((?:#\d+[\s,and]*)+)', re.IGNORECASE)
+num_pat = re.compile(r'#(\d+)')
+
+def is_open(n):
+    try:
+        r = subprocess.run(
+            ["gh", "issue", "view", str(n), "--repo", repo, "--json", "state"],
+            capture_output=True, text=True, check=True,
+        )
+        return json.loads(r.stdout)["state"] == "OPEN"
+    except Exception:
+        # If we can't resolve it, assume not-blocked rather than blocking
+        # forever on a transient error. The worker will surface real issues.
+        return False
+
+for it in issues:
+    body = it.get("body") or ""
+    deps = set()
+    for m in blocked_pat.finditer(body):
+        for n in num_pat.findall(m.group(1)):
+            deps.add(int(n))
+    if not any(is_open(n) for n in deps):
+        print(json.dumps(it))
+        sys.exit(0)
+
+# All remaining issues are blocked.
+sys.exit(42)
+PY
+) || pick_rc=$?
+
+if [ "${pick_rc:-0}" = "42" ]; then
+  printf 'TRACK_BLOCKED track=%s (all open issues have open Blocked-by deps)\n' "$TRACK" >&2
+  exit 1
+fi
+
+number=$(printf '%s' "$pick_json" | python3 -c "import sys,json; print(json.load(sys.stdin)['number'])")
+title=$(printf '%s' "$pick_json" | python3 -c "import sys,json; print(json.load(sys.stdin)['title'])")
+body=$(printf '%s' "$pick_json" | python3 -c "import sys,json; print(json.load(sys.stdin)['body'])")
 
 # Claim it
 gh issue edit "$number" --add-assignee "@me" --repo "$REPO" >/dev/null
