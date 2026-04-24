@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generic Dev Studio — Documentation</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-hover: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #2fd9c6;
+    --accent-subtle: rgba(47, 217, 198, 0.13);
+    --blue: #58a6ff;
+    --green: #3fb950;
+    --purple: #bc8cff;
+    --red: #f85149;
+    --yellow: #d29922;
+    --code-bg: #0d1117;
+    --chanakya: #f0883e;
+    --achilles: #58a6ff;
+    --argus: #bc8cff;
+    --studio: #2fd9c6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .hero {
+    background: linear-gradient(135deg, #0f1a1a 0%, #0d1117 50%, #0a1616 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 80px 0 56px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 60% 40%, rgba(47, 217, 198, 0.06) 0%, transparent 50%),
+                radial-gradient(circle at 30% 70%, rgba(88, 166, 255, 0.04) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  .hero h1 {
+    font-size: 3rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 12px;
+    position: relative;
+  }
+
+  .hero h1 .studio-name { color: var(--studio); }
+
+  .hero .tagline {
+    font-size: 1.2rem;
+    color: var(--text-muted);
+    position: relative;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  .hero .subtagline {
+    margin-top: 14px;
+    font-size: 0.92rem;
+    color: var(--text-muted);
+    position: relative;
+    opacity: 0.75;
+  }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(13, 17, 23, 0.88);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+
+  .nav-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nav-inner::-webkit-scrollbar { display: none; }
+
+  .nav a {
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 14px 16px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .nav a:hover { color: var(--text); border-bottom-color: var(--border); }
+
+  section { padding: 56px 0; }
+  section + section { border-top: 1px solid var(--border); }
+
+  h2 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 22px;
+  }
+
+  h3 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 28px 0 10px;
+    color: var(--text);
+  }
+
+  h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 20px 0 8px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  p { margin-bottom: 14px; color: var(--text-muted); }
+  p strong { color: var(--text); }
+  ul, ol { margin-bottom: 14px; padding-left: 20px; color: var(--text-muted); }
+  li { margin-bottom: 6px; }
+  li strong { color: var(--text); }
+
+  a.inline { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--border); }
+  a.inline:hover { border-bottom-color: var(--accent); }
+
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.85rem;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin: 16px 0;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+
+  pre code {
+    background: transparent;
+    padding: 0;
+    border: none;
+    font-size: inherit;
+  }
+
+  /* Agent roster cards */
+  .agent-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin: 20px 0 8px;
+  }
+  @media (max-width: 720px) { .agent-grid { grid-template-columns: 1fr; } }
+
+  .agent-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .agent-card:hover { background: var(--surface-hover); }
+  .agent-card.chanakya { border-top-color: var(--chanakya); }
+  .agent-card.achilles { border-top-color: var(--achilles); }
+  .agent-card.argus { border-top-color: var(--argus); }
+
+  .agent-card .name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .agent-card.chanakya .name { color: var(--chanakya); }
+  .agent-card.achilles .name { color: var(--achilles); }
+  .agent-card.argus .name { color: var(--argus); }
+
+  .agent-card .role {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+
+  .agent-card p { font-size: 0.88rem; margin-bottom: 10px; }
+  .agent-card ul { font-size: 0.85rem; padding-left: 18px; margin-bottom: 0; }
+  .agent-card li { margin-bottom: 4px; }
+
+  /* Mode cards */
+  .mode-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 18px 0;
+  }
+  @media (max-width: 640px) { .mode-grid { grid-template-columns: 1fr; } }
+
+  .mode-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .mode-card:hover { border-color: var(--studio); background: var(--surface-hover); }
+
+  .mode-card code {
+    font-family: 'SF Mono', monospace;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--studio);
+    display: block;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin-bottom: 4px;
+  }
+
+  .mode-card .triggers {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-bottom: 8px;
+  }
+
+  .mode-card .what {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+
+  /* Rulebook rows */
+  .rule-row {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 18px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: start;
+  }
+  .rule-row:last-child { border-bottom: none; }
+  @media (max-width: 640px) { .rule-row { grid-template-columns: 1fr; gap: 6px; } }
+
+  .rule-name {
+    font-family: 'SF Mono', monospace;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--studio);
+  }
+  .rule-desc { color: var(--text-muted); font-size: 0.9rem; }
+
+  /* Tip blocks */
+  .tip-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin: 20px 0;
+  }
+  @media (max-width: 720px) { .tip-grid { grid-template-columns: 1fr; } }
+
+  .tip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+  }
+
+  .tip.do { border-left: 3px solid var(--green); }
+  .tip.dont { border-left: 3px solid var(--red); }
+
+  .tip .label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .tip.do .label { color: var(--green); }
+  .tip.dont .label { color: var(--red); }
+
+  .tip p { font-size: 0.88rem; margin-bottom: 0; line-height: 1.55; }
+  .tip p strong { color: var(--text); }
+
+  /* Callout */
+  .callout {
+    background: var(--accent-subtle);
+    border: 1px solid rgba(47, 217, 198, 0.3);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 20px 0;
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+  .callout strong { color: var(--studio); }
+
+  /* Path table */
+  .path-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.85rem;
+  }
+  .path-table th {
+    text-align: left;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .path-table td {
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  .path-table td code { font-size: 0.8rem; }
+
+  /* Troubleshoot Q/A */
+  .qa { border-top: 1px solid var(--border); padding: 18px 0; }
+  .qa:last-child { border-bottom: 1px solid var(--border); }
+  .qa .q {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 0.95rem;
+    margin-bottom: 8px;
+  }
+  .qa .q::before { content: 'Q. '; color: var(--studio); font-weight: 700; }
+  .qa .a { color: var(--text-muted); font-size: 0.9rem; }
+  .qa .a::before { content: 'A. '; color: var(--text-muted); font-weight: 700; }
+
+  /* Footer */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 0;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="container">
+    <h1><span class="studio-name">Generic Dev Studio</span></h1>
+    <p class="tagline">A three-agent orchestration system for Claude Code — Chanakya plans, Achilles writes, Argus reviews.</p>
+    <p class="subtagline">Built around iOS/SwiftUI. Orchestration layer is stack-agnostic.</p>
+  </div>
+</header>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#what">What it is</a>
+    <a href="#agents">Agents</a>
+    <a href="#router">Studio router</a>
+    <a href="#rulebooks">Rulebooks</a>
+    <a href="#workflows">Workflows</a>
+    <a href="#tips">Tips</a>
+    <a href="#paths">Paths</a>
+    <a href="#extending">Extending</a>
+    <a href="#troubleshoot">Troubleshoot</a>
+    <a href="#links">Links</a>
+  </div>
+</nav>
+
+<section id="what">
+  <div class="container">
+    <h2>What it is</h2>
+    <p>Generic Dev Studio turns Claude Code into a small team. You talk to one agent in plain English; it decomposes the work into briefs, hands them to a worker that codes in an isolated git worktree, and routes the diff through a reviewer before anything merges back to your branch. Your uncommitted changes never get touched.</p>
+    <p>Three ideas hold it together:</p>
+    <ul>
+      <li><strong>Routers, not monoliths.</strong> Each agent's <code>SKILL.md</code> is a thin dispatcher (&lt;100 lines) that loads a mode pack on demand. You pay context cost only for the mode you need.</li>
+      <li><strong>File-based IPC.</strong> Briefs, debriefs, events, tasks — all plain files under <code>~/.dev-studio/&lt;project&gt;/</code>. Claude restarts, laptop sleeps, power blips — the state survives.</li>
+      <li><strong>Rulebooks that future sessions auto-pick-up.</strong> <code>REVIEW.md</code>, <code>RELEASES.md</code>, <code>ARCHITECTURE.md</code> live at the repo root. A new session reads them as a matter of course, so the conventions hold.</li>
+    </ul>
+    <div class="callout">
+      <strong>Who is this for?</strong> One developer running Claude Code locally who wants to fan work out across multiple agents without babysitting each one. It is not a CI system, not a hosted service, and not a replacement for human code review on anything shipping to users.
+    </div>
+  </div>
+</section>
+
+<section id="agents">
+  <div class="container">
+    <h2>The three agents</h2>
+    <p>Each agent has a narrow job and its own skill directory. Mode packs live under <code>&lt;agent&gt;/modes/</code>; the <code>SKILL.md</code> router picks one per invocation.</p>
+    <div class="agent-grid">
+      <div class="agent-card chanakya">
+        <div class="name">Chanakya</div>
+        <div class="role">PM / orchestrator (singleton)</div>
+        <p>Turns a feature description into prioritized tasks with IDs, writes self-contained briefs (Figma specs, codebase pointers, acceptance criteria), sweeps the inbox, tracks debt, and drives the user-verification pipeline.</p>
+        <ul>
+          <li><code>/chanakya status</code>, <code>brief</code>, <code>ship</code>, <code>sweep</code></li>
+          <li><code>test-manifest</code>, <code>test-flow</code>, <code>review-feedback</code></li>
+          <li>Slack ingest, feedback archive, reporting</li>
+        </ul>
+      </div>
+      <div class="agent-card achilles">
+        <div class="name">Achilles</div>
+        <div class="role">Implementer (many concurrent)</div>
+        <p>Reads a brief, implements in an isolated worktree, self-reviews, gates on a green build, invokes Argus pre-merge, merges back, and drops a debrief. XS/S tasks skip <code>xcodebuild</code> and accumulate build debt.</p>
+        <ul>
+          <li><code>/achilles T001</code> — task mode</li>
+          <li><code>/achilles build</code> — on-demand build check</li>
+          <li><code>/achilles debrief</code> — capture an in-chat fix</li>
+          <li><code>/achilles worker</code> — fleet pane</li>
+        </ul>
+      </div>
+      <div class="agent-card argus">
+        <div class="name">Argus</div>
+        <div class="role">Reviewer (two-stage)</div>
+        <p>Runs between Achilles self-review and merge. <strong>Stage 1</strong>: does the diff match the brief? <strong>Stage 2</strong>: cross-file regression, edge cases, secrets, staleness, tests. Stage 2 only fires if Stage 1 is approved or flagged.</p>
+        <ul>
+          <li>Auto-invoked by Achilles pre-merge</li>
+          <li><code>/argus</code> / <code>/argus T001</code> standalone</li>
+          <li>XS-trivial diffs skip Argus entirely</li>
+        </ul>
+      </div>
+    </div>
+    <p>Planned roster: <strong>Lu Ban</strong> (architect, greenfield designs → ADRs) and an Argus <em>smoke mode</em> that folds synthetic-QA in without adding a fifth agent.</p>
+  </div>
+</section>
+
+<section id="router">
+  <div class="container">
+    <h2>The studio router</h2>
+    <p>The agent routers above handle <em>task-level</em> work on your project. The <strong>studio router</strong> is different: it handles operations that concern the studio itself, or that cut across agents. Invoke it by intent — if you say "where were we" or "review this", the studio router picks the right mode.</p>
+
+    <h3>Tier 1 modes (shipped today)</h3>
+    <div class="mode-grid">
+      <div class="mode-card">
+        <code>/studio resume-plan</code>
+        <div class="triggers">"where were we", "pick up from"</div>
+        <div class="what">Loads ROADMAP §Phase sequence + ARCHITECTURE §Design Vision + pending memory, reports current branch / last phase / next phase, asks any deferred questions.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio review</code>
+        <div class="triggers">"review this", "check this", "any issues?"</div>
+        <div class="what">Walks REVIEW.md against the pending diff. Auto-fixes the block+auto-fix tier silently, surfaces ask-tier before changing, notes warn-tier either way.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio release</code>
+        <div class="triggers">"draft release notes", "what's new", "should we tag?"</div>
+        <div class="what">Consults RELEASES.md, evaluates whether the repo has crossed a tag-worthy threshold, drafts outcome-first notes. Never auto-tags — always waits for explicit go-ahead.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio ingest</code>
+        <div class="triggers">"add to parking lot", "file a pattern"</div>
+        <div class="what">Studio-level capture outside Chanakya's inbox — patterns, analyses, rule-tweak proposals, parking-lot entries. Strips project-specific identifiers before anything becomes public.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio help</code>
+        <div class="triggers">"show me the docs", "how does this work?"</div>
+        <div class="what">Opens this page. Also runnable as the <code>/studio-help</code> slash command.</div>
+      </div>
+    </div>
+
+    <h3>Tier 2 modes (planned)</h3>
+    <p><code>backlog</code> (gh issue triage), <code>audit</code> (architecture audit run), <code>scaffold</code> (new mode pack / primitive skeleton). Not shipped today; if your intent suggests one, the router notes the gap and falls back to the closest Tier 1.</p>
+
+    <div class="callout">
+      <strong>Don't dispatch through /studio for task work.</strong> Implement X, fix bug Y, review a Turnip diff — those route to <code>/chanakya</code>, <code>/achilles</code>, <code>/argus</code> directly. The studio router is scoped to operations concerning the studio itself.
+    </div>
+  </div>
+</section>
+
+<section id="rulebooks">
+  <div class="container">
+    <h2>Rulebooks</h2>
+    <p>Five files at the repo root are authoritative for how the studio behaves. They are not docs; they are rules a session reads before acting.</p>
+    <div class="rule-row">
+      <div class="rule-name">REVIEW.md</div>
+      <div class="rule-desc">Review-time rules (R1–R11) with tiers — <strong>block+auto-fix</strong>, <strong>ask</strong>, <strong>warn</strong>. Walked against any diff that touches <code>scripts/*.sh</code>, <code>SKILL.md</code>, <code>_shared/*</code>, or exceeds 100 lines. Walked <em>before</em> committing, not after.</div>
+    </div>
+    <div class="rule-row">
+      <div class="rule-name">RELEASES.md</div>
+      <div class="rule-desc">When to tag, how to version, release-note template, tone rules. Outcome-first bullets with the user as the (implied) subject. No marketing language, no emojis unless asked. Every MINOR has a headline feature.</div>
+    </div>
+    <div class="rule-row">
+      <div class="rule-name">CLAUDE.md</div>
+      <div class="rule-desc">Project-level conventions: studio router triggers, review/release/docs-sync/backlog rulebooks, auto-apply tiers (what Claude commits silently vs. asks about), briefing convention, privacy rules for analysis sessions.</div>
+    </div>
+    <div class="rule-row">
+      <div class="rule-name">ARCHITECTURE.md</div>
+      <div class="rule-desc">Design Vision (2026-04-20 synthesis), agent roster, rejected alternatives, <strong>§Host-agnosticism</strong> principle. Load-bearing for any cross-cutting architectural decision.</div>
+    </div>
+    <div class="rule-row">
+      <div class="rule-name">ROADMAP.md</div>
+      <div class="rule-desc">Phase sequence with dependencies (what's done, what's next, what's parallelizable). Paired with GitHub issues for actionable backlog. Themes live in <code>THEMES.md</code>.</div>
+    </div>
+  </div>
+</section>
+
+<section id="workflows">
+  <div class="container">
+    <h2>Common workflows</h2>
+
+    <h3>From a feature idea to a merged change</h3>
+    <pre><code>/chanakya                        # describe the feature → master plan
+/chanakya brief T001             # self-contained brief with Figma + code pointers
+/achilles T001                   # isolated worktree → build → Argus → merge
+/chanakya status                 # what's in flight, what needs verification</code></pre>
+
+    <h3>Fan out to multiple workers</h3>
+    <pre><code># In N iTerm panes, Cmd+Opt+I to broadcast-type:
+/achilles worker                 # each pane atomically claims a slot
+# Then in your Chanakya pane:
+/chanakya ship T001,T002,T003    # auto-routes to idle workers</code></pre>
+
+    <h3>Quick in-chat bug fix (no brief, no worktree)</h3>
+    <pre><code># You describe the bug, Claude fixes it inline, then:
+/achilles debrief                # capture the fix as a YAML debrief
+                                 # (no Argus, no master-plan task)</code></pre>
+
+    <h3>Review before commit</h3>
+    <pre><code># Say "review this" or invoke /simplify on the pending diff.
+# Studio router walks REVIEW.md:
+#   - block+auto-fix tier    → Claude fixes silently, commits with the diff
+#   - ask tier               → Claude surfaces, waits
+#   - warn tier              → Claude notes both in chat and commit msg</code></pre>
+
+    <h3>Drafting a release</h3>
+    <pre><code># After a few tag-worthy commits land on main:
+# Say "should we tag?" or "draft release notes"
+# Studio router consults RELEASES.md → drafts outcome-first notes
+# You review, say "tag it" → git tag + gh release create
+# Then README.md Mermaid timeline + Story so far auto-updates</code></pre>
+
+    <h3>Resume after a break</h3>
+    <pre><code># /resume-plan  — or just say "where were we"
+# Loads ROADMAP §Phase sequence + ARCHITECTURE §Design Vision
+# + any project_*_pending.md memory
+# Reports current branch, last completed phase, next planned phase.</code></pre>
+  </div>
+</section>
+
+<section id="tips">
+  <div class="container">
+    <h2>Tips — get the best out of it</h2>
+    <div class="tip-grid">
+      <div class="tip do">
+        <div class="label">Do</div>
+        <p><strong>Let Claude auto-apply silently.</strong> Rule-wording tweaks, README clarifications, issue creation on agreed work — these are auto-apply-tier in CLAUDE.md. Approving each one is friction; revert if wrong.</p>
+      </div>
+      <div class="tip dont">
+        <div class="label">Don't</div>
+        <p><strong>Don't dispatch through /studio for task work.</strong> Fixing a bug, implementing a feature, reviewing a Turnip diff — those go to <code>/chanakya</code>, <code>/achilles</code>, <code>/argus</code>. Studio is for cross-cutting or studio-itself ops only.</p>
+      </div>
+      <div class="tip do">
+        <div class="label">Do</div>
+        <p><strong>Prefer the brief-then-ship flow for non-trivial work.</strong> <code>/chanakya brief T001</code> → <code>/achilles T001</code> gives Achilles a self-contained context. Direct-to-Achilles works for quick changes; briefs scale better.</p>
+      </div>
+      <div class="tip dont">
+        <div class="label">Don't</div>
+        <p><strong>Don't write TODOs casually.</strong> Tracked deferrals use <code>TODO(#42):</code> with an issue reference. Anything else belongs in a GitHub issue or the code itself, not a comment.</p>
+      </div>
+      <div class="tip do">
+        <div class="label">Do</div>
+        <p><strong>Walk REVIEW.md before committing, not after.</strong> Findings land in the commit message and in chat. Retroactive reviews are a failure mode — the rules exist to shape the commit, not audit it.</p>
+      </div>
+      <div class="tip dont">
+        <div class="label">Don't</div>
+        <p><strong>Don't hand-roll runtime paths.</strong> Every script resolves paths via <code>scripts/lib-paths.sh</code>. Hardcoding <code>~/.dev-studio/turnip-ios/...</code> is a REVIEW R3 block.</p>
+      </div>
+      <div class="tip do">
+        <div class="label">Do</div>
+        <p><strong>Use <code>/chanakya studio-feedback</code> to improve the studio itself.</strong> Friction you hit becomes a canonical feedback record; the next generic-dev-studio session ingests it. This is the intended upgrade loop.</p>
+      </div>
+      <div class="tip dont">
+        <div class="label">Don't</div>
+        <p><strong>Don't leave worker panes open indefinitely.</strong> Between sessions run <code>scripts/fleet-cleanup.sh</code> (soft) or <code>--all</code> (full teardown). Stale locks eventually cause dispatch oddities.</p>
+      </div>
+    </div>
+
+    <h3>Minimal-intervention philosophy</h3>
+    <p>The studio is designed for unattended runs. Claude should not stop to confirm routine work. It pauses only at: Slack publish, first-time config writes, merge conflicts, and explicit <code>--wait</code> feedback windows. If you see a permission prompt mid-automation, something is off — usually a path escaping <code>~/.dev-studio/**</code>. File it as studio feedback.</p>
+
+    <h3>Token budget</h3>
+    <p>Mode packs load on demand, so a dispatch pays only for what it dispatches. Snapshots under <code>~/.dev-studio/&lt;project&gt;/.runtime/snapshots/</code> pre-warm Chanakya's status views. Away-mode caps MCPs and disables scheduled wakes. Argus scopes cross-file scans (10 neighbors × 50 lines) and caps diffs at 500 lines. None of this is a knob you normally touch — good defaults.</p>
+  </div>
+</section>
+
+<section id="paths">
+  <div class="container">
+    <h2>Paths</h2>
+    <p>All runtime state lives outside <code>~/.claude/</code> so neither agent trips self-mod prompts. Two roots:</p>
+    <table class="path-table">
+      <thead>
+        <tr><th>Root</th><th>Scope</th><th>Contains</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>~/.dev-studio/&lt;project&gt;/</code></td>
+          <td>Per-project</td>
+          <td>plans, worktrees, inboxes, debriefs, events, snapshots, locks</td>
+        </tr>
+        <tr>
+          <td><code>~/.dev-studio/.runtime/</code></td>
+          <td>Machine-global</td>
+          <td>shared machine resources (test-slot semaphore, cross-project fleet view)</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>The <code>&lt;project&gt;</code> slug defaults to the git toplevel basename; override with <code>ACHILLES_PROJECT=&lt;slug&gt;</code>. Scripts resolve paths via <code>scripts/lib-paths.sh</code> — never hardcode.</p>
+
+    <h3>Install</h3>
+    <pre><code>ln -s "$PWD/chanakya"   ~/.claude/skills/chanakya
+ln -s "$PWD/achilles"   ~/.claude/skills/achilles
+ln -s "$PWD/argus"      ~/.claude/skills/argus
+ln -s "$PWD/studio"     ~/.claude/skills/studio
+ln -s "$PWD/_shared"    ~/.claude/skills/_shared
+ln -s "$PWD/scripts"    ~/.claude/skills/scripts
+ln -s "$PWD/commands/chanakya-help.md"        ~/.claude/commands/chanakya-help.md
+ln -s "$PWD/commands/studio-help.md"          ~/.claude/commands/studio-help.md
+ln -s "$PWD/commands/pushTFBuild.md"          ~/.claude/commands/pushTFBuild.md
+ln -s "$PWD/commands/fullSendToAppStore.md"   ~/.claude/commands/fullSendToAppStore.md</code></pre>
+
+    <h3>Permissions (add to <code>~/.claude/settings.json</code>)</h3>
+    <pre><code>"Read(~/.dev-studio/**)",
+"Write(~/.dev-studio/**)",
+"Edit(~/.dev-studio/**)",
+"Bash(git *)",
+"Bash(xcodebuild:*)",
+"Bash(mkdir:*)"</code></pre>
+  </div>
+</section>
+
+<section id="extending">
+  <div class="container">
+    <h2>Extending the studio</h2>
+
+    <h3>Add a new mode pack to any router</h3>
+    <ol>
+      <li>Drop a file under <code>&lt;agent&gt;/modes/&lt;name&gt;.md</code> with frontmatter (<code>name</code>, <code>description</code>, <code>type: mode-pack</code>, <code>budget_tokens</code>, <code>reads</code>, <code>writes</code>).</li>
+      <li>Add one dispatch row to the agent's <code>SKILL.md</code> table.</li>
+      <li>Add a fixture at <code>tests/mode-packs/&lt;agent&gt;/&lt;name&gt;.yaml</code> with <code>scenario</code>, <code>failure_signals</code>, <code>success_signals</code>. Required by the Phase 2.6.6 gate — without it the linter emits <code>W_MISSING_PACK_FIXTURE</code>.</li>
+      <li>Run <code>scripts/test-mode-pack.sh &lt;agent&gt;/&lt;name&gt;</code> to validate.</li>
+    </ol>
+
+    <h3>Add a new <code>_shared</code> primitive</h3>
+    <p>Live under <code>_shared/{patterns,contracts,state-machines,schemas,primitives,rules}/</code>. A primitive earns its own file when at least two agents or two mode packs reference the same behavior. Prefer linking to a primitive over copy-pasting prose — the architecture linter catches duplicated prose past a Jaccard threshold.</p>
+
+    <h3>Add a new slash command</h3>
+    <p>Thin wrappers go under <code>commands/</code> (installable via symlink) or <code>.claude/commands/</code> (project-local). Wrappers should forward to a mode pack, not duplicate its steps.</p>
+
+    <h3>Add a new script</h3>
+    <p>All scripts MUST resolve paths via <code>scripts/lib-paths.sh</code>, be both bash and zsh compatible, and pass <code>bash -n</code>. Register in the surface manifest via <code>scripts/update-surface-manifest.sh</code>. If the script emits events, use <code>scripts/emit-event.sh</code> — don't hand-roll JSONL.</p>
+
+    <h3>Automation tiers (what Claude does silently vs. asks about)</h3>
+    <ul>
+      <li><strong>Auto-apply</strong> — rule-wording tweaks, threshold tuning backed by data, brief-template additions, skill-prose trimming, dead-code removal, GH issue creation on agreed work, README roadmap updates on releases.</li>
+      <li><strong>Ask-first</strong> — changing how agents hand off, removing/renaming rules or sub-commands, anything touching runtime behavior in the user's actual project, permission/secrets/auth changes, breaking changes, deleting issues or releases.</li>
+      <li><strong>Hard stop</strong> — auto-apply never touches the user's project's runtime behavior. Their project is sacred; the studio's conventions are negotiable.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="troubleshoot">
+  <div class="container">
+    <h2>Troubleshooting</h2>
+
+    <div class="qa">
+      <div class="q">Permission prompts mid-automation — what did I do wrong?</div>
+      <div class="a">Usually a path escaping <code>~/.dev-studio/**</code>. Check the offending script for hardcoded <code>~/.claude/</code>, <code>/tmp/</code>, or <code>$HOME</code> writes. All runtime writes must land under <code>~/.dev-studio/</code>; that root is pre-allowlisted. File as studio feedback so the router doesn't regress.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">A worker pane is stuck <code>busy</code> but nothing is running.</div>
+      <div class="a">Stale lock. Run <code>scripts/fleet-cleanup.sh</code> (soft sweep clears stale locks, old <code>done/</code>, rotates large logs) or <code>--all</code> for a full teardown — the latter refuses if any worker is still alive. The lock format is <code>mkdir + PID-token</code>, so a recycled PID won't steal the slot.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">Achilles finished a task but it never showed up in <code>/chanakya status</code>.</div>
+      <div class="a">Orphan debrief — the task completed but slipped the master plan. Run <code>scripts/backfill-orphan-debriefs.sh</code> (dry-run default) to see; add <code>--apply</code> to fix. Also surfaced as an <code>inbox_sweep_completed</code> count in the next sweep.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">Argus keeps flagging stale-base merges.</div>
+      <div class="a">Achilles Step 8.4 runs <code>scripts/achilles-refresh-base.sh</code> pre-Argus, which fetches and merges base; stale-merge blocks usually resolve in-flight. If they persist, check for merge conflicts that need manual resolution, then re-run Argus.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">How do I pause Argus for a task?</div>
+      <div class="a"><code>scripts/waive-start.sh argus "&lt;reason&gt;" "&lt;sunset_trigger&gt;"</code> — opens a structured pause with an accumulated-skip counter surfaced in the SessionStart banner. Lift with <code>scripts/waive-lift.sh argus</code>. Waives are visible by design; they shouldn't be quiet.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">SessionStart bootstrap didn't fire — context looks empty.</div>
+      <div class="a">The <code>hooks/session-start</code> Claude Code hook injects router-bootstrap context on <code>startup|resume|clear|compact</code>. If it's missing, verify the hook is registered in <code>~/.claude/settings.json</code> and the path is correct. A fallback prose-preamble is on the Phase 2.6.6 roadmap.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">Event log day rolled over mid-sweep — will I lose state?</div>
+      <div class="a">No. The offset marker is a <code>(filename, byte)</code> tuple, so Chanakya re-reads the new day's file from 0 when the byte offset exceeds the new file size. Atomic rotation is safe mid-read.</div>
+    </div>
+  </div>
+</section>
+
+<section id="links">
+  <div class="container">
+    <h2>Links</h2>
+    <ul>
+      <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio">Repository</a> — source, issues, releases</li>
+      <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues">Open issues</a> — actionable backlog</li>
+      <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/releases">Releases</a> — version history + migration notes</li>
+      <li><a class="inline" href="../README.md">README.md</a> — install, 30-second overview, command surface</li>
+      <li><a class="inline" href="../chanakya/docs.html">Chanakya + Achilles docs</a> — agent-level command reference with examples</li>
+      <li><a class="inline" href="../ROADMAP.md">ROADMAP.md</a> — phase sequence + long-term vision</li>
+      <li><a class="inline" href="../ARCHITECTURE.md">ARCHITECTURE.md</a> — design vision + host-agnosticism principle</li>
+      <li><a class="inline" href="../REVIEW.md">REVIEW.md</a> — review rulebook</li>
+      <li><a class="inline" href="../RELEASES.md">RELEASES.md</a> — release conventions</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>Generic Dev Studio — <a href="https://github.com/v-i-s-h-a-l/generic-dev-studio">github.com/v-i-s-h-a-l/generic-dev-studio</a> — MIT</p>
+  </div>
+</footer>
+
+</body>
+</html>

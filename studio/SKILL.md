@@ -1,6 +1,6 @@
 ---
 name: studio
-description: "Cross-agent studio router. Handles studio-level operations that span agents or concern the project's own conventions (not the user's iOS project). Tier 1 sub-commands: resume-plan, review, release, ingest. Do NOT use for task-level work — that goes to /chanakya, /achilles, /argus."
+description: "Cross-agent studio router. Handles studio-level operations that span agents or concern the project's own conventions (not the user's iOS project). Tier 1 sub-commands: resume-plan, review, release, ingest, help. Do NOT use for task-level work — that goes to /chanakya, /achilles, /argus."
 type: agent-router
 ---
 
@@ -22,6 +22,7 @@ Task-level work on the user's iOS project (`/chanakya`, `/achilles`, `/argus` ow
 | `review` / "review this diff" / "any issues?" / "check this" | `modes/review.md` |
 | `release` / "draft release notes" / "what's new" / "should we tag?" | `modes/release.md` |
 | `ingest` / "ingest this" / studio-flavored capture outside chanakya's inbox | `modes/ingest.md` |
+| `help` / `/studio-help` / "show me the docs" / "how does this work?" | `modes/help.md` |
 
 Tier 2 modes (not shipped today; spawn on demand): `backlog` (gh issue triage), `audit` (architecture audit run), `scaffold` (new mode pack / primitive scaffold).
 

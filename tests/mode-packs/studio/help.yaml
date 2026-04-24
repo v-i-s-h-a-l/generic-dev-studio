@@ -1,0 +1,29 @@
+# Skill-testing fixture for studio/modes/help.md
+# Proves: mode opens studio/docs.html (not a generic help dump) and does not
+# load the HTML contents into context.
+schema: 1
+pack: studio/modes/help.md
+scenario: |
+  The user says "show me the studio docs" with no prior context. Describe:
+    1. What exact command does the mode run to fulfill this request?
+    2. Which file does it open?
+    3. Does the mode read the HTML contents into the session context? Why or why not?
+    4. What does the mode tell the user after opening?
+    5. If the docs file is missing, what does the mode do?
+failure_signals:
+  # Without the mode pack, subagent will answer generically about Claude or
+  # try to enumerate the docs inline.
+  - "(?i)^\\s*(here.?s|let me) (explain|tell you) how claude"
+  - "(?i)(read|load|open|display) .*docs\\.html.*(contents|into|inline)"
+  - "(?i)(cat|head|tail|Read tool) .*docs\\.html"
+success_signals:
+  - "(?i)open .*studio/docs\\.html"
+  - "(?i)(default browser|browser)"
+  - "(?i)not (read|load) .*context"
+  - "(?i)(missing|not found|doesn.?t exist)"
+notes: |
+  The load-bearing property is that `docs.html` is rendered by the browser,
+  not read into the session. A subagent without the mode pack will often
+  Read the HTML and paste it inline — that defeats the purpose (token cost
+  + worse UX than the rendered page). The mode's budget is 300 tokens
+  precisely because it should never touch the file contents.

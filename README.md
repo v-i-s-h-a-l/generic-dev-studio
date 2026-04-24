@@ -41,6 +41,14 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 ## TL;DR
 
 ```
+# Studio router — cross-agent / studio-level ops (not task work)
+/studio resume-plan              # "where were we" — load ROADMAP + ARCHITECTURE + pending memory
+/studio review                   # walk REVIEW.md against the pending diff
+/studio release                  # draft release notes per RELEASES.md (never auto-tags)
+/studio ingest                   # capture studio-level patterns / rule-tweak proposals
+/studio help                     # open the studio docs page in your browser
+/studio-help                     # slash-command shortcut for /studio help
+
 /argus                           # review current worktree (auto-invoked by Achilles pre-merge)
 /argus T001                      # review a specific task's worktree standalone
 /chanakya                        # describe features → get a master plan
@@ -115,8 +123,15 @@ chanakya/
 achilles/
   SKILL.md         # worker agent — isolated execution pipeline + Argus pre-merge gate
 
+studio/
+  SKILL.md         # cross-agent router — studio-level ops (resume-plan, review, release,
+                   #   ingest, help); not for task work
+  modes/           # Tier-1 mode packs — resume-plan, review, release, ingest, help
+  docs.html        # studio docs page — capabilities, workflows, tips, troubleshooting
+
 commands/
-  chanakya-help.md      # /chanakya-help — opens docs.html in browser
+  chanakya-help.md      # /chanakya-help — opens chanakya docs.html in browser
+  studio-help.md        # /studio-help — opens studio docs.html in browser
   pushTFBuild.md        # /pushTFBuild — archive + upload to TestFlight
   fullSendToAppStore.md # /fullSendToAppStore — submit build to App Store review
 
@@ -175,8 +190,10 @@ _shared/                # reusable primitives (symlinked from ~/.claude/skills/_
 ln -s "$PWD/chanakya"   ~/.claude/skills/chanakya
 ln -s "$PWD/achilles"   ~/.claude/skills/achilles
 ln -s "$PWD/argus"      ~/.claude/skills/argus
+ln -s "$PWD/studio"     ~/.claude/skills/studio
 ln -s "$PWD/_shared"    ~/.claude/skills/_shared
 ln -s "$PWD/commands/chanakya-help.md"        ~/.claude/commands/chanakya-help.md
+ln -s "$PWD/commands/studio-help.md"          ~/.claude/commands/studio-help.md
 ln -s "$PWD/commands/pushTFBuild.md"          ~/.claude/commands/pushTFBuild.md
 ln -s "$PWD/commands/fullSendToAppStore.md"   ~/.claude/commands/fullSendToAppStore.md
 ln -s "$PWD/scripts"   ~/.claude/skills/scripts    # required for /achilles worker mode
@@ -188,6 +205,7 @@ ln -s "$PWD/scripts"   ~/.claude/skills/scripts    # required for /achilles work
 cp -r argus/     ~/.claude/skills/argus/
 cp -r chanakya/  ~/.claude/skills/chanakya/
 cp -r achilles/  ~/.claude/skills/achilles/
+cp -r studio/    ~/.claude/skills/studio/
 cp -r _shared/   ~/.claude/skills/_shared/
 cp commands/*.md ~/.claude/commands/
 cp -r scripts/   ~/.claude/skills/scripts/         # required for /achilles worker mode
@@ -294,7 +312,9 @@ See `scripts/README.md` for the full on-disk layout, env vars (`ACHILLES_PROJECT
 
 ## Docs
 
-Interactive docs page: [`chanakya/docs.html`](chanakya/docs.html) — or run `/chanakya-help` from inside Claude Code.
+**Studio-level docs** (capabilities, workflows, tips, troubleshooting): [`studio/docs.html`](studio/docs.html) — or run `/studio-help` (alias: `/studio help`) from inside Claude Code.
+
+**Agent-level command reference** (Chanakya + Achilles + Argus): [`chanakya/docs.html`](chanakya/docs.html) — or run `/chanakya-help`.
 
 Long-form user walkthrough with examples: [`chanakya/README.md`](chanakya/README.md).
 
