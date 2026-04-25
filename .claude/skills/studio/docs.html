@@ -324,6 +324,7 @@
 /studio review            # walk REVIEW.md against the pending diff
 /studio release           # draft release notes per RELEASES.md
 /studio audit             # plan ↔ memory ↔ commits drift check
+/studio analyze [proj]    # sweep studio-feedback inbox + event logs for &lt;proj&gt;
 /studio guard "topic"     # has this work been done before?
 /studio-setup             # open the machine-setup guide (manager / worker / dual)
 /studio-help              # open this docs page</code></pre>
@@ -384,6 +385,11 @@
         <code>/studio audit</code>
         <div class="triggers">"audit the arc", "check plan drift" — also auto-runs on SessionStart</div>
         <div class="what">Three grep-only probes. <strong>A1</strong> decision-ledger consistency (ROADMAP phases ↔ memory pointers). <strong>A2</strong> claim-evidence (phases marked ✓ must cite a commit / tag / issue / file path / metric — R10 Iron Law at the plan layer). <strong>A3</strong> arc-exit checklist (arcs marked CLOSED must have empty parking-lot and no pending-questions memory files). Silent when clean.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio analyze [&lt;project&gt;]</code>
+        <div class="triggers">"analyze logs and feedback", "sweep the studio-feedback inbox", "what patterns are showing up?"</div>
+        <div class="what">Sweeps the studio-feedback inbox at <code>~/.dev-studio/generic-dev-studio/feedback-inbox/&lt;source&gt;/</code> + the project's event-log shards (<code>events/*.jsonl</code>, ≥ 2026-04-17). Distinct from <code>ingest</code> (single-input classify); analyze is a queue/log sweep. Detailed citations land in a private report at <code>~/.dev-studio/&lt;project&gt;/analysis/&lt;today&gt;.md</code> (never committed); scrubbed abstract patterns become GH issues; trivial rule tweaks auto-apply per CLAUDE.md. Surfaces skipped/malformed records explicitly. Strictly studio-only — never falls through to chanakya project queues.</div>
       </div>
       <div class="mode-card">
         <code>/studio guard "&lt;topic&gt;"</code>
