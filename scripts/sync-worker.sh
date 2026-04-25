@@ -79,7 +79,11 @@ TIMEOUT_BIN=""
 command -v gtimeout >/dev/null 2>&1 && TIMEOUT_BIN="gtimeout 30"
 command -v timeout  >/dev/null 2>&1 && [ -z "$TIMEOUT_BIN" ] && TIMEOUT_BIN="timeout 30"
 
-ssh_exec() { $TIMEOUT_BIN ssh "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" "$@"; }
+# Non-interactive SSH bypasses login-shell init, so PATH excludes /opt/homebrew/bin
+# (Apple Silicon) and /usr/local/bin (Intel) — brew tools probe as missing even
+# when installed. Load brew's shellenv on the remote before running the command.
+SHELLENV_PRELUDE='[ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv)"; [ -x /usr/local/bin/brew ] && eval "$(/usr/local/bin/brew shellenv)";'
+ssh_exec() { $TIMEOUT_BIN ssh "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" "$SHELLENV_PRELUDE $*"; }
 
 # Reachability bound up-front. Don't pretend we synced if we can't even talk.
 if ! $TIMEOUT_BIN ssh "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" true >/dev/null 2>&1; then
