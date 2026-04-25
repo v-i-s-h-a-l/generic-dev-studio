@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Studio — Adding a worker node</title>
+<title>Studio — Onboarding a machine (manager / worker / dual)</title>
 <style>
   :root {
     --bg: #0d1117;
@@ -259,9 +259,9 @@
 
 <header class="hero">
   <div class="container">
-    <h1>Adding a <span class="studio-name">worker node</span></h1>
-    <p class="tagline">Onboard a headless Mac (mini, studio, any future host) so the studio can dispatch compile + test work to it over SSH — and free the laptop for editing.</p>
-    <p class="subtagline">Host-agnostic. ~20 minutes end-to-end, ~5 minutes hands-on.</p>
+    <h1>Onboarding a <span class="studio-name">machine</span></h1>
+    <p class="tagline">One unified wizard — <code>scripts/bootstrap.sh</code> — for any role: <strong>manager</strong> (primary, runs agents), <strong>worker</strong> (headless worker), or <strong>dual</strong> (rare; both).</p>
+    <p class="subtagline">Host-agnostic. Agents-only is just "manager with no workers registered" — same wizard, fewer steps.</p>
   </div>
 </header>
 
@@ -284,52 +284,83 @@
 <!-- TL;DR ============================================================== -->
 <section id="tldr">
   <div class="container">
-    <h2>TL;DR — the one-shot path</h2>
-    <p>On the Mac you're onboarding, clone this repo and run the interactive wizard. It walks you through every step below — auto-runs what can be automated, pauses for the manual bits (Xcode install, Tailscale browser login, laptop-pubkey paste), and finishes by printing the exact <code>nodes.json</code> entry to copy to your laptop.</p>
+    <h2>TL;DR</h2>
+    <p>On any machine you want to onboard, clone this repo and run the unified wizard. It asks your role up-front, walks the relevant steps, auto-runs what can be automated, pauses for the manual bits (Xcode install, Tailscale browser login, pubkey paste), and ends with a summary + next-step hint.</p>
     <pre><code>git clone https://github.com/v-i-s-h-a-l/generic-dev-studio.git ~/studio-tmp
 cd ~/studio-tmp
-./scripts/bootstrap-node.sh</code></pre>
+./scripts/bootstrap.sh                       # interactive
+./scripts/bootstrap.sh --role worker --yes    # fully non-interactive
+./scripts/bootstrap.sh --dry-run             # preview only — no mutations</code></pre>
 
-    <p>The wizard handles 8 steps in order:</p>
+    <h3>The three roles</h3>
+    <div class="mode-grid">
+      <div class="mode-card">
+        <code>manager</code>
+        <div class="triggers">primary · runs agents · dispatches</div>
+        <div class="what">Your main dev machine. Runs <code>/chanakya /achilles /argus</code> inside a Claude Code session. Holds the iOS project. Dispatches build + test work to registered workers. "Agents-only" use is just manager with zero workers registered — same flow.</div>
+      </div>
+      <div class="mode-card">
+        <code>worker</code>
+        <div class="triggers">headless · accepts SSH</div>
+        <div class="what">A Mac mini / Mac Studio / spare Mac dedicated as a build box. No agents, no editor, no shell profile. Exists to absorb compile + test cost so the manager stays responsive.</div>
+      </div>
+      <div class="mode-card">
+        <code>dual</code>
+        <div class="triggers">rare · agents + accepts</div>
+        <div class="what">Machine that runs agents AND appears in a manager's worker registry (its own, or another manager's). Use only if you know you want it.</div>
+      </div>
+    </div>
+
+    <h3>What the wizard does</h3>
     <ol class="steps">
       <li>
-        <div class="step-title">Node identity <span class="badge auto">auto</span></div>
-        <div class="step-body">Defaults id from hostname; you confirm and pick which roles this node can serve.</div>
-      </li>
-      <li>
-        <div class="step-title">Tailscale <span class="badge mixed">mixed</span></div>
-        <div class="step-body">Detects + offers to install via brew; you do the one-time browser sign-in.</div>
-      </li>
-      <li>
-        <div class="step-title">SSH (Remote Login) <span class="badge auto">auto</span></div>
-        <div class="step-body"><code>sudo systemsetup -setremotelogin on</code> — prompts for your sudo password once.</div>
-      </li>
-      <li>
-        <div class="step-title">Laptop pubkey <span class="badge mixed">mixed</span></div>
-        <div class="step-body">You paste it from the laptop (<code>cat ~/.ssh/id_ed25519.pub</code>); the wizard appends to <code>authorized_keys</code> with correct perms.</div>
-      </li>
-      <li>
-        <div class="step-title">Xcode toolchain <span class="badge mixed">mixed</span></div>
-        <div class="step-body">Detects + offers <code>xcode-select --install</code> for CLT; flags missing <code>Xcode.app</code> if role <code>xcodebuild</code> was picked.</div>
+        <div class="step-title">Preflight + role + identity <span class="badge auto">auto</span></div>
+        <div class="step-body">macOS check, architecture detect (Apple Silicon / Intel), repo-location detect, machine-id capture, role selection (skippable via <code>--role</code>).</div>
       </li>
       <li>
         <div class="step-title">Homebrew + packages <span class="badge auto">auto</span></div>
-        <div class="step-body">Offers to install brew, then <code>jq rsync coreutils fswatch git</code>. Skips anything already present.</div>
+        <div class="step-body">Installs brew + role-specific deps. For every tool already present: <strong>keep / upgrade / reinstall / skip</strong>. Non-interactive mode keeps all by default.</div>
       </li>
       <li>
-        <div class="step-title"><code>pmset</code> keep-awake <span class="badge auto">auto</span></div>
-        <div class="step-body">Applies the recommended no-sleep settings. Asks if it's an always-on box and points at the extra flags if so.</div>
+        <div class="step-title">Studio repo + agent skills <span class="badge auto">auto</span> <span class="triggers">manager · dual</span></div>
+        <div class="step-body">Runs <code>install.sh</code> to symlink agents + slash commands into <code>~/.claude/</code>. Idempotent. Optional contributor git hooks.</div>
       </li>
       <li>
-        <div class="step-title">Emit registration <span class="badge auto">auto</span></div>
-        <div class="step-body">Prints the exact <code>nodes.json</code> entry for your laptop — pre-filled with detected hostname, user, roles — plus the verify commands.</div>
+        <div class="step-title">SSH identity <span class="badge mixed">mixed</span></div>
+        <div class="step-body"><strong>manager:</strong> detects existing keypair, offers ed25519 generation. <strong>worker:</strong> enables Remote Login, accepts one or more manager pubkeys pasted in.</div>
+      </li>
+      <li>
+        <div class="step-title">Tailscale <span class="badge mixed">mixed</span></div>
+        <div class="step-body">Detects + offers to install via brew; you do the browser sign-in. Manager gets an optional recommended ACL scaffold for the Tailnet admin console.</div>
+      </li>
+      <li>
+        <div class="step-title"><code>pmset</code> keep-awake <span class="badge auto">auto</span> <span class="triggers">worker · dual</span></div>
+        <div class="step-body">Applies no-sleep settings. Asks if it's an always-on box and points at the extra flags if so.</div>
+      </li>
+      <li>
+        <div class="step-title">Git config + Xcode <span class="badge mixed">mixed</span></div>
+        <div class="step-body">Confirms <code>git user.name/email</code> (manager). Detects Xcode / CLT, flags missing <code>Xcode.app</code> when role <code>xcodebuild</code> is picked.</div>
+      </li>
+      <li>
+        <div class="step-title">Registration <span class="badge auto">auto</span></div>
+        <div class="step-body"><strong>worker:</strong> emits the exact <code>nodes.json</code> entry (with <code>machine_id</code>) to paste on your manager. <strong>manager:</strong> creates <code>nodes.json</code> skeleton if missing.</div>
+      </li>
+      <li>
+        <div class="step-title">Self-test + summary <span class="badge auto">auto</span></div>
+        <div class="step-body">Role-specific health checks + pass/fail count + next-step hint. Every run logged under <code>~/.dev-studio/.runtime/logs/bootstrap-&lt;ts&gt;.log</code>.</div>
       </li>
     </ol>
     <div class="callout">
-      <strong>Dry-run first?</strong> <code>./scripts/bootstrap-node.sh --dry-run</code> walks through the same prompts but won't execute any mutation (no sudo, no brew install, no pubkey append). Good for scanning what'll happen before committing.
+      <strong>Dry-run first.</strong> <code>./scripts/bootstrap.sh --dry-run</code> walks all prompts but skips every mutation. Scan what'll happen before committing.
     </div>
     <div class="callout">
-      <strong>No fallback footgun.</strong> Every step of this setup is opt-in. If you skip it entirely, <code>node-pick</code> returns <code>local</code> and all dispatches run on the laptop — identical to pre-onboarding behaviour.
+      <strong>Non-interactive mode.</strong> <code>--yes --role=&lt;role&gt;</code> takes defaults for every prompt. Useful for re-provisioning scripts, CI, scripted fleet expansion. <code>--id</code> and <code>--worker-roles</code> override specific values.
+    </div>
+    <div class="callout">
+      <strong>Re-runnable.</strong> Going agents-only → adding a worker later is just a re-run on each machine. Wizard detects current state and prompts only for the delta.
+    </div>
+    <div class="callout">
+      <strong>No fallback footgun.</strong> If you skip all of it, <code>node-pick</code> returns <code>local</code> and every dispatch runs on the manager — identical to pre-onboarding behaviour.
     </div>
   </div>
 </section>
