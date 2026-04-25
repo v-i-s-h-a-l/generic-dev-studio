@@ -16,7 +16,10 @@
 #                    under ~/.dev-studio/.runtime/derived-data/ whose worktree
 #                    no longer exists, and locks/xcodebuild.lock whose pid
 #                    file points at a dead process. PID-gated, not time-gated.
-#   all              Run all five in order.
+#   ui-evidence      Prune AXe a11y-tree snapshots under ui-evidence/
+#                    per task-state retention rules (7d default,
+#                    48h for approved-and-merged tasks).
+#   all              Run all six in order.
 #
 # --all-projects iterates list_fleet_projects and re-execs per project. Cannot
 # be combined with subcommands that aren't `all` or `local-debt` — those are
@@ -53,7 +56,7 @@ done
 
 SUBCMD="${1:-}"
 case "$SUBCMD" in
-  worktrees|feedback-assets|orphan-assets|scaling-alerts|local-debt|all) ;;
+  worktrees|feedback-assets|orphan-assets|scaling-alerts|local-debt|ui-evidence|all) ;;
   "") printf 'usage: sweep-janitor.sh [--dry-run] [--all-projects] <worktrees|feedback-assets|orphan-assets|scaling-alerts|local-debt|all>\n' >&2; exit 2 ;;
   *)  printf 'unknown subcommand: %s\n' "$SUBCMD" >&2; exit 2 ;;
 esac
@@ -119,8 +122,8 @@ safe_delete() {
 safe_delete_global() {
   local target="$1"
   case "$target" in
-    "$RUNTIME_GLOBAL"/derived-data/*) ;;
-    *) printf 'safe_delete_global: refusing to delete %s (outside %s/derived-data/)\n' "$target" "$RUNTIME_GLOBAL" >&2; return 1 ;;
+    "$RUNTIME_GLOBAL"/derived-data/*|"$RUNTIME_GLOBAL"/ui-evidence/*) ;;
+    *) printf 'safe_delete_global: refusing to delete %s (outside allowed global paths)\n' "$target" "$RUNTIME_GLOBAL" >&2; return 1 ;;
   esac
   local size=0
   if [ -d "$target" ]; then
@@ -309,18 +312,72 @@ sweep_local_debt() {
   fi
 }
 
+# AXe ui-evidence retention per #182. Snapshots live under either the
+# project root or runtime-global (argus-axe-verify.sh writes to whichever
+# resolves). Retention:
+#   7d+        → always sweep (covers orphans and all final states)
+#   48h–7d     → sweep only if task approved or merged (no longer evidentiary)
+#   <48h       → retain
+sweep_ui_evidence() {
+  local root deleted=0 retained=0
+  local events_dir="$PROJECT_ROOT/events"
+
+  for root in "$PROJECT_ROOT/ui-evidence" "$RUNTIME_GLOBAL/ui-evidence"; do
+    [ -d "$root" ] || continue
+    for d in "$root"/*/; do
+      [ -d "$d" ] || continue
+      local task_id m age_s
+      task_id=$(basename "$d")
+      m=$(mtime "$d" 2>/dev/null || echo 0)
+      age_s=$(( now_s - m ))
+
+      if [ "$age_s" -ge 604800 ]; then
+        case "$root" in
+          "$PROJECT_ROOT"/*) safe_delete "$d" ui-evidence-expired || true ;;
+          *)                 safe_delete_global "$d" || true ;;
+        esac
+        deleted=$((deleted + 1))
+        continue
+      fi
+
+      if [ "$age_s" -ge 172800 ] && [ -d "$events_dir" ]; then
+        if grep -q "$task_id" "$events_dir"/*.jsonl 2>/dev/null &&
+           grep "$task_id" "$events_dir"/*.jsonl 2>/dev/null \
+             | grep -q '"review_approved"\|"task_merged"'; then
+          case "$root" in
+            "$PROJECT_ROOT"/*) safe_delete "$d" ui-evidence-approved || true ;;
+            *)                 safe_delete_global "$d" || true ;;
+          esac
+          deleted=$((deleted + 1))
+          continue
+        fi
+      fi
+
+      retained=$((retained + 1))
+    done
+  done
+
+  if [ "$deleted" -gt 0 ] || [ "$retained" -gt 0 ]; then
+    printf 'ui-evidence: deleted=%d retained=%d\n' "$deleted" "$retained" >&2
+    emit_event_keyed chanakya janitor ui_evidence_swept "" \
+      "{\"deleted\":$deleted,\"retained\":$retained}" >/dev/null 2>&1 || true
+  fi
+}
+
 case "$SUBCMD" in
   worktrees)        sweep_worktrees ;;
   feedback-assets)  sweep_feedback_assets ;;
   orphan-assets)    sweep_orphan_assets ;;
   scaling-alerts)   sweep_scaling_alerts ;;
   local-debt)       sweep_local_debt ;;
+  ui-evidence)      sweep_ui_evidence ;;
   all)
     sweep_worktrees
     sweep_feedback_assets
     sweep_orphan_assets
     sweep_scaling_alerts
     sweep_local_debt
+    sweep_ui_evidence
     ;;
 esac
 
