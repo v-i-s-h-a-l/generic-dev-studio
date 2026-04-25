@@ -1,7 +1,9 @@
 ---
 name: argus
+description: Reviewer agent for the Turnip iOS codebase. Two-stage review (spec-compliance then code-quality) between Achilles self-review and merge. See routing.yaml for the slash-command surface.
+type: agent-router
+schema_version: 1
 version: 1.1.0
-description: "Reviewer agent for the Turnip iOS codebase. Runs between Achilles self-review and merge in TWO stages: spec-compliance (does the diff match the brief?) then code-quality (cross-file regression, edge cases, secrets, staleness, tests). Stage 2 runs iff Stage 1 is approved|flagged; blocked at Stage 1 skips Stage 2. Invoked automatically by Achilles pre-merge, or standalone with /argus [<task-id>] (runs both) or /argus <stage> [<task-id>] (runs one). XS-trivial diffs skip Argus entirely."
 transition_notes: _shared/patterns/dual-write-transition.md
 budget_tokens: 400
 ---

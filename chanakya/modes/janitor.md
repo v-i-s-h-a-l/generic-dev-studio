@@ -2,6 +2,7 @@
 name: Chanakya Janitor
 description: Project-scoped janitor — runs sweep-janitor + fleet-cleanup for the active project, including the gap-#31 local-debt pass (merged worktrees, orphan DerivedData, dead-pid xcodebuild locks). Default is dry-run; --apply commits the deletions.
 type: mode-pack
+schema_version: 1
 budget_tokens: 500
 snapshots: []
 reads: []

@@ -2,6 +2,7 @@
 name: Achilles Group
 description: Composite group mode (`/achilles group <task-id>`). Executes the implementation task, then auto-continues with its test sub-tasks sequentially — all in one session. Phased: unit → integration → UI. Bails at the first unrecoverable failure with a partial debrief.
 type: mode-pack
+schema_version: 1
 snapshots: []
 budget_tokens: 1500
 reads:

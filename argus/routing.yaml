@@ -1,0 +1,15 @@
+schema_version: 1
+name: argus
+invocation:
+  slash_command: "/argus"
+  triggers:
+    - "/argus"
+    - "/argus <task-id>"
+    - "/argus spec-compliance [<task-id>]"
+    - "/argus code-quality [<task-id>]"
+    - "review the worktree"
+    - "run two-stage review"
+domains:
+  - turnip-ios
+  - review
+  - quality-gates

@@ -1,7 +1,8 @@
 ---
-name: Chanakya Review (PRD delta)
-description: Explicit `/chanakya review` sub-command — user pastes updated PRD and Chanakya diffs it against the current master plan / task index, marking affected tasks as `needs-rework`, regenerating stale briefs, and adding new task entries for new requirements. The pre-dispatch inbox sweep (Steps 0A–0G) has moved to `modes/inbox-sweep.md` — this mode pack only loads when the user explicitly runs `/chanakya review`.
+name: Chanakya Review
+description: `/chanakya review` — user pastes updated PRD; Chanakya diffs against the master plan, marks affected tasks `needs-rework`, regenerates stale briefs, adds new task entries. Pre-dispatch inbox sweep moved to modes/inbox-sweep.md.
 type: mode-pack
+schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [briefs.json]
 budget_tokens: 800

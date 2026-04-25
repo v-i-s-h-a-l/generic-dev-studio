@@ -2,6 +2,7 @@
 name: Chanakya Ship
 description: Brief + dispatch composite. Resolves targets, checks debt gates, briefs pending tasks, phases dispatch (fleet mode via work-stealing queue; single-session prints commands).
 type: mode-pack
+schema_version: 1
 snapshots: [briefs.json, debt.json]
 budget_tokens: 2500
 reads:

@@ -1,0 +1,35 @@
+schema_version: 1
+name: chanakya
+invocation:
+  slash_command: "/chanakya"
+  triggers:
+    - "/chanakya"
+    - "/chanakya status"
+    - "/chanakya intake"
+    - "/chanakya brief <task-id>"
+    - "/chanakya brief-all"
+    - "/chanakya brief-review <task-id>"
+    - "/chanakya review"
+    - "/chanakya sweep"
+    - "/chanakya update"
+    - "/chanakya test-manifest"
+    - "/chanakya test-flow"
+    - "/chanakya review-feedback"
+    - "/chanakya compact"
+    - "/chanakya sync-slack"
+    - "/chanakya ship <target>"
+    - "/chanakya sweep-debt"
+    - "/chanakya verify"
+    - "/chanakya janitor"
+    - "/chanakya ingest-thread <channel> <ts>"
+    - "/chanakya ingest-dm <user>"
+    - "/chanakya ingest-slack"
+    - "/chanakya report-design"
+    - "/chanakya report-product"
+    - "/chanakya feedback-archive"
+    - "/chanakya feedback-history"
+domains:
+  - turnip-ios
+  - planning
+  - feedback
+  - releases

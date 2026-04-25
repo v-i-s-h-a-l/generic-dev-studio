@@ -1,7 +1,8 @@
 ---
 name: Achilles Task
-description: Execution pipeline for brief-based and direct-mode work. Handles all task types (feature / bugfix / refactor / test-unit / test-integration / test-ui / test-tdd / debug) through the shared Step 1–11 pipeline, including size-driven build gate, mandatory Argus pre-merge review, merge-lock serialization, and debrief.
+description: Execution pipeline for brief-based and direct-mode work. Handles every task type (feature / bugfix / refactor / test-* / debug) via the shared Step 1–11 pipeline — size-driven build gate, mandatory Argus pre-merge, merge-lock, debrief.
 type: mode-pack
+schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: []
 budget_tokens: 2700

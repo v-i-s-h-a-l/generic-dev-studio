@@ -2,6 +2,7 @@
 name: Studio Release
 description: Draft release notes per `RELEASES.md` template, evaluate if the repo has crossed a release-worthy threshold, and update README's Mermaid timeline + Story so far when a release actually ships. Never auto-tags.
 type: mode-pack
+schema_version: 1
 budget_tokens: 1000
 snapshots: []
 reads:

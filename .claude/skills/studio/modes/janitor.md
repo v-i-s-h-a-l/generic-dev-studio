@@ -2,6 +2,7 @@
 name: Studio Janitor
 description: Cross-project janitor — fans out sweep-janitor + fleet-cleanup across every project under ~/.dev-studio/. Reports counts/bytes per project. Default is dry-run; --yes actually deletes.
 type: mode-pack
+schema_version: 1
 budget_tokens: 350
 snapshots: []
 reads:

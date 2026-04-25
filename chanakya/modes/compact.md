@@ -2,6 +2,7 @@
 name: Chanakya Compact
 description: Archive verified tasks, regenerate Dashboard + Module Index + Blocked list, trim changelog, optionally sweep artifacts. Includes implicit feedback-archive + index regeneration.
 type: mode-pack
+schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [briefs.json]
 budget_tokens: 3500

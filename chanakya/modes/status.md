@@ -2,6 +2,7 @@
 name: Chanakya Status
 description: Default mode. Renders master-plan summary, git state, blockers, push queue, test-flow round status, and release status.
 type: mode-pack
+schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [briefs.json, debt.json, feedback-inbox.json, events-tail.json]
 budget_tokens: 1500

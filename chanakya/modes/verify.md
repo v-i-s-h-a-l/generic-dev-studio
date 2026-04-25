@@ -2,6 +2,7 @@
 name: Chanakya Verify
 description: Guided single-sitting verification flow. Chains test-flow generation, user testing, then promotes + applies feedback.
 type: mode-pack
+schema_version: 1
 snapshots: []
 budget_tokens: 1500
 reads:

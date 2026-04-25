@@ -1,7 +1,8 @@
 ---
 name: Chanakya Brief-Review
-description: Checklist-driven quality pass over an authored brief before dispatch. Warn-tier, not block — ships even when findings exist. Catches the class of brief defects that cascade into rework (prescriptive wrong tech, ambiguous terminology, deliverable-path collisions, task-ID leakage in acceptance, missing concurrency/memory/crash-recovery constraints). Runs standalone via `/chanakya brief-review <task-id>`; not auto-invoked.
+description: Checklist-driven quality pass over an authored brief before dispatch. Warn-tier, not block — ships even with findings. Catches brief defects that cascade into rework. Runs standalone via `/chanakya brief-review <task-id>`; not auto-invoked.
 type: mode-pack
+schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 budget_tokens: 1200
 snapshots: []

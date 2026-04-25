@@ -2,6 +2,7 @@
 name: Achilles Build
 description: Manual build verification (`/achilles build`). One command: green resets the debt counter on Chanakya's next sweep; red auto-bisects to name the breaking commit and files a P0 fix task. No brief required. Never prompts the user.
 type: mode-pack
+schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: []
 budget_tokens: 2500

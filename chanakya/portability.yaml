@@ -1,0 +1,9 @@
+schema_version: 1
+hosts:
+  - claude-code
+scope: global
+incompatible:
+  codex: "Chanakya-on-Codex is tracked under #141 — orchestrator-side host portability arc. Today Chanakya assumes Claude Code's slash-command + skill-routing surface for many sub-commands; widening to Codex requires the orchestrator portability work."
+notes: |
+  Achilles + Argus are host-portable as of host-agnostic-workers-v1 (#88
+  shipped 2026-04-24). Chanakya's portability is the next milestone.

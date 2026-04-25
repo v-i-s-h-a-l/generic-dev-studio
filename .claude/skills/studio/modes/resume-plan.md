@@ -2,6 +2,7 @@
 name: Studio Resume-Plan
 description: Report where the studio's multi-session architecture arc is, and ask any pending questions the previous session left. Authoritative procedure — the thin `.claude/commands/resume-plan.md` slash command forwards to this mode.
 type: mode-pack
+schema_version: 1
 budget_tokens: 800
 snapshots: []
 reads:

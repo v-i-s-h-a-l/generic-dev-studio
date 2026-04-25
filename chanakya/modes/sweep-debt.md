@@ -2,6 +2,7 @@
 name: Chanakya Sweep-Debt
 description: Identify and dispatch all pending debt-reduction tasks (test sub-tasks + build checks) in one command.
 type: mode-pack
+schema_version: 1
 snapshots: [briefs.json, debt.json]
 budget_tokens: 2000
 reads:

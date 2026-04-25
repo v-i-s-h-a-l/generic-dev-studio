@@ -1,7 +1,8 @@
 ---
 name: Chanakya Inbox Sweep
-description: Pre-dispatch inbox sweep procedure. Runs Steps 0A–0G before every Chanakya mode — regular task debriefs (task-mode + direct-debrief), manual-build-check debriefs, release debriefs, App Store watcher, threshold actions, stale-artifact janitor, event log processing, feedback reminders, blind-spot detection, studio-feedback ingestion. Split out of modes/review.md on 2026-04-22 so non-review invocations don't pay for PRD-delta prose they never use.
+description: Pre-dispatch inbox sweep — Steps 0A–0G run before every Chanakya mode (debriefs, App Store watcher, threshold actions, janitor, event log, feedback reminders, blind-spot detection, studio-feedback ingest). Split out of modes/review.md on 2026-04-22.
 type: mode-pack
+schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [debt.json, events-tail.json, feedback-inbox.json]
 budget_tokens: 1500

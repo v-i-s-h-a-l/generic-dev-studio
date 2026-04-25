@@ -29,6 +29,18 @@ scripts/install-skill-launchagent.sh
 
 This renders `com.dev-studio.skill-fanout.plist.template` with your repo path + `$HOME` + an auto-detected `WatchPaths` list, writes the plist to `~/Library/LaunchAgents/`, and `launchctl load`s it. Re-running is idempotent: byte-identical plist → no-op. WatchPaths is regenerated fresh each install, so you can re-run after adding new skills to refresh the watch set.
 
+### macOS TCC caveat (Sequoia / 15+)
+
+If your studio repo lives inside `~/Documents/`, `~/Downloads/`, `~/Desktop/`, or any other TCC-protected location, the LaunchAgent will fail with `Operation not permitted` because launchd processes do not inherit Full Disk Access by default. The repo itself is fine for interactive use (you've granted Terminal/iTerm full disk access historically); the LaunchAgent runs outside that context.
+
+Three resolutions, in increasing order of permanence:
+
+1. **Skip the LaunchAgent.** The SessionStart freshness check + git post-merge hook cover ~99% of real drift. The LaunchAgent is incremental coverage; not having it is acceptable. Run `scripts/install-skill-launchagent.sh --uninstall` to clean up if it's been installed.
+2. **Move the repo outside TCC-protected dirs.** A clone at `~/work/generic-dev-studio/` or `~/code/generic-dev-studio/` works without any FDA grants.
+3. **Grant Full Disk Access to launchd.** System Settings → Privacy & Security → Full Disk Access → "+" → ⌘⇧G `/sbin/launchd`. Heaviest hammer; affects every LaunchAgent on the system. Only do this if you understand the security tradeoff.
+
+Detection: after install, check `~/.dev-studio/.runtime/logs/skill-fanout.err`. Any `Operation not permitted` line indicates TCC is blocking; choose one of the resolutions above.
+
 ## Uninstall
 
 ```sh

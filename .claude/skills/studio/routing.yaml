@@ -1,0 +1,24 @@
+schema_version: 1
+name: studio
+invocation:
+  slash_command: "/studio"
+  triggers:
+    - "/studio"
+    - "/studio resume-plan"
+    - "where were we"
+    - "pick up from where we left off"
+    - "/studio review"
+    - "review this diff"
+    - "/studio release"
+    - "draft release notes"
+    - "should we tag"
+    - "/studio ingest"
+    - "/studio analyze"
+    - "/studio help"
+    - "/studio audit"
+    - "/studio guard <topic>"
+    - "/studio janitor"
+    - "/studio nodes"
+    - "/studio work <track>"
+domains:
+  - studio-internal

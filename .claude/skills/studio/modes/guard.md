@@ -1,7 +1,8 @@
 ---
 name: Studio Guard
-description: Pre-work guard — before starting new work, greps git log, memory, and the GitHub backlog for prior mentions. Catches the "I forgot we shipped this" / "I forgot we tried this and it didn't work" / "I forgot there's an issue open" classes of errors. On-demand only; not auto-invoked.
+description: Pre-work guard — greps git log, memory, and GitHub backlog for prior mentions before starting new work. Catches "already shipped", "already tried and failed", "issue already open" classes of error. On-demand only; not auto-invoked.
 type: mode-pack
+schema_version: 1
 budget_tokens: 400
 snapshots: []
 reads:

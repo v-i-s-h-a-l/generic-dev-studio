@@ -1,7 +1,8 @@
 ---
 name: Achilles Worker
-description: Fleet worker mode (`/achilles worker [N]`). Turns the current Claude session into a fleet pane — claims a slot atomically, starts a background watch loop, and spawns a fresh `claude -p "/achilles <id>"` per dispatched task. The session is the operator-facing wrapper; the bash watch loop is the IPC primitive.
+description: Fleet worker mode. Turns the current session into a fleet pane — claims a slot atomically, starts a background watch loop, and spawns a fresh worker per dispatched task. The session is the operator-facing wrapper; the bash loop is the IPC primitive.
 type: mode-pack
+schema_version: 1
 snapshots: []
 budget_tokens: 1500
 reads:

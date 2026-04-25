@@ -1,7 +1,8 @@
 ---
 name: Achilles Studio-Feedback
-description: Studio-feedback capture (`/achilles studio-feedback` or conversational "capture this as feedback"). Mirrors `/chanakya studio-feedback` exactly — writes a feedback file to the canonical inbox path. Subagents emit feedback directly to the filesystem during task execution when they notice studio-level issues.
+description: Studio-feedback capture from worker context. Mirrors `/chanakya studio-feedback` exactly — writes a feedback file to the canonical inbox path. Subagents emit feedback directly during task execution when they notice studio-level issues.
 type: mode-pack
+schema_version: 1
 snapshots: []
 budget_tokens: 800
 reads: []
