@@ -11,6 +11,14 @@ Used for `Type: test-tdd` tasks, where tests are written before the implementati
 
 ---
 
+## Recommendations
+
+- **Size:** XS | S | M | L
+- **Recommended model:** Opus | Sonnet | Haiku
+  Rationale: <one line — what about THIS task drove the model choice>
+- **Model reasoning effort:** low | medium | high
+  Rationale: <one line — what about THIS task drove the effort tier>
+
 ## Purpose
 
 Define the expected interfaces and behaviors via failing tests. The implementation task (<impl-task-id>) will make these tests pass.

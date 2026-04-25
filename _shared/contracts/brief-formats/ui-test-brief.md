@@ -8,6 +8,14 @@
 
 ---
 
+## Recommendations
+
+- **Size:** XS | S | M | L
+- **Recommended model:** Opus | Sonnet | Haiku
+  Rationale: <one line — what about THIS task drove the model choice>
+- **Model reasoning effort:** low | medium | high
+  Rationale: <one line — what about THIS task drove the effort tier>
+
 ## Scope
 
 UI tests for <user flow>. Test the end-to-end user journey through the UI.

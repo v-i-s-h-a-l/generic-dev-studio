@@ -66,6 +66,21 @@ If the brief cites a Figma node id, was the node fetched and inlined (not just l
 
 Does a matching legacy markdown exist at `plans/chanakya-tasks/<task-id>-<slug>.md`? If not, the brief was written via an ad-hoc path that skipped `write_brief_artifact` — a R9 violation (dual-write AND, not OR). Flag and recommend re-authoring through the helper.
 
+### C11 — Model + reasoning effort recommendations present and sensible
+
+Per `_shared/rules/brief-model-effort.md`, every brief MUST declare three fields in the Priority & Complexity / Recommendations block: `Recommended model` (Opus / Sonnet / Haiku), `Model reasoning effort` (low / medium / high), and `Size` (XS / S / M / L). Each must carry a one-line rationale.
+
+Two flag conditions:
+
+1. **Missing field** — any of the three absent. Flag and request the author add it before dispatch.
+2. **Sniff-test failure** — the choice is structurally wrong:
+   - `Haiku` on a cutover / migration / crash root-cause / architecture decision (Opus territory).
+   - `Opus` on a one-line guard / flag flip / rename-only refactor (Haiku territory).
+   - `Haiku / high` (cost mismatch — `high` reasoning needs `Sonnet` or `Opus` to be useful).
+   - Rationale missing or generic ("seems right" / "default") — the rule requires a one-line rationale specific to THIS task.
+
+Surface as a finding; don't auto-correct. The author owns the recommendation.
+
 ## Step 3 — Emit event + report
 
 Count findings. Emit one event:

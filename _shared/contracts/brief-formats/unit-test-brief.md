@@ -10,6 +10,14 @@
 
 ---
 
+## Recommendations
+
+- **Size:** XS | S | M | L
+- **Recommended model:** Opus | Sonnet | Haiku
+  Rationale: <one line — what about THIS task drove the model choice>
+- **Model reasoning effort:** low | medium | high
+  Rationale: <one line — what about THIS task drove the effort tier>
+
 ## Scope
 
 Unit tests for <feature>. Test business logic, view models, and model transformations in isolation.

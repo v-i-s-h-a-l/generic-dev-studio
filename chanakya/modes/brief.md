@@ -84,6 +84,14 @@ Use Glob and Grep to find:
 
 Render the type-specific narrative from the template corresponding to the task type (see §6A-D below) into a tempfile, then call `write_brief_artifact` — it dual-writes the YAML canonical form (schema `_shared/schemas/brief.md`, `brief@3.1.0`) and the legacy markdown at `plans/chanakya-tasks/<task-id>-<slug>.md` in one shot, emits `brief_state_changed null → draft`, and regenerates `plans/index.yaml`.
 
+**Required header fields** — every brief MUST include these three fields in its Priority & Complexity / Recommendations block (per `_shared/rules/brief-model-effort.md`):
+
+1. **Recommended model** — `Opus | Sonnet | Haiku` + one-line rationale.
+2. **Model reasoning effort** — `low | medium | high` + one-line rationale.
+3. **Size** (a.k.a. task effort) — `XS | S | M | L`. (Existing field; drives Step 6 build gate downstream.)
+
+The first two govern thinking cost; the third governs diff cost. They are independent — a small (`S`) crash fix can warrant `Opus / high` because diagnosis is the cost driver, not the diff. Defaults by task shape are documented in the rules file. Briefs missing any of the three fail brief-review (warn-tier) and the worker session has to guess — the whole point of the rule is to remove that guess.
+
 **Concrete invocation** (run in the Bash tool; all paths are resolver-derived per REVIEW.md R3):
 
 ```bash

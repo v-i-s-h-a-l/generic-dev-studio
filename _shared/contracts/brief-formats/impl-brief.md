@@ -19,6 +19,16 @@ Write to `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md`:
 - **Priority:** P0
 - **Complexity:** L
 - **Size:** XS | S | M | L   <!-- drives Achilles' Step 6 gate: XS/S → lsp-only, M/L → full-green -->
+- **Recommended model:** Opus | Sonnet | Haiku
+  <!-- Opus: cutovers, migrations, crash root-cause, ambiguous specs, cross-module reasoning.
+       Sonnet: well-specified work where patterns are established (common case).
+       Haiku: mechanical edits — flag flips, string changes, one-line guards, rename-only
+              refactors, formulaic test scaffolding. -->
+  Rationale: <one line — what about THIS task drove the model choice>
+- **Model reasoning effort:** low | medium | high
+  <!-- thinking-budget tier; orthogonal to Size. A crash-fix can be S-size and warrant `high`
+       because diagnosis is the cost driver, not diff size. -->
+  Rationale: <one line — what about THIS task drove the effort tier>
 
 ## Churn Layer
 
