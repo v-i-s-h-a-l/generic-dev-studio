@@ -52,7 +52,12 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /studio analyze [<project>]      # sweep studio-feedback inbox + event logs for a project
 /studio help                     # open the studio docs page in your browser
 /studio-help                     # slash-command shortcut for /studio help
-/studio-setup                    # open the machine-setup guide (manager / worker / dual onboarding)
+/studio nodes                    # day-2 fleet management — status, add, remove, health, sync, schedule
+/studio-setup                    # onboard THIS machine — no args = interactive manager
+/studio-setup --manager          # non-interactive manager
+/studio-setup --worker           # non-interactive worker (id = hostname; --id X to override)
+/studio-setup --dual             # both roles on one machine
+/studio-setup --help             # open the setup guide + usage summary
 
 /argus                           # review current worktree (auto-invoked by Achilles pre-merge)
 /argus T001                      # review a specific task's worktree standalone
@@ -133,12 +138,14 @@ achilles/
   SKILL.md         # cross-agent router — studio-level ops (resume-plan, review, release,
                    #   ingest, help, audit, guard); not for task work
   modes/           # Tier-1 mode packs — resume-plan, review, release, ingest, help,
-                   #   audit (plan-drift probes), guard (pre-work "already-shipped" probes)
+                   #   audit (plan-drift probes), guard (pre-work "already-shipped" probes),
+                   #   janitor (cross-project sweep), nodes (day-2 fleet management)
   docs.html        # studio docs page — capabilities, workflows, tips, troubleshooting
+  setup.html       # studio machine-setup guide — manager / worker / dual onboarding
 
 .claude/commands/       # project-scoped slash commands (fire only when cwd is this repo)
   studio-help.md        # /studio-help — opens studio docs.html in browser
-  studio-setup.md       # /studio-setup — opens the machine-setup guide (manager / worker / dual)
+  studio-setup.md       # /studio-setup — onboard THIS machine (--manager/--worker/--dual; no args = interactive)
   resume-plan.md        # /resume-plan — forwards to studio/modes/resume-plan.md
   capture.md            # /capture — retrospective session scan → IDEAS.md
 
