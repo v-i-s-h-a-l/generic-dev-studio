@@ -18,6 +18,9 @@ scenario: |
     8. `/studio guard "host-agnostic workers"` (or "has this been done?")
     9. `/studio` with no argument
     10. `/studio brief T001` (user wants to brief a task on their iOS project)
+    11. `/studio nodes` or "show the fleet" / "list workers"
+    12. `/studio nodes sync --all`
+    13. "I want to onboard my Mac mini as a worker" (user wants to bootstrap)
 
   Also confirm: is the studio router singleton? Does it emit `agent_boot` events?
 failure_signals:
@@ -34,9 +37,12 @@ success_signals:
   - "modes/help\\.md"
   - "modes/audit\\.md"
   - "modes/guard\\.md"
+  - "modes/nodes\\.md"
   - "(?i)(not singleton|no lock|no agent_boot)"
   - "(?i)(chanakya|achilles).*(brief|task|dispatch)"
   - "(?i)(default|no arg).*(resume-plan|pickup)"
+  - "(?i)/studio-setup"
+  - "(?i)bootstrap.*not.*nodes mode"
 notes: |
   The load-bearing properties of .claude/skills/studio/SKILL.md that this fixture catches:
     - Explicit arg wins: `/studio resume-plan` → modes/resume-plan.md.
@@ -47,3 +53,4 @@ notes: |
       to /chanakya or /achilles, never dispatches internally.
     - Not singleton; no agent_boot event. A subagent without the pack will
       typically assume studio is an orchestrator-style singleton like chanakya.
+    - `nodes` is day-2 ops; bootstrap requests redirect to `/studio-setup`.

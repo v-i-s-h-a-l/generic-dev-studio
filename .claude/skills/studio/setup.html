@@ -290,6 +290,17 @@ cd generic-dev-studio
 ./scripts/bootstrap.sh --yes --role manager   # one-shot, defaults
 ./scripts/bootstrap.sh                        # interactive, pick anything</code></pre>
     <p>The wizard runs as plain bash — no AI required at install time. Tweak anything later with <code>scripts/configure.sh</code>.</p>
+    <h3>From inside Claude Code</h3>
+    <p>If you already have a Claude Code session open in the cloned repo, the slash command wraps the same wizard:</p>
+    <pre><code>/studio-setup                    # interactive manager (no args = no --yes)
+/studio-setup --manager          # non-interactive manager
+/studio-setup --worker           # non-interactive worker (id = hostname)
+/studio-setup --worker --id mini --roles swift-test,xcodebuild
+/studio-setup --dual             # both roles on one box
+/studio-setup --interactive      # drop --yes when used with a role flag
+/studio-setup --dry-run          # preview without changing anything
+/studio-setup --help             # this guide + usage summary</code></pre>
+    <p>The slash command runs on <strong>the current machine</strong> — it does not SSH anywhere. To onboard a different machine, SSH there first and run it from a session on that box.</p>
   </div>
 </section>
 

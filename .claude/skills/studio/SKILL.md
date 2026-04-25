@@ -1,6 +1,6 @@
 ---
 name: studio
-description: "Cross-agent studio router. Handles studio-level operations that span agents or concern the project's own conventions (not the user's iOS project). Tier 1 sub-commands: resume-plan, review, release, ingest, analyze, help, audit, guard, janitor. Do NOT use for task-level work — that goes to /chanakya, /achilles, /argus."
+description: "Cross-agent studio router. Handles studio-level operations that span agents or concern the project's own conventions (not the user's iOS project). Tier 1 sub-commands: resume-plan, review, release, ingest, analyze, help, audit, guard, janitor, nodes. Do NOT use for task-level work — that goes to /chanakya, /achilles, /argus."
 type: agent-router
 ---
 
@@ -27,10 +27,13 @@ Task-level work on the user's iOS project (`/chanakya`, `/achilles`, `/argus` ow
 | `audit` / "audit the arc" / "check plan drift" / auto-invoked by SessionStart | `modes/audit.md` |
 | `guard <keywords>` / "has this been done?" / "are we repeating work?" | `modes/guard.md` |
 | `janitor [--yes]` / "clean up the studio" / "what's reclaimable across projects?" / "sweep all projects" | `modes/janitor.md` |
+| `nodes` / `nodes status` / `nodes add\|remove\|enable\|disable` / `nodes health` / `nodes sync` / `nodes schedule` / "show the fleet" / "list workers" / "are the workers up?" / "register a worker" / "sync the workers" | `modes/nodes.md` |
 
 | `work <track>` / `STUDIO_TRACK=<track>` auto-start | `modes/work.md` |
 
 Tier 2 modes (not shipped today; spawn on demand): `backlog` (gh issue triage), `scaffold` (new mode pack / primitive scaffold).
+
+**Onboarding a new machine** (manager / worker / dual) is **not** a `/studio` mode. Use `/studio-setup` (or `scripts/bootstrap.sh` directly). The `nodes` mode is day-2 ops only — it never bootstraps a fresh machine.
 
 ## Intent detection
 
