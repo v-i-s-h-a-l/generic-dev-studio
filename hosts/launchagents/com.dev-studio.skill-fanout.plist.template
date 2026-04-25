@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.dev-studio.skill-fanout</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO_ROOT__/scripts/sync-host-skills.sh</string>
+        <string>--all</string>
+    </array>
+
+    <!-- Fire when any canonical skill root or the host registry changes.
+         The placeholder list is filled in at install time by
+         scripts/install-skill-launchagent.sh, which scans for SKILL.md /
+         portability.yaml / routing.yaml roots. -->
+    <key>WatchPaths</key>
+    <array>
+__WATCH_PATHS__
+    </array>
+
+    <!-- Don't fire more than once per 60 seconds even if many files change
+         in a burst. Keeps the LaunchAgent quiet during git pulls. -->
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/.dev-studio/.runtime/logs/skill-fanout.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.dev-studio/.runtime/logs/skill-fanout.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
