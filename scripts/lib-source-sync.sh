@@ -40,16 +40,29 @@
 #       remote (mkdir -p). Used to seed DerivedData / cache directories
 #       that the dispatched command will write into.
 #
+#   sourcesync_pull_file <node-id> <remote-rel> <local-path>
+#       I/O: copies a single file from `<remote $HOME>/<remote-rel>` to
+#       <local-path>. Creates the local parent directory if missing.
+#       Returns rsync's exit code. Non-fatal by design — callers
+#       typically use `|| true`.
+#
+#   sourcesync_pull_dir <node-id> <remote-rel> <local-dir>
+#       I/O: rsyncs a directory from `<remote $HOME>/<remote-rel>/` to
+#       <local-dir>/. Does NOT use --delete — accumulates rather than
+#       mirrors. Creates the local directory if missing. Returns rsync's
+#       exit code. Non-fatal by design.
+#
 # Design notes:
-#   - rsync uses --delete so the remote tree is an exact mirror of the
-#     local source. Stale files from a previous task can't pollute the
-#     build. This is what `git worktree` already enforces locally.
+#   - rsync uses --delete on PUSH so the remote tree is an exact mirror
+#     of the local source. PULL functions never --delete — they
+#     accumulate artifacts (sidecars, evidence) without wiping local
+#     content from other sources.
 #   - rsync runs over SSH using the same node-registry credentials
 #     (user + host) that node-dispatch.sh uses. No new transport.
-#   - The library never touches DerivedData on the remote post-build —
-#     gate scripts only care about exit code; logs come back through SSH.
-#     If a future caller wants build artifacts back, that's a sourcesync_pull
-#     companion to add then.
+#   - DerivedData is left on the remote post-build; gate scripts care
+#     about exit code + structured sidecar. Pull functions retrieve
+#     specific artifacts (JSON sidecars, AXe evidence) — not bulk
+#     DerivedData.
 #   - Caller MUST pass --rsh "ssh ..." compatible options? No — we use
 #     the system SSH config + agent. ssh-copy-id + tailscale magic-DNS
 #     are the prerequisites; this library inherits them.
@@ -145,4 +158,40 @@ sourcesync_mkdir_remote() {
   host=$(printf '%s' "$entry" | jq -r '.host')
   ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
       "$user@$host" "mkdir -p \"\$HOME/$rel\"" >/dev/null 2>&1
+}
+
+# sourcesync_pull_file <node-id> <remote-rel> <local-path>
+sourcesync_pull_file() {
+  local node_id="${1:?node-id required}" remote_rel="${2:?remote-relative path required}" local_path="${3:?local path required}"
+  command -v jq >/dev/null 2>&1 || { printf 'sourcesync: jq required\n' >&2; return 2; }
+  command -v rsync >/dev/null 2>&1 || { printf 'sourcesync: rsync required\n' >&2; return 2; }
+  local registry; registry="$(resolve_runtime_global)/nodes.json"
+  [ -r "$registry" ] || { printf 'sourcesync: node registry not readable: %s\n' "$registry" >&2; return 2; }
+  local entry user host
+  entry=$(jq -e --arg id "$node_id" '.nodes[]? | select(.id == $id) | select(.enabled != false)' "$registry") \
+    || { printf 'sourcesync: unknown or disabled node: %s\n' "$node_id" >&2; return 2; }
+  user=$(printf '%s' "$entry" | jq -r '.user')
+  host=$(printf '%s' "$entry" | jq -r '.host')
+  mkdir -p "$(dirname "$local_path")" 2>/dev/null || true
+  rsync -aq \
+    -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
+    "$user@$host:\$HOME/$remote_rel" "$local_path" 2>/dev/null
+}
+
+# sourcesync_pull_dir <node-id> <remote-rel> <local-dir>
+sourcesync_pull_dir() {
+  local node_id="${1:?node-id required}" remote_rel="${2:?remote-relative path required}" local_dir="${3:?local directory required}"
+  command -v jq >/dev/null 2>&1 || { printf 'sourcesync: jq required\n' >&2; return 2; }
+  command -v rsync >/dev/null 2>&1 || { printf 'sourcesync: rsync required\n' >&2; return 2; }
+  local registry; registry="$(resolve_runtime_global)/nodes.json"
+  [ -r "$registry" ] || { printf 'sourcesync: node registry not readable: %s\n' "$registry" >&2; return 2; }
+  local entry user host
+  entry=$(jq -e --arg id "$node_id" '.nodes[]? | select(.id == $id) | select(.enabled != false)' "$registry") \
+    || { printf 'sourcesync: unknown or disabled node: %s\n' "$node_id" >&2; return 2; }
+  user=$(printf '%s' "$entry" | jq -r '.user')
+  host=$(printf '%s' "$entry" | jq -r '.host')
+  mkdir -p "$local_dir" 2>/dev/null || true
+  rsync -aq \
+    -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
+    "$user@$host:\$HOME/$remote_rel/" "$local_dir/" 2>/dev/null
 }
