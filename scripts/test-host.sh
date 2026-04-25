@@ -57,6 +57,14 @@ FM_ONLY=0
 
 # Pinned tooling. The validator is non-optional — the security-floor and
 # schema-violation tests cannot soundly SKIP without inverting the gate.
+# `pip3 install --user` lands the binary under ~/Library/Python/<ver>/bin on
+# macOS, which isn't on the default shell PATH. Probe and prepend so users
+# don't have to edit their rc just to run conformance.
+if ! command -v check-jsonschema >/dev/null 2>&1; then
+  for _pybin in "$HOME"/Library/Python/*/bin "$HOME/.local/bin"; do
+    [ -x "$_pybin/check-jsonschema" ] && { PATH="$_pybin:$PATH"; export PATH; break; }
+  done
+fi
 if ! command -v check-jsonschema >/dev/null 2>&1; then
   printf 'test-host: missing check-jsonschema. Install: pip3 install --user check-jsonschema\n' >&2
   exit 2
