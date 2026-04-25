@@ -42,6 +42,7 @@ schema: 1
 brew_packages:
   required:
     - jq            # node-dispatch reads nodes.json
+    - yq            # sync-host-skills.sh, manifest parsing
     - rsync         # source-sync auto-rsync (#127)
     - coreutils     # gtimeout for SSH probe bounds
     - git
@@ -60,6 +61,17 @@ xcode_version_min: ""
 # janitor, etc.). Today this is empty — workers stay passive per the
 # architecture; the manager schedules everything from its side.
 launchd_agents: []
+
+# Skill hosts to fan out on this worker. Each entry is a host slug from
+# hosts/registry.yaml. sync-worker.sh rsyncs skill content to the worker
+# then runs sync-host-skills.sh --all so the worker's per-host discovery
+# dirs (e.g. ~/.claude/skills/, ~/.codex/skills/) get proper symlinks.
+#
+# Leave empty or omit to skip skill propagation entirely.
+skills:
+  hosts:
+    - claude-code
+    - codex
 YAML
 printf 'wrote default manifest: %s\n' "$MANIFEST"
 printf 'edit it to declare what your fleet needs, then:\n'
