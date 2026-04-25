@@ -1,6 +1,6 @@
 ---
 name: studio
-description: "Cross-agent studio router. Handles studio-level operations that span agents or concern the project's own conventions (not the user's iOS project). Tier 1 sub-commands: resume-plan, review, release, ingest, help, audit, guard. Do NOT use for task-level work — that goes to /chanakya, /achilles, /argus."
+description: "Cross-agent studio router. Handles studio-level operations that span agents or concern the project's own conventions (not the user's iOS project). Tier 1 sub-commands: resume-plan, review, release, ingest, analyze, help, audit, guard. Do NOT use for task-level work — that goes to /chanakya, /achilles, /argus."
 type: agent-router
 ---
 
@@ -21,7 +21,8 @@ Task-level work on the user's iOS project (`/chanakya`, `/achilles`, `/argus` ow
 | `resume-plan` / "where were we" / "pick up from where we left off" | `modes/resume-plan.md` |
 | `review` / "review this diff" / "any issues?" / "check this" | `modes/review.md` |
 | `release` / "draft release notes" / "what's new" / "should we tag?" | `modes/release.md` |
-| `ingest` / "ingest this" / studio-flavored capture outside chanakya's inbox | `modes/ingest.md` |
+| `ingest` / "ingest this" / studio-flavored capture (single input) | `modes/ingest.md` |
+| `analyze [<project>]` / "analyze logs and feedback" / "sweep the studio-feedback inbox" / "what patterns are showing up?" | `modes/analyze.md` |
 | `help` / `/studio-help` / "show me the docs" / "how does this work?" | `modes/help.md` |
 | `audit` / "audit the arc" / "check plan drift" / auto-invoked by SessionStart | `modes/audit.md` |
 | `guard <keywords>` / "has this been done?" / "are we repeating work?" | `modes/guard.md` |
@@ -39,6 +40,19 @@ Priority order:
 3. **Default** — no arg, no clear intent → `modes/resume-plan.md`. "What's going on with the studio" is the most common implicit question.
 
 Never prompt for clarification when a sensible default exists.
+
+### Scope guard — feedback / logs / analyze stay studio-only
+
+When the cwd is `generic-dev-studio`, the words **"feedback"**, **"logs"**, **"analyze"**, **"sweep"**, **"patterns"** route to studio modes (`analyze` for sweeps, `ingest` for single inputs). Never silently fall through to `/chanakya`-owned queues at `~/.dev-studio/<project>/feedback/`.
+
+The two queues are disjoint:
+
+| Queue | Path | Owner | Reached via |
+|---|---|---|---|
+| Studio feedback | `~/.dev-studio/generic-dev-studio/feedback-inbox/<source>/` | studio | `/studio analyze`, SessionStart hook, `scripts/ingest-feedback.sh` |
+| Chanakya project feedback | `~/.dev-studio/<project>/feedback/` | chanakya | `/chanakya ingest-*`, `/chanakya feedback-*` (explicit prefix only) |
+
+Chanakya / Achilles / Argus subcommands are **always** invoked with their explicit prefixes (`/chanakya …`, `/achilles …`, `/argus …`). The studio router never dispatches into them, never reads their queues, never resolves "feedback" through them. If a request is ambiguous, surface the disambiguation in one line and ask — do not guess across layers.
 
 ## Relationship to existing slash commands
 

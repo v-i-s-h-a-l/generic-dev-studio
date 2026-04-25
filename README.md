@@ -48,7 +48,8 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /studio resume-plan              # "where were we" — load ROADMAP + ARCHITECTURE + pending memory
 /studio review                   # walk REVIEW.md against the pending diff
 /studio release                  # draft release notes per RELEASES.md (never auto-tags)
-/studio ingest                   # capture studio-level patterns / rule-tweak proposals
+/studio ingest                   # capture a single studio-level pattern / rule-tweak proposal
+/studio analyze [<project>]      # sweep studio-feedback inbox + event logs for a project
 /studio help                     # open the studio docs page in your browser
 /studio-help                     # slash-command shortcut for /studio help
 /studio-setup                    # open the machine-setup guide (manager / worker / dual onboarding)

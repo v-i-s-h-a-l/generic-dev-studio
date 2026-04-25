@@ -220,4 +220,15 @@ printf '%s\n' "$FILES" | while IFS= read -r file; do
   esac
 done
 
+# Counters above live in the piped subshell; for the post-run summary, re-scan
+# the inbox for anything still sitting outside processed/. A non-zero remainder
+# means the next session should explicitly check (`/studio analyze`) — silent
+# skips are how a queue rots.
+remaining=$(find "$INBOX_BASE" -mindepth 2 -maxdepth 2 -type f -name '*.md' \
+              -not -path '*/processed/*' 2>/dev/null | wc -l | tr -d ' ')
+if [ "$remaining" != "0" ]; then
+  printf 'ingest-feedback: %s record(s) remain unprocessed in %s — run `/studio analyze` to triage\n' \
+    "$remaining" "$INBOX_BASE" >&2
+fi
+
 exit 0
