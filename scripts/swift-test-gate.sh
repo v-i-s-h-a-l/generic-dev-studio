@@ -174,11 +174,39 @@ test_log=$(mktemp 2>/dev/null || printf '/tmp/swift-test-%s.log' "$$")
 if [ "$NODE_ID" = "local" ]; then
   swift test --package-path "$PKG_ROOT" >"$test_log" 2>&1
 else
-  # Remote shell must cd into the worktree itself — otherwise the relative
-  # `--package-path` would resolve against the remote $HOME. printf %q
-  # keeps spaces / special chars intact through SSH's argv-joining.
-  "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" \
-    sh -c "cd $(printf '%q' "$WORKTREE") && swift test --package-path $(printf '%q' "$PKG_ROOT")" \
+  # Remote dispatch (#127). Mirror $WORKTREE under remote $HOME via rsync,
+  # then cd to the home-relative form. Laptop's $HOME and remote's $HOME
+  # may differ (e.g. /Users/vishalsingh vs /Users/vishal); home-relative
+  # mirroring is the stable anchor. PKG_ROOT is translated to its
+  # home-relative form too — when it lives under $WORKTREE (the common
+  # case), the rsync'd tree already contains it; otherwise we sync it
+  # explicitly so `--package-path` resolves on the remote.
+  # shellcheck source=lib-source-sync.sh
+  . "$SCRIPT_DIR/lib-source-sync.sh"
+  REL_WORKTREE=$(sourcesync_push "$NODE_ID" "$WORKTREE") || {
+    printf 'swift-test-gate: source sync to %s failed\n' "$NODE_ID" >&2
+    data=$(printf '{"mode":"swift-test","reason":"source_sync_failed","node":"%s","attempt":%s}' "$NODE_ID" "$ATTEMPT")
+    _emit_terminal build_check_failed "$data"
+    exit 2
+  }
+  case "$PKG_ROOT" in
+    "$WORKTREE"|"$WORKTREE"/*) REL_PKG=$(sourcesync_relative_to_home "$PKG_ROOT") ;;
+    *)
+      # Package root sits outside the worktree — sync it as a separate
+      # tree before dispatch. Rare path; SPM tests usually live inside.
+      sourcesync_push "$NODE_ID" "$PKG_ROOT" >/dev/null || {
+        printf 'swift-test-gate: package sync to %s failed\n' "$NODE_ID" >&2
+        data=$(printf '{"mode":"swift-test","reason":"package_sync_failed","node":"%s","attempt":%s}' "$NODE_ID" "$ATTEMPT")
+        _emit_terminal build_check_failed "$data"
+        exit 2
+      }
+      REL_PKG=$(sourcesync_relative_to_home "$PKG_ROOT")
+      ;;
+  esac
+  Q_WORKTREE=$(sourcesync_remote_quoted "$REL_WORKTREE")
+  Q_PKG=$(sourcesync_remote_quoted "$REL_PKG")
+  REMOTE_CMD='cd '"$Q_WORKTREE"' && swift test --package-path '"$Q_PKG"
+  "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "$REMOTE_CMD" \
     >"$test_log" 2>&1
 fi
 TEST_STATUS=$?

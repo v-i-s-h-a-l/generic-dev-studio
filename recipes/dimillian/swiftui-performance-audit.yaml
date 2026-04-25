@@ -1,0 +1,22 @@
+schema_version: 1
+name: swiftui-performance-audit
+domain: [swift, swiftui, ios, performance]
+strategy: verbatim
+sources:
+  - upstream: github.com/Dimillian/Skills
+    path: swiftui-performance-audit/
+    pinned_sha: 05ba982bfeb0d77d3c97d4542b0ee15034d05f84
+    license: MIT
+update_policy: auto-pr
+authoring_standard: exempt
+attribution: |
+  SwiftUI Performance Audit by Thomas Ricouard. Vendored verbatim under MIT.
+  Source: github.com/Dimillian/Skills (monorepo)
+  Index entry: github.com/twostraws/Swift-Agent-Skills
+routing:
+  triggers:
+    - "scroll jank"
+    - "SwiftUI performance audit"
+    - "excessive view updates"
+    - "/swiftui-performance-audit"
+  domains: [swift, swiftui, performance]

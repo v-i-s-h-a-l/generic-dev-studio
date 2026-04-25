@@ -20,6 +20,13 @@ trusted:
   # Anthropic's public skills + cookbook. Production-grade reference.
   - anthropics
 
+  # iOS / Swift skill authors curated via twostraws/Swift-Agent-Skills index
+  # (see https://github.com/twostraws/Swift-Agent-Skills).
+  - twostraws       # Paul Hudson (Hacking with Swift): swiftui-pro, swift-concurrency-pro, swift-testing-pro
+  - Dimillian       # Thomas Ricouard (monorepo): swiftui-view-refactor, swiftui-performance-audit, swiftui-liquid-glass
+  - Erikote04       # Erik Sebastián de Erice: swift-api-design-guidelines-skill
+  - efremidze       # Lasha Efremidze: swift-architecture-skill
+
 # Authors on this list are exempt from the first-time-vendor prompt only.
 # They are still subject to:
 #   - License allowlist (per _shared/standards/license-allowlist.yaml)

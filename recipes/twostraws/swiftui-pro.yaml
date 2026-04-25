@@ -1,0 +1,21 @@
+schema_version: 1
+name: swiftui-pro
+domain: [swift, swiftui, ios]
+strategy: verbatim
+sources:
+  - upstream: github.com/twostraws/SwiftUI-Agent-Skill
+    path: swiftui-pro/
+    pinned_sha: be297ff80dddec529af1f9b1f1f114aab6c9d11c
+    license: MIT
+update_policy: auto-pr
+authoring_standard: exempt
+attribution: |
+  SwiftUI Pro by Paul Hudson (Hacking with Swift). Vendored verbatim under MIT.
+  Source: github.com/twostraws/SwiftUI-Agent-Skill
+  Index entry: github.com/twostraws/Swift-Agent-Skills
+routing:
+  triggers:
+    - "writing or reviewing SwiftUI views"
+    - "SwiftUI best practices"
+    - "/swiftui-pro"
+  domains: [swift, swiftui]

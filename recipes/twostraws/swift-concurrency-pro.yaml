@@ -1,0 +1,23 @@
+schema_version: 1
+name: swift-concurrency-pro
+domain: [swift, concurrency, ios]
+strategy: verbatim
+sources:
+  - upstream: github.com/twostraws/Swift-Concurrency-Agent-Skill
+    path: swift-concurrency-pro/
+    pinned_sha: e710f8d577ccbff1ac047aac1594a5683000cb0b
+    license: MIT
+update_policy: auto-pr
+authoring_standard: exempt
+attribution: |
+  Swift Concurrency Pro by Paul Hudson (Hacking with Swift). Vendored verbatim under MIT.
+  Source: github.com/twostraws/Swift-Concurrency-Agent-Skill
+  Index entry: github.com/twostraws/Swift-Agent-Skills
+routing:
+  triggers:
+    - "writing or reviewing Swift concurrency"
+    - "async/await review"
+    - "actor isolation"
+    - "Sendable conformance"
+    - "/swift-concurrency-pro"
+  domains: [swift, concurrency]
