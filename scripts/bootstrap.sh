@@ -837,6 +837,39 @@ JSON"
     cmd_hint "scripts/bootstrap.sh --role worker --id $DETECTED_HOST"
     dim "(run the wizard again with --role worker to generate the entry for this same machine)"
   fi
+
+  # ---- worker-manifest + scheduled sync (opt-in) ----
+  WORKER_COUNT=0
+  [ -f "$NODES_PATH" ] && WORKER_COUNT=$(jq -r '.nodes | length' "$NODES_PATH" 2>/dev/null || echo 0)
+
+  if [ "$WORKER_COUNT" != "0" ] && [ "$WORKER_COUNT" != "?" ]; then
+    substep "Worker manifest"
+    if [ -n "$STUDIO_REPO_DIR" ] && [ -x "$STUDIO_REPO_DIR/scripts/init-worker-manifest.sh" ]; then
+      PROJECT_GUESS=$(resolve_project 2>/dev/null || echo "")
+      MANIFEST_PATH=""
+      [ -n "$PROJECT_GUESS" ] && MANIFEST_PATH="$HOME/.dev-studio/$PROJECT_GUESS/worker-manifest.yaml"
+      if [ -n "$MANIFEST_PATH" ] && [ -f "$MANIFEST_PATH" ]; then
+        ok "manifest exists: $MANIFEST_PATH"
+      else
+        info "A worker-manifest declares what registered workers should have (brew packages, Xcode minimum, etc.)."
+        info "It pairs with scripts/sync-worker.sh to keep workers in lock-step with this manager."
+        if confirm "Create a default worker-manifest.yaml for this project?" "y"; then
+          run "$STUDIO_REPO_DIR/scripts/init-worker-manifest.sh"
+        fi
+      fi
+    fi
+
+    substep "Scheduled worker-sync (opt-in)"
+    info "A nightly launchd agent on this manager can keep registered workers in sync"
+    info "with the manifest automatically — no per-update SSH needed from you."
+    if confirm "Schedule worker-sync to run nightly?" "n"; then
+      if [ -n "$STUDIO_REPO_DIR" ] && [ -x "$STUDIO_REPO_DIR/scripts/schedule-worker-sync.sh" ]; then
+        run "$STUDIO_REPO_DIR/scripts/schedule-worker-sync.sh" --install --interval daily
+      fi
+    else
+      dim "(skip — turn on later: scripts/configure.sh schedule on)"
+    fi
+  fi
 fi
 
 # ============================================================================
@@ -896,6 +929,7 @@ case "$ROLE" in
     info "  1. Invoke /chanakya in your iOS project to try the agent layer."
     info "  2. When you have a worker Mac: run this wizard there with --role worker."
     info "  3. Paste the worker's emitted nodes.json block into ~/.dev-studio/.runtime/nodes.json here."
+    info "  4. Tweak config any time:  scripts/configure.sh"
     ;;
   worker)
     info "  1. Paste the printed nodes.json block on your manager machine."
@@ -906,6 +940,7 @@ case "$ROLE" in
     info "  1. Re-run this wizard with --role worker to generate the self-worker entry for this machine."
     info "  2. Add the generated block to ~/.dev-studio/.runtime/nodes.json here."
     info "  3. Invoke /chanakya to try the agent layer; dispatches that pick this id run via ssh-to-localhost."
+    info "  4. Tweak config any time:  scripts/configure.sh"
     ;;
 esac
 
