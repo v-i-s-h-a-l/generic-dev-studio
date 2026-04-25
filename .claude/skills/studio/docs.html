@@ -326,6 +326,7 @@
 /studio audit             # plan ↔ memory ↔ commits drift check
 /studio analyze [proj]    # sweep studio-feedback inbox + event logs for &lt;proj&gt;
 /studio guard "topic"     # has this work been done before?
+/studio janitor [--yes]   # cross-project sweep of stale artifacts (dry-run by default)
 /studio-setup             # open the machine-setup guide (manager / worker / dual)
 /studio-help              # open this docs page</code></pre>
     <p>Most users type <code>/studio</code> and let intent detection pick the mode. Sub-commands above are also available conversationally — "where were we", "any issues with this diff?", "should we tag?" all route correctly.</p>
@@ -395,6 +396,11 @@
         <code>/studio guard "&lt;topic&gt;"</code>
         <div class="triggers">"has this been done?", "are we repeating work?"</div>
         <div class="what">Before proposing new work, searches three channels. <strong>G1</strong> git log + tags (already shipped). <strong>G2</strong> memory files (already tried / prior decisions). <strong>G3</strong> <code>gh issue list --state all</code> (already in backlog). Surfaces hits separately; user decides continue / merge / drop. Refuses vague single-word queries.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio janitor [--yes]</code>
+        <div class="triggers">"clean up the studio", "what's reclaimable across projects?", "sweep all projects"</div>
+        <div class="what">Cross-project sweep of stale artifacts. Fans <code>scripts/sweep-janitor.sh --all-projects all</code> + <code>scripts/fleet-cleanup.sh --all-projects</code> across every project under <code>~/.dev-studio/</code>. Default is dry-run; <code>--yes</code> applies. Aggregates per-project counts and freed bytes; calls out hot spots > 1 GB. Includes the gap-#31 <code>local-debt</code> pass: merged worktrees, orphan DerivedData, dead-pid <code>xcodebuild.lock</code>. For single-project sweeps, route to <code>/chanakya janitor</code>. Node-side counterpart tracked under #152 (<code>phase-2.7-epic</code>).</div>
       </div>
     </div>
 

@@ -1,6 +1,6 @@
 ---
 name: studio
-description: "Cross-agent studio router. Handles studio-level operations that span agents or concern the project's own conventions (not the user's iOS project). Tier 1 sub-commands: resume-plan, review, release, ingest, analyze, help, audit, guard. Do NOT use for task-level work — that goes to /chanakya, /achilles, /argus."
+description: "Cross-agent studio router. Handles studio-level operations that span agents or concern the project's own conventions (not the user's iOS project). Tier 1 sub-commands: resume-plan, review, release, ingest, analyze, help, audit, guard, janitor. Do NOT use for task-level work — that goes to /chanakya, /achilles, /argus."
 type: agent-router
 ---
 
@@ -26,6 +26,7 @@ Task-level work on the user's iOS project (`/chanakya`, `/achilles`, `/argus` ow
 | `help` / `/studio-help` / "show me the docs" / "how does this work?" | `modes/help.md` |
 | `audit` / "audit the arc" / "check plan drift" / auto-invoked by SessionStart | `modes/audit.md` |
 | `guard <keywords>` / "has this been done?" / "are we repeating work?" | `modes/guard.md` |
+| `janitor [--yes]` / "clean up the studio" / "what's reclaimable across projects?" / "sweep all projects" | `modes/janitor.md` |
 
 | `work <track>` / `STUDIO_TRACK=<track>` auto-start | `modes/work.md` |
 
