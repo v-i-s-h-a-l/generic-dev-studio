@@ -94,6 +94,8 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `test_run_failed` | Tests red | `failing_tests` (array) |
 | `base_stale` | Base branch advanced since branch point | `base_sha`, `branch_sha` |
 | `review_scoped` | A scope cap was triggered (diff cap, file cap, or xs_skip) | `cap` (`diff_size`\|`file_count`\|`xs_skip`), `value`, `limit` |
+| `argus_gate_skipped` | Argus dispatch exited non-zero without a verdict, OR a `task_merged` fired with no preceding `review_(approved\|flagged\|blocked)` for the same task. Loud-skip sentinel for #154. | `stage`, `idem_key`, `reason` (`unknown_host`\|`missing_manifest`\|`missing_spawn_command`\|`secret_scope_floor_unmet`\|`mktemp_failed`\|`validator_unavailable`\|`handoff_schema_violation`\|`verdict_timeout_<N>s`\|`no_verdict_at_merge`\|`unknown_exit_<rc>`), `exit_code` (where applicable) |
+| `duration_sanity_fail` | A computed `duration_s` failed the [0, 86400] plausibility check (clock skew, epoch-mismatch, or stale stamp). The emitting site falls back to `null` for the field rather than poison aggregations. Mirrors `emit-agent-session-completed.sh`'s warn-and-omit shape from #157. | `computed`, `start`, `end`, `caller` (script name) |
 
 ### Chanakya events
 
@@ -161,6 +163,7 @@ Emitted by `scripts/chanakya-snap.sh` (producer side) and by mode packs that con
 |---|---|---|
 | `agent_session_completed` | Final step of any agent session (any mode) | `mode` (e.g. `ship`, `T001`, `auto-sweep`), `duration_s` (non-negative integer ≤ 86400; **OMITTED when the emitter can't compute a trustworthy value** — see #107. Readers must treat an absent `duration_s` as "session recorded, timing unreliable" rather than default to zero or null), `tokens` (`{input, output, cache_read, cache_write}` — best-effort; may be omitted if not available), `files_read` (count), `files_written` (count) |
 | `stale_index_lock_removed` | `safe_git_commit` (see `_shared/primitives/safe-git.md`) cleared a stale `.git/index.lock` with no live holder. Tracks frequency so the producer side can be root-caused if it rises. | `repo` (absolute path from `git rev-parse --show-toplevel`), `caller_skill` (e.g. `pushTFBuild`, `achilles-merge`, `gcpr`) |
+| `boot_validation_failed` | `emit-agent-boot.sh` rejected a non-semver `skill_version`, halting the agent before any further events for that session land in the log (#158). | `reason` (`invalid_skill_version`\|`invalid_skill_version_chars`), `value`, `session_id` |
 | `dual_write_partial` | A Phase 2.6 dual-writer (see `_shared/patterns/dual-write-transition.md`) succeeded on the YAML side but failed on the legacy counterpart. Emitted by `scripts/lib-ledger.sh` helpers. Paired with exit code `3` from the caller so the next sweep surfaces the drift rather than it silently compounding. | `subject_kind` (`task`\|`brief`\|`round`\|`release`\|`debrief`\|`review`), `subject_uuid`, `legacy_path`, `reason` (short string; e.g. `permission_denied`\|`disk_full`\|`concurrent_lock`\|`other`) |
 
 **Why `agent_session_completed`.** Without this we can't measure context cost or session duration per agent. Treat as required at the end of every Chanakya / Achilles / Argus session, regardless of how the session terminated. If token counts aren't available to the agent at emit time, omit the `tokens` key — duration alone is still useful.

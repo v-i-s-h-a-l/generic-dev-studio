@@ -107,6 +107,7 @@ xcrun simctl boot "Argus-${SLOT_N}" >/dev/null 2>&1 || true
 data=$(printf '{"slot":%s,"suite":"%s"}' "$SLOT_N" "$TEST_TARGET")
 emit_event_keyed argus review test_run_started "$TASK_ID" "$data" >/dev/null || true
 
+DURATION_S_CAP=86400  # 24h sanity cap, matches emit-agent-session-completed.sh
 RUN_START_S=$(date -u +%s)
 xcodebuild test \
   -scheme "$SCHEME" \
@@ -120,6 +121,15 @@ xcodebuild test \
 TEST_STATUS=$?
 RUN_END_S=$(date -u +%s)
 DURATION_S=$(( RUN_END_S - RUN_START_S ))
+# Clamp negative (clock skew) and absurd values (epoch-mismatch corruption).
+# Out-of-range ⇒ "null" so the field is present but flagged as untrustworthy
+# rather than poisoning aggregations like the ~56-year value in #157.
+if [ "$DURATION_S" -lt 0 ] || [ "$DURATION_S" -gt "$DURATION_S_CAP" ]; then
+  emit_event_keyed argus review duration_sanity_fail "$TASK_ID" \
+    "{\"computed\":$DURATION_S,\"start\":$RUN_START_S,\"end\":$RUN_END_S,\"caller\":\"argus-run-tests\"}" \
+    >/dev/null 2>&1 || true
+  DURATION_S="null"
+fi
 
 if [ "$TEST_STATUS" -eq 0 ]; then
   # Test count parsed from the xcodebuild summary line. Failures here are

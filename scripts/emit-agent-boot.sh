@@ -27,6 +27,41 @@ case "$AGENT" in
   *) printf 'error: invalid agent "%s" (must be chanakya|achilles|argus)\n' "$AGENT" >&2; exit 2 ;;
 esac
 
+# #158 — skill_version must be a semver scalar. The 11-distinct-values bug came
+# from callers passing yq-failed output (`---`), unset vars, or freeform strings
+# that polluted analytics keyed on skill_version. Reject loudly here so the
+# agent halts at boot rather than emitting un-joinable events for the rest of
+# the session. Accepts: MAJOR.MINOR.PATCH plus optional pre-release / build
+# metadata (semver 2.0.0, simplified). The pattern is intentionally strict —
+# adding an alphanumeric prefix or trailing whitespace fails.
+case "$SKILL_VERSION" in
+  [0-9]*.[0-9]*.[0-9]*) ;;
+  *)
+    printf 'error: skill_version "%s" is not semver (MAJOR.MINOR.PATCH); refuse to emit agent_boot\n' "$SKILL_VERSION" >&2
+    # Best-effort fail event so the rejection is loud in the log too. Sourcing
+    # lib-paths failed earlier? Then append_event is unavailable and we still
+    # exit non-zero.
+    if command -v append_event >/dev/null 2>&1 || declare -f append_event >/dev/null 2>&1; then
+      append_event "$AGENT" boot_validation_failed "" \
+        "{\"reason\":\"invalid_skill_version\",\"value\":\"$SKILL_VERSION\",\"session_id\":\"$SESSION_ID\"}" \
+        2>/dev/null || true
+    fi
+    exit 2
+    ;;
+esac
+# Reject anything more permissive than the glob caught (e.g. "1.2.3-extra rubbish").
+case "$SKILL_VERSION" in
+  *[!0-9.+\-A-Za-z]*)
+    printf 'error: skill_version "%s" contains invalid chars; refuse to emit agent_boot\n' "$SKILL_VERSION" >&2
+    if command -v append_event >/dev/null 2>&1 || declare -f append_event >/dev/null 2>&1; then
+      append_event "$AGENT" boot_validation_failed "" \
+        "{\"reason\":\"invalid_skill_version_chars\",\"value\":\"$SKILL_VERSION\",\"session_id\":\"$SESSION_ID\"}" \
+        2>/dev/null || true
+    fi
+    exit 2
+    ;;
+esac
+
 # Resolve the project-scoped sentinel dir. Failing to resolve is fatal —
 # we'd otherwise silently double-emit across sessions.
 PROJECT=$(resolve_project 2>/dev/null) || {

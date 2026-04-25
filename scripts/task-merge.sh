@@ -149,6 +149,20 @@ git branch -d "$BRANCH" >/dev/null 2>&1 || {
   printf 'warn: git branch -d %s refused (not fully merged?); leaving branch alive\n' "$BRANCH" >&2
 }
 
+# #154 sentinel — if no review_(approved|flagged|blocked) preceded this merge
+# for this task in the current event log, the code-quality gate was skipped
+# (silent dispatch failure, manual override, or stage-2 short-circuit). Emit
+# argus_gate_skipped with reason=no_verdict_at_merge so the dark window is
+# loud rather than dark. XS-trivial diffs that legitimately bypass Argus also
+# trip this; readers join with task size to suppress the false positive.
+event_log=$(resolve_event_log 2>/dev/null || echo "")
+if [ -n "$event_log" ] && [ -f "$event_log" ]; then
+  if ! grep -E "\"task\":\"$TASK_ID\".*\"event\":\"review_(approved|flagged|blocked)\"" "$event_log" >/dev/null 2>&1; then
+    skip_data=$(printf '{"reason":"no_verdict_at_merge","branch":"%s","merge_sha":"%s"}' "$BRANCH" "$MERGE_SHA")
+    emit_event_keyed argus review argus_gate_skipped "$TASK_ID" "$skip_data" >/dev/null 2>&1 || true
+  fi
+fi
+
 data=$(printf '{"merge_sha":"%s","branch":"%s"}' "$MERGE_SHA" "$BRANCH")
 emit_event_keyed achilles task task_merged "$TASK_ID" "$data" >/dev/null 2>&1 || true
 
