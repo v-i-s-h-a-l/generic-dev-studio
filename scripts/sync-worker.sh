@@ -210,6 +210,38 @@ elif [ "$DRY_RUN" = "1" ]; then
   printf '[dry-run] no skills.hosts in manifest — skill sync skipped\n'
 fi
 
+# ---------- runtime-bin mirroring ----------
+# Mirror dispatch-path scripts to ~/.dev-studio/.runtime/bin/ on the worker.
+# These are invoked by task-build-gate.sh's remote branch via $HOME-relative
+# paths — a stable anchor independent of the repo location on either machine.
+RUNTIME_BIN_REL=".dev-studio/.runtime/bin"
+RUNTIME_BIN_SCRIPTS=(xcodebuild-shim.sh)
+
+if [ "$DRY_RUN" = "1" ]; then
+  for _rbs in "${RUNTIME_BIN_SCRIPTS[@]}"; do
+    printf '[dry-run] would mirror %s to %s:~/%s/\n' "$_rbs" "$WORKER_ID" "$RUNTIME_BIN_REL"
+  done
+else
+  if ssh_exec "mkdir -p \"\$HOME/$RUNTIME_BIN_REL\"" >/dev/null 2>&1; then
+    for _rbs in "${RUNTIME_BIN_SCRIPTS[@]}"; do
+      if [ ! -f "$SCRIPT_DIR/$_rbs" ]; then
+        drift+=("runtime_bin_missing_source: $SCRIPT_DIR/$_rbs not found locally")
+        continue
+      fi
+      if rsync -aq \
+            -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
+            "$SCRIPT_DIR/$_rbs" "${SSH_USER}@${HOST}:\$HOME/$RUNTIME_BIN_REL/$_rbs" 2>/dev/null \
+         && ssh_exec "chmod +x \"\$HOME/$RUNTIME_BIN_REL/$_rbs\"" >/dev/null 2>&1; then
+        applied=$((applied + 1))
+      else
+        drift+=("runtime_bin_sync_failed: $_rbs")
+      fi
+    done
+  else
+    drift+=("runtime_bin_mkdir_failed: could not create ~/$RUNTIME_BIN_REL on $WORKER_ID")
+  fi
+fi
+
 # ---------- emit drift event if any ----------
 if [ "${#drift[@]}" -gt 0 ]; then
   drift_json=$(printf '%s\n' "${drift[@]}" | jq -R . | jq -s -c .)

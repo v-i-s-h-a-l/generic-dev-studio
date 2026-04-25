@@ -231,10 +231,11 @@ fi
 
 # Run the build. Output is captured for downstream analysis (error-line count
 # in the data payload) but not stored — we trust the build tool's exit status.
-# Inner build call routes through scripts/xcodebuild-shim.sh which selects
-# between xcodebuild and xcodebuildmcp per STUDIO_XCODEBUILDMCP env var. When
-# xcodebuildmcp is in use, $XCB_JSON_SIDECAR receives a structured JSON view
-# the build_check_failed event picks up below to enrich with error detail.
+# Both local and remote branches route through xcodebuild-shim.sh which
+# selects between xcodebuild and xcodebuildmcp per STUDIO_XCODEBUILDMCP.
+# When xcodebuildmcp is in use, $XCB_JSON_SIDECAR receives a structured
+# JSON view the build_check_failed event picks up below. The remote branch
+# (#178) runs the shim on the worker and pulls the sidecar back.
 build_log=$(mktemp 2>/dev/null || printf '/tmp/xcb-%s.log' "$$")
 build_json="${build_log}.json"
 export XCB_JSON_SIDECAR="$build_json"
@@ -246,17 +247,8 @@ if [ "$NODE_ID" = "local" ]; then
     >"$build_log" 2>&1
   BUILD_STATUS=$?
 else
-  # Remote dispatch (#127). Three things differ from local:
-  #   1. Source — the remote has no copy of the worktree until we rsync.
-  #      sourcesync_push mirrors $WORKTREE to <remote $HOME>/<rel>.
-  #   2. Paths — laptop's absolute paths (/Users/vishalsingh/...) won't
-  #      resolve on a remote whose $HOME differs (e.g. /Users/vishal).
-  #      sourcesync_remote_quoted emits "$HOME/<rel>" — literal $HOME so
-  #      the REMOTE shell expands it; the local shell sees it as a string.
-  #   3. Shim — the xcodebuildmcp routing layer is a manager-side concern;
-  #      the worker just executes plain xcodebuild. Skipping the shim
-  #      removes a path-translation problem (the shim itself lives at the
-  #      laptop's absolute SCRIPT_DIR — not present on the worker).
+  # Remote dispatch (#127, #178). Source sync, path translation, shim
+  # routing, and sidecar pull-back for structured error enrichment.
   # shellcheck source=lib-source-sync.sh
   . "$SCRIPT_DIR/lib-source-sync.sh"
   REL_WORKTREE=$(sourcesync_push "$NODE_ID" "$WORKTREE") || {
@@ -273,14 +265,44 @@ else
   }
   Q_WORKTREE=$(sourcesync_remote_quoted "$REL_WORKTREE")
   Q_DERIVED=$(sourcesync_remote_quoted "$REL_DERIVED")
-  # Build remote command. Single-quote the $HOME portions so the local
-  # shell leaves them literal; concatenate variables for SCHEME/DESTINATION
-  # via printf %q. Final string contains literal $HOME refs the remote
-  # shell expands.
-  REMOTE_CMD='cd '"$Q_WORKTREE"' && xcodebuild build -scheme '"$(printf '%q' "$SCHEME")"' -destination '"$(printf '%q' "$DESTINATION")"' -derivedDataPath '"$Q_DERIVED"
+
+  REMOTE_SIDECAR_REL=".dev-studio/.runtime/sidecar/xcb-${TASK_ID}.json"
+
+  # Propagate STUDIO_XCODEBUILDMCP so the worker's shim honours the
+  # manager's routing preference (=0 skips the shim on both sides).
+  Q_MCP_MODE=$(printf '%q' "${STUDIO_XCODEBUILDMCP:-auto}")
+
+  # Build remote command. Guards:
+  #   a) brew shellenv — non-interactive SSH lacks /opt/homebrew/bin in
+  #      PATH; without it, xcodebuildmcp (brew-installed) is invisible.
+  #   b) shim existence — falls back to xcodebuild if sync-worker.sh
+  #      hasn't mirrored the shim yet (preserves pre-#178 behaviour).
+  #   c) sidecar dir — mkdir so the shim can write the JSON sidecar.
+  REMOTE_CMD='[ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv)";'
+  REMOTE_CMD+=' [ -x /usr/local/bin/brew ] && eval "$(/usr/local/bin/brew shellenv)";'
+  REMOTE_CMD+=' _SHIM="$HOME/.dev-studio/.runtime/bin/xcodebuild-shim.sh";'
+  REMOTE_CMD+=' [ -x "$_SHIM" ] || _SHIM=xcodebuild;'
+  REMOTE_CMD+=' export STUDIO_XCODEBUILDMCP='"$Q_MCP_MODE"';'
+  REMOTE_CMD+=' mkdir -p "$HOME/.dev-studio/.runtime/sidecar" 2>/dev/null;'
+  REMOTE_CMD+=' export XCB_JSON_SIDECAR="$HOME/'"$REMOTE_SIDECAR_REL"'";'
+  REMOTE_CMD+=' cd '"$Q_WORKTREE"' && "$_SHIM" build -scheme '"$(printf '%q' "$SCHEME")"' -destination '"$(printf '%q' "$DESTINATION")"' -derivedDataPath '"$Q_DERIVED"
   "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "$REMOTE_CMD" \
     >"$build_log" 2>&1
   BUILD_STATUS=$?
+
+  # Sidecar pull-back: structured JSON from the worker's shim → local
+  # build_json for error enrichment below. Non-fatal — when the shim
+  # fell back to xcodebuild (or xcodebuildmcp isn't installed), no
+  # sidecar exists and the pull fails silently.
+  sourcesync_pull_file "$NODE_ID" "$REMOTE_SIDECAR_REL" "$build_json" 2>/dev/null || true
+
+  # AXe evidence pull-back (#178). If tests ran on the worker, snapshots
+  # live at this path. Pull to the matching local path so evidence is
+  # reachable regardless of which machine produced it. No-op when the
+  # directory doesn't exist (the common case for build-only dispatch).
+  REMOTE_EVIDENCE_REL=".dev-studio/$PROJECT/.runtime/ui-evidence/$TASK_ID"
+  LOCAL_EVIDENCE="$HOME/$REMOTE_EVIDENCE_REL"
+  sourcesync_pull_dir "$NODE_ID" "$REMOTE_EVIDENCE_REL" "$LOCAL_EVIDENCE" 2>/dev/null || true
 fi
 
 # Parse error + warning counts. Cheap and well-defined — xcodebuild's error
