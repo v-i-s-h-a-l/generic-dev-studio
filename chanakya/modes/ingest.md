@@ -2,6 +2,7 @@
 name: Chanakya Ingest
 description: Slack-source feedback ingestion — thread, DM, channel. Pulls messages, classifies feedback vs conversation, mints feedback records, downloads attachments, dedupes, emits feedback_ingested.
 type: mode-pack
+schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [feedback-inbox.json]
 budget_tokens: 3000

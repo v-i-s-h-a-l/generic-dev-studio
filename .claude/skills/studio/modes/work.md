@@ -2,6 +2,7 @@
 name: Studio Work Mode
 description: Autonomous issue worker for a parallel track. Claims the next unassigned issue in the track, implements it on the track branch, commits, closes the issue, and loops. Entry point for /studio work <track> or STUDIO_TRACK env var auto-start.
 type: mode-pack
+schema_version: 1
 budget_tokens: 600
 reads:
   - TRACKS.md

@@ -2,6 +2,7 @@
 name: Chanakya Feedback Reports
 description: Render reporter-facing feedback reports — design (category=design or UI/UX module) and product (category=clarification/enhancement). Read-only; writes a dated markdown file to chanakya-inbox. Sub-commands report-design and report-product.
 type: mode-pack
+schema_version: 1
 snapshots: [feedback-inbox.json]
 budget_tokens: 2500
 reads:

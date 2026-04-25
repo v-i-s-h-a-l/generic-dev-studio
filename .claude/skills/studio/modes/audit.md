@@ -1,7 +1,8 @@
 ---
 name: Studio Audit
-description: Arc-coherence audit — runs three probes (A1 decision-ledger consistency, A2 claim-evidence, A3 arc-exit) against ROADMAP.md + memory + git history. Silent when clean; emits drift findings when a phase/arc has fallen out of sync. Auto-invoked by SessionStart; also available on demand.
+description: Arc-coherence audit — three probes (A1 decision-ledger, A2 claim-evidence, A3 arc-exit) against ROADMAP.md + memory + git history. Silent when clean; emits drift findings when a phase/arc has fallen out of sync. Auto-invoked by SessionStart.
 type: mode-pack
+schema_version: 1
 budget_tokens: 400
 snapshots: []
 reads:

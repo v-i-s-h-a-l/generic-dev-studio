@@ -2,6 +2,7 @@
 name: Chanakya Tests
 description: Test-manifest (per-task checklist) + test-flow (journey-ordered walkthrough, with promote + diff modes). The two test-planning sub-commands are grouped because they are consulted together and share reads against processed debriefs and per-task test artifacts.
 type: mode-pack
+schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [briefs.json]
 budget_tokens: 2500

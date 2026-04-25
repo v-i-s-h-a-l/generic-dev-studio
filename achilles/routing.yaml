@@ -1,0 +1,23 @@
+schema_version: 1
+name: achilles
+invocation:
+  slash_command: "/achilles"
+  triggers:
+    - "/achilles"
+    - "implement task <id>"
+    - "/achilles <task-id>"
+    - "/achilles build"
+    - "/achilles debrief"
+    - "/achilles push-tf"
+    - "/achilles app-store"
+    - "/achilles group <task-id>"
+    - "/achilles next [N]"
+    - "/achilles test-suite <unit|ui|all>"
+    - "/achilles worker [N]"
+    - "/achilles studio-feedback"
+    - "capture this as feedback"
+domains:
+  - turnip-ios
+  - implementation
+  - testing
+  - releases

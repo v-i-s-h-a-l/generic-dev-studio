@@ -2,6 +2,7 @@
 name: Studio Review
 description: Walk `REVIEW.md` at the repo root against the current diff. Auto-fix `block + auto-fix` tier, surface `ask` tier before changing, note `warn` tier. For the studio's own repo — not the user's iOS project (that's Argus's job).
 type: mode-pack
+schema_version: 1
 budget_tokens: 1200
 snapshots: []
 reads:

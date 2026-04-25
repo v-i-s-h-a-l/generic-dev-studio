@@ -1,7 +1,8 @@
 ---
 name: Chanakya Feedback
-description: Review-Feedback (apply user-testing.md edits to master plan), Feedback-Archive (promote verified records to per-build archive), Feedback-History (search active + archive), Studio-Feedback (capture studio-internal feedback). The full feedback lifecycle except Slack ingestion (which lives in the ingest mode pack).
+description: Full feedback lifecycle (review, archive, history, studio-feedback) excluding Slack ingestion (which lives in modes/ingest.md). Applies user-testing edits to the master plan and promotes verified records to per-build archive.
 type: mode-pack
+schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [briefs.json, feedback-inbox.json]
 budget_tokens: 4000

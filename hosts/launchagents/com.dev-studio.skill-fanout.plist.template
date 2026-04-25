@@ -6,8 +6,15 @@
     <key>Label</key>
     <string>com.dev-studio.skill-fanout</string>
 
+    <!-- Invoked via /bin/bash with the script as an argument, not as a
+         standalone exec. This sidesteps macOS Sequoia+'s TCC restriction
+         on LaunchAgent processes executing scripts inside ~/Documents
+         (which surfaces as "Operation not permitted"). bash itself is in
+         /bin and TCC-allowed; the script becomes a read by bash, which
+         most macOS environments permit without Full Disk Access. -->
     <key>ProgramArguments</key>
     <array>
+        <string>/bin/bash</string>
         <string>__REPO_ROOT__/scripts/sync-host-skills.sh</string>
         <string>--all</string>
     </array>

@@ -1,7 +1,8 @@
 ---
 name: studio
-description: "Cross-agent studio router. Handles studio-level operations that span agents or concern the project's own conventions (not the user's iOS project). Tier 1 sub-commands: resume-plan, review, release, ingest, analyze, help, audit, guard, janitor, nodes. Do NOT use for task-level work — that goes to /chanakya, /achilles, /argus."
+description: Cross-agent studio router. Handles studio-level operations that span agents or concern the studio repo's own conventions (not the user's iOS project). See routing.yaml for the sub-command surface. Task-level work routes to /chanakya, /achilles, /argus.
 type: agent-router
+schema_version: 1
 ---
 
 # Studio — Router

@@ -1,7 +1,8 @@
 ---
 name: achilles
-description: "Worker agent for the Turnip iOS codebase. Executes tasks from Chanakya-generated briefs or directly from user instructions. Handles implementation tasks (with SOLID/testability mandates, accessibility identifiers, DI-based test seams), unit test tasks, integration test tasks, UI test tasks, and TDD test-first tasks. Works on an isolated git worktree, self-reviews (including testability checks), invokes Argus pre-merge, merges locally, cleans up, and debriefs. XS/S tasks skip xcodebuild (LSP-only) and accumulate build debt; M/L tasks run the full build gate. Default is merge-immediately (no wait); pass --wait to block up to 10 minutes for user test feedback before merging. Emits events to the shared event log throughout. Invoke with /achilles <task-id> [--wait] [--force-build] [--ignore-build-debt] for brief-based work, /achilles [--wait] for direct mode, /achilles build for a manual build-verification run (auto-bisects on red), /achilles debrief to capture a direct-to-Claude bug-fix or quick-change into a YAML debrief (no brief, no worktree, no Argus), /achilles push-tf for TestFlight release (wraps /pushTFBuild + debrief), or /achilles app-store for App Store submission (wraps /fullSendToAppStore + debrief)."
+description: Worker agent for the Turnip iOS codebase. Implements tasks on isolated git worktrees, self-reviews, invokes Argus pre-merge, merges locally, debriefs. See routing.yaml for the slash-command surface; full mode index in the dispatch table.
 type: agent-router
+schema_version: 1
 ---
 
 # Achilles — Worker Agent (router)

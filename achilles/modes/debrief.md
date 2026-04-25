@@ -1,7 +1,8 @@
 ---
 name: Achilles Debrief
-description: Direct-to-Claude debrief for bug-fix or quick-change work that bypassed the brief → worktree → Argus pipeline. Scans conversation transcript + working-tree/staged diff, asks inline whether tests are needed, emits a YAML debrief under plans/debriefs/. No brief, no worktree, no Argus, no git action. Conversational invocation only.
+description: Direct-to-Claude debrief for work that bypassed the brief→worktree→Argus pipeline. Scans transcript + git diff, asks inline if tests are needed, emits a YAML debrief under plans/debriefs/. No brief, no worktree, no Argus, no git action.
 type: mode-pack
+schema_version: 1
 snapshots: []
 budget_tokens: 2000
 reads:

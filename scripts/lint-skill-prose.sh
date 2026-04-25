@@ -86,17 +86,25 @@ extract_frontmatter() {
   ' "$1"
 }
 
-# Read a top-level scalar field from the frontmatter via yq if present,
-# else awk fallback. Returns empty if missing.
+# Read a top-level scalar field from the frontmatter. Tries yq first; falls
+# back to a key-prefix awk extraction when yq rejects the YAML (common when
+# unquoted descriptions contain colons). Returns empty if missing.
 fm_field() {
-  local file="$1" key="$2" fm
+  local file="$1" key="$2" fm out
   fm=$(extract_frontmatter "$file")
   if command -v yq >/dev/null 2>&1; then
-    printf '%s' "$fm" | yq -r ".$key // \"\"" 2>/dev/null
-    return 0
+    out=$(printf '%s' "$fm" | yq -r ".$key // \"\"" 2>/dev/null)
+    if [ -n "$out" ]; then printf '%s' "$out"; return 0; fi
   fi
   printf '%s' "$fm" | awk -v key="$key" '
-    $1 == key":" { sub("^"key"[[:space:]]*:[[:space:]]*", ""); gsub(/^["'\'']|["'\'']$/, ""); print; exit }
+    BEGIN { pat = "^"key":[[:space:]]" }
+    $0 ~ pat {
+      sub(pat, "", $0)
+      sub(/^[[:space:]]+/, "", $0)
+      gsub(/^["'\'']|["'\'']$/, "", $0)
+      print
+      exit
+    }
   '
 }
 

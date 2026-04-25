@@ -2,6 +2,7 @@
 name: Studio Ingest
 description: Studio-level ingest — inputs that concern the studio's own evolution (analysis reports from running on real projects, pattern observations, parking-lot candidates) rather than user-project feedback. Routes user-project feedback to `/chanakya ingest-*` instead.
 type: mode-pack
+schema_version: 1
 budget_tokens: 800
 snapshots: []
 reads:

@@ -2,6 +2,7 @@
 name: Achilles Next
 description: Composite next mode (`/achilles next [N]`). Picks and executes the highest-priority ready task without the user specifying a task ID. With N>1, prints a dispatch plan for other tabs.
 type: mode-pack
+schema_version: 1
 snapshots: []
 budget_tokens: 1000
 reads:

@@ -1,7 +1,8 @@
 ---
 name: Chanakya Sweep
-description: Inbox-sweep-only invocation. Runs the pre-dispatch Step 0 (Steps 0A–0G defined in modes/inbox-sweep.md) and exits. No status table, no dashboard render, no task-list rendering. Intended for smoke-tests, validation passes, and pre-dispatch warm-ups where the full status view is unnecessary overhead.
+description: Inbox-sweep-only invocation. Runs Step 0 (defined in modes/inbox-sweep.md) and exits. No status table, no dashboard, no task list. For smoke-tests, validation passes, and pre-dispatch warm-ups where the full status view is overhead.
 type: mode-pack
+schema_version: 1
 snapshots: []
 budget_tokens: 500
 reads: []

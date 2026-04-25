@@ -2,6 +2,7 @@
 name: Studio Nodes
 description: Day-2 fleet management — list workers, add/remove/enable/disable, probe health, push manifest, manage scheduled sync. Wraps configure.sh + node-health.sh + sync-worker(s).sh; does not run bootstrap.
 type: mode-pack
+schema_version: 1
 budget_tokens: 400
 snapshots: []
 reads:

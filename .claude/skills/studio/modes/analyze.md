@@ -1,7 +1,8 @@
 ---
 name: Studio Analyze
-description: Sweep a project's event-log shards + studio-feedback inbox to surface usage patterns, write a private detailed report, and distill scrubbed public patterns to GH issues. Canonical surface for "analyze logs and feedback for studio from <project>". Distinct from `ingest` (single-input classify); analyze is a queue/log sweep.
+description: Sweep a project's event-log + studio-feedback inbox to surface usage patterns. Writes a private detailed report and distills scrubbed public patterns to GH issues. Distinct from `ingest` (single input); analyze is a queue/log sweep.
 type: mode-pack
+schema_version: 1
 budget_tokens: 1200
 snapshots: []
 reads:

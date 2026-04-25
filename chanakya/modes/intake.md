@@ -2,6 +2,7 @@
 name: Chanakya Intake
 description: Initial task capture + planning — take a PRD or bullet points, tier into plan-worthy vs direct, expand into task groups with sub-task decisions (unit/integration/UI tests, TDD vs test-after), assign skills, write the master plan.
 type: mode-pack
+schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [briefs.json]
 budget_tokens: 4000

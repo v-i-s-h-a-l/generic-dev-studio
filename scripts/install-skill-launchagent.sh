@@ -133,3 +133,22 @@ printf 'install-skill-launchagent: installed %s\n' "$DEST"
 printf '  WatchPaths: %d entries\n' "$(printf '%s\n' "$WATCH_PATHS_BLOCK" | wc -l | tr -d '[:space:]')"
 printf '  Reload:     scripts/install-skill-launchagent.sh\n'
 printf '  Uninstall:  scripts/install-skill-launchagent.sh --uninstall\n'
+
+# Detect TCC blockage (macOS Sequoia+: launchd lacks Full Disk Access for
+# files inside ~/Documents/Downloads/Desktop). Touch a watched file to force
+# a fire, sleep past the throttle floor, and inspect stderr.
+case "$REPO_ROOT" in
+  "$HOME/Documents"/*|"$HOME/Downloads"/*|"$HOME/Desktop"/*)
+    err_log="$HOME/.dev-studio/.runtime/logs/skill-fanout.err"
+    : > "$err_log" 2>/dev/null
+    touch "$REPO_ROOT/hosts/registry.yaml" 2>/dev/null || true
+    sleep 2
+    if [ -s "$err_log" ] && grep -q 'Operation not permitted' "$err_log" 2>/dev/null; then
+      printf '\nWARNING — LaunchAgent fired but was blocked by macOS TCC:\n' >&2
+      printf '  %s\n' "$(head -1 "$err_log")" >&2
+      printf '  Repo is inside a TCC-protected directory. See hosts/launchagents/INSTALL.md\n' >&2
+      printf '  for resolutions (relocate repo, grant launchd Full Disk Access, or skip).\n' >&2
+      printf '  SessionStart freshness check + git post-merge hook still cover drift.\n' >&2
+    fi
+    ;;
+esac

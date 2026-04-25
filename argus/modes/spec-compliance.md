@@ -2,6 +2,7 @@
 name: Argus Spec-Compliance
 description: Stage 1 of the two-stage Argus review. Narrow check — does the diff match the brief? Nothing extra, nothing missed. Runs before code-quality. Drawn from obra/superpowers/subagent-driven-development.
 type: mode-pack
+schema_version: 1
 snapshots: []
 budget_tokens: 1200
 reads:

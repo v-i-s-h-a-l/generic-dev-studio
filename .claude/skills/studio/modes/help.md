@@ -2,6 +2,7 @@
 name: Studio Help
 description: Open the studio documentation page in the default browser. Tier-1 mode. Triggers when the user asks "how does this work?", "show me the docs", or runs `/studio help` / `/studio-help`.
 type: mode-pack
+schema_version: 1
 budget_tokens: 300
 snapshots: []
 reads:

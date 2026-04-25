@@ -1,7 +1,8 @@
 ---
 name: chanakya
-description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, processes the shared event log, and manages the user verification pipeline. Sub-commands: status, brief, brief-review, review, sweep, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify, janitor, ingest-thread, ingest-dm, ingest-slack, report-design, report-product, feedback-archive, feedback-history. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
+description: Project manager for the Turnip iOS codebase. Plans tasks, generates Achilles briefs, runs inbox sweeps, tracks build/test debt, manages verification. See routing.yaml for the sub-command surface. Bug fixes / one-file changes route to /achilles.
 type: agent-router
+schema_version: 1
 ---
 
 # Chanakya — Project Manager (router)

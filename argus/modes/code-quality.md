@@ -1,7 +1,8 @@
 ---
 name: Argus Code-Quality
-description: Stage 2 of the two-stage Argus review. Cross-file regression risk, edge-case coverage, diff anomalies, secrets in diff, base-branch staleness, test-run (M/L), TDD red→green verification. Runs iff Stage 1 (spec-compliance) returned approved or flagged. Previously the sole Argus pass; split 2026-04-23.
+description: Stage 2 of two-stage Argus review. Cross-file regressions, edge cases, diff anomalies, secrets, base-branch staleness, M/L test run, TDD red→green. Runs iff Stage 1 returned approved or flagged. Previously the sole Argus pass; split 2026-04-23.
 type: mode-pack
+schema_version: 1
 snapshots: []
 budget_tokens: 2000
 reads:
