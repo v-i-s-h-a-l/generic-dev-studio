@@ -22,6 +22,9 @@
 #   scripts/configure.sh recheck               # re-run role validation; surface diff
 #                                              # vs last-recorded state. Use after
 #                                              # installing Xcode / fixing SSH / etc.
+#   scripts/configure.sh guide                 # guided post-setup walkthrough — explore
+#                                              # tools, workers, networking, scheduling
+#   scripts/configure.sh tour                  # quick tour of the studio architecture
 
 set -u
 umask 022
@@ -29,19 +32,10 @@ umask 022
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
-
-# ---------- ANSI helpers ----------
-if [ -t 1 ]; then
-  c_cyan=$'\033[1;36m'; c_green=$'\033[32m'; c_yellow=$'\033[33m'
-  c_blue=$'\033[34m'; c_red=$'\033[31m'; c_dim=$'\033[2m'
-  c_bold=$'\033[1m'; c_reset=$'\033[0m'
-else
-  c_cyan=''; c_green=''; c_yellow=''; c_blue=''; c_red=''; c_dim=''; c_bold=''; c_reset=''
-fi
-ok()   { printf '  %s✓%s %s\n' "$c_green" "$c_reset" "$*"; }
-warn() { printf '  %s⚠%s %s\n' "$c_yellow" "$c_reset" "$*"; }
-info() { printf '  %si%s %s\n' "$c_blue" "$c_reset" "$*"; }
-err()  { printf '  %s✗%s %s\n' "$c_red" "$c_reset" "$*" >&2; }
+# shellcheck source=lib-ui.sh
+. "$SCRIPT_DIR/lib-ui.sh"
+# shellcheck source=lib-registry.sh
+. "$SCRIPT_DIR/lib-registry.sh"
 
 # ---------- common ----------
 NODES_JSON="$(resolve_runtime_global)/nodes.json"
@@ -253,6 +247,192 @@ MENU
 }
 
 # ============================================================================
+# guide — post-setup guided configuration wizard
+#
+# Walks the user through their setup topic-by-topic, with explanations,
+# current state, and change options. Uses the tool registry (tools.yaml)
+# for the Tools topic so new tools auto-appear.
+# ============================================================================
+
+_guide_resolve_role() {
+  local state role wroles
+  state=""
+  if [ -x "$SCRIPT_DIR/lib-stepwise.sh" ]; then
+    . "$SCRIPT_DIR/lib-stepwise.sh"
+    state=$(stepwise_state_path 2>/dev/null || echo "")
+  fi
+  _GUIDE_ROLE=""
+  _GUIDE_WROLES=""
+  if [ -n "$state" ] && [ -f "$state" ] && command -v jq >/dev/null 2>&1; then
+    _GUIDE_ROLE=$(jq -r '.role // ""' "$state" 2>/dev/null || true)
+    _GUIDE_WROLES=$(jq -r '(.worker_roles // []) | join(",")' "$state" 2>/dev/null || true)
+  fi
+  [ -z "$_GUIDE_ROLE" ] && {
+    if [ -L "$HOME/.claude/skills/chanakya" ]; then _GUIDE_ROLE="manager"; else _GUIDE_ROLE="worker"; fi
+  }
+}
+
+_guide_tools() {
+  printf '\n%s━━━ Tools ━━━%s\n\n' "$c_cyan" "$c_reset"
+  info "Role: $_GUIDE_ROLE"
+  [ -n "$_GUIDE_WROLES" ] && info "Worker roles: $_GUIDE_WROLES"
+  echo
+
+  registry_load
+  registry_scan "$_GUIDE_ROLE" "$_GUIDE_WROLES"
+  registry_render_scan "interactive"
+
+  local count_need=0 count_opt=0
+  local entry
+  for entry in $_SCAN_NEEDED; do count_need=$((count_need + 1)); done
+  for entry in $_SCAN_OPTIONAL; do count_opt=$((count_opt + 1)); done
+
+  if [ "$count_need" -gt 0 ] || [ "$count_opt" -gt 0 ]; then
+    echo
+    if confirm "Install missing tools now?" "y"; then
+      YES=0 registry_install_needed "interactive" || true
+    fi
+  else
+    echo
+    ok "All tools for your role are installed."
+  fi
+
+  echo
+  printf '  %sTip:%s Type a tool ID to see full details (e.g. "jq", "tailscale"), or Enter to go back.\n' "$c_dim" "$c_reset"
+  printf '  ? '
+  read -r tool_choice
+  if [ -n "$tool_choice" ]; then
+    local _tid
+    _tid=$(registry_get "$tool_choice" "id")
+    if [ -n "$_tid" ]; then
+      registry_tool_card "$tool_choice"
+    else
+      warn "Unknown tool: $tool_choice"
+    fi
+  fi
+}
+
+_guide_networking() {
+  printf '\n%s━━━ Networking ━━━%s\n\n' "$c_cyan" "$c_reset"
+
+  printf '  %sTailscale%s\n' "$c_bold" "$c_reset"
+  if command -v tailscale >/dev/null 2>&1; then
+    if tailscale status >/dev/null 2>&1; then
+      ok "Tailscale connected: $(tailscale version 2>/dev/null | head -1)"
+      local ts_name
+      ts_name=$(tailscale status --json 2>/dev/null \
+        | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("Self",{}).get("DNSName","").rstrip("."))' 2>/dev/null || true)
+      [ -n "$ts_name" ] && info "DNS name: $ts_name"
+    else
+      warn "Tailscale installed but not connected"
+      cmd_hint "open -a Tailscale   # or: sudo tailscale up"
+    fi
+  else
+    warn "Tailscale not installed"
+    info "Mesh VPN for reaching workers by hostname. Free for personal use."
+    cmd_hint "brew install --cask tailscale"
+  fi
+
+  echo
+  printf '  %sSSH%s\n' "$c_bold" "$c_reset"
+  if [ -f "$HOME/.ssh/id_ed25519" ] || [ -f "$HOME/.ssh/id_rsa" ]; then
+    ok "SSH keypair present"
+  else
+    warn "No SSH keypair found"
+    cmd_hint "ssh-keygen -t ed25519 -C \"$(id -un)@studio\""
+  fi
+
+  local rl_state
+  rl_state=$(sudo -n systemsetup -getremotelogin 2>/dev/null | awk -F': ' '{print tolower($NF)}' | tr -d ' ' || echo "unknown")
+  case "$rl_state" in
+    on)      ok "Remote Login (SSH server) enabled" ;;
+    off)     warn "Remote Login is OFF — workers can't accept dispatches"
+             cmd_hint "sudo systemsetup -setremotelogin on" ;;
+    unknown) info "Remote Login status unknown (needs sudo to check)" ;;
+  esac
+}
+
+_guide_tour() {
+  printf '\n%s━━━ Quick Tour ━━━%s\n\n' "$c_cyan" "$c_reset"
+  cat <<'TOUR'
+  The studio has three layers:
+
+  1. AGENTS — AI-powered task management
+     /chanakya plans work, /achilles implements, /argus reviews.
+     They run inside Claude Code on your manager machine.
+
+  2. DISPATCH — distributed builds
+     Your manager sends compile/test work to registered workers
+     via SSH. rsync keeps sources in sync; gtimeout prevents runaways.
+
+  3. TOOLING — scripts and configuration
+     Everything under scripts/ — health checks, sync, scheduling,
+     event logging. Most scripts are idempotent and re-runnable.
+
+  Key files:
+    ~/.dev-studio/.runtime/nodes.json          worker registry
+    ~/.dev-studio/.runtime/bootstrap-state.json wizard state
+    ~/.dev-studio/<project>/                    per-project runtime
+
+  Commands:
+    scripts/configure.sh status      see everything at a glance
+    scripts/configure.sh recheck     re-validate your setup
+    scripts/configure.sh worker add  register a new worker
+    scripts/configure.sh guide       this walkthrough
+    scripts/bootstrap.sh             re-run the full wizard
+    scripts/bootstrap.sh --quick     quick-start (tools + skills only)
+
+TOUR
+}
+
+cmd_guide() {
+  _guide_resolve_role
+
+  printf '\n%s━━━ Studio Configuration Guide ━━━%s\n\n' "$c_cyan" "$c_reset"
+  info "Role: $_GUIDE_ROLE"
+  [ -n "$_GUIDE_WROLES" ] && info "Worker roles: $_GUIDE_WROLES"
+  echo
+
+  local _loop=1
+  while [ "$_loop" = "1" ]; do
+    cat <<MENU
+  ${c_bold}What would you like to explore?${c_reset}
+
+    ${c_bold}1${c_reset}  Tools         — see what's installed, add optional tools
+    ${c_bold}2${c_reset}  Workers       — manage worker machines
+    ${c_bold}3${c_reset}  Networking    — Tailscale, SSH, hostname resolution
+    ${c_bold}4${c_reset}  Scheduling    — automated worker-sync
+    ${c_bold}5${c_reset}  Health check  — re-validate your setup, spot regressions
+    ${c_bold}6${c_reset}  Quick tour    — what each piece does (2-min read)
+    ${c_bold}q${c_reset}  Exit
+MENU
+    printf '\n  ? '
+    read -r guide_choice
+
+    case "$guide_choice" in
+      1) _guide_tools ;;
+      2) cmd_worker list
+         echo
+         if confirm "Add a worker?" "n"; then cmd_worker add; fi ;;
+      3) _guide_networking ;;
+      4) cmd_schedule status
+         echo
+         if confirm "Toggle scheduling?" "n"; then
+           printf '  on or off? '
+           read -r toggle
+           cmd_schedule "$toggle"
+         fi ;;
+      5) cmd_recheck ;;
+      6) _guide_tour ;;
+      q|Q|"") _loop=0 ;;
+      *) warn "Pick 1-6 or q" ;;
+    esac
+    echo
+  done
+  ok "bye"
+}
+
+# ============================================================================
 # dispatch
 # ============================================================================
 case "${1:-menu}" in
@@ -261,7 +441,9 @@ case "${1:-menu}" in
   manifest)      cmd_manifest ;;
   schedule)      shift; cmd_schedule "$@" ;;
   recheck)       cmd_recheck ;;
+  guide)         cmd_guide ;;
+  tour)          _guide_resolve_role; _guide_tour ;;
   menu|"")       interactive_menu ;;
   -h|--help)     sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) err "unknown command: $1 (try: status / worker / manifest / schedule / recheck / menu)"; exit 1 ;;
+  *) err "unknown command: $1 (try: status / worker / manifest / schedule / recheck / guide / tour / menu)"; exit 1 ;;
 esac
