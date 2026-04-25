@@ -26,6 +26,10 @@
 #
 # Designed to run from a cron job or LaunchAgent (no interactive prompts).
 # Trust-mode auto-merge is deferred to #170; this MVP always opens PRs.
+#
+# Diff-aware (#183): if a SHA bump produces no actual content change in the
+# vendored subpath, the recipe is "silent-bumped" — committed to main with a
+# `recipe_silent_bump` event and no PR. Only real content changes get a PR.
 
 set -u
 umask 022
@@ -145,23 +149,51 @@ update_one_recipe() {
   printf 'update-recipes: %s drift detected — pinned=%s upstream=%s\n' "$name" "${pinned_sha:0:8}" "${head_sha:0:8}" >&2
   if [ "$DRY_RUN" -eq 1 ]; then return 0; fi
 
-  # Branch off main + bump SHA.
-  local branch="skills-bump-$name-$(date -u +%Y%m%d)"
   local current_branch
   current_branch=$(git -C "$REPO_ROOT" symbolic-ref --short HEAD 2>/dev/null || echo HEAD)
+
+  # Bump SHA + re-vendor on current branch first; branch creation deferred
+  # until we know whether content actually changed (#183).
+  yq -i ".sources[0].pinned_sha = \"$head_sha\"" "$recipe_file"
+
+  if ! "$SCRIPT_DIR/install-recipe.sh" "$name" --auto-approve-author >/dev/null 2>&1; then
+    printf 'update-recipes: install-recipe.sh failed for %s @ %s\n' "$name" "$head_sha" >&2
+    git -C "$REPO_ROOT" checkout -- "$recipe_file" 2>/dev/null
+    return 1
+  fi
+
+  # Diff-aware: check if vendored content actually changed beyond metadata.
+  local vendor_dir="skills/vendored/$author/$name"
+  local content_diff
+  content_diff=$(git -C "$REPO_ROOT" diff --name-only -- "$vendor_dir/" 2>/dev/null \
+    | grep -v 'vendor\.yaml$' | grep -v 'portability\.yaml$' || true)
+
+  if [ -z "$content_diff" ]; then
+    # Silent bump: SHA advanced but vendored content in our subpath didn't
+    # change. Commit directly to main — no PR noise.
+    git -C "$REPO_ROOT" add "$recipe_rel" "$vendor_dir/" 2>/dev/null
+    git -C "$REPO_ROOT" commit -m "[skills] silent-bump $name @ ${head_sha:0:8} (no content change)
+
+Recipe: $recipe_rel
+Upstream: $upstream@$head_sha (was ${pinned_sha:0:8})
+
+Co-Authored-By: scripts/update-recipes.sh <noreply@dev-studio.local>" \
+      >/dev/null 2>&1 || true
+    if [ -x "$SCRIPT_DIR/emit-event.sh" ]; then
+      "$SCRIPT_DIR/emit-event.sh" recipe_silent_bump \
+        recipe="$name" from_sha="${pinned_sha:0:8}" to_sha="${head_sha:0:8}" \
+        >/dev/null 2>&1 || true
+    fi
+    printf 'update-recipes: %s silent-bump to %s (no content change in %s)\n' "$name" "${head_sha:0:8}" "$upath" >&2
+    return 0
+  fi
+
+  # Content changed — proceed with full PR flow.
+  local branch="skills-bump-$name-$(date -u +%Y%m%d)"
   if [ "$NO_PR" -eq 0 ]; then
     git -C "$REPO_ROOT" checkout -B "$branch" >/dev/null 2>&1 || {
       printf 'update-recipes: failed to create branch %s\n' "$branch" >&2; return 1
     }
-  fi
-
-  yq -i ".sources[0].pinned_sha = \"$head_sha\"" "$recipe_file"
-
-  # Re-run install-recipe.sh to re-vendor at new SHA.
-  if ! "$SCRIPT_DIR/install-recipe.sh" "$name" --auto-approve-author >/dev/null 2>&1; then
-    printf 'update-recipes: install-recipe.sh failed for %s @ %s\n' "$name" "$head_sha" >&2
-    [ "$NO_PR" -eq 0 ] && git -C "$REPO_ROOT" checkout "$current_branch" >/dev/null 2>&1
-    return 1
   fi
 
   # Linter pass (best-effort signal for the PR body).
