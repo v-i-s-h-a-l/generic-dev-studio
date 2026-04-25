@@ -25,6 +25,7 @@
 #   worker_sync_drift_detected   {studio.dispatch.node, studio.sync.drift: [...]}
 #   worker_sync_completed        {studio.dispatch.node, studio.sync.applied_count}
 #   worker_sync_failed           {studio.dispatch.node, studio.sync.reason}
+#   worker_skill_sync_completed  {studio.dispatch.node, studio.sync.skill_hosts}
 
 set -u
 umask 022
@@ -156,6 +157,57 @@ if [ -n "$XCODE_MIN" ]; then
       drift+=("xcode_below_min: $WORKER_ID has $remote_xcode, manifest wants ≥$XCODE_MIN")
     fi
   fi
+fi
+
+# ---------- skill propagation ----------
+SKILL_HOSTS=$(yq -r '.skills.hosts[]?' "$MANIFEST" 2>/dev/null)
+if [ -n "$SKILL_HOSTS" ]; then
+  REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+  repo_rel=""
+  case "$REPO_ROOT" in
+    "$HOME")   repo_rel="." ;;
+    "$HOME"/*) repo_rel="${REPO_ROOT#$HOME/}" ;;
+    *)
+      drift+=("skill_sync_skipped: repo root not under \$HOME — cannot mirror")
+      ;;
+  esac
+
+  if [ -n "$repo_rel" ]; then
+    skill_dirs=(skills _shared scripts hosts achilles argus chanakya .claude)
+    skill_sync_ok=1
+
+    for dir in "${skill_dirs[@]}"; do
+      [ -d "$REPO_ROOT/$dir" ] || continue
+      if [ "$DRY_RUN" = "1" ]; then
+        printf '[dry-run] would rsync %s/ to %s:~/%s/%s/\n' "$dir" "$WORKER_ID" "$repo_rel" "$dir"
+        continue
+      fi
+      ssh_exec "mkdir -p \"\$HOME/$repo_rel/$dir\"" >/dev/null 2>&1
+      if ! rsync -aq --delete --exclude '.git' \
+            -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
+            "$REPO_ROOT/$dir/" "${SSH_USER}@${HOST}:\$HOME/$repo_rel/$dir/" 2>/dev/null; then
+        drift+=("skill_rsync_failed: $dir")
+        skill_sync_ok=0
+      fi
+    done
+
+    if [ "$DRY_RUN" = "0" ] && [ "$skill_sync_ok" = "1" ]; then
+      remote_sync="cd \"\$HOME/$repo_rel\" && scripts/sync-host-skills.sh --all"
+      if ssh_exec "$remote_sync" >/dev/null 2>&1; then
+        applied=$((applied + 1))
+        printf 'sync-worker: skill farms synced on %s\n' "$WORKER_ID"
+      else
+        drift+=("skill_fanout_failed: sync-host-skills.sh --all failed on remote")
+      fi
+
+      hosts_csv=$(printf '%s\n' $SKILL_HOSTS | paste -sd ',' -)
+      emit_event_keyed sync worker worker_skill_sync_completed "$WORKER_ID" \
+        "{\"studio.dispatch.node\":\"$WORKER_ID\",\"studio.sync.skill_hosts\":\"$hosts_csv\"}" \
+        >/dev/null 2>&1 || true
+    fi
+  fi
+elif [ "$DRY_RUN" = "1" ]; then
+  printf '[dry-run] no skills.hosts in manifest — skill sync skipped\n'
 fi
 
 # ---------- emit drift event if any ----------
