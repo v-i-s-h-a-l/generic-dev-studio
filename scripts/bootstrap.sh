@@ -665,6 +665,62 @@ if [ "$ROLE" = "manager" ] || [ "$ROLE" = "dual" ]; then
     fi
   fi
   [ -n "$KEY_FOUND" ] && summary "ssh key = ${KEY_FOUND/#$HOME/~}.pub"
+
+  # Passphrase + ssh-agent + Keychain integration. A passphrase-protected
+  # key works for interactive ssh (you type it, agent caches), but every
+  # non-interactive dispatcher (node-health, sync-worker, node-dispatch)
+  # passes -o BatchMode=yes which forbids prompting. Symptom: SSH succeeds
+  # by hand, fails as "Permission denied (publickey,...)" the moment any
+  # script automates it. Fix: load the key into ssh-agent with --apple-use-keychain
+  # so macOS Keychain unlocks it on every login automatically.
+  if [ -n "$KEY_FOUND" ]; then
+    substep "Key passphrase + macOS Keychain"
+    PRIV="${KEY_FOUND%.pub}"
+    if ssh-keygen -y -P "" -f "$PRIV" >/dev/null 2>&1; then
+      ok "key has no passphrase — non-interactive SSH works as-is"
+      stepwise_record ssh_key_passphrase "ok" "no-passphrase"
+    else
+      warn "key $PRIV is passphrase-protected"
+      info "Non-interactive dispatchers (node-health, sync-worker, node-dispatch) pass"
+      info "-o BatchMode=yes which forbids prompting — they fail with 'Permission denied'"
+      info "even when interactive SSH works. Loading the key into ssh-agent + Keychain"
+      info "fixes this for all future sessions."
+      cmd_hint "ssh-add --apple-use-keychain $PRIV"
+      if confirm "Run ssh-add --apple-use-keychain now (will prompt for the passphrase once)?" "y"; then
+        # ssh-add prompts on its own controlling terminal — no FD plumbing needed.
+        if ssh-add --apple-use-keychain "$PRIV" </dev/tty; then
+          ok "key loaded; macOS Keychain will unlock it on every login"
+          stepwise_record ssh_key_passphrase "ok" "loaded-via-keychain"
+        else
+          warn "ssh-add failed — re-run manually: ssh-add --apple-use-keychain $PRIV"
+          stepwise_record ssh_key_passphrase "fail" "ssh-add-failed"
+        fi
+      else
+        warn "skipped — non-interactive SSH will fail until you run ssh-add manually"
+        stepwise_record ssh_key_passphrase "skipped:user"
+      fi
+      # Persist the auto-load behavior so a fresh shell / reboot still works
+      # without manual ssh-add. The block is idempotent — only appended if
+      # absent. Modern macOS man ssh_config explicitly recommends UseKeychain
+      # alongside AddKeysToAgent for this exact use case.
+      SSH_CONFIG="$HOME/.ssh/config"
+      mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+      touch "$SSH_CONFIG" && chmod 600 "$SSH_CONFIG"
+      if ! grep -qE '^[[:space:]]*UseKeychain[[:space:]]+yes' "$SSH_CONFIG" 2>/dev/null; then
+        if confirm "Append AddKeysToAgent + UseKeychain to ~/.ssh/config so this persists across reboots?" "y"; then
+          {
+            printf '\n# Added by generic-dev-studio bootstrap (#176): persist key in macOS Keychain\n'
+            printf 'Host *\n  AddKeysToAgent yes\n  UseKeychain yes\n  IdentityFile %s\n' "$PRIV"
+          } >> "$SSH_CONFIG"
+          ok "appended Host * block to $SSH_CONFIG"
+          stepwise_record ssh_config_keychain "ok"
+        fi
+      else
+        ok "~/.ssh/config already configures UseKeychain"
+        stepwise_record ssh_config_keychain "ok" "already-present"
+      fi
+    fi
+  fi
 fi
 
 if [ "$ROLE" = "worker" ] || [ "$ROLE" = "dual" ]; then
@@ -1073,6 +1129,11 @@ ${c_cyan}═══ VERIFY (run on MANAGER, from the studio repo) ═══${c_re
   ssh -o BatchMode=yes $CURRENT_USER@$TS_HOST true && echo OK
   scripts/node-health.sh $WORKER_ID
   scripts/node-pick.sh swift-test
+
+  ${c_dim}# If the manager's user differs from this worker's user (\"$CURRENT_USER\"),${c_reset}
+  ${c_dim}# that's fine — Achilles' source-sync (lib-source-sync.sh / #127) mirrors${c_reset}
+  ${c_dim}# every dispatched path under the REMOTE \$HOME, not the manager's absolute${c_reset}
+  ${c_dim}# path. The two machines stay decoupled in user namespace.${c_reset}
 
 BANNER
   summary "registration block emitted for $WORKER_ID @ $TS_HOST"
