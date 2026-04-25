@@ -267,37 +267,123 @@
 
 <nav class="nav">
   <div class="nav-inner">
-    <a href="#tldr">TL;DR</a>
-    <a href="#why">Why / how it works</a>
+    <a href="#quick-start">Quick start</a>
+    <a href="#install">Install</a>
+    <a href="#configure">Configure</a>
+    <a href="#roles">Roles</a>
+    <a href="#wizard">Wizard reference</a>
     <a href="#prereqs">Prerequisites</a>
-    <a href="#stage-1">Stage 1 — Network + SSH</a>
-    <a href="#stage-2">Stage 2 — Toolchain</a>
-    <a href="#stage-3">Stage 3 — Register</a>
-    <a href="#verify">Verify</a>
-    <a href="#maintenance">Maintenance</a>
-    <a href="#always-on">Always-on node</a>
+    <a href="#why">How it works</a>
+    <a href="#always-on">Always-on</a>
     <a href="#security">Security</a>
     <a href="#troubleshoot">Troubleshoot</a>
   </div>
 </nav>
 
-<!-- TL;DR ============================================================== -->
-<section id="tldr">
+<!-- QUICK START ======================================================== -->
+<section id="quick-start">
   <div class="container">
-    <h2>TL;DR</h2>
-    <p>On any machine you want to onboard, clone this repo and run the unified wizard. It asks your role up-front, walks the relevant steps, auto-runs what can be automated, pauses for the manual bits (Xcode install, Tailscale browser login, pubkey paste), and ends with a summary + next-step hint.</p>
-    <pre><code>git clone https://github.com/v-i-s-h-a-l/generic-dev-studio.git ~/studio-tmp
-cd ~/studio-tmp
-./scripts/bootstrap.sh                       # interactive
-./scripts/bootstrap.sh --role worker --yes    # fully non-interactive
-./scripts/bootstrap.sh --dry-run             # preview only — no mutations</code></pre>
+    <h2>Quick start</h2>
+    <p>Onboard any Mac as a <strong>manager</strong> (your primary dev box, runs the agents), <strong>worker</strong> (a headless build box), or <strong>dual</strong>. Same wizard for all three.</p>
+    <pre><code>git clone https://github.com/v-i-s-h-a-l/generic-dev-studio.git
+cd generic-dev-studio
+./scripts/bootstrap.sh --yes --role manager   # one-shot, defaults
+./scripts/bootstrap.sh                        # interactive, pick anything</code></pre>
+    <p>The wizard runs as plain bash — no AI required at install time. Tweak anything later with <code>scripts/configure.sh</code>.</p>
+  </div>
+</section>
 
-    <h3>The three roles</h3>
+<!-- INSTALL ============================================================ -->
+<section id="install">
+  <div class="container">
+    <h2>Install</h2>
+
+    <h3>One-shot install (defaults)</h3>
+    <p>Sensible defaults for every prompt; no questions asked. Use this when you just want it working — you can configure anything afterwards.</p>
+    <pre><code>./scripts/bootstrap.sh --yes --role manager
+./scripts/bootstrap.sh --yes --role worker --id mini --worker-roles swift-test,xcodebuild
+./scripts/bootstrap.sh --yes --role dual</code></pre>
+
+    <h3>Interactive install</h3>
+    <p>Walks you through every step, lets you choose. Defaults stay sensible — most prompts you can just press Enter on.</p>
+    <pre><code>./scripts/bootstrap.sh</code></pre>
+
+    <h3>Preview without changing anything</h3>
+    <pre><code>./scripts/bootstrap.sh --dry-run --role manager</code></pre>
+
+    <h3>What it installs</h3>
+    <p>Per role. Tools already present are detected — wizard offers <strong>keep / upgrade / reinstall / skip</strong> for each.</p>
+    <table>
+      <thead><tr><th>Component</th><th>manager</th><th>worker</th><th>dual</th></tr></thead>
+      <tbody>
+        <tr><td>Homebrew + base packages (<code>jq rsync coreutils git</code>)</td><td>✓</td><td>✓</td><td>✓</td></tr>
+        <tr><td><code>fswatch yq</code> (extra; needed for full agent stack)</td><td>✓</td><td>—</td><td>✓</td></tr>
+        <tr><td>Studio repo + <code>install.sh</code> (agent skills into <code>~/.claude/</code>)</td><td>✓</td><td>—</td><td>✓</td></tr>
+        <tr><td>SSH key generation (if missing)</td><td>✓</td><td>—</td><td>✓</td></tr>
+        <tr><td>SSH server (Remote Login) enabled</td><td>—</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Manager pubkey accepted into <code>authorized_keys</code></td><td>—</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Tailscale (offered; browser sign-in is yours)</td><td>✓</td><td>✓</td><td>✓</td></tr>
+        <tr><td><code>pmset</code> no-sleep</td><td>—</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Worker manifest (if any workers registered)</td><td>opt-in</td><td>—</td><td>opt-in</td></tr>
+        <tr><td>Scheduled worker-sync (launchd, nightly)</td><td>opt-in</td><td>—</td><td>opt-in</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <strong>Claude Code is not required to install.</strong> The wizard checks for it on a manager and tells you where to install if missing — but doesn't block. You can complete the wizard, install Claude Code separately, then start using <code>/chanakya</code> when it's ready. Workers never need it at all.
+    </div>
+    <div class="callout">
+      <strong>No sudo on a manager.</strong> Worker setup uses sudo for Remote Login and pmset (the wizard prompts once). Manager and agents-only paths typically don't need sudo if Homebrew's prefix is already user-owned.
+    </div>
+    <div class="callout">
+      <strong>Re-runnable.</strong> Re-running the wizard later (e.g. to upgrade tools, or to add a worker role onto an agents-only box) detects current state and only prompts for the delta. Safe to run as many times as you like.
+    </div>
+  </div>
+</section>
+
+<!-- CONFIGURE ========================================================== -->
+<section id="configure">
+  <div class="container">
+    <h2>Configure</h2>
+    <p>Post-install changes go through <code>scripts/configure.sh</code>. Single entry point, idempotent.</p>
+
+    <pre><code>scripts/configure.sh                 # interactive menu (status + options)
+scripts/configure.sh status          # one-screen state dump
+
+scripts/configure.sh worker add      # interactively add a worker to nodes.json
+scripts/configure.sh worker remove &lt;id&gt;
+scripts/configure.sh worker enable &lt;id&gt;     # nodes.json: enabled = true
+scripts/configure.sh worker disable &lt;id&gt;    # pause without de-registering
+
+scripts/configure.sh manifest        # edit worker-manifest.yaml in $EDITOR
+
+scripts/configure.sh schedule on     # install scheduled worker-sync (launchd, nightly)
+scripts/configure.sh schedule off    # remove it
+scripts/configure.sh schedule run    # one-shot sync now</code></pre>
+
+    <h3>What lives where</h3>
+    <table>
+      <thead><tr><th>Thing</th><th>File</th></tr></thead>
+      <tbody>
+        <tr><td>Worker registry</td><td><code>~/.dev-studio/.runtime/nodes.json</code></td></tr>
+        <tr><td>Per-project worker manifest</td><td><code>~/.dev-studio/&lt;project&gt;/worker-manifest.yaml</code></td></tr>
+        <tr><td>Scheduled worker-sync agent</td><td><code>~/Library/LaunchAgents/dev.studio.worker-sync.plist</code></td></tr>
+        <tr><td>Bootstrap run logs</td><td><code>~/.dev-studio/.runtime/logs/bootstrap-&lt;ts&gt;.log</code></td></tr>
+      </tbody>
+    </table>
+    <p>You can edit any of these by hand if you prefer; <code>configure.sh</code> is just a structured wrapper around the same files.</p>
+  </div>
+</section>
+
+<!-- ROLES ============================================================== -->
+<section id="roles">
+  <div class="container">
+    <h2>Roles</h2>
     <div class="mode-grid">
       <div class="mode-card">
         <code>manager</code>
         <div class="triggers">primary · runs agents · dispatches</div>
-        <div class="what">Your main dev machine. Runs <code>/chanakya /achilles /argus</code> inside a Claude Code session. Holds the iOS project. Dispatches build + test work to registered workers. "Agents-only" use is just manager with zero workers registered — same flow.</div>
+        <div class="what">Your main dev machine. Runs <code>/chanakya /achilles /argus</code> inside a Claude Code session. Holds the iOS project. Dispatches build + test work to registered workers. "Agents-only" use is just manager with zero workers registered — same flow, fewer steps.</div>
       </div>
       <div class="mode-card">
         <code>worker</code>
@@ -310,8 +396,14 @@ cd ~/studio-tmp
         <div class="what">Machine that runs agents AND appears in a manager's worker registry (its own, or another manager's). Use only if you know you want it.</div>
       </div>
     </div>
+  </div>
+</section>
 
-    <h3>What the wizard does</h3>
+<!-- WIZARD REFERENCE =================================================== -->
+<section id="wizard">
+  <div class="container">
+    <h2>Wizard reference</h2>
+    <p>What the 11 wizard steps actually do. Most are auto; a few need a click or a sudo password.</p>
     <ol class="steps">
       <li>
         <div class="step-title">Preflight + role + identity <span class="badge auto">auto</span></div>
@@ -346,21 +438,16 @@ cd ~/studio-tmp
         <div class="step-body"><strong>worker:</strong> emits the exact <code>nodes.json</code> entry (with <code>machine_id</code>) to paste on your manager. <strong>manager:</strong> creates <code>nodes.json</code> skeleton if missing.</div>
       </li>
       <li>
+        <div class="step-title">Worker manifest + scheduled sync <span class="badge auto">auto</span> <span class="triggers">manager · dual, opt-in</span></div>
+        <div class="step-body">If at least one worker is registered, offers to create a default <code>worker-manifest.yaml</code> and install a nightly launchd agent that keeps workers in lock-step automatically. Both opt-in; flip later via <code>configure.sh schedule on</code>.</div>
+      </li>
+      <li>
         <div class="step-title">Self-test + summary <span class="badge auto">auto</span></div>
         <div class="step-body">Role-specific health checks + pass/fail count + next-step hint. Every run logged under <code>~/.dev-studio/.runtime/logs/bootstrap-&lt;ts&gt;.log</code>.</div>
       </li>
     </ol>
     <div class="callout">
-      <strong>Dry-run first.</strong> <code>./scripts/bootstrap.sh --dry-run</code> walks all prompts but skips every mutation. Scan what'll happen before committing.
-    </div>
-    <div class="callout">
-      <strong>Non-interactive mode.</strong> <code>--yes --role=&lt;role&gt;</code> takes defaults for every prompt. Useful for re-provisioning scripts, CI, scripted fleet expansion. <code>--id</code> and <code>--worker-roles</code> override specific values.
-    </div>
-    <div class="callout">
-      <strong>Re-runnable.</strong> Going agents-only → adding a worker later is just a re-run on each machine. Wizard detects current state and prompts only for the delta.
-    </div>
-    <div class="callout">
-      <strong>No fallback footgun.</strong> If you skip all of it, <code>node-pick</code> returns <code>local</code> and every dispatch runs on the manager — identical to pre-onboarding behaviour.
+      <strong>No fallback footgun.</strong> If you skip the wizard entirely, <code>node-pick</code> returns <code>local</code> and every dispatch runs on the manager — identical to pre-onboarding behaviour. Onboarding is purely additive.
     </div>
   </div>
 </section>
