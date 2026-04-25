@@ -25,6 +25,7 @@ Fleet management from inside Claude. Onboarding a *new* machine still goes throu
 | `health [<id>]` | `node-health.sh [<id>]` | Probe one or all (status + load1) |
 | `sync [<id>\|--all] [--dry-run]` | `sync-worker.sh <id>` or `sync-workers-all.sh` | Push manifest deltas |
 | `schedule on\|off\|status` | `configure.sh schedule …` | Manage the launchd auto-sync agent |
+| `recheck` | `configure.sh recheck` | Re-run role validation on this machine; surface diff vs last bootstrap (e.g. Xcode now installed, SSH key now valid) |
 
 All sub-commands shell out to existing scripts. This mode is dispatch + result rendering, not new logic.
 
@@ -78,7 +79,17 @@ The scripts emit `worker_sync_*` events on their own; do not re-emit. Surface dr
 
 If the user invokes `sync` with no id and no `--all`, ask them to pick: "one worker (`sync <id>`) or all workers (`sync --all`)?" Prefer explicit over implicit.
 
-## Step 5 — Schedule
+## Step 5 — Recheck
+
+```bash
+scripts/configure.sh recheck
+```
+
+Re-runs `validate()` for every step the current role recorded during `bootstrap.sh`. Reports per-step diff vs last-known status. Use after fixing something that previously failed — e.g. you installed Xcode after the wizard reported it missing, or you fixed a bad SSH key. If a previously-failing step now passes, the table flags it `↑ newly passing`. If a previously-passing step now fails, it's flagged `↓ regression`.
+
+Local-only today. Remote recheck (re-validate a registered worker over SSH) is a follow-up.
+
+## Step 6 — Schedule
 
 ```bash
 scripts/configure.sh schedule on    # install launchd agent
@@ -98,6 +109,7 @@ Studio router dispatches here for:
 - "register a worker", "add the mini", "add a node"
 - "sync the workers", "push the manifest", "is the mini in sync"
 - "is the scheduled sync running", "turn off auto-sync"
+- "I just installed Xcode — re-check the worker", "recheck", "did anything change?"
 
 Out of scope (route elsewhere):
 

@@ -159,6 +159,13 @@ fi
 declare -a SUMMARY_LINES
 summary() { SUMMARY_LINES+=("$1"); }
 
+# Stepwise primitives — per-step validate-and-recover, state file, recheck
+# helpers. See scripts/lib-stepwise.sh for the contract.
+SCRIPT_DIR_LSW=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+# shellcheck source=lib-stepwise.sh
+. "$SCRIPT_DIR_LSW/lib-stepwise.sh"
+stepwise_state_init
+
 # ============================================================================
 # Prompt helpers (respect --yes)
 #
@@ -657,36 +664,91 @@ if [ "$ROLE" = "worker" ] || [ "$ROLE" = "dual" ]; then
   if [ "$YES" = "1" ]; then
     dim "Non-interactive: skipping pubkey paste prompt. Add them later:"
     cmd_hint "echo 'ssh-ed25519 …' >> ~/.ssh/authorized_keys"
+    stepwise_record ssh_pubkey "skipped:non-interactive"
   else
-    # Mirror the instructions to FD 3 so they reach the terminal immediately,
-    # not just the (potentially mid-buffer) tee pipe. Otherwise `cat` below
-    # blocks before the user has seen what to paste.
-    {
-      printf '  i On your MANAGER machine, run ONE of:\n'
-      printf '  $ cat ~/.ssh/id_ed25519.pub\n'
-      printf '  $ cat ~/.ssh/id_rsa.pub\n'
-      printf '  i Paste below (or multiple lines for multiple managers), Enter, then Ctrl-D.\n\n'
-    } >&3
-    info "On your MANAGER machine, run ONE of:"
-    cmd_hint "cat ~/.ssh/id_ed25519.pub"
-    cmd_hint "cat ~/.ssh/id_rsa.pub"
-    info "Paste below (or paste multiple lines for multiple managers), press Enter, then Ctrl-D."
-    echo
-    PASTE=$(cat <&4 || true)
-    added=0
-    while IFS= read -r line; do
-      line=$(printf '%s' "$line" | tr -d '\r' | sed 's/[[:space:]]*$//')
-      [ -z "$line" ] && continue
-      case "$line" in ssh-*) ;; *) warn "ignored (not an ssh-* key): ${line:0:60}…"; continue ;; esac
-      if grep -qF "$line" ~/.ssh/authorized_keys 2>/dev/null; then
-        ok "already present: ${line:0:60}…"
-      else
-        printf '%s\n' "$line" >> ~/.ssh/authorized_keys
-        added=$((added + 1))
-        ok "added: ${line:0:60}…"
+    # Per-step validate-and-retry. Each pasted line is parsed by ssh-keygen;
+    # we surface the fingerprint + comment back for confirmation BEFORE writing
+    # to authorized_keys. A mistyped key never gets accepted silently.
+    pubkey_attempt=0
+    pubkey_added=0
+    pubkey_rejected=0
+    while :; do
+      pubkey_attempt=$((pubkey_attempt + 1))
+      {
+        printf '\n  i On your MANAGER machine, run ONE of:\n'
+        printf '  $ cat ~/.ssh/id_ed25519.pub\n'
+        printf '  $ cat ~/.ssh/id_rsa.pub\n'
+        printf '  i Paste below (one or more lines), press Enter, then Ctrl-D.\n'
+        printf '  i Each line is parsed before write — fingerprint shown for confirmation.\n\n'
+      } >&3
+      PASTE=$(cat <&4 || true)
+      attempt_added=0
+      attempt_rejected=0
+      while IFS= read -r line; do
+        line=$(printf '%s' "$line" | tr -d '\r' | sed 's/[[:space:]]*$//')
+        [ -z "$line" ] && continue
+        if parsed=$(stepwise_validate_pubkey "$line" 2>/dev/null); then
+          info "parsed: $parsed"
+          if grep -qF "$line" ~/.ssh/authorized_keys 2>/dev/null; then
+            ok "already in authorized_keys — skipping"
+            continue
+          fi
+          # Confirm before writing — mistypes that happen to be valid keys
+          # (e.g. you pasted the wrong machine's key) still get caught here.
+          if confirm "Append this key to ~/.ssh/authorized_keys?" "y"; then
+            printf '%s\n' "$line" >> ~/.ssh/authorized_keys
+            attempt_added=$((attempt_added + 1))
+            ok "appended"
+          else
+            warn "skipped this key on user request"
+          fi
+        else
+          err "rejected (not a valid pubkey line): ${line:0:60}…"
+          attempt_rejected=$((attempt_rejected + 1))
+        fi
+      done <<< "$PASTE"
+      pubkey_added=$((pubkey_added + attempt_added))
+      pubkey_rejected=$((pubkey_rejected + attempt_rejected))
+      if [ "$pubkey_added" -gt 0 ]; then
+        ok "$pubkey_added key(s) accepted"
+        stepwise_record ssh_pubkey "ok" "added=$pubkey_added"
+        break
       fi
-    done <<< "$PASTE"
-    summary "authorized_keys: +$added new"
+      # Nothing accepted yet — invoke the recovery menu.
+      reason="$attempt_rejected line(s) rejected, 0 keys accepted (attempt $pubkey_attempt)"
+      [ "$attempt_rejected" = "0" ] && reason="empty paste; no keys captured (attempt $pubkey_attempt)"
+      action=$(stepwise_recover_menu ssh_pubkey "$reason")
+      case "$action" in
+        retry) continue ;;
+        fix)
+          info "Opening ~/.ssh/authorized_keys in \$EDITOR (${EDITOR:-vi}) — paste keys there, save, return."
+          "${EDITOR:-vi}" "$HOME/.ssh/authorized_keys"
+          # Don't auto-mark ok — we don't know what they did. Re-validate.
+          if [ -s "$HOME/.ssh/authorized_keys" ]; then
+            ok "authorized_keys is non-empty after edit"
+            stepwise_record ssh_pubkey "ok" "user-edited"
+          else
+            warn "authorized_keys is still empty"
+            stepwise_record ssh_pubkey "skipped:empty-after-edit"
+          fi
+          break ;;
+        skip)
+          warn "skipping pubkey step — worker won't accept manager dispatches until a key is added"
+          info "later: ssh-copy-id <user>@<this-host>.local  (from each manager)"
+          stepwise_record ssh_pubkey "skipped:user"
+          break ;;
+        abort)
+          err "aborted by user — state saved, resume with: scripts/bootstrap.sh --resume"
+          stepwise_record ssh_pubkey "aborted"
+          exit 2 ;;
+      esac
+      [ "$pubkey_attempt" -ge 3 ] && {
+        warn "3 attempts exhausted — leaving authorized_keys as-is"
+        stepwise_record ssh_pubkey "skipped:retry-exhausted"
+        break
+      }
+    done
+    summary "authorized_keys: +$pubkey_added new (rejected: $pubkey_rejected)"
   fi
 fi
 
@@ -731,16 +793,25 @@ else
   fi
 fi
 
-# Tailscale hostname for nodes.json / registration.
-TS_HOST=""
-if [ "$TS_UP" = "1" ]; then
-  TS_HOST=$(tailscale status --json 2>/dev/null | python3 -c 'import sys,json
-try:
-  d=json.load(sys.stdin); print(d.get("Self",{}).get("HostName",""))
-except Exception: pass' 2>/dev/null || true)
+# Hostname for nodes.json registration. The captured value MUST resolve from
+# the manager — past wizards captured `hostname -s` (no .local) which fails
+# on Bonjour-only LANs. stepwise_resolve_host probes Tailscale magic-DNS
+# first, then bare, then <bare>.local; returns the first form that resolves.
+if RESOLVED_HOST=$(stepwise_resolve_host "$DETECTED_HOST"); then
+  TS_HOST="$RESOLVED_HOST"
+  if [ "$TS_HOST" = "$DETECTED_HOST" ]; then
+    ok "hostname for registration: $TS_HOST (resolved as-is)"
+  else
+    ok "hostname for registration: $TS_HOST (auto-corrected from \"$DETECTED_HOST\")"
+  fi
+  stepwise_record hostname "ok" "$TS_HOST"
+else
+  TS_HOST="$DETECTED_HOST"
+  warn "hostname \"$TS_HOST\" did not resolve from this machine."
+  info "It may still resolve from your manager (Tailscale, /etc/hosts, etc.)."
+  info "If not: try \`scutil --set HostName <reachable-name>\` or use the IP."
+  stepwise_record hostname "fail" "did-not-resolve:$TS_HOST"
 fi
-[ -z "$TS_HOST" ] && TS_HOST="$DETECTED_HOST"
-ok "hostname for registration: $TS_HOST"
 
 # Tailscale ACL scaffolding (manager only — the machine that owns the tailnet
 # policy is typically the primary dev machine).
@@ -843,22 +914,78 @@ else
   fi
 fi
 
-# xcodebuild-role gets a stricter check.
+# xcodebuild-role gets a stricter check + an interactive recovery menu when
+# Xcode is missing. Rather than print 4 lines of advice and continue (the
+# old behavior — you find out it never worked when you try to dispatch),
+# we ask the user how they want to proceed RIGHT NOW.
 case ",$WORKER_ROLES," in
   *,xcodebuild,*)
-    if [ ! -e /Applications/Xcode.app ]; then
-      warn "Role 'xcodebuild' requested but /Applications/Xcode.app not found."
-      info "Install full Xcode.app from the App Store, or:"
-      cmd_hint "open 'https://developer.apple.com/download/all/?q=Xcode'"
-      info "Then:"
-      cmd_hint "sudo xcode-select -s /Applications/Xcode.app"
-      info "Install simulator runtimes inside Xcode → Settings → Platforms"
-    else
+    if [ -e /Applications/Xcode.app ]; then
       ok "/Applications/Xcode.app present"
+      stepwise_record xcode_app "ok"
       if [ "$ROLE" = "worker" ] || [ "$ROLE" = "dual" ]; then
         info "Verify simulator runtimes match your manager's:"
         cmd_hint "xcrun simctl list runtimes"
       fi
+    else
+      err "Role 'xcodebuild' requested but /Applications/Xcode.app not found."
+      while :; do
+        {
+          printf '\n  How do you want to handle this?\n\n'
+          printf '    [1] Open the App Store now (sign in, click "Get" on Xcode; ~10 GB).\n'
+          printf '    [2] Install via the xcodes CLI (faster; ~20 min download).\n'
+          printf '    [3] Drop xcodebuild from this worker — keep swift-test only.\n'
+          printf '    [4] Skip — install Xcode later, then run scripts/configure.sh recheck.\n\n'
+          printf '  \033[1;33m⌨  CHOOSE\033[0m  [1/2/3/4]: '
+        } >&3
+        IFS= read -r reply <&4 || reply="4"
+        case "$reply" in
+          1)
+            run open -a "App Store"
+            info "After Xcode finishes installing, accept the license:"
+            cmd_hint "sudo xcodebuild -license accept"
+            info "Then re-run validation: scripts/configure.sh recheck"
+            stepwise_record xcode_app "skipped:installing-via-app-store"
+            break ;;
+          2)
+            if ! command -v xcodes >/dev/null 2>&1; then
+              if confirm "xcodes CLI not installed. Install via brew?" "y"; then
+                run brew install xcodes || { warn "brew install xcodes failed"; }
+              fi
+            fi
+            if command -v xcodes >/dev/null 2>&1; then
+              announce "xcodes install --latest (downloads + extracts; ~20 min on a fast link)"
+              if run xcodes install --latest; then
+                ok "Xcode installed via xcodes"
+                stepwise_record xcode_app "ok"
+              else
+                warn "xcodes install failed — recheck after manual fix"
+                stepwise_record xcode_app "fail" "xcodes-install-failed"
+              fi
+            fi
+            break ;;
+          3)
+            # Drop xcodebuild from the role list. The manifest still records
+            # the worker's intent in case the user re-enables later via recheck.
+            new_roles=$(printf '%s' "$WORKER_ROLES" | awk -F, -v OFS=, '{
+              out=""
+              for (i=1;i<=NF;i++) if ($i != "xcodebuild") out = (out=="" ? $i : out","$i)
+              print out
+            }')
+            WORKER_ROLES="$new_roles"
+            ok "this worker scoped to: ${WORKER_ROLES:-(empty — add roles via configure.sh)}"
+            info "Re-add xcodebuild later: scripts/configure.sh recheck (after installing Xcode)"
+            stepwise_record xcode_app "skipped:role-scoped-down"
+            break ;;
+          4|"")
+            warn "skipped — xcodebuild dispatches will fail until Xcode is installed."
+            info "When Xcode is in /Applications, re-validate:"
+            cmd_hint "scripts/configure.sh recheck"
+            stepwise_record xcode_app "skipped:user"
+            break ;;
+          *) warn "pick 1, 2, 3, or 4"; continue ;;
+        esac
+      done
     fi
     ;;
 esac
@@ -965,38 +1092,88 @@ fi
 step "11 · Self-test"
 
 PASS=0; FAIL=0
+declare -a FAILED_STEPS
 
-check() {
-  local label="$1"
-  shift
+# check_step records every result to bootstrap-state.json so configure.sh
+# recheck has a baseline. On fail, it accumulates the step-id; the post-loop
+# block below presents one combined recovery menu so the user isn't asked
+# four times in a row for related failures.
+check_step() {
+  local id="$1" label="$2"
+  shift 2
   if "$@" >/dev/null 2>&1; then
     ok "$label"; PASS=$((PASS + 1))
+    stepwise_record "$id" "ok"
   else
     err "$label"; FAIL=$((FAIL + 1))
+    FAILED_STEPS+=("$id:$label")
+    stepwise_record "$id" "fail"
   fi
 }
 
 if [ "$ROLE" = "manager" ] || [ "$ROLE" = "dual" ]; then
-  check "~/.claude/skills/chanakya symlinked"  test -L "$HOME/.claude/skills/chanakya"
-  check "~/.claude/skills/achilles symlinked"  test -L "$HOME/.claude/skills/achilles"
-  check "~/.claude/skills/argus symlinked"     test -L "$HOME/.claude/skills/argus"
-  check "jq present"                           command -v jq
-  check "git user.email set"                   bash -c 'test -n "$(git config --global user.email)"'
-  [ -n "$STUDIO_REPO_DIR" ] && check "verify-install passes" "$STUDIO_REPO_DIR/scripts/verify-install.sh"
+  check_step skill_chanakya  "~/.claude/skills/chanakya symlinked"  test -L "$HOME/.claude/skills/chanakya"
+  check_step skill_achilles  "~/.claude/skills/achilles symlinked"  test -L "$HOME/.claude/skills/achilles"
+  check_step skill_argus     "~/.claude/skills/argus symlinked"     test -L "$HOME/.claude/skills/argus"
+  check_step jq              "jq present"                           command -v jq
+  check_step git_user_email  "git user.email set"                   bash -c 'test -n "$(git config --global user.email)"'
+  [ -n "$STUDIO_REPO_DIR" ] && check_step verify_install "verify-install passes" "$STUDIO_REPO_DIR/scripts/verify-install.sh"
 fi
 
 if [ "$ROLE" = "worker" ] || [ "$ROLE" = "dual" ]; then
-  check "SSH daemon accepts connections"  bash -c 'launchctl list | grep -qi ssh'
-  check "jq present"                      command -v jq
-  check "rsync present"                   command -v rsync
-  check "Command Line Tools present"      xcode-select -p
+  check_step sshd  "SSH daemon accepts connections"  bash -c 'launchctl list | grep -qi ssh'
+  check_step jq    "jq present"                      command -v jq
+  check_step rsync "rsync present"                   command -v rsync
+  check_step clt   "Command Line Tools present"      xcode-select -p
   case ",$WORKER_ROLES," in
-    *,xcodebuild,*) check "Xcode.app present"        test -e /Applications/Xcode.app ;;
-    *,swift-test,*) check "swift present"            command -v swift ;;
+    *,xcodebuild,*) check_step xcode_app "Xcode.app present"  test -e /Applications/Xcode.app ;;
+    *,swift-test,*) check_step swift     "swift present"      command -v swift ;;
   esac
 fi
 
 summary "self-test: $PASS passed, $FAIL failed"
+
+# Inline recovery for any failed step. We don't ABORT here — the install ran
+# to completion; we just tell the user how to recover and where to validate.
+if [ "$FAIL" -gt 0 ]; then
+  printf '\n  %s%d step(s) failed — recovery hints:%s\n\n' "$c_yellow" "$FAIL" "$c_reset"
+  for entry in "${FAILED_STEPS[@]:-}"; do
+    id="${entry%%:*}"
+    label="${entry#*:}"
+    case "$id" in
+      skill_chanakya|skill_achilles|skill_argus|verify_install)
+        printf '  %s✗%s %s\n' "$c_red" "$c_reset" "$label"
+        printf '       fix: cd %s && scripts/install.sh\n' "${STUDIO_REPO_DIR:-<studio-repo>}"
+        ;;
+      jq|rsync) printf '  %s✗%s %s\n       fix: brew install %s\n' "$c_red" "$c_reset" "$label" "$id" ;;
+      git_user_email)
+        printf '  %s✗%s %s\n       fix: git config --global user.email "you@example.com"\n' "$c_red" "$c_reset" "$label" ;;
+      sshd)
+        printf '  %s✗%s %s\n       fix: System Settings → General → Sharing → Remote Login (or sudo systemsetup -setremotelogin on)\n' "$c_red" "$c_reset" "$label" ;;
+      clt)
+        printf '  %s✗%s %s\n       fix: xcode-select --install\n' "$c_red" "$c_reset" "$label" ;;
+      xcode_app)
+        printf '  %s✗%s %s\n       fix: install Xcode.app to /Applications (App Store / xcodes / .xip)\n' "$c_red" "$c_reset" "$label"
+        printf '       then: scripts/configure.sh recheck\n' ;;
+      swift)
+        printf '  %s✗%s %s\n       fix: install Command Line Tools (xcode-select --install) or full Xcode\n' "$c_red" "$c_reset" "$label" ;;
+      *)
+        printf '  %s✗%s %s\n' "$c_red" "$c_reset" "$label" ;;
+    esac
+  done
+  printf '\n  After fixing: %sscripts/configure.sh recheck%s — re-validates everything; reports newly-passing steps.\n\n' "$c_bold" "$c_reset"
+fi
+
+# Persist role + worker_roles + machine_id into the state file so recheck
+# from any future session knows what to validate without re-prompting.
+stepwise_state="$(stepwise_state_path)"
+if [ -f "$stepwise_state" ] && command -v jq >/dev/null 2>&1; then
+  wroles_json=$(printf '%s' "$WORKER_ROLES" | jq -R 'split(",") | map(select(length>0))')
+  jq --arg role "$ROLE" --arg mid "$MACHINE_ID" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+     --argjson roles "${wroles_json:-[]}" \
+     '. + {role: $role, machine_id: $mid, worker_roles: $roles, last_run: $ts}' \
+     "$stepwise_state" > "$stepwise_state.tmp" 2>/dev/null && mv "$stepwise_state.tmp" "$stepwise_state"
+fi
 
 # ============================================================================
 # Summary + next steps

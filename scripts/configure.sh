@@ -19,6 +19,9 @@
 #   scripts/configure.sh schedule off          # remove it
 #   scripts/configure.sh schedule status       # show launchd state + last log
 #   scripts/configure.sh schedule run          # one-shot sync now
+#   scripts/configure.sh recheck               # re-run role validation; surface diff
+#                                              # vs last-recorded state. Use after
+#                                              # installing Xcode / fixing SSH / etc.
 
 set -u
 umask 022
@@ -174,6 +177,32 @@ cmd_manifest() {
 }
 
 # ============================================================================
+# recheck — re-run validation hooks for the recorded role; surface diff vs
+# last-known status. Useful after installing Xcode / fixing SSH keys / etc.
+# ============================================================================
+cmd_recheck() {
+  # shellcheck source=lib-stepwise.sh
+  . "$SCRIPT_DIR/lib-stepwise.sh"
+  require_jq
+  local state; state=$(stepwise_state_path)
+  if [ ! -f "$state" ]; then
+    info "no bootstrap-state.json yet — first \`bootstrap.sh\` run will populate it"
+    info "running a one-shot validation against the current role anyway"
+  fi
+  # Derive role + worker_roles. State file is authoritative if present;
+  # otherwise probe the local machine for sensible defaults.
+  local role wroles
+  role=$(jq -r '.role // ""' "$state" 2>/dev/null || true)
+  wroles=$(jq -r '(.worker_roles // []) | join(",")' "$state" 2>/dev/null || true)
+  if [ -z "$role" ]; then
+    if [ -L "$HOME/.claude/skills/chanakya" ]; then role="manager"; else role="worker"; fi
+  fi
+  [ -z "$wroles" ] && wroles="swift-test,xcodebuild"
+  printf '%sRecheck%s — role=%s worker_roles=%s\n\n' "$c_bold" "$c_reset" "$role" "$wroles"
+  stepwise_recheck_all "$role" "$wroles"
+}
+
+# ============================================================================
 # schedule
 # ============================================================================
 cmd_schedule() {
@@ -202,6 +231,7 @@ ${c_bold}What would you like to do?${c_reset}
   ${c_bold}4${c_reset}  Edit worker manifest
   ${c_bold}5${c_reset}  Toggle scheduled worker-sync (on/off)
   ${c_bold}6${c_reset}  Run worker-sync now
+  ${c_bold}7${c_reset}  Recheck — re-validate role; report what changed since last bootstrap
   ${c_bold}q${c_reset}  Quit
 MENU
   printf '\n? '
@@ -217,6 +247,7 @@ MENU
        printf '? toggle [on/off]: '; read -r toggle
        cmd_schedule "$toggle" ;;
     6) cmd_schedule run ;;
+    7) cmd_recheck ;;
     *) ok "bye" ;;
   esac
 }
@@ -229,7 +260,8 @@ case "${1:-menu}" in
   worker)        shift; cmd_worker "$@" ;;
   manifest)      cmd_manifest ;;
   schedule)      shift; cmd_schedule "$@" ;;
+  recheck)       cmd_recheck ;;
   menu|"")       interactive_menu ;;
   -h|--help)     sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) err "unknown command: $1 (try: status / worker / manifest / schedule / menu)"; exit 1 ;;
+  *) err "unknown command: $1 (try: status / worker / manifest / schedule / recheck / menu)"; exit 1 ;;
 esac

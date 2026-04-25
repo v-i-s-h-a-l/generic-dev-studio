@@ -34,6 +34,9 @@ scenario: |
     14. `/studio nodes bootstrap` (user wants to re-bootstrap a worker)
     15. `/studio nodes manifest` (user wants to edit the manifest YAML)
     16. State has zero registered workers; user runs `/studio nodes`.
+    17. "I just installed Xcode — recheck"
+    18. `/studio nodes recheck`
+    19. `/studio nodes recheck m1mini` (user wants to re-check the mini, not this manager)
 
   Also confirm:
     - Does this mode ever invoke `scripts/bootstrap.sh`?
@@ -54,6 +57,8 @@ success_signals:
   - "(?i)scripts/sync-worker\\.sh"
   - "(?i)scripts/sync-workers-all\\.sh"
   - "(?i)scripts/configure\\.sh schedule"
+  - "(?i)scripts/configure\\.sh recheck"
+  - "(?i)remote recheck.*follow.?up"
   - "(?i)/studio-setup"
   - "(?i)scripts/configure\\.sh manifest"
   - "(?i)(ask|prompt).*one worker.*all workers"
@@ -71,3 +76,5 @@ notes: |
       probes against an empty registry.
     - The launchd plist write is the one documented exception to the
       ~/.dev-studio/** rule; the mode is honest about that.
+    - `recheck` is local-only today — remote recheck is acknowledged as a
+      follow-up rather than silently doing nothing for an `<id>` argument.
