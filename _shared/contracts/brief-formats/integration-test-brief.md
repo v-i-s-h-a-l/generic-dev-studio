@@ -8,6 +8,14 @@
 
 ---
 
+## Recommendations
+
+- **Size:** XS | S | M | L
+- **Recommended model:** Opus | Sonnet | Haiku
+  Rationale: <one line — what about THIS task drove the model choice>
+- **Model reasoning effort:** low | medium | high
+  Rationale: <one line — what about THIS task drove the effort tier>
+
 ## Scope
 
 Integration tests verifying <module A> and <module B> work together correctly. These are longer-running tests that exercise real module boundaries without mocking the integration points.
