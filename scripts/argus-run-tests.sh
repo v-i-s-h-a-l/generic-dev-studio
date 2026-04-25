@@ -109,7 +109,13 @@ emit_event_keyed argus review test_run_started "$TASK_ID" "$data" >/dev/null || 
 
 DURATION_S_CAP=86400  # 24h sanity cap, matches emit-agent-session-completed.sh
 RUN_START_S=$(date -u +%s)
-xcodebuild test \
+
+# Test invocation routes through scripts/xcodebuild-shim.sh; structured JSON
+# (when xcodebuildmcp is the executor) lands at TEST_OUTPUT.json beside the
+# raw log so downstream test_run_failed events can enrich payloads with
+# per-test failure detail.
+export XCB_JSON_SIDECAR="${TEST_OUTPUT}.json"
+"$SCRIPT_DIR/xcodebuild-shim.sh" test \
   -scheme "$SCHEME" \
   -destination "$DEST" \
   -derivedDataPath "$DERIVED" \

@@ -457,6 +457,19 @@ case "$ROLE" in
     DEPS=(fswatch coreutils yq jq rsync git) ;;
 esac
 
+# Optional packages — installed best-effort; bootstrap continues on failure.
+# scripts/xcodebuild-shim.sh routes through these when present (see #173, #174).
+case "$ROLE" in
+  worker|dual)
+    # xcodebuildmcp (getsentry/XcodeBuildMCP) is the structured-output
+    # executor that scripts/xcodebuild-shim.sh prefers when installed. AXe
+    # ships bundled and powers Argus's a11y verification.
+    OPTIONAL_DEPS=(xcodebuildmcp) ;;
+  *)
+    OPTIONAL_DEPS=() ;;
+esac
+OPTIONAL_TAPS=(getsentry/xcodebuildmcp)
+
 if command -v brew >/dev/null 2>&1; then
   BREW_VERSION=$(brew --version 2>/dev/null | head -n 1)
   action=$(dup_action "Homebrew" "$BREW_VERSION")
@@ -514,6 +527,33 @@ if command -v brew >/dev/null 2>&1; then
       fi
     fi
   done
+
+  # Optional packages — best-effort. Tap setup + install both ignore failure
+  # so the wizard never blocks on a third-party tap being unavailable.
+  if [ "${#OPTIONAL_DEPS[@]}" -gt 0 ]; then
+    substep "Optional packages (best-effort)"
+    for tap in "${OPTIONAL_TAPS[@]}"; do
+      [ -z "$tap" ] && continue
+      if ! brew tap 2>/dev/null | grep -Fxq "$tap"; then
+        announce "brew tap $tap"
+        run brew tap "$tap" >/dev/null 2>&1 || \
+          warn "tap $tap failed — optional packages from this tap will be skipped"
+      fi
+    done
+    for pkg in "${OPTIONAL_DEPS[@]}"; do
+      pkg_line=$(printf '%s\n' "$BREW_FORMULA_VERSIONS" | awk -v p="$pkg" '$1==p{print; exit}')
+      if [ -n "$pkg_line" ]; then
+        ok "$pkg already present"
+      else
+        announce "brew install $pkg (optional)"
+        if run brew install "$pkg" >/dev/null 2>&1; then
+          ok "$pkg installed"
+        else
+          warn "$pkg install failed — features that depend on it will fall back gracefully"
+        fi
+      fi
+    done
+  fi
 else
   warn "Skipping package install — no brew available"
 fi

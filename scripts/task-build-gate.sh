@@ -230,23 +230,29 @@ if [ "$NODE_ID" = "local" ]; then
 fi
 
 # Run the build. Output is captured for downstream analysis (error-line count
-# in the data payload) but not stored — we trust xcodebuild's exit status.
+# in the data payload) but not stored — we trust the build tool's exit status.
+# Inner build call routes through scripts/xcodebuild-shim.sh which selects
+# between xcodebuild and xcodebuildmcp per STUDIO_XCODEBUILDMCP env var. When
+# xcodebuildmcp is in use, $XCB_JSON_SIDECAR receives a structured JSON view
+# the build_check_failed event picks up below to enrich with error detail.
 build_log=$(mktemp 2>/dev/null || printf '/tmp/xcb-%s.log' "$$")
+build_json="${build_log}.json"
+export XCB_JSON_SIDECAR="$build_json"
 if [ "$NODE_ID" = "local" ]; then
-  xcodebuild \
+  "$SCRIPT_DIR/xcodebuild-shim.sh" build \
     -scheme "$SCHEME" \
     -destination "$DESTINATION" \
     -derivedDataPath "$DERIVED" \
-    build \
     >"$build_log" 2>&1
   BUILD_STATUS=$?
 else
-  # Remote shell owns the cd + xcodebuild invocation. %q keeps every path
-  # safe through the SSH argv round trip. DerivedData on the remote uses
-  # the remote's $HOME (which resolves from the laptop's absolute path
-  # when usernames match — the common case) — an unexpected location is
-  # auto-created rather than failing.
-  "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "cd $(printf '%q' "$WORKTREE") && xcodebuild -scheme $(printf '%q' "$SCHEME") -destination $(printf '%q' "$DESTINATION") -derivedDataPath $(printf '%q' "$DERIVED") build" \
+  # Remote shell owns the cd + shim invocation. %q keeps every path safe
+  # through the SSH argv round trip. DerivedData on the remote uses the
+  # remote's $HOME (which resolves from the laptop's absolute path when
+  # usernames match — the common case) — an unexpected location is
+  # auto-created rather than failing. STUDIO_XCODEBUILDMCP env propagates
+  # through the remote shell so the same routing rules apply on both sides.
+  "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "STUDIO_XCODEBUILDMCP=$(printf '%q' "${STUDIO_XCODEBUILDMCP:-auto}") $(printf '%q' "$SCRIPT_DIR/xcodebuild-shim.sh") build -scheme $(printf '%q' "$SCHEME") -destination $(printf '%q' "$DESTINATION") -derivedDataPath $(printf '%q' "$DERIVED")" \
     >"$build_log" 2>&1
   BUILD_STATUS=$?
 fi
@@ -255,11 +261,26 @@ fi
 # lines match `error:` case-insensitively and begin at column 0 or after a path.
 err_count=$(grep -cE '(^|: )error:' "$build_log" 2>/dev/null || echo 0)
 warn_count=$(grep -cE '(^|: )warning:' "$build_log" 2>/dev/null || echo 0)
-rm -f "$build_log" 2>/dev/null || true
+
+# When the shim wrote a JSON sidecar (xcodebuildmcp executor), capture up to
+# the first 5 error objects for the build_check_failed payload. Bounded to
+# keep the event-log shard small. Failures here are non-fatal — the legacy
+# count-based payload is still emitted.
+errors_json="null"
+if [ -s "$build_json" ] && command -v jq >/dev/null 2>&1; then
+  errors_json=$(jq -c '
+    [(.errors // [])[:5] | .[] | {
+      file: (.file // .path // null),
+      line: (.line // null),
+      message: (.message // (. | tostring))
+    }]
+  ' "$build_json" 2>/dev/null || printf 'null')
+fi
+rm -f "$build_log" "$build_json" 2>/dev/null || true
 
 if [ "$BUILD_STATUS" -ne 0 ]; then
-  data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s}' \
-    "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT")
+  data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"errors_json":%s}' \
+    "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$errors_json")
   _emit_terminal build_check_failed "$data"
   exit 2
 fi
