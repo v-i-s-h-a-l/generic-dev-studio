@@ -455,6 +455,25 @@ yaml_parse_check() {
   local f="${1:?usage: yaml_parse_check <file> [caller]}" caller="${2:-unknown}"
   [ -f "$f" ] || return 2
   command -v yq >/dev/null 2>&1 || return 0
+
+  # #156 — quarantine fast-skip. If a file failed to parse on a prior sweep
+  # AND its mtime hasn't moved since, treat it as still-broken: skip the
+  # parse attempt and the noisy debrief_parse_error emit. Auto-clears as
+  # soon as the user touches the file. Quarantine is a JSONL append-only
+  # log so multiple sweeps converging is safe; the `tail -1` lookup wins.
+  local q_path q_entry q_mtime now_mtime
+  q_path=$(_quarantine_path) || q_path=""
+  if [ -n "$q_path" ] && [ -f "$q_path" ]; then
+    q_entry=$(grep -F "\"path\":\"$f\"" "$q_path" 2>/dev/null | tail -1)
+    if [ -n "$q_entry" ]; then
+      q_mtime=$(printf '%s' "$q_entry" | sed -n 's/.*"mtime":\([0-9]*\).*/\1/p')
+      now_mtime=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)
+      if [ -n "$q_mtime" ] && [ "$q_mtime" = "$now_mtime" ]; then
+        return 2  # still-quarantined; no event, no work
+      fi
+    fi
+  fi
+
   local err
   if err=$(yq 'length' "$f" 2>&1 >/dev/null); then
     return 0
@@ -467,5 +486,26 @@ yaml_parse_check() {
   append_event chanakya debrief_parse_error "" \
     "{\"path\":\"$f\",\"yq_error\":\"$esc\",\"caller\":\"$caller\"}" \
     2>/dev/null || true
+
+  # Append to the quarantine list so the next sweep skips this file unless
+  # its mtime advances. Best-effort — quarantine is a perf optimization,
+  # not a correctness gate.
+  if [ -n "$q_path" ]; then
+    local fp_mtime ts
+    fp_mtime=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
+    mkdir -p "$(dirname "$q_path")" 2>/dev/null || true
+    printf '{"path":"%s","mtime":%s,"caller":"%s","ts":"%s"}\n' \
+      "$f" "$fp_mtime" "$caller" "$ts" >> "$q_path" 2>/dev/null || true
+  fi
   return 2
+}
+
+# #156 — resolves the per-project debrief quarantine file path. Stays under
+# ~/.dev-studio/<project>/.runtime/state/ to inherit existing path allowlist
+# (REVIEW.md R1) and per-project isolation (R4).
+_quarantine_path() {
+  local project
+  project=$(resolve_project 2>/dev/null) || return 1
+  printf '%s\n' "$HOME/.dev-studio/$project/.runtime/state/debrief-quarantine.jsonl"
 }

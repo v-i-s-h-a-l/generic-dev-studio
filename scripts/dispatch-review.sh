@@ -82,6 +82,22 @@ event_log=$(resolve_event_log) || {
   exit 1
 }
 
+# Trap-based "every exit emits a verdict-or-skip event" guard. Without it, any
+# non-zero exit between Step 1 and Step 7 leaves the task with no Argus-side
+# event, which is exactly the silent-skip shape #154 describes. SKIP_REASON is
+# set on each early-exit path before `exit 1`; success path zeroes it.
+DISPATCH_TERMINAL_EMITTED=0
+SKIP_REASON=""
+_emit_skip_if_open() {
+  [ "$DISPATCH_TERMINAL_EMITTED" = "1" ] && return 0
+  local rc=$?
+  local reason="${SKIP_REASON:-unknown_exit_$rc}"
+  emit_event_keyed argus review argus_gate_skipped "$TASK_ID" \
+    "{\"stage\":\"$STAGE\",\"idem_key\":\"$IDEM_KEY\",\"reason\":\"$reason\",\"exit_code\":$rc}" \
+    --idem-key "$IDEM_KEY" >/dev/null 2>&1 || true
+}
+trap _emit_skip_if_open EXIT INT TERM
+
 # ---- Step 1: dedup ----------------------------------------------------------
 # Two senders can race on the same key — the contract says producer-side dedupe
 # pre-write. dispatch-review is the producer of `review_*` events on the
@@ -114,6 +130,7 @@ if [ -n "$prior" ]; then
       "{\"idem_key\":\"$IDEM_KEY\",\"stage\":\"$STAGE\",\"verdict\":\"$v\"}" \
       --idem-key "$IDEM_KEY" >/dev/null 2>&1 || true
     printf 'ARGUS_VERDICT=%s\n' "$v"
+    DISPATCH_TERMINAL_EMITTED=1
     exit 0
   fi
 fi
@@ -123,10 +140,10 @@ HOST="${STUDIO_HOST:-claude-code}"
 case "$HOST" in
   claude-code) host_dir="$REPO_ROOT/.claude-plugin" ;;
   codex)       host_dir="$REPO_ROOT/.codex" ;;
-  *) printf 'dispatch-review: unknown STUDIO_HOST=%s (no adapter)\n' "$HOST" >&2; exit 1 ;;
+  *) SKIP_REASON="unknown_host"; printf 'dispatch-review: unknown STUDIO_HOST=%s (no adapter)\n' "$HOST" >&2; exit 1 ;;
 esac
 manifest="$host_dir/capabilities.yaml"
-[ -f "$manifest" ] || { printf 'dispatch-review: missing %s\n' "$manifest" >&2; exit 1; }
+[ -f "$manifest" ] || { SKIP_REASON="missing_manifest"; printf 'dispatch-review: missing %s\n' "$manifest" >&2; exit 1; }
 
 yaml_field() {
   grep -E "^${2}:[[:space:]]" "$1" 2>/dev/null \
@@ -136,7 +153,7 @@ yaml_field() {
 }
 SPAWN_COMMAND=$(yaml_field "$manifest" spawn_command)
 SECRET_SCOPE=$(yaml_field "$manifest" secret_scope)
-[ -n "$SPAWN_COMMAND" ] || { printf 'dispatch-review: %s missing spawn_command\n' "$manifest" >&2; exit 1; }
+[ -n "$SPAWN_COMMAND" ] || { SKIP_REASON="missing_spawn_command"; printf 'dispatch-review: %s missing spawn_command\n' "$manifest" >&2; exit 1; }
 
 # ---- Step 3: Argus security floor ------------------------------------------
 # Reference host (claude-code) is documented-exempt (see hosts/ADAPTER-SPEC.md).
@@ -145,15 +162,17 @@ SECRET_SCOPE=$(yaml_field "$manifest" secret_scope)
 # secrets into its session is unnecessary surface for a future prompt-
 # injection in a diff to exfiltrate.
 if [ "$HOST" != "claude-code" ] && [ "$SECRET_SCOPE" != "none" ]; then
+  SKIP_REASON="secret_scope_floor_unmet"
   printf 'dispatch-review: refuse — host=%s declares secret_scope=%s; Argus dispatch requires secret_scope: none. Add a dedicated Argus adapter (see hosts/ADAPTER-SPEC.md §Argus security floor) or route Argus to a none-scoped host.\n' \
     "$HOST" "$SECRET_SCOPE" >&2
   exit 1
 fi
 
 # ---- Step 4: build + validate handoff payload ------------------------------
-handoff_path=$(mktemp -t dispatch-review.XXXXXX) || exit 1
+handoff_path=$(mktemp -t dispatch-review.XXXXXX) || { SKIP_REASON="mktemp_failed"; exit 1; }
 handoff_path="${handoff_path}.json"
-trap 'rm -f "$handoff_path" "$handoff_path.tmp"' EXIT
+# Compose with _emit_skip_if_open — earlier-installed trap must keep firing.
+trap '_emit_skip_if_open; rm -f "$handoff_path" "$handoff_path.tmp"' EXIT
 
 task_id_field='null'
 if [ -n "$TASK_UUID" ]; then
@@ -178,13 +197,16 @@ cat > "$handoff_path" <<EOF
 }
 EOF
 
-validator_err=$(mktemp -t dispatch-review-validate.XXXXXX) || exit 1
-trap 'rm -f "$handoff_path" "$handoff_path.tmp" "$validator_err"' EXIT
+validator_err=$(mktemp -t dispatch-review-validate.XXXXXX) || { SKIP_REASON="mktemp_failed"; exit 1; }
+# Replace prior tmpfile-only trap, but keep _emit_skip_if_open running on EXIT.
+trap '_emit_skip_if_open; rm -f "$handoff_path" "$handoff_path.tmp" "$validator_err"' EXIT
 if ! "$SCRIPT_DIR/validate-contract.sh" handoff "$handoff_path" 2>"$validator_err"; then
   rc=$?
   if [ "$rc" -eq 2 ]; then
+    SKIP_REASON="validator_unavailable"
     printf 'dispatch-review: validator unavailable (check-jsonschema not installed). Install per _shared/contracts/EVOLUTION.md.\n' >&2
   else
+    SKIP_REASON="handoff_schema_violation"
     printf 'dispatch-review: handoff payload rejected (schema_violation, no auto-retry per _shared/contracts/idempotency.md §retry classification).\n' >&2
   fi
   cat "$validator_err" >&2 2>/dev/null || true
@@ -253,11 +275,15 @@ done
 wait "$spawn_pid" 2>/dev/null || true
 
 if [ -z "$verdict" ]; then
+  SKIP_REASON="verdict_timeout_${TIMEOUT}s"
   printf 'dispatch-review: timeout (%ds) waiting for review_* event with idempotency_key=%s\n' \
     "$TIMEOUT" "$IDEM_KEY" >&2
   exit 1
 fi
 
 # ---- Step 7: print verdict -------------------------------------------------
+# Spawned argus already emitted review_<verdict> via argus-emit-verdict.sh;
+# DISPATCH_TERMINAL_EMITTED suppresses the skip-emit on the success path.
+DISPATCH_TERMINAL_EMITTED=1
 printf 'ARGUS_VERDICT=%s\n' "$verdict"
 exit 0
