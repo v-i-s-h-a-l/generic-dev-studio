@@ -523,6 +523,9 @@
 <!-- Nav -->
 <nav class="nav">
   <div class="nav-inner">
+    <a href="#what">What it is</a>
+    <a href="#quick-start">Quick start</a>
+    <a href="#install">Install</a>
     <a href="#commands">Commands</a>
     <a href="#composites">Composites</a>
     <a href="#fleet">Fleet</a>
@@ -541,6 +544,38 @@
 </nav>
 
 <main class="container">
+
+<!-- What it is -->
+<section id="what">
+  <h2>What it is</h2>
+  <p>Three slash-command agents that turn a Claude Code session into a small product team. <strong>Chanakya</strong> plans (PM, breaks features into task groups). <strong>Achilles</strong> executes (implementer, isolated git worktrees, self-review, build gates). <strong>Argus</strong> reviews (two-stage: spec compliance + code quality). They work on top of your iOS project &mdash; uncommitted changes never get touched, every task gets its own worktree, every merge is gated.</p>
+</section>
+
+<!-- Quick start -->
+<section id="quick-start">
+  <h2>Quick start</h2>
+  <p>Inside your iOS project, after install:</p>
+  <pre><code>/chanakya                  # describe a feature, get a plan + task groups
+/chanakya brief T001       # generate a self-contained brief for one task
+/achilles T001             # implementer takes the brief, ships the code
+                           # (Achilles auto-invokes Argus, merges on green)</code></pre>
+  <p>That's the core loop. Everything below is detail &mdash; status dashboards, debt gauges, test flows, fleet mode, the lot. You can always start typing <code>/chanakya</code> and it'll lead you.</p>
+</section>
+
+<!-- Install -->
+<section id="install">
+  <h2>Install</h2>
+  <p>The agents live in the <code>generic-dev-studio</code> repo and get symlinked into <code>~/.claude/skills/</code> so they reach you from any project &mdash; including your iOS repo.</p>
+  <pre><code>git clone https://github.com/v-i-s-h-a-l/generic-dev-studio.git
+cd generic-dev-studio
+./scripts/install.sh           # idempotent &mdash; safe to re-run after pulls
+./scripts/verify-install.sh    # reports any drift</code></pre>
+  <p>Or, for a one-shot install with all manager defaults plus deps and SSH keys:</p>
+  <pre><code>./scripts/bootstrap.sh --yes --role manager   # one-shot
+./scripts/bootstrap.sh                        # interactive</code></pre>
+  <p>See the <a class="inline" href="../.claude/skills/studio/setup.html">machine-setup guide</a> (also <code>/studio-setup</code>) for the full menu &mdash; including how to onboard a worker Mac for offloaded builds.</p>
+  <p>Post-install, tweak with <code>scripts/configure.sh</code> (registered workers, manifests, scheduled sync, etc.).</p>
+</section>
 
 <!-- Commands -->
 <section id="commands">

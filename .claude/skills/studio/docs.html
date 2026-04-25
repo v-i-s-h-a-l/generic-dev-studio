@@ -295,24 +295,46 @@
 
 <nav class="nav">
   <div class="nav-inner">
-    <a href="#overview">Overview</a>
+    <a href="#what">What it is</a>
+    <a href="#quick-start">Quick start</a>
+    <a href="#install">Install</a>
     <a href="#modes">Modes</a>
     <a href="#rulebooks">Rulebooks</a>
-    <a href="#install">Install</a>
     <a href="#extend">Extend</a>
     <a href="#troubleshoot">Troubleshoot</a>
     <a href="#links">Links</a>
   </div>
 </nav>
 
-<section id="overview">
+<section id="what">
   <div class="container">
     <h2>What /studio is</h2>
-    <p><code>/studio</code> is a <strong>project-scoped skill</strong> shipped at <code>.claude/skills/studio/</code>. It auto-loads when your working directory is inside <code>generic-dev-studio</code>, and does nothing anywhere else. Its responsibility is <em>the studio itself</em>: the rules, conventions, release cadence, planning ledger, and cross-session arc state of this repo.</p>
-    <p>It is a thin router. A sub-command or conversational trigger dispatches into one mode pack under <code>modes/</code>, which carries the procedure. The router contract lives in <code>_shared/patterns/router-pattern.md</code>.</p>
+    <p><strong>A project-scoped router for studio-level operations.</strong> Auto-loads when your cwd is inside <code>generic-dev-studio</code>; silent everywhere else. Acts <em>on the studio itself</em> — its rules, releases, plans, machine setup — not on your iOS project.</p>
     <div class="callout">
-      <strong>Not for user-project task work.</strong> Implementing features, fixing bugs, reviewing an iOS diff — those route to the <em>agent</em> layer (<code>/chanakya</code>, <code>/achilles</code>, <code>/argus</code>), documented separately at <a class="inline" href="../../../chanakya/docs.html">chanakya/docs.html</a>. <code>/studio</code> acts <em>on the studio</em>; the agents act <em>on your project</em>. If in doubt: are you editing a file in this repo? It's studio territory. Are you editing code in your app? It's agent territory.
+      <strong>Not for app code.</strong> Implementing features, fixing bugs, reviewing an iOS diff → those route to <code>/chanakya</code>, <code>/achilles</code>, <code>/argus</code>. See <a class="inline" href="../../../chanakya/docs.html">chanakya/docs.html</a>.
     </div>
+  </div>
+</section>
+
+<section id="quick-start">
+  <div class="container">
+    <h2>Quick start</h2>
+    <pre><code># inside generic-dev-studio:
+/studio                   # default → resume the current arc ("where were we?")
+/studio review            # walk REVIEW.md against the pending diff
+/studio release           # draft release notes per RELEASES.md
+/studio audit             # plan ↔ memory ↔ commits drift check
+/studio guard "topic"     # has this work been done before?
+/studio-setup             # open the machine-setup guide (manager / worker / dual)
+/studio-help              # open this docs page</code></pre>
+    <p>Most users type <code>/studio</code> and let intent detection pick the mode. Sub-commands above are also available conversationally — "where were we", "any issues with this diff?", "should we tag?" all route correctly.</p>
+  </div>
+</section>
+
+<section id="overview">
+  <div class="container">
+    <h2>How it works</h2>
+    <p>It is a thin router. A sub-command or conversational trigger dispatches into one mode pack under <code>modes/</code>, which carries the procedure. The router contract lives in <code>_shared/patterns/router-pattern.md</code>.</p>
     <h3>When /studio fires</h3>
     <ul>
       <li>Explicit: <code>/studio &lt;mode&gt;</code>, <code>/studio-help</code>, <code>/resume-plan</code>.</li>
