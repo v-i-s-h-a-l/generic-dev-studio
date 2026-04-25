@@ -47,6 +47,8 @@
 #   --worker-roles <csv>           Worker role tags (default: swift-test,xcodebuild)
 #   --interactive                 Prompt at every step (legacy default behavior)
 #   --yes                         Deprecated alias — non-interactive is now the default
+#   --quick                       Quick-start: required tools + skills only, zero prompts.
+#                                 Implies --role manager. Full setup: re-run without --quick.
 #   --dry-run                     Print what would happen; change nothing.
 #   --log <path>                  Override log path (default: per-run timestamped
 #                                 file under ~/.dev-studio/.runtime/logs/)
@@ -75,6 +77,7 @@ WORKER_ROLES=""
 # prompt-at-every-step behavior.
 INTERACTIVE=0
 DRY_RUN=0
+QUICK=0
 LOG_PATH=""
 NO_LOG=0
 
@@ -85,6 +88,7 @@ while [ $# -gt 0 ]; do
     --worker-roles)  WORKER_ROLES="${2:?}"; shift 2 ;;
     --interactive)  INTERACTIVE=1; shift ;;
     --yes)          shift ;;  # deprecated alias — non-interactive is now the default
+    --quick)        QUICK=1; ROLE="${ROLE:-manager}"; INTERACTIVE=0; shift ;;
     --dry-run)      DRY_RUN=1; shift ;;
     --log)          LOG_PATH="${2:?}"; shift 2 ;;
     --no-log)       NO_LOG=1; shift ;;
@@ -105,28 +109,33 @@ fi
 # `--yes` is now a no-op (non-interactive is the default).
 YES=$([ "$INTERACTIVE" = "1" ] && echo 0 || echo 1)
 
-# ============================================================================
-# ANSI helpers
-# ============================================================================
-
-if [ -t 1 ]; then
-  c_cyan=$'\033[1;36m'; c_green=$'\033[32m'; c_yellow=$'\033[33m'
-  c_blue=$'\033[34m'; c_red=$'\033[31m'; c_magenta=$'\033[35m'
-  c_dim=$'\033[2m'; c_bold=$'\033[1m'; c_reset=$'\033[0m'
+# Wizard mode: determines how tools are presented and installed.
+#   quick       — required tools only, zero prompts, fastest path to working
+#   auto        — install required + recommended, skip satisfied, minimal prompts
+#   interactive — show each tool with WHY, tier badge, ? for details
+if [ "$QUICK" = "1" ]; then
+  WIZARD_MODE="quick"
+elif [ "$INTERACTIVE" = "1" ]; then
+  WIZARD_MODE="interactive"
 else
-  c_cyan=''; c_green=''; c_yellow=''; c_blue=''; c_red=''; c_magenta=''; c_dim=''; c_bold=''; c_reset=''
+  WIZARD_MODE="auto"
 fi
 
-step()     { printf '\n%s━━━ %s ━━━%s\n' "$c_cyan" "$*" "$c_reset"; }
-substep()  { printf '\n  %s▸ %s%s\n' "$c_magenta" "$*" "$c_reset"; }
-ok()       { printf '  %s✓%s %s\n' "$c_green" "$c_reset" "$*"; }
-warn()     { printf '  %s⚠%s %s\n' "$c_yellow" "$c_reset" "$*"; }
-info()     { printf '  %si%s %s\n' "$c_blue" "$c_reset" "$*"; }
-err()      { printf '  %s✗%s %s\n' "$c_red" "$c_reset" "$*" >&2; }
-cmd_hint() { printf '  %s$ %s%s\n' "$c_dim" "$*" "$c_reset"; }
-dim()      { printf '  %s%s%s\n' "$c_dim" "$*" "$c_reset"; }
-# Pre-announce a long-running op so silence after it isn't read as a hang.
-announce() { printf '  %s↻%s %s %s(this can take a moment — heartbeat below if it runs long)%s\n' "$c_blue" "$c_reset" "$*" "$c_dim" "$c_reset"; }
+# ============================================================================
+# Shared libraries
+# ============================================================================
+
+# Script directory — used for sourcing sibling libraries.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+
+# Shared UI library: ANSI colors, output functions, prompt helpers, run().
+# Source BEFORE the tee/logging setup so TTY detection sees the real stdout.
+# shellcheck source=lib-ui.sh
+. "$SCRIPT_DIR/lib-ui.sh"
+
+# Tool registry engine: YAML parser, scan, install.
+# shellcheck source=lib-registry.sh
+. "$SCRIPT_DIR/lib-registry.sh"
 
 # ============================================================================
 # Logging — every run writes a timestamped log; stdout still shows everything
@@ -155,78 +164,27 @@ else
   exec 3>&2 4<&0
 fi
 
-# Session summary accumulator — appended per step, dumped at the end.
-declare -a SUMMARY_LINES
-summary() { SUMMARY_LINES+=("$1"); }
-
-# Stepwise primitives — per-step validate-and-recover, state file, recheck
-# helpers. See scripts/lib-stepwise.sh for the contract.
-SCRIPT_DIR_LSW=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+# Stepwise primitives — per-step validate-and-recover, state file, recheck.
 # shellcheck source=lib-stepwise.sh
-. "$SCRIPT_DIR_LSW/lib-stepwise.sh"
+. "$SCRIPT_DIR/lib-stepwise.sh"
 stepwise_state_init
 
-# ============================================================================
-# Prompt helpers (respect --yes)
-#
-# Prompts go to FD 3 (terminal, unbuffered). Reads come from FD 4 (terminal).
-# A one-line "→ <answer>" is echoed to stderr so the tee'd log records what
-# the user picked even though the prompt itself never crossed the log pipe.
-# ============================================================================
-
-ask() {
-  # ask "prompt" [default] → stdout = answer
-  local prompt="$1" default="${2:-}" suffix="" reply
-  [ -n "$default" ] && suffix=" [$default]"
-  if [ "$YES" = "1" ]; then
-    printf '  %s? %s%s — using default: %s%s\n' "$c_dim" "$prompt" "$suffix" "$default" "$c_reset" >&2
-    printf '%s' "$default"
-    return
-  fi
-  printf '  %s⌨  INPUT NEEDED%s  %s%s: ' "$c_yellow$c_bold" "$c_reset" "$prompt" "$suffix" >&3
-  IFS= read -r reply <&4 || reply=""
-  reply="${reply:-$default}"
-  printf '  %s⌨  %s → %s%s\n' "$c_dim" "$prompt" "$reply" "$c_reset" >&2
-  printf '%s' "$reply"
-}
-
-confirm() {
-  # confirm "prompt" [default=y|n] — returns 0 on yes
-  local prompt="$1" default="${2:-y}" suffix reply
-  case "$default" in y|Y) suffix="[Y/n]" ;; *) suffix="[y/N]" ;; esac
-  if [ "$YES" = "1" ]; then
-    printf '  %s? %s %s — using default: %s%s\n' "$c_dim" "$prompt" "$suffix" "$default" "$c_reset" >&2
-    case "$default" in y|Y) return 0 ;; *) return 1 ;; esac
-  fi
-  printf '  %s⌨  INPUT NEEDED%s  %s %s: ' "$c_yellow$c_bold" "$c_reset" "$prompt" "$suffix" >&3
-  IFS= read -r reply <&4 || reply=""
-  reply="${reply:-$default}"
-  case "$reply" in
-    y|Y|yes|Yes) printf '  %s⌨  %s → yes%s\n' "$c_dim" "$prompt" "$c_reset" >&2; return 0 ;;
-    *)           printf '  %s⌨  %s → no%s\n'  "$c_dim" "$prompt" "$c_reset" >&2; return 1 ;;
-  esac
-}
-
-pause_for_user() {
-  [ "$YES" = "1" ] && { dim "(non-interactive: skipping pause)"; return; }
-  printf '  %s⌨  INPUT NEEDED%s  Press Enter when done (or Ctrl-C to abort)…' "$c_yellow$c_bold" "$c_reset" >&3
-  IFS= read -r _ <&4 || true
-  printf '\n' >&3
-}
-
-# dup_action <tool-label> <current-version> → echoes one of: keep | upgrade | reinstall | skip
-# In --yes mode, always echoes "keep".
+# dup_action: legacy prompt for already-installed non-registry tools.
+# Used by Steps 5-10 for Tailscale, Xcode, Claude Code, etc. Registry-managed
+# tools use the scan/render/install workflow instead.
+# In --quick mode or --yes mode, always returns "keep" without prompting.
 dup_action() {
-  local label="$1" version="$2" reply outcome
-  if [ "$YES" = "1" ]; then
+  local label="$1" version="$2" reply outcome _ofd _ifd
+  _ofd=$(_ui_out_fd); _ifd=$(_ui_in_fd)
+  if [ "$YES" = "1" ] || [ "$QUICK" = "1" ]; then
     printf '  %s✓ %s (%s) — keeping (non-interactive)%s\n' "$c_dim" "$label" "$version" "$c_reset" >&2
     echo keep
     return
   fi
-  printf '  %s◆%s %s %s(%s)%s — ' "$c_magenta" "$c_reset" "$c_bold$label$c_reset" "$c_dim" "$version" "$c_reset" >&3
+  printf '  %s◆%s %s %s(%s)%s — ' "$c_magenta" "$c_reset" "$c_bold$label$c_reset" "$c_dim" "$version" "$c_reset" >&"$_ofd"
   printf '[%sK%seep / [%su%s]pgrade / [%sr%s]einstall / [%ss%s]kip : ' \
-    "$c_bold" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "$c_reset" >&3
-  IFS= read -r reply <&4 || reply=""
+    "$c_bold" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "$c_reset" >&"$_ofd"
+  IFS= read -r reply <&"$_ifd" || reply=""
   reply="${reply:-k}"
   case "$reply" in
     k|K|keep|Keep)       outcome=keep ;;
@@ -237,37 +195,6 @@ dup_action() {
   esac
   printf '  %s◆ %s → %s%s\n' "$c_dim" "$label" "$outcome" "$c_reset" >&2
   echo "$outcome"
-}
-
-# ============================================================================
-# Run helper — respects --dry-run
-# ============================================================================
-
-run() {
-  if [ "$DRY_RUN" = "1" ]; then
-    printf '  %sDRY-RUN: %s%s\n' "$c_dim" "$*" "$c_reset"
-    return 0
-  fi
-  # Heartbeat: if the wrapped command produces no output for ≥15s, print
-  # an elapsed-time line every 15s so the user knows we're not wedged.
-  # Goes to FD 3 (terminal) so it shows up even when stdout is piped through
-  # tee → log file. Killed as soon as the command returns.
-  local start_ts hb_pid rc
-  start_ts=$(date +%s)
-  (
-    sleep 15
-    while :; do
-      now=$(date +%s)
-      printf '  %s⏳ still running… %ds elapsed%s\n' "$c_dim" "$((now - start_ts))" "$c_reset" >&3 2>/dev/null || exit 0
-      sleep 15
-    done
-  ) &
-  hb_pid=$!
-  "$@"
-  rc=$?
-  kill "$hb_pid" 2>/dev/null || true
-  wait "$hb_pid" 2>/dev/null || true
-  return $rc
 }
 
 # ============================================================================
@@ -348,11 +275,15 @@ fi
 ok "running as: $(id -un)"
 
 if [ "$DRY_RUN" = "1" ]; then warn "DRY-RUN MODE — no mutations will be applied."; fi
-if [ "$INTERACTIVE" = "1" ]; then
-  info "INTERACTIVE MODE — you'll be prompted at every step."
-else
-  info "AUTO-PILOT MODE (default) — every prompt takes its smart default. Pass --interactive to be asked at every step."
-fi
+case "$WIZARD_MODE" in
+  quick)
+    info "QUICK-START MODE — required tools + skills only, zero prompts."
+    info "For full setup: re-run without --quick." ;;
+  interactive)
+    info "INTERACTIVE MODE — each tool shows WHY, tier, and alternatives. You decide." ;;
+  auto)
+    info "AUTO-PILOT MODE (default) — installs required + recommended, skips satisfied. Pass --interactive for per-tool control." ;;
+esac
 [ -n "$LOG_PATH" ] && info "Logging to: $LOG_PATH"
 
 # Early repo detection — tells later steps whether to offer to clone.
@@ -437,62 +368,35 @@ if [ "$ROLE" = "worker" ] || [ "$ROLE" = "dual" ]; then
 fi
 
 # ============================================================================
-# Step 3 — Homebrew + common deps
+# Step 3 — Tools (registry-driven)
+#
+# The tool registry (scripts/tools.yaml) is the single source of truth for
+# what the studio needs. This step:
+#   1. Handles Homebrew first (prerequisite for other installs)
+#   2. Scans all tools for the current role
+#   3. Renders the scan results (mode-dependent: quick/auto/interactive)
+#   4. Installs missing brew-installable tools
+# Complex tools (Tailscale, Xcode, Claude Code) appear in the scan but
+# are handled procedurally in later steps.
 # ============================================================================
 
-step "3 · Homebrew + packages"
+step "3 · Tools"
 
-# Pick deps per role.
-case "$ROLE" in
-  manager)
-    # Manager: full dep set. yq + jq power post-2.6 YAML + event-log work;
-    # fswatch powers the worker-mode file-watcher. rsync + coreutils are
-    # dispatcher-side (for future #127 auto-rsync + gtimeout bounds).
-    DEPS=(fswatch coreutils yq jq rsync git) ;;
-  worker)
-    # Worker: only what dispatched commands need. No yq/fswatch unless we
-    # later ship a self-update launchd agent (see worker-manifest work).
-    DEPS=(jq rsync coreutils git) ;;
-  dual)
-    DEPS=(fswatch coreutils yq jq rsync git) ;;
-esac
+# ---- Phase 1: Homebrew (must exist before we can install anything else) ----
 
-# Optional packages — installed best-effort; bootstrap continues on failure.
-# scripts/xcodebuild-shim.sh routes through these when present (see #173, #174).
-case "$ROLE" in
-  worker|dual)
-    # xcodebuildmcp (getsentry/XcodeBuildMCP) is the structured-output
-    # executor that scripts/xcodebuild-shim.sh prefers when installed. AXe
-    # ships bundled and powers Argus's a11y verification.
-    OPTIONAL_DEPS=(xcodebuildmcp) ;;
-  *)
-    OPTIONAL_DEPS=() ;;
-esac
-OPTIONAL_TAPS=(getsentry/xcodebuildmcp)
-
+substep "Package manager"
 if command -v brew >/dev/null 2>&1; then
-  BREW_VERSION=$(brew --version 2>/dev/null | head -n 1)
-  action=$(dup_action "Homebrew" "$BREW_VERSION")
-  case "$action" in
-    upgrade)
-      announce "brew update — refreshing tap metadata"
-      run brew update
-      announce "brew upgrade — installing newer versions of any outdated formulae"
-      run brew upgrade ;;
-    reinstall) warn "Homebrew reinstall not driven by this wizard (destructive). Upgrade instead, or run the official installer manually." ;;
-    keep|skip) ok "Homebrew kept" ;;
-  esac
+  ok "Homebrew $(brew --version 2>/dev/null | head -1)"
 else
   warn "Homebrew not installed"
-  if confirm "Install Homebrew now (runs the official installer)?"; then
+  if [ "$QUICK" = "1" ] || confirm "Install Homebrew now (runs the official installer)?"; then
     announce "Downloading + running the official Homebrew installer (downloads CLT if missing — typically 2–10 min)"
     run /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     BREW_BIN="$(brew_prefix)/bin/brew"
     [ -x "$BREW_BIN" ] && eval "$("$BREW_BIN" shellenv)"
-    # Offer to persist the PATH addition to the shell rc.
     RC=$(shell_rc)
     if ! grep -qF "$(brew_prefix)/bin/brew shellenv" "$RC" 2>/dev/null; then
-      if confirm "Add 'brew shellenv' to $RC so future shells find brew?"; then
+      if [ "$QUICK" = "1" ] || confirm "Add 'brew shellenv' to $RC so future shells find brew?"; then
         run bash -c "printf '\n# Homebrew\neval \"\$(%q shellenv)\"\n' \"$BREW_BIN\" >> \"$RC\""
         ok "Added brew shellenv to $RC"
       fi
@@ -500,62 +404,26 @@ else
   fi
 fi
 
-if command -v brew >/dev/null 2>&1; then
-  substep "Studio packages"
-  # Cache the installed-formula list once — calling `brew list` per-package
-  # cost ~2–5s × N packages of dead air, which read as "stuck" during the
-  # most prompt-heavy section of the wizard. One `brew list --versions` call
-  # gives us both presence and version in a single round trip.
-  info "Cataloging installed brew formulae (one-shot)…"
-  BREW_FORMULA_VERSIONS=$(brew list --versions --formula 2>/dev/null || true)
-  for pkg in "${DEPS[@]}"; do
-    pkg_line=$(printf '%s\n' "$BREW_FORMULA_VERSIONS" | awk -v p="$pkg" '$1==p{print; exit}')
-    if [ -n "$pkg_line" ]; then
-      VERSION=$(printf '%s\n' "$pkg_line" | awk '{print $NF}')
-      action=$(dup_action "$pkg" "$VERSION")
-      case "$action" in
-        upgrade)   announce "brew upgrade $pkg"; run brew upgrade "$pkg" ;;
-        reinstall) announce "brew reinstall $pkg"; run brew reinstall "$pkg" ;;
-        keep|skip) ok "$pkg kept ($VERSION)" ;;
-      esac
-    else
-      if confirm "Install $pkg?" "y"; then
-        announce "brew install $pkg"
-        run brew install "$pkg"
-      else
-        warn "Skipped $pkg (some Studio features may not work without it)"
-      fi
-    fi
-  done
+# ---- Phase 2: Scan all tools for this role ----
 
-  # Optional packages — best-effort. Tap setup + install both ignore failure
-  # so the wizard never blocks on a third-party tap being unavailable.
-  if [ "${#OPTIONAL_DEPS[@]}" -gt 0 ]; then
-    substep "Optional packages (best-effort)"
-    for tap in "${OPTIONAL_TAPS[@]}"; do
-      [ -z "$tap" ] && continue
-      if ! brew tap 2>/dev/null | grep -Fxq "$tap"; then
-        announce "brew tap $tap"
-        run brew tap "$tap" >/dev/null 2>&1 || \
-          warn "tap $tap failed — optional packages from this tap will be skipped"
-      fi
-    done
-    for pkg in "${OPTIONAL_DEPS[@]}"; do
-      pkg_line=$(printf '%s\n' "$BREW_FORMULA_VERSIONS" | awk -v p="$pkg" '$1==p{print; exit}')
-      if [ -n "$pkg_line" ]; then
-        ok "$pkg already present"
-      else
-        announce "brew install $pkg (optional)"
-        if run brew install "$pkg" >/dev/null 2>&1; then
-          ok "$pkg installed"
-        else
-          warn "$pkg install failed — features that depend on it will fall back gracefully"
-        fi
-      fi
-    done
-  fi
+substep "Scanning tools for role: $ROLE"
+registry_load
+registry_scan "$ROLE" "$WORKER_ROLES"
+
+# ---- Phase 3: Render scan results (mode-dependent) ----
+
+registry_render_scan "$WIZARD_MODE"
+
+# ---- Phase 4: Install missing brew-installable tools ----
+
+if [ -n "$_SCAN_NEEDED" ] && command -v brew >/dev/null 2>&1; then
+  substep "Installing"
+  registry_install_needed "$WIZARD_MODE" || true
+  summary "tools installed via registry"
+elif [ -n "$_SCAN_NEEDED" ]; then
+  warn "Skipping tool install — no brew available"
 else
-  warn "Skipping package install — no brew available"
+  summary "all brew tools satisfied"
 fi
 
 # ============================================================================
@@ -633,6 +501,26 @@ if [ "$ROLE" = "manager" ] || [ "$ROLE" = "dual" ]; then
     info "Install per the Anthropic docs (DMG / installer). Then re-run this wizard to verify."
     cmd_hint "open https://docs.claude.com/en/docs/claude-code"
   fi
+fi
+
+# ============================================================================
+# Quick-exit — in --quick mode, we stop after tools + skills are in place.
+# The remaining steps (SSH, Tailscale, pmset, git config, Xcode, registration)
+# are configuration that the user can do later via:
+#   scripts/bootstrap.sh           (re-run without --quick for full setup)
+#   scripts/configure.sh guide     (post-setup guided walkthrough)
+# ============================================================================
+
+if [ "$QUICK" = "1" ]; then
+  step "Quick-start complete"
+  ok "Required tools and agent skills are installed."
+  info "For full setup (SSH, Tailscale, workers, Xcode): re-run without --quick"
+  cmd_hint "scripts/bootstrap.sh"
+  info "For post-setup configuration guide:"
+  cmd_hint "scripts/configure.sh guide"
+  [ -n "$LOG_PATH" ] && dim "Log of this run: $LOG_PATH"
+  step "Done"
+  exit 0
 fi
 
 # ============================================================================

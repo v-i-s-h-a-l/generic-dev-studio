@@ -1,0 +1,269 @@
+# tools.yaml — declarative tool registry for the studio wizard.
+#
+# Single source of truth for every dependency the studio needs.
+# Adding a new tool = adding a YAML block here. The wizard (bootstrap.sh),
+# post-setup guide (configure.sh guide), and health checks (configure.sh
+# recheck) all read from this file.
+#
+# Parsed by lib-registry.sh's built-in awk parser — no yq required.
+# Keep the format flat: one level of indentation under each "- id:" block,
+# inline arrays [a, b, c], single-line strings. Multi-line details use \n.
+#
+# Schema
+#
+#   id              Unique slug (used in code, state files, configure.sh)
+#   name            Human-readable display name
+#   category        Grouping: package-manager | data-processing | file-sync |
+#                   utilities | vcs | networking | runtime | toolchain
+#   tier            required | recommended | optional
+#   roles           Space-separated roles this tool applies to.
+#                   Use [manager, worker, dual] for all roles.
+#   conditional_on  Optional gate: "worker_role:<tag>" — tool only applies
+#                   when the worker has that role tag.
+#   why             One-line explanation shown in auto-pilot and interactive
+#   details         Longer explanation shown on "?" in interactive mode.
+#                   Use \n for line breaks.
+#   check_type      How to detect presence: command | command_or_path | path | eval
+#   check_target    The command name, path, or eval expression to check
+#   check_fallback  Space-separated fallback paths (for command/command_or_path)
+#   check_eval      Shell expression for check_type=eval
+#   version_cmd     Shell command that prints the installed version
+#   min_version     Minimum acceptable version (empty = any version)
+#   install_type    How to install: brew | brew-cask | brew-tap | script | custom | manual
+#   install_target  brew formula/cask name (for brew/brew-cask/brew-tap)
+#   install_tap     Homebrew tap to add first (for brew-tap)
+#   install_cmd     Shell command to run (for script type)
+#   duration        Human-readable install time estimate
+#   alternatives    What else works if the user skips this (empty = none)
+
+schema: 1
+
+tools:
+  # ======================================================================
+  # Package manager — must be installed before any brew-based tool
+  # ======================================================================
+  - id: homebrew
+    name: Homebrew
+    category: package-manager
+    tier: required
+    roles: [manager, worker, dual]
+    why: "Package manager — installs all other CLI dependencies"
+    details: "The de-facto macOS package manager. Without it, every CLI tool (jq, yq, rsync, etc.) needs manual download and PATH wiring. Homebrew also provides Cask for GUI apps like Tailscale."
+    check_type: command
+    check_target: brew
+    check_fallback: /opt/homebrew/bin/brew /usr/local/bin/brew
+    version_cmd: "brew --version 2>/dev/null | head -1 | awk '{print $NF}'"
+    min_version: ""
+    install_type: custom
+    install_target: ""
+    duration: "2-5 min (downloads Command Line Tools if missing)"
+    alternatives: ""
+
+  # ======================================================================
+  # Required CLI tools (brew-installable)
+  # ======================================================================
+  - id: jq
+    name: jq
+    category: data-processing
+    tier: required
+    roles: [manager, worker, dual]
+    why: "JSON processor — parses nodes.json, bootstrap state, event payloads"
+    details: "Lightweight CLI JSON processor used by virtually every studio script. Reads/writes the worker registry (nodes.json), wizard state (bootstrap-state.json), and structured event payloads. Without jq, studio scripts can't parse or update configuration."
+    check_type: command
+    check_target: jq
+    version_cmd: "jq --version 2>/dev/null | sed 's/jq-//'"
+    min_version: ""
+    install_type: brew
+    install_target: jq
+    duration: "<30s"
+    alternatives: ""
+
+  - id: yq
+    name: yq
+    category: data-processing
+    tier: required
+    roles: [manager, dual]
+    why: "YAML processor — parses worker manifests, recipes, portability configs"
+    details: "Reads and validates YAML files throughout the studio: worker manifests (what each worker should have), skill recipes (upstream vendor configs), and portability declarations. Manager-only because workers receive pre-processed commands, not raw YAML."
+    check_type: command
+    check_target: yq
+    version_cmd: "yq --version 2>/dev/null | awk '{print $NF}'"
+    min_version: ""
+    install_type: brew
+    install_target: yq
+    duration: "<30s"
+    alternatives: ""
+
+  - id: rsync
+    name: rsync
+    category: file-sync
+    tier: required
+    roles: [manager, worker, dual]
+    why: "Incremental file sync — mirrors source between manager and workers"
+    details: "The dispatcher uses rsync to mirror project sources from manager to workers before each build/test dispatch. rsync's delta algorithm means only changed files transfer, making iterative dispatches fast (~1-3s for typical changes vs minutes for a full copy)."
+    check_type: command
+    check_target: rsync
+    version_cmd: "rsync --version 2>/dev/null | head -1 | sed 's/.*version //; s/ .*//' | head -c 20"
+    min_version: ""
+    install_type: brew
+    install_target: rsync
+    duration: "<30s"
+    alternatives: ""
+
+  - id: coreutils
+    name: coreutils
+    category: utilities
+    tier: required
+    roles: [manager, worker, dual]
+    why: "GNU utilities — gtimeout for build limits, gdate for ISO timestamps"
+    details: "macOS ships BSD versions of core utilities that lack flags the studio needs. The dispatcher uses gtimeout to enforce wall-clock limits on remote builds (preventing runaways), and gdate for ISO-8601 timestamps in event logs. The brew package installs GNU versions prefixed with 'g'."
+    check_type: command
+    check_target: gtimeout
+    version_cmd: "gtimeout --version 2>/dev/null | head -1 | awk '{print $NF}'"
+    min_version: ""
+    install_type: brew
+    install_target: coreutils
+    duration: "<1 min"
+    alternatives: ""
+
+  - id: fswatch
+    name: fswatch
+    category: file-sync
+    tier: required
+    roles: [manager, dual]
+    why: "File-system watcher — triggers worker sync on source changes"
+    details: "Monitors your project directory for file changes and triggers worker sync automatically. Without fswatch, you'd need to manually run sync-worker.sh before each dispatch, or accept that workers might build against stale sources. Workers don't need it — they receive synced files."
+    check_type: command
+    check_target: fswatch
+    version_cmd: "fswatch --version 2>/dev/null | head -1 | awk '{print $NF}'"
+    min_version: ""
+    install_type: brew
+    install_target: fswatch
+    duration: "<30s"
+    alternatives: ""
+
+  - id: git
+    name: git
+    category: vcs
+    tier: required
+    roles: [manager, worker, dual]
+    why: "Version control — the studio repo, dispatches, and worktrees depend on it"
+    details: "Git is fundamental. The studio itself is a git repo. Achilles creates worktrees for parallel tasks. Dispatchers check branch state before syncing. The built-in macOS git (via Command Line Tools) works fine — the brew version is optional but often newer."
+    check_type: command
+    check_target: git
+    version_cmd: "git --version 2>/dev/null | awk '{print $3}'"
+    min_version: ""
+    install_type: brew
+    install_target: git
+    duration: "<1 min"
+    alternatives: ""
+
+  # ======================================================================
+  # Recommended tools (installed in auto-pilot, skippable)
+  # ======================================================================
+  - id: tailscale
+    name: Tailscale
+    category: networking
+    tier: recommended
+    roles: [manager, worker, dual]
+    why: "Mesh VPN — lets manager reach workers by hostname, no port forwarding"
+    details: "Creates an encrypted mesh network between your machines. Workers appear by name (e.g. 'mini') from the manager without configuring routers, DNS, or firewall rules. Free for personal use (up to 100 devices). Without it, you need .local mDNS, static IPs, or manual /etc/hosts entries."
+    check_type: command_or_path
+    check_target: tailscale
+    check_fallback: /Applications/Tailscale.app
+    version_cmd: "tailscale version 2>/dev/null | head -1 | awk '{print $1}'"
+    min_version: ""
+    install_type: custom
+    install_target: ""
+    duration: "1-2 min install + sign-in"
+    alternatives: "LAN with .local hostnames, static IPs, traditional VPN"
+
+  - id: claude-code
+    name: Claude Code
+    category: runtime
+    tier: recommended
+    roles: [manager, dual]
+    why: "AI agent runtime — /chanakya /achilles /argus run inside it"
+    details: "The Anthropic CLI that hosts the studio's agent layer. Without it, you can still use scripts and worker infrastructure, but AI-powered task management (Chanakya), implementation (Achilles), and review (Argus) won't be available. Install via the official Anthropic docs."
+    check_type: command
+    check_target: claude
+    version_cmd: "claude --version 2>/dev/null | head -1 | awk '{print $1}'"
+    min_version: ""
+    install_type: manual
+    install_target: ""
+    duration: "2-5 min"
+    alternatives: ""
+
+  # ======================================================================
+  # Optional tools (skipped in auto-pilot, offered in interactive)
+  # ======================================================================
+  - id: xcodebuildmcp
+    name: xcodebuildmcp
+    category: toolchain
+    tier: optional
+    roles: [worker, dual]
+    why: "Structured Xcode executor — machine-readable build output for the shim"
+    details: "From getsentry/XcodeBuildMCP. The studio's xcodebuild-shim.sh prefers this for structured, machine-parseable build output. Without it, builds fall back to raw xcodebuild — fully functional, just less structured for automated analysis."
+    check_type: command
+    check_target: xcodebuildmcp
+    version_cmd: ""
+    min_version: ""
+    install_type: brew-tap
+    install_target: xcodebuildmcp
+    install_tap: getsentry/xcodebuildmcp
+    duration: "<1 min"
+    alternatives: "raw xcodebuild (always available with Xcode)"
+
+  # ======================================================================
+  # Toolchain — presence checked by registry, install handled procedurally
+  # ======================================================================
+  - id: xcode-clt
+    name: Command Line Tools
+    category: toolchain
+    tier: required
+    roles: [manager, worker, dual]
+    why: "Compiler toolchain — Swift, clang, linker; minimum for any build role"
+    details: "Apple's Command Line Tools provide the Swift compiler, clang, and linker. Every build role needs at least this. Lighter than full Xcode (~2GB vs ~12GB) and sufficient for swift-test. The installer opens a GUI dialog."
+    check_type: eval
+    check_target: ""
+    check_eval: "xcode-select -p >/dev/null 2>&1"
+    version_cmd: "pkgutil --pkg-info=com.apple.pkg.CLTools_Executables 2>/dev/null | awk '/version:/{print $2}' || xcode-select -p 2>/dev/null"
+    min_version: ""
+    install_type: custom
+    install_target: ""
+    duration: "5-10 min"
+    alternatives: ""
+
+  - id: xcode-app
+    name: Xcode.app
+    category: toolchain
+    tier: required
+    roles: [worker, dual]
+    conditional_on: worker_role:xcodebuild
+    why: "Full Xcode IDE + simulators — required for xcodebuild dispatches"
+    details: "The full Xcode application provides the simulator runtime, instruments, and xcodebuild for complete iOS builds. Required only when this worker handles xcodebuild dispatches. Install via the App Store (~12GB) or the faster xcodes CLI."
+    check_type: path
+    check_target: /Applications/Xcode.app
+    version_cmd: "xcodebuild -version 2>/dev/null | head -1"
+    min_version: ""
+    install_type: custom
+    install_target: ""
+    duration: "20-60 min"
+    alternatives: ""
+
+  - id: swift
+    name: Swift
+    category: toolchain
+    tier: required
+    roles: [worker, dual]
+    conditional_on: worker_role:swift-test
+    why: "Swift compiler — needed for swift test dispatches"
+    details: "The Swift compiler, provided by Command Line Tools or Xcode.app. If CLT is installed, Swift is typically available. This check confirms the toolchain is functional."
+    check_type: command
+    check_target: swift
+    version_cmd: "swift --version 2>/dev/null | head -1 | sed 's/.*version //; s/ (.*//' | head -c 20"
+    min_version: ""
+    install_type: custom
+    install_target: ""
+    duration: "(installed via CLT or Xcode)"
+    alternatives: ""
