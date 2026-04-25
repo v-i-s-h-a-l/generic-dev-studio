@@ -186,6 +186,30 @@ Argus must not write to `briefs/`, `debriefs/`, task YAML, or the worktree. Achi
 
 **How to check:** in a diff that touches argus modes or argus-emit-verdict.sh, verify no writes reach `plans/briefs/` or worktree paths. In Achilles diffs, verify no `briefs/` mutations.
 
+### R18 — Skill Authoring Standard conformance (tier: **block + auto-fix**)
+
+Every owned `SKILL.md`, mode-pack `modes/*.md`, `routing.yaml`, and `portability.yaml` MUST pass `scripts/lint-skill-prose.sh` on commit. Vendored skills (declared `authoring_standard: exempt` in their `vendor.yaml`) are validated for frontmatter only and skip the body grammar checks. The Authoring Standard itself lives at `_shared/standards/skill-authoring.md`; the sentinel verb set at `_shared/standards/sentinel-vocabulary.md`.
+
+**Why:** prose drift across hosts is the operational risk that contracts and schemas don't catch. Different models read soft modals differently — "should" gets interpreted as license to skip; "consider" reads as "do." Treating SKILL.md as a programming language with a defined grammar closes that gap. Recorded in `project_skill_distribution_arc.md` as load-bearing decision #1.
+
+**How to check:** the pre-commit hook (Gate 3, `lint-skill-prose.sh --staged`) runs the linter on staged SKILL.md / mode-pack / routing.yaml / portability.yaml files. Findings format: `<CODE>:<file>[:<line>]:<detail>`. Codes documented in `_shared/standards/skill-authoring.md §Linter codes`.
+
+**Fix pattern:** for every linter `E_*` finding —
+
+| Finding | Fix |
+|---|---|
+| `E_MISSING_FRONTMATTER` / `E_MISSING_REQUIRED_KEY` / `E_INVALID_FRONTMATTER` | Add the missing keys (`name`, `description`, `type`, `schema_version: 1`); ensure description ≤ 280 chars |
+| `E_BAD_TYPE` / `E_BAD_NAME` | Set `type` to one of the six allowed values; rename to kebab-case for executable skill kinds |
+| `E_SOFT_MODAL_IN_PROCEDURE` | Replace `should`/`may`/`might`/`consider` with imperative verbs |
+| `E_MISSING_SENTINEL` | Start each step with one of `READ`, `WRITE`, `RUN`, `CHECK`, `EMIT`, `RECORD`, `STOP`, `PROCEED`, `RETRY`, `SKIP`, `ESCALATE`, `BLOCK` |
+| `E_MISSING_PRE_POST` | Add `Before:` and `After:` lines under each numbered step |
+| `E_MISSING_FAILURE_MODES` / `E_BAD_FAILURE_CLASSIFICATION` | Add a `## Failure modes` table with the three-column shape; classify each failure as `transient`, `permanent`, or `ambiguous` |
+| `E_INVALID_ROUTING` / `E_INVALID_PORTABILITY` | Schema validation hint will name the offending field; consult the JSON Schema in `_shared/standards/` |
+
+Soft modals are linter-blocks specifically because procedures are not optional — they are the contract. If a step is genuinely conditional, model it via a decision table, not "should" prose.
+
+**Migration carve-out:** the four legacy studio agents (Achilles, Argus, Chanakya, studio router) migrate under issue #172. While that issue is open, the linter accepts them at warn-level; once #172 closes, they drop to block-level alongside everything else.
+
 ## Deferred / known gaps
 
 Not rules yet — track here so we remember:

@@ -1,0 +1,10 @@
+schema_version: 1
+name: exemplar
+invocation:
+  slash_command: "/exemplar"
+  triggers:
+    - "show me a reference skill"
+    - "what does an authoring-standard-conformant skill look like"
+    - "/exemplar"
+domains:
+  - studio-internal

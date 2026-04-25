@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Pre-commit hook for generic-dev-studio. Four gates in order:
+# Pre-commit hook for generic-dev-studio. Five gates in order:
 #   1.  update-surface-manifest.sh — regenerate + auto-stage docs-surface.json.
 #   1b. capability-manifest.sh --regen — regenerate + auto-stage the manifest.
 #   2.  lint-architecture.sh --staged — router/frontmatter/dup/surface checks.
+#   2b. lint-skill-prose.sh --staged — Authoring Standard gate (REVIEW.md R18).
 #   3.  privacy gate — reject if staged diff leaks another project's runtime.
 #
-# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2 and 3. Gate 1+1b
+# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/3. Gate 1+1b
 # (manifest regens) always run because stale manifests leak downstream.
 
 set -u
@@ -46,6 +47,17 @@ if [ -x "$SCRIPTS/lint-architecture.sh" ]; then
   rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '\npre-commit: architecture violations above — see _shared/rules/enforcement-contract.md\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2b — Skill Authoring Standard linter (REVIEW.md R18).
+if [ -x "$SCRIPTS/lint-skill-prose.sh" ]; then
+  "$SCRIPTS/lint-skill-prose.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: skill-prose violations above — see _shared/standards/skill-authoring.md\n' >&2
     printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
     exit 1
   fi
