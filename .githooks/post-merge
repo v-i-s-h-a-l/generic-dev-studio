@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# post-merge hook for generic-dev-studio.
+#
+# Catches drift introduced by `git pull` / `git merge` from other people's
+# commits — when canonical skill content, portability.yaml, or the host
+# registry changes upstream, the symlink farm needs to reflect that on the
+# next session. The SessionStart freshness check covers most of this, but
+# only fires when a session starts; this hook keeps the farm fresh between
+# sessions too.
+#
+# Idempotent: runs sync-host-skills.sh --all in the background, suppressing
+# output. The hook never fails the merge — symlink-farm drift is non-fatal
+# and surfaces via the audit on the next sync.
+
+set -u
+
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+SYNC="$REPO_ROOT/scripts/sync-host-skills.sh"
+[ -x "$SYNC" ] || exit 0
+
+# Only run when the merge actually changed the skill graph. The cheapest
+# probe is to look at ORIG_HEAD..HEAD for paths under the relevant roots.
+if changed=$(git -C "$REPO_ROOT" diff --name-only ORIG_HEAD HEAD 2>/dev/null); then
+  case "$changed" in
+    *_shared/standards/*|*hosts/registry.yaml*|*portability.yaml*|*routing.yaml*|*SKILL.md*)
+      ( "$SYNC" --all >/dev/null 2>&1 ) &
+      ;;
+  esac
+fi
+
+exit 0

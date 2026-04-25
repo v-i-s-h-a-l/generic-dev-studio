@@ -101,6 +101,71 @@ if [ -n "$audit_out" ]; then
   ctx="${ctx}${audit_out}"
 fi
 
+# Skill-distribution freshness — re-fan-out the symlink farm if any canonical
+# skill root has been touched since the last sync. Idempotent and silent in
+# the steady state. Background invocation; never blocks the session preamble.
+# In long-lived TUI sessions where in-process content caches stale, we surface
+# a one-line tip when freshness was actually applied.
+skill_freshness_banner() {
+  local sync_script="$REPO_ROOT/scripts/sync-host-skills.sh"
+  [ -x "$sync_script" ] || return 0
+  local stamp_dir="$HOME/.dev-studio/.runtime/state"
+  local stamp="$stamp_dir/skill-sync-$STUDIO_HOST.stamp"
+  mkdir -p "$stamp_dir" 2>/dev/null || return 0
+
+  # Determine the most recent mtime across canonical skill roots and the
+  # registry. If newer than the stamp (or stamp missing), re-sync.
+  local newest=0 mtime
+  local probe_paths=(
+    "$REPO_ROOT/hosts/registry.yaml"
+    "$REPO_ROOT/_shared/standards"
+  )
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    probe_paths+=("$p")
+  done < <(
+    cd "$REPO_ROOT" 2>/dev/null && \
+    find achilles argus chanakya .claude/skills skills/owned skills/vendored \
+         -maxdepth 4 -name 'portability.yaml' -o -name 'SKILL.md' 2>/dev/null \
+      | head -200
+  )
+  local p
+  for p in "${probe_paths[@]}"; do
+    [ -e "$p" ] || continue
+    if mtime=$(stat -f %m "$p" 2>/dev/null); then :;
+    elif mtime=$(stat -c %Y "$p" 2>/dev/null); then :;
+    else continue
+    fi
+    [ "$mtime" -gt "$newest" ] && newest="$mtime"
+  done
+
+  local stamp_mtime=0
+  if [ -f "$stamp" ]; then
+    stamp_mtime=$(stat -f %m "$stamp" 2>/dev/null) || stamp_mtime=$(stat -c %Y "$stamp" 2>/dev/null) || stamp_mtime=0
+  fi
+
+  [ "$newest" -le "$stamp_mtime" ] && return 0
+
+  # Drift detected — re-sync (silent on success). Run in foreground but bound
+  # by a 5s soft cap; if it takes longer, emit nothing rather than block.
+  ( "$sync_script" "$STUDIO_HOST" >/dev/null 2>&1 ) &
+  local sync_pid=$!
+  local i=0
+  while [ "$i" -lt 50 ] && kill -0 "$sync_pid" 2>/dev/null; do
+    sleep 0.1; i=$((i+1))
+  done
+  if kill -0 "$sync_pid" 2>/dev/null; then return 0; fi
+  if wait "$sync_pid" 2>/dev/null; then
+    : > "$stamp" 2>/dev/null || true
+    printf '\n\n*Skill farm refreshed (%s): canonical content changed since last sync.*' "$STUDIO_HOST"
+  fi
+}
+
+skill_out=$(skill_freshness_banner 2>/dev/null || true)
+if [ -n "$skill_out" ]; then
+  ctx="${ctx}${skill_out}"
+fi
+
 # Track-work auto-start: if STUDIO_TRACK is set, claim the next issue and
 # inject a work directive so Claude starts immediately without user input.
 track_banner() {
