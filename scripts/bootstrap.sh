@@ -880,20 +880,10 @@ JSON"
 
   if [ "$WORKER_COUNT" != "0" ] && [ "$WORKER_COUNT" != "?" ]; then
     substep "Worker manifest"
-    if [ -n "$STUDIO_REPO_DIR" ] && [ -x "$STUDIO_REPO_DIR/scripts/init-worker-manifest.sh" ]; then
-      PROJECT_GUESS=$(resolve_project 2>/dev/null || echo "")
-      MANIFEST_PATH=""
-      [ -n "$PROJECT_GUESS" ] && MANIFEST_PATH="$HOME/.dev-studio/$PROJECT_GUESS/worker-manifest.yaml"
-      if [ -n "$MANIFEST_PATH" ] && [ -f "$MANIFEST_PATH" ]; then
-        ok "manifest exists: $MANIFEST_PATH"
-      else
-        info "A worker-manifest declares what registered workers should have (brew packages, Xcode minimum, etc.)."
-        info "It pairs with scripts/sync-worker.sh to keep workers in lock-step with this manager."
-        if confirm "Create a default worker-manifest.yaml for this project?" "y"; then
-          run "$STUDIO_REPO_DIR/scripts/init-worker-manifest.sh"
-        fi
-      fi
-    fi
+    info "A worker-manifest declares what each registered worker should have (brew packages, Xcode minimum, etc.)."
+    info "It pairs with scripts/sync-worker.sh to keep workers in lock-step with this manager."
+    info "Create one from inside your iOS project repo (where 'git rev-parse --show-toplevel' resolves the project name):"
+    cmd_hint "cd ~/path/to/your-ios-project && $STUDIO_REPO_DIR/scripts/init-worker-manifest.sh"
 
     substep "Scheduled worker-sync (opt-in)"
     info "A nightly launchd agent on this manager can keep registered workers in sync"
