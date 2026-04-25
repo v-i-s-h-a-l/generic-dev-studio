@@ -145,6 +145,16 @@ if [ "$TEST_STATUS" -eq 0 ]; then
   TEST_COUNT="${TEST_COUNT:-0}"
   data=$(printf '{"duration_s":%s,"test_count":%s}' "$DURATION_S" "$TEST_COUNT")
   emit_event_keyed argus review test_run_passed "$TASK_ID" "$data" >/dev/null || true
+
+  # Net-new verification layer (#174): capture an a11y-tree snapshot of the
+  # simulator post-test via AXe (bundled with xcodebuildmcp). Catches passing
+  # tests that drove the UI into an unexpected end state — assertions only
+  # see what they assert against; the a11y tree sees everything on screen.
+  # Best-effort; argus-axe-verify.sh always exits 0 (failures are emitted as
+  # events, not propagated as gate failures).
+  if [ -x "$SCRIPT_DIR/argus-axe-verify.sh" ]; then
+    "$SCRIPT_DIR/argus-axe-verify.sh" "$TASK_ID" "Argus-${SLOT_N}" "$SLOT_N" >/dev/null 2>&1 || true
+  fi
   exit 0
 fi
 
