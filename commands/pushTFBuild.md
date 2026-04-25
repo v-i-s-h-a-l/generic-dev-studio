@@ -55,12 +55,23 @@ Parse the JSON responses to extract:
 
 **New build number:** `LATEST_BUILD_NUMBER + 1`
 
-**Version check:**
-- Get `CURRENT_VERSION` from pbxproj: `grep -m1 "MARKETING_VERSION" <pbxproj>`
-- If `CURRENT_VERSION == LIVE_VERSION`, we must bump the version (it's already live on App Store)
-- If `CURRENT_VERSION != LIVE_VERSION`, keep the current version (it's still in TestFlight review)
+**Version check (load-bearing — read carefully):**
 
-**If version bump needed**, compute new version:
+- Get `CURRENT_VERSION` from pbxproj: `grep -m1 "MARKETING_VERSION" <pbxproj>`
+- **The rule is binary and the only input is the App Store live version vs. the pbxproj version. No other input is allowed to drive a bump:**
+  - If `CURRENT_VERSION == LIVE_VERSION` → version MUST bump (current version is already live on the App Store; new TF builds need a new version string).
+  - If `CURRENT_VERSION != LIVE_VERSION` → keep the current version. The current version is still in TestFlight review; multiple TF builds at the same in-flight version is the normal state. Builds distinguish by **build number**, not by version string.
+
+**Forbidden inputs to the bump decision:**
+
+- ✗ "Another branch is on TestFlight at the same version" — irrelevant; testers distinguish by build number.
+- ✗ "Two TF tracks at the same version might confuse testers" — version is App-Store-state-driven, not TF-track-driven.
+- ✗ "Distinguishing the X-feature build from the Y-feature build" — that's a release-note concern, not a version-string concern.
+- ✗ Proposing a menu to the user ("26.4.17 vs 26.4.18?") when the rule says no bump. Don't ask; use the current version and bump only the build number.
+
+The build number ALWAYS bumps to `latest_tf_build_number + 1`, independent of version logic.
+
+**If version bump needed** (and only if), compute new version:
 - `YY` = last 2 digits of current year (e.g. `26`)
 - `M` = current month, no leading zero (e.g. `3` for March)
 - `N`:
@@ -79,6 +90,8 @@ Pushing build 3031 (v26.3.1, branch <branch>, scheme <SCHEME>)
 Echo the resolved `SCHEME` (default `Zaps`, or whatever `--scheme` selected).
 
 The user opted into the release by running the command — no confirmation prompt. If they want a custom version, they can re-invoke with the version flag or abort now.
+
+**No alternative-version menu.** When Step 2's rule says "no bump", the summary line shows the current version unchanged and the build number bumped. Do not offer "26.4.17 vs 26.4.18?" — the rule decided. If you find yourself reasoning about whether to bump for any reason other than `CURRENT_VERSION == LIVE_VERSION`, stop: that reasoning is the bug. Use the current version, bump only the build number, ship.
 
 ### Step 4: Update project.pbxproj
 
