@@ -29,19 +29,24 @@
 #
 # Usage
 #
-#   ./scripts/bootstrap.sh                                   # interactive
-#   ./scripts/bootstrap.sh --role manager                       # skip role prompt
-#   ./scripts/bootstrap.sh --role worker --id mini --yes      # fully non-interactive
+#   ./scripts/bootstrap.sh                                   # auto-pilot — prompts for role only
+#   ./scripts/bootstrap.sh --role manager                       # zero prompts
+#   ./scripts/bootstrap.sh --role worker --id mini             # zero prompts
+#   ./scripts/bootstrap.sh --interactive                       # legacy: prompt for everything
 #   ./scripts/bootstrap.sh --dry-run                         # preview only
+#
+# Default UX: non-interactive auto-pilot. The wizard derives every decision
+# from machine state (existing tools = keep, missing tools = install). The
+# only prompt is for `role` if you didn't pass `--role`. Use `--interactive`
+# to opt back into per-step prompts.
 #
 # Flags
 #
-#   --role <manager|worker|dual>      Pre-select role (skips step 1 prompt)
+#   --role <manager|worker|dual>  Pre-select role (skips the only mandatory prompt)
 #   --id <short-id>               Worker id for nodes.json (defaults: hostname)
 #   --worker-roles <csv>           Worker role tags (default: swift-test,xcodebuild)
-#   --yes                         Non-interactive: auto-answer all prompts with
-#                                 sensible defaults (keep existing, install
-#                                 missing). Requires --role.
+#   --interactive                 Prompt at every step (legacy default behavior)
+#   --yes                         Deprecated alias — non-interactive is now the default
 #   --dry-run                     Print what would happen; change nothing.
 #   --log <path>                  Override log path (default: per-run timestamped
 #                                 file under ~/.dev-studio/.runtime/logs/)
@@ -64,7 +69,11 @@ umask 022
 ROLE=""
 WORKER_ID=""
 WORKER_ROLES=""
-YES=0
+# INTERACTIVE=0 is the new default: auto-decide every step from machine state.
+# The wizard still prompts ONCE for role if you didn't pass --role, because
+# that's the only thing it can't infer. Pass --interactive for the legacy
+# prompt-at-every-step behavior.
+INTERACTIVE=0
 DRY_RUN=0
 LOG_PATH=""
 NO_LOG=0
@@ -74,7 +83,8 @@ while [ $# -gt 0 ]; do
     --role)         ROLE="${2:?}"; shift 2 ;;
     --id)           WORKER_ID="${2:?}"; shift 2 ;;
     --worker-roles)  WORKER_ROLES="${2:?}"; shift 2 ;;
-    --yes)          YES=1; shift ;;
+    --interactive)  INTERACTIVE=1; shift ;;
+    --yes)          shift ;;  # deprecated alias — non-interactive is now the default
     --dry-run)      DRY_RUN=1; shift ;;
     --log)          LOG_PATH="${2:?}"; shift 2 ;;
     --no-log)       NO_LOG=1; shift ;;
@@ -86,15 +96,14 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$YES" = "1" ] && [ -z "$ROLE" ]; then
-  printf 'error: --yes requires --role (manager|worker|dual) so non-interactive mode knows what to do\n' >&2
-  exit 1
-fi
 if [ -n "$ROLE" ]; then
   case "$ROLE" in manager|worker|dual) ;;
     *) printf 'error: --role must be manager, worker, or dual (got %s)\n' "$ROLE" >&2; exit 1 ;;
   esac
 fi
+# Legacy compatibility shim: keep $YES readable for any inline test below.
+# `--yes` is now a no-op (non-interactive is the default).
+YES=$([ "$INTERACTIVE" = "1" ] && echo 0 || echo 1)
 
 # ============================================================================
 # ANSI helpers
@@ -116,6 +125,8 @@ info()     { printf '  %si%s %s\n' "$c_blue" "$c_reset" "$*"; }
 err()      { printf '  %s✗%s %s\n' "$c_red" "$c_reset" "$*" >&2; }
 cmd_hint() { printf '  %s$ %s%s\n' "$c_dim" "$*" "$c_reset"; }
 dim()      { printf '  %s%s%s\n' "$c_dim" "$*" "$c_reset"; }
+# Pre-announce a long-running op so silence after it isn't read as a hang.
+announce() { printf '  %s↻%s %s %s(this can take a moment — heartbeat below if it runs long)%s\n' "$c_blue" "$c_reset" "$*" "$c_dim" "$c_reset"; }
 
 # ============================================================================
 # Logging — every run writes a timestamped log; stdout still shows everything
@@ -165,10 +176,10 @@ ask() {
     printf '%s' "$default"
     return
   fi
-  printf '  ? %s%s: ' "$prompt" "$suffix" >&3
+  printf '  %s⌨  INPUT NEEDED%s  %s%s: ' "$c_yellow$c_bold" "$c_reset" "$prompt" "$suffix" >&3
   IFS= read -r reply <&4 || reply=""
   reply="${reply:-$default}"
-  printf '  %s? %s → %s%s\n' "$c_dim" "$prompt" "$reply" "$c_reset" >&2
+  printf '  %s⌨  %s → %s%s\n' "$c_dim" "$prompt" "$reply" "$c_reset" >&2
   printf '%s' "$reply"
 }
 
@@ -180,18 +191,18 @@ confirm() {
     printf '  %s? %s %s — using default: %s%s\n' "$c_dim" "$prompt" "$suffix" "$default" "$c_reset" >&2
     case "$default" in y|Y) return 0 ;; *) return 1 ;; esac
   fi
-  printf '  ? %s %s: ' "$prompt" "$suffix" >&3
+  printf '  %s⌨  INPUT NEEDED%s  %s %s: ' "$c_yellow$c_bold" "$c_reset" "$prompt" "$suffix" >&3
   IFS= read -r reply <&4 || reply=""
   reply="${reply:-$default}"
   case "$reply" in
-    y|Y|yes|Yes) printf '  %s? %s → yes%s\n' "$c_dim" "$prompt" "$c_reset" >&2; return 0 ;;
-    *)           printf '  %s? %s → no%s\n'  "$c_dim" "$prompt" "$c_reset" >&2; return 1 ;;
+    y|Y|yes|Yes) printf '  %s⌨  %s → yes%s\n' "$c_dim" "$prompt" "$c_reset" >&2; return 0 ;;
+    *)           printf '  %s⌨  %s → no%s\n'  "$c_dim" "$prompt" "$c_reset" >&2; return 1 ;;
   esac
 }
 
 pause_for_user() {
   [ "$YES" = "1" ] && { dim "(non-interactive: skipping pause)"; return; }
-  printf '  ↵ Press Enter when done (or Ctrl-C to abort)...' >&3
+  printf '  %s⌨  INPUT NEEDED%s  Press Enter when done (or Ctrl-C to abort)…' "$c_yellow$c_bold" "$c_reset" >&3
   IFS= read -r _ <&4 || true
   printf '\n' >&3
 }
@@ -230,7 +241,26 @@ run() {
     printf '  %sDRY-RUN: %s%s\n' "$c_dim" "$*" "$c_reset"
     return 0
   fi
+  # Heartbeat: if the wrapped command produces no output for ≥15s, print
+  # an elapsed-time line every 15s so the user knows we're not wedged.
+  # Goes to FD 3 (terminal) so it shows up even when stdout is piped through
+  # tee → log file. Killed as soon as the command returns.
+  local start_ts hb_pid rc
+  start_ts=$(date +%s)
+  (
+    sleep 15
+    while :; do
+      now=$(date +%s)
+      printf '  %s⏳ still running… %ds elapsed%s\n' "$c_dim" "$((now - start_ts))" "$c_reset" >&3 2>/dev/null || exit 0
+      sleep 15
+    done
+  ) &
+  hb_pid=$!
   "$@"
+  rc=$?
+  kill "$hb_pid" 2>/dev/null || true
+  wait "$hb_pid" 2>/dev/null || true
+  return $rc
 }
 
 # ============================================================================
@@ -311,7 +341,11 @@ fi
 ok "running as: $(id -un)"
 
 if [ "$DRY_RUN" = "1" ]; then warn "DRY-RUN MODE — no mutations will be applied."; fi
-if [ "$YES" = "1" ];     then warn "NON-INTERACTIVE MODE (--yes) — all prompts take their defaults."; fi
+if [ "$INTERACTIVE" = "1" ]; then
+  info "INTERACTIVE MODE — you'll be prompted at every step."
+else
+  info "AUTO-PILOT MODE (default) — every prompt takes its smart default. Pass --interactive to be asked at every step."
+fi
 [ -n "$LOG_PATH" ] && info "Logging to: $LOG_PATH"
 
 # Early repo detection — tells later steps whether to offer to clone.
@@ -344,9 +378,16 @@ if [ -z "$ROLE" ]; then
              setup that explicitly self-dispatches).
 
 EOF
-  ROLE=$(ask "Role" "manager")
+  # Role is the one input the wizard cannot infer from machine state, so it
+  # always prompts here — even in the default non-interactive mode. (The rest
+  # of the run stays auto-pilot unless --interactive is set.) Pass --role to
+  # skip even this prompt.
+  printf '  %s⌨  INPUT NEEDED%s  Role [manager]: ' "$c_yellow$c_bold" "$c_reset" >&3
+  IFS= read -r ROLE <&4 || ROLE=""
+  ROLE="${ROLE:-manager}"
+  printf '  %s⌨  Role → %s%s\n' "$c_dim" "$ROLE" "$c_reset" >&2
   case "$ROLE" in manager|worker|dual) ;;
-    *) err "unknown role: $ROLE"; exit 2 ;;
+    *) err "unknown role: $ROLE (must be manager, worker, or dual)"; exit 2 ;;
   esac
 fi
 
@@ -413,13 +454,18 @@ if command -v brew >/dev/null 2>&1; then
   BREW_VERSION=$(brew --version 2>/dev/null | head -n 1)
   action=$(dup_action "Homebrew" "$BREW_VERSION")
   case "$action" in
-    upgrade)   run brew update && run brew upgrade ;;
+    upgrade)
+      announce "brew update — refreshing tap metadata"
+      run brew update
+      announce "brew upgrade — installing newer versions of any outdated formulae"
+      run brew upgrade ;;
     reinstall) warn "Homebrew reinstall not driven by this wizard (destructive). Upgrade instead, or run the official installer manually." ;;
     keep|skip) ok "Homebrew kept" ;;
   esac
 else
   warn "Homebrew not installed"
   if confirm "Install Homebrew now (runs the official installer)?"; then
+    announce "Downloading + running the official Homebrew installer (downloads CLT if missing — typically 2–10 min)"
     run /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     BREW_BIN="$(brew_prefix)/bin/brew"
     [ -x "$BREW_BIN" ] && eval "$("$BREW_BIN" shellenv)"
@@ -436,17 +482,25 @@ fi
 
 if command -v brew >/dev/null 2>&1; then
   substep "Studio packages"
+  # Cache the installed-formula list once — calling `brew list` per-package
+  # cost ~2–5s × N packages of dead air, which read as "stuck" during the
+  # most prompt-heavy section of the wizard. One `brew list --versions` call
+  # gives us both presence and version in a single round trip.
+  info "Cataloging installed brew formulae (one-shot)…"
+  BREW_FORMULA_VERSIONS=$(brew list --versions --formula 2>/dev/null || true)
   for pkg in "${DEPS[@]}"; do
-    if brew list --formula 2>/dev/null | grep -qx "$pkg"; then
-      VERSION=$(brew list --versions "$pkg" 2>/dev/null | awk '{print $NF}')
+    pkg_line=$(printf '%s\n' "$BREW_FORMULA_VERSIONS" | awk -v p="$pkg" '$1==p{print; exit}')
+    if [ -n "$pkg_line" ]; then
+      VERSION=$(printf '%s\n' "$pkg_line" | awk '{print $NF}')
       action=$(dup_action "$pkg" "$VERSION")
       case "$action" in
-        upgrade)   run brew upgrade "$pkg" ;;
-        reinstall) run brew reinstall "$pkg" ;;
+        upgrade)   announce "brew upgrade $pkg"; run brew upgrade "$pkg" ;;
+        reinstall) announce "brew reinstall $pkg"; run brew reinstall "$pkg" ;;
         keep|skip) ok "$pkg kept ($VERSION)" ;;
       esac
     else
       if confirm "Install $pkg?" "y"; then
+        announce "brew install $pkg"
         run brew install "$pkg"
       else
         warn "Skipped $pkg (some Studio features may not work without it)"
@@ -471,6 +525,7 @@ if [ "$ROLE" = "manager" ] || [ "$ROLE" = "dual" ]; then
     warn "Studio repo not found in the usual locations"
     CLONE_PATH=$(ask "Clone target" "$HOME/generic-dev-studio")
     if confirm "Clone generic-dev-studio into $CLONE_PATH?"; then
+      announce "git clone generic-dev-studio → $CLONE_PATH"
       run git clone https://github.com/v-i-s-h-a-l/generic-dev-studio.git "$CLONE_PATH"
       STUDIO_REPO_DIR="$CLONE_PATH"
     else
@@ -498,11 +553,13 @@ if [ "$ROLE" = "manager" ] || [ "$ROLE" = "dual" ]; then
       action=$(dup_action "Agent-skill symlinks" "already installed")
       case "$action" in
         keep)      ok "install.sh result kept as-is" ;;
-        upgrade|reinstall) run "$STUDIO_REPO_DIR/scripts/install.sh" ;;
+        upgrade|reinstall)
+          announce "scripts/install.sh — re-creating agent-skill symlinks"
+          run "$STUDIO_REPO_DIR/scripts/install.sh" ;;
         skip)      ok "skipped" ;;
       esac
     else
-      info "Running install.sh..."
+      announce "scripts/install.sh — wiring agent-skill symlinks for the first time"
       run "$STUDIO_REPO_DIR/scripts/install.sh"
     fi
     summary "agent skills installed from $STUDIO_REPO_DIR"
@@ -548,12 +605,14 @@ if [ "$ROLE" = "manager" ] || [ "$ROLE" = "dual" ]; then
     dim "(you can add another without removing this one; the wizard won't touch it)"
     if confirm "Generate an additional ed25519 key anyway?" "n"; then
       KEY_NAME=$(ask "Name for new key" "id_ed25519_studio")
+      announce "ssh-keygen — generating ed25519 keypair (no passphrase)"
       run ssh-keygen -t ed25519 -C "$(id -un)@studio" -f "$HOME/.ssh/$KEY_NAME" -N ""
       KEY_FOUND="$HOME/.ssh/$KEY_NAME"
     fi
   else
     warn "No SSH keypair found at ~/.ssh/id_ed25519 or ~/.ssh/id_rsa"
     if confirm "Generate an ed25519 keypair now?" "y"; then
+      announce "ssh-keygen — generating ed25519 keypair (no passphrase)"
       run ssh-keygen -t ed25519 -C "$(id -un)@studio" -f "$HOME/.ssh/id_ed25519" -N ""
       KEY_FOUND="$HOME/.ssh/id_ed25519"
     fi
@@ -661,6 +720,7 @@ else
   warn "Tailscale not installed"
   if confirm "Install Tailscale (free for personal use)?" "y"; then
     if command -v brew >/dev/null 2>&1; then
+      announce "brew install --cask tailscale (~100MB download)"
       run brew install --cask tailscale
     else
       info "No brew. Manual download:"

@@ -1,5 +1,5 @@
 ---
-description: Onboard the current machine via scripts/bootstrap.sh. No args → interactive manager. Flags: --manager, --worker, --dual, --interactive, --dry-run, --help.
+description: Onboard the current machine via scripts/bootstrap.sh. Auto-pilot by default — only prompts for role if not given. Flags: --manager, --worker, --dual, --interactive, --dry-run, --help.
 allowed-tools: [Bash]
 argument-hint: "[--manager|--worker|--dual] [--id <id>] [--roles a,b] [--interactive] [--dry-run] [--help]"
 ---
@@ -8,23 +8,25 @@ argument-hint: "[--manager|--worker|--dual] [--id <id>] [--roles a,b] [--interac
 
 Thin dispatcher in front of `scripts/bootstrap.sh`. Onboards **the current machine** (the box this Claude Code session is running on) as manager, worker, or dual. To onboard a different machine, SSH there first.
 
+The bootstrap wizard is **auto-pilot by default** — it derives every decision from machine state. The only mandatory user input is `role`, and even that is skipped if you pass a role flag below. Pass `--interactive` to opt back into per-step prompts.
+
 ## Args
 
 Parse `$ARGUMENTS`:
 
 | Invocation | Resolves to |
 |---|---|
-| (empty) | `scripts/bootstrap.sh --role manager` (interactive — *no* `--yes`) |
-| `--manager` | `scripts/bootstrap.sh --role manager --yes` |
-| `--worker [--id <id>] [--roles a,b]` | `scripts/bootstrap.sh --role worker --yes [--id …] [--worker-roles …]` |
-| `--dual [--id <id>] [--roles a,b]` | `scripts/bootstrap.sh --role dual --yes [--id …] [--worker-roles …]` |
+| (empty) | `scripts/bootstrap.sh` — prompts for role only, then auto-pilots |
+| `--manager` | `scripts/bootstrap.sh --role manager` (zero prompts) |
+| `--worker [--id <id>] [--roles a,b]` | `scripts/bootstrap.sh --role worker [--id …] [--worker-roles …]` (zero prompts) |
+| `--dual [--id <id>] [--roles a,b]` | `scripts/bootstrap.sh --role dual [--id …] [--worker-roles …]` (zero prompts) |
 | `--help` or `-h` | Open `setup.html` in browser, print usage summary, exit |
 
 Modifiers (apply on top of any role flag):
-- `--interactive` — drop the `--yes`; bootstrap will prompt.
+- `--interactive` — pass through; bootstrap prompts at every step.
 - `--dry-run` — pass through to bootstrap; previews only.
 
-Conflicts: more than one role flag → error. `--interactive` with no role → ignored (no-args is already interactive).
+Conflicts: more than one role flag → error.
 
 ## Steps
 
@@ -45,12 +47,12 @@ DOCS="$REPO_ROOT/.claude/skills/studio/setup.html"
 Then print:
 
 ```
-/studio-setup                   onboard this machine as manager (interactive)
-/studio-setup --manager         non-interactive manager
-/studio-setup --worker          non-interactive worker (id defaults to hostname)
+/studio-setup                   auto-pilot — prompts for role only
+/studio-setup --manager         zero-prompt manager onboarding
+/studio-setup --worker          zero-prompt worker (id defaults to hostname)
 /studio-setup --worker --id X   override worker id
 /studio-setup --dual            both roles on one box (rare)
-/studio-setup --interactive     drop --yes when used with a role flag
+/studio-setup --interactive     prompt at every step (legacy)
 /studio-setup --dry-run         preview without changing anything
 /studio-setup --help            this message + open the setup guide
 ```
@@ -63,14 +65,14 @@ Translate the parsed args:
 
 | Slash flag | Bootstrap flag |
 |---|---|
-| `--manager` | `--role manager --yes` |
-| `--worker`  | `--role worker --yes`  |
-| `--dual`    | `--role dual --yes`    |
+| `--manager` | `--role manager` |
+| `--worker`  | `--role worker`  |
+| `--dual`    | `--role dual`    |
 | `--id X`    | `--id X` |
 | `--roles a,b` | `--worker-roles a,b` |
-| `--interactive` | strip `--yes` |
+| `--interactive` | `--interactive` |
 | `--dry-run` | `--dry-run` |
-| (no role flag) | `--role manager` (interactive — no `--yes`) |
+| (no role flag) | (no flag — bootstrap auto-pilots, prompting only for role) |
 
 ### 4. Footgun guard
 
