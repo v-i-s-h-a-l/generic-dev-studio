@@ -180,9 +180,9 @@ dup_action() {
     echo keep
     return
   fi
-  printf '  %s◆%s %s %s(%s)%s — ' "$c_magenta" "$c_reset" "$c_bold$label$c_reset" "$c_dim" "$version" "$c_reset"
+  printf '  %s◆%s %s %s(%s)%s — ' "$c_magenta" "$c_reset" "$c_bold$label$c_reset" "$c_dim" "$version" "$c_reset" >&2
   printf '[%sK%seep / [%su%s]pgrade / [%sr%s]einstall / [%ss%s]kip : ' \
-    "$c_bold" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "$c_reset"
+    "$c_bold" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "$c_reset" >&2
   read -r reply
   reply="${reply:-k}"
   case "$reply" in
