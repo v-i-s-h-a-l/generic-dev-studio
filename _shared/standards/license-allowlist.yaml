@@ -1,0 +1,28 @@
+# license-allowlist.yaml — SPDX licenses that scripts/install-recipe.sh accepts
+# for vendored skills without an explicit override.
+#
+# Adding a license here requires evaluating: (a) does it permit redistribution
+# in our form? (b) does it impose obligations the studio can satisfy (e.g.
+# attribution preserved in vendor.yaml + INSPIRED_BY.md)? Strong copyleft
+# licenses are deliberately excluded from MVP — they'd require a wholesale
+# legal review every time the recipe upstream changed terms.
+#
+# Recipe authors who need a license outside this list must override at install
+# time:  scripts/install-recipe.sh <recipe> --override-license=...
+# Override usage is logged so audit trails survive.
+
+allowed:
+  - MIT
+  - Apache-2.0
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - 0BSD
+  - CC0-1.0
+  - Unlicense
+  - ISC
+
+# License-allowlist evolution: bumping this list is an authoring-standard
+# change; tracked under the schema_version of recipe.json. Major-version
+# bumps when a previously-allowed license is removed (existing recipes get
+# a deprecation window, not an immediate fail).
+schema_version: 1

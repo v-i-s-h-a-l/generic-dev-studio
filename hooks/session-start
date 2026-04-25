@@ -166,6 +166,54 @@ if [ -n "$skill_out" ]; then
   ctx="${ctx}${skill_out}"
 fi
 
+# Skill-update PR notifier — surface any open `pr_review_ready` events from
+# scripts/update-recipes.sh so a fresh session sees pending recipe bumps in
+# its first turn. Best effort; scans the last 7 days of event-log shards.
+skill_pr_banner() {
+  local events_root="$HOME/.dev-studio/$(basename "$REPO_ROOT")/events"
+  [ -d "$events_root" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+
+  local cutoff_iso today shard
+  if today=$(date -u +%Y-%m-%d 2>/dev/null); then :; else return 0; fi
+  # 7-day window — collect up to 7 daily shards.
+  local lines i d
+  lines=""
+  i=0
+  while [ "$i" -lt 7 ]; do
+    if d=$(date -u -v -"$i"d +%Y-%m-%d 2>/dev/null); then :;
+    elif d=$(date -u -d "-$i days" +%Y-%m-%d 2>/dev/null); then :;
+    else d=""; fi
+    [ -z "$d" ] && { i=$((i+1)); continue; }
+    shard="$events_root/$d.jsonl"
+    [ -f "$shard" ] || { i=$((i+1)); continue; }
+    while IFS= read -r line; do
+      lines="$lines$line"$'\n'
+    done < <(grep -F '"event":"pr_review_ready"' "$shard" 2>/dev/null || true)
+    i=$((i+1))
+  done
+
+  [ -z "$lines" ] && return 0
+
+  # Each line carries data.{recipe, pr_url, sha_short, lint}; one banner row per.
+  local banner=""
+  banner=$(printf '%s' "$lines" | jq -r '
+    select(.event == "pr_review_ready")
+    | "  • " + (.data.recipe // "?") + " @ " + (.data.sha_short // "?") + "  " + (.data.pr_url // "")
+  ' 2>/dev/null)
+
+  [ -z "$banner" ] && return 0
+
+  local count
+  count=$(printf '%s\n' "$lines" | grep -c 'pr_review_ready' 2>/dev/null || echo 0)
+  printf '\n\n---\n\n📬 **%d skill-update PR(s) awaiting review** (`scripts/update-recipes.sh`):\n\n%s\n\nMerge or close each via `gh pr merge` / `gh pr close`. To stop seeing this banner, acknowledge with: `gh pr list --label skill-bump`.' "$count" "$banner"
+}
+
+skill_pr_out=$(skill_pr_banner 2>/dev/null || true)
+if [ -n "$skill_pr_out" ]; then
+  ctx="${ctx}${skill_pr_out}"
+fi
+
 # Track-work auto-start: if STUDIO_TRACK is set, claim the next issue and
 # inject a work directive so Claude starts immediately without user input.
 track_banner() {

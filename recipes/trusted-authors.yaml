@@ -1,0 +1,35 @@
+# trusted-authors.yaml — GitHub user/org slugs that scripts/install-recipe.sh
+# vendors without prompting. First-time authors not on this list trigger an
+# explicit one-time approval prompt before vendoring proceeds.
+#
+# This is a supply-chain firewall: an unfamiliar author's content getting
+# silently pulled in is the malicious-package class of risk. The approval
+# prompt is the human gate. Once approved, the author lands here.
+#
+# Adding an author manually (rather than via the install prompt) is fine —
+# document the rationale in the comment alongside.
+
+trusted:
+  # Studio's own org/user.
+  - v-i-s-h-a-l
+
+  # Reference prior art for the skill-distribution arc; vendored recipes
+  # imported from this org informed Phase 1 design (#167-#168).
+  - obra
+
+  # Anthropic's public skills + cookbook. Production-grade reference.
+  - anthropics
+
+# Authors on this list are exempt from the first-time-vendor prompt only.
+# They are still subject to:
+#   - License allowlist (per _shared/standards/license-allowlist.yaml)
+#   - Diff-scan flagging (URLs / writes outside skill dir / network calls)
+#     in update PRs
+#   - Linter conformance (frontmatter must validate, body grammar gated by
+#     authoring_standard: required|exempt)
+#
+# Trust here is "this author's content is allowed to enter the vendoring
+# pipeline" — NOT "this author's content is allowed to land without review."
+# That distinction is intentional.
+
+schema_version: 1
