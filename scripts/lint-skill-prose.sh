@@ -304,6 +304,14 @@ check_skill_headings() {
 lint_skill_md() {
   local file="$1" rel="$2"
 
+  # Vendored skills are exempt by location: anything under skills/vendored/
+  # has a sibling vendor.yaml that records the upstream + license + SHA.
+  # We trust that record; the upstream's frontmatter shape is the upstream
+  # author's call, not ours to police.
+  case "$rel" in
+    skills/vendored/*) return 0 ;;
+  esac
+
   local fm tmp_fm fm_json type_field exempt name desc desc_len
   fm=$(extract_frontmatter "$file")
   if [ -z "$fm" ]; then

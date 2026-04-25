@@ -1,0 +1,22 @@
+schema_version: 1
+name: swift-testing-pro
+domain: [swift, testing, ios]
+strategy: verbatim
+sources:
+  - upstream: github.com/twostraws/Swift-Testing-Agent-Skill
+    path: swift-testing-pro/
+    pinned_sha: 3d434c7d81f35e5726d4363fc30260735d541c2f
+    license: MIT
+update_policy: auto-pr
+authoring_standard: exempt
+attribution: |
+  Swift Testing Pro by Paul Hudson (Hacking with Swift). Vendored verbatim under MIT.
+  Source: github.com/twostraws/Swift-Testing-Agent-Skill
+  Index entry: github.com/twostraws/Swift-Agent-Skills
+routing:
+  triggers:
+    - "writing or reviewing Swift Testing"
+    - "@Test macro"
+    - "#expect"
+    - "/swift-testing-pro"
+  domains: [swift, testing]

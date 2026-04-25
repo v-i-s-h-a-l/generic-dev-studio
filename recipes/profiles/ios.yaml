@@ -22,24 +22,27 @@ description: |
   API design + module architecture skills. Curated against the user's
   ~/.claude-personal/CLAUDE.md skill conventions.
 
-# Core SwiftUI skills (TODO — fill in once upstream URLs are nailed down;
-# see issue #169's "out of scope" note: the iOS-profile recipes will be
-# authored as the user identifies authoritative upstreams. The studio
-# install-recommended command works against this list as soon as recipes
-# are populated).
-recipes: []
-
-# When recipes land here:
-#   recipes:
-#     - swiftui-expert
-#     - swiftui-view-refactor
-#     - swiftui-performance-audit
-#     - swiftui-liquid-glass
-#     - swift-concurrency-pro
-#     - swift-testing-expert
-#     - swift-api-design-guidelines
-#     - swift-architecture
+# Curated against the user's ~/.claude-personal/CLAUDE.md skill conventions.
+# Authors sourced via the twostraws/Swift-Agent-Skills community index
+# (https://github.com/twostraws/Swift-Agent-Skills). All MIT-licensed.
 #
-# `studio install-recommended ios` will iterate the list, calling
-# install-recipe.sh for each. Failures are surfaced; the install does not
-# proceed past a license/author-allowlist failure for an individual recipe.
+# Slash-command name = upstream skill `name:` field. Two of the user's CLAUDE.md
+# slash commands differ from the upstream names:
+#   /swiftui-expert-skill  → installed as `/swiftui-pro` (twostraws/SwiftUI-Agent-Skill)
+#   /swift-testing-expert  → installed as `/swift-testing-pro` (twostraws/Swift-Testing-Agent-Skill)
+# Update ~/.claude-personal/CLAUDE.md to use the upstream names, or alias
+# locally — the studio respects whatever is on disk.
+
+recipes:
+  - swiftui-pro                       # SwiftUI authoring + review (Paul Hudson)
+  - swiftui-view-refactor             # SwiftUI view-splitting (Thomas Ricouard)
+  - swiftui-performance-audit         # Scroll-jank / hitch diagnosis (Thomas Ricouard)
+  - swiftui-liquid-glass              # iOS 26+ Liquid Glass adoption (Thomas Ricouard)
+  - swift-concurrency-pro             # async/await + actors + Sendable (Paul Hudson)
+  - swift-testing-pro                 # @Test / #expect / test plans (Paul Hudson)
+  - swift-api-design-guidelines-skill # Swift API design conventions (Erik Sebastián de Erice)
+  - swift-architecture-skill          # MVVM / TCA / Clean Architecture (Lasha Efremidze)
+
+# `scripts/install-recommended.sh ios` iterates this list, calling
+# install-recipe.sh for each. License + author allowlists gate every install;
+# failures are surfaced and skipped, the run continues for the rest.

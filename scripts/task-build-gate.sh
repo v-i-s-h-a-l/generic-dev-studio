@@ -246,13 +246,39 @@ if [ "$NODE_ID" = "local" ]; then
     >"$build_log" 2>&1
   BUILD_STATUS=$?
 else
-  # Remote shell owns the cd + shim invocation. %q keeps every path safe
-  # through the SSH argv round trip. DerivedData on the remote uses the
-  # remote's $HOME (which resolves from the laptop's absolute path when
-  # usernames match — the common case) — an unexpected location is
-  # auto-created rather than failing. STUDIO_XCODEBUILDMCP env propagates
-  # through the remote shell so the same routing rules apply on both sides.
-  "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "STUDIO_XCODEBUILDMCP=$(printf '%q' "${STUDIO_XCODEBUILDMCP:-auto}") $(printf '%q' "$SCRIPT_DIR/xcodebuild-shim.sh") build -scheme $(printf '%q' "$SCHEME") -destination $(printf '%q' "$DESTINATION") -derivedDataPath $(printf '%q' "$DERIVED")" \
+  # Remote dispatch (#127). Three things differ from local:
+  #   1. Source — the remote has no copy of the worktree until we rsync.
+  #      sourcesync_push mirrors $WORKTREE to <remote $HOME>/<rel>.
+  #   2. Paths — laptop's absolute paths (/Users/vishalsingh/...) won't
+  #      resolve on a remote whose $HOME differs (e.g. /Users/vishal).
+  #      sourcesync_remote_quoted emits "$HOME/<rel>" — literal $HOME so
+  #      the REMOTE shell expands it; the local shell sees it as a string.
+  #   3. Shim — the xcodebuildmcp routing layer is a manager-side concern;
+  #      the worker just executes plain xcodebuild. Skipping the shim
+  #      removes a path-translation problem (the shim itself lives at the
+  #      laptop's absolute SCRIPT_DIR — not present on the worker).
+  # shellcheck source=lib-source-sync.sh
+  . "$SCRIPT_DIR/lib-source-sync.sh"
+  REL_WORKTREE=$(sourcesync_push "$NODE_ID" "$WORKTREE") || {
+    printf 'task-build-gate: source sync to %s failed\n' "$NODE_ID" >&2
+    exit 2
+  }
+  REL_DERIVED=$(sourcesync_relative_to_home "$DERIVED") || {
+    printf 'task-build-gate: DerivedData path %s is outside $HOME — refusing remote dispatch\n' "$DERIVED" >&2
+    exit 2
+  }
+  sourcesync_mkdir_remote "$NODE_ID" "$REL_DERIVED" || {
+    printf 'task-build-gate: failed to mkdir DerivedData on %s\n' "$NODE_ID" >&2
+    exit 2
+  }
+  Q_WORKTREE=$(sourcesync_remote_quoted "$REL_WORKTREE")
+  Q_DERIVED=$(sourcesync_remote_quoted "$REL_DERIVED")
+  # Build remote command. Single-quote the $HOME portions so the local
+  # shell leaves them literal; concatenate variables for SCHEME/DESTINATION
+  # via printf %q. Final string contains literal $HOME refs the remote
+  # shell expands.
+  REMOTE_CMD='cd '"$Q_WORKTREE"' && xcodebuild build -scheme '"$(printf '%q' "$SCHEME")"' -destination '"$(printf '%q' "$DESTINATION")"' -derivedDataPath '"$Q_DERIVED"
+  "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "$REMOTE_CMD" \
     >"$build_log" 2>&1
   BUILD_STATUS=$?
 fi

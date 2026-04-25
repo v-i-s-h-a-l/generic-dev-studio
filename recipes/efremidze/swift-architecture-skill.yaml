@@ -1,0 +1,21 @@
+schema_version: 1
+name: swift-architecture-skill
+domain: [swift, architecture, ios]
+strategy: verbatim
+sources:
+  - upstream: github.com/efremidze/swift-architecture-skill
+    path: swift-architecture-skill/
+    pinned_sha: 457f1355657f2431d7c19e1cfa8d9480ea9d30ed
+    license: MIT
+update_policy: auto-pr
+authoring_standard: exempt
+attribution: |
+  Swift Architecture Skill by Lasha Efremidze. Vendored verbatim under MIT.
+  Source: github.com/efremidze/swift-architecture-skill
+  Index entry: github.com/twostraws/Swift-Agent-Skills
+routing:
+  triggers:
+    - "module or package architecture"
+    - "MVVM vs TCA vs Clean Architecture"
+    - "/swift-architecture-skill"
+  domains: [swift, architecture]

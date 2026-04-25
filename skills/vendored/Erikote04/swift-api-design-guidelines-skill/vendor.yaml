@@ -1,0 +1,13 @@
+schema_version: 1
+recipe: swift-api-design-guidelines-skill
+strategy: verbatim
+upstream: github.com/Erikote04/Swift-API-Design-Guidelines-Agent-Skill
+path: swift-api-design-guidelines-skill/
+pinned_sha: 36cdc1b5680f5d6c5c52c353a6857d176f4929e8
+license: MIT
+authoring_standard: exempt
+vendored_at: 2026-04-25T19:07:20Z
+attribution: |
+  Swift API Design Guidelines Skill by Erik Sebastián de Erice. Vendored verbatim under MIT.
+  Source: github.com/Erikote04/Swift-API-Design-Guidelines-Agent-Skill
+  Index entry: github.com/twostraws/Swift-Agent-Skills

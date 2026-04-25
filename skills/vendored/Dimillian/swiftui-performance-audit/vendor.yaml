@@ -1,0 +1,13 @@
+schema_version: 1
+recipe: swiftui-performance-audit
+strategy: verbatim
+upstream: github.com/Dimillian/Skills
+path: swiftui-performance-audit/
+pinned_sha: 05ba982bfeb0d77d3c97d4542b0ee15034d05f84
+license: MIT
+authoring_standard: exempt
+vendored_at: 2026-04-25T19:07:09Z
+attribution: |
+  SwiftUI Performance Audit by Thomas Ricouard. Vendored verbatim under MIT.
+  Source: github.com/Dimillian/Skills (monorepo)
+  Index entry: github.com/twostraws/Swift-Agent-Skills
