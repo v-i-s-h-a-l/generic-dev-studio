@@ -123,6 +123,11 @@ strategy=$(yq -r '.strategy' "$RECIPE_FILE")
 authoring_standard=$(yq -r '.authoring_standard' "$RECIPE_FILE")
 attribution=$(yq -r '.attribution // ""' "$RECIPE_FILE")
 
+# Recipe-level portability override (optional).
+recipe_port_hosts=$(yq -r '.portability.hosts // [] | .[]' "$RECIPE_FILE" 2>/dev/null)
+recipe_port_scope=$(yq -r '.portability.scope // ""' "$RECIPE_FILE" 2>/dev/null)
+[ "$recipe_port_scope" = "null" ] && recipe_port_scope=""
+
 # Iterate sources. Most recipes have one; verbatim composite is rare.
 src_count=$(yq -r '.sources | length' "$RECIPE_FILE")
 src_idx=0
@@ -211,7 +216,8 @@ while [ "$src_idx" -lt "$src_count" ]; do
   vendor_yaml="$vendor_dir/vendor.yaml"
   if [ -f "$vendor_yaml" ]; then
     existing_sha=$(yq -r '.pinned_sha // ""' "$vendor_yaml" 2>/dev/null)
-    if [ "$existing_sha" = "$pinned_sha" ] && [ "$strategy" != "owned" ] && [ "$strategy" != "inspired" ]; then
+    if [ "$existing_sha" = "$pinned_sha" ] && [ "$strategy" != "owned" ] && [ "$strategy" != "inspired" ] \
+       && [ -f "$vendor_dir/portability.yaml" ]; then
       printf 'install-recipe: %s already vendored at %s (no-op)\n' "$NAME" "$pinned_sha" >&2
       src_idx=$((src_idx + 1)); continue
     fi
@@ -244,7 +250,57 @@ EOF
     printf '%s\n' "$attribution" | sed 's/^/  /' >> "$vendor_yaml"
   fi
 
+  # ---- Portability resolution: recipe-explicit → upstream probe → default ----
+  # For owned/inspired strategies, respect hand-managed portability.yaml.
+  if [ -f "$vendor_dir/portability.yaml" ] && { [ "$strategy" = "owned" ] || [ "$strategy" = "inspired" ]; }; then
+    printf 'install-recipe: vendored %s @ %s -> %s\n' "$NAME" "$pinned_sha" "${vendor_dir#"$REPO_ROOT/"}" >&2
+    printf 'install-recipe: portability.yaml preserved (owned/inspired — hand-managed)\n' >&2
+    src_idx=$((src_idx + 1)); continue
+  fi
+
+  port_source="default"
+  port_hosts_list="claude-code"
+  port_scope="${recipe_port_scope:-global}"
+
+  if [ -n "$recipe_port_hosts" ]; then
+    port_source="recipe"
+    port_hosts_list="$recipe_port_hosts"
+  else
+    inferred=""
+    [ -d "$vendor_dir/.claude-plugin" ] && inferred="${inferred:+$inferred
+}claude-code"
+    [ -f "$vendor_dir/agents/openai.yaml" ] && inferred="${inferred:+$inferred
+}codex"
+    if [ -n "$inferred" ]; then
+      port_source="inferred"
+      port_hosts_list="$inferred"
+      case "$port_hosts_list" in
+        *claude-code*) : ;;
+        *) port_hosts_list="claude-code
+$port_hosts_list" ;;
+      esac
+    fi
+  fi
+
+  {
+    printf 'schema_version: 1\nhosts:\n'
+    printf '%s\n' "$port_hosts_list" | while IFS= read -r h; do
+      [ -z "$h" ] && continue
+      printf '  - %s\n' "$h"
+    done
+    printf 'scope: %s\n' "$port_scope"
+  } > "$vendor_dir/portability.yaml"
+
+  if [ "$port_source" != "recipe" ] && [ -x "$SCRIPT_DIR/emit-event.sh" ]; then
+    hosts_csv=$(printf '%s\n' "$port_hosts_list" | paste -sd ',' -)
+    "$SCRIPT_DIR/emit-event.sh" recipe_portability_inferred \
+      recipe="$NAME" hosts="$hosts_csv" scope="$port_scope" source="$port_source" \
+      >/dev/null 2>&1 || true
+  fi
+
   printf 'install-recipe: vendored %s @ %s -> %s\n' "$NAME" "$pinned_sha" "${vendor_dir#"$REPO_ROOT/"}" >&2
+  printf 'install-recipe: portability.yaml written (source=%s, hosts=%s)\n' \
+    "$port_source" "$(printf '%s\n' "$port_hosts_list" | paste -sd ',' -)" >&2
 
   src_idx=$((src_idx + 1))
 done

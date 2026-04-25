@@ -34,7 +34,7 @@ if command -v jq >/dev/null 2>&1; then
       *=*)
         key="${kv%%=*}"
         val="${kv#*=}"
-        data=$(printf '%s' "$data" | jq --arg k "$key" --arg v "$val" '. + {($k): $v}')
+        data=$(printf '%s' "$data" | jq -c --arg k "$key" --arg v "$val" '. + {($k): $v}')
         ;;
     esac
   done
