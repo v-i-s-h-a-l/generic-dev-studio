@@ -132,12 +132,28 @@ if [ "$NO_LOG" != "1" ]; then
   exec > >(tee "$LOG_PATH") 2>&1
 fi
 
+# Interactive prompt FDs. After `exec > >(tee …) 2>&1`, both stdout and stderr
+# are pipes — and bash printf to a pipe is block-buffered (~4KB). A short
+# prompt ("Install fswatch? [Y/n]: ") sits in the buffer and never reaches the
+# screen, so `read` blocks invisibly. FD 3 (out) and FD 4 (in) bypass the tee
+# pipe and write straight to the controlling terminal. Fall back to stderr/
+# stdin when there is no tty (CI, ssh -T, --yes mode).
+if [ -e /dev/tty ] && { : >/dev/tty; } 2>/dev/null; then
+  exec 3>/dev/tty 4</dev/tty
+else
+  exec 3>&2 4<&0
+fi
+
 # Session summary accumulator — appended per step, dumped at the end.
 declare -a SUMMARY_LINES
 summary() { SUMMARY_LINES+=("$1"); }
 
 # ============================================================================
 # Prompt helpers (respect --yes)
+#
+# Prompts go to FD 3 (terminal, unbuffered). Reads come from FD 4 (terminal).
+# A one-line "→ <answer>" is echoed to stderr so the tee'd log records what
+# the user picked even though the prompt itself never crossed the log pipe.
 # ============================================================================
 
 ask() {
@@ -149,8 +165,11 @@ ask() {
     printf '%s' "$default"
     return
   fi
-  read -rp "  ? $prompt$suffix: " reply
-  printf '%s' "${reply:-$default}"
+  printf '  ? %s%s: ' "$prompt" "$suffix" >&3
+  IFS= read -r reply <&4 || reply=""
+  reply="${reply:-$default}"
+  printf '  %s? %s → %s%s\n' "$c_dim" "$prompt" "$reply" "$c_reset" >&2
+  printf '%s' "$reply"
 }
 
 confirm() {
@@ -161,37 +180,45 @@ confirm() {
     printf '  %s? %s %s — using default: %s%s\n' "$c_dim" "$prompt" "$suffix" "$default" "$c_reset" >&2
     case "$default" in y|Y) return 0 ;; *) return 1 ;; esac
   fi
-  read -rp "  ? $prompt $suffix: " reply
+  printf '  ? %s %s: ' "$prompt" "$suffix" >&3
+  IFS= read -r reply <&4 || reply=""
   reply="${reply:-$default}"
-  case "$reply" in y|Y|yes|Yes) return 0 ;; *) return 1 ;; esac
+  case "$reply" in
+    y|Y|yes|Yes) printf '  %s? %s → yes%s\n' "$c_dim" "$prompt" "$c_reset" >&2; return 0 ;;
+    *)           printf '  %s? %s → no%s\n'  "$c_dim" "$prompt" "$c_reset" >&2; return 1 ;;
+  esac
 }
 
 pause_for_user() {
   [ "$YES" = "1" ] && { dim "(non-interactive: skipping pause)"; return; }
-  read -rp "  ↵ Press Enter when done (or Ctrl-C to abort)..." _
+  printf '  ↵ Press Enter when done (or Ctrl-C to abort)...' >&3
+  IFS= read -r _ <&4 || true
+  printf '\n' >&3
 }
 
 # dup_action <tool-label> <current-version> → echoes one of: keep | upgrade | reinstall | skip
 # In --yes mode, always echoes "keep".
 dup_action() {
-  local label="$1" version="$2" reply
+  local label="$1" version="$2" reply outcome
   if [ "$YES" = "1" ]; then
     printf '  %s✓ %s (%s) — keeping (non-interactive)%s\n' "$c_dim" "$label" "$version" "$c_reset" >&2
     echo keep
     return
   fi
-  printf '  %s◆%s %s %s(%s)%s — ' "$c_magenta" "$c_reset" "$c_bold$label$c_reset" "$c_dim" "$version" "$c_reset" >&2
+  printf '  %s◆%s %s %s(%s)%s — ' "$c_magenta" "$c_reset" "$c_bold$label$c_reset" "$c_dim" "$version" "$c_reset" >&3
   printf '[%sK%seep / [%su%s]pgrade / [%sr%s]einstall / [%ss%s]kip : ' \
-    "$c_bold" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "$c_reset" >&2
-  read -r reply
+    "$c_bold" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "$c_reset" >&3
+  IFS= read -r reply <&4 || reply=""
   reply="${reply:-k}"
   case "$reply" in
-    k|K|keep|Keep)       echo keep ;;
-    u|U|upgrade|Upgrade) echo upgrade ;;
-    r|R|reinstall)       echo reinstall ;;
-    s|S|skip|Skip)       echo skip ;;
-    *)                   echo keep ;;  # any other input → safe default
+    k|K|keep|Keep)       outcome=keep ;;
+    u|U|upgrade|Upgrade) outcome=upgrade ;;
+    r|R|reinstall)       outcome=reinstall ;;
+    s|S|skip|Skip)       outcome=skip ;;
+    *)                   outcome=keep ;;
   esac
+  printf '  %s◆ %s → %s%s\n' "$c_dim" "$label" "$outcome" "$c_reset" >&2
+  echo "$outcome"
 }
 
 # ============================================================================
@@ -572,12 +599,21 @@ if [ "$ROLE" = "worker" ] || [ "$ROLE" = "dual" ]; then
     dim "Non-interactive: skipping pubkey paste prompt. Add them later:"
     cmd_hint "echo 'ssh-ed25519 …' >> ~/.ssh/authorized_keys"
   else
+    # Mirror the instructions to FD 3 so they reach the terminal immediately,
+    # not just the (potentially mid-buffer) tee pipe. Otherwise `cat` below
+    # blocks before the user has seen what to paste.
+    {
+      printf '  i On your MANAGER machine, run ONE of:\n'
+      printf '  $ cat ~/.ssh/id_ed25519.pub\n'
+      printf '  $ cat ~/.ssh/id_rsa.pub\n'
+      printf '  i Paste below (or multiple lines for multiple managers), Enter, then Ctrl-D.\n\n'
+    } >&3
     info "On your MANAGER machine, run ONE of:"
     cmd_hint "cat ~/.ssh/id_ed25519.pub"
     cmd_hint "cat ~/.ssh/id_rsa.pub"
     info "Paste below (or paste multiple lines for multiple managers), press Enter, then Ctrl-D."
     echo
-    PASTE=$(cat || true)
+    PASTE=$(cat <&4 || true)
     added=0
     while IFS= read -r line; do
       line=$(printf '%s' "$line" | tr -d '\r' | sed 's/[[:space:]]*$//')
