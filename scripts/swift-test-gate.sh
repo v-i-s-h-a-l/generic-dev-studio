@@ -189,23 +189,46 @@ else
     _emit_terminal build_check_failed "$data"
     exit 2
   }
+  # PKG_ROOT may be:
+  #   (a) a worktree-relative path (e.g. "." or "Packages/Foo") — the script
+  #       cd'd into $WORKTREE before walking, so the walk's `dirname` chain
+  #       produced relative paths. After remote `cd $Q_WORKTREE`, the same
+  #       relative path resolves correctly on the worker.
+  #   (b) an absolute path under $WORKTREE — translate to worktree-relative.
+  #   (c) an absolute path outside $WORKTREE — rare; sync separately and use
+  #       the home-mirrored path on the remote.
+  Q_WORKTREE=$(sourcesync_remote_quoted "$REL_WORKTREE")
   case "$PKG_ROOT" in
-    "$WORKTREE"|"$WORKTREE"/*) REL_PKG=$(sourcesync_relative_to_home "$PKG_ROOT") ;;
+    /*)
+      case "$PKG_ROOT" in
+        "$WORKTREE"|"$WORKTREE"/*)
+          # case (b): make it worktree-relative so the post-cd swift test
+          # call resolves it under the synced tree.
+          if [ "$PKG_ROOT" = "$WORKTREE" ]; then
+            REMOTE_PKG_ARG="."
+          else
+            REMOTE_PKG_ARG="${PKG_ROOT#$WORKTREE/}"
+          fi
+          REMOTE_CMD='cd '"$Q_WORKTREE"' && swift test --package-path '"$(printf '%q' "$REMOTE_PKG_ARG")"
+          ;;
+        *)
+          # case (c): sync the package tree separately.
+          REL_PKG=$(sourcesync_push "$NODE_ID" "$PKG_ROOT") || {
+            printf 'swift-test-gate: package sync to %s failed\n' "$NODE_ID" >&2
+            data=$(printf '{"mode":"swift-test","reason":"package_sync_failed","node":"%s","attempt":%s}' "$NODE_ID" "$ATTEMPT")
+            _emit_terminal build_check_failed "$data"
+            exit 2
+          }
+          Q_PKG=$(sourcesync_remote_quoted "$REL_PKG")
+          REMOTE_CMD='cd '"$Q_WORKTREE"' && swift test --package-path '"$Q_PKG"
+          ;;
+      esac
+      ;;
     *)
-      # Package root sits outside the worktree — sync it as a separate
-      # tree before dispatch. Rare path; SPM tests usually live inside.
-      sourcesync_push "$NODE_ID" "$PKG_ROOT" >/dev/null || {
-        printf 'swift-test-gate: package sync to %s failed\n' "$NODE_ID" >&2
-        data=$(printf '{"mode":"swift-test","reason":"package_sync_failed","node":"%s","attempt":%s}' "$NODE_ID" "$ATTEMPT")
-        _emit_terminal build_check_failed "$data"
-        exit 2
-      }
-      REL_PKG=$(sourcesync_relative_to_home "$PKG_ROOT")
+      # case (a): worktree-relative — pass through verbatim.
+      REMOTE_CMD='cd '"$Q_WORKTREE"' && swift test --package-path '"$(printf '%q' "$PKG_ROOT")"
       ;;
   esac
-  Q_WORKTREE=$(sourcesync_remote_quoted "$REL_WORKTREE")
-  Q_PKG=$(sourcesync_remote_quoted "$REL_PKG")
-  REMOTE_CMD='cd '"$Q_WORKTREE"' && swift test --package-path '"$Q_PKG"
   "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "$REMOTE_CMD" \
     >"$test_log" 2>&1
 fi
