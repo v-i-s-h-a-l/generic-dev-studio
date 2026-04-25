@@ -607,6 +607,10 @@ cd generic-dev-studio
       <span>Run Step 0 inbox sweep only &mdash; no status table, no dashboard render. Lighter invocation for smoke-tests, pre-dispatch warm-ups, or headless validation.</span>
     </div>
     <div class="cmd-card">
+      <code>/chanakya janitor [--apply]</code>
+      <span>Project-scoped sweep of stale artifacts: worktrees, feedback assets, orphan assets, scaling alerts, fleet leftovers, plus the gap-#31 <code>local-debt</code> pass (merged worktrees regardless of mtime, orphan DerivedData, dead-pid <code>xcodebuild.lock</code>). Default is dry-run; <code>--apply</code> commits the deletions. Node-side counterpart tracked under #152.</span>
+    </div>
+    <div class="cmd-card">
       <code>/chanakya update</code>
       <span>Sync the master plan with current git and worktree state</span>
     </div>

@@ -1,6 +1,6 @@
 ---
 name: chanakya
-description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, processes the shared event log, and manages the user verification pipeline. Sub-commands: status, brief, brief-review, review, sweep, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify, ingest-thread, ingest-dm, ingest-slack, report-design, report-product, feedback-archive, feedback-history. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
+description: "Project manager for the Turnip iOS codebase. Plans tasks, generates self-contained Achilles briefs (with Figma context), runs inbox sweeps, tracks build/test debt, processes the shared event log, and manages the user verification pipeline. Sub-commands: status, brief, brief-review, review, sweep, update, test-manifest, test-flow, review-feedback, compact, sync-slack, ship, brief-all, sweep-debt, verify, janitor, ingest-thread, ingest-dm, ingest-slack, report-design, report-product, feedback-archive, feedback-history. Do NOT trigger for bug fixes or one-file changes — those go to /achilles."
 type: agent-router
 ---
 
@@ -43,6 +43,7 @@ Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debri
 | `ship <target>` | `modes/ship.md` |
 | `sweep-debt` | `modes/sweep-debt.md` |
 | `verify [--round N]` | `modes/verify.md` |
+| `janitor [--apply]` | `modes/janitor.md` |
 | `ingest-thread <channel> <ts> [flags]` | `modes/ingest.md` (arg: thread) |
 | `ingest-dm <user> [flags]` | `modes/ingest.md` (arg: dm) |
 | `ingest-slack [flags]` | `modes/ingest.md` (arg: channel) |

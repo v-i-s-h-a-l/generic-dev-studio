@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# sweep-janitor.sh [--dry-run] <subcommand>
+# sweep-janitor.sh [--dry-run] [--all-projects] <subcommand>
 #
-# Step 0D — stale-artifact sweep. Four independent subcommands:
+# Step 0D — stale-artifact sweep. Five independent subcommands:
 #
 #   worktrees        Prune worktree dirs older than 7 days with no
 #                    active-review marker + no live `git worktree` entry.
@@ -11,11 +11,21 @@
 #                    by any feedback record; 7d mtime grace.
 #   scaling-alerts   Line-count feedback/active.md; warn @ 50, block @ 100
 #                    (sets feedback_ingest_blocked flag).
-#   all              Run all four in order.
+#   local-debt       Issue #31 — worktrees whose branch is fully merged into a
+#                    protected base (regardless of mtime), DerivedData dirs
+#                    under ~/.dev-studio/.runtime/derived-data/ whose worktree
+#                    no longer exists, and locks/xcodebuild.lock whose pid
+#                    file points at a dead process. PID-gated, not time-gated.
+#   all              Run all five in order.
+#
+# --all-projects iterates list_fleet_projects and re-execs per project. Cannot
+# be combined with subcommands that aren't `all` or `local-debt` — those are
+# the only sweeps with cross-project meaning.
 #
 # DRY_RUN=1 (env) or --dry-run flag reports targets without deleting. Every
-# unlink is prefix-checked against the project root so a misconfigured
-# resolver can't walk off the reservation.
+# unlink is prefix-checked against the project root (or the runtime-global
+# derived-data dir for the local-debt path) so a misconfigured resolver can't
+# walk off the reservation.
 #
 # Emits `cleanup_completed` at the end (archived count + freed gigabytes).
 
@@ -29,22 +39,50 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-ledger.sh"
 
 DRY_FLAG=0
-if [ "${1:-}" = "--dry-run" ]; then
-  DRY_FLAG=1
-  shift
-fi
+ALL_PROJECTS=0
+# Order-independent flag parse — callers in the wild mix --dry-run and
+# --all-projects either way (matches fleet-cleanup.sh's getopt loop).
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run)      DRY_FLAG=1; shift ;;
+    --all-projects) ALL_PROJECTS=1; shift ;;
+    *)              break ;;
+  esac
+done
 [ "${DRY_RUN:-0}" = "1" ] && DRY_FLAG=1
 
 SUBCMD="${1:-}"
 case "$SUBCMD" in
-  worktrees|feedback-assets|orphan-assets|scaling-alerts|all) ;;
-  "") printf 'usage: sweep-janitor.sh [--dry-run] <worktrees|feedback-assets|orphan-assets|scaling-alerts|all>\n' >&2; exit 2 ;;
+  worktrees|feedback-assets|orphan-assets|scaling-alerts|local-debt|all) ;;
+  "") printf 'usage: sweep-janitor.sh [--dry-run] [--all-projects] <worktrees|feedback-assets|orphan-assets|scaling-alerts|local-debt|all>\n' >&2; exit 2 ;;
   *)  printf 'unknown subcommand: %s\n' "$SUBCMD" >&2; exit 2 ;;
 esac
+
+# --all-projects only makes sense on cross-project sweeps. Other sub-commands
+# are deliberately project-scoped (e.g. scaling-alerts touches one feedback
+# inbox); pretending to fan them out would silently behave wrong.
+if [ "$ALL_PROJECTS" = "1" ] && [ "$SUBCMD" != "all" ] && [ "$SUBCMD" != "local-debt" ]; then
+  printf '--all-projects requires `all` or `local-debt` subcommand\n' >&2; exit 2
+fi
+
+# Fan-out path: re-exec per project with ACHILLES_PROJECT pinned. One process
+# per project keeps the safe_delete prefix-check honest (PROJECT_ROOT differs).
+if [ "$ALL_PROJECTS" = "1" ]; then
+  flags=()
+  [ "$DRY_FLAG" = "1" ] && flags+=(--dry-run)
+  rc=0
+  while IFS= read -r project; do
+    [ -z "$project" ] && continue
+    printf '== %s ==\n' "$project" >&2
+    ACHILLES_PROJECT="$project" "$0" "${flags[@]}" "$SUBCMD" || rc=$?
+  done < <(list_fleet_projects)
+  exit "$rc"
+fi
 
 PROJECT=$(resolve_project 2>/dev/null) || exit 0
 PROJECT_ROOT=$(resolve_project_root_for "$PROJECT")
 STATE_DIR="$PROJECT_ROOT/.runtime/state"
+RUNTIME_GLOBAL=$(resolve_runtime_global)
 
 # Running totals — feed the cleanup_completed event at the end.
 archived=0
@@ -64,6 +102,28 @@ safe_delete() {
     size=$(stat -f %z "$target" 2>/dev/null || stat -c %s "$target" 2>/dev/null || echo 0)
   elif [ -d "$target" ]; then
     # du output is in 1K blocks on macOS/Linux by default — convert to bytes.
+    size=$(du -sk "$target" 2>/dev/null | awk '{print $1 * 1024}')
+  fi
+  if [ "$DRY_FLAG" = "1" ]; then
+    printf 'DRY-RUN delete %s (%s bytes)\n' "$target" "${size:-0}" >&2
+  else
+    rm -rf "$target" 2>/dev/null || return 1
+  fi
+  archived=$(( archived + 1 ))
+  freed_bytes=$(( freed_bytes + ${size:-0} ))
+}
+
+# Narrow allowlist twin of safe_delete for machine-global DerivedData under
+# ~/.dev-studio/.runtime/derived-data/. Refuses anything outside that exact
+# subdir — DerivedData is the only machine-global artifact this script deletes.
+safe_delete_global() {
+  local target="$1"
+  case "$target" in
+    "$RUNTIME_GLOBAL"/derived-data/*) ;;
+    *) printf 'safe_delete_global: refusing to delete %s (outside %s/derived-data/)\n' "$target" "$RUNTIME_GLOBAL" >&2; return 1 ;;
+  esac
+  local size=0
+  if [ -d "$target" ]; then
     size=$(du -sk "$target" 2>/dev/null | awk '{print $1 * 1024}')
   fi
   if [ "$DRY_FLAG" = "1" ]; then
@@ -182,16 +242,85 @@ sweep_scaling_alerts() {
   fi
 }
 
+# Issue #31 — process-gated cleanup that complements the time-gated sweeps
+# above. Three independent passes:
+#   (a) worktrees whose branch is fully merged into a protected base
+#   (b) DerivedData dirs whose worktree is gone
+#   (c) xcodebuild.lock whose pid file points at a dead process
+sweep_local_debt() {
+  # (a) merged worktrees — distinct from sweep_worktrees, which gates on
+  # mtime + git-worktree-list membership. Here we delete a still-registered
+  # worktree if its branch is already in main; the work is reclaimable
+  # whether or not 7 days have passed.
+  local root="$PROJECT_ROOT/worktrees" base wt branch
+  if [ -d "$root" ]; then
+    base=""
+    for candidate in main master trunk develop; do
+      if git -C "$PROJECT_ROOT" rev-parse --verify --quiet "$candidate" >/dev/null 2>&1; then
+        base="$candidate"; break
+      fi
+    done
+    if [ -n "$base" ]; then
+      for wt in "$root"/*; do
+        [ -d "$wt" ] || continue
+        [ -f "$wt/.argus-running" ] && continue
+        branch=$(git -C "$wt" symbolic-ref --short HEAD 2>/dev/null) || continue
+        # Is this branch fully merged into base? `git branch --merged base`
+        # lists local branches reachable from base — exact-match wins.
+        if git -C "$PROJECT_ROOT" branch --merged "$base" 2>/dev/null \
+            | sed 's/^[* ] *//' | grep -Fxq "$branch"; then
+          # Detach the registered worktree before unlinking its dir, otherwise
+          # `git worktree list` keeps a stale entry pointing at nothing.
+          git -C "$PROJECT_ROOT" worktree remove --force "$wt" 2>/dev/null || true
+          [ -d "$wt" ] && safe_delete "$wt" merged-worktree || true
+        fi
+      done
+    fi
+  fi
+
+  # (b) orphan DerivedData — directory layout is
+  # ~/.dev-studio/.runtime/derived-data/<worktree-slug>/. The slug matches the
+  # worktree's basename (see resolve_derived_data_for in lib-paths.sh). If no
+  # worktree under any project still uses that slug, the dir is reclaimable.
+  local dd_root="$RUNTIME_GLOBAL/derived-data" dd slug
+  if [ -d "$dd_root" ]; then
+    for dd in "$dd_root"/*; do
+      [ -d "$dd" ] || continue
+      slug=$(basename "$dd")
+      # Cross-project worktree existence check. find -path is portable; one
+      # process for all projects beats a per-project loop.
+      if find "$HOME/.dev-studio" -maxdepth 3 -type d -name "$slug" \
+          -path '*/worktrees/*' -print -quit 2>/dev/null | grep -q .; then
+        continue
+      fi
+      safe_delete_global "$dd" orphan-derived-data || true
+    done
+  fi
+
+  # (c) dead-pid xcodebuild lock. The 45-min mtime reclaim in the skill
+  # blocks new builds for up to 45 minutes after a crash; PID check is
+  # immediate and correct (kill -0 returns 0 iff the process exists).
+  local lock="$PROJECT_ROOT/locks/xcodebuild.lock" lock_pid
+  if [ -d "$lock" ] && [ -f "$lock/pid" ]; then
+    lock_pid=$(cat "$lock/pid" 2>/dev/null | tr -dc '0-9')
+    if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+      safe_delete "$lock" dead-pid-xcodebuild-lock || true
+    fi
+  fi
+}
+
 case "$SUBCMD" in
   worktrees)        sweep_worktrees ;;
   feedback-assets)  sweep_feedback_assets ;;
   orphan-assets)    sweep_orphan_assets ;;
   scaling-alerts)   sweep_scaling_alerts ;;
+  local-debt)       sweep_local_debt ;;
   all)
     sweep_worktrees
     sweep_feedback_assets
     sweep_orphan_assets
     sweep_scaling_alerts
+    sweep_local_debt
     ;;
 esac
 
