@@ -56,7 +56,7 @@ Three parallel reads:
 1. **Studio-feedback inbox** — `~/.dev-studio/generic-dev-studio/feedback-inbox/<source>/`. Classify each non-`processed/` file:
    - Already-ingested (issue # in body / processed-marker) → skip.
    - Well-formed pending → list for re-ingest pass.
-   - **Skipped (missing scope/kind frontmatter)** → surface explicitly. Do not silently drop.
+   - **Skipped (missing kind frontmatter)** → surface explicitly. Do not silently drop. (`scope` is now inferred when absent; only `kind` is mandatory.)
 2. **Event logs** — `~/.dev-studio/<project>/events/*.jsonl` shards, bounded `--since` (default 2026-04-17 per memory rule on log provenance). Group by event-type, count, extract notable patterns (repeated failures, spikes, dual-write partials, R10 hits, Argus blocks).
 3. **Prior analysis reports** — `~/.dev-studio/<project>/analysis/*.md`. Read titles + key-findings sections only, not full bodies. Use as trend baseline ("this pattern was already flagged on \<date\>" → don't refile).
 

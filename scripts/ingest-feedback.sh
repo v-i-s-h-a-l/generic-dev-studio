@@ -128,6 +128,21 @@ has_leaky_tokens() {
   return 1
 }
 
+# Infer scope when missing. Records in the studio-feedback inbox are
+# studio-scoped by definition — the chanakya project-feedback queue is
+# a separate path. See #188.
+infer_scope() {
+  local file="$1" kind="$2"
+  local explicit
+  explicit=$(get_field "$file" scope)
+  if [ -n "$explicit" ]; then
+    printf '%s\n' "$explicit"
+    return
+  fi
+  [ -n "$kind" ] || return
+  printf 'generic-dev-studio\n'
+}
+
 # Sanitized abstract body: strip the frontmatter, then prepend the privacy
 # footer. For scope=generic-dev-studio records that already describe abstract
 # patterns (the convention, per the studio-feedback mode), the body itself is
@@ -152,15 +167,16 @@ printf '%s\n' "$FILES" | while IFS= read -r file; do
   src_proj=$(basename "$src_dir")
   fname=$(basename "$file")
 
-  scope=$(get_field "$file" scope)
   kind=$(get_field "$file" kind)
   ts=$(get_field "$file" ts)
 
-  if [ -z "$scope" ] || [ -z "$kind" ]; then
-    printf 'ingest-feedback: skipping %s (missing scope or kind frontmatter)\n' "$rel" >&2
+  if [ -z "$kind" ]; then
+    printf 'ingest-feedback: skipping %s (missing kind frontmatter)\n' "$rel" >&2
     skipped_count=$((skipped_count+1))
     continue
   fi
+
+  scope=$(infer_scope "$file" "$kind")
 
   {
     printf '\n---\n'
