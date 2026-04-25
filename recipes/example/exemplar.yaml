@@ -1,0 +1,34 @@
+# recipes/example/exemplar.yaml — reference recipe.
+#
+# Demonstrates the full recipe schema + serves as the linter's regression
+# fixture. Points at the studio's own owned exemplar skill (skills/owned/
+# exemplar/) — vendoring this recipe is a no-op (the canonical content
+# already lives in this repo), but install-recipe.sh exercises the full
+# pipeline against it: license check, author check, vendor.yaml emission,
+# routing fan-out.
+
+schema_version: 1
+name: exemplar
+domain: [studio-internal]
+strategy: owned
+sources:
+  - upstream: github.com/v-i-s-h-a-l/generic-dev-studio
+    path: skills/owned/exemplar/
+    pinned_sha: 614fc37b
+    license: MIT
+update_policy: manual
+authoring_standard: required
+attribution: |
+  Studio-authored reference skill demonstrating the Skill Authoring Standard.
+  See skills/owned/exemplar/SKILL.md for the canonical content and
+  _shared/standards/skill-authoring.md for the rules it exemplifies.
+
+routing:
+  triggers:
+    - "show me a reference skill"
+    - "what does an authoring-standard-conformant skill look like"
+  domains: [studio-internal]
+
+portability:
+  hosts: [claude-code, codex]
+  scope: global

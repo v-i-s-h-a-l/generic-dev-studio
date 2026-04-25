@@ -1,0 +1,45 @@
+# recipes/profiles/ios.yaml — curator's iOS development profile.
+#
+# Recipes listed here install when the user runs `studio install-recommended`
+# or `studio install-recommended ios`. Profiles compose into a single
+# "install everything for this domain" command so a fresh machine bootstrap
+# is one shell line instead of N manual fetches.
+#
+# Adding a recipe to a profile is a curatorial decision: is this skill load-
+# bearing for the domain, or just nice-to-have? Profiles stay slim; lots of
+# nice-to-have skills go straight into the recipes/ tree but stay out of
+# any profile until they earn the spot.
+#
+# Recipes referenced here MUST exist as recipes/<recipe-name>.yaml or
+# recipes/<dir>/<recipe-name>.yaml — install-recipe.sh resolves by exact
+# filename match.
+
+schema_version: 1
+
+display_name: "iOS development"
+description: |
+  SwiftUI authoring + review, Swift concurrency review, Swift Testing,
+  API design + module architecture skills. Curated against the user's
+  ~/.claude-personal/CLAUDE.md skill conventions.
+
+# Core SwiftUI skills (TODO — fill in once upstream URLs are nailed down;
+# see issue #169's "out of scope" note: the iOS-profile recipes will be
+# authored as the user identifies authoritative upstreams. The studio
+# install-recommended command works against this list as soon as recipes
+# are populated).
+recipes: []
+
+# When recipes land here:
+#   recipes:
+#     - swiftui-expert
+#     - swiftui-view-refactor
+#     - swiftui-performance-audit
+#     - swiftui-liquid-glass
+#     - swift-concurrency-pro
+#     - swift-testing-expert
+#     - swift-api-design-guidelines
+#     - swift-architecture
+#
+# `studio install-recommended ios` will iterate the list, calling
+# install-recipe.sh for each. Failures are surfaced; the install does not
+# proceed past a license/author-allowlist failure for an individual recipe.

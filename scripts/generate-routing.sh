@@ -69,6 +69,23 @@ if [ -z "$HOST" ]; then
   exit 2
 fi
 
+# Auto-detect .skill-domains in cwd and repo root when no explicit --domains
+# filter was passed. The file is one domain per line; comments (`#`) and
+# blank lines ignored. Intent: per-project context lean — Swift skills do
+# not appear in routing for a Python project, etc.
+if [ -z "$DOMAIN_FILTER" ]; then
+  for dom_file in "$PWD/.skill-domains" "$REPO_ROOT/.skill-domains"; do
+    if [ -f "$dom_file" ]; then
+      DOMAIN_FILTER=$(awk '
+        /^[[:space:]]*$/ { next }
+        /^[[:space:]]*#/ { next }
+        { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); printf "%s,", $0 }
+      ' "$dom_file" | sed 's/,$//')
+      break
+    fi
+  done
+fi
+
 REGISTRY="$REPO_ROOT/hosts/registry.yaml"
 if [ ! -f "$REGISTRY" ]; then
   printf 'generate-routing: hosts/registry.yaml not found\n' >&2

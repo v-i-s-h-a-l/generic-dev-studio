@@ -1,0 +1,13 @@
+schema_version: 1
+recipe: exemplar
+strategy: owned
+upstream: github.com/v-i-s-h-a-l/generic-dev-studio
+path: skills/owned/exemplar/
+pinned_sha: 614fc37b
+license: MIT
+authoring_standard: required
+vendored_at: 2026-04-25T18:12:58Z
+attribution: |
+  Studio-authored reference skill demonstrating the Skill Authoring Standard.
+  See skills/owned/exemplar/SKILL.md for the canonical content and
+  _shared/standards/skill-authoring.md for the rules it exemplifies.
