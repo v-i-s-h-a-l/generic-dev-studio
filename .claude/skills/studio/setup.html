@@ -287,17 +287,17 @@
     <p>Onboard any Mac as a <strong>manager</strong> (your primary dev box, runs the agents), <strong>worker</strong> (a headless build box), or <strong>dual</strong>. Same wizard for all three.</p>
     <pre><code>git clone https://github.com/v-i-s-h-a-l/generic-dev-studio.git
 cd generic-dev-studio
-./scripts/bootstrap.sh --yes --role manager   # one-shot, defaults
-./scripts/bootstrap.sh                        # interactive, pick anything</code></pre>
-    <p>The wizard runs as plain bash — no AI required at install time. Tweak anything later with <code>scripts/configure.sh</code>.</p>
+./scripts/bootstrap.sh --role manager   # zero prompts
+./scripts/bootstrap.sh                  # auto-pilot, prompts for role only</code></pre>
+    <p>The wizard runs as plain bash — no AI required at install time. <strong>Auto-pilot is the default</strong>: every step takes its smart default based on your machine state, and the only mandatory input is <code>role</code> (skipped if you pass <code>--role</code>). Pass <code>--interactive</code> to be prompted at every step. Tweak anything later with <code>scripts/configure.sh</code>.</p>
     <h3>From inside Claude Code</h3>
     <p>If you already have a Claude Code session open in the cloned repo, the slash command wraps the same wizard:</p>
-    <pre><code>/studio-setup                    # interactive manager (no args = no --yes)
-/studio-setup --manager          # non-interactive manager
-/studio-setup --worker           # non-interactive worker (id = hostname)
+    <pre><code>/studio-setup                    # auto-pilot — prompts for role only
+/studio-setup --manager          # zero-prompt manager onboarding
+/studio-setup --worker           # zero-prompt worker (id = hostname)
 /studio-setup --worker --id mini --roles swift-test,xcodebuild
 /studio-setup --dual             # both roles on one box
-/studio-setup --interactive      # drop --yes when used with a role flag
+/studio-setup --interactive      # prompt at every step (legacy)
 /studio-setup --dry-run          # preview without changing anything
 /studio-setup --help             # this guide + usage summary</code></pre>
     <p>The slash command runs on <strong>the current machine</strong> — it does not SSH anywhere. To onboard a different machine, SSH there first and run it from a session on that box.</p>
@@ -309,15 +309,19 @@ cd generic-dev-studio
   <div class="container">
     <h2>Install</h2>
 
-    <h3>One-shot install (defaults)</h3>
-    <p>Sensible defaults for every prompt; no questions asked. Use this when you just want it working — you can configure anything afterwards.</p>
-    <pre><code>./scripts/bootstrap.sh --yes --role manager
-./scripts/bootstrap.sh --yes --role worker --id mini --worker-roles swift-test,xcodebuild
-./scripts/bootstrap.sh --yes --role dual</code></pre>
+    <h3>Zero-prompt install (defaults)</h3>
+    <p>Sensible defaults for every step; no questions asked. Use this when you just want it working — you can configure anything afterwards. <em>This is the default behavior</em> when a <code>--role</code> is supplied.</p>
+    <pre><code>./scripts/bootstrap.sh --role manager
+./scripts/bootstrap.sh --role worker --id mini --worker-roles swift-test,xcodebuild
+./scripts/bootstrap.sh --role dual</code></pre>
 
-    <h3>Interactive install</h3>
-    <p>Walks you through every step, lets you choose. Defaults stay sensible — most prompts you can just press Enter on.</p>
+    <h3>Auto-pilot (no role flag)</h3>
+    <p>Same as zero-prompt, except the wizard prompts once for the role. Otherwise it derives every decision from machine state.</p>
     <pre><code>./scripts/bootstrap.sh</code></pre>
+
+    <h3>Interactive install (legacy)</h3>
+    <p>Walks you through every step, lets you choose. Defaults stay sensible — most prompts you can just press Enter on.</p>
+    <pre><code>./scripts/bootstrap.sh --interactive</code></pre>
 
     <h3>Preview without changing anything</h3>
     <pre><code>./scripts/bootstrap.sh --dry-run --role manager</code></pre>

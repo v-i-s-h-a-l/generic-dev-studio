@@ -53,10 +53,11 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /studio help                     # open the studio docs page in your browser
 /studio-help                     # slash-command shortcut for /studio help
 /studio nodes                    # day-2 fleet management — status, add, remove, health, sync, schedule
-/studio-setup                    # onboard THIS machine — no args = interactive manager
-/studio-setup --manager          # non-interactive manager
-/studio-setup --worker           # non-interactive worker (id = hostname; --id X to override)
+/studio-setup                    # onboard THIS machine — auto-pilot, prompts for role only
+/studio-setup --manager          # zero-prompt manager onboarding
+/studio-setup --worker           # zero-prompt worker (id = hostname; --id X to override)
 /studio-setup --dual             # both roles on one machine
+/studio-setup --interactive      # legacy: prompt at every step
 /studio-setup --help             # open the setup guide + usage summary
 
 /argus                           # review current worktree (auto-invoked by Achilles pre-merge)
@@ -145,7 +146,7 @@ achilles/
 
 .claude/commands/       # project-scoped slash commands (fire only when cwd is this repo)
   studio-help.md        # /studio-help — opens studio docs.html in browser
-  studio-setup.md       # /studio-setup — onboard THIS machine (--manager/--worker/--dual; no args = interactive)
+  studio-setup.md       # /studio-setup — onboard THIS machine (--manager/--worker/--dual; no args = auto-pilot prompting only for role)
   resume-plan.md        # /resume-plan — forwards to studio/modes/resume-plan.md
   capture.md            # /capture — retrospective session scan → IDEAS.md
 
