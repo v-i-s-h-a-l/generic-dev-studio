@@ -1,0 +1,30 @@
+# hosts/registry.yaml — authoritative host roster for skill fan-out.
+#
+# One row per host. Adding a new host = one row here + one .<host>/capabilities.yaml
+# (per hosts/ADAPTER-SPEC.md) + one entry in the per-host tool-dialect map at
+# _shared/tool-dialect/<host>.md (when needed). scripts/sync-host-skills.sh and
+# scripts/generate-routing.sh consume this file as the single source of truth
+# for "what hosts exist and where do their skills live".
+#
+# Schema versioned via _shared/standards/host-registry.json (validated by
+# scripts/lint-skill-prose.sh when present).
+#
+# All fields are required. None are nullable. Empty values reject at lint time.
+
+claude-code:
+  display_name: "Claude Code"
+  global_skill_dir: "~/.claude/skills"
+  project_skill_dir: ".claude/skills"
+  routing_file: "CLAUDE.md"
+  routing_walks_parents: true       # Claude Code reads CLAUDE.md from cwd up to repo root
+  capabilities_path: ".claude-plugin/capabilities.yaml"
+  tool_dialect: claude
+
+codex:
+  display_name: "OpenAI Codex CLI"
+  global_skill_dir: "~/.codex/skills"
+  project_skill_dir: ".codex/skills"
+  routing_file: "AGENTS.md"
+  routing_walks_parents: false      # Codex 0.123 — verified 2026-04-25
+  capabilities_path: ".codex/capabilities.yaml"
+  tool_dialect: openai

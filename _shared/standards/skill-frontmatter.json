@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio/_shared/standards/skill-frontmatter.json",
+  "title": "Skill SKILL.md frontmatter (schema_version 1)",
+  "description": "Validates the YAML frontmatter block of every SKILL.md / mode-pack / standard file authored under the studio.",
+  "type": "object",
+  "required": ["name", "description", "type", "schema_version"],
+  "additionalProperties": true,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]*$",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Identifier. Skill / mode-pack / agent-router types must additionally match kebab-case (^[a-z0-9][a-z0-9._-]*$); the linter enforces that. Title Case allowed for primitive / reference / standard."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 280,
+      "description": "One sentence; surfaces in routing manifests and CLAUDE.md generation."
+    },
+    "type": {
+      "enum": ["agent-router", "mode-pack", "skill", "primitive", "reference", "standard"],
+      "description": "Discriminator for grammar requirements; see _shared/standards/skill-authoring.md."
+    },
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Authoring Standard version this file conforms to."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[A-Za-z0-9.-]+)?$",
+      "description": "Optional skill-level semver, independent of schema_version."
+    },
+    "budget_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Advisory model budget for sessions invoking this skill."
+    },
+    "authoring_standard": {
+      "enum": ["exempt"],
+      "description": "Vendored verbatim only; bypasses body grammar lints."
+    },
+    "transition_notes": {
+      "type": "string",
+      "description": "Path to a migration / transition document referenced by the linter as informational."
+    },
+    "originSessionId": {
+      "type": "string",
+      "description": "Optional metadata for memory-derived files."
+    },
+    "snapshots": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Mode-pack-only: declared snapshot files this pack consumes; freshness checked at load time."
+    }
+  }
+}

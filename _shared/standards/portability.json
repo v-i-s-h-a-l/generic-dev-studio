@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio/_shared/standards/portability.json",
+  "title": "Skill portability manifest (schema_version 1)",
+  "description": "Per-skill declaration of compatible hosts. Drives scripts/sync-host-skills.sh fan-out — only declared hosts get a symlink in their discovery dir. Default for unmigrated skills (no portability.yaml): hosts: [claude-code]; new-host fan-out is opt-in, not opt-out.",
+  "type": "object",
+  "required": ["schema_version", "hosts"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "hosts": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]*$"
+      },
+      "description": "Host slugs from hosts/registry.yaml that this skill runs on."
+    },
+    "incompatible": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 4,
+        "description": "Rationale for the incompatibility. Mandatory; never silent exclusion."
+      },
+      "description": "Map of host-slug → human-readable reason this skill cannot run there."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-text portability caveats; informational."
+    }
+  }
+}

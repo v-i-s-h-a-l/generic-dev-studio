@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio/_shared/standards/routing.json",
+  "title": "Skill routing manifest (schema_version 1)",
+  "description": "Per-skill routing data consumed by scripts/generate-routing.sh to emit host-native routing fragments. Replaces hand-maintained CLAUDE.md prose for invocation rules.",
+  "type": "object",
+  "required": ["schema_version", "name", "invocation"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "Kebab-case skill identifier; must match the SKILL.md frontmatter name."
+    },
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "slash_command": {
+          "type": "string",
+          "pattern": "^/[a-z0-9][a-z0-9._:-]*$",
+          "description": "Optional slash-command form; e.g. /achilles or /studio:resume-plan."
+        },
+        "triggers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 200
+          },
+          "description": "Natural-language phrases that fire this skill in conversation."
+        },
+        "default_mode": {
+          "type": "string",
+          "description": "Router skills only; mode pack to dispatch when no arg or default intent."
+        }
+      },
+      "anyOf": [
+        {"required": ["slash_command"]},
+        {"required": ["triggers"]}
+      ]
+    },
+    "domains": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]*$"
+      },
+      "uniqueItems": true,
+      "description": "Tag set used by per-project .skill-domains filtering. Empty = always loaded."
+    },
+    "skip_when": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "domain_mismatch": {"type": "boolean", "default": true}
+      },
+      "description": "Loading rules. By default, skill is omitted from routing when none of its domains match the project's .skill-domains."
+    }
+  }
+}

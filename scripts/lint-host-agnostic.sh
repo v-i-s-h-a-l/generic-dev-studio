@@ -71,9 +71,10 @@ check_prose_portability() {
   for pat in "${patterns[@]}"; do
     while IFS=: read -r file line_no line_text; do
       [ -z "$file" ] && continue
-      # Skip lint script itself and REVIEW.md (they document the patterns).
+      # Skip lint script itself, REVIEW.md, and the Authoring Standard
+      # (they document the patterns to be avoided).
       case "$file" in
-        */lint-host-agnostic.sh|*/REVIEW.md) continue ;;
+        */lint-host-agnostic.sh|*/REVIEW.md|*/_shared/standards/skill-authoring.md) continue ;;
       esac
       emit_prose_hit "E_CLAUDE_PROSE:${file#"$REPO_ROOT/"}:$line_no:\"$pat\" | replace with host-neutral equivalent or move to a Claude-Code-only adapter overlay"
     done < <(
