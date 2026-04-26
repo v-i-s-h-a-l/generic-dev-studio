@@ -157,16 +157,16 @@ The linter loads the matrix from this primitive (parsed at lint time), not from 
 
 `tests/lint-comms-boundary/violations/` (created in Session 3) holds canonical bad declarations. Smallest case: a synthetic `achilles/modes/fake.md` with `writes: plans/reviews/<review-id>.yaml` — must produce `B_AUTHORIAL_WRITER_VIOLATION` with a clear message.
 
-## Drift findings — current state (audit 2026-04-27)
+## Drift findings — current state (lint output, 2026-04-27)
 
-Audit of `_shared/schemas/capability-manifest.json` against this primitive surfaced:
+`scripts/lint-comms-boundary.sh` against `_shared/schemas/capability-manifest.json`: **0 errors, 9 warnings** — all of which are expected:
 
-1. **No B1/B2 violations.** Every `plans/<kind>/<id>.yaml` create-shaped write is performed by the correct authorial writer.
-2. **B4 dual-writes (warn-tier, expected).** Eight Chanakya modes + two Achilles modes write to `plans/chanakya-master.md` for the Phase 2.6 transitional dual-write. All carry `# legacy ... until Commit H` annotations. Resolved by #245.
-3. **B6 missing schema-ref (warn-tier, low-frequency).** A handful of `plans/index.yaml` writes lack the schema annotation. Cleanup batch in Session 3.
-4. **Pass-through purity holds.** Argus `spec-compliance` writes only `events/`; never the review YAML.
+1. **B4 master-plan dual-writes (warn, transitional).** Nine modes (`achilles/task` + 8 Chanakya modes) declare writes against `plans/chanakya-master.md` for the Phase 2.6 dual-write window. Each carries `# legacy ... until Commit H` annotations. The lint warns today and **promotes to block once #245 (Commit H) flips `DUAL_WRITE_MODE=yaml-only` as the default**.
+2. **B1/B2/B3 clean.** Every create-shaped write maps to the correct authorial writer; every back-ref / state-transition is performed by an enumerated co-writer.
+3. **B5 pass-through purity clean.** `argus/spec-compliance` writes only `events/`; `chanakya/status` is read-only against task / release / review artifacts.
+4. **B6 schema-ref clean.** Every create-shaped declaration carries a `schema:` annotation.
 
-No B3 (out-of-scope co-writer) violations detected — every back-ref / state-transition declaration aligns with the matrix.
+Synthetic violations are exercised by `tests/lint-comms-boundary/run.sh` — a hand-crafted manifest that injects `B_FORBIDDEN_CREATE` and `B_PASS_THROUGH_VIOLATION` cases and asserts the linter catches each.
 
 ## Related
 

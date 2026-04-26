@@ -13,7 +13,7 @@ reads:
   - plans/chanakya-master.md                       # legacy fallback until Commit H
 writes:
   - plans/tasks/<task-id>.yaml                     # state transitions (→ needs-rework) and delta notes
-  - plans/tasks/<new-task-id>.yaml                 # newly-minted tasks for requirements not present before
+  - plans/tasks/<new-task-id>.yaml                 # newly-minted tasks for requirements not present before (schema: _shared/schemas/task.md)
   - plans/briefs/<brief-id>.yaml                   # regenerated briefs for stale ones
   - plans/chanakya-master.md                       # legacy master-plan row mutation during Phase 2.6 transition (dual-write)
   - plans/chanakya-tasks/<task-id>-<slug>.md       # legacy regenerated brief markdown during Phase 2.6 transition (dual-write, via delegated brief-mode regeneration)
