@@ -143,6 +143,25 @@ if [ -r "$ATTEMPTS_FILE" ]; then
 fi
 printf '%s\n' "$ATTEMPT" > "$ATTEMPTS_FILE" 2>/dev/null || true
 
+# Pre-flight dispatch decision (#137) — picked up here so the start
+# event carries studio.dispatch.* tags. swift-test never uses xcodebuild,
+# so xcode_version is best-effort from the parity cache (typically empty
+# for pure-SPM nodes).
+REASON_FILE=$(mktemp 2>/dev/null || printf '/tmp/dispatch-reason-%s' "$$")
+: > "$REASON_FILE" 2>/dev/null || true
+NODE_ID=$(STUDIO_DISPATCH_REASON_FILE="$REASON_FILE" \
+  "$SCRIPT_DIR/node-pick.sh" swift-test 2>/dev/null || echo local)
+DISPATCH_REASON=$(tr -d '\n' < "$REASON_FILE" 2>/dev/null)
+rm -f "$REASON_FILE" 2>/dev/null || true
+[ -z "$DISPATCH_REASON" ] && DISPATCH_REASON="healthy"
+XCODE_VER=""
+PARITY_CACHE="$(resolve_runtime_global)/node-parity-cache.json"
+if [ -r "$PARITY_CACHE" ] && command -v jq >/dev/null 2>&1; then
+  XCODE_VER=$(jq -r --arg id "$NODE_ID" '.nodes[$id].xcodebuild.version // ""' "$PARITY_CACHE" 2>/dev/null)
+fi
+DISPATCH_FIELDS=$(printf ',"studio.dispatch.node":"%s","studio.dispatch.role":"swift-test","studio.dispatch.reason":"%s","studio.dispatch.xcode_version":"%s"' \
+  "$NODE_ID" "$DISPATCH_REASON" "$XCODE_VER")
+
 # Trap-based span closure. Without it, any exit between started and
 # pass/fail (signal, swift-not-found, surprise non-zero) leaks an open
 # build_check_started that analytics can't tell apart from "in flight".
@@ -158,9 +177,9 @@ _emit_aborted_if_open() {
   fi
   local data
   if [ -n "$reason" ]; then
-    data=$(printf '{"mode":"swift-test","attempt":%s,"exit_code":%s,"reason":"%s"}' "$ATTEMPT" "$rc" "$reason")
+    data=$(printf '{"mode":"swift-test","attempt":%s,"exit_code":%s,"reason":"%s"%s}' "$ATTEMPT" "$rc" "$reason" "$DISPATCH_FIELDS")
   else
-    data=$(printf '{"mode":"swift-test","attempt":%s,"exit_code":%s}' "$ATTEMPT" "$rc")
+    data=$(printf '{"mode":"swift-test","attempt":%s,"exit_code":%s%s}' "$ATTEMPT" "$rc" "$DISPATCH_FIELDS")
   fi
   emit_event_keyed achilles task build_check_aborted "$TASK_ID" "$data" >/dev/null 2>&1 || true
   rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
@@ -174,8 +193,8 @@ _emit_terminal() {
 }
 
 file_count=$(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ')
-start_data=$(printf '{"mode":"swift-test","worktree":"%s","package":"%s","files":%s,"attempt":%s}' \
-  "$WORKTREE" "$PKG_ROOT" "$file_count" "$ATTEMPT")
+start_data=$(printf '{"mode":"swift-test","worktree":"%s","package":"%s","files":%s,"attempt":%s%s}' \
+  "$WORKTREE" "$PKG_ROOT" "$file_count" "$ATTEMPT" "$DISPATCH_FIELDS")
 emit_event_keyed achilles task build_check_started "$TASK_ID" "$start_data" >/dev/null 2>&1 || true
 trap '_emit_aborted_if_open; _release_task_lock; _gate_set_title ""; _gate_set_badge ""' EXIT INT TERM
 
@@ -184,15 +203,14 @@ trap '_emit_aborted_if_open; _release_task_lock; _gate_set_title ""; _gate_set_b
 if [ "${DRY_RUN:-0}" = "1" ]; then
   printf 'DRY-RUN swift test --package-path=%s\n' "$PKG_ROOT" >&2
   _emit_terminal build_check_passed \
-    "$(printf '{"mode":"swift-test","dry_run":true,"package":"%s","attempt":%s}' "$PKG_ROOT" "$ATTEMPT")"
+    "$(printf '{"mode":"swift-test","dry_run":true,"package":"%s","attempt":%s%s}' "$PKG_ROOT" "$ATTEMPT" "$DISPATCH_FIELDS")"
   exit 0
 fi
 
-# Route the test run through node-dispatch so an SSH-reachable worker
-# node tagged `swift-test` absorbs the compile + test cost. `node-pick`
-# returns `local` when no remote is registered or healthy, which keeps
-# hosts without a node registry running bit-for-bit the old behaviour.
-NODE_ID=$("$SCRIPT_DIR/node-pick.sh" swift-test 2>/dev/null || echo local)
+# NODE_ID was resolved during pre-flight (above) so the start event could
+# carry studio.dispatch.* tags. `node-pick` returns `local` when no remote
+# is registered or healthy, which keeps hosts without a node registry
+# running bit-for-bit the old behaviour.
 GATE_START_S=$(date -u +%s)
 gate_announce_start swift-test "$NODE_ID" "$TASK_ID" swift-test
 
@@ -201,7 +219,7 @@ if node_is_self "$NODE_ID"; then
   # to a remote node, the remote's toolchain is what matters and its
   # absence surfaces as a non-zero remote exit code below.
   if ! command -v swift >/dev/null 2>&1; then
-    data=$(printf '{"mode":"swift-test","reason":"swift_unavailable","package":"%s","attempt":%s}' "$PKG_ROOT" "$ATTEMPT")
+    data=$(printf '{"mode":"swift-test","reason":"swift_unavailable","package":"%s","attempt":%s%s}' "$PKG_ROOT" "$ATTEMPT" "$DISPATCH_FIELDS")
     _emit_terminal build_check_failed "$data"
     gate_announce_done swift-test "$NODE_ID" "$TASK_ID" failed 0
     exit 2
@@ -224,7 +242,7 @@ else
   . "$SCRIPT_DIR/lib-source-sync.sh"
   REL_WORKTREE=$(sourcesync_push "$NODE_ID" "$WORKTREE") || {
     printf 'swift-test-gate: source sync to %s failed\n' "$NODE_ID" >&2
-    data=$(printf '{"mode":"swift-test","reason":"source_sync_failed","node":"%s","attempt":%s}' "$NODE_ID" "$ATTEMPT")
+    data=$(printf '{"mode":"swift-test","reason":"source_sync_failed","node":"%s","attempt":%s%s}' "$NODE_ID" "$ATTEMPT" "$DISPATCH_FIELDS")
     _emit_terminal build_check_failed "$data"
     exit 2
   }
@@ -254,7 +272,7 @@ else
           # case (c): sync the package tree separately.
           REL_PKG=$(sourcesync_push "$NODE_ID" "$PKG_ROOT") || {
             printf 'swift-test-gate: package sync to %s failed\n' "$NODE_ID" >&2
-            data=$(printf '{"mode":"swift-test","reason":"package_sync_failed","node":"%s","attempt":%s}' "$NODE_ID" "$ATTEMPT")
+            data=$(printf '{"mode":"swift-test","reason":"package_sync_failed","node":"%s","attempt":%s%s}' "$NODE_ID" "$ATTEMPT" "$DISPATCH_FIELDS")
             _emit_terminal build_check_failed "$data"
             exit 2
           }
@@ -288,15 +306,15 @@ GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
 [ "$GATE_DUR_S" -lt 0 ] && GATE_DUR_S=0
 
 if [ "$TEST_STATUS" -ne 0 ]; then
-  data=$(printf '{"mode":"swift-test","node":"%s","errors":%s,"warnings":%s,"package":"%s","attempt":%s}' \
-    "$NODE_ID" "$err_count" "$warn_count" "$PKG_ROOT" "$ATTEMPT")
+  data=$(printf '{"mode":"swift-test","node":"%s","errors":%s,"warnings":%s,"package":"%s","attempt":%s%s}' \
+    "$NODE_ID" "$err_count" "$warn_count" "$PKG_ROOT" "$ATTEMPT" "$DISPATCH_FIELDS")
   _emit_terminal build_check_failed "$data"
   gate_announce_done swift-test "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
   exit 2
 fi
 
-data=$(printf '{"mode":"swift-test","node":"%s","warnings":%s,"package":"%s","files":%s,"attempt":%s}' \
-  "$NODE_ID" "$warn_count" "$PKG_ROOT" "$file_count" "$ATTEMPT")
+data=$(printf '{"mode":"swift-test","node":"%s","warnings":%s,"package":"%s","files":%s,"attempt":%s%s}' \
+  "$NODE_ID" "$warn_count" "$PKG_ROOT" "$file_count" "$ATTEMPT" "$DISPATCH_FIELDS")
 _emit_terminal build_check_passed "$data"
 gate_announce_done swift-test "$NODE_ID" "$TASK_ID" passed "$GATE_DUR_S"
 exit 0

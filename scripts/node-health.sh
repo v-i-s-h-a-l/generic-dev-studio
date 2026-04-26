@@ -25,8 +25,25 @@ umask 022
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-ledger.sh
+. "$SCRIPT_DIR/lib-ledger.sh" 2>/dev/null || true
 
 TARGET_ID="${1:-}"
+
+# _emit_unreachable <id> <probe> <error> — discriminating event for R14
+# (issue #137). Best-effort; never blocks the probe loop. Caller dedups
+# by node id at the analytics layer if needed.
+_emit_unreachable() {
+  local id="$1" probe="$2" err="$3"
+  command -v emit_event_keyed >/dev/null 2>&1 || return 0
+  err=${err:0:200}
+  err=${err//\\/\\\\}
+  err=${err//\"/\\\"}
+  local data
+  data=$(printf '{"studio.dispatch.node":"%s","studio.dispatch.probe":"%s","studio.dispatch.error":"%s"}' \
+    "$id" "$probe" "$err")
+  emit_event_keyed studio dispatch node_unreachable "" "$data" >/dev/null 2>&1 || true
+}
 
 REGISTRY="$(resolve_runtime_global)/nodes.json"
 if [ ! -r "$REGISTRY" ]; then
@@ -89,15 +106,17 @@ while IFS=$'\t' read -r id host user enabled; do
   # show `unreachable` whenever sshd is disabled at home, even though the
   # local copy of node-pick wants to dispatch work to itself.
   if node_is_self "$id"; then
-    output=$(uptime 2>/dev/null) || {
+    if ! output=$(uptime 2>&1); then
+      _emit_unreachable "$id" "uptime" "$output"
       printf '%s\tunreachable\t-\t%s\n' "$id" "$host"
       continue
-    }
+    fi
   else
-    output=$($TIMEOUT_BIN ssh "${SSH_OPTS[@]}" "${user}@${host}" uptime 2>/dev/null) || {
+    if ! output=$($TIMEOUT_BIN ssh "${SSH_OPTS[@]}" "${user}@${host}" uptime 2>&1); then
+      _emit_unreachable "$id" "ssh" "$output"
       printf '%s\tunreachable\t-\t%s\n' "$id" "$host"
       continue
-    }
+    fi
   fi
   load1=$(printf '%s' "$output" | sed -n 's/.*load[^:]*:[[:space:]]*\([0-9][0-9]*\(\.[0-9]*\)\{0,1\}\).*/\1/p')
   [ -z "$load1" ] && load1="0.00"
