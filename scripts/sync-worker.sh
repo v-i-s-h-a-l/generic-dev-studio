@@ -98,6 +98,7 @@ fi
 # ---------- read manifest ----------
 REQUIRED_BREW=$(yq -r '.brew_packages.required[]?' "$MANIFEST" 2>/dev/null)
 OPTIONAL_BREW=$(yq -r '.brew_packages.optional[]?' "$MANIFEST" 2>/dev/null)
+BREW_TAPS=$(yq -r '.brew_packages.taps[]?' "$MANIFEST" 2>/dev/null)
 XCODE_MIN=$(yq -r '.xcode_version_min // ""' "$MANIFEST" 2>/dev/null)
 
 emit_event_keyed sync worker worker_sync_started "$WORKER_ID" \
@@ -142,6 +143,48 @@ if [ "${#want_install[@]}" -gt 0 ] && [ "$DRY_RUN" = "0" ]; then
       >/dev/null 2>&1 || true
     exit 3
   fi
+fi
+
+# ---------- brew taps ----------
+# Add taps before optional installs so tap-provided formulae resolve.
+if [ -n "$BREW_TAPS" ]; then
+  remote_taps=$(ssh_exec 'brew tap 2>/dev/null' || true)
+  want_taps=()
+  for tap in $BREW_TAPS; do
+    if ! printf '%s\n' "$remote_taps" | grep -qx "$tap"; then
+      want_taps+=("$tap")
+      drift+=("missing_brew_tap: $tap")
+    fi
+  done
+  if [ "${#want_taps[@]}" -gt 0 ] && [ "$DRY_RUN" = "0" ]; then
+    for tap in "${want_taps[@]}"; do
+      if ssh_exec "brew tap $tap" >/dev/null 2>&1; then
+        applied=$((applied + 1))
+      else
+        drift+=("brew_tap_failed: $tap")
+      fi
+    done
+  elif [ "${#want_taps[@]}" -gt 0 ] && [ "$DRY_RUN" = "1" ]; then
+    printf '[dry-run] would add %d tap(s) on %s: %s\n' \
+      "${#want_taps[@]}" "$WORKER_ID" "${want_taps[*]}"
+  fi
+fi
+
+# ---------- optional brew install ----------
+# Best-effort: failures are non-fatal (surfaced as drift, not exit 3).
+if [ "${#optional_missing[@]}" -gt 0 ] && [ "$DRY_RUN" = "0" ]; then
+  printf 'sync-worker: installing %d optional package(s) on %s: %s\n' \
+    "${#optional_missing[@]}" "$WORKER_ID" "${optional_missing[*]}"
+  for pkg in "${optional_missing[@]}"; do
+    if ssh_exec "brew install $pkg" >/dev/null 2>&1; then
+      applied=$((applied + 1))
+    else
+      drift+=("optional_install_failed: $pkg")
+    fi
+  done
+elif [ "${#optional_missing[@]}" -gt 0 ] && [ "$DRY_RUN" = "1" ]; then
+  printf '[dry-run] would install %d optional package(s) on %s: %s\n' \
+    "${#optional_missing[@]}" "$WORKER_ID" "${optional_missing[*]}"
 fi
 
 # ---------- Xcode version drift (informational; not auto-fixed) ----------
