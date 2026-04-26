@@ -238,6 +238,16 @@ if node_is_self "$NODE_ID"; then
   IS_LOCAL=1
 else
   IS_LOCAL=0
+  # Pre-flight Xcode-version drift guard (#136). Major drift blocks dispatch;
+  # minor/patch warns and allows. STUDIO_IGNORE_XCODE_DRIFT=1 demotes block
+  # to warn. Refresh of the parity cache is cheap (one SSH per node, lazy
+  # behind a 7-day TTL) so the guard's worst case is one extra round trip
+  # before a real M/L build's lock acquire.
+  if ! "$SCRIPT_DIR/check-xcode-parity.sh" "$NODE_ID"; then
+    data=$(printf '{"mode":"full-green","node":"%s","reason":"xcode_major_drift","attempt":%s}' "$NODE_ID" "$ATTEMPT")
+    _emit_terminal build_check_failed "$data"
+    exit 2
+  fi
 fi
 
 # Surface the dispatch decision to the user — stderr banner + iTerm badge
