@@ -4,18 +4,18 @@ description: YAML shape for Achilles-authored debriefs under plans/debriefs/<deb
 type: reference
 ---
 
-# Debrief Schema (`debrief@2.0.2`)
+# Debrief Schema (`debrief@2.1.0`)
 
 Per-debrief artifact written to `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml`. Replaces the markdown debriefs that previously landed at `plans/chanakya-inbox/<task-id>-debrief.md`. Authored by Achilles in `task` mode (paired with a brief) or in `debrief` mode (direct-debrief, no brief).
 
-Version 2.0.0 is a breaking change from the legacy markdown format (`contracts/debrief-format.md`). Prose narratives are kept as strings inside typed fields so Chanakya's ingest path does not need NLP to locate "Decisions Made" or "Build Verification" — they are structured.
+Version 2.0.0 was a breaking change from the legacy markdown format (`contracts/debrief-format.md`). Prose narratives are kept as strings inside typed fields so Chanakya's ingest path does not need NLP to locate "Decisions Made" or "Build Verification" — they are structured. Subsequent 2.x bumps (2.0.1, 2.0.2, 2.1.0) are non-breaking additive changes; `min_reader: 2.0.0` keeps the entire active fleet compatible.
 
 ## Shape
 
 ```yaml
 schema_version:
   name: debrief
-  version: 2.0.0
+  version: 2.1.0
   min_reader: 2.0.0
   deprecated_at: null
 id: 0190f52a-79aa-7d02-8b88-33ce5fe65e66        # UUIDv7
@@ -24,6 +24,11 @@ brief_id: 0190f52a-6e11-7c01-8a77-11a05a9e2b4c  # UUIDv7 | null
 mode: task                                       # task | direct-debrief
 state: emitted                                   # emitted | ingested | superseded
 completed_at: 2026-04-22T12:40:51Z
+executed_with:                                   # 2.1.0; multi-model accountability — populated from scripts/emit-agent-boot.sh data
+  model_id: "claude-opus-4-7"                    # canonical model id (e.g. "claude-opus-4-7", "claude-sonnet-4-6", "gpt-5-codex")
+  host: claude-code                              # claude-code | codex | <future-host>
+  session_id: "session-42"                       # producer session id (matches agent-boot event)
+  duration_s: 8246                               # integer seconds — wall-clock duration of the implementing session
 branch:
   worked_on: achilles/T001
   merged_into: feature/filter-presets
@@ -103,6 +108,7 @@ report_state: done                                # done | done_with_concerns | 
 | `open_questions` | array of strings | yes | Direct-debrief mode uses this for inline questions the user answered. Usually empty for task mode. |
 | `argus_review` | object | yes | `{status, review_id, notes}`. Status `not-invoked` only valid when Argus was bypassed (xs-skip or direct-debrief). |
 | `report_state` | enum \| absent | no | `done` \| `done_with_concerns` \| `blocked` \| `needs_context`. Worker-report contract — see `contracts/worker-report.md`. Absent in pre-2.0.2 debriefs; readers infer from other fields for back-compat. |
+| `executed_with` | object \| absent | no | 2.1.0; `{model_id, host, session_id, duration_s}`. Producer identity for multi-model accountability. Absent in pre-2.1.0 debriefs; readers MUST tolerate absence and either join `events/<date>.jsonl` `agent_boot` records by `task_id` to fill the gap or treat the executor as unknown. Three of the four fields (`model_id`, `host`, `session_id`) are already produced by `scripts/emit-agent-boot.sh`; `duration_s` is computed from the matching `agent_session_completed` event timestamp delta. |
 
 ## Modes
 
@@ -136,6 +142,7 @@ The 141 processed debriefs in `chanakya-inbox/processed/` are **copied as-is** t
 
 | Version | Landed | Changes |
 |---|---|---|
+| 2.1.0 | 2026-04-27 | Non-breaking: add optional `executed_with` block (`model_id`, `host`, `session_id`, `duration_s`) for multi-model accountability and A/B model-routing telemetry. Three fields already emitted by `scripts/emit-agent-boot.sh`; only the schema-side surface lands here (#247 Stage C deliverable 2). |
 | 2.0.2 | 2026-04-23 | Non-breaking: add optional `report_state` field (4-state worker-report enum). Back-compat reader rule in `contracts/worker-report.md`. Drawn from obra/superpowers. |
 | 2.0.1 | 2026-04-22 | Non-breaking: add `state` field (`emitted` \| `ingested` \| `superseded`). Missing `state` is read as `emitted` for back-compat. Motivated by direct-debriefs having no parent-task history to mark as ingested. |
 | 2.0.0 | 2026-04-22 | Breaking: full YAML shape replaces markdown. `mode` field distinguishes task vs direct-debrief. `testability` becomes a typed object. `build_gate` / `build_debt_override` promoted to first-class fields. |
