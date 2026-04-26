@@ -22,7 +22,7 @@ This file exists because T218a drifted: a writer updated the legacy brief markdo
 
 4. **Index rebuild is the final step.** `plans/index.yaml` regenerates from the YAML layer. Index rebuild must run *after* both writes succeed. Batch via `WITHHOLD_INDEX=1` + `flush_index` when a mode pack performs N mutations in sequence; single rebuild at the end.
 
-5. **Flag-controlled flip at Commit H.** The helpers in `scripts/lib-ledger.sh` honor `DUAL_WRITE_MODE` env: `both` (default) dual-writes; `yaml-only` skips the legacy step. Commit H flips the default; helpers stop dual-writing without editing every mode pack.
+5. **Flag-controlled flip (#245 A.3, shipped).** The helpers in `scripts/lib-ledger.sh` honor `DUAL_WRITE_MODE` env: `yaml-only` (default post-A.3) skips the legacy step; `both` re-enables dual-write as an escape hatch for future migrations. The default flip stopped dual-writing without editing every mode pack.
 
 6. **Dry-run preserves both sides.** Under `DRY_RUN=1` per `dry-run.md`, log **two** `DRY-RUN write` lines — one YAML, one legacy — so dry-run output captures the full intent.
 

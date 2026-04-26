@@ -56,7 +56,7 @@
 #     flush_index                             rebuild plans/index.yaml now
 #
 # Env controls (all optional):
-#   DUAL_WRITE_MODE   `both` (default) | `yaml-only`           Commit H flips default
+#   DUAL_WRITE_MODE   `yaml-only` (default) | `both`           `both` retained as escape hatch for future migrations (#245 A.3)
 #   DRY_RUN           `1` to log + buffer without filesystem writes
 #   WITHHOLD_INDEX    `1` to skip rebuild-index per mutation (callers batch)
 #
@@ -235,10 +235,10 @@ emit_event_keyed() {
 
 # ---------- Dual-write gating ----------
 
-# Single consultation point so Commit H flips the default by editing only
-# this function + the env-var documentation.
+# Single consultation point. #245 A.3 flipped the default to yaml-only;
+# `both` retained as escape hatch for any future migration.
 _lw_dual_write_enabled() {
-  case "${DUAL_WRITE_MODE:-both}" in
+  case "${DUAL_WRITE_MODE:-yaml-only}" in
     both) return 0 ;;
     yaml-only) return 1 ;;
     *) printf '_lw_dual_write_enabled: unknown DUAL_WRITE_MODE=%s\n' "$DUAL_WRITE_MODE" >&2; return 1 ;;
