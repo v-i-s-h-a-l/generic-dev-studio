@@ -1,0 +1,3 @@
+interface:
+  display_name: "Swift API Design Guidelines"
+  short_description: "Write, review, or improve Swift APIs — naming, argument labels, documentation, conventions"
