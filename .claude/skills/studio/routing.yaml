@@ -25,5 +25,8 @@ invocation:
     - "update the workers"
     - "are the workers in sync"
     - "/studio work <track>"
+    - "/studio tf-push"
+    - "/studio tf-push --dry-run"
+    - "push a TestFlight build via studio"
 domains:
   - studio-internal

@@ -328,6 +328,7 @@
 /studio guard "topic"     # has this work been done before?
 /studio janitor [--yes]   # cross-project sweep of stale artifacts (dry-run by default)
 /studio nodes             # day-2 fleet management — status, add, sync, health, schedule, recheck
+/studio tf-push [--dry-run]  # studio-owned TestFlight / App Store Connect push (live work gated on STUDIO_TF_PUSH_LIVE=1)
 /studio-setup             # onboard THIS machine (--manager / --worker / --dual; no args → interactive manager)
 /studio-help              # open this docs page</code></pre>
     <p>Most users type <code>/studio</code> and let intent detection pick the mode. Sub-commands above are also available conversationally — "where were we", "any issues with this diff?", "should we tag?" all route correctly.</p>
@@ -346,7 +347,7 @@
     </ul>
     <h3>What it does not do</h3>
     <ul>
-      <li>No task dispatch, no worktree management, no build gates, no TestFlight/App Store, no Slack ingest — that is Chanakya / Achilles / Argus territory.</li>
+      <li>No task dispatch, no worktree management, no build gates, no Slack ingest — that is Chanakya / Achilles / Argus territory. (TestFlight / App Store push is now studio-owned via <code>/studio tf-push</code>; see #217.)</li>
       <li>No singleton lock, no <code>agent_boot</code> telemetry — studio is a conversational tool, not a fleet worker.</li>
       <li>No writes outside <code>~/.dev-studio/&lt;project&gt;/audit/</code> (audit reports in <code>--report</code> mode). Everything else is read-only chat output + file edits you approve.</li>
     </ul>
