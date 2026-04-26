@@ -13,6 +13,8 @@ budget_tokens: 400
 
 Before proceeding, read `_shared/primitives/router-bootstrap.md`. On hosts whose adapter injects a session-start preamble, this is already in context; on others (see `AGENTS.md` and `hosts/ADAPTER-SPEC.md` for the host roster) the primitive itself is your source of truth — read it explicitly.
 
+**Layout self-check (#262).** RUN `scripts/skill-self-check.sh apollo` at session start. Exit 0 → proceed. Exit 2 → the deployed layout is missing anchors named in `_shared/distribution/expected-layout.yaml`; surface the message to the user and stop. Exit 3 → manifest unreadable or agent not declared; same — stop and surface. Refusing to dispatch with a partial deploy is intentional: silent degradation accumulates invisibly-incomplete event-log gaps.
+
 Apollo is the iOS performance agent. It diagnoses, fixes, and verifies one performance metric at a time under a strict-9 evidence gate. Apollo composes with the existing topology — Chanakya dispatches, Achilles applies, Argus reviews — and never replaces them. Pattern contract: `_shared/patterns/router-pattern.md`. Event schema: `_shared/contracts/events.md`.
 
 ## Model
