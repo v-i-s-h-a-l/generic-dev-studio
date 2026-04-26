@@ -49,6 +49,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-ledger.sh"
 # shellcheck source=lib-dispatch-registry.sh
 . "$SCRIPT_DIR/lib-dispatch-registry.sh"
+# shellcheck source=lib-dispatch-harvest.sh
+. "$SCRIPT_DIR/lib-dispatch-harvest.sh"
 
 MODE="${1:?usage: task-build-gate.sh <lsp-only|full-green> <task-id> <worktree> <scheme> <destination> [<project-or-workspace-relpath>]}"
 TASK_ID="${2:?task-id required}"
@@ -290,6 +292,82 @@ else
     _emit_terminal build_check_failed "$data"
     exit 2
   fi
+fi
+
+# #271 — reconnect-and-harvest. Before any retry's lock + queue + dispatch,
+# probe the registry for an in-flight UUID for this {task_id, node}. If the
+# prior run's <uuid>.exit landed on the worker, fetch the log + exit code
+# and use them as the gate result instead of re-running. The probe is a
+# no-op the first time the gate runs for a task (no prior entry exists),
+# so it's safe to gate-unconditionally on the remote branch.
+HARVESTED=0
+build_log=""
+build_json=""
+if [ "$IS_LOCAL" = "0" ]; then
+  prior_uuid=$(dispatch_harvest_find_inflight "$TASK_ID" "$NODE_ID" 2>/dev/null) || prior_uuid=""
+  if [ -n "$prior_uuid" ]; then
+    harvest_log=$(mktemp 2>/dev/null || printf '/tmp/harvest-%s.log' "$$")
+    if harvested_rc=$(dispatch_harvest_attempt "$NODE_ID" "$prior_uuid" "$harvest_log" 2>&2); then
+      DISPATCH_UUID="$prior_uuid"
+      BUILD_STATUS="$harvested_rc"
+      build_log="$harvest_log"
+      HARVESTED=1
+      hdata=$(printf '{"node":"%s","uuid":"%s","exit_code":%s,"mode":"full-green","attempt":%s%s}' \
+        "$NODE_ID" "$prior_uuid" "$harvested_rc" "$ATTEMPT" "$DISPATCH_FIELDS")
+      emit_event_keyed studio dispatch dispatch_harvested "$TASK_ID" "$hdata" >/dev/null 2>&1 || true
+      # Park the registry entry as harvested before _emit_terminal runs;
+      # then null DISPATCH_UUID so the terminal mark in _emit_terminal
+      # doesn't overwrite `harvested` with `passed`/`failed`.
+      dispatch_registry_mark "$prior_uuid" harvested 2>/dev/null || true
+      DISPATCH_UUID=""
+    else
+      rm -f "$harvest_log" 2>/dev/null || true
+    fi
+  fi
+fi
+
+# Harvested: skip the lock + queue + dispatch entirely. Mirrors the
+# post-build parsing below (errors/warnings count + success-marker check)
+# so the harvested terminal payload matches a normal full-green emit, with
+# `harvested:true` distinguishing the path. Acceptance: only the original
+# dispatch produced a build on the worker; this gate invocation contributes
+# zero remote work.
+if [ "$HARVESTED" = "1" ]; then
+  err_count=$(grep -cE '(^|: )error:' "$build_log" 2>/dev/null)
+  case "$err_count" in ''|*[!0-9]*) err_count=0 ;; esac
+  warn_count=$(grep -cE '(^|: )warning:' "$build_log" 2>/dev/null)
+  case "$warn_count" in ''|*[!0-9]*) warn_count=0 ;; esac
+  # Success-marker contract from #265 applies identically — xcodebuild's
+  # text path can exit 0 without compiling, and the harvested log is the
+  # same text path that lib-source-sync would have rsync'd back.
+  success_marker_present=1
+  if [ "$BUILD_STATUS" -eq 0 ] && [ -s "$build_log" ]; then
+    if ! grep -F '** BUILD SUCCEEDED **' "$build_log" >/dev/null 2>&1; then
+      success_marker_present=0
+    fi
+  fi
+  rm -f "$build_log" 2>/dev/null || true
+  GATE_DUR_S=0
+  gate_announce_start build "$NODE_ID" "$TASK_ID" full-green
+  if [ "$BUILD_STATUS" -ne 0 ]; then
+    data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"harvested":true%s}' \
+      "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    _emit_terminal build_check_failed "$data"
+    gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
+    exit 2
+  fi
+  if [ "$success_marker_present" -eq 0 ]; then
+    data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"success_marker_absent","harvested":true%s}' \
+      "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    _emit_terminal build_check_failed "$data"
+    gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
+    exit 2
+  fi
+  data=$(printf '{"mode":"full-green","node":"%s","warnings":%s,"scheme":"%s","attempt":%s,"harvested":true%s}' \
+    "$NODE_ID" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+  _emit_terminal build_check_passed "$data"
+  gate_announce_done build "$NODE_ID" "$TASK_ID" passed "$GATE_DUR_S"
+  exit 0
 fi
 
 # Surface the dispatch decision to the user — stderr banner + iTerm badge

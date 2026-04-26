@@ -51,6 +51,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-ledger.sh"
 # shellcheck source=lib-dispatch-registry.sh
 . "$SCRIPT_DIR/lib-dispatch-registry.sh"
+# shellcheck source=lib-dispatch-harvest.sh
+. "$SCRIPT_DIR/lib-dispatch-harvest.sh"
 
 # #270 — populated by the remote-dispatch branch via STUDIO_DISPATCH_UUID_FILE
 # sidecar. Empty for self-node and dry-run paths.
@@ -144,6 +146,45 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   emit_event_keyed achilles task test_run_passed "$TASK_ID" "$data" >/dev/null 2>&1 || true
   gate_announce_done test "$NODE_ID" "$TASK_ID" dry-run 0
   exit 0
+fi
+
+# #271 — reconnect-and-harvest. Skip lock + dispatch when a prior in-flight
+# entry for this {task, node} has already produced a result on the worker.
+# The probe is a no-op the first time the gate runs (no prior entry exists).
+HARVESTED=0
+if [ "$IS_LOCAL" = "0" ]; then
+  prior_uuid=$(dispatch_harvest_find_inflight "$TASK_ID" "$NODE_ID" 2>/dev/null) || prior_uuid=""
+  if [ -n "$prior_uuid" ]; then
+    harvest_log=$(mktemp 2>/dev/null || printf '/tmp/harvest-%s.log' "$$")
+    if harvested_rc=$(dispatch_harvest_attempt "$NODE_ID" "$prior_uuid" "$harvest_log" 2>&2); then
+      DISPATCH_UUID="$prior_uuid"
+      HARVESTED=1
+      hdata=$(printf '{"node":"%s","uuid":"%s","exit_code":%s,"mode":"xcodebuild-test","attempt":%s%s}' \
+        "$NODE_ID" "$prior_uuid" "$harvested_rc" "$ATTEMPT" "$DISPATCH_FIELDS")
+      emit_event_keyed studio dispatch dispatch_harvested "$TASK_ID" "$hdata" >/dev/null 2>&1 || true
+      dispatch_registry_mark "$prior_uuid" harvested 2>/dev/null || true
+      DISPATCH_UUID=""
+      DURATION_S=0
+      TEST_COUNT=$(grep -Eo 'Test Suite .* passed|Executed [0-9]+ tests' "$harvest_log" 2>/dev/null \
+        | grep -Eo '[0-9]+' | head -1)
+      TEST_COUNT="${TEST_COUNT:-0}"
+      rm -f "$harvest_log" 2>/dev/null || true
+      if [ "$harvested_rc" -eq 0 ]; then
+        data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"test_count":%s,"attempt":%s,"harvested":true%s}' \
+          "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$TEST_COUNT" "$ATTEMPT" "$DISPATCH_FIELDS")
+        emit_event_keyed achilles task test_run_passed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+        gate_announce_done test "$NODE_ID" "$TASK_ID" passed "$DURATION_S"
+        exit 0
+      fi
+      data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"attempt":%s,"exit_code":%s,"harvested":true%s}' \
+        "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$ATTEMPT" "$harvested_rc" "$DISPATCH_FIELDS")
+      emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+      gate_announce_done test "$NODE_ID" "$TASK_ID" failed "$DURATION_S"
+      exit 2
+    else
+      rm -f "$harvest_log" 2>/dev/null || true
+    fi
+  fi
 fi
 
 # Acquire one of the N slot locks with 30-min wait cap, 45-min staleness

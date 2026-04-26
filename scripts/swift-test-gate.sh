@@ -44,6 +44,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-ledger.sh"
 # shellcheck source=lib-dispatch-registry.sh
 . "$SCRIPT_DIR/lib-dispatch-registry.sh"
+# shellcheck source=lib-dispatch-harvest.sh
+. "$SCRIPT_DIR/lib-dispatch-harvest.sh"
 
 TASK_ID="${1:?usage: swift-test-gate.sh <task-id> <worktree> [<changed-files>]}"
 WORKTREE="${2:?worktree required}"
@@ -238,6 +240,53 @@ if node_is_self "$NODE_ID"; then
     gate_announce_done swift-test "$NODE_ID" "$TASK_ID" failed 0
     exit 2
   fi
+fi
+
+# #271 — reconnect-and-harvest. Probe the dispatch registry for an in-flight
+# UUID for {task_id, node} on the remote branch. If the prior run's
+# <uuid>.exit landed on the worker, fetch + use it instead of running again.
+# No-op the first time the gate runs for a task (no prior entry exists).
+HARVESTED=0
+if ! node_is_self "$NODE_ID"; then
+  prior_uuid=$(dispatch_harvest_find_inflight "$TASK_ID" "$NODE_ID" 2>/dev/null) || prior_uuid=""
+  if [ -n "$prior_uuid" ]; then
+    harvest_log=$(mktemp 2>/dev/null || printf '/tmp/harvest-%s.log' "$$")
+    if harvested_rc=$(dispatch_harvest_attempt "$NODE_ID" "$prior_uuid" "$harvest_log" 2>&2); then
+      DISPATCH_UUID="$prior_uuid"
+      TEST_STATUS="$harvested_rc"
+      test_log="$harvest_log"
+      HARVESTED=1
+      hdata=$(printf '{"node":"%s","uuid":"%s","exit_code":%s,"mode":"swift-test","attempt":%s%s}' \
+        "$NODE_ID" "$prior_uuid" "$harvested_rc" "$ATTEMPT" "$DISPATCH_FIELDS")
+      emit_event_keyed studio dispatch dispatch_harvested "$TASK_ID" "$hdata" >/dev/null 2>&1 || true
+      dispatch_registry_mark "$prior_uuid" harvested 2>/dev/null || true
+      DISPATCH_UUID=""
+    else
+      rm -f "$harvest_log" 2>/dev/null || true
+    fi
+  fi
+fi
+
+if [ "$HARVESTED" = "1" ]; then
+  err_count=$(grep -cE '(^|: )error:' "$test_log" 2>/dev/null)
+  case "$err_count" in ''|*[!0-9]*) err_count=0 ;; esac
+  warn_count=$(grep -cE '(^|: )warning:' "$test_log" 2>/dev/null)
+  case "$warn_count" in ''|*[!0-9]*) warn_count=0 ;; esac
+  rm -f "$test_log" 2>/dev/null || true
+  GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
+  [ "$GATE_DUR_S" -lt 0 ] && GATE_DUR_S=0
+  if [ "$TEST_STATUS" -ne 0 ]; then
+    data=$(printf '{"mode":"swift-test","node":"%s","errors":%s,"warnings":%s,"package":"%s","attempt":%s,"harvested":true%s}' \
+      "$NODE_ID" "$err_count" "$warn_count" "$PKG_ROOT" "$ATTEMPT" "$DISPATCH_FIELDS")
+    _emit_terminal build_check_failed "$data"
+    gate_announce_done swift-test "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
+    exit 2
+  fi
+  data=$(printf '{"mode":"swift-test","node":"%s","warnings":%s,"package":"%s","files":%s,"attempt":%s,"harvested":true%s}' \
+    "$NODE_ID" "$warn_count" "$PKG_ROOT" "$file_count" "$ATTEMPT" "$DISPATCH_FIELDS")
+  _emit_terminal build_check_passed "$data"
+  gate_announce_done swift-test "$NODE_ID" "$TASK_ID" passed "$GATE_DUR_S"
+  exit 0
 fi
 
 test_log=$(mktemp 2>/dev/null || printf '/tmp/swift-test-%s.log' "$$")
