@@ -694,6 +694,10 @@ cd generic-dev-studio
       <code>/chanakya dispatch-ready</code>
       <span>Briefed tasks where every predecessor is in <code>{merged, verified, archived}</code>. Grouped by train, sorted by priority then age. Renders <code>id / priority / effort_minutes / recommended_model / title</code>. The fleet-wide "what's safe to dispatch right now?" answer.</span>
     </div>
+    <div class="cmd-card">
+      <code>/chanakya urgent &lt;free-text&gt;</code>
+      <span>Hotfix fast-path. Free-text intent in, minimal brief out (no Figma fetch, no testability section, no PRD-delta), task tagged <code>labels:[urgent]</code> + <code>priority:p0</code>, Achilles dispatched immediately. Skips brief-review entirely. Brief still flows through <code>lib-ledger</code> writers so #195's debrief-or-no-merge gate fires on merge. Use for production crashes / hotfix-required bugs where the full intake loop is friction; escape to <code>/chanakya intake</code> when scope is multi-file or multi-task.</span>
+    </div>
   </div>
 
   <h3 style="color: var(--achilles);">Achilles &mdash; The Warrior</h3>

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-26T23:25:54Z",
+  "generated_at": "2026-04-26T23:33:34Z",
   "schema": 1,
   "commands": [
     {"name": "chanakya-help", "source": "commands/chanakya-help.md", "description": "", "agent": null, "scope": "global"},
@@ -50,6 +50,7 @@
     {"name": "chanakya.tests", "source": "chanakya/modes/tests.md", "agent": "chanakya", "mode": "tests", "description": "Test-manifest (per-task checklist) + test-flow (journey-ordered walkthrough, with promote + diff modes). The two test-planning sub-commands are grouped because they are consulted together and share reads against processed debriefs and per-task test artifacts."},
     {"name": "chanakya.train", "source": "chanakya/modes/train.md", "agent": "chanakya", "mode": "train", "description": "Per-train view of tasks via the lean-schema `train` field. Sub-modes — list (unique trains), show (tasks by state), dispatch-ready (train-scoped), burn-down (state counts)."},
     {"name": "chanakya.update", "source": "chanakya/modes/update.md", "agent": "chanakya", "mode": "update", "description": "Cross-reference git state with the master plan and auto-close tasks whose branches have merged."},
+    {"name": "chanakya.urgent-ingest", "source": "chanakya/modes/urgent-ingest.md", "agent": "chanakya", "mode": "urgent-ingest", "description": "Hotfix fast-path — free-text intent in, minimal brief tagged urgent + immediate Achilles dispatch out. Skips brief-review; brief still flows through lib-ledger writers so #195's debrief gate fires."},
     {"name": "chanakya.verify", "source": "chanakya/modes/verify.md", "agent": "chanakya", "mode": "verify", "description": "Guided single-sitting verification flow. Chains test-flow generation, user testing, then promotes + applies feedback."}
   ]
 }

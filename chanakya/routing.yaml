@@ -33,6 +33,7 @@ invocation:
     - "/chanakya stale [--days=N]"
     - "/chanakya blocked-by <task-id>"
     - "/chanakya dispatch-ready"
+    - "/chanakya urgent <free-text>"
 domains:
   - turnip-ios
   - planning

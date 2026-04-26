@@ -65,6 +65,7 @@ Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debri
 | `stale [--days=N] [--state=<state>]` | `modes/stale.md` |
 | `blocked-by <task-id>` | `modes/blocked-by.md` |
 | `dispatch-ready` | `modes/dispatch-ready.md` |
+| `urgent <free-text>` | `modes/urgent-ingest.md` (fast-path: minimal brief + immediate Achilles dispatch, skips brief-review) |
 
 Session-level flags (`--at-laptop`, `--away`, `--auto-sweep`, `--watch`, `--ship-mode`) modify invocation behavior across all modes — they persist to `chanakya_mode.md` and `auto_sweep_state.md` and are honored by every mode pack. `--auto-sweep` specifically re-enters `modes/inbox-sweep.md` on each tick with adaptive backoff (15→30→60→120 min on consecutive blank sweeps; resets to 15 on any activity).
 
@@ -73,7 +74,7 @@ Session-level flags (`--at-laptop`, `--away`, `--auto-sweep`, `--watch`, `--ship
 Priority order when dispatching:
 
 1. **Explicit arg** — `/chanakya brief T001` → `modes/brief.md`. Always wins.
-2. **Conversational switch** — mid-session, if the user says "let's plan instead" or "actually capture this as feedback" or similar, re-dispatch inline to the matching mode without requiring a new invocation. Studio-feedback in particular recognises natural language ("capture this as feedback", "file feedback", "save this as feedback"); feedback-ingest recognises "ingest the thread from the 3140 testflight post" per `feedback_proactive_commands.md`.
+2. **Conversational switch** — mid-session, if the user says "let's plan instead" or "actually capture this as feedback" or similar, re-dispatch inline to the matching mode without requiring a new invocation. Studio-feedback in particular recognises natural language ("capture this as feedback", "file feedback", "save this as feedback"); feedback-ingest recognises "ingest the thread from the 3140 testflight post" per `feedback_proactive_commands.md`. Urgent intent ("urgent: …", "hotfix …", "production crash …", "we need to fix … now") routes to `modes/urgent-ingest.md` — the keyword carries the entire payload as the intent string.
 3. **Default** — no arg, no clear intent → `modes/status.md`.
 
 Never prompt for clarification when a sensible default exists.

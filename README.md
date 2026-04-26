@@ -86,6 +86,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /chanakya stale [--days=N]       # tasks stuck in their state > N days (default 7)
 /chanakya blocked-by <task-id>   # reverse predecessors lookup — what does shipping this unblock
 /chanakya dispatch-ready         # briefed tasks where every predecessor is merged/verified/archived
+/chanakya urgent <free-text>     # hotfix fast-path — minimal brief tagged urgent + immediate Achilles dispatch (skips brief-review)
 /chanakya test-manifest          # per-task checklist → user-testing.md
 /chanakya test-flow              # journey-ordered walkthrough → round files
 /chanakya review-feedback        # promote passing tasks to verified; file follow-ups for failures
@@ -136,7 +137,7 @@ chanakya/
                    #   event log processing, test-manifest, test-flow, review-feedback,
                    #   sync-slack, ship, brief-all, sweep-debt, verify, reopen, compact,
                    #   ingest-thread/dm/slack, report-design, report-product,
-                   #   feedback-archive, feedback-history
+                   #   feedback-archive, feedback-history, urgent (hotfix fast-path)
   README.md        # long-form user docs with examples
   docs.html        # interactive docs page (open in browser)
 
