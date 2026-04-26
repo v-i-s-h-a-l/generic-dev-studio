@@ -44,6 +44,11 @@
 #
 #   --role <manager|worker|dual>  Pre-select role (skips the only mandatory prompt)
 #   --id <short-id>               Worker id for nodes.json (defaults: hostname)
+#   --secret-scopes <a,b,...>     Credential scopes this node advertises (e.g.
+#                                 'asc,slack' for the laptop that holds App
+#                                 Store Connect + Slack tokens). Default empty.
+#                                 Consumed by node-pick --requires-secret-scope
+#                                 to keep TF/AS work on credential-bearing nodes.
 #   --worker-roles <csv>           Worker role tags (default: swift-test,xcodebuild)
 #   --interactive                 Prompt at every step (legacy default behavior)
 #   --yes                         Deprecated alias — non-interactive is now the default
@@ -80,12 +85,14 @@ DRY_RUN=0
 QUICK=0
 LOG_PATH=""
 NO_LOG=0
+SECRET_SCOPES=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --role)         ROLE="${2:?}"; shift 2 ;;
     --id)           WORKER_ID="${2:?}"; shift 2 ;;
     --worker-roles)  WORKER_ROLES="${2:?}"; shift 2 ;;
+    --secret-scopes) SECRET_SCOPES="${2:?}"; shift 2 ;;
     --interactive)  INTERACTIVE=1; shift ;;
     --yes)          shift ;;  # deprecated alias — non-interactive is now the default
     --quick)        QUICK=1; ROLE="${ROLE:-manager}"; INTERACTIVE=0; shift ;;
@@ -1029,6 +1036,16 @@ if [ "$ROLE" = "worker" ] || [ "$ROLE" = "dual" ]; then
     }
   } END{printf "]"}')
 
+  scopes_json=$(printf '%s' "$SECRET_SCOPES" | awk -F',' 'BEGIN{printf "["}
+  {
+    for (i=1;i<=NF;i++) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i)
+      if (length($i)==0) continue
+      if (cnt++) printf ", "
+      printf "\"%s\"", $i
+    }
+  } END{printf "]"}')
+
   cat <<BANNER
 
 ${c_cyan}═══ COPY-PASTE TO YOUR MANAGER MACHINE ═══${c_reset}
@@ -1044,6 +1061,7 @@ ${c_cyan}═══ COPY-PASTE TO YOUR MANAGER MACHINE ═══${c_reset}
         "host": "$TS_HOST",
         "user": "$CURRENT_USER",
         "roles": $roles_json,
+        "secret_scopes": $scopes_json,
         "enabled": true
       }
     ]

@@ -13,6 +13,7 @@
 #   scripts/configure.sh worker remove <id>    # remove a worker
 #   scripts/configure.sh worker enable <id>    # flip enabled: true
 #   scripts/configure.sh worker disable <id>   # flip enabled: false
+#   scripts/configure.sh worker scopes <id> a,b  # set secret_scopes (#284)
 #   scripts/configure.sh worker list           # tabular list
 #   scripts/configure.sh manifest              # edit worker-manifest.yaml in $EDITOR
 #   scripts/configure.sh schedule on           # install scheduled worker-sync
@@ -46,6 +47,19 @@ if [ -n "$PROJECT" ]; then
 fi
 
 require_jq() { command -v jq >/dev/null 2>&1 || { err "jq required"; exit 2; }; }
+
+# csv → JSON-array string. Empty input → "[]". Trims whitespace, drops empty
+# elements. Centralizing this dodges the `jq -R` empty-input → `--argjson ""`
+# error path that bit `worker scopes <id> ""` (#284).
+_csv_to_jsonarray() {
+  local raw="$1"
+  if [ -z "$raw" ]; then
+    printf '[]'
+    return
+  fi
+  printf '%s' "$raw" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))'
+}
+
 ensure_nodes_json() {
   if [ ! -f "$NODES_JSON" ]; then
     mkdir -p "$(dirname "$NODES_JSON")"
@@ -124,7 +138,7 @@ cmd_worker() {
       cmd_status | sed -n '/Registered workers/,/^$/p'
       ;;
     add)
-      local id host user roles
+      local id host user roles scopes
       printf '%s? id (short, used in lock paths and event logs):%s ' "$c_dim" "$c_reset"; read -r id
       [ -z "$id" ] && { err "id required"; exit 1; }
       printf '%s? host (Tailscale magic-DNS or LAN):%s ' "$c_dim" "$c_reset"; read -r host
@@ -132,6 +146,9 @@ cmd_worker() {
       [ -z "$user" ] && user=$(id -un)
       printf '%s? roles, comma-separated [swift-test,xcodebuild]:%s ' "$c_dim" "$c_reset"; read -r roles
       [ -z "$roles" ] && roles="swift-test,xcodebuild"
+      # secret_scopes (#284): credential scopes this node advertises. Default
+      # empty — only nodes that hold real tokens (laptop) declare 'asc,slack'.
+      printf '%s? secret scopes, comma-separated (e.g. asc,slack) [empty]:%s ' "$c_dim" "$c_reset"; read -r scopes
 
       # #146 — probe the worker's stable machine_id via SSH so registry has a
       # durability backing key (id is grep-friendly but reusable across boxes;
@@ -156,20 +173,34 @@ cmd_worker() {
         exit 2
       fi
 
-      local roles_json
-      roles_json=$(printf '%s' "$roles" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; ""))')
+      local roles_json scopes_json
+      roles_json=$(_csv_to_jsonarray "$roles")
+      scopes_json=$(_csv_to_jsonarray "$scopes")
       # Build the entry with machine_id only when probed — keeps optional
       # field truly optional (back-compat with hand-edited registries).
       if [ -n "$probed_mid" ]; then
-        jq --arg id "$id" --arg host "$host" --arg user "$user" --arg mid "$probed_mid" --argjson roles "$roles_json" \
-           '.nodes |= ([.[]? | select(.id != $id)] + [{id:$id, machine_id:$mid, host:$host, user:$user, roles:$roles, enabled:true}])' \
+        jq --arg id "$id" --arg host "$host" --arg user "$user" --arg mid "$probed_mid" --argjson roles "$roles_json" --argjson scopes "$scopes_json" \
+           '.nodes |= ([.[]? | select(.id != $id)] + [{id:$id, machine_id:$mid, host:$host, user:$user, roles:$roles, secret_scopes:$scopes, enabled:true}])' \
            "$NODES_JSON" > "$NODES_JSON.tmp" && mv "$NODES_JSON.tmp" "$NODES_JSON"
       else
-        jq --arg id "$id" --arg host "$host" --arg user "$user" --argjson roles "$roles_json" \
-           '.nodes |= ([.[]? | select(.id != $id)] + [{id:$id, host:$host, user:$user, roles:$roles, enabled:true}])' \
+        jq --arg id "$id" --arg host "$host" --arg user "$user" --argjson roles "$roles_json" --argjson scopes "$scopes_json" \
+           '.nodes |= ([.[]? | select(.id != $id)] + [{id:$id, host:$host, user:$user, roles:$roles, secret_scopes:$scopes, enabled:true}])' \
            "$NODES_JSON" > "$NODES_JSON.tmp" && mv "$NODES_JSON.tmp" "$NODES_JSON"
       fi
       ok "added worker '$id'${probed_mid:+ (machine_id ${probed_mid:0:12}…)}"
+      ;;
+    scopes)
+      # Idempotent setter for secret_scopes on an existing entry. Used to
+      # migrate registries that pre-date #284 ("configure.sh worker scopes
+      # laptop asc,slack") without rewriting the rest of the entry.
+      local id="${2:?usage: configure.sh worker scopes <id> <a,b,...>}"
+      local raw="${3-}"
+      local scopes_json
+      scopes_json=$(_csv_to_jsonarray "$raw")
+      jq --arg id "$id" --argjson scopes "$scopes_json" \
+         '.nodes |= map(if .id == $id then .secret_scopes = $scopes else . end)' \
+         "$NODES_JSON" > "$NODES_JSON.tmp" && mv "$NODES_JSON.tmp" "$NODES_JSON"
+      ok "set secret_scopes for '$id' = $(printf '%s' "$scopes_json")"
       ;;
     remove)
       local id="${2:?usage: configure.sh worker remove <id>}"
