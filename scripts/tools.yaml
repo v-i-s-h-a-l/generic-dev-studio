@@ -72,7 +72,7 @@ tools:
     check_type: command
     check_target: jq
     version_cmd: "jq --version 2>/dev/null | sed 's/jq-//'"
-    min_version: ""
+    min_version: "1.5"
     install_type: brew
     install_target: jq
     duration: "<30s"
@@ -88,7 +88,7 @@ tools:
     check_type: command
     check_target: yq
     version_cmd: "yq --version 2>/dev/null | awk '{print $NF}'"
-    min_version: ""
+    min_version: "4.0"
     install_type: brew
     install_target: yq
     duration: "<30s"
@@ -104,7 +104,7 @@ tools:
     check_type: command
     check_target: rsync
     version_cmd: "rsync --version 2>/dev/null | head -1 | sed 's/.*version //; s/ .*//' | head -c 20"
-    min_version: ""
+    min_version: "3.0"
     install_type: brew
     install_target: rsync
     duration: "<30s"
@@ -152,7 +152,7 @@ tools:
     check_type: command
     check_target: git
     version_cmd: "git --version 2>/dev/null | awk '{print $3}'"
-    min_version: ""
+    min_version: "2.25"
     install_type: brew
     install_target: git
     duration: "<1 min"
