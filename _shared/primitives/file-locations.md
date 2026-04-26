@@ -81,7 +81,7 @@ Queries against the ledger go through `scripts/query-plans.sh --kind=<artifact-k
 
 ### Legacy layout (pre-Phase 2.6, preserved)
 
-Kept for historical reads on migrated projects — the directories still hold pre-cutover artifacts (and `chanakya-inbox/processed/` per Q18 archive-as-is). They are no longer written to.
+Kept for historical reads on migrated projects — the directories still hold pre-cutover artifacts (and `chanakya-inbox/processed/` per Q18 archive-as-is). Until #245 (Commit H) flips `DUAL_WRITE_MODE=yaml-only` as the default, the master-plan + inbox debrief paths below are still dual-written on every artifact mutation; post-flip they become read-only (and post-#245 Phase A.4 are archived under `plans/.legacy-archive/`). Test-case artifacts and `chanakya-inbox/assets/` are out of scope for #245 and continue to be written here.
 
 | Artifact | Path (legacy) | Status |
 |---|---|---|
