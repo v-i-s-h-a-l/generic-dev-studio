@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.studio.node-janitor</string>
+
+    <!-- Invoked via /bin/bash with the script as an argument so the LaunchAgent
+         survives macOS Sequoia+ TCC restrictions on script execution from
+         locations like ~/Documents — same pattern as skill-fanout. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__JANITOR_SCRIPT__</string>
+        <string>--quiet</string>
+    </array>
+
+    <!-- Every 6 hours. Sweeps stale derived-data + worktrees on this node. -->
+    <key>StartInterval</key>
+    <integer>21600</integer>
+
+    <!-- Run once at load so the first sweep doesn't wait 6h after install. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/.dev-studio/.runtime/logs/node-janitor.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.dev-studio/.runtime/logs/node-janitor.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

@@ -347,6 +347,10 @@ for _shim in "$SCRIPT_DIR"/*-shim.sh; do
   [ -f "$_shim" ] || continue
   RUNTIME_BIN_SCRIPTS+=("$(basename "$_shim")")
 done
+# node-janitor.sh — periodic disk-sweep daemon on every worker (#129).
+# Not a shim, but follows the same dispatch-path-relative anchor so the
+# LaunchAgent points at a stable location independent of repo placement.
+[ -f "$SCRIPT_DIR/node-janitor.sh" ] && RUNTIME_BIN_SCRIPTS+=("node-janitor.sh")
 
 if [ "$DRY_RUN" = "1" ]; then
   for _rbs in "${RUNTIME_BIN_SCRIPTS[@]}"; do
