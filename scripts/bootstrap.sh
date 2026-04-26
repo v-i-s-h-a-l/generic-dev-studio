@@ -426,6 +426,26 @@ else
   summary "all brew tools satisfied"
 fi
 
+# ---- Phase 5: /etc/paths.d/homebrew for non-interactive SSH (worker/dual) ----
+
+if { [ "$ROLE" = "worker" ] || [ "$ROLE" = "dual" ]; } && command -v brew >/dev/null 2>&1; then
+  _PATHS_D="/etc/paths.d/homebrew"
+  _BREW_PREFIX="$(brew --prefix)"
+  _WANT_BIN="$_BREW_PREFIX/bin"
+  _WANT_SBIN="$_BREW_PREFIX/sbin"
+  if [ -f "$_PATHS_D" ] && grep -qF "$_WANT_BIN" "$_PATHS_D" 2>/dev/null; then
+    ok "/etc/paths.d/homebrew already set"
+  else
+    info "Non-interactive SSH sessions (dispatched builds) don't read ~/.zshrc."
+    info "Writing /etc/paths.d/homebrew so brew tools are on PATH for all shells."
+    if confirm "Write $_PATHS_D (needs sudo)?" "y"; then
+      printf '%s\n%s\n' "$_WANT_BIN" "$_WANT_SBIN" | run sudo tee "$_PATHS_D" >/dev/null
+      ok "Wrote $_PATHS_D"
+      summary "/etc/paths.d/homebrew written for non-interactive SSH"
+    fi
+  fi
+fi
+
 # ============================================================================
 # Step 4 — Studio repo + agent-skill install (manager / dual only)
 # ============================================================================
