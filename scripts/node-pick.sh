@@ -10,7 +10,14 @@
 # output straight into node-dispatch.sh without branching.
 #
 # Usage:
-#   scripts/node-pick.sh <role>
+#   scripts/node-pick.sh [--requires-secret-scope <a>[,<b>...]] <role>
+#
+# `--requires-secret-scope` (#284) restricts candidates to nodes whose
+# `secret_scopes` field includes every requested scope. Nodes with a missing
+# or empty `secret_scopes` advertise no scopes and are filtered out when the
+# flag is passed. With no flag, the field is ignored (existing behavior).
+# Locks D2 from #217 — TF/AS dispatchers ask for `asc,slack`; only the laptop
+# advertises both, so mini is structurally excluded.
 #
 # Output: a single line — either a node id from the registry, or `local`.
 #
@@ -40,7 +47,17 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh" 2>/dev/null || true
 
-ROLE="${1:?usage: node-pick.sh <role>}"
+REQUIRED_SCOPES=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --requires-secret-scope) REQUIRED_SCOPES="${2:?--requires-secret-scope requires <a,b,...>}"; shift 2 ;;
+    --) shift; break ;;
+    -*) printf 'node-pick: unknown flag %s\n' "$1" >&2; exit 2 ;;
+    *) break ;;
+  esac
+done
+
+ROLE="${1:?usage: node-pick.sh [--requires-secret-scope a,b] <role>}"
 
 # _record_reason <reason> — write to side-channel file (best-effort).
 _record_reason() {
@@ -71,24 +88,46 @@ command -v jq >/dev/null 2>&1 || { printf 'error: jq required\n' >&2; exit 2; }
 
 # Drop `.enabled == false` explicitly — jq's `//` treats false like null,
 # so `(.enabled // true) == true` would incorrectly include disabled nodes.
-CANDIDATES=$(jq -r --arg role "$ROLE" \
-  '.nodes[]? | select(.enabled != false) | select(.roles? // [] | index($role)) | .id' \
-  "$REGISTRY" 2>/dev/null) || CANDIDATES=""
+# Secret-scope filter (#284): when REQUIRED_SCOPES is set, every requested
+# scope must appear in the node's `secret_scopes` (missing field = empty).
+# `($req - $have) == []` is the "$have ⊇ $req" check in jq idiom.
+if [ -n "$REQUIRED_SCOPES" ]; then
+  CANDIDATES=$(jq -r --arg role "$ROLE" --arg req "$REQUIRED_SCOPES" \
+    '($req | split(",") | map(gsub("^\\s+|\\s+$"; ""))) as $r
+     | .nodes[]?
+     | select(.enabled != false)
+     | select(.roles? // [] | index($role))
+     | select(($r - (.secret_scopes // [])) == [])
+     | .id' \
+    "$REGISTRY" 2>/dev/null) || CANDIDATES=""
+else
+  CANDIDATES=$(jq -r --arg role "$ROLE" \
+    '.nodes[]? | select(.enabled != false) | select(.roles? // [] | index($role)) | .id' \
+    "$REGISTRY" 2>/dev/null) || CANDIDATES=""
+fi
 
 if [ -z "$CANDIDATES" ]; then
   # Distinguish "no node has this role" from "all role-bearing nodes are
-  # disabled" — the two have different operational meanings (config gap
-  # vs deliberate disable) and different fixes.
+  # disabled" from "no role-bearing node advertises the required scopes" —
+  # each has a different operational meaning and a different fix.
   ANY_ROLE=$(jq -r --arg role "$ROLE" \
     '.nodes[]? | select(.roles? // [] | index($role)) | .id' \
     "$REGISTRY" 2>/dev/null) || ANY_ROLE=""
+  ENABLED_ROLE=$(jq -r --arg role "$ROLE" \
+    '.nodes[]? | select(.enabled != false) | select(.roles? // [] | index($role)) | .id' \
+    "$REGISTRY" 2>/dev/null) || ENABLED_ROLE=""
   if [ -z "$ANY_ROLE" ]; then
-    _record_reason "fallback:no-role"
-    _emit_fallback "fallback:no-role"
+    reason="fallback:no-role"
+  elif [ -z "$ENABLED_ROLE" ]; then
+    reason="fallback:disabled"
   else
-    _record_reason "fallback:disabled"
-    _emit_fallback "fallback:disabled"
+    # Role-bearing + enabled candidates exist but none carry the requested
+    # secret scopes. Distinct signal — points at the registry's secret_scopes
+    # field, not at health/role/enabled config.
+    reason="fallback:secret-scope"
   fi
+  _record_reason "$reason"
+  _emit_fallback "$reason"
   echo "local"
   exit 0
 fi

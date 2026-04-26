@@ -369,6 +369,7 @@ scripts/configure.sh worker add      # interactively add a worker to nodes.json
 scripts/configure.sh worker remove &lt;id&gt;
 scripts/configure.sh worker enable &lt;id&gt;     # nodes.json: enabled = true
 scripts/configure.sh worker disable &lt;id&gt;    # pause without de-registering
+scripts/configure.sh worker scopes &lt;id&gt; asc,slack  # set credential scopes (#284)
 
 scripts/configure.sh manifest        # edit worker-manifest.yaml in $EDITOR
 

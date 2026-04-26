@@ -23,6 +23,7 @@ Fleet management from inside Claude. Onboarding a *new* machine still goes throu
 | `add` | `configure.sh worker add` (interactive prompts in script) | Register a worker |
 | `remove <id>` | `configure.sh worker remove <id>` | Unregister |
 | `enable <id>` / `disable <id>` | `configure.sh worker enable\|disable <id>` | Toggle dispatch eligibility |
+| `scopes <id> <a,b>` | `configure.sh worker scopes <id> <csv>` | Set credential scopes (e.g. `asc,slack`); empty CSV clears. Consumed by `node-pick --requires-secret-scope`. |
 | `health [<id>]` | `node-health.sh [<id>]` | Probe one or all (status + load1) |
 | `sync [<id>\|--all] [--dry-run]` | `sync-worker.sh <id>` or `sync-workers-all.sh` | Push manifest deltas |
 | `schedule on\|off\|status` | `configure.sh schedule …` | Manage the launchd auto-sync agent |
