@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "nodes": [
+    {
+      "id": "fixture-mini",
+      "machine_id": "fixture-mini-uuid",
+      "host": "mini.fixture.local",
+      "user": "fixture",
+      "roles": ["xcodebuild", "swift-test", "release"],
+      "enabled": true,
+      "secret_scopes": []
+    },
+    {
+      "id": "fixture-laptop",
+      "machine_id": "fixture-laptop-uuid",
+      "host": "laptop.fixture.local",
+      "user": "fixture",
+      "roles": ["xcodebuild", "swift-test", "release"],
+      "enabled": true,
+      "secret_scopes": ["asc", "slack"]
+    },
+    {
+      "id": "fixture-third",
+      "machine_id": "fixture-third-uuid",
+      "host": "third.fixture.local",
+      "user": "fixture",
+      "roles": ["xcodebuild", "release"],
+      "enabled": true,
+      "secret_scopes": []
+    }
+  ]
+}

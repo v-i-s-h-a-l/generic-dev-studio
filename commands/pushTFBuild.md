@@ -5,292 +5,121 @@ allowed-tools: [Bash, Read, Edit, Grep]
 
 # Push iOS Build to TestFlight
 
-Archive the current branch and upload it to TestFlight, automatically bumping the build number and version if needed.
+Hybrid wrapper around `scripts/studio-tf-push.sh` (studio repo at `~/Documents/v-i-s-h-a-l/github/generic-dev-studio`). The studio script owns all mechanical work — bump, archive, export+upload, dSYMs — and emits the four pre-Slack events. This wrapper drives Slack composition + the human-approval gate, then emits `slack_drafted` / `slack_sent` via the same script's `emit` subcommand so all six events share one release-tag.
+
+Authoritative procedure: `_shared/contracts/release-tf-push.md`. Project knobs (paths, scheme, ASC ids, Crashlytics plist): `_shared/primitives/turnip-project-config.md`. Slack body rules: `_shared/contracts/build-message-format.md`.
 
 ## Arguments
 
-- `--scheme <name>` *(optional, default `Zaps`)* — which Xcode scheme to archive. Use `Zaps-Internal` to ship an internal-tester build with the `INTERNAL_BUILD` compile flag defined (HUD-enabled). The archive path and status banner echo the chosen scheme; all other steps are unchanged. If omitted, the default `Zaps` / `Release` flow is preserved exactly.
+- `--scheme <name>` *(optional, default `Zaps`)* — pass-through to `studio-tf-push.sh push --scheme`. Use `Zaps-Internal` for the HUD-enabled internal-tester build.
 
-Derive `CONFIGURATION` from the scheme:
-- `Zaps` → `Release`
-- `Zaps-Internal` → `Internal`
-
-## Configuration
-
-See `_shared/primitives/turnip-project-config.md` for all project paths and identifiers (project, scheme, pbxproj, ASC key ID/issuer/key file, App ID, bundle ID, Crashlytics plist, xcpretty).
-
-## Steps
-
-### Step 1: Fetch App Store Connect info
-
-Generate a JWT token and call the App Store Connect API to get:
-
-**a) Latest TestFlight build number** — call the builds endpoint, sort by uploadedDate descending, take the first result's `version` field (this is the build number).
-
-**Use the App Store Connect REST API directly** (JWT pattern from `_shared/primitives/appstore-connect-jwt.md`):
+## Step 1: Pre-mint the release tag (idempotency key)
 
 ```bash
-# Step 1a: Generate JWT using python3
-TOKEN=$(python3 -c "
-import jwt, time, sys
-key = open('$(echo ~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8)').read()
-payload = {'iss': '1fa9f26b-7b13-459a-9225-1ca8d9c51fca', 'iat': int(time.time()), 'exp': int(time.time()) + 1200, 'aud': 'appstoreconnect-v1'}
-print(jwt.encode(payload, key, algorithm='ES256', headers={'kid': 'WJQ6D76K8R'}))
-")
-
-# Step 1b: Get latest build number from TestFlight
-curl -sg "https://api.appstoreconnect.apple.com/v1/builds?sort=-uploadedDate&limit=1&fields[builds]=version" \
-  -H "Authorization: Bearer $TOKEN"
-
-# Step 1c: Get current live App Store version
-curl -sg "https://api.appstoreconnect.apple.com/v1/appStoreVersions?filter[appStoreState]=READY_FOR_SALE&fields[appStoreVersions]=versionString" \
-  -H "Authorization: Bearer $TOKEN"
+export STUDIO_RELEASE_TAG="release-pending-$(date -u +%Y%m%d-%H%M%S)"
 ```
 
-Parse the JSON responses to extract:
-- `LATEST_BUILD_NUMBER` (integer, e.g. 3030)
-- `LIVE_VERSION` (string, e.g. "26.2.0")
+The `push` subcommand reuses this if set; later `emit` calls reuse it too so all six events share one task field.
 
-### Step 2: Determine new build number and version
+## Step 2: Run the studio push script (Steps 1–6 of the contract)
 
-**New build number:** `LATEST_BUILD_NUMBER + 1`
-
-**Version check (load-bearing — read carefully):**
-
-- Get `CURRENT_VERSION` from pbxproj: `grep -m1 "MARKETING_VERSION" <pbxproj>`
-- **The rule is binary and the only input is the App Store live version vs. the pbxproj version. No other input is allowed to drive a bump:**
-  - If `CURRENT_VERSION == LIVE_VERSION` → version MUST bump (current version is already live on the App Store; new TF builds need a new version string).
-  - If `CURRENT_VERSION != LIVE_VERSION` → keep the current version. The current version is still in TestFlight review; multiple TF builds at the same in-flight version is the normal state. Builds distinguish by **build number**, not by version string.
-
-**Forbidden inputs to the bump decision:**
-
-- ✗ "Another branch is on TestFlight at the same version" — irrelevant; testers distinguish by build number.
-- ✗ "Two TF tracks at the same version might confuse testers" — version is App-Store-state-driven, not TF-track-driven.
-- ✗ "Distinguishing the X-feature build from the Y-feature build" — that's a release-note concern, not a version-string concern.
-- ✗ Proposing a menu to the user ("26.4.17 vs 26.4.18?") when the rule says no bump. Don't ask; use the current version and bump only the build number.
-
-The build number ALWAYS bumps to `latest_tf_build_number + 1`, independent of version logic.
-
-**If version bump needed** (and only if), compute new version:
-- `YY` = last 2 digits of current year (e.g. `26`)
-- `M` = current month, no leading zero (e.g. `3` for March)
-- `N`:
-  - Parse `LIVE_VERSION` — if it matches `YY.M.*` (same year and month), take its third part and add 1
-  - Otherwise (different month/year), start at `0`
-- New version = `"YY.M.N"`
-
-### Step 3: Print the plan and proceed
-
-Print a one-line summary, then proceed without asking for confirmation:
-
-```
-Pushing build 3031 (v26.3.1, branch <branch>, scheme <SCHEME>)
+```bash
+cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
+CTX=$(STUDIO_TF_PUSH_LIVE=1 ./scripts/studio-tf-push.sh push ${SCHEME:+--scheme "$SCHEME"} | tail -1)
+RELEASE_TAG=$(echo "$CTX" | jq -r .release_tag)
+NEW_BUILD_NUMBER=$(echo "$CTX" | jq -r .build)
+VERSION=$(echo "$CTX" | jq -r .version)
+BRANCH=$(echo "$CTX" | jq -r .branch)
+PREV_BUILD=$(echo "$CTX" | jq -r .prev_build)
 ```
 
-Echo the resolved `SCHEME` (default `Zaps`, or whatever `--scheme` selected).
+The script emits `release_started`, `archive_completed`, `upload_completed`, `dsym_uploaded` along the way. If it exits non-zero it has already emitted `release_failed` with the stage that broke — surface stderr to the user and stop. Do NOT continue to Slack steps.
 
-The user opted into the release by running the command — no confirmation prompt. If they want a custom version, they can re-invoke with the version flag or abort now.
+## Step 3: Compose the Slack message
 
-**No alternative-version menu.** When Step 2's rule says "no bump", the summary line shows the current version unchanged and the build number bumped. Do not offer "26.4.17 vs 26.4.18?" — the rule decided. If you find yourself reasoning about whether to bump for any reason other than `CURRENT_VERSION == LIVE_VERSION`, stop: that reasoning is the bug. Use the current version, bump only the build number, ship.
+Compose from the user's commits since the last shared TF build, per `_shared/contracts/build-message-format.md`.
 
-### Step 4: Update project.pbxproj
+Find the last shared build:
 
-Use the Edit tool to update `CURRENT_PROJECT_VERSION` and `MARKETING_VERSION` in:
-`/Users/vishalsingh/Documents/Turnip.gg/turnip-ios/zaps-app/Turnip.xcodeproj/project.pbxproj`
+```bash
+cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
+LAST_SHARED_BUILD=$(./scripts/slack-fetch.sh history --channel C016BNCGDM2 --limit 10 \
+  | jq -r 'select(.user=="U0AJYVC8P8X") | .text' \
+  | grep -oE 'build [0-9]+ is available on TestFlight' \
+  | head -1 | grep -oE '[0-9]+')
+```
 
-Both values appear multiple times — update ALL occurrences using `replace_all`.
-
-### Step 5: Commit the version bump
-
-Pre-step: clear stale `.git/index.lock` if safe, then commit via `safe_git_commit` — see `_shared/primitives/safe-git.md` for rationale and the full helper.
+Then:
 
 ```bash
 cd /Users/vishalsingh/Documents/Turnip.gg/turnip-ios
-git add zaps-app/Turnip.xcodeproj/project.pbxproj
-CALLER_SKILL=pushTFBuild safe_git_commit -m "$(cat <<EOF
-Bump build number to <NEW_BUILD_NUMBER>
-
-Preparing TestFlight build <NEW_BUILD_NUMBER> (v<VERSION>) from branch <BRANCH_NAME>.
-
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
-EOF
-)"
-```
-
-### Step 6: Push branch to remote
-
-Push the branch including the version bump commit before archiving:
-```bash
-git push -u origin HEAD
-```
-
-### Step 7: Archive
-
-```bash
-cd /Users/vishalsingh/Documents/Turnip.gg/turnip-ios
-xcodebuild archive \
-  -project zaps-app/Turnip.xcodeproj \
-  -scheme <SCHEME> \
-  -configuration <CONFIGURATION> \
-  -archivePath /tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive \
-  -allowProvisioningUpdates \
-  -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8 \
-  -authenticationKeyID WJQ6D76K8R \
-  -authenticationKeyIssuerID 1fa9f26b-7b13-459a-9225-1ca8d9c51fca \
-  CODE_SIGN_STYLE=Automatic \
-  | /Users/vishalsingh/.gem/ruby/2.6.0/bin/xcpretty || cat
-```
-
-This step takes several minutes. Keep the user informed that archiving is in progress.
-
-**Verify:** After archiving, confirm the `.xcarchive` exists at `/tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive`. If it does not exist, the archive failed — stop here and report the error to the user. Do NOT continue to export or upload.
-
-### Step 8: Export and Upload to App Store Connect
-
-The export options use `destination: upload`, which means `xcodebuild -exportArchive` uploads directly to App Store Connect. No local IPA is produced — there is no separate upload step.
-
-**IMPORTANT:** Do NOT pipe this command through xcpretty. The raw output is short and must be read to verify success or diagnose errors.
-
-```bash
-cat > /tmp/ExportOptions.plist <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>method</key>
-  <string>app-store-connect</string>
-  <key>destination</key>
-  <string>upload</string>
-  <key>signingStyle</key>
-  <string>automatic</string>
-</dict>
-</plist>
-PLIST
-
-xcodebuild -exportArchive \
-  -archivePath /tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive \
-  -exportPath /tmp/<SCHEME>-<NEW_BUILD_NUMBER>-export \
-  -exportOptionsPlist /tmp/ExportOptions.plist \
-  -allowProvisioningUpdates \
-  -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8 \
-  -authenticationKeyID WJQ6D76K8R \
-  -authenticationKeyIssuerID 1fa9f26b-7b13-459a-9225-1ca8d9c51fca \
-  2>&1
-```
-
-**Verify:** Check the raw output carefully:
-- If output contains `** EXPORT FAILED **` or `error:` lines → the upload failed. Stop here and report to the user. Common causes:
-  - "Failed to Use Accounts" → API key authentication issue. Verify the key file exists at `~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8`.
-  - "bundle version must be higher" → build number already exists on App Store Connect.
-- `warning:` lines about missing dSYMs for third-party frameworks (AppsFlyer, Firebase, etc.) are harmless — ignore them.
-- If output contains `Export Succeeded` → the build was uploaded successfully.
-
-Do NOT offer to send a Slack notification unless this step succeeded.
-
-### Step 9: Upload dSYMs to Crashlytics
-
-**Only run this step if Step 8 succeeded.**
-
-The `xcodebuild -exportArchive` pipeline does not trigger the Crashlytics run script, so dSYMs must be uploaded explicitly. Upload them one at a time (bulk upload can crash on certain archives).
-
-```bash
-UPLOAD_SYMBOLS=$(find ~/Library/Developer/Xcode/DerivedData/Turnip-*/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/upload-symbols -maxdepth 0 2>/dev/null | head -1)
-GSIP="/Users/vishalsingh/Documents/Turnip.gg/turnip-ios/zaps-app/Zaps/Firebase/Prod/GoogleService-Info.plist"
-DSYMS_DIR="/tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive/dSYMs"
-
-failed=()
-for dsym in "$DSYMS_DIR"/*.dSYM; do
-  name=$(basename "$dsym")
-  result=$("$UPLOAD_SYMBOLS" -gsp "$GSIP" -p ios "$dsym" 2>&1)
-  if echo "$result" | grep -q "Successfully uploaded"; then
-    echo "✓ $name"
-  else
-    echo "✗ $name"
-    failed+=("$name")
-  fi
-done
-
-if [ ${#failed[@]} -eq 0 ]; then
-  echo "All dSYMs uploaded to Crashlytics."
-else
-  echo "Failed: ${failed[*]}"
-fi
-```
-
-If `UPLOAD_SYMBOLS` is empty (DerivedData was cleaned), report that dSYMs could not be uploaded but continue — it's non-blocking. The archive at `/tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive` will be available for manual upload later.
-
-### Step 10: Compose Slack notification
-
-**Only reach this step if Steps 7 and 8 both succeeded with verified outputs.**
-
-Immediately proceed to compose the Slack message — do NOT ask whether to notify first. After composing, show the draft to the user and ask if they'd like to make any edits or send it as-is.
-
-### Step 11: Get relevant commits for message composition
-
-The Slack message should be composed from **the user's (vishal) commits only** on the current branch. Use the bump-to-bump range to find commits since the last build that was shared on #testing.
-
-**Step 11a: Find the last build that was posted to #testing.** Fetch recent messages from #testing posted by Vishal-CLI (bot user `U0AJYVC8P8X`) and find the most recent build number mentioned.
-
-Load the Slack bot token using the pattern in `_shared/primitives/slack-post.md` (token path, missing-token error, and remediation are documented there).
-
-```bash
-SLACK_BOT_TOKEN=$(cat ~/.claude/secrets/slack-bot-token)
-curl -s "https://slack.com/api/conversations.history?channel=C016BNCGDM2&limit=10" \
-  -H "Authorization: Bearer $SLACK_BOT_TOKEN"
-```
-
-Look for the last message from Vishal-CLI that contains "build NNNN is available on TestFlight" and extract that build number as `LAST_SHARED_BUILD`.
-
-**Step 11b: Get vishal's commits since that build:**
-
-```bash
-LAST_SHARED_BUMP=$(git log --oneline --all --grep="Bump build number to <LAST_SHARED_BUILD>" | head -1 | cut -d' ' -f1)
+LAST_SHARED_BUMP=$(git log --oneline --all --grep="Bump build number to $LAST_SHARED_BUILD" | head -1 | cut -d' ' -f1)
 git log --no-merges --author="vishal" --format="%h | %s%n%b%n---" ${LAST_SHARED_BUMP}..HEAD | grep -viE "Bump (build|version)"
 ```
 
-Read the full commit messages (subject + body) to understand the user-facing impact.
+Read full commit messages (subject + body). Compose per `build-message-format.md`:
 
-### Step 12: Compose the message
+- Three sections: `*New*` / `*Fixed*` / `*Crash fixes*` — skip empty sections.
+- Feature rollup under *New*; bare crash-link bullets under *Crash fixes*.
+- Name regressions explicitly under *Fixed* as `• regression bug fix: <thing>`.
+- Rollover line `• includes changes from <PREV_BUILD_NUMBER>` when stacking on an unreleased TF (compare `LAST_SHARED_BUILD` vs `PREV_BUILD` from the context — if they differ, prepend a rollover bullet).
+- Headline: `<!here> [iOS] build <NEW_BUILD_NUMBER> is available on TestFlight`. Drop `<!here>` for buddy/internal/silent builds.
 
-Compose the message from vishal's commits **first**, before scanning for reporters. Follow `_shared/contracts/build-message-format.md` for the full composition rules — three-section shape (`*New*` / `*Fixed*` / `*Crash fixes*`, skip empty sections), feature rollup under *New*, crash-fix bare-link bullets, cc-mentions inline (TF-only, added in Step 13), and `• includes changes from <PREV_BUILD_NUMBER>` rollover when stacking on an unreleased TF.
-
-Name regressions explicitly under *Fixed* as `• regression bug fix: <thing>` — testers need to see the net delta from the prior TF build.
-
-Headline: `<!here> [iOS] build <NEW_BUILD_NUMBER> is available on TestFlight` — `<!here>` on parent only, never in thread replies (Slack ignores it there). Drop `<!here>` for buddy/internal/silent builds.
-
-### Step 13: Scan recent Vishal-CLI build threads for bug reporters
-
-**After composing the message**, scan the last 3–4 build/TestFlight message threads posted by Vishal-CLI (bot user `U0AJYVC8P8X`) in #testing. Only look at threads started by Vishal-CLI that are build notifications.
+## Step 4: Scan recent threads for cc-tag attribution
 
 ```bash
-# Get recent #testing messages, filter for Vishal-CLI build messages
-curl -s "https://slack.com/api/conversations.history?channel=C016BNCGDM2&limit=15" \
-  -H "Authorization: Bearer $SLACK_BOT_TOKEN"
-
-# For each Vishal-CLI build message with replies, fetch the thread
-curl -s "https://slack.com/api/conversations.replies?channel=C016BNCGDM2&ts=MESSAGE_TS" \
-  -H "Authorization: Bearer $SLACK_BOT_TOKEN"
-
-# Resolve user display names (for showing to user only)
-curl -s "https://slack.com/api/users.info?user=USER_ID" \
-  -H "Authorization: Bearer $SLACK_BOT_TOKEN"
+cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
+./scripts/slack-fetch.sh history --channel C016BNCGDM2 --limit 15
+# For each Vishal-CLI build message with replies:
+./scripts/slack-fetch.sh replies --channel C016BNCGDM2 --ts <MESSAGE_TS>
+# Resolve display names (review only):
+./scripts/slack-fetch.sh user --user <USER_ID>
 ```
 
-For each composed bullet point, check if any thread reply in those 3–4 build threads reported the same bug or requested the same feature. If there's a match, append `cc: <@USER_ID>` to that bullet. **Do not change the language of the bullet points** — only add the tag.
+Append `cc: <@USER_ID>` inline on bullets that match a thread reply. Show parenthesised display name to the user only — strip before sending.
 
-When showing the draft to the user, display the person's real name in parentheses next to the tag — e.g. `cc: <@U12345> (John)`. The parenthesised name is for the user's reference only and must NOT be included in the final Slack message.
-
-**Always show the draft to the user and ask: "Want me to send this, or would you like to make any edits?"** Wait for explicit user approval before sending.
-
-### Step 14: Send to Slack
+## Step 5: Emit `slack_drafted`
 
 ```bash
-curl -s -X POST https://slack.com/api/chat.postMessage \
-  --data-urlencode "channel=C016BNCGDM2" \
-  --data-urlencode "text=MESSAGE_HERE" \
-  -H "Authorization: Bearer $SLACK_BOT_TOKEN"
+BULLETS=$(echo "$BODY" | grep -c '^•')
+CCS=$(echo "$BODY" | grep -oE 'cc: <@[A-Z0-9]+>' | wc -l | tr -d ' ')
+cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
+./scripts/studio-tf-push.sh emit slack_drafted --release-tag "$RELEASE_TAG" \
+  --data "$(jq -nc --argjson b "$NEW_BUILD_NUMBER" --argjson bc "$BULLETS" --argjson cc "$CCS" \
+              '{build:$b, channel:"#testing", bullet_count:$bc, cc_count:$cc}')"
 ```
 
-Replace `MESSAGE_HERE` with the final approved message text. Confirm to the user that the message was sent successfully.
+## Step 6: Human-approval gate
 
-**Thread replies and `<!here>` rules:** See `_shared/primitives/slack-post.md`.
+Show the draft to the user verbatim — include parenthesised display names next to each `<@USER_ID>` for review readability. Ask: **"Send this, or edit first?"**
+
+If the user edits, update the draft and re-emit `slack_drafted` with the same `--release-tag` (the ledger keys on it; consumers see one drafted span with the latest content). Wait for explicit approval before Step 7.
+
+## Step 7: Send to Slack
+
+Strip parenthesised display names from the body, then:
+
+```bash
+cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
+RESP=$(./scripts/slack-post.sh --channel C016BNCGDM2 --text "$FINAL_BODY")
+PARENT_TS=$(echo "$RESP" | jq -r .ts)
+[ -n "$PARENT_TS" ] && [ "$PARENT_TS" != "null" ] || { echo "slack-post returned no ts"; exit 1; }
+
+CHARS=$(printf '%s' "$FINAL_BODY" | wc -c | tr -d ' ')
+./scripts/studio-tf-push.sh emit slack_sent --release-tag "$RELEASE_TAG" \
+  --data "$(jq -nc --argjson b "$NEW_BUILD_NUMBER" --arg ts "$PARENT_TS" --argjson c "$CHARS" \
+              '{build:$b, channel:"#testing", parent_ts:$ts, message_chars:$c}')"
+```
+
+If the post fails:
+
+```bash
+./scripts/studio-tf-push.sh emit release_failed --release-tag "$RELEASE_TAG" \
+  --data "$(jq -nc --arg r "$REASON" '{stage:"slack_send", reason:$r}')"
+```
+
+The build is already on TestFlight; the failure is in notification, not delivery. Do not re-run upload.
+
+## Rollback
+
+To revert this wrapper to the legacy prose-driven runbook: `git revert` the commit that introduced this version in the studio repo's `commands/pushTFBuild.md`. The legacy version drove every step inline without `studio-tf-push.sh`.

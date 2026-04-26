@@ -1,42 +1,46 @@
 #!/usr/bin/env bash
 # studio-tf-push.sh — studio-owned TestFlight / App Store Connect push driver.
 #
-# Skeleton implementation per `_shared/contracts/release-tf-push.md` (Stage B
-# of #217). This is the entry point Stage E will swap `/pushTFBuild` over to.
+# Implements `_shared/contracts/release-tf-push.md` Steps 1–6 (TF push) and
+# the App Store Connect submission path. Step 7–9 (Slack draft + human
+# approval + send) live in the slash-command wrapper because they need LLM
+# judgment and a user-approval gate; the wrapper emits `slack_drafted` /
+# `slack_sent` via `studio-tf-push.sh emit` so the event taxonomy stays
+# under one roof.
 #
-# Today the script:
-#   1. Routes to the laptop via `node-pick --requires-secret-scope asc,slack`.
-#   2. Walks the 14 logical steps from the contract (collapsed into 6 phases).
-#   3. Emits the seven events the contract registers — `release_started`,
-#      `archive_completed`, `upload_completed`, `dsym_uploaded`, `slack_drafted`,
-#      `slack_sent`, plus `release_failed` on the failure path.
-#   4. Stubs every external-effect step (archive, upload, dSYM upload, Slack
-#      send) behind the `STUDIO_TF_PUSH_LIVE=1` env-var gate. Default off — the
-#      script refuses loud per R14 if asked to do real work without the gate.
-#
-# Real archive / upload / Slack bodies port from the user's `~/.claude/commands/
-# pushTFBuild.md` once Stage D's Slack primitives exist and a release window is
-# open (Stage E). This file holds the shape; Stage E fills it in.
+# Subcommands:
+#   push       (default) — Steps 1–6 of release-tf-push.md. Bumps build /
+#              version, archives, exports + uploads to ASC, uploads dSYMs.
+#              Outputs a one-line JSON context blob on stdout for the wrapper
+#              (release_tag, build, version, scheme, branch, archive_path,
+#              prev_build).
+#   appstore   — App Store submission: tag + push tag, GH draft release,
+#              find build on ASC, create/update version, set MANUAL release,
+#              update whatsNew per localization. Inputs (release notes, what's
+#              new) come from files prepared by the wrapper after user
+#              approval.
+#   emit       — emit one release event (`slack_drafted` / `slack_sent` /
+#              `release_failed`) with the same release-tag the wrapper
+#              captured from `push`. Lets the wrapper participate in the
+#              event taxonomy without exposing `lib-ledger.sh` directly.
 #
 # Usage:
-#   scripts/studio-tf-push.sh [--dry-run]
-#
-# Flags:
-#   --dry-run   skip every external effect (no archive, no upload, no Slack
-#               post). Emits all six events with `mode: "dry-run"` in the data
-#               payload so dashboards can filter rehearsal runs out. Exit 0
-#               on a clean walk; exit non-zero only if the routing or event
-#               emission itself broke.
+#   scripts/studio-tf-push.sh [push] [--scheme <name>] [--dry-run]
+#   scripts/studio-tf-push.sh appstore --build <n> --version <v> \
+#                              --release-notes-file <path> --whatsnew-file <path> \
+#                              [--dry-run]
+#   scripts/studio-tf-push.sh emit <event> --release-tag <tag> --data <json>
 #
 # Env:
-#   STUDIO_TF_PUSH_LIVE=1   required to run any real external effect. Without
-#                           it (and without --dry-run), the script halts at
-#                           the prereq gate and emits `release_failed` with
-#                           `stage: "prereq"` — Stage E flips this default
-#                           once the live wrappers land.
-#   STUDIO_TF_PUSH_FIXTURE_NODE   override the resolved node id (smoke tests
-#                                 read this to assert routing without touching
-#                                 the real registry).
+#   STUDIO_TF_PUSH_LIVE=1         required for non-dry-run external effects.
+#                                 Wrappers set this; bare CLI invocations do
+#                                 not, so accidental live pushes are blocked.
+#   STUDIO_RELEASE_TAG            if set, `push` reuses this tag instead of
+#                                 minting one. Wrappers generate the tag up
+#                                 front so that `push` and later `emit` calls
+#                                 share one idempotency key.
+#   STUDIO_TF_PUSH_FIXTURE_NODE   override the resolved node id (smoke tests).
+#   STUDIO_TF_PUSH_SKIP_NODE_PICK=1   skip the node-pick gate (fixtures only).
 
 set -u
 umask 022
@@ -47,29 +51,17 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
 
-# ---------- args ----------
+# Project config (from _shared/primitives/turnip-project-config.md).
+PROJECT_ROOT="/Users/vishalsingh/Documents/Turnip.gg/turnip-ios"
+PBXPROJ="$PROJECT_ROOT/zaps-app/Turnip.xcodeproj/project.pbxproj"
+PROJECT_RELPATH="zaps-app/Turnip.xcodeproj"
+ASC_KEY_ID="WJQ6D76K8R"
+ASC_ISSUER_ID="1fa9f26b-7b13-459a-9225-1ca8d9c51fca"
+ASC_KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8"
+APP_ID="6502945736"
+GSIP_PATH="$PROJECT_ROOT/zaps-app/Zaps/Firebase/Prod/GoogleService-Info.plist"
+XCPRETTY="/Users/vishalsingh/.gem/ruby/2.6.0/bin/xcpretty"
 
-DRY_RUN_FLAG=0
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --dry-run) DRY_RUN_FLAG=1; shift ;;
-    -h|--help)
-      sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
-      exit 0 ;;
-    --) shift; break ;;
-    *) printf 'studio-tf-push: unknown arg %s\n' "$1" >&2; exit 2 ;;
-  esac
-done
-
-LIVE="${STUDIO_TF_PUSH_LIVE:-0}"
-
-# ---------- release tag (idempotency key, per contract §Idempotency) ----------
-
-RELEASE_TAG="release-pending-$(date -u +%Y%m%d-%H%M%S)"
-
-# ---------- helpers ----------
-
-# Build a JSON object from k=v pairs. Values are JSON-escaped.
 _json_obj() {
   local out='{}'
   for kv in "$@"; do
@@ -83,10 +75,9 @@ _json_obj() {
   printf '%s' "$out"
 }
 
-# emit_release <event> <data-json>
 emit_release() {
   local event="$1" data="${2:-{\}}"
-  if [ "$DRY_RUN_FLAG" = "1" ]; then
+  if [ "${DRY_RUN_FLAG:-0}" = "1" ]; then
     data=$(printf '%s' "$data" | jq -c '. + {"mode":"dry-run"}')
   fi
   emit_event_keyed studio release "$event" "$RELEASE_TAG" "$data" >/dev/null
@@ -101,123 +92,409 @@ halt_failed() {
   exit 1
 }
 
-# ---------- Phase 0 — Resolve dispatch node (Stage A integration) ----------
+mint_jwt() {
+  python3 - <<PY 2>/dev/null
+import jwt, time
+key = open('$ASC_KEY_PATH').read()
+payload = {'iss': '$ASC_ISSUER_ID', 'iat': int(time.time()), 'exp': int(time.time()) + 1200, 'aud': 'appstoreconnect-v1'}
+print(jwt.encode(payload, key, algorithm='ES256', headers={'kid': '$ASC_KEY_ID'}))
+PY
+}
 
-if [ -n "${STUDIO_TF_PUSH_FIXTURE_NODE:-}" ]; then
-  NODE="$STUDIO_TF_PUSH_FIXTURE_NODE"
-else
-  NODE=$("$SCRIPT_DIR/node-pick.sh" --requires-secret-scope asc,slack release 2>/dev/null || echo local)
-fi
+route_to_release_node() {
+  if [ "${STUDIO_TF_PUSH_SKIP_NODE_PICK:-0}" = "1" ]; then
+    NODE="local-skipped"
+    return
+  fi
+  if [ -n "${STUDIO_TF_PUSH_FIXTURE_NODE:-}" ]; then
+    NODE="$STUDIO_TF_PUSH_FIXTURE_NODE"
+  else
+    NODE=$("$SCRIPT_DIR/node-pick.sh" --requires-secret-scope asc,slack release 2>/dev/null || echo local)
+  fi
+  if [ "$NODE" = "local" ]; then
+    halt_failed prereq "no node advertises asc,slack scopes — refusing to run secret-bearing work locally"
+  fi
+}
 
-if [ "$NODE" = "local" ]; then
-  # `local` here means no node advertised both scopes — fail loud rather than
-  # run secret-bearing code on an unauthorized host. Stage A's `node_fallback`
-  # event already carries the diagnostic; this halt is the policy enforcement.
-  halt_failed prereq "no node advertises asc,slack scopes — refusing to run secret-bearing work locally"
-fi
+cmd_emit() {
+  local event="${1:-}"; shift || true
+  case "$event" in
+    slack_drafted|slack_sent|release_failed) ;;
+    *) printf 'emit: event must be slack_drafted|slack_sent|release_failed (got %s)\n' "$event" >&2; exit 2 ;;
+  esac
+  local rt="" data="{}"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --release-tag) rt="${2:?}"; shift 2 ;;
+      --data) data="${2:?}"; shift 2 ;;
+      *) printf 'emit: unknown arg %s\n' "$1" >&2; exit 2 ;;
+    esac
+  done
+  [ -n "$rt" ] || { printf 'emit: --release-tag required\n' >&2; exit 2; }
+  printf '%s' "$data" | jq -e . >/dev/null 2>&1 || { printf 'emit: --data must be valid JSON\n' >&2; exit 2; }
+  emit_event_keyed studio release "$event" "$rt" "$data" >/dev/null
+}
 
-printf 'studio-tf-push: routed to %s (release-tag=%s, dry-run=%s, live=%s)\n' \
-  "$NODE" "$RELEASE_TAG" "$DRY_RUN_FLAG" "$LIVE"
+cmd_push() {
+  DRY_RUN_FLAG=0
+  local SCHEME="Zaps"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run) DRY_RUN_FLAG=1; shift ;;
+      --scheme) SCHEME="${2:?}"; shift 2 ;;
+      *) printf 'push: unknown arg %s\n' "$1" >&2; exit 2 ;;
+    esac
+  done
 
-# ---------- Phase 1 — Prereqs + ASC state (contract Steps 1–2) ----------
+  local CONFIGURATION="Release"
+  case "$SCHEME" in
+    Zaps) CONFIGURATION="Release" ;;
+    Zaps-Internal) CONFIGURATION="Internal" ;;
+  esac
 
-# Live work without the gate is refused per R14 — emit a release_failed and
-# exit. Dry-run does not need the gate; the whole point is a credential-free
-# rehearsal of the event sequence.
-if [ "$DRY_RUN_FLAG" != "1" ] && [ "$LIVE" != "1" ]; then
-  halt_failed prereq "STUDIO_TF_PUSH_LIVE=1 required for non-dry-run; refusing real archive/upload (R14)"
-fi
+  local LIVE="${STUDIO_TF_PUSH_LIVE:-0}"
+  if [ "$DRY_RUN_FLAG" != "1" ] && [ "$LIVE" != "1" ]; then
+    RELEASE_TAG="${STUDIO_RELEASE_TAG:-release-pending-$(date -u +%Y%m%d-%H%M%S)}"
+    halt_failed prereq "STUDIO_TF_PUSH_LIVE=1 required for non-dry-run; refusing real archive/upload (R14)"
+  fi
 
-# Stub values for the dry-run skeleton. Stage E replaces these with live ASC
-# reads + pbxproj parsing per contract §Step 1.
-BUILD_FROM=0
-LIVE_VERSION="0.0.0"
-CURRENT_VERSION="0.0.0"
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
-NEW_BUILD_NUMBER=$((BUILD_FROM + 1))
-VERSION="$CURRENT_VERSION"
+  route_to_release_node
+  local BRANCH
+  BRANCH=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 
-emit_release release_started "$(_json_obj \
-  "build_from=$BUILD_FROM" \
-  "live_version=$LIVE_VERSION" \
-  "current_version=$CURRENT_VERSION" \
-  "branch=$BRANCH")"
+  # Phase 1 — ASC state + version decision (Steps 1–2).
+  local LATEST_BUILD_NUMBER=0 LIVE_VERSION="0.0.0" CURRENT_VERSION="0.0.0"
+  if [ "$DRY_RUN_FLAG" = "1" ]; then
+    :
+  else
+    local TOKEN
+    TOKEN=$(mint_jwt)
+    [ -n "$TOKEN" ] || halt_failed prereq "ASC JWT mint failed (check $ASC_KEY_PATH)"
 
-# ---------- Phase 2 — Archive (contract Steps 3–4) ----------
+    local builds_resp versions_resp
+    builds_resp=$(curl -sg "https://api.appstoreconnect.apple.com/v1/builds?sort=-uploadedDate&limit=1&fields[builds]=version" \
+      -H "Authorization: Bearer $TOKEN")
+    versions_resp=$(curl -sg "https://api.appstoreconnect.apple.com/v1/appStoreVersions?filter[appStoreState]=READY_FOR_SALE&fields[appStoreVersions]=versionString" \
+      -H "Authorization: Bearer $TOKEN")
+    LATEST_BUILD_NUMBER=$(printf '%s' "$builds_resp" | jq -r '.data[0].attributes.version // empty')
+    LIVE_VERSION=$(printf '%s' "$versions_resp" | jq -r '.data[0].attributes.versionString // empty')
+    [ -n "$LATEST_BUILD_NUMBER" ] || halt_failed prereq "could not parse latest TF build from ASC response"
+    [ -n "$LIVE_VERSION" ] || halt_failed prereq "could not parse live App Store version from ASC response"
+    CURRENT_VERSION=$(grep -m1 "MARKETING_VERSION" "$PBXPROJ" | sed -E 's/.*= ([^;]+);.*/\1/' | tr -d ' ')
+    [ -n "$CURRENT_VERSION" ] || halt_failed prereq "could not parse MARKETING_VERSION from pbxproj"
+  fi
 
-ARCHIVE_PATH="/tmp/stub-$NEW_BUILD_NUMBER.xcarchive"
-SCHEME="stub"
+  RELEASE_TAG="${STUDIO_RELEASE_TAG:-release-$((LATEST_BUILD_NUMBER + 1))-$(date -u +%Y%m%d-%H%M%S)}"
 
-if [ "$DRY_RUN_FLAG" = "1" ]; then
-  printf 'studio-tf-push: [dry-run] would archive scheme=%s build=%s → %s\n' \
-    "$SCHEME" "$NEW_BUILD_NUMBER" "$ARCHIVE_PATH"
-else
-  # Stage E owns the live xcodebuild archive call. Skeleton refuses to invoke
-  # it — see header comment.
-  halt_failed archive "live archive not implemented — Stage E ports from pushTFBuild.md"
-fi
+  emit_release release_started "$(_json_obj \
+    "build_from=$LATEST_BUILD_NUMBER" \
+    "live_version=$LIVE_VERSION" \
+    "current_version=$CURRENT_VERSION" \
+    "branch=$BRANCH")"
 
-emit_release archive_completed "$(_json_obj \
-  "build=$NEW_BUILD_NUMBER" \
-  "version=$VERSION" \
-  "scheme=$SCHEME" \
-  "archive_path=$ARCHIVE_PATH" \
-  "duration_s=0")"
+  printf 'studio-tf-push: routed to %s (release-tag=%s, dry-run=%s, scheme=%s)\n' \
+    "$NODE" "$RELEASE_TAG" "$DRY_RUN_FLAG" "$SCHEME" >&2
 
-# ---------- Phase 3 — Export + upload (contract Step 5) ----------
+  local NEW_BUILD_NUMBER=$((LATEST_BUILD_NUMBER + 1))
+  local VERSION="$CURRENT_VERSION"
 
-if [ "$DRY_RUN_FLAG" = "1" ]; then
-  printf 'studio-tf-push: [dry-run] would export + upload build %s to ASC\n' "$NEW_BUILD_NUMBER"
-else
-  halt_failed upload "live upload not implemented — Stage E"
-fi
+  if [ "$DRY_RUN_FLAG" != "1" ] && [ "$CURRENT_VERSION" = "$LIVE_VERSION" ]; then
+    local YY MM N
+    YY=$(date -u +%y)
+    MM=$(date -u +%-m)
+    if [[ "$LIVE_VERSION" =~ ^${YY}\.${MM}\.([0-9]+)$ ]]; then
+      N=$(( ${BASH_REMATCH[1]} + 1 ))
+    else
+      N=0
+    fi
+    VERSION="${YY}.${MM}.${N}"
+  fi
 
-emit_release upload_completed "$(_json_obj \
-  "build=$NEW_BUILD_NUMBER" \
-  "version=$VERSION" \
-  "duration_s=0")"
+  # Phase 1.5 — pbxproj bump + commit + push (Step 3).
+  if [ "$DRY_RUN_FLAG" = "1" ]; then
+    printf 'studio-tf-push: [dry-run] would bump pbxproj to build=%s version=%s and push branch=%s\n' \
+      "$NEW_BUILD_NUMBER" "$VERSION" "$BRANCH" >&2
+  else
+    case "$BRANCH" in
+      main|master|trunk|develop) halt_failed prereq "active branch '$BRANCH' is a base branch — R11 forbids studio-initiated push" ;;
+    esac
+    if ! sed -i '' \
+        -e "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = ${NEW_BUILD_NUMBER};/g" \
+        -e "s/MARKETING_VERSION = [^;]*;/MARKETING_VERSION = ${VERSION};/g" \
+        "$PBXPROJ"; then
+      halt_failed prereq "pbxproj sed bump failed"
+    fi
+    (
+      cd "$PROJECT_ROOT" || halt_failed prereq "cd $PROJECT_ROOT failed"
+      local lock
+      lock="$(git rev-parse --git-dir)/index.lock"
+      if [ -e "$lock" ] && ! pgrep -f "git .* $PROJECT_ROOT" >/dev/null; then
+        rm -f "$lock"
+      fi
+      git add zaps-app/Turnip.xcodeproj/project.pbxproj
+      git commit -m "$(cat <<EOF
+Bump build number to ${NEW_BUILD_NUMBER}
 
-# ---------- Phase 4 — dSYM upload (contract Step 6) ----------
+Preparing TestFlight build ${NEW_BUILD_NUMBER} (v${VERSION}) from branch ${BRANCH}.
 
-if [ "$DRY_RUN_FLAG" = "1" ]; then
-  printf 'studio-tf-push: [dry-run] would upload dSYMs to Crashlytics\n'
-fi
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)" || exit 1
+      git push -u origin HEAD || exit 1
+    ) || halt_failed prereq "version-bump commit/push failed"
+  fi
 
-emit_release dsym_uploaded "$(_json_obj \
-  "build=$NEW_BUILD_NUMBER" \
-  "count_succeeded=0" \
-  "count_failed=0" \
-  "count_skipped=0" \
-  "reason=dry_run")"
+  # Phase 2 — Archive (Step 4).
+  local ARCHIVE_PATH="/tmp/${SCHEME}-${NEW_BUILD_NUMBER}.xcarchive"
+  local archive_started_at archive_duration_s=0
+  archive_started_at=$(date +%s)
 
-# ---------- Phase 5 — Compose + draft Slack (contract Steps 7–8) ----------
+  if [ "$DRY_RUN_FLAG" = "1" ]; then
+    printf 'studio-tf-push: [dry-run] would archive scheme=%s build=%s → %s\n' \
+      "$SCHEME" "$NEW_BUILD_NUMBER" "$ARCHIVE_PATH" >&2
+  else
+    (
+      cd "$PROJECT_ROOT" || exit 1
+      xcodebuild archive \
+        -project "$PROJECT_RELPATH" \
+        -scheme "$SCHEME" \
+        -configuration "$CONFIGURATION" \
+        -archivePath "$ARCHIVE_PATH" \
+        -allowProvisioningUpdates \
+        -authenticationKeyPath "$ASC_KEY_PATH" \
+        -authenticationKeyID "$ASC_KEY_ID" \
+        -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+        CODE_SIGN_STYLE=Automatic \
+        2>&1 | { [ -x "$XCPRETTY" ] && "$XCPRETTY" || cat; }
+    )
+    [ -d "$ARCHIVE_PATH" ] || halt_failed archive "xcarchive missing at $ARCHIVE_PATH"
+    archive_duration_s=$(( $(date +%s) - archive_started_at ))
+  fi
 
-if [ "$DRY_RUN_FLAG" = "1" ]; then
-  printf 'studio-tf-push: [dry-run] would compose Slack draft + show approval gate\n'
-else
-  halt_failed draft "live Slack composition not implemented — Stage D + E"
-fi
+  emit_release archive_completed "$(_json_obj \
+    "build=$NEW_BUILD_NUMBER" \
+    "version=$VERSION" \
+    "scheme=$SCHEME" \
+    "archive_path=$ARCHIVE_PATH" \
+    "duration_s=$archive_duration_s")"
 
-emit_release slack_drafted "$(_json_obj \
-  "build=$NEW_BUILD_NUMBER" \
-  "channel=#testing" \
-  "bullet_count=0" \
-  "cc_count=0")"
+  # Phase 3 — Export + upload (Step 5).
+  local upload_started_at upload_duration_s=0
+  upload_started_at=$(date +%s)
 
-# ---------- Phase 6 — Send (contract Step 9) ----------
+  if [ "$DRY_RUN_FLAG" = "1" ]; then
+    printf 'studio-tf-push: [dry-run] would export + upload build %s to ASC\n' "$NEW_BUILD_NUMBER" >&2
+  else
+    local export_plist="/tmp/ExportOptions-${NEW_BUILD_NUMBER}.plist"
+    cat > "$export_plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key>
+  <string>app-store-connect</string>
+  <key>destination</key>
+  <string>upload</string>
+  <key>signingStyle</key>
+  <string>automatic</string>
+</dict>
+</plist>
+PLIST
+    local export_log="/tmp/${SCHEME}-${NEW_BUILD_NUMBER}-export.log"
+    if ! xcodebuild -exportArchive \
+        -archivePath "$ARCHIVE_PATH" \
+        -exportPath "/tmp/${SCHEME}-${NEW_BUILD_NUMBER}-export" \
+        -exportOptionsPlist "$export_plist" \
+        -allowProvisioningUpdates \
+        -authenticationKeyPath "$ASC_KEY_PATH" \
+        -authenticationKeyID "$ASC_KEY_ID" \
+        -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+        >"$export_log" 2>&1; then
+      halt_failed upload "xcodebuild -exportArchive exit non-zero (log: $export_log)"
+    fi
+    if grep -q '\*\* EXPORT FAILED \*\*' "$export_log" || grep -E '^error:' "$export_log" >/dev/null; then
+      halt_failed upload "export reported failure (log: $export_log)"
+    fi
+    grep -q 'Export Succeeded' "$export_log" || halt_failed upload "no 'Export Succeeded' marker (log: $export_log)"
+    upload_duration_s=$(( $(date +%s) - upload_started_at ))
+  fi
 
-if [ "$DRY_RUN_FLAG" = "1" ]; then
-  printf 'studio-tf-push: [dry-run] would post to #testing on user approval\n'
-  PARENT_TS="0000000000.000000"
-else
-  halt_failed slack_send "live Slack post not implemented — Stage D + E"
-fi
+  emit_release upload_completed "$(_json_obj \
+    "build=$NEW_BUILD_NUMBER" \
+    "version=$VERSION" \
+    "duration_s=$upload_duration_s")"
 
-emit_release slack_sent "$(_json_obj \
-  "build=$NEW_BUILD_NUMBER" \
-  "channel=#testing" \
-  "parent_ts=$PARENT_TS" \
-  "message_chars=0")"
+  # Phase 4 — dSYM upload (Step 6).
+  local dsym_succeeded=0 dsym_failed=0 dsym_skipped=0 dsym_reason=""
 
-printf 'studio-tf-push: complete (release-tag=%s)\n' "$RELEASE_TAG"
-exit 0
+  if [ "$DRY_RUN_FLAG" = "1" ]; then
+    printf 'studio-tf-push: [dry-run] would upload dSYMs to Crashlytics\n' >&2
+    dsym_reason="dry_run"
+  else
+    local upload_symbols
+    upload_symbols=$(find ~/Library/Developer/Xcode/DerivedData -maxdepth 5 -type f -name upload-symbols 2>/dev/null \
+                       | grep -m1 'firebase-ios-sdk/Crashlytics/upload-symbols' || true)
+    if [ -z "$upload_symbols" ]; then
+      dsym_reason="derived_data_clean"
+    else
+      local dsyms_dir="$ARCHIVE_PATH/dSYMs"
+      shopt -s nullglob
+      for dsym in "$dsyms_dir"/*.dSYM; do
+        if "$upload_symbols" -gsp "$GSIP_PATH" -p ios "$dsym" 2>&1 | grep -q "Successfully uploaded"; then
+          dsym_succeeded=$((dsym_succeeded + 1))
+        else
+          dsym_failed=$((dsym_failed + 1))
+        fi
+      done
+      shopt -u nullglob
+    fi
+  fi
+
+  local dsym_data
+  if [ -n "$dsym_reason" ]; then
+    dsym_data=$(_json_obj \
+      "build=$NEW_BUILD_NUMBER" \
+      "count_succeeded=$dsym_succeeded" \
+      "count_failed=$dsym_failed" \
+      "count_skipped=$dsym_skipped" \
+      "reason=$dsym_reason")
+  else
+    dsym_data=$(jq -nc \
+      --argjson build "$NEW_BUILD_NUMBER" \
+      --argjson s "$dsym_succeeded" --argjson f "$dsym_failed" --argjson k "$dsym_skipped" \
+      '{build:$build, count_succeeded:$s, count_failed:$f, count_skipped:$k, reason:null}')
+  fi
+  emit_release dsym_uploaded "$dsym_data"
+
+  jq -nc \
+    --arg release_tag "$RELEASE_TAG" \
+    --argjson build "$NEW_BUILD_NUMBER" \
+    --arg version "$VERSION" \
+    --arg scheme "$SCHEME" \
+    --arg branch "$BRANCH" \
+    --arg archive_path "$ARCHIVE_PATH" \
+    --argjson prev_build "$LATEST_BUILD_NUMBER" \
+    '{release_tag:$release_tag, build:$build, version:$version, scheme:$scheme, branch:$branch, archive_path:$archive_path, prev_build:$prev_build}'
+}
+
+cmd_appstore() {
+  DRY_RUN_FLAG=0
+  local BUILD="" VERSION="" RELEASE_NOTES_FILE="" WHATSNEW_FILE=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run) DRY_RUN_FLAG=1; shift ;;
+      --build) BUILD="${2:?}"; shift 2 ;;
+      --version) VERSION="${2:?}"; shift 2 ;;
+      --release-notes-file) RELEASE_NOTES_FILE="${2:?}"; shift 2 ;;
+      --whatsnew-file) WHATSNEW_FILE="${2:?}"; shift 2 ;;
+      *) printf 'appstore: unknown arg %s\n' "$1" >&2; exit 2 ;;
+    esac
+  done
+  [ -n "$BUILD" ] || { printf 'appstore: --build required\n' >&2; exit 2; }
+  [ -n "$VERSION" ] || { printf 'appstore: --version required\n' >&2; exit 2; }
+  [ -n "$RELEASE_NOTES_FILE" ] && [ -r "$RELEASE_NOTES_FILE" ] || { printf 'appstore: --release-notes-file unreadable\n' >&2; exit 2; }
+  [ -n "$WHATSNEW_FILE" ] && [ -r "$WHATSNEW_FILE" ] || { printf 'appstore: --whatsnew-file unreadable\n' >&2; exit 2; }
+
+  local LIVE="${STUDIO_TF_PUSH_LIVE:-0}"
+  RELEASE_TAG="${STUDIO_RELEASE_TAG:-release-${BUILD}-$(date -u +%Y%m%d-%H%M%S)}"
+  if [ "$DRY_RUN_FLAG" != "1" ] && [ "$LIVE" != "1" ]; then
+    halt_failed prereq "STUDIO_TF_PUSH_LIVE=1 required for non-dry-run appstore submission"
+  fi
+  route_to_release_node
+
+  local TAG="${BUILD}-zaps"
+  if [ "$DRY_RUN_FLAG" = "1" ]; then
+    printf 'studio-tf-push: [dry-run] would tag %s, push, gh release create --draft, ASC submit build=%s version=%s\n' \
+      "$TAG" "$BUILD" "$VERSION" >&2
+    return 0
+  fi
+
+  local appstore_branch
+  appstore_branch=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+  case "$appstore_branch" in
+    main|master|trunk|develop) halt_failed prereq "active branch '$appstore_branch' is a base branch — R11 forbids studio-initiated push" ;;
+  esac
+  (
+    cd "$PROJECT_ROOT" || exit 1
+    git push -u origin HEAD || exit 1
+    git tag "$TAG" || exit 1
+    git push origin "$TAG" || exit 1
+  ) || halt_failed prereq "git tag/push failed"
+
+  gh auth switch --user vishal-zaps >/dev/null 2>&1 || true
+  if ! gh release create "$TAG" \
+      --repo turnip-ios/turnip-zaps \
+      --title "$TAG" \
+      --notes-file "$RELEASE_NOTES_FILE" \
+      --draft >/dev/null; then
+    halt_failed prereq "gh release create failed"
+  fi
+  printf 'studio-tf-push: GH draft release: https://github.com/turnip-ios/turnip-zaps/releases/tag/%s\n' "$TAG" >&2
+
+  local TOKEN
+  TOKEN=$(mint_jwt)
+  [ -n "$TOKEN" ] || halt_failed prereq "ASC JWT mint failed"
+
+  local build_resp build_id
+  build_resp=$(curl -sg "https://api.appstoreconnect.apple.com/v1/builds?filter[version]=${BUILD}&include=preReleaseVersion&limit=1" \
+    -H "Authorization: Bearer $TOKEN")
+  build_id=$(printf '%s' "$build_resp" | jq -r '.data[0].id // empty')
+  [ -n "$build_id" ] || halt_failed prereq "ASC: build $BUILD not found"
+
+  local versions_resp version_id
+  versions_resp=$(curl -sg "https://api.appstoreconnect.apple.com/v1/apps/${APP_ID}/appStoreVersions?fields[appStoreVersions]=versionString,appStoreState,releaseType" \
+    -H "Authorization: Bearer $TOKEN")
+  version_id=$(printf '%s' "$versions_resp" \
+    | jq -r --arg v "$VERSION" '.data[] | select(.attributes.appStoreState=="PREPARE_FOR_SUBMISSION" and .attributes.versionString==$v) | .id' \
+    | head -1)
+  if [ -z "$version_id" ]; then
+    local create_resp
+    create_resp=$(curl -s -X POST "https://api.appstoreconnect.apple.com/v1/appStoreVersions" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "$(jq -nc --arg v "$VERSION" --arg app "$APP_ID" '{data:{type:"appStoreVersions",attributes:{platform:"IOS",versionString:$v,releaseType:"MANUAL"},relationships:{app:{data:{type:"apps",id:$app}}}}}')")
+    version_id=$(printf '%s' "$create_resp" | jq -r '.data.id // empty')
+    [ -n "$version_id" ] || halt_failed prereq "ASC: appStoreVersion create failed: $create_resp"
+  fi
+
+  curl -s -X PATCH "https://api.appstoreconnect.apple.com/v1/appStoreVersions/${version_id}" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -nc --arg id "$version_id" --arg bid "$build_id" '{data:{type:"appStoreVersions",id:$id,attributes:{releaseType:"MANUAL"},relationships:{build:{data:{type:"builds",id:$bid}}}}}')" \
+    >/dev/null
+
+  local locs_resp whatsnew_text
+  whatsnew_text=$(cat "$WHATSNEW_FILE")
+  locs_resp=$(curl -s "https://api.appstoreconnect.apple.com/v1/appStoreVersions/${version_id}/appStoreVersionLocalizations" \
+    -H "Authorization: Bearer $TOKEN")
+  local loc_count=0
+  for loc_id in $(printf '%s' "$locs_resp" | jq -r '.data[].id'); do
+    curl -s -X PATCH "https://api.appstoreconnect.apple.com/v1/appStoreVersionLocalizations/${loc_id}" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "$(jq -nc --arg id "$loc_id" --arg w "$whatsnew_text" '{data:{type:"appStoreVersionLocalizations",id:$id,attributes:{whatsNew:$w}}}')" \
+      >/dev/null
+    loc_count=$((loc_count + 1))
+  done
+
+  printf 'studio-tf-push: appstore submission ready (build=%s version=%s, %d localizations updated)\n' \
+    "$BUILD" "$VERSION" "$loc_count" >&2
+
+  jq -nc \
+    --arg release_tag "$RELEASE_TAG" \
+    --arg tag "$TAG" \
+    --arg version_id "$version_id" \
+    --arg build_id "$build_id" \
+    --argjson loc_count "$loc_count" \
+    '{release_tag:$release_tag, tag:$tag, version_id:$version_id, build_id:$build_id, localizations:$loc_count}'
+}
+
+case "${1:-}" in
+  push|""|--dry-run|--scheme)
+    [ "${1:-}" = "push" ] && shift
+    cmd_push "$@" ;;
+  appstore) shift; cmd_appstore "$@" ;;
+  emit) shift; cmd_emit "$@" ;;
+  -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *) printf 'studio-tf-push: unknown subcommand %s\n' "$1" >&2; exit 2 ;;
+esac
