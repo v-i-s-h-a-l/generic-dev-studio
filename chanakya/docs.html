@@ -889,8 +889,11 @@ cd generic-dev-studio
   <p>File-based IPC that lets one Chanakya session fan tasks out to N independent Achilles worker panes. Each worker spawns a fresh <code>claude -p "/achilles &lt;id&gt;"</code> per task &mdash; clean context every time, no harness changes.</p>
 
   <h3>One-time setup</h3>
-  <pre><code>brew install fswatch coreutils
-chmod +x scripts/*.sh</code></pre>
+  <pre><code># Manager: bootstrap installs all deps (or: brew install fswatch coreutils jq yq rsync git)
+scripts/bootstrap.sh --manager
+# Workers: sync-worker pushes tools, skills, and shims automatically
+scripts/schedule-worker-sync.sh --install   # daily launchd agent
+scripts/sync-workers-all.sh                 # immediate first sync</code></pre>
 
   <h3>Daily flow</h3>
   <p><strong>Recommended:</strong> launch Claude in N panes with <code>claude --dangerously-skip-permissions</code>, turn on iTerm <strong>Broadcast Input</strong> (<code>Cmd+Opt+I</code>), and type <code>/achilles worker</code> once. Every Claude session runs the worker mode, each pane atomically claims the lowest free slot (1, 2, 3, &hellip;) via a <code>worker-N/.lock</code> dir, and the parent Claude session stays available for status / shutdown questions. Tasks themselves still spawn in fresh <code>claude -p</code> subprocesses &mdash; per-task context stays clean.</p>
@@ -955,6 +958,7 @@ chmod +x scripts/*.sh</code></pre>
       <tr><td><code>ACHILLES_TASK_TIMEOUT_SEC</code></td><td><code>2700</code> (45m)</td><td>Max per-task runtime; needs <code>gtimeout</code>. <code>0</code> disables.</td></tr>
       <tr><td><code>ACHILLES_UNATTENDED</code></td><td><code>0</code></td><td>Set to <code>1</code> to pass <code>--dangerously-skip-permissions</code> for fully unattended overnight runs.</td></tr>
       <tr><td><code>ACHILLES_AUTONOMOUS</code></td><td><code>0</code> (auto-set to <code>1</code> per task by worker)</td><td>Tells Achilles there is no user to answer clarifying questions; subagent picks obvious defaults and records them in the debrief's <code>## Assumptions</code> block. Exported by <code>achilles-worker.sh</code> automatically — do not set manually.</td></tr>
+      <tr><td><code>STUDIO_XCODEBUILDMCP</code></td><td><code>auto</code></td><td>Build executor routing: <code>0</code>&nbsp;=&nbsp;raw&nbsp;xcodebuild, <code>1</code>&nbsp;=&nbsp;require&nbsp;xcodebuildmcp&nbsp;(fail&nbsp;if&nbsp;missing), <code>auto</code>&nbsp;=&nbsp;prefer&nbsp;xcodebuildmcp&nbsp;when&nbsp;installed,&nbsp;fall&nbsp;back&nbsp;to&nbsp;xcodebuild. Both local and remote builds route through <code>xcodebuild-shim.sh</code>.</td></tr>
     </tbody>
   </table>
 
@@ -988,6 +992,26 @@ ACHILLES_BASE_REFRESH_THRESHOLD=5 /achilles T001
 # On conflict, Achilles aborts cleanly and surfaces report_state: blocked.
 scripts/achilles-refresh-base.sh &lt;worktree&gt; [--dry-run]</code></pre>
   <p>Emits <code>base_refreshed</code> (merge clean) or <code>base_refresh_conflict</code> (aborted). No-ops when the worktree is already up to date — the event is only emitted on an actual merge.</p>
+
+  <h3 style="margin-top: 32px;">xcodebuild shim routing</h3>
+  <p>Both local and remote builds route through <code>scripts/xcodebuild-shim.sh</code> instead of invoking <code>xcodebuild</code> directly. The shim selects the executor based on <code>STUDIO_XCODEBUILDMCP</code> (see Environment above). When <code>xcodebuildmcp</code> is active, a JSON sidecar (<code>~/.dev-studio/.runtime/sidecar/xcb-&lt;task-id&gt;.json</code>) captures structured build errors; for remote builds, the sidecar is pulled back to the manager via <code>sourcesync_pull_file</code>.</p>
+  <pre><code># The shim is mirrored to workers automatically by sync-worker.sh
+# at ~/.dev-studio/.runtime/bin/xcodebuild-shim.sh — task-build-gate.sh
+# invokes it by $HOME-relative path on both local and remote branches.
+#
+# Adding a new *-shim.sh script to scripts/ auto-mirrors on next sync.</code></pre>
+
+  <h3 style="margin-top: 32px;">Worker sync automation</h3>
+  <p>Workers receive tools, skills, and shim scripts from the manager via <code>sync-worker.sh</code>. Three auto-propagation mechanisms ensure new additions don't require manual manifest editing:</p>
+  <table class="decision-table">
+    <thead><tr><th>What</th><th>Discovery</th><th>Propagation</th></tr></thead>
+    <tbody>
+      <tr><td>Brew packages &amp; taps</td><td><code>tools.yaml</code> entries with <code>roles: [worker]</code> or <code>[dual]</code>, filtered by <code>conditional_on</code> against the worker's node roles</td><td>Merged additively into the project manifest; installed via SSH</td></tr>
+      <tr><td>Agent directories</td><td>Any top-level repo dir containing <code>SKILL.md</code></td><td>rsync &mdash;delete to the worker's mirrored repo path</td></tr>
+      <tr><td>Shim scripts</td><td>Glob <code>scripts/*-shim.sh</code></td><td>rsync to <code>~/.dev-studio/.runtime/bin/</code> + chmod +x</td></tr>
+    </tbody>
+  </table>
+  <p>Scheduled sync runs daily via a launchd agent (<code>scripts/schedule-worker-sync.sh --install</code>). On-demand: <code>/studio nodes sync --all</code> or <code>scripts/sync-workers-all.sh</code>. Drift (missing packages, failed taps, version mismatches) is surfaced via <code>worker_sync_drift_detected</code> events and printed to stdout.</p>
 </section>
 
 <!-- Flow -->

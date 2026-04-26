@@ -19,6 +19,11 @@ invocation:
     - "/studio guard <topic>"
     - "/studio janitor"
     - "/studio nodes"
+    - "sync the workers"
+    - "sync workers"
+    - "push to workers"
+    - "update the workers"
+    - "are the workers in sync"
     - "/studio work <track>"
 domains:
   - studio-internal
