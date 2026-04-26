@@ -125,4 +125,73 @@ for arg in "$@"; do
   REMOTE_CMD+=$(printf '%q ' "$arg")
 done
 
-exec ssh "${SSH_OPTS[@]}" "${USER_}@${HOST}" -- "$REMOTE_CMD"
+# #269 — dispatch UUID + remote log persistence. Every remote run gets a
+# UUID; the worker tees stdout/stderr to ~/.dev-studio/.runtime/logs/<uuid>.log
+# and writes <uuid>.exit (single-line exit code) on completion. Together
+# they let #147-B (registry) and #147-C (reconnect-and-harvest) recover
+# the result of a build whose dispatching laptop disappeared mid-run.
+#
+# UUID generation: prefer uuidgen, fall back to /proc/sys (linux) or a
+# hex-from-urandom dance (macOS without util-linux). Lowercased for
+# filesystem consistency.
+if command -v uuidgen >/dev/null 2>&1; then
+  DISPATCH_UUID=$(uuidgen | tr 'A-Z' 'a-z')
+elif [ -r /proc/sys/kernel/random/uuid ]; then
+  DISPATCH_UUID=$(cat /proc/sys/kernel/random/uuid)
+else
+  DISPATCH_UUID=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n' | \
+    sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')
+fi
+printf 'node-dispatch: uuid=%s\n' "$DISPATCH_UUID" >&2
+
+# Wrapper executed on the worker. Single-quoted heredoc — no interpolation
+# happens on the laptop side; UUID and command travel as positional args.
+# The runner is fully detached (nohup + redirected stdio + disown) so it
+# survives the laptop's ssh client dying. tail -F streams the log back
+# during normal operation; on disconnect tail dies but the runner keeps
+# writing to the log and the .exit file.
+#
+# REVIEW R3 exception: LOG_DIR is the only literal $HOME/.dev-studio/.runtime
+# path in this repo outside lib-paths.sh, intentionally. The wrapper runs on
+# a remote worker that does not source lib-paths.sh; the path mirrors
+# `resolve_runtime_global()` on the remote — keep them in sync if either
+# side moves.
+REMOTE_WRAPPER=$(cat <<'REMOTE_EOF'
+set -u
+UUID="$1"
+CMD="$2"
+LOG_DIR="$HOME/.dev-studio/.runtime/logs"
+mkdir -p "$LOG_DIR"
+LOG="$LOG_DIR/$UUID.log"
+EXIT_FILE="$LOG_DIR/$UUID.exit"
+
+# Atomic exit-file write via mv so a reader (#147-C) never sees a partial
+# file. CMD already arrives printf-%q-quoted; bash -c reconstructs argv.
+nohup bash -c '
+  bash -c "$1"
+  rc=$?
+  printf "%s\n" "$rc" > "$2.tmp" && mv "$2.tmp" "$2"
+  exit $rc
+' _ "$CMD" "$EXIT_FILE" >"$LOG" 2>&1 </dev/null &
+RUNNER=$!
+disown 2>/dev/null || true
+
+tail -n +1 -F "$LOG" 2>/dev/null &
+TAIL=$!
+
+# Poll runner liveness: bash `wait` would return immediately on a disowned
+# pid. Sleep granularity matches normal build feedback latency.
+while kill -0 "$RUNNER" 2>/dev/null; do sleep 1; done
+sleep 0.3
+kill "$TAIL" 2>/dev/null || true
+wait "$TAIL" 2>/dev/null || true
+
+if [ -r "$EXIT_FILE" ]; then
+  exit "$(cat "$EXIT_FILE")"
+fi
+exit 1
+REMOTE_EOF
+)
+
+exec ssh "${SSH_OPTS[@]}" "${USER_}@${HOST}" -- bash -s -- \
+  "$DISPATCH_UUID" "$REMOTE_CMD" <<<"$REMOTE_WRAPPER"
