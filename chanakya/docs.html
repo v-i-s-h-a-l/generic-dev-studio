@@ -678,6 +678,22 @@ cd generic-dev-studio
       <code>/chanakya studio-feedback</code>
       <span>Capture feedback <em>about the studio itself</em> (not project feedback). Writes to <code>~/.dev-studio/generic-dev-studio/feedback-inbox/&lt;source-project&gt;/</code>; next generic-dev-studio session ingests automatically. No paste required. Triggered by <code>/chanakya studio-feedback</code> or "capture this as feedback".</span>
     </div>
+    <div class="cmd-card">
+      <code>/chanakya train &lt;show|list|burn-down|dispatch-ready&gt; [name]</code>
+      <span>Per-train view over the lean-schema <code>train</code> field. <code>list</code> prints unique trains; <code>show &lt;name&gt;</code> tables tasks by state; <code>burn-down &lt;name&gt;</code> reports state counts; <code>dispatch-ready &lt;name&gt;</code> filters to ready-to-dispatch within the train. Walks <code>plans/tasks/*.yaml</code> via <code>scripts/query-tasks.sh</code> (lean fields are not in <code>index.yaml</code>).</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya stale [--days=N] [--state=&lt;state&gt;]</code>
+      <span>Tasks whose latest state transition is older than N days (default 7). Surfaces forgotten <code>briefed</code> tasks, abandoned <code>in-progress</code> branches, <code>merged</code> tasks awaiting verification. Optional <code>--state</code> narrows the scope; output groups by state with the canonical follow-up surfaced per group.</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya blocked-by &lt;task-id&gt;</code>
+      <span>Reverse <code>predecessors</code> lookup &mdash; lists every task whose dispatch is gated on <code>&lt;task-id&gt;</code> shipping. Same data as <code>query-relations.sh --task &lt;id&gt; | inverse.blocks</code>, surfaced as a first-class command. Answers "if I ship T347, what unblocks?"</span>
+    </div>
+    <div class="cmd-card">
+      <code>/chanakya dispatch-ready</code>
+      <span>Briefed tasks where every predecessor is in <code>{merged, verified, archived}</code>. Grouped by train, sorted by priority then age. Renders <code>id / priority / effort_minutes / recommended_model / title</code>. The fleet-wide "what's safe to dispatch right now?" answer.</span>
+    </div>
   </div>
 
   <h3 style="color: var(--achilles);">Achilles &mdash; The Warrior</h3>

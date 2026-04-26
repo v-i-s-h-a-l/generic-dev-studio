@@ -29,6 +29,10 @@ invocation:
     - "/chanakya report-product"
     - "/chanakya feedback-archive"
     - "/chanakya feedback-history"
+    - "/chanakya train <show|list|burn-down|dispatch-ready> [name]"
+    - "/chanakya stale [--days=N]"
+    - "/chanakya blocked-by <task-id>"
+    - "/chanakya dispatch-ready"
 domains:
   - turnip-ios
   - planning
