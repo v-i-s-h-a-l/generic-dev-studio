@@ -5,7 +5,7 @@ type: mode-pack
 schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [briefs.json, debt.json]
-budget_tokens: 4000
+budget_tokens: 4400
 reads:
   - plans/index.yaml                               # post-migration task index
   - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
@@ -100,6 +100,16 @@ Use Glob and Grep to find:
 
 Render the type-specific narrative from the template corresponding to the task type (see §6A-D below) into a tempfile, then call `write_brief_artifact` — it writes the YAML canonical form (schema `_shared/schemas/brief.md`, `brief@3.3.0`), emits `brief_state_changed null → draft`, and regenerates `plans/index.yaml`.
 
+### Summary (`brief@3.2.0`, required for new briefs)
+
+Every brief MUST carry a `summary` — a ≤500-token compact slice that downstream consumers (`/chanakya dispatch-ready`, Achilles agent-boot under `BRIEF_SLICE=summary`) render directly without re-parsing the full body. Author it as the **shortest fact-dense description that lets a reader decide whether to load the full brief**. Three sentences max:
+
+1. What this task changes (one sentence).
+2. Why it matters / what triggers it (one sentence).
+3. Key constraint or non-obvious assumption (one sentence).
+
+Not a TLDR of acceptance criteria — those live in `acceptance`. Pass it as a single-line `summary="..."` k=v to `write_brief_artifact`. Lint refuses summaries longer than 500 tokens (`scripts/lint-brief.sh` — run on the written artifact before transitioning to `ready`).
+
 ### Dispatch routing (`brief@3.3.0`)
 
 Default `dispatch_agent: achilles` and leave `perf_mode` / `evidence` null — the standard worker path.
@@ -139,7 +149,15 @@ BRIEF_UUID=$(mint_uuidv7)
 write_brief_artifact "$BRIEF_UUID" "<parent-task-uuid>" "<type>" "<size>" \
   legacy_task_id=<T-number> \
   slug=<short-kebab-slug> \
+  summary="<one-sentence change>. <one-sentence why>. <one-sentence key constraint>." \
   body_file="$BODY_FILE"
+
+# Self-review before flipping to ready: lints the summary slice and (if any
+# predecessor debrief paths are passed via --predecessor) fails the brief if
+# any inherited concern's keywords are absent from the body. Closes the
+# silent-absorb gap (#162). For first-time briefs pass no flags.
+BRIEF_PATH="$(resolve_briefs_dir_for "$(resolve_project)")/$BRIEF_UUID.yaml"
+scripts/self-review-brief.sh "$BRIEF_PATH" || exit $?
 
 # Flip draft → ready so the brief becomes claimable.
 transition_brief_state "$BRIEF_UUID" ready chanakya "authored by $USER"

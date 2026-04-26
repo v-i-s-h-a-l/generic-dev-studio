@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-04-26T23:56:38Z",
+  "generated_at": "2026-04-26T23:57:26Z",
   "agents": [
     {
       "name": "studio",
@@ -422,7 +422,7 @@
           "writes": [],
           "snapshots": [],
           "dry_run": false,
-          "budget_tokens": 600
+          "budget_tokens": 800
         },
         {
           "name": "feedback-reports",
