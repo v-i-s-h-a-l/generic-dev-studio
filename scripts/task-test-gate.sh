@@ -49,6 +49,12 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
+# shellcheck source=lib-dispatch-registry.sh
+. "$SCRIPT_DIR/lib-dispatch-registry.sh"
+
+# #270 — populated by the remote-dispatch branch via STUDIO_DISPATCH_UUID_FILE
+# sidecar. Empty for self-node and dry-run paths.
+DISPATCH_UUID=""
 
 TASK_ID="${1:?usage: task-test-gate.sh <task-id> <worktree> <scheme> <destination> [<test-target>] [<project-or-workspace-relpath>]}"
 WORKTREE="${2:?worktree required}"
@@ -240,8 +246,15 @@ else
   REMOTE_CMD+=' -scheme '"$(printf '%q' "$SCHEME")"' -destination '"$(printf '%q' "$DESTINATION")"' -derivedDataPath '"$Q_DERIVED"
   [ -n "$TEST_TARGET" ] && REMOTE_CMD+=' -only-testing:'"$(printf '%q' "$TEST_TARGET")"
 
-  "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "$REMOTE_CMD" >"$test_log" 2>&1
+  # #270 — opt in to dispatch registry; capture UUID via sidecar so the
+  # terminal-status mark below resolves to the right entry.
+  UUID_SIDECAR=$(mktemp 2>/dev/null || printf '/tmp/dispatch-uuid-%s' "$$")
+  STUDIO_DISPATCH_TASK_ID="$TASK_ID" \
+    STUDIO_DISPATCH_UUID_FILE="$UUID_SIDECAR" \
+    "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "$REMOTE_CMD" >"$test_log" 2>&1
   TEST_STATUS=$?
+  DISPATCH_UUID=$(tr -d '[:space:]' < "$UUID_SIDECAR" 2>/dev/null)
+  rm -f "$UUID_SIDECAR" 2>/dev/null || true
 fi
 
 RUN_END_S=$(date -u +%s)
@@ -259,6 +272,7 @@ if [ "$TEST_STATUS" -eq 0 ]; then
   data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"test_count":%s,"attempt":%s%s}' \
     "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$TEST_COUNT" "$ATTEMPT" "$DISPATCH_FIELDS")
   emit_event_keyed achilles task test_run_passed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  [ -n "$DISPATCH_UUID" ] && dispatch_registry_mark "$DISPATCH_UUID" passed 2>/dev/null || true
   gate_announce_done test "$NODE_ID" "$TASK_ID" passed "$DURATION_S"
   exit 0
 fi
@@ -266,5 +280,6 @@ fi
 data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"attempt":%s,"exit_code":%s%s}' \
   "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$ATTEMPT" "$TEST_STATUS" "$DISPATCH_FIELDS")
 emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+[ -n "$DISPATCH_UUID" ] && dispatch_registry_mark "$DISPATCH_UUID" failed 2>/dev/null || true
 gate_announce_done test "$NODE_ID" "$TASK_ID" failed "$DURATION_S"
 exit 2

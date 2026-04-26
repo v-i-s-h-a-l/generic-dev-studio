@@ -30,6 +30,8 @@ umask 022
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-dispatch-registry.sh
+. "$SCRIPT_DIR/lib-dispatch-registry.sh"
 
 NODE_ID="${1:?usage: node-dispatch.sh <node-id> <command> [args...]}"
 shift
@@ -143,6 +145,20 @@ else
     sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')
 fi
 printf 'node-dispatch: uuid=%s\n' "$DISPATCH_UUID" >&2
+
+# #270 — laptop-side dispatch registry. Callers (the build/test gates) set
+# STUDIO_DISPATCH_TASK_ID + STUDIO_DISPATCH_UUID_FILE to opt in. The sidecar
+# file lets the caller capture the UUID across the upcoming `exec ssh` (which
+# replaces this process — stderr scraping by the parent is unreliable for
+# dispatches whose stderr is teed into a build log). Both writes are
+# best-effort; failures here must not abort the dispatch.
+if [ -n "${STUDIO_DISPATCH_UUID_FILE:-}" ]; then
+  printf '%s\n' "$DISPATCH_UUID" > "$STUDIO_DISPATCH_UUID_FILE" 2>/dev/null || true
+fi
+if [ -n "${STUDIO_DISPATCH_TASK_ID:-}" ]; then
+  dispatch_registry_record "$DISPATCH_UUID" "$NODE_ID" "$STUDIO_DISPATCH_TASK_ID" \
+    2>/dev/null || true
+fi
 
 # Wrapper executed on the worker. Single-quoted heredoc — no interpolation
 # happens on the laptop side; UUID and command travel as positional args.
