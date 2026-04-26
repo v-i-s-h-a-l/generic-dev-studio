@@ -162,6 +162,16 @@ printf '%s\n' "$new_events" | while IFS= read -r line; do
       push_append drift "$task" "dual_write_partial"
       printf '%s\n' "$line" >> "$DRIFT_LOG" 2>/dev/null || true
       ;;
+    debrief_missing)
+      # #249 Phase 1 — surface the merge-without-debrief gap. Body carries
+      # the merge_sha so the operator can locate the merge commit; the task
+      # id flows through the standard `task` column.
+      merge_sha=""
+      if command -v jq >/dev/null 2>&1; then
+        merge_sha=$(printf '%s' "$line" | jq -r '.data.merge_sha // ""' 2>/dev/null)
+      fi
+      push_append debrief_missing "$task" "merged at ${merge_sha:-<unknown>} with no debrief"
+      ;;
     test_run_failed|build_debt_incremented)
       # No direct action — Chanakya surfaces these via status summaries.
       :
