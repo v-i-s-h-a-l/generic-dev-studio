@@ -48,7 +48,7 @@ Detached HEAD — no branch created. Build mode never commits or merges.
 
 ## B3 — Full build at HEAD
 
-RUN `scripts/task-build-gate.sh full-green "$BUILD_ID" "$WORKTREE" <scheme> <destination>`. Capture its exit code as `BUILD_STATUS`. The gate owns node dispatch (laptop or remote worker), per-node `xcodebuild.lock` acquisition with 45-min staleness reclaim, DerivedData isolation under `~/.dev-studio/.runtime/derived-data/$BUILD_ID/`, and `build_check_started` / `build_check_passed` / `build_check_failed` event emission. Build-mode reuses the gate without modification: `$BUILD_ID` substitutes for `<task-id>`, and the gate's per-task DerivedData resolver maps it to a build-mode-isolated path.
+RUN `scripts/task-build-gate.sh full-green "$BUILD_ID" "$WORKTREE" <scheme> <destination> [<project-relpath>]`. Capture its exit code as `BUILD_STATUS`. The gate owns node dispatch (laptop or remote worker), per-node `xcodebuild.lock` acquisition with 45-min staleness reclaim, DerivedData isolation under `~/.dev-studio/.runtime/derived-data/$BUILD_ID/`, and `build_check_started` / `build_check_passed` / `build_check_failed` event emission. The optional 6th arg pins xcodebuild's `-project` / `-workspace` against multi-project repos (#238); source from `_shared/primitives/turnip-project-config.md`'s `Project (worktree-relative)` field. Build-mode reuses the gate without modification: `$BUILD_ID` substitutes for `<task-id>`, and the gate's per-task DerivedData resolver maps it to a build-mode-isolated path.
 
 Direct `xcodebuild` invocation from this mode is forbidden — the gate is the single chokepoint for build-toolchain entry (REVIEW.md R1 / lint-build-invocations).
 
@@ -85,12 +85,12 @@ git bisect bad "$HEAD_SHA"
 git bisect good "$LAST_GREEN_SHA"   # from the Build Debt block
 ```
 
-2. **Bisect loop** — for each commit `git bisect` checks out, RUN `scripts/task-build-gate.sh full-green "$BUILD_ID" "$WORKTREE" <scheme> <destination>` (same gate, same per-node lock semantics, same DerivedData path so SPM stays warm across iterations). Mark good/bad based on exit status:
+2. **Bisect loop** — for each commit `git bisect` checks out, RUN `scripts/task-build-gate.sh full-green "$BUILD_ID" "$WORKTREE" <scheme> <destination> [<project-relpath>]` (same gate, same per-node lock semantics, same DerivedData path so SPM stays warm across iterations). Mark good/bad based on exit status:
 
 ```bash
 while git bisect log | grep -q "^# first bad commit:" ; do break; done
 # loop:
-scripts/task-build-gate.sh full-green "$BUILD_ID" "$WORKTREE" "$SCHEME" "$DESTINATION"
+scripts/task-build-gate.sh full-green "$BUILD_ID" "$WORKTREE" "$SCHEME" "$DESTINATION" "$PROJECT_RELPATH"
 STATUS=$?
 if [ $STATUS -eq 0 ]; then git bisect good; else git bisect bad; fi
 ```

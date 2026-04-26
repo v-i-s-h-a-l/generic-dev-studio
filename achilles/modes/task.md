@@ -223,13 +223,15 @@ if [ "${FORCE_BUILD:-0}" = "0" ]; then
   rc=$?
   case $rc in
     0) GATE=swift-test ;;
-    1) scripts/task-build-gate.sh "$GATE" "$TASK_ID" "$WORKTREE" "$SCHEME" "$DESTINATION" ;;
+    1) scripts/task-build-gate.sh "$GATE" "$TASK_ID" "$WORKTREE" "$SCHEME" "$DESTINATION" "$PROJECT_RELPATH" ;;
     *) exit $rc ;;
   esac
 else
-  scripts/task-build-gate.sh "$GATE" "$TASK_ID" "$WORKTREE" "$SCHEME" "$DESTINATION"
+  scripts/task-build-gate.sh "$GATE" "$TASK_ID" "$WORKTREE" "$SCHEME" "$DESTINATION" "$PROJECT_RELPATH"
 fi
 ```
+
+`$PROJECT_RELPATH` (#238) is the worktree-relative path to the canonical `.xcodeproj` or `.xcworkspace`, sourced from `_shared/primitives/turnip-project-config.md`'s `Project (worktree-relative)` field. Pinning prevents xcodebuild from auto-picking a stub project at the worktree root in multi-project repos. Pass empty string when the field is absent — the gate omits `-project` and falls back to xcodebuild's auto-detection (current behaviour for single-project repos).
 
 The script emits `build_check_started` on entry and `build_check_passed` / `build_check_failed` on exit, or `build_check_aborted` if it exits between start and the normal terminal (arg failure, signal, unhandled exception — see events.md #106). `build_check_started` carries an `attempt` counter: 1 for a cold start, 2+ when a prior build-check for the same task emitted `started` without a paired terminal (e.g. a process that died, then got re-invoked). The counter resets on any terminal event. Full-green owns the atomic `mkdir`-based xcodebuild lock under `~/.dev-studio/.runtime/xcodebuild-lock/<node-id>/` — scoped per dispatch target so a laptop-local build and a mini-dispatched build don't serialize on each other — with 45-minute staleness reclaim, per-task `-derivedDataPath`, and a trap that releases the lock on any exit. A separate per-task lock under `<project>/.runtime/state/build-check-locks/<task-id>/` (60-min staleness reclaim) refuses concurrent invocations for the same task — exit `4`, no `started`/`aborted` emitted (#209). Exit codes: `0` green, `2` red, `3` locked-out (30-minute wait exceeded), `4` refused (concurrent same-task invocation).
 

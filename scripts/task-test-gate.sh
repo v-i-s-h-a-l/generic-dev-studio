@@ -16,7 +16,13 @@
 # script keeps both gates compositional and independently testable.
 #
 # Usage:
-#   scripts/task-test-gate.sh <task-id> <worktree> <scheme> <destination> [<test-target>]
+#   scripts/task-test-gate.sh <task-id> <worktree> <scheme> <destination> [<test-target>] [<project-or-workspace-relpath>]
+#
+#   project-or-workspace-relpath: optional, worktree-relative path to a
+#     .xcodeproj or .xcworkspace. Pinned via xcodebuild's -project /
+#     -workspace; auto-detection at the worktree root is fragile in
+#     multi-project repos (#238). Pass empty test-target to skip the 5th
+#     arg when only the project pin is needed: `... <dest> "" <project>`.
 #
 # Exit codes:
 #   0  green       — all tests passed
@@ -44,13 +50,22 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
 
-TASK_ID="${1:?usage: task-test-gate.sh <task-id> <worktree> <scheme> <destination> [<test-target>]}"
+TASK_ID="${1:?usage: task-test-gate.sh <task-id> <worktree> <scheme> <destination> [<test-target>] [<project-or-workspace-relpath>]}"
 WORKTREE="${2:?worktree required}"
 SCHEME="${3:?scheme required}"
 DESTINATION="${4:?destination required}"
 TEST_TARGET="${5:-}"
+PROJECT_RELPATH="${6:-}"
 
 [ -d "$WORKTREE" ] || { printf 'error: worktree not a directory: %s\n' "$WORKTREE" >&2; exit 2; }
+
+case "$PROJECT_RELPATH" in
+  ''|*.xcodeproj|*.xcworkspace) ;;
+  *)
+    printf 'error: project-or-workspace-relpath must end in .xcodeproj or .xcworkspace (got %s)\n' "$PROJECT_RELPATH" >&2
+    exit 2
+    ;;
+esac
 
 # Pick a swift-test-tagged node — same role as swift-test-gate.sh asks for.
 # The build gate uses `xcodebuild`; the test gate uses `swift-test`. Both
@@ -128,8 +143,15 @@ RUN_START_S=$(date -u +%s)
 
 # `set --` builds the argv so an empty TEST_TARGET means "no -only-testing"
 # rather than "-only-testing:" (which xcodebuild would reject). Keeps the
-# wrapper usable for both targeted and full-suite runs.
-set -- test -scheme "$SCHEME" -destination "$DESTINATION" -derivedDataPath "$DERIVED"
+# wrapper usable for both targeted and full-suite runs. The optional
+# -project / -workspace pin (#238) is folded in before -scheme; xcodebuild
+# requires that ordering.
+set -- test
+case "$PROJECT_RELPATH" in
+  *.xcworkspace) set -- "$@" -workspace "$PROJECT_RELPATH" ;;
+  *.xcodeproj)   set -- "$@" -project   "$PROJECT_RELPATH" ;;
+esac
+set -- "$@" -scheme "$SCHEME" -destination "$DESTINATION" -derivedDataPath "$DERIVED"
 [ -n "$TEST_TARGET" ] && set -- "$@" -only-testing:"$TEST_TARGET"
 
 if [ "$IS_LOCAL" = "1" ]; then
@@ -162,7 +184,12 @@ else
   REMOTE_CMD+=' _SHIM="$HOME/.dev-studio/.runtime/bin/xcodebuild-shim.sh";'
   REMOTE_CMD+=' [ -x "$_SHIM" ] || _SHIM=xcodebuild;'
   REMOTE_CMD+=' export STUDIO_XCODEBUILDMCP='"$Q_MCP_MODE"';'
-  REMOTE_CMD+=' cd '"$Q_WORKTREE"' && "$_SHIM" test -scheme '"$(printf '%q' "$SCHEME")"' -destination '"$(printf '%q' "$DESTINATION")"' -derivedDataPath '"$Q_DERIVED"
+  REMOTE_CMD+=' cd '"$Q_WORKTREE"' && "$_SHIM" test'
+  case "$PROJECT_RELPATH" in
+    *.xcworkspace) REMOTE_CMD+=' -workspace '"$(printf '%q' "$PROJECT_RELPATH")" ;;
+    *.xcodeproj)   REMOTE_CMD+=' -project '"$(printf '%q' "$PROJECT_RELPATH")" ;;
+  esac
+  REMOTE_CMD+=' -scheme '"$(printf '%q' "$SCHEME")"' -destination '"$(printf '%q' "$DESTINATION")"' -derivedDataPath '"$Q_DERIVED"
   [ -n "$TEST_TARGET" ] && REMOTE_CMD+=' -only-testing:'"$(printf '%q' "$TEST_TARGET")"
 
   "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "$REMOTE_CMD" >"$test_log" 2>&1

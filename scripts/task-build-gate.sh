@@ -19,8 +19,12 @@
 # an R4-exempted carve-out documented in file-locations.md.
 #
 # Usage:
-#   scripts/task-build-gate.sh <mode> <task-id> <worktree> <scheme> <destination>
+#   scripts/task-build-gate.sh <mode> <task-id> <worktree> <scheme> <destination> [<project-or-workspace-relpath>]
 #     mode: lsp-only | full-green
+#     project-or-workspace-relpath: optional, worktree-relative path to a
+#       .xcodeproj or .xcworkspace. When set, xcodebuild is pinned with
+#       -project / -workspace; auto-detection at the worktree root is
+#       fragile in multi-project repos (#238).
 #
 # Exit codes:
 #   0  green
@@ -38,15 +42,28 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
 
-MODE="${1:?usage: task-build-gate.sh <lsp-only|full-green> <task-id> <worktree> <scheme> <destination>}"
+MODE="${1:?usage: task-build-gate.sh <lsp-only|full-green> <task-id> <worktree> <scheme> <destination> [<project-or-workspace-relpath>]}"
 TASK_ID="${2:?task-id required}"
 WORKTREE="${3:?worktree required}"
 SCHEME="${4:-}"
 DESTINATION="${5:-}"
+PROJECT_RELPATH="${6:-}"
 
 case "$MODE" in
   lsp-only|full-green) ;;
   *) printf 'error: mode must be lsp-only or full-green (got %s)\n' "$MODE" >&2; exit 2 ;;
+esac
+
+# Validate the project-pin shape early (#238). xcodebuild auto-detection at
+# the worktree root picks the first `*.xcodeproj` it finds, which is wrong
+# in multi-project repos where the stub at root lacks a pbxproj. Refuse a
+# relpath that isn't a project/workspace before any lock or event emit.
+case "$PROJECT_RELPATH" in
+  ''|*.xcodeproj|*.xcworkspace) ;;
+  *)
+    printf 'error: project-or-workspace-relpath must end in .xcodeproj or .xcworkspace (got %s)\n' "$PROJECT_RELPATH" >&2
+    exit 2
+    ;;
 esac
 
 [ -d "$WORKTREE" ] || { printf 'error: worktree not a directory: %s\n' "$WORKTREE" >&2; exit 2; }
@@ -301,12 +318,20 @@ fi
 build_log=$(mktemp 2>/dev/null || printf '/tmp/xcb-%s.log' "$$")
 build_json="${build_log}.json"
 export XCB_JSON_SIDECAR="$build_json"
+
+# Compose xcodebuild argv via `set --` so the optional -project / -workspace
+# flag (#238) folds in cleanly without conditional duplication of the whole
+# command. The flag must appear before -scheme; xcodebuild errors otherwise
+# on workspace-vs-project mismatch.
+set -- build
+case "$PROJECT_RELPATH" in
+  *.xcworkspace) set -- "$@" -workspace "$PROJECT_RELPATH" ;;
+  *.xcodeproj)   set -- "$@" -project   "$PROJECT_RELPATH" ;;
+esac
+set -- "$@" -scheme "$SCHEME" -destination "$DESTINATION" -derivedDataPath "$DERIVED"
+
 if [ "$IS_LOCAL" = "1" ]; then
-  "$SCRIPT_DIR/xcodebuild-shim.sh" build \
-    -scheme "$SCHEME" \
-    -destination "$DESTINATION" \
-    -derivedDataPath "$DERIVED" \
-    >"$build_log" 2>&1
+  "$SCRIPT_DIR/xcodebuild-shim.sh" "$@" >"$build_log" 2>&1
   BUILD_STATUS=$?
 else
   # Remote dispatch (#127, #178). Source sync, path translation, shim
@@ -347,7 +372,12 @@ else
   REMOTE_CMD+=' export STUDIO_XCODEBUILDMCP='"$Q_MCP_MODE"';'
   REMOTE_CMD+=' mkdir -p "$HOME/.dev-studio/.runtime/sidecar" 2>/dev/null;'
   REMOTE_CMD+=' export XCB_JSON_SIDECAR="$HOME/'"$REMOTE_SIDECAR_REL"'";'
-  REMOTE_CMD+=' cd '"$Q_WORKTREE"' && "$_SHIM" build -scheme '"$(printf '%q' "$SCHEME")"' -destination '"$(printf '%q' "$DESTINATION")"' -derivedDataPath '"$Q_DERIVED"
+  REMOTE_CMD+=' cd '"$Q_WORKTREE"' && "$_SHIM" build'
+  case "$PROJECT_RELPATH" in
+    *.xcworkspace) REMOTE_CMD+=' -workspace '"$(printf '%q' "$PROJECT_RELPATH")" ;;
+    *.xcodeproj)   REMOTE_CMD+=' -project '"$(printf '%q' "$PROJECT_RELPATH")" ;;
+  esac
+  REMOTE_CMD+=' -scheme '"$(printf '%q' "$SCHEME")"' -destination '"$(printf '%q' "$DESTINATION")"' -derivedDataPath '"$Q_DERIVED"
   "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "$REMOTE_CMD" \
     >"$build_log" 2>&1
   BUILD_STATUS=$?
