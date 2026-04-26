@@ -183,8 +183,8 @@ Mapped fix archetypes per signal class. Apollo cites the archetype, not the intu
 | Hang-under-thermal | Move blocking work off main; replace `dispatch_sync` / `DispatchSemaphore.wait` with structured concurrency | `MXHangDiagnostic` callStack roots in main; Time Profiler on main thread matches; concurrent CPU climb visible in trace | Concurrency rewrites can introduce data races; archetype paired with Sendable-compliance check on changed types |
 | CPU hot loop | Vectorize via Accelerate (vDSP / vForce / BNNS) when the math is SIMD-friendly | Time Profiler shows scalar floating-point inner loop; CPU Counters IPC < 1.5 under load | Accelerate APIs are platform-specific; archetype scoped to iOS / macOS targets that link Accelerate |
 | CPU hot loop | Cache-friendlier data layout (struct-of-arrays vs array-of-structs; pointer-chase reduction) | LLC-cache-miss rate > 5% at the hot stack; sequential-access path resolves lower miss rate | Refactor surface is wide; archetype valid only when miss rate is the dominant cycle consumer per Counters |
-| GPU-rooted thermal | Reduce per-frame fragment work (lower-resolution offscreen targets, scissor non-visible regions, drop redundant passes) | Metal System Trace shows fragment shader > 80% of frame time under sustained load; HUD `gpuTimeMs` exceeds frame budget | Quality regression possible; archetype scoped to scenarios where thermal trumps fidelity. **Metal-specific archetypes route to the `imgly-engine-expert` skill via the Stage 3 delegation contract (#233)**; Apollo retains measurement authority and refuses to bake Metal internals into this mode pack |
-| GPU-rooted thermal | Coalesce command buffers / drop redundant draw calls / batch encoder work | Metal System Trace shows > 100 draw calls per frame; CPU encode time co-rises | Refactor surface is large; route to `imgly-engine-expert` (#233) when the pipeline is owned there; emit `advisory:1` with the canonical-antipattern citation only until #233 ships |
+| GPU-rooted thermal | Reduce per-frame fragment work (lower-resolution offscreen targets, scissor non-visible regions, drop redundant passes) | Metal System Trace shows fragment shader > 80% of frame time under sustained load; HUD `gpuTimeMs` exceeds frame budget | Quality regression possible; archetype scoped to scenarios where thermal trumps fidelity. **Metal-specific archetypes delegate to `imgly-engine-expert` via `apollo/_shared/integrations/imgly-and-metal.md`**; Apollo retains measurement authority and refuses to bake Metal internals into this mode pack |
+| GPU-rooted thermal | Coalesce command buffers / drop redundant draw calls / batch encoder work | Metal System Trace shows > 100 draw calls per frame; CPU encode time co-rises | Refactor surface is large; delegate to `imgly-engine-expert` per `apollo/_shared/integrations/imgly-and-metal.md` when the pipeline is owned there; if delegation surface is unavailable (skill not vendored), emit `advisory:1` with the canonical-antipattern citation only |
 
 The Metal carve-out is firm: Apollo never proposes a specific Metal change. Apollo names "render-pipeline thermal regression at <signpost>", attaches the cited evidence, and the Metal/Imgly knowledge lives in the dedicated skill. This keeps Apollo Imgly-agnostic.
 
@@ -312,7 +312,7 @@ The five-phase pipeline rendered as enforceable steps. Each step gates the trans
 |---|---|---|
 | → Achilles (patch) | `~/.dev-studio/<project>/apollo/recommendations/<id>.md` + brief seed | Recommendation contains `diff_target`, `expected_delta`, `verification_recipe`, `dwell_seconds`. Achilles applies the patch on a worktree, runs Argus per its normal flow, and merges. Apollo never invokes Achilles directly — Chanakya routes the brief. |
 | → Argus (review) | None directly. | Apollo's recommendation artifact is read-only context for Argus during code review. Argus does not write Apollo state. |
-| → imgly-engine-expert (Metal/Imgly archetypes) | `delegate: imgly-engine-expert` line on the recommendation when the diff target is in Imgly / Metal pipeline code | Stage 3 deliverable (#233). Until #233 ships, Apollo refuses Metal-internal recommendations and emits `advisory:1` with the canonical-antipattern citation only. |
+| → imgly-engine-expert (Metal/Imgly archetypes) | `delegate: imgly-engine-expert` line on the recommendation when the diff target is in Imgly / Metal pipeline code | Handoff envelope: `apollo/_shared/integrations/imgly-and-metal.md` (`apollo_to_expert` / `expert_to_apollo` blocks). If the receiving skill is not vendored in the project, refuse with the standard refusal block and emit `advisory:1` with the canonical-antipattern citation only. |
 
 ## Singleton
 
@@ -326,7 +326,7 @@ The "no first-party Instruments thermal template" gap is the dominant tooling er
 
 The thermalState observer contract is the third load-bearing invariant: a regression that targets a `.serious` / `.critical` shed path is unfalsifiable without an observer-side signpost. Apollo refuses to propose a fix to a system the app does not yet observe — the first remediation in that case is to add the observer, not to throttle pre-emptively.
 
-The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives in the dedicated `imgly-engine-expert` skill; Apollo retains measurement and verification authority. The Stage 3 delegation contract (#233) formalizes the boundary; until it ships, Apollo refuses to bake Metal internals into this mode pack.
+The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives in the dedicated `imgly-engine-expert` skill; Apollo retains measurement and verification authority. The delegation contract at `apollo/_shared/integrations/imgly-and-metal.md` formalizes the boundary — Apollo writes the structured `apollo_to_expert` envelope, the receiving skill returns `expert_to_apollo`, and Apollo applies strict-9 to the verification plan before accepting the recommendation.
 
 ## See also
 
@@ -339,6 +339,7 @@ The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives
 - `apollo/_shared/primitives/organizer-asc.md` — Performance / Power Metrics rows on the production fleet
 - `apollo/_shared/primitives/execution-surface.md` — capability matrix + auto-capture decision tree (real-device pairing as `human-required`)
 - `apollo/_shared/primitives/canonical-antipatterns.md` — thermal antipatterns curated for the `advisory:1` channel (`therm:NN` rows)
+- `apollo/_shared/integrations/imgly-and-metal.md` — Imgly / Metal delegation contract (handoff envelope + retained-vs-delegated authority)
 - `_shared/contracts/events.md` — `apollo_capture_*` and `apollo_recommendation` event schemas
 - `REVIEW.md` R10 — sister rule for completion claims; Apollo's verification phase is the thermal-mode counterpart
 - `ProcessInfo.thermalState` and `thermalStateDidChangeNotification` — Apple Developer reference for the observer contract
