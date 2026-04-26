@@ -92,6 +92,7 @@ is_allowlisted() {
     scripts/argus-run-tests.sh|\
     scripts/xcodebuild-shim.sh|\
     scripts/snapshot-sync.sh|\
+    scripts/studio-tf-push.sh|\
     scripts/lint-build-invocations.sh)
       return 0
       ;;

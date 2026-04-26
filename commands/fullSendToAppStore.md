@@ -5,372 +5,87 @@ allowed-tools: [Bash, Read, Edit, Grep]
 
 # Full Send to App Store
 
-Tag the current commit, create a GitHub draft release with playful release notes, and set up an App Store Connect submission with manual release.
+Tag the current commit, create a GitHub draft release, and submit the build to App Store Connect for review with manual release. Mechanical work (tag + push, GH draft, ASC API calls) routes through `scripts/studio-tf-push.sh appstore` in the studio repo (`~/Documents/v-i-s-h-a-l/github/generic-dev-studio`). This wrapper drives release-notes composition, the human-approval gate, and the optional Slack post.
 
-## Configuration
+Authoritative knobs: `_shared/primitives/turnip-project-config.md` (App ID, ASC ids), `_shared/contracts/build-message-format.md` (release-notes shape).
 
-See `_shared/primitives/turnip-project-config.md` for all project paths and identifiers (repo root, pbxproj, ASC key ID/issuer/key file, App ID, bundle ID).
-
-## Step 1: Get current build number
+## Step 1: Resolve build + previous tag + commits
 
 ```bash
-grep -m1 "CURRENT_PROJECT_VERSION" /Users/vishalsingh/Documents/Turnip.gg/turnip-ios/zaps-app/Turnip.xcodeproj/project.pbxproj | tr -dc '0-9'
+cd /Users/vishalsingh/Documents/Turnip.gg/turnip-ios
+CURRENT_BUILD_NUMBER=$(grep -m1 "CURRENT_PROJECT_VERSION" zaps-app/Turnip.xcodeproj/project.pbxproj | tr -dc '0-9')
+VERSION=$(grep -m1 "MARKETING_VERSION" zaps-app/Turnip.xcodeproj/project.pbxproj | sed -E 's/.*= ([^;]+);.*/\1/' | tr -d ' ')
+PREV_TAG=$(git tag --sort=-creatordate | grep -E '^[0-9]+-zaps$' | head -1)
+git log "${PREV_TAG}..HEAD" --no-merges --format="%h %s%n%b%n---"
 ```
 
-This gives us `CURRENT_BUILD_NUMBER` (e.g. `3030`).
+Read full commit messages (subject + body) for informed release notes.
 
-## Step 2: Get the previous release tag
+## Step 2: Classify commits and compose two outputs
+
+For each fix commit:
+1. Identify what code/feature it touches.
+2. `git show ${PREV_TAG}:<file>` (or feature-introduction check) to determine if the buggy code existed at `PREV_TAG`.
+3. If introduced **after** `PREV_TAG` → fold into the parent feature bullet or omit (internal iteration).
+4. If at or before `PREV_TAG` → real user-facing fix, include.
+
+Compose two outputs:
+
+**A) Slack parent body + GitHub release notes (unified).** Three-section shape per `build-message-format.md` (`*New*` / `*Fixed*` / `*Crash fixes*`, skip empty sections). Release-specific overrides:
+- Drop regressions introduced and fixed within `PREV_TAG..HEAD` — net delta to users is zero.
+- Crash bullets: `• Fixed crash <Crashlytics URL>` or `• Possible fix for crash <Crashlytics URL>`.
+- No `cc:` mentions (release audience is broader). No rollover line.
+
+**B) App Store "What's New".** Playful, user-facing, flowing sentences (no bullets, no emojis). Short — under 500 chars ideally.
+
+## Step 3: Show both, get user approval
+
+Show A and B clearly labelled. Ask: *"Does this look good? You can say 'edit github notes', 'edit app store notes', or 'looks good' to proceed."*
+
+Wait for approval or edits before continuing.
+
+## Step 4: Write approved text to files
 
 ```bash
-git -C /Users/vishalsingh/Documents/Turnip.gg/turnip-ios tag --sort=-creatordate | grep -E '^[0-9]+-zaps$' | head -1
+cat > /tmp/release-notes.txt <<'EOF'
+<approved release notes A>
+EOF
+cat > /tmp/whats-new.txt <<'EOF'
+<approved what's new B>
+EOF
 ```
 
-This is `PREV_TAG` (e.g. `3027-zaps`).
-
-## Step 3: Get commits between previous tag and HEAD
-
-Read full commit messages (subject + body) so the detailed context can inform release notes and App Store "What's New":
-```bash
-git -C /Users/vishalsingh/Documents/Turnip.gg/turnip-ios log <PREV_TAG>..HEAD --no-merges --format="%h %s%n%b%n---"
-```
-
-Filter out version/build bump commits (lines containing "Bump build", "Bump version"). These are the meaningful changes. Use the commit body (what/why/where) to write better, more informed release notes.
-
-## Step 4: Compose release notes (two versions)
-
-**Before composing**, classify each bug fix commit to determine if it belongs in the release notes:
-
-For each commit that looks like a fix:
-1. Identify what code/feature the fix touches
-2. Check whether that code/feature existed at `PREV_TAG` (e.g. `git show <PREV_TAG>:<file>` or check if the feature was introduced after `PREV_TAG`)
-3. If the buggy code was introduced **after** `PREV_TAG` → the fix is internal development iteration. Either fold it into the parent feature's bullet point or omit it entirely
-4. If the buggy code existed **at or before** `PREV_TAG` → it's a real user-facing bug fix. Include it in the Bug Fixes section
-
-Examples:
-- "Fixed Select Frame gizmo not working on empty placeholders" — the gizmo was added in this cycle → omit
-- "Fixed scroll-to-tap misinterpretation in grids" — image placeholder grids existed before → keep
-- "Disabled crop on user-added stickers" — user-added stickers existed before → keep
-
-Using the filtered and classified commits, write two outputs:
-
-**A) Slack parent body + GitHub release notes (unified)** — follow `_shared/contracts/build-message-format.md`: three-section shape `*New*` / `*Fixed*` / `*Crash fixes*`, skip empty sections, feature rollup under *New*, bare-link bullets under *Crash fixes*. The same text is used as both the Slack parent body (Step 15) and the GitHub release notes (Step 7) — they are not separate.
-
-Release-specific rules (beyond the shared doc):
-- **Drop regressions introduced and fixed within `PREV_TAG..HEAD`** — if commit A introduced a bug and commit B fixed it, and both fall in this range, the net user-visible delta is zero; emit nothing for either. Only bullets representing changes users will actually see from the last shipped version survive.
-- Crash-fix bullets use the release form: `• Fixed crash <Crashlytics URL>` or `• Possible fix for crash <Crashlytics URL>` (prefix signals confidence).
-- No `cc:` mentions (release audience is broader — cc is TF-only).
-- No rollover line.
-
-**B) App Store "What's New"** — even more playful and user-facing, written like you're talking directly to the user. Keep it short (under 4000 chars, ideally under 500). No emojis. No bullet points — flowing sentences or short punchy lines. Example:
-```
-We tidied up the editor and it shows. The canvas stays the right size when you go to pick a photo, and tapping placeholders in your collage now works exactly the way you expect. Small things, big difference.
-```
-
-## Step 5: Show both to user and ask for confirmation
-
-Display both versions clearly labelled and ask:
-"Does this look good? You can say 'edit github notes', 'edit app store notes', or 'looks good' to proceed."
-
-Wait for user approval or edits before continuing.
-
-## Step 6: Push branch and create the git tag
+## Step 5: Run the studio appstore submission
 
 ```bash
-git -C /Users/vishalsingh/Documents/Turnip.gg/turnip-ios push -u origin HEAD
-git -C /Users/vishalsingh/Documents/Turnip.gg/turnip-ios tag <CURRENT_BUILD_NUMBER>-zaps
-git -C /Users/vishalsingh/Documents/Turnip.gg/turnip-ios push origin <CURRENT_BUILD_NUMBER>-zaps
+cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
+export STUDIO_RELEASE_TAG="release-${CURRENT_BUILD_NUMBER}-$(date -u +%Y%m%d-%H%M%S)"
+STUDIO_TF_PUSH_LIVE=1 ./scripts/studio-tf-push.sh appstore \
+  --build "$CURRENT_BUILD_NUMBER" \
+  --version "$VERSION" \
+  --release-notes-file /tmp/release-notes.txt \
+  --whatsnew-file /tmp/whats-new.txt
 ```
 
-## Step 7: Create GitHub draft release
+The script tags `${BUILD}-zaps`, pushes the tag, creates a GH draft release (account-switched to `vishal-zaps`), finds the build on ASC, creates or updates the App Store version, sets MANUAL release type with the build attached, and updates `whatsNew` for every localization.
 
-Make sure `gh` is using the `vishal-zaps` account:
-```bash
-gh auth switch --user vishal-zaps
-```
-
-```bash
-gh release create <CURRENT_BUILD_NUMBER>-zaps \
-  --repo turnip-ios/turnip-zaps \
-  --title "<CURRENT_BUILD_NUMBER>-zaps" \
-  --notes "<GITHUB_RELEASE_NOTES>" \
-  --draft
-```
-
-Construct the stable tag URL (not the draft preview URL that `gh release create` prints):
+The stable GH release URL — same for draft and published — is:
 
 ```
-GITHUB_RELEASE_URL=https://github.com/turnip-ios/turnip-zaps/releases/tag/<CURRENT_BUILD_NUMBER>-zaps
+https://github.com/turnip-ios/turnip-zaps/releases/tag/${CURRENT_BUILD_NUMBER}-zaps
 ```
 
-This form resolves to the draft pre-publish and to the final published release post-publish — the same URL stays valid through the entire release lifecycle, so the Slack post in Step 15 never goes stale when the draft is later published.
+## Step 6: Optional Slack post
 
-Confirm `<GITHUB_RELEASE_URL>` to the user.
-
-## Step 8: Resolve submission build number
-
-Default `SUBMISSION_BUILD_NUMBER` to `CURRENT_BUILD_NUMBER` and proceed without asking. Print:
-
-```
-Submitting build <CURRENT_BUILD_NUMBER> for App Store review
-```
-
-In the rare case the user wants to submit an older TestFlight build instead, they can abort now and re-invoke; don't add a prompt for the common path.
-
-## Step 9: Generate App Store Connect JWT
-
-Use the pattern in `_shared/primitives/appstore-connect-jwt.md` to generate `$TOKEN`. The `-sg` curl flag requirement documented there applies to all subsequent API calls in this command.
-
-## Step 10: Find the build on App Store Connect
-
-IMPORTANT: Use `-sg` flag with curl to disable glob expansion (required for URLs with square brackets):
+Post the unified A body via:
 
 ```bash
-curl -sg "https://api.appstoreconnect.apple.com/v1/builds?filter[version]=<SUBMISSION_BUILD_NUMBER>&include=preReleaseVersion&limit=1" \
-  -H "Authorization: Bearer $TOKEN"
+cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
+./scripts/slack-post.sh --channel <release-channel-id> --text "$RELEASE_BODY"
 ```
 
-Parse the response to get:
-- `BUILD_ID` — the build's `id` field
-- `VERSION_STRING` — from `included[].attributes.version` (the marketing version like `26.3.1`)
+Confirm to the user with the Slack permalink and the GH release URL.
 
-## Step 11: Find or create the App Store Version
+## Rollback
 
-The App ID for Zaps is `6502945736` (bundle ID: `gg.zaps.ios`). Use this directly.
-
-```bash
-# Check for existing versions - list all and filter in Python
-curl -sg "https://api.appstoreconnect.apple.com/v1/apps/6502945736/appStoreVersions?fields[appStoreVersions]=versionString,appStoreState,releaseType" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-- If a version exists in `PREPARE_FOR_SUBMISSION` and its `versionString` matches `VERSION_STRING` → use it (`APP_STORE_VERSION_ID`)
-- If no matching version exists → create one:
-
-```bash
-curl -s -X POST "https://api.appstoreconnect.apple.com/v1/appStoreVersions" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "data": {
-      "type": "appStoreVersions",
-      "attributes": {
-        "platform": "IOS",
-        "versionString": "<VERSION_STRING>",
-        "releaseType": "MANUAL"
-      },
-      "relationships": {
-        "app": {
-          "data": { "type": "apps", "id": "<APP_ID>" }
-        }
-      }
-    }
-  }'
-```
-
-Save the new `APP_STORE_VERSION_ID`.
-
-## Step 12: Set the build and release type on the App Store version
-
-Set the build and ensure `releaseType` is `MANUAL` in a single PATCH call:
-
-```bash
-curl -s -X PATCH "https://api.appstoreconnect.apple.com/v1/appStoreVersions/<APP_STORE_VERSION_ID>" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "data": {
-      "type": "appStoreVersions",
-      "id": "<APP_STORE_VERSION_ID>",
-      "attributes": {
-        "releaseType": "MANUAL"
-      },
-      "relationships": {
-        "build": {
-          "data": { "type": "builds", "id": "<BUILD_ID>" }
-        }
-      }
-    }
-  }'
-```
-
-## Step 13: Update "What's New" for all localizations
-
-First, get all localizations for this version:
-
-```bash
-curl -s "https://api.appstoreconnect.apple.com/v1/appStoreVersions/<APP_STORE_VERSION_ID>/appStoreVersionLocalizations" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-For **each localization** returned, PATCH the `whatsNew` field with the App Store release notes text:
-
-```bash
-curl -s -X PATCH "https://api.appstoreconnect.apple.com/v1/appStoreVersionLocalizations/<LOCALIZATION_ID>" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "data": {
-      "type": "appStoreVersionLocalizations",
-      "id": "<LOCALIZATION_ID>",
-      "attributes": {
-        "whatsNew": "<APP_STORE_WHATS_NEW>"
-      }
-    }
-  }'
-```
-
-## Step 14: Create the App Store submission
-
-Release mode is MANUAL (set in Step 12) — the build will not ship until the user clicks "Release" in App Store Connect. Proceed without a confirmation prompt.
-
-NOTE: The old `appStoreVersionSubmissions` API is deprecated. Use the new `reviewSubmissions` API instead:
-
-```bash
-# Step 14a: Create a review submission
-REVIEW_SUBMISSION_ID=$(curl -sg -X POST "https://api.appstoreconnect.apple.com/v1/reviewSubmissions" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "data": {
-      "type": "reviewSubmissions",
-      "attributes": { "platform": "IOS" },
-      "relationships": {
-        "app": { "data": { "type": "apps", "id": "6502945736" } }
-      }
-    }
-  }' | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['id'])")
-
-# Step 14b: Add the app store version to the submission
-curl -sg -X POST "https://api.appstoreconnect.apple.com/v1/reviewSubmissionItems" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"data\": {
-      \"type\": \"reviewSubmissionItems\",
-      \"relationships\": {
-        \"reviewSubmission\": { \"data\": { \"type\": \"reviewSubmissions\", \"id\": \"$REVIEW_SUBMISSION_ID\" } },
-        \"appStoreVersion\": { \"data\": { \"type\": \"appStoreVersions\", \"id\": \"<APP_STORE_VERSION_ID>\" } }
-      }
-    }
-  }"
-
-# Step 14c: Submit for review
-curl -sg -X PATCH "https://api.appstoreconnect.apple.com/v1/reviewSubmissions/$REVIEW_SUBMISSION_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"data\": {
-      \"type\": \"reviewSubmissions\",
-      \"id\": \"$REVIEW_SUBMISSION_ID\",
-      \"attributes\": { \"submitted\": true }
-    }
-  }"
-```
-
-## Step 15: Post to #releases Slack channel
-
-Slack channel: `C01PVRBMFJ6` (#releases)
-
-Load the Slack bot token using the pattern in `_shared/primitives/slack-post.md` (token path, missing-token error, and remediation are documented there). The `thread_ts` and `<!here>` rules in that file also apply here.
-
-```bash
-SLACK_BOT_TOKEN=$(cat ~/.claude/secrets/slack-bot-token)
-```
-
-**Main message** — headline + body (no `<!here>` on release parent, per `_shared/contracts/build-message-format.md`). The body is the three-section `*New*` / `*Fixed*` / `*Crash fixes*` text composed in Step 4A (the unified Slack-parent / GitHub-release-notes output — not a separate dump):
-```
-[iOS] v<VERSION_STRING> (build <SUBMISSION_BUILD_NUMBER>) has been submitted for App Store review
-
-<STEP_4A_BODY>
-```
-
-```bash
-PARENT_TS=$(curl -s -X POST https://slack.com/api/chat.postMessage \
-  -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"channel\":\"C01PVRBMFJ6\",\"text\":\"[iOS] v<VERSION_STRING> (build <SUBMISSION_BUILD_NUMBER>) has been submitted for App Store review\n\n<STEP_4A_BODY_ESCAPED>\"}" \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['ts'])")
-```
-
-Thread reply order (per `_shared/contracts/build-message-format.md` → Thread replies): App Store "What's New" first (highest product value), GitHub release URL second.
-
-**Reply 1** — App Store "What's New" with context header, two blank lines before the actual text:
-```
-App Store "What's New" submitted with this build:
-
-
-<APP_STORE_WHATS_NEW>
-```
-
-```bash
-curl -s -X POST https://slack.com/api/chat.postMessage \
-  -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"channel\":\"C01PVRBMFJ6\",\"thread_ts\":\"$PARENT_TS\",\"text\":\"App Store \\\"What's New\\\" submitted with this build:\n\n\n<APP_STORE_WHATS_NEW_ESCAPED>\"}"
-```
-
-**Reply 2** — GitHub release URL only (stable tag URL from Step 7):
-```bash
-curl -s -X POST https://slack.com/api/chat.postMessage \
-  -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"channel\":\"C01PVRBMFJ6\",\"thread_ts\":\"$PARENT_TS\",\"text\":\"<GITHUB_RELEASE_URL>\"}"
-```
-
-See `_shared/primitives/slack-post.md` for the general curl pattern. Escape newlines as `\n` and any double quotes in the message text before embedding in the JSON `-d` payload.
-
-## Step 16: Arm the App Store watcher
-
-Chanakya sweeps (every `/chanakya status`, `brief`, `ship`, `auto-sweep` tick) piggyback `scripts/appstore-watch.sh` to poll App Store Connect for this submission's state. When Apple flips the version to `PENDING_DEVELOPER_RELEASE` or `READY_FOR_SALE`, the watcher publishes the draft release (`gh release edit <tag> --draft=false`), posts a threaded reply on the Slack message from Step 15, and emits `appstore_released`. No further user action needed unless the watcher reports stuck.
-
-Write the marker:
-
-```bash
-NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-QUIET=$(date -u -v+6H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '6 hours' +%Y-%m-%dT%H:%M:%SZ)
-mkdir -p ~/.dev-studio/turnip-ios/.runtime/state
-
-python3 - "$NOW" "$QUIET" <<'PY'
-import json, sys, os
-now, quiet = sys.argv[1], sys.argv[2]
-marker = {
-    "schema": 1,
-    "project": "turnip-ios",
-    "tag": "<CURRENT_BUILD_NUMBER>-zaps",
-    "build": "<SUBMISSION_BUILD_NUMBER>",
-    "version": "<VERSION_STRING>",
-    "repo": "turnip-ios/turnip-zaps",
-    "source_branch": os.popen("git -C /Users/vishalsingh/Documents/Turnip.gg/turnip-ios branch --show-current").read().strip(),
-    "github_release_url": "<GITHUB_RELEASE_URL>",
-    "slack_channel": "C01PVRBMFJ6",
-    "slack_parent_ts": "<PARENT_TS>",
-    "asc_app_id": "6502945736",
-    "asc_key_path": os.path.expanduser("~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8"),
-    "asc_issuer_id": "1fa9f26b-7b13-459a-9225-1ca8d9c51fca",
-    "asc_key_id": "WJQ6D76K8R",
-    "submitted_at": now,
-    "quiet_until": quiet,
-    "next_check_at": quiet,
-    "last_state": "WAITING_FOR_REVIEW",
-    "last_check_at": None,
-    "failures": 0
-}
-path = os.path.expanduser("~/.dev-studio/turnip-ios/.runtime/state/pending-appstore-review.json")
-with open(path, 'w') as f:
-    json.dump(marker, f, indent=2)
-print(f"Marker written: {path}")
-PY
-```
-
-Emit `appstore_submitted` to the event log (via the project's `lib-paths.sh` `append_event` helper if invoked from there, otherwise skip — the marker itself carries full state).
-
-## Step 17: Done
-
-Confirm to the user:
-- Git tag created and pushed: `<CURRENT_BUILD_NUMBER>-zaps`
-- GitHub draft release created (stable URL: `<GITHUB_RELEASE_URL>`)
-- App Store submission created for version `<VERSION_STRING>` (build `<SUBMISSION_BUILD_NUMBER>`) with manual release
-- Posted to #releases on Slack
-- App Store watcher armed — will auto-publish the draft + thread-reply on Slack when the submission flips to `PENDING_DEVELOPER_RELEASE` / `READY_FOR_SALE` (piggybacks every `/chanakya` sweep; no `--away`/`--auto-sweep` required)
-
-Remind the user: the app will not go live automatically after approval — they need to manually release it from App Store Connect. The watcher fires when Apple finishes review, not when the user releases.
+To revert this wrapper to the legacy version: `git revert` the commit that introduced this file in the studio repo. Legacy ran the ASC API calls + `gh release create` inline.
