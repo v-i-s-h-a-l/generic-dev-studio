@@ -89,8 +89,10 @@ if [ -z "$EVENT_FILES" ]; then
 fi
 
 # Concatenate all eligible event files (jsonl + jsonl.gz) into one stream,
-# then count + classify in one awk pass. Lexicographic ts comparison works
-# because every event uses zero-padded ISO-8601 in UTC (Z suffix).
+# parse each line with jq (handles nested data.* fields correctly — naive
+# quote-splitting awk got fooled by producer.instance_id and similar). One
+# pass; lexicographic ts comparison works because all events use zero-padded
+# ISO-8601 in UTC.
 read_events() {
   local f
   for f in $EVENT_FILES; do
@@ -102,28 +104,27 @@ read_events() {
   done
 }
 
-TALLY=$(read_events | awk -v start_ts="$STARTED_AT" '
-  /^\{/ {
-    ts = ev = task = domain = ""
-    n = split($0, parts, "\"")
-    for (i = 1; i < n; i++) {
-      if      (parts[i] == "ts")     ts     = parts[i+2]
-      else if (parts[i] == "event")  ev     = parts[i+2]
-      else if (parts[i] == "task")   task   = parts[i+2]
-      else if (parts[i] == "domain") domain = parts[i+2]
-    }
-    if (ts == "" || ev == "") next
-    if (ts < start_ts) next
-    if      (ev == "brief_completed" && task != "")                          tasks[task]=1
-    else if (ev == "release_state_changed" || ev == "appstore_released")     releases++
-    else if (ev == "inbox_sweep_completed" || ev == "audit_completed")       sweeps++
-    else if (ev == "legacy_artifact_read" && domain != "")                   domains[domain]++
-  }
+TALLY=$(read_events | jq -rR --arg start_ts "$STARTED_AT" '
+  fromjson? | select(.ts != null and .event != null and .ts >= $start_ts) |
+  if .event == "brief_completed" and (.task // "") != "" then
+    "task\t\(.task)"
+  elif .event == "release_state_changed" or .event == "appstore_released" then
+    "release"
+  elif .event == "inbox_sweep_completed" or .event == "audit_completed" then
+    "sweep"
+  elif .event == "legacy_artifact_read" and (.data.domain // "") != "" then
+    "domain\t\(.data.domain)"
+  else empty end
+' 2>/dev/null | awk -F'\t' '
+  $1 == "task"    { tasks[$2]   = 1 }
+  $1 == "release" { releases++     }
+  $1 == "sweep"   { sweeps++       }
+  $1 == "domain"  { domains[$2]++ }
   END {
     n = 0; for (t in tasks) n++
     printf "task_cycles\t%d\n", n
-    printf "releases\t%d\n", releases+0
-    printf "sweeps\t%d\n", sweeps+0
+    printf "releases\t%d\n",   releases+0
+    printf "sweeps\t%d\n",     sweeps+0
     for (d in domains) printf "domain\t%s\t%d\n", d, domains[d]
   }
 ')
