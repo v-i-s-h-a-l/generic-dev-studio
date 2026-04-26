@@ -77,6 +77,13 @@ if node_is_self "$NODE_ID"; then
   IS_LOCAL=1
 else
   IS_LOCAL=0
+  # Pre-flight Xcode-version drift guard (#136). Same contract as
+  # task-build-gate.sh — block on major drift, warn on minor/patch.
+  if ! "$SCRIPT_DIR/check-xcode-parity.sh" "$NODE_ID"; then
+    data=$(printf '{"node":"%s","reason":"xcode_major_drift","attempt":%s}' "$NODE_ID" "$ATTEMPT")
+    emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+    exit 2
+  fi
 fi
 
 LOCK_ROOT="$(resolve_runtime_global)/xcodebuild-lock"

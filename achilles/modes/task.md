@@ -237,6 +237,8 @@ The script emits `build_check_started` on entry and `build_check_passed` / `buil
 
 **Node dispatch (#112).** Both `swift-test-gate.sh` and `task-build-gate.sh` full-green mode route through `scripts/node-pick.sh` — the swift-test gate asks for a `swift-test`-tagged node, the full-green gate asks for `xcodebuild`. When a healthy remote node answers (see `~/.dev-studio/.runtime/nodes.json`), the compile + test cost lands on that node over SSH. When no remote is registered, reachable, or role-matching, `node-pick` returns `local` and the gate runs on the laptop with no behavioural change. Fallback is silent — unreachable-but-configured is routine, not an error. The `node` field on `build_check_passed` / `build_check_failed` records where each attempt actually ran so debug sessions can distinguish local-red from mini-red without guessing.
 
+**Xcode-drift guard (#136).** Before any remote dispatch, the gates call `scripts/check-xcode-parity.sh` to compare laptop ↔ target-node Xcode versions against the cache from `node-parity.sh` (refreshed lazily on a 7-day TTL). MAJOR drift blocks; minor and patch drift warn-and-allow. Set `STUDIO_IGNORE_XCODE_DRIFT=1` to override a major-drift block in the rare deliberate-divergence case (e.g. validating a build on the older SDK). On block, the gate exits 2 with reason `xcode_major_drift`; no lock is acquired, no SSH cost is paid.
+
 **Red-gate handling:** stop — do **not** merge; leave branch + DerivedData intact; surface to user. If the fix is straightforward, fix, re-run Steps 5–6. Don't spiral. Never bypass the lock.
 
 Record `GATE = "lsp-only" | "full-green" | "swift-test"` for the debrief's `## Build Verification` block.
