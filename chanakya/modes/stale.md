@@ -3,11 +3,12 @@ name: Chanakya Stale
 description: Tasks stuck in their current state longer than N days. Default --days=7. Surfaces forgotten briefed tasks, abandoned in-progress branches, and merged tasks awaiting verification.
 type: mode-pack
 schema_version: 1
-budget_tokens: 600
+budget_tokens: 700
 snapshots: []
 reads:
   - plans/tasks/*.yaml                             # history[-1].at (latest transition timestamp) lives per-task
-writes: []
+writes:
+  - events/<date>.jsonl                            # `suggestion_emitted{kind:stale_brief}` via scripts/detect-stale-briefs.sh
 ---
 
 # Mode: Stale (`/chanakya stale [--days=N] [--state=<state>]`)
@@ -53,6 +54,16 @@ For each stale group, surface the canonical follow-up:
 | `blocked` | review the blocker; consider `/chanakya reopen` if stale |
 
 Suggestions are advisory — print under each group as one line.
+
+## Emit suggestions
+
+After rendering, run:
+
+```bash
+scripts/detect-stale-briefs.sh --days="$DAYS"
+```
+
+The script emits one `suggestion_emitted{kind:stale_brief}` per stale `briefed` task — idempotent via `idempotency_key` bucketed by age (7/14/28/56d), so re-running the mode does not re-fire. `/chanakya status` surfaces the active set without further wiring. See `_shared/contracts/events.md` §Suggestion engine.
 
 ## Output discipline
 
