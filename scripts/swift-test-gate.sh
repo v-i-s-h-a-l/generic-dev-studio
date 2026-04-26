@@ -42,6 +42,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
+# shellcheck source=lib-dispatch-registry.sh
+. "$SCRIPT_DIR/lib-dispatch-registry.sh"
 
 TASK_ID="${1:?usage: swift-test-gate.sh <task-id> <worktree> [<changed-files>]}"
 WORKTREE="${2:?worktree required}"
@@ -162,6 +164,10 @@ fi
 DISPATCH_FIELDS=$(printf ',"studio.dispatch.node":"%s","studio.dispatch.role":"swift-test","studio.dispatch.reason":"%s","studio.dispatch.xcode_version":"%s"' \
   "$NODE_ID" "$DISPATCH_REASON" "$XCODE_VER")
 
+# #270 — populated by the remote-dispatch branch. Empty for self-node
+# (no remote registry entry exists to mark).
+DISPATCH_UUID=""
+
 # Trap-based span closure. Without it, any exit between started and
 # pass/fail (signal, swift-not-found, surprise non-zero) leaks an open
 # build_check_started that analytics can't tell apart from "in flight".
@@ -182,6 +188,7 @@ _emit_aborted_if_open() {
     data=$(printf '{"mode":"swift-test","attempt":%s,"exit_code":%s%s}' "$ATTEMPT" "$rc" "$DISPATCH_FIELDS")
   fi
   emit_event_keyed achilles task build_check_aborted "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  [ -n "$DISPATCH_UUID" ] && dispatch_registry_mark "$DISPATCH_UUID" aborted 2>/dev/null || true
   rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
 }
 _emit_terminal() {
@@ -189,6 +196,13 @@ _emit_terminal() {
   local data="${2:?}"
   emit_event_keyed achilles task "$event" "$TASK_ID" "$data" >/dev/null 2>&1 || true
   TERMINAL_EMITTED=1
+  if [ -n "$DISPATCH_UUID" ]; then
+    case "$event" in
+      *_passed)  dispatch_registry_mark "$DISPATCH_UUID" passed  2>/dev/null || true ;;
+      *_failed)  dispatch_registry_mark "$DISPATCH_UUID" failed  2>/dev/null || true ;;
+      *_aborted) dispatch_registry_mark "$DISPATCH_UUID" aborted 2>/dev/null || true ;;
+    esac
+  fi
   rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
 }
 
@@ -230,6 +244,7 @@ test_log=$(mktemp 2>/dev/null || printf '/tmp/swift-test-%s.log' "$$")
 
 if node_is_self "$NODE_ID"; then
   swift test --package-path "$PKG_ROOT" >"$test_log" 2>&1
+  TEST_STATUS=$?
 else
   # Remote dispatch (#127). Mirror $WORKTREE under remote $HOME via rsync,
   # then cd to the home-relative form. Laptop's $HOME and remote's $HOME
@@ -286,10 +301,17 @@ else
       REMOTE_CMD='cd '"$Q_WORKTREE"' && swift test --package-path '"$(printf '%q' "$PKG_ROOT")"
       ;;
   esac
-  "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "$REMOTE_CMD" \
-    >"$test_log" 2>&1
+  # #270 — sidecar capture so _emit_terminal / _emit_aborted_if_open can
+  # mark the dispatch-registry entry node-dispatch wrote.
+  UUID_SIDECAR=$(mktemp 2>/dev/null || printf '/tmp/dispatch-uuid-%s' "$$")
+  STUDIO_DISPATCH_TASK_ID="$TASK_ID" \
+    STUDIO_DISPATCH_UUID_FILE="$UUID_SIDECAR" \
+    "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "$REMOTE_CMD" \
+      >"$test_log" 2>&1
+  TEST_STATUS=$?
+  DISPATCH_UUID=$(tr -d '[:space:]' < "$UUID_SIDECAR" 2>/dev/null)
+  rm -f "$UUID_SIDECAR" 2>/dev/null || true
 fi
-TEST_STATUS=$?
 
 # Counts kept cheap and well-defined: swift-test surfaces failures via
 # `error:` and Xcode-style `: error:` prefixes, identical to xcodebuild.

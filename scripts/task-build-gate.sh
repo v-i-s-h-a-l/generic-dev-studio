@@ -47,6 +47,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
+# shellcheck source=lib-dispatch-registry.sh
+. "$SCRIPT_DIR/lib-dispatch-registry.sh"
 
 MODE="${1:?usage: task-build-gate.sh <lsp-only|full-green> <task-id> <worktree> <scheme> <destination> [<project-or-workspace-relpath>]}"
 TASK_ID="${2:?task-id required}"
@@ -144,6 +146,12 @@ if [ "$MODE" = "full-green" ]; then
     "$NODE_ID" "$DISPATCH_REASON" "$XCODE_VER")
 fi
 
+# #270 — populated by the remote-dispatch branch via STUDIO_DISPATCH_UUID_FILE
+# sidecar (node-dispatch.sh writes the UUID before its `exec ssh`). Empty for
+# lsp-only, dry-run, locked-out, and self-node paths — those never hit
+# node-dispatch and have no remote registry entry to mark.
+DISPATCH_UUID=""
+
 # Trap-based terminal-span closure. Without this, any exit path between
 # build_check_started and the pass/fail emit (cd failures, missing args,
 # SIGKILL, stale-lock retry-loop bail-outs) would leave an open span that
@@ -167,6 +175,7 @@ _emit_aborted_if_open() {
     data=$(printf '{"mode":"%s","attempt":%s,"exit_code":%s%s}' "$MODE" "$ATTEMPT" "$rc" "$DISPATCH_FIELDS")
   fi
   emit_event_keyed achilles task build_check_aborted "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  [ -n "$DISPATCH_UUID" ] && dispatch_registry_mark "$DISPATCH_UUID" aborted 2>/dev/null || true
   rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
 }
 
@@ -178,6 +187,13 @@ _emit_terminal() {
   local data="${2:?}"
   emit_event_keyed achilles task "$event" "$TASK_ID" "$data" >/dev/null 2>&1 || true
   TERMINAL_EMITTED=1
+  if [ -n "$DISPATCH_UUID" ]; then
+    case "$event" in
+      *_passed)  dispatch_registry_mark "$DISPATCH_UUID" passed  2>/dev/null || true ;;
+      *_failed)  dispatch_registry_mark "$DISPATCH_UUID" failed  2>/dev/null || true ;;
+      *_aborted) dispatch_registry_mark "$DISPATCH_UUID" aborted 2>/dev/null || true ;;
+    esac
+  fi
   rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
 }
 
@@ -514,9 +530,18 @@ else
     *.xcodeproj)   REMOTE_CMD+=' -project '"$(printf '%q' "$PROJECT_RELPATH")" ;;
   esac
   REMOTE_CMD+=' -scheme '"$(printf '%q' "$SCHEME")"' -destination '"$(printf '%q' "$DESTINATION")"' -derivedDataPath '"$Q_DERIVED"
-  "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "$REMOTE_CMD" \
-    >"$build_log" 2>&1
+  # #270 — opt in to the laptop-side dispatch registry. node-dispatch.sh
+  # writes the in-flight entry once the UUID is generated and stamps it
+  # into the sidecar; we capture it after dispatch returns so _emit_terminal
+  # / _emit_aborted_if_open can mark the terminal status.
+  UUID_SIDECAR=$(mktemp 2>/dev/null || printf '/tmp/dispatch-uuid-%s' "$$")
+  STUDIO_DISPATCH_TASK_ID="$TASK_ID" \
+    STUDIO_DISPATCH_UUID_FILE="$UUID_SIDECAR" \
+    "$SCRIPT_DIR/node-dispatch.sh" "$NODE_ID" sh -c "$REMOTE_CMD" \
+      >"$build_log" 2>&1
   BUILD_STATUS=$?
+  DISPATCH_UUID=$(tr -d '[:space:]' < "$UUID_SIDECAR" 2>/dev/null)
+  rm -f "$UUID_SIDECAR" 2>/dev/null || true
 
   # Sidecar pull-back: structured JSON from the worker's shim → local
   # build_json for error enrichment below. Non-fatal — when the shim
