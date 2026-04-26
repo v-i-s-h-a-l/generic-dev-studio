@@ -18,7 +18,7 @@ Every `xcodebuild`, `swift build`, and `swift test` invocation in agent code or 
 | Achilles test-suite mode | `scripts/task-test-gate.sh` | `xcodebuild test` under per-node lock |
 | Argus M/L review test phase | `scripts/argus-run-tests.sh` | machine-local test-slot semaphore (intentional carve-out — runs against `Argus-N` simulators that are per-machine) |
 
-The gates own three responsibilities: node-pick (route to a healthy worker tagged for the role, fall back to local), lock acquisition (per-node `xcodebuild-lock/<node-id>/` with 45-min staleness reclaim), and event emission (`build_check_*` for build, `test_run_*` for test). Skipping the gate skips all three.
+The gates own three responsibilities: node-pick (route to a healthy worker tagged for the role, fall back to local), lock acquisition (per-node `xcodebuild-lock/<node-id>/` with 45-min staleness reclaim, fed by a per-node FIFO queue at `build-queue/<node-id>/` per #266 so concurrent waiters acquire in enqueue order rather than racing the mkdir), and event emission (`build_check_*` for build, `build_queue_position` on enqueue, `test_run_*` for test). Skipping the gate skips all three.
 
 ## Why a single chokepoint
 

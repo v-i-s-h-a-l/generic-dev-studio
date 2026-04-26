@@ -73,6 +73,8 @@ Phase 2.6 introduced a uniform per-artifact YAML layout under `plans/` + a singl
 | Fleet inbox root | `~/.dev-studio/<project>/.runtime/achilles-inbox/` | — |
 | Push queue | `~/.dev-studio/<project>/.runtime/state/push-queue.jsonl` | — |
 | Test-slot semaphore (global) | `~/.dev-studio/.runtime/locks/test-slots/` | — |
+| Xcodebuild lock (global, per-node) | `~/.dev-studio/.runtime/xcodebuild-lock/<node-id>/` — serializes xcodebuild against the SPM cache + Clang module cache + simulator locks on the node that runs the build. R4-exempted carve-out: keyed by dispatch target so a laptop-local build and a mini-dispatched build don't serialize on each other. | — |
+| Build-queue substrate (global, per-node) | `~/.dev-studio/.runtime/build-queue/<node-id>/` — FIFO queue feeding the per-node xcodebuild lock (#266 / #218 Stage A). Each waiter writes `<enqueued_at>-<pid>-<task-id>.json` on entry and removes it on exit; the head entry (oldest enqueued_at) is the next to acquire the lock. Same R4 carve-out as the lock itself: per-node physical-resource serialization. | — |
 | Node registry (global) | `~/.dev-studio/.runtime/nodes.json` — worker nodes reachable over SSH; consumed by `scripts/node-dispatch.sh` / `node-health.sh` / `node-pick.sh` | — |
 | Snapshot references | `~/.dev-studio/<project>/snapshots/references/` — canonical reference images for snapshot tests; generated on the node tagged `snapshot-canonical` and pulled locally via `scripts/snapshot-sync.sh` | — |
 | Argus result bundles | `/tmp/argus-<task-id>.xcresult` | — |
