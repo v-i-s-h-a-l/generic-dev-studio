@@ -29,6 +29,7 @@
 #         _SCAN_NEEDED     — "id:tier id:tier ..."   (missing required/recommended)
 #         _SCAN_OPTIONAL   — "id id ..."             (missing optional)
 #         _SCAN_CUSTOM     — "id id ..."             (need custom install flow)
+#         _SCAN_UPGRADE    — "id:have:want ..."      (present but below min_version)
 #
 #   registry_render_scan <mode>
 #       Render scan results. Modes: quick | auto | interactive.
@@ -64,6 +65,7 @@ _SCAN_SATISFIED=""
 _SCAN_NEEDED=""
 _SCAN_OPTIONAL=""
 _SCAN_CUSTOM=""
+_SCAN_UPGRADE=""
 
 # Brew formula cache — populated once per scan when brew is available.
 _BREW_FORMULA_CACHE=""
@@ -215,12 +217,34 @@ registry_ids_for_role() {
 }
 
 # ============================================================================
+# Version comparison — returns 0 if $1 >= $2 (dot-separated numeric)
+# ============================================================================
+
+_registry_version_gte() {
+  local have="$1" want="$2"
+  [ -z "$want" ] && return 0
+  [ -z "$have" ] && return 1
+  # Strip non-numeric prefixes (e.g. "v4.30.1" → "4.30.1")
+  have=$(printf '%s' "$have" | sed 's/^[^0-9]*//')
+  want=$(printf '%s' "$want" | sed 's/^[^0-9]*//')
+  local IFS='.'
+  set -- $have; local h1="${1:-0}" h2="${2:-0}" h3="${3:-0}"
+  set -- $want; local w1="${1:-0}" w2="${2:-0}" w3="${3:-0}"
+  [ "$h1" -gt "$w1" ] 2>/dev/null && return 0
+  [ "$h1" -lt "$w1" ] 2>/dev/null && return 1
+  [ "$h2" -gt "$w2" ] 2>/dev/null && return 0
+  [ "$h2" -lt "$w2" ] 2>/dev/null && return 1
+  [ "$h3" -ge "$w3" ] 2>/dev/null && return 0
+  return 1
+}
+
+# ============================================================================
 # Scan — check presence + version for all relevant tools
 # ============================================================================
 
 registry_scan() {
   local role="$1" wroles="${2:-}"
-  _SCAN_SATISFIED="" _SCAN_NEEDED="" _SCAN_OPTIONAL="" _SCAN_CUSTOM=""
+  _SCAN_SATISFIED="" _SCAN_NEEDED="" _SCAN_OPTIONAL="" _SCAN_CUSTOM="" _SCAN_UPGRADE=""
 
   # Cache brew formula list once (avoids ~2-5s per-package dead air).
   _BREW_FORMULA_CACHE=""
@@ -300,6 +324,11 @@ registry_scan() {
       # Sanitize: replace spaces with underscores so the space-separated
       # scan results format doesn't break on multi-word version strings.
       version=$(printf '%s' "$version" | tr ' ' '_')
+      local min_ver
+      min_ver=$(registry_get "$id" "min_version")
+      if [ -n "$min_ver" ] && [ "$version" != "installed" ] && ! _registry_version_gte "$version" "$min_ver"; then
+        _SCAN_UPGRADE="$_SCAN_UPGRADE $id:$version:$min_ver"
+      fi
       _SCAN_SATISFIED="$_SCAN_SATISFIED $id:$version"
     else
       # Separate custom-install from brew-installable
@@ -322,6 +351,7 @@ registry_scan() {
   _SCAN_NEEDED="${_SCAN_NEEDED# }"
   _SCAN_OPTIONAL="${_SCAN_OPTIONAL# }"
   _SCAN_CUSTOM="${_SCAN_CUSTOM# }"
+  _SCAN_UPGRADE="${_SCAN_UPGRADE# }"
 }
 
 # ============================================================================
@@ -330,13 +360,14 @@ registry_scan() {
 
 registry_render_scan() {
   local mode="${1:-auto}"
-  local count_sat=0 count_need=0 count_opt=0 count_custom=0
+  local count_sat=0 count_need=0 count_opt=0 count_custom=0 count_upgrade=0
   local entry
 
   for entry in $_SCAN_SATISFIED; do count_sat=$((count_sat + 1)); done
   for entry in $_SCAN_NEEDED; do count_need=$((count_need + 1)); done
   for entry in $_SCAN_OPTIONAL; do count_opt=$((count_opt + 1)); done
   for entry in $_SCAN_CUSTOM; do count_custom=$((count_custom + 1)); done
+  for entry in $_SCAN_UPGRADE; do count_upgrade=$((count_upgrade + 1)); done
 
   case "$mode" in
     # ------------------------------------------------------------------
@@ -358,6 +389,13 @@ registry_render_scan() {
           cnames="${cnames:+$cnames, }$(registry_get "$entry" "name")"
         done
         dim "$count_custom tool(s) with custom install: $cnames"
+      fi
+      if [ "$count_upgrade" -gt 0 ]; then
+        for entry in $_SCAN_UPGRADE; do
+          local _id="${entry%%:*}" _rest="${entry#*:}"
+          local _have="${_rest%%:*}" _want="${_rest#*:}"
+          warn "$(registry_get "$_id" "name") $_have → upgrade to $_want+ recommended"
+        done
       fi
       ;;
 
@@ -407,6 +445,18 @@ registry_render_scan() {
           _name=$(registry_get "$entry" "name")
           _why=$(registry_get "$entry" "why")
           printf '    %s▹%s %-20s — %s\n' "$c_dim" "$c_reset" "$_name" "$_why"
+        done
+      fi
+
+      if [ "$count_upgrade" -gt 0 ]; then
+        echo
+        dim "Upgrade recommended:"
+        for entry in $_SCAN_UPGRADE; do
+          local _id="${entry%%:*}" _rest="${entry#*:}"
+          local _have="${_rest%%:*}" _want="${_rest#*:}"
+          printf '    %s↑%s %-20s %s%s → %s+%s\n' \
+            "$c_yellow" "$c_reset" "$(registry_get "$_id" "name")" \
+            "$c_dim" "$_have" "$_want" "$c_reset"
         done
       fi
 
@@ -467,6 +517,19 @@ registry_render_scan() {
         done
       fi
 
+      if [ "$count_upgrade" -gt 0 ]; then
+        echo
+        printf '  %s── Upgrade recommended ─────────────────────────────────────%s\n' "$c_yellow" "$c_reset"
+        for entry in $_SCAN_UPGRADE; do
+          local _id="${entry%%:*}" _rest="${entry#*:}"
+          local _have="${_rest%%:*}" _want="${_rest#*:}"
+          local _name
+          _name=$(registry_get "$_id" "name")
+          printf '    %s↑%s %-20s installed: %s, need: %s+\n' \
+            "$c_yellow" "$c_reset" "$_name" "$_have" "$_want"
+        done
+      fi
+
       echo
       info "$count_sat satisfied · $count_need to install · $count_opt optional · $count_custom later steps"
       ;;
@@ -503,6 +566,45 @@ registry_install_needed() {
     echo
     for id in $_SCAN_OPTIONAL; do
       _registry_interactive_install "$id" "optional" || true
+    done
+  fi
+
+  # Upgrade outdated tools (brew upgrade for brew-installed, warn for others)
+  if [ -n "$_SCAN_UPGRADE" ]; then
+    for entry in $_SCAN_UPGRADE; do
+      id="${entry%%:*}"
+      local _rest="${entry#*:}" _have _want _itype
+      _have="${_rest%%:*}"; _want="${_rest#*:}"
+      _itype=$(registry_get "$id" "install_type")
+      case "$_itype" in
+        brew|brew-cask|brew-tap)
+          local _itarget
+          _itarget=$(registry_get "$id" "install_target")
+          case "$mode" in
+            quick)
+              warn "$(registry_get "$id" "name") $_have is below min $_want — run: brew upgrade $_itarget"
+              ;;
+            auto)
+              announce "brew upgrade $_itarget"
+              if run brew upgrade "$_itarget" 2>/dev/null; then
+                ok "$(registry_get "$id" "name") upgraded"
+              else
+                warn "$(registry_get "$id" "name") upgrade failed — try manually: brew upgrade $_itarget"
+                failures=$((failures + 1))
+              fi
+              ;;
+            interactive)
+              if confirm "Upgrade $(registry_get "$id" "name") from $_have to $_want+?" "y"; then
+                announce "brew upgrade $_itarget"
+                run brew upgrade "$_itarget" 2>/dev/null || warn "upgrade failed"
+              fi
+              ;;
+          esac
+          ;;
+        *)
+          warn "$(registry_get "$id" "name") $_have is below min $_want — upgrade manually"
+          ;;
+      esac
     done
   fi
 
