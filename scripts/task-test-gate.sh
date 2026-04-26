@@ -71,6 +71,8 @@ mkdir -p "$DERIVED" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$DERIVED
 mkdir -p "$(dirname "$LOCK")" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$(dirname "$LOCK")" >&2; exit 2; }
 
 ATTEMPT=1
+GATE_START_S=$(date -u +%s)
+gate_announce_start test "$NODE_ID" "$TASK_ID" full-test
 
 start_data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","worktree":"%s","attempt":%s}' \
   "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$WORKTREE" "$ATTEMPT")
@@ -82,6 +84,7 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","dry_run":true,"attempt":%s}' \
     "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$ATTEMPT")
   emit_event_keyed achilles task test_run_passed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  gate_announce_done test "$NODE_ID" "$TASK_ID" dry-run 0
   exit 0
 fi
 
@@ -106,12 +109,15 @@ while true; do
     data=$(printf '{"node":"%s","reason":"locked_out","waited_s":%s,"attempt":%s}' "$NODE_ID" "$wait_seconds" "$ATTEMPT")
     emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
     printf 'error: xcodebuild lock wait exceeded %ss\n' "$wait_cap" >&2
+    gate_announce_done test "$NODE_ID" "$TASK_ID" locked-out "$wait_seconds"
     exit 3
   fi
   sleep "$backoff"
   wait_seconds=$((wait_seconds + backoff))
 done
-trap 'rm -rf "$LOCK" 2>/dev/null' EXIT INT TERM
+# Trap also clears the badge/title on aborted exit so a SIGKILL'd run
+# doesn't leave a stale overlay pinned in the user's pane.
+trap 'rm -rf "$LOCK" 2>/dev/null; _gate_set_title ""; _gate_set_badge ""' EXIT INT TERM
 
 if [ "$IS_LOCAL" = "1" ]; then
   cd "$WORKTREE" || { printf 'error: cd %s failed\n' "$WORKTREE" >&2; exit 2; }
@@ -178,10 +184,12 @@ if [ "$TEST_STATUS" -eq 0 ]; then
   data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"test_count":%s,"attempt":%s}' \
     "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$TEST_COUNT" "$ATTEMPT")
   emit_event_keyed achilles task test_run_passed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  gate_announce_done test "$NODE_ID" "$TASK_ID" passed "$DURATION_S"
   exit 0
 fi
 
 data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"attempt":%s,"exit_code":%s}' \
   "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$ATTEMPT" "$TEST_STATUS")
 emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+gate_announce_done test "$NODE_ID" "$TASK_ID" failed "$DURATION_S"
 exit 2

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-26T15:07:26Z",
+  "generated_at": "2026-04-26T16:02:30Z",
   "schema": 1,
   "commands": [
     {"name": "chanakya-help", "source": "commands/chanakya-help.md", "description": "", "agent": null, "scope": "global"},
@@ -10,6 +10,7 @@
     {"name": "studio-help", "source": ".claude/commands/studio-help.md", "description": "", "agent": null, "scope": "project"},
     {"name": "studio-setup", "source": ".claude/commands/studio-setup.md", "description": "Onboard the current machine via scripts/bootstrap.sh. Auto-pilot by default — only prompts for role if not given. Flags: --manager, --worker, --dual, --interactive, --dry-run, --help.", "agent": null, "scope": "project"},
     {"name": "achilles", "source": "achilles/SKILL.md", "agent": "achilles", "description": "Worker agent for the Turnip iOS codebase. Implements tasks on isolated git worktrees, self-reviews, invokes Argus pre-merge, merges locally, debriefs. See routing.yaml for the slash-command surface; full mode index in the dispatch table."},
+    {"name": "apollo", "source": "apollo/SKILL.md", "agent": "apollo", "description": "iOS performance agent. Per-metric mode packs (memory/thermal/battery) under a strict-9 evidence gate. Refuses recommendations without hard evidence; auto-captures via the execution surface."},
     {"name": "argus", "source": "argus/SKILL.md", "agent": "argus", "description": "Reviewer agent for the Turnip iOS codebase. Two-stage review (spec-compliance then code-quality) between Achilles self-review and merge. See routing.yaml for the slash-command surface."},
     {"name": "chanakya", "source": "chanakya/SKILL.md", "agent": "chanakya", "description": "Project manager for the Turnip iOS codebase. Plans tasks, generates Achilles briefs, runs inbox sweeps, tracks build/test debt, manages verification. See routing.yaml for the sub-command surface. Bug fixes / one-file changes route to /achilles."},
     {"name": "achilles.app-store", "source": "achilles/modes/app-store.md", "agent": "achilles", "mode": "app-store", "description": "App Store Release wrapper (`/achilles app-store`). Wraps the existing `/fullSendToAppStore` skill, captures App Store–specific data (git tag, GitHub release URL) alongside the release artifact + release debrief that bind the submission to Chanakya's task tracking."},

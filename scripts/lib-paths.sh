@@ -553,3 +553,53 @@ node_is_self() {
   mid=$(node_machine_id_for "$id")
   [ -n "$mid" ] && [ "$mid" = "$self" ]
 }
+
+# #215 — gate UX surface. Three side-channels that surface the live
+# build/test dispatch state to the user:
+#   1. stderr banner    — visible inline in the agent's terminal
+#   2. iTerm2 badge     — translucent corner overlay, persists through scroll
+#   3. terminal title   — alt-tab / pane / dock visibility
+# All three are suppressed under STUDIO_GATE_QUIET=1 so scripted callers
+# (tests, batch jobs) don't accumulate noise. The escapes are best-effort:
+# non-supporting terminals discard them silently.
+
+gate_announce_start() {
+  [ "${STUDIO_GATE_QUIET:-0}" = "1" ] && return 0
+  local action="$1" node="$2" task="$3" mode="$4"
+  printf '→ %s: node=%s  task=%s  mode=%s\n' "$action" "$node" "$task" "$mode" >&2
+  _gate_set_title "$action $task → $node"
+  _gate_set_badge "$task" "→ $node" "$mode"
+}
+
+gate_announce_done() {
+  [ "${STUDIO_GATE_QUIET:-0}" = "1" ] && return 0
+  local action="$1" node="$2" task="$3" status="$4" dur="${5:-?}"
+  printf '← %s: node=%s  task=%s  status=%s  wall=%ss\n' \
+    "$action" "$node" "$task" "$status" "$dur" >&2
+  _gate_set_title ""
+  _gate_set_badge ""
+}
+
+# OSC 0 — sets both window and tab title on most modern terminals
+# (Terminal.app, iTerm2, Alacritty, kitty, ghostty). Empty value clears.
+_gate_set_title() {
+  printf '\033]0;%s\007' "$1" >&2
+}
+
+# iTerm2 SetBadgeFormat — translucent corner overlay. Format string is
+# base64-encoded UTF-8; literal newlines render as line breaks. Skipping
+# the escape on non-iTerm terminals avoids the small chance of a stray
+# OSC sequence bleeding through to a logger that captures stderr.
+_gate_set_badge() {
+  [ "${TERM_PROGRAM:-}" = "iTerm.app" ] || return 0
+  if [ -z "${1:-}${2:-}${3:-}" ]; then
+    printf '\033]1337;SetBadgeFormat=\007' >&2
+    return 0
+  fi
+  local content="${1:-}"
+  [ -n "${2:-}" ] && content="$content"$'\n'"$2"
+  [ -n "${3:-}" ] && content="$content"$'\n'"$3"
+  local b64
+  b64=$(printf '%s' "$content" | base64 | tr -d '\n')
+  printf '\033]1337;SetBadgeFormat=%s\007' "$b64" >&2
+}

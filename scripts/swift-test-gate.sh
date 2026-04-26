@@ -177,7 +177,7 @@ file_count=$(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ')
 start_data=$(printf '{"mode":"swift-test","worktree":"%s","package":"%s","files":%s,"attempt":%s}' \
   "$WORKTREE" "$PKG_ROOT" "$file_count" "$ATTEMPT")
 emit_event_keyed achilles task build_check_started "$TASK_ID" "$start_data" >/dev/null 2>&1 || true
-trap '_emit_aborted_if_open; _release_task_lock' EXIT INT TERM
+trap '_emit_aborted_if_open; _release_task_lock; _gate_set_title ""; _gate_set_badge ""' EXIT INT TERM
 
 # DRY-RUN — log the invocation, skip the real test run. Idempotency-key
 # parity with task-build-gate.sh so wet/dry-run output diffs cleanly.
@@ -193,6 +193,8 @@ fi
 # returns `local` when no remote is registered or healthy, which keeps
 # hosts without a node registry running bit-for-bit the old behaviour.
 NODE_ID=$("$SCRIPT_DIR/node-pick.sh" swift-test 2>/dev/null || echo local)
+GATE_START_S=$(date -u +%s)
+gate_announce_start swift-test "$NODE_ID" "$TASK_ID" swift-test
 
 if node_is_self "$NODE_ID"; then
   # Local swift is only required on the local branch — if we're dispatching
@@ -201,6 +203,7 @@ if node_is_self "$NODE_ID"; then
   if ! command -v swift >/dev/null 2>&1; then
     data=$(printf '{"mode":"swift-test","reason":"swift_unavailable","package":"%s","attempt":%s}' "$PKG_ROOT" "$ATTEMPT")
     _emit_terminal build_check_failed "$data"
+    gate_announce_done swift-test "$NODE_ID" "$TASK_ID" failed 0
     exit 2
   fi
 fi
@@ -281,14 +284,19 @@ warn_count=$(grep -cE '(^|: )warning:' "$test_log" 2>/dev/null)
 case "$warn_count" in ''|*[!0-9]*) warn_count=0 ;; esac
 rm -f "$test_log" 2>/dev/null || true
 
+GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
+[ "$GATE_DUR_S" -lt 0 ] && GATE_DUR_S=0
+
 if [ "$TEST_STATUS" -ne 0 ]; then
   data=$(printf '{"mode":"swift-test","node":"%s","errors":%s,"warnings":%s,"package":"%s","attempt":%s}' \
     "$NODE_ID" "$err_count" "$warn_count" "$PKG_ROOT" "$ATTEMPT")
   _emit_terminal build_check_failed "$data"
+  gate_announce_done swift-test "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
   exit 2
 fi
 
 data=$(printf '{"mode":"swift-test","node":"%s","warnings":%s,"package":"%s","files":%s,"attempt":%s}' \
   "$NODE_ID" "$warn_count" "$PKG_ROOT" "$file_count" "$ATTEMPT")
 _emit_terminal build_check_passed "$data"
+gate_announce_done swift-test "$NODE_ID" "$TASK_ID" passed "$GATE_DUR_S"
 exit 0
