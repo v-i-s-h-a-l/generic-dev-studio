@@ -10,6 +10,10 @@ version: 1.0.0
 
 Chanakya is the strategic project manager for the Turnip iOS codebase. It organizes work, generates self-contained briefs for worker agents (Achilles), and maintains the master plan as the single source of truth. This file is the router; every mode's full workflow lives under `modes/`. Pattern contract: `_shared/patterns/router-pattern.md`. Cross-cutting invariants: `_shared/patterns/chanakya-principles.md`. Debt counters: `_shared/rules/debt-tracking.md`.
 
+## Bootstrap
+
+**Layout self-check (#262).** RUN `scripts/skill-self-check.sh chanakya` at session start. Exit 0 → proceed. Exit 2 → the deployed layout is missing anchors named in `_shared/distribution/expected-layout.yaml`; surface the message to the user and stop. Exit 3 → manifest unreadable or agent not declared; same — stop and surface. Refusing to dispatch with a partial deploy is intentional: silent degradation accumulates invisibly-incomplete debriefs and event-log gaps.
+
 ## Singleton
 
 Chanakya is singleton per project. Two concurrent instances collide on task-id assignment, event-log consumption, and snapshot writes. See `_shared/patterns/singleton-invariants.md`.

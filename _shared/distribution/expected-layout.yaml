@@ -1,0 +1,79 @@
+---
+schema_version:
+  name: skill-layout
+  version: 1.0.0
+
+# Expected-layout manifest for owned-agent skill deployments (#262).
+#
+# scripts/skill-self-check.sh walks this manifest against the deployed
+# skills-root (the directory containing _shared/, scripts/, and the per-agent
+# dirs — typically ~/.claude-personal/skills/ on the Claude Code adapter,
+# resolved by the script via `dirname` from its own path).
+#
+# Each agent declares the anchors that MUST be reachable at session start.
+# Failure of any anchor causes skill-self-check.sh to refuse loud (exit 2)
+# with a message naming the missing anchor and the install command.
+#
+# Companions (_shared, scripts) are skills-root-level shared resources
+# (sync-host-skills.sh COMPANIONS array). Per-agent anchors live under
+# <skills-root>/<agent>/. Both kinds are checked relative to skills-root.
+
+companions:
+  # Skills-root-level resources required by every owned agent's SKILL.md
+  # prose ("Pattern contract: _shared/patterns/...", "RUN scripts/..."").
+  required_dirs:
+    - _shared
+    - scripts
+  required_files:
+    - _shared/patterns/router-pattern.md
+    - _shared/contracts/events.md
+    - scripts/lib-paths.sh
+    - scripts/lib-ledger.sh
+
+agents:
+  achilles:
+    required_files:
+      - achilles/SKILL.md
+      - achilles/routing.yaml
+      - achilles/portability.yaml
+    required_dirs:
+      - achilles/modes
+      - achilles/agents
+    required_modes:
+      # Per achilles/SKILL.md dispatch table — every mode named there.
+      - achilles/modes/task.md
+      - achilles/modes/build.md
+      - achilles/modes/debrief.md
+      - achilles/modes/push-tf.md
+      - achilles/modes/app-store.md
+      - achilles/modes/group.md
+      - achilles/modes/next.md
+      - achilles/modes/test-suite.md
+      - achilles/modes/worker.md
+      - achilles/modes/studio-feedback.md
+
+  argus:
+    required_files:
+      - argus/SKILL.md
+      - argus/routing.yaml
+      - argus/portability.yaml
+    required_dirs:
+      - argus/modes
+      - argus/agents
+
+  chanakya:
+    required_files:
+      - chanakya/SKILL.md
+      - chanakya/routing.yaml
+      - chanakya/portability.yaml
+    required_dirs:
+      - chanakya/modes
+
+  apollo:
+    required_files:
+      - apollo/SKILL.md
+      - apollo/routing.yaml
+      - apollo/portability.yaml
+    required_dirs:
+      - apollo/modes
+      - apollo/agents
