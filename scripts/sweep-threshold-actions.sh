@@ -26,24 +26,36 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 PROJECT=$(resolve_project 2>/dev/null) || exit 0
 PROJECT_ROOT=$(resolve_project_root_for "$PROJECT")
 MASTER="$PROJECT_ROOT/plans/chanakya-master.md"
+BUILD_DEBT_YAML="$PROJECT_ROOT/plans/build-debt.yaml"
 STATE_DIR="$PROJECT_ROOT/.runtime/state"
 BLOCK_FLAG="$STATE_DIR/build_debt_blocked"
 
-[ -f "$MASTER" ] || exit 0
-
-# Parse the Counter line inside the `## Build Debt` block. Scope is bounded
-# by the next `##` heading so we don't accidentally pick up Unit/UI sections.
-counter=$(awk '
-  /^## Build Debt/ { in_block=1; next }
-  in_block && /^## / { exit }
-  in_block && /^- Counter:/ {
-    t=$0
-    sub(/^.*Counter: */, "", t)
-    sub(/ .*$/, "", t)
-    print t + 0
-    exit
-  }
-' "$MASTER")
+# Counter source-of-truth post-#273 is plans/build-debt.yaml. Pre-bootstrap
+# projects fall back to parsing master-plan (R-fallback per A.1 audit) and
+# emit legacy_artifact_read so the read is observable.
+counter=""
+if [ -f "$BUILD_DEBT_YAML" ] && command -v yq >/dev/null 2>&1; then
+  counter=$(yq -r '.counter // 0' "$BUILD_DEBT_YAML" 2>/dev/null)
+fi
+if [ -z "$counter" ] || [ "$counter" = "null" ]; then
+  if [ -f "$MASTER" ]; then
+    counter=$(awk '
+      /^## Build Debt/ { in_block=1; next }
+      in_block && /^## / { exit }
+      in_block && /^- Counter:/ {
+        t=$0
+        sub(/^.*Counter: */, "", t)
+        sub(/ .*$/, "", t)
+        print t + 0
+        exit
+      }
+    ' "$MASTER")
+    if [ -n "$counter" ]; then
+      emit_event_keyed chanakya inbox-sweep legacy_artifact_read "" \
+        '{"domain":"build_debt","reason":"no_build_debt_yaml"}' >/dev/null 2>&1 || true
+    fi
+  fi
+fi
 counter=${counter:-0}
 
 # Check for an existing open TBUILD task in the post-2.6 surface. Grep tasks
@@ -76,6 +88,11 @@ if [ "$counter" -ge 6 ] && [ "$has_open_tbuild" = "0" ]; then
   write_task_artifact "$tbuild_uuid" proposed \
     "TBUILD — Build verification checkpoint (debt counter=$counter)" \
     type=build-check priority=P1 source=build-debt legacy_task_id=TBUILD || true
+  # Pin open_check_task in the canonical YAML so future sweeps see the open
+  # TBUILD even if the title-grep above misses (e.g. title rename).
+  if [ -f "$BUILD_DEBT_YAML" ] && command -v yq >/dev/null 2>&1; then
+    _build_debt_yq_apply ".open_check_task = \"TBUILD\" | .state = \"warn\"" 2>/dev/null || true
+  fi
   emit_event_keyed chanakya inbox-sweep build_debt_warned "" \
     "{\"counter\":$counter,\"threshold\":6}" >/dev/null || true
 fi
@@ -88,6 +105,9 @@ if [ "$counter" -ge 12 ]; then
   tmp="$BLOCK_FLAG.tmp.$$"
   printf 'counter: %s\nset_at: %s\n' "$counter" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp" 2>/dev/null || true
   mv "$tmp" "$BLOCK_FLAG" 2>/dev/null || rm -f "$tmp"
+  if [ -f "$BUILD_DEBT_YAML" ] && command -v yq >/dev/null 2>&1; then
+    _build_debt_yq_apply ".state = \"block\"" 2>/dev/null || true
+  fi
   emit_event_keyed chanakya inbox-sweep build_debt_blocked "" \
     "{\"counter\":$counter}" >/dev/null || true
 fi
