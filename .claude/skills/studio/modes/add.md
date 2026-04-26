@@ -62,7 +62,11 @@ On failure, surface the specific error:
 - **Author not trusted** — explain the first-time trust gate; offer to approve
 - **Recipe already exists** — point to the existing recipe and suggest `install-recipe.sh` for updates
 
-## Step 4 — Commit (auto-apply tier)
+## Step 4 — Update routing instructions
+
+If the new skill benefits from explicit routing (model should use it for a specific domain), add a one-line entry to `_shared/skill-routing.md`. The next `sync-host-skills.sh --all` run (or `/studio sync`) propagates it to every host's global instructions file.
+
+## Step 5 — Commit (auto-apply tier)
 
 Adding a skill through `/studio add` is auto-apply tier per CLAUDE.md — the user explicitly initiated it. Commit the new recipe + vendored content in a single commit:
 
