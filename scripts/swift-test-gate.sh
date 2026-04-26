@@ -194,7 +194,7 @@ fi
 # hosts without a node registry running bit-for-bit the old behaviour.
 NODE_ID=$("$SCRIPT_DIR/node-pick.sh" swift-test 2>/dev/null || echo local)
 
-if [ "$NODE_ID" = "local" ]; then
+if node_is_self "$NODE_ID"; then
   # Local swift is only required on the local branch — if we're dispatching
   # to a remote node, the remote's toolchain is what matters and its
   # absence surfaces as a non-zero remote exit code below.
@@ -207,7 +207,7 @@ fi
 
 test_log=$(mktemp 2>/dev/null || printf '/tmp/swift-test-%s.log' "$$")
 
-if [ "$NODE_ID" = "local" ]; then
+if node_is_self "$NODE_ID"; then
   swift test --package-path "$PKG_ROOT" >"$test_log" 2>&1
 else
   # Remote dispatch (#127). Mirror $WORKTREE under remote $HOME via rsync,

@@ -213,6 +213,16 @@ fi
 # pre-B3 behaviour bit-for-bit under `xcodebuild-lock/local/`.
 NODE_ID=$("$SCRIPT_DIR/node-pick.sh" xcodebuild 2>/dev/null || echo local)
 
+# #215 — when node-pick returns the current machine (either synthetic `local`
+# or a registered self-id like `laptop`), run inline. Source-sync + SSH would
+# loop back through the network stack, and ssh to self is not guaranteed (no
+# sshd at home is the common case).
+if node_is_self "$NODE_ID"; then
+  IS_LOCAL=1
+else
+  IS_LOCAL=0
+fi
+
 LOCK_ROOT="$(resolve_runtime_global)/xcodebuild-lock"
 LOCK="$LOCK_ROOT/$NODE_ID"
 DERIVED=$(resolve_derived_data_for "$TASK_ID")
@@ -267,7 +277,7 @@ trap '_emit_aborted_if_open; rm -rf "$LOCK" 2>/dev/null; _release_task_lock' EXI
 # Local branch still needs to cd before invoking xcodebuild. Remote branch
 # delegates the cd to the remote shell below — the dispatch still happens
 # from whatever cwd the caller had.
-if [ "$NODE_ID" = "local" ]; then
+if [ "$IS_LOCAL" = "1" ]; then
   cd "$WORKTREE" || { printf 'error: cd %s failed\n' "$WORKTREE" >&2; exit 2; }
 fi
 
@@ -281,7 +291,7 @@ fi
 build_log=$(mktemp 2>/dev/null || printf '/tmp/xcb-%s.log' "$$")
 build_json="${build_log}.json"
 export XCB_JSON_SIDECAR="$build_json"
-if [ "$NODE_ID" = "local" ]; then
+if [ "$IS_LOCAL" = "1" ]; then
   "$SCRIPT_DIR/xcodebuild-shim.sh" build \
     -scheme "$SCHEME" \
     -destination "$DESTINATION" \
