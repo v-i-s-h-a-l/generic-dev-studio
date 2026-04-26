@@ -1,6 +1,6 @@
 ---
 name: Canonical anti-patterns primitive
-description: Curated 1/10 advisory channel for Apollo. Documented anti-patterns cited only when measurement is structurally impossible. Memory + thermal rows seeded (Stage 2a + 2b).
+description: Curated 1/10 advisory channel for Apollo. Documented anti-patterns cited only when measurement is structurally impossible. Memory + thermal + battery rows seeded (Stage 2a + 2b + 2c).
 type: reference
 schema_version: 1
 ---
@@ -60,7 +60,16 @@ The `measurement_path: blocked` line is mandatory. If the reason names a path th
 
 ## Battery anti-patterns (Stage 2c — #232)
 
-To be added by #232. The row-id namespace is `batt:NN`.
+| Row id | Pattern | Diff signal | Why advisory, not recommendation |
+|---|---|---|---|
+| `batt:01` | Foreground `CLLocationManager` running at `kCLLocationAccuracyBest` / `BestForNavigation` while not user-engaged; or `startUpdatingLocation()` invoked without a paired pause on `applicationDidEnterBackground` for non-location-essential apps | `CLLocationManager.desiredAccuracy = kCLLocationAccuracyBest{ForNavigation}`, `startUpdatingLocation()` invoked, no balancing `stopUpdatingLocation()` on background entry, no switch to `startMonitoringSignificantLocationChanges` for non-foreground use | High-accuracy GPS is a documented sustained drain source (Apple Energy Efficiency Guide); magnitude is device- and reception-dependent and can only be attributed by a Power Profiler Location row capture |
+| `batt:02` | Polling HTTP loop with sub-minute interval instead of push or backoff | `Timer.scheduledTimer(withTimeInterval: <60, …)` or `RunLoop` schedule firing a `URLSessionDataTask`, `URLSession.shared.data(for:)`, or equivalent in a loop with no `URLRequest.cachePolicy = .returnCacheDataElseLoad` and no exponential backoff | Tail-energy on each cellular wake compounds the per-request cost; without a Power Profiler `network` row + Network instrument trace, the tail-energy magnitude is unmeasured |
+| `batt:03` | Persistent WebSocket / long-poll without keepalive coalescing or backoff window | `URLSessionWebSocketTask`, `URLSessionStreamTask`, or third-party WS client kept open across foreground / background transitions, no ping coalescing, no `URLSessionConfiguration.timeoutIntervalForResource`, no APNs fallback for backgrounded delivery | Persistent radio sessions prevent radio sleep; cost depends on RTT and ping cadence and only resolves under Power Profiler + Network instrument paired capture |
+| `batt:04` | `Timer.scheduledTimer` / `CADisplayLink` / `Combine.Timer.publish` active when app is backgrounded | Timer or display-link instantiated in `viewDidLoad` / `init`, no `applicationDidEnterBackground` / `scenePhase == .background` invalidation path | Background CPU + display wakes; cost depends on cadence and what the timer drives. Without Power Profiler across the background interval, the wake density is unattributed |
+| `batt:05` | `CBCentralManager.scanForPeripherals(withServices:options:)` running continuously without duty-cycling | `scanForPeripherals` invoked once, no balancing `stopScan()`, no duty-cycle window (start → discover → stop → wait → repeat); `CBCentralManagerScanOptionAllowDuplicatesKey: true` ratchets the cost further | Continuous BLE scan is a sustained Bluetooth drain; magnitude depends on advertisement density and only resolves under Power Profiler Bluetooth row capture |
+| `batt:06` | `AVAudioSession` activated and held active outside playback windows | `AVAudioSession.sharedInstance().setActive(true, …)` invoked, no balancing `setActive(false, options: .notifyOthersOnDeactivation)` on playback stop / `applicationDidEnterBackground`; `.playAndRecord` category retained when only `.ambient` is needed | Active audio session keeps the audio subsystem powered; cost is real but workload-dependent and only attributed under Power Profiler Audio row capture |
+| `batt:07` | `UIApplication.shared.isIdleTimerDisabled = true` left enabled outside the scoped use case | `isIdleTimerDisabled = true` set in a view controller's `viewDidAppear` / `init` with no balancing `false` reset on `viewDidDisappear` / `applicationWillResignActive` / `scenePhase` transition; or set globally at app launch | Disabled idle timer keeps the screen on, dominating display energy; magnitude depends on user dwell and only resolves under Power Profiler Display row + `MXDisplayMetric.averagePixelLuminance` capture |
+| `batt:08` | Background URLSession / `BGProcessingTask` with un-bounded work; no `expirationHandler`, `BGProcessingTaskRequest.requiresExternalPower = false` for compute-heavy work, or no `BGTask.setTaskCompleted(success:)` in the success path | `URLSessionConfiguration.background(withIdentifier:)` task started without a registered `URLSessionDelegate.urlSession(_:didCompleteWithError:)` cleanup; or `BGTaskScheduler.shared.register(forTaskWithIdentifier:)` handler that does not register `task.expirationHandler` and call `task.setTaskCompleted(success:)` on every exit path | Background overruns hit the OS watchdog (`0xdead10cc`) and thrash the cohort battery aggregate; magnitude depends on cadence × work and only resolves under Power Profiler driven by a `simctl push` / `(lldb) BGTaskScheduler._simulateLaunchForTaskWithIdentifier:` script |
 
 ## How rows enter the list
 
@@ -81,6 +90,7 @@ A pattern-match-on-diff system that flags "looks expensive" is the regression Ap
 - `apollo/_shared/primitives/execution-surface.md` — the auto-capture decision tree the advisory route only fires after exhausting
 - `apollo/modes/memory.md` — consumer of the `mem:NN` rows
 - `apollo/modes/thermal.md` — consumer of the `therm:NN` rows
+- `apollo/modes/battery.md` — consumer of the `batt:NN` rows
 - WWDC18 219 — Image and Graphics Best Practices (canonical for `mem:01`)
 - WWDC21 10180 — Detect and diagnose memory issues (canonical for `mem:02`–`mem:05`)
 - Apple "ARC: Strong Reference Cycles for Closures" — Swift Programming Language guide (canonical for `mem:03`)
@@ -90,3 +100,11 @@ A pattern-match-on-diff system that flags "looks expensive" is the regression Ap
 - WWDC25 308 — Optimize CPU performance with Instruments (canonical for `therm:03`, `therm:04`)
 - Apple Metal best-practices — command-buffer / queue reuse (canonical for `therm:06`)
 - WWDC22 10027 / Core ML compute-unit selection guidance (canonical for `therm:07`)
+- Apple Energy Efficiency Guide for iOS Apps — location accuracy / radio coalescing / always-on subsystem guidance (canonical for `batt:01`, `batt:02`, `batt:03`, `batt:05`, `batt:06`)
+- WWDC25 226 — Profile and optimize power usage in your app (canonical for `batt:01`–`batt:08` reproducible-vs-non-reproducible split)
+- WWDC22 10142 — Efficiency awaits: Background tasks in SwiftUI (canonical for `batt:08`)
+- WWDC21 10212 — Analyze HTTP traffic in Instruments (canonical for `batt:02`, `batt:03` tail-energy)
+- Apple `BGTaskScheduler` + `BGProcessingTaskRequest` references (canonical for `batt:08`)
+- Apple `UIApplication.isIdleTimerDisabled` reference (canonical for `batt:07`)
+- Apple `AVAudioSession` lifecycle reference (canonical for `batt:06`)
+- Apple `CBCentralManagerScanOptionAllowDuplicatesKey` reference (canonical for `batt:05`)
