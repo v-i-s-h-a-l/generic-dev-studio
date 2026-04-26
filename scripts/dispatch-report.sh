@@ -124,6 +124,33 @@ cat $files 2>/dev/null \
   | awk 'BEGIN{printf "  %-20s %-10s %s\n", "node", "probe", "count"; printf "  %-20s %-10s %s\n", "----", "-----", "-----"}
          {n=$1; $1=""; sub(/^ +/,""); split($0, p, "\t"); printf "  %-20s %-10s %s\n", p[1], p[2], n}'
 
+# --- Build-queue depth distribution (#266). Every full-green gate emits
+# one build_queue_position at enqueue with depth + position. Surface the
+# count of queued runs per node and the share that hit non-trivial waits
+# (position > 1) so saturation is visible without running query-events.
+printf '\n## Build-queue enqueues (full-green only)\n\n'
+# shellcheck disable=SC2086
+queue_total=$(cat $files 2>/dev/null \
+  | jq -r 'select(.event=="build_queue_position") | 1' 2>/dev/null | wc -l | tr -d ' ')
+if [ "$queue_total" -gt 0 ]; then
+  printf '  %-20s %-10s %-12s %s\n' "node" "enqueues" "waited(>1)" "max_depth"
+  printf '  %-20s %-10s %-12s %s\n' "----" "--------" "----------" "---------"
+  # shellcheck disable=SC2086
+  cat $files 2>/dev/null \
+    | jq -r 'select(.event=="build_queue_position")
+             | "\(.data.node // "unknown")\t\(.data.position // 1)\t\(.data.depth // 1)"' 2>/dev/null \
+    | awk -F'\t' '
+        { n[$1]++; if ($2+0 > 1) waited[$1]++; if ($3+0 > maxd[$1]) maxd[$1] = $3+0 }
+        END {
+          for (k in n) {
+            w = waited[k] + 0
+            printf "  %-20s %-10s %-12s %s\n", k, n[k], w, maxd[k]
+          }
+        }' | sort -k2 -rn
+else
+  printf '  no build_queue_position events in window\n'
+fi
+
 # --- Top failure reasons on build_check_failed (the "what's actually
 # breaking" view, complementary to fallback).
 printf '\n## Top build_check_failed reasons\n\n'

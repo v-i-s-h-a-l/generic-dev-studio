@@ -39,6 +39,8 @@ Write to `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md`:
 - **Base:** `<base-branch>`
 - **Branch name:** `achilles/<task-id>`
 
+> **Do not annotate the base with a tip SHA** (e.g. `(tip: <sha>)` after the base branch name). Brief-write time and dispatch time are minutes-to-hours apart; a SHA captured at write time goes stale before the worktree is set up, but reads as load-bearing. Base-stale handling lives at Step 8.4 (auto-refresh; `base_refreshed` event) and at `task_started.base_sha` capture, both of which read live `git rev-parse <base>` at dispatch time. The brief is the spec; the live tree is the SHA. (#264)
+
 ## Skills to Invoke
 
 Before starting, load these skills for guidance:

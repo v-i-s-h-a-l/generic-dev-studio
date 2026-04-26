@@ -282,8 +282,77 @@ DERIVED=$(resolve_derived_data_for "$TASK_ID")
 mkdir -p "$DERIVED" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$DERIVED" >&2; exit 2; }
 mkdir -p "$(dirname "$LOCK")" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$(dirname "$LOCK")" >&2; exit 2; }
 
-# DRY-RUN — log the invocation, skip the lock + xcodebuild. Idempotency key
-# matches the wet-run's path so diff-comparison works (patterns/dry-run.md).
+# ---------- queue substrate (#266 / #218 Stage A) ----------
+#
+# FIFO queue feeding the per-node mkdir-lock below. Pure ordering — no
+# priority logic yet (lands in #218-B). Each waiter writes an entry
+# `<enqueued_at>-<pid>-<task-id>.json`; the head (oldest enqueued_at by
+# lexical sort) acquires the lock next. The queue lives at
+# `~/.dev-studio/.runtime/build-queue/<node-id>/` — sibling of the lock
+# itself; R4-exempted carve-out documented in file-locations.md.
+#
+# 45-min stale-entry GC matches the lock-dir staleness threshold so an
+# orphaned waiter (gate killed mid-flight without trap-based dequeue)
+# doesn't strand the queue. The inner mkdir-lock retains its own 45-min
+# reclaim — the two layers are independent.
+QUEUE_DIR="$(resolve_runtime_global)/build-queue/$NODE_ID"
+mkdir -p "$QUEUE_DIR" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$QUEUE_DIR" >&2; exit 2; }
+ENQUEUED_AT=$(date -u +%s)
+QUEUE_ENTRY="$QUEUE_DIR/$(printf '%010d-%d-%s.json' "$ENQUEUED_AT" "$$" "$TASK_ID")"
+printf '{"id":"%s","enqueued_at":%s,"pid":%s,"role":"xcodebuild"}\n' \
+  "$TASK_ID" "$ENQUEUED_AT" "$$" > "$QUEUE_ENTRY" 2>/dev/null \
+  || { printf 'error: cannot write queue entry %s\n' "$QUEUE_ENTRY" >&2; exit 2; }
+
+_release_queue_entry() { rm -f "$QUEUE_ENTRY" 2>/dev/null || true; }
+_queue_gc() {
+  find "$QUEUE_DIR" -maxdepth 1 -type f -name '*.json' -mmin +45 -delete 2>/dev/null || true
+}
+
+_queue_gc
+QUEUE_DEPTH=$(find "$QUEUE_DIR" -maxdepth 1 -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+case "$QUEUE_DEPTH" in ''|*[!0-9]*) QUEUE_DEPTH=1 ;; esac
+[ "$QUEUE_DEPTH" -lt 1 ] && QUEUE_DEPTH=1
+QUEUE_POSITION=$(find "$QUEUE_DIR" -maxdepth 1 -type f -name '*.json' 2>/dev/null \
+  | sort | awk -v me="$QUEUE_ENTRY" '{ if ($0 == me) { print NR; exit } }')
+case "$QUEUE_POSITION" in ''|*[!0-9]*) QUEUE_POSITION="$QUEUE_DEPTH" ;; esac
+
+queue_data=$(printf '{"mode":"%s","node":"%s","position":%s,"depth":%s,"attempt":%s%s}' \
+  "$MODE" "$NODE_ID" "$QUEUE_POSITION" "$QUEUE_DEPTH" "$ATTEMPT" "$DISPATCH_FIELDS")
+emit_event_keyed achilles task build_queue_position "$TASK_ID" "$queue_data" >/dev/null 2>&1 || true
+
+# Compose: aborted-if-open → queue release → task lock release. The
+# inner-lock release is layered on once that lock is acquired below.
+trap '_emit_aborted_if_open; _release_queue_entry; _release_task_lock' EXIT INT TERM
+
+# Wait until our entry is at the head. Re-GC each iteration so an
+# orphaned entry ahead of us doesn't strand the wait. 30-min envelope
+# matches the inner mkdir-lock's wait cap; combined ceiling is 60 min,
+# but that requires both layers saturated — a substrate anomaly worth
+# surfacing as a failed gate via reason: queue_locked_out.
+queue_wait=0
+queue_wait_cap=1800
+queue_backoff=10
+while :; do
+  _queue_gc
+  head=$(find "$QUEUE_DIR" -maxdepth 1 -type f -name '*.json' 2>/dev/null | sort | head -1)
+  [ "$head" = "$QUEUE_ENTRY" ] && break
+  if [ "$queue_wait" -ge "$queue_wait_cap" ]; then
+    printf 'error: build-queue wait exceeded %ss (head=%s)\n' "$queue_wait_cap" "$head" >&2
+    data=$(printf '{"mode":"full-green","reason":"queue_locked_out","waited_s":%s,"attempt":%s%s}' \
+      "$queue_wait" "$ATTEMPT" "$DISPATCH_FIELDS")
+    _emit_terminal build_check_failed "$data"
+    gate_announce_done build "$NODE_ID" "$TASK_ID" locked-out "$queue_wait"
+    exit 3
+  fi
+  sleep "$queue_backoff"
+  queue_wait=$((queue_wait + queue_backoff))
+done
+
+# DRY-RUN — log the invocation, skip the lock + xcodebuild. Idempotency
+# key matches the wet-run's path so diff-comparison works
+# (patterns/dry-run.md). The queue substrate above ran for real (enqueue
+# + head-wait + dequeue via trap), so DRY_RUN faithfully exercises FIFO
+# ordering — used by the #266 acceptance harness.
 if [ "${DRY_RUN:-0}" = "1" ]; then
   printf 'DRY-RUN xcodebuild node=%s scheme=%s destination=%s -derivedDataPath=%s\n' \
     "$NODE_ID" "$SCHEME" "$DESTINATION" "$DERIVED" >&2
@@ -329,7 +398,7 @@ done
 # branch even when the earlier outer trap got overridden by this one. Also
 # clears the iTerm badge + terminal title so a SIGKILL or unexpected exit
 # doesn't leave a stale "→ m1mini" overlay pinned in the user's pane.
-trap '_emit_aborted_if_open; rm -rf "$LOCK" 2>/dev/null; _release_task_lock; _gate_set_title ""; _gate_set_badge ""' EXIT INT TERM
+trap '_emit_aborted_if_open; rm -rf "$LOCK" 2>/dev/null; _release_queue_entry; _release_task_lock; _gate_set_title ""; _gate_set_badge ""' EXIT INT TERM
 
 # Local branch still needs to cd before invoking xcodebuild. Remote branch
 # delegates the cd to the remote shell below — the dispatch still happens

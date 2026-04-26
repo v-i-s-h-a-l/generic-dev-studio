@@ -83,6 +83,10 @@ dispatched → superseded (mid-flight replacement; rare)
 
 Transitions emit `brief_state_changed` per `contracts/events.md`.
 
+## Out of scope
+
+The schema deliberately omits a base-branch tip SHA field (#264). Brief-write time and dispatch time are minutes-to-hours apart; a SHA captured at write time goes stale before the worktree is set up. Base-stale detection is dispatch-time only — `task_started.base_sha` records the live SHA at Step 2 and `base_refreshed` / `base_refresh_conflict` (Step 8.4) handle drift. Brief writers MUST NOT add a tip SHA to `body` prose either; the brief is the spec, the live tree is the SHA. Enforcement convention only — no schema field to violate.
+
 ## Links
 
 - `task_id` back-references the parent task. Bidirectional consistency checked by the plans-index validator.
