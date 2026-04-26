@@ -49,6 +49,7 @@ Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debri
 | `ship <target>` | `modes/ship.md` |
 | `sweep-debt` | `modes/sweep-debt.md` |
 | `verify [--round N]` | `modes/verify.md` |
+| `reopen <task-id> --reason="<text>"` | `modes/reopen.md` |
 | `janitor [--apply]` | `modes/janitor.md` |
 | `ingest-thread <channel> <ts> [flags]` | `modes/ingest.md` (arg: thread) |
 | `ingest-dm <user> [flags]` | `modes/ingest.md` (arg: dm) |

@@ -70,6 +70,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /chanakya brief-all              # brief every pending task in priority order
 /chanakya sweep-debt             # brief + dispatch all pending debt tasks
 /chanakya verify                 # guided: test-flow → promote → review-feedback
+/chanakya reopen T347 --reason="qa-rejected: <text>"  # reopen a closed task with recorded provenance
 /achilles T001                   # execute (XS/S: lsp-only, M/L: full build; merges immediately)
 /achilles T001 --wait            # execute, pause up to 10 min for feedback before merging
 /achilles T001 --force-build     # override size-driven gate; run full xcodebuild
@@ -127,7 +128,7 @@ argus/
 chanakya/
   SKILL.md         # manager agent — intake, briefing, status, PRD review, inbox sweep,
                    #   event log processing, test-manifest, test-flow, review-feedback,
-                   #   sync-slack, ship, brief-all, sweep-debt, verify, compact,
+                   #   sync-slack, ship, brief-all, sweep-debt, verify, reopen, compact,
                    #   ingest-thread/dm/slack, report-design, report-product,
                    #   feedback-archive, feedback-history
   README.md        # long-form user docs with examples

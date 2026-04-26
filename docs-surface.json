@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-26T21:56:53Z",
+  "generated_at": "2026-04-26T22:03:40Z",
   "schema": 1,
   "commands": [
     {"name": "chanakya-help", "source": "commands/chanakya-help.md", "description": "", "agent": null, "scope": "global"},
@@ -37,6 +37,7 @@
     {"name": "chanakya.ingest", "source": "chanakya/modes/ingest.md", "agent": "chanakya", "mode": "ingest", "description": "Slack-source feedback ingestion — thread, DM, channel. Pulls messages, classifies feedback vs conversation, mints feedback records, downloads attachments, dedupes, emits feedback_ingested."},
     {"name": "chanakya.intake", "source": "chanakya/modes/intake.md", "agent": "chanakya", "mode": "intake", "description": "Initial task capture + planning — take a PRD or bullet points, tier into plan-worthy vs direct, expand into task groups with sub-task decisions (unit/integration/UI tests, TDD vs test-after), assign skills, write the master plan."},
     {"name": "chanakya.janitor", "source": "chanakya/modes/janitor.md", "agent": "chanakya", "mode": "janitor", "description": "Project-scoped janitor — runs sweep-janitor + fleet-cleanup for the active project, including the gap-#31 local-debt pass (merged worktrees, orphan DerivedData, dead-pid xcodebuild locks). Default is dry-run; --apply commits the deletions."},
+    {"name": "chanakya.reopen", "source": "chanakya/modes/reopen.md", "agent": "chanakya", "mode": "reopen", "description": "Reopen a closed task. Validates source state (verified | merged | archived | cancelled), records a reopen reason, appends prior debrief id to reopen_chain, transitions state to reopened, and emits task_reopened so the next brief carries the lineage."},
     {"name": "chanakya.review", "source": "chanakya/modes/review.md", "agent": "chanakya", "mode": "review", "description": "`/chanakya review` — user pastes updated PRD; Chanakya diffs against the master plan, marks affected tasks `needs-rework`, regenerates stale briefs, adds new task entries. Pre-dispatch inbox sweep moved to modes/inbox-sweep.md."},
     {"name": "chanakya.ship", "source": "chanakya/modes/ship.md", "agent": "chanakya", "mode": "ship", "description": "Brief + dispatch composite. Resolves targets, checks debt gates, briefs pending tasks, phases dispatch (fleet mode via work-stealing queue; single-session prints commands)."},
     {"name": "chanakya.status", "source": "chanakya/modes/status.md", "agent": "chanakya", "mode": "status", "description": "Default mode. Renders master-plan summary, git state, blockers, push queue, test-flow round status, and release status."},
