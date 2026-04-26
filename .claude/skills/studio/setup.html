@@ -622,7 +622,7 @@ chmod 600 ~/.ssh/authorized_keys</code></pre>
 xcodebuild -version</code></pre>
 
       <div class="callout warn">
-        <strong>Xcode version parity matters.</strong> Different Xcode = different SDK = different binaries. Builds dispatched to the node can diverge silently if the node is on an older Xcode. Keep them in sync; <code>node-parity.sh</code> (see follow-ups) will catch drift.
+        <strong>Xcode version parity matters.</strong> Different Xcode = different SDK = different binaries. Builds dispatched to the node can diverge silently if the node is on an older Xcode. Run <code>scripts/node-parity.sh</code> any time you update Xcode on either machine — it surfaces toolchain drift across all registered nodes (#126).
       </div>
 
       <h3>2.3 · Homebrew + required packages <span class="badge auto">auto</span></h3>
@@ -728,10 +728,10 @@ sudo pmset -a displaysleep 10  # screen can sleep — system stays up
 sudo pmset -a disksleep 0      # don't spin disks down</code></pre>
 
     <h3>Xcode / CLT parity drift</h3>
-    <p>When you update Xcode on the laptop, the node falls behind and builds diverge silently. A future <code>scripts/node-parity.sh</code> will report the delta; until then, manually:</p>
-    <pre><code>xcodebuild -version                                   # laptop
-ssh mini "xcodebuild -version"                        # node
-# If they differ → update Xcode on the node</code></pre>
+    <p>When you update Xcode on the laptop, the node falls behind and builds diverge silently. <code>scripts/node-parity.sh</code> probes every registered node and prints an aligned drift table — exit 1 means at least one dimension differs. Output is also cached at <code>~/.dev-studio/.runtime/node-parity-cache.json</code> so dispatch-time guards (#136) read the verdict without re-probing.</p>
+    <pre><code>scripts/node-parity.sh                # probe all nodes, print table
+scripts/node-parity.sh m1mini         # probe just one
+scripts/node-parity.sh --cache-only   # print last cached snapshot, no SSH</code></pre>
 
     <h3>DerivedData cleanup</h3>
     <p>The node accumulates DerivedData per dispatched task. Monthly-ish:</p>
@@ -952,7 +952,7 @@ sudo tailscale up --ssh</code></pre>
     <h2>Planned follow-ups</h2>
     <p>The bootstrap wizard is shipped. Remaining automation to close the offload loop — tracking issues in <a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues">the repo</a>:</p>
     <ul>
-      <li><strong><code>scripts/node-parity.sh</code></strong> — run on the laptop, SSHes each registered node, reports tool-version deltas (Xcode, Swift, simulators, packages).</li>
+      <li><strong><code>scripts/node-parity.sh</code></strong> ✓ shipped in #126 — run on the laptop, SSHes each registered node, reports tool-version deltas (Xcode, Swift, simulators, packages). Cache feeds the dispatch-time Xcode-version guard (#136).</li>
       <li><strong>Auto-rsync in <code>task-build-gate.sh</code> + <code>swift-test-gate.sh</code></strong> — before the remote invocation, sync the worktree to the node. Closes the <a class="inline" href="#source-sync">source-sync gap</a> for pre-Commit-H use.</li>
       <li><strong>Runaway-build guard</strong> — configurable timeout on remote dispatch so a hung <code>xcodebuild</code> doesn't pin the dispatcher forever.</li>
       <li><strong>Remote-node teardown</strong> — extend Achilles Step 9 cleanup to wipe <code>DerivedData</code> + worktree on nodes where dispatch ran.</li>
