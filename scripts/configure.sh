@@ -132,12 +132,44 @@ cmd_worker() {
       [ -z "$user" ] && user=$(id -un)
       printf '%s? roles, comma-separated [swift-test,xcodebuild]:%s ' "$c_dim" "$c_reset"; read -r roles
       [ -z "$roles" ] && roles="swift-test,xcodebuild"
+
+      # #146 — probe the worker's stable machine_id via SSH so registry has a
+      # durability backing key (id is grep-friendly but reusable across boxes;
+      # machine_id catches reinstalls and accidental id collisions).
+      local probed_mid=""
+      if [ -n "$host" ]; then
+        probed_mid=$(ssh -n -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
+          "${user}@${host}" 'cat ~/.dev-studio/.runtime/machine-id 2>/dev/null' 2>/dev/null \
+          | tr -d '[:space:]')
+        if [ -z "$probed_mid" ]; then
+          info "could not probe machine-id on $host (worker may not be bootstrapped yet); registering without machine_id — re-run after bootstrap to add it"
+        fi
+      fi
+
+      # Collision check: if id is already taken by a *different* physical
+      # machine, refuse loud rather than silently rebind events/lock paths.
+      # Missing machine_id on the existing entry → skip (back-compat).
+      local existing_mid
+      existing_mid=$(jq -r --arg id "$id" '.nodes[]? | select(.id == $id) | .machine_id // ""' "$NODES_JSON" 2>/dev/null)
+      if [ -n "$existing_mid" ] && [ -n "$probed_mid" ] && [ "$existing_mid" != "$probed_mid" ]; then
+        err "id '$id' is already registered to a different machine (machine_id $existing_mid; probed $probed_mid). Pick another id or remove the stale entry first."
+        exit 2
+      fi
+
       local roles_json
       roles_json=$(printf '%s' "$roles" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; ""))')
-      jq --arg id "$id" --arg host "$host" --arg user "$user" --argjson roles "$roles_json" \
-         '.nodes += [{id:$id, host:$host, user:$user, roles:$roles, enabled:true}]' \
-         "$NODES_JSON" > "$NODES_JSON.tmp" && mv "$NODES_JSON.tmp" "$NODES_JSON"
-      ok "added worker '$id'"
+      # Build the entry with machine_id only when probed — keeps optional
+      # field truly optional (back-compat with hand-edited registries).
+      if [ -n "$probed_mid" ]; then
+        jq --arg id "$id" --arg host "$host" --arg user "$user" --arg mid "$probed_mid" --argjson roles "$roles_json" \
+           '.nodes |= ([.[]? | select(.id != $id)] + [{id:$id, machine_id:$mid, host:$host, user:$user, roles:$roles, enabled:true}])' \
+           "$NODES_JSON" > "$NODES_JSON.tmp" && mv "$NODES_JSON.tmp" "$NODES_JSON"
+      else
+        jq --arg id "$id" --arg host "$host" --arg user "$user" --argjson roles "$roles_json" \
+           '.nodes |= ([.[]? | select(.id != $id)] + [{id:$id, host:$host, user:$user, roles:$roles, enabled:true}])' \
+           "$NODES_JSON" > "$NODES_JSON.tmp" && mv "$NODES_JSON.tmp" "$NODES_JSON"
+      fi
+      ok "added worker '$id'${probed_mid:+ (machine_id ${probed_mid:0:12}…)}"
       ;;
     remove)
       local id="${2:?usage: configure.sh worker remove <id>}"
