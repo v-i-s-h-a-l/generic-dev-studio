@@ -125,6 +125,57 @@ registry_load() {
   fi
   _REG_CACHE=$(_registry_parse "$yaml")
   _REG_LOADED=1
+  registry_validate
+}
+
+# ============================================================================
+# Validate — catch malformed entries at load time
+# ============================================================================
+
+registry_validate() {
+  local id errors=0
+  local _required_fields="name tier roles check_type why"
+  local _valid_tiers=" required recommended optional "
+  local _valid_install=" brew brew-cask brew-tap script custom manual system "
+  local _valid_check=" command command_or_path path eval "
+
+  for id in $(registry_ids); do
+    local field val
+
+    for field in $_required_fields; do
+      val=$(registry_get "$id" "$field")
+      if [ -z "$val" ]; then
+        warn "tools.yaml: '$id' missing required field '$field' — skipping tool"
+        errors=$((errors + 1))
+        continue 2
+      fi
+    done
+
+    val=$(registry_get "$id" "tier")
+    case "$_valid_tiers" in
+      *" $val "*) ;;
+      *) warn "tools.yaml: '$id' has invalid tier '$val'"; errors=$((errors + 1)) ;;
+    esac
+
+    val=$(registry_get "$id" "check_type")
+    case "$_valid_check" in
+      *" $val "*) ;;
+      *) warn "tools.yaml: '$id' has invalid check_type '$val'"; errors=$((errors + 1)) ;;
+    esac
+
+    val=$(registry_get "$id" "install_type")
+    if [ -n "$val" ]; then
+      case "$_valid_install" in
+        *" $val "*) ;;
+        *) warn "tools.yaml: '$id' has invalid install_type '$val'"; errors=$((errors + 1)) ;;
+      esac
+    fi
+  done
+
+  if [ "$errors" -gt 0 ]; then
+    warn "tools.yaml: $errors validation error(s) — affected tools may behave unexpectedly"
+  fi
+  return 0
 }
 
 # ============================================================================
