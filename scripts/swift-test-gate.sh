@@ -272,8 +272,13 @@ TEST_STATUS=$?
 
 # Counts kept cheap and well-defined: swift-test surfaces failures via
 # `error:` and Xcode-style `: error:` prefixes, identical to xcodebuild.
-err_count=$(grep -cE '(^|: )error:' "$test_log" 2>/dev/null || echo 0)
-warn_count=$(grep -cE '(^|: )warning:' "$test_log" 2>/dev/null || echo 0)
+# #237 — sanitise grep -c output without falling back to `|| echo 0`,
+# which would concatenate two zeros across a newline on the no-matches
+# path and corrupt the JSONL event payload.
+err_count=$(grep -cE '(^|: )error:' "$test_log" 2>/dev/null)
+case "$err_count" in ''|*[!0-9]*) err_count=0 ;; esac
+warn_count=$(grep -cE '(^|: )warning:' "$test_log" 2>/dev/null)
+case "$warn_count" in ''|*[!0-9]*) warn_count=0 ;; esac
 rm -f "$test_log" 2>/dev/null || true
 
 if [ "$TEST_STATUS" -ne 0 ]; then

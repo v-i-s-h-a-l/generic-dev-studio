@@ -231,8 +231,8 @@ sweep_scaling_alerts() {
   # Row count heuristic: lines starting with `| F` (F-record table rows).
   # Keeps us resilient to section reordering.
   local rows
-  rows=$(grep -cE '^\| *F[0-9]' "$active" 2>/dev/null || echo 0)
-  rows=${rows:-0}
+  rows=$(grep -cE '^\| *F[0-9]' "$active" 2>/dev/null)
+  case "$rows" in ''|*[!0-9]*) rows=0 ;; esac  # #237 — see grep -c sanitiser
   if [ "$rows" -ge 100 ]; then
     printf '⛔ feedback/active.md has %s records — ingest refused. Run /chanakya feedback-archive.\n' "$rows"
     if [ "$DRY_FLAG" = "0" ]; then
