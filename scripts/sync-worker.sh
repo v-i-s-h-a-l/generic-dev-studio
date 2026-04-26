@@ -173,18 +173,22 @@ if [ -z "$remote_brew" ]; then
   drift+=("brew_unavailable: brew not installed or empty list on $WORKER_ID")
 fi
 
+# #260 — drift entries are added only after install attempts settle (or in
+# the dry-run branch where no install runs). The earlier shape pre-staged
+# `missing_brew_*` entries on detection, which never got cleared when the
+# install succeeded — successfully-installed packages stayed in the drift
+# report. The new shape: collect the gap, attempt to close it, then drift
+# reflects only what's still missing.
 want_install=()
 for pkg in $REQUIRED_BREW; do
   if ! printf '%s\n' "$remote_brew" | grep -qx "$pkg"; then
     want_install+=("$pkg")
-    drift+=("missing_brew_required: $pkg")
   fi
 done
 optional_missing=()
 for pkg in $OPTIONAL_BREW; do
   if ! printf '%s\n' "$remote_brew" | grep -qx "$pkg"; then
     optional_missing+=("$pkg")
-    drift+=("missing_brew_optional: $pkg")
   fi
 done
 
@@ -194,12 +198,19 @@ if [ "${#want_install[@]}" -gt 0 ] && [ "$DRY_RUN" = "0" ]; then
   if ssh_exec "brew install ${want_install[*]}"; then
     applied=$((applied + ${#want_install[@]}))
   else
+    for pkg in "${want_install[@]}"; do
+      drift+=("required_install_failed: $pkg")
+    done
     printf 'error: brew install failed on %s — required deps not satisfied\n' "$WORKER_ID" >&2
     emit_event_keyed sync worker worker_sync_failed "$WORKER_ID" \
       "{\"studio.dispatch.node\":\"$WORKER_ID\",\"studio.sync.reason\":\"brew_install_failed\"}" \
       >/dev/null 2>&1 || true
     exit 3
   fi
+elif [ "${#want_install[@]}" -gt 0 ] && [ "$DRY_RUN" = "1" ]; then
+  for pkg in "${want_install[@]}"; do
+    drift+=("missing_brew_required: $pkg")
+  done
 fi
 
 # ---------- brew taps ----------
@@ -210,7 +221,6 @@ if [ -n "$BREW_TAPS" ]; then
   for tap in $BREW_TAPS; do
     if ! printf '%s\n' "$remote_taps" | grep -qx "$tap"; then
       want_taps+=("$tap")
-      drift+=("missing_brew_tap: $tap")
     fi
   done
   if [ "${#want_taps[@]}" -gt 0 ] && [ "$DRY_RUN" = "0" ]; then
@@ -224,6 +234,9 @@ if [ -n "$BREW_TAPS" ]; then
   elif [ "${#want_taps[@]}" -gt 0 ] && [ "$DRY_RUN" = "1" ]; then
     printf '[dry-run] would add %d tap(s) on %s: %s\n' \
       "${#want_taps[@]}" "$WORKER_ID" "${want_taps[*]}"
+    for tap in "${want_taps[@]}"; do
+      drift+=("missing_brew_tap: $tap")
+    done
   fi
 fi
 
@@ -242,6 +255,9 @@ if [ "${#optional_missing[@]}" -gt 0 ] && [ "$DRY_RUN" = "0" ]; then
 elif [ "${#optional_missing[@]}" -gt 0 ] && [ "$DRY_RUN" = "1" ]; then
   printf '[dry-run] would install %d optional package(s) on %s: %s\n' \
     "${#optional_missing[@]}" "$WORKER_ID" "${optional_missing[*]}"
+  for pkg in "${optional_missing[@]}"; do
+    drift+=("missing_brew_optional: $pkg")
+  done
 fi
 
 # ---------- Xcode version drift (informational; not auto-fixed) ----------
