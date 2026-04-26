@@ -101,7 +101,8 @@ Within a single Argus test run:
 - UI tests: `-parallel-testing-enabled YES -parallel-testing-worker-count 2` (capped to avoid simulator thrash)
 
 ```bash
-# Unit test invocation
+# Unit test invocation (executed by argus-run-tests.sh — sample only)
+# lint-build:allow next-line — documentation of argus-run-tests.sh's call shape
 xcodebuild test \
   -scheme "$SCHEME" \
   -destination "$DEST" \
@@ -110,7 +111,8 @@ xcodebuild test \
   -parallel-testing-enabled YES \
   -only-testing:"$UNIT_TARGET"
 
-# UI test invocation
+# UI test invocation (executed by argus-run-tests.sh — sample only)
+# lint-build:allow next-line — documentation of argus-run-tests.sh's call shape
 xcodebuild test \
   -scheme "$SCHEME" \
   -destination "$DEST" \

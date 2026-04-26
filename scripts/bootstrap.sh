@@ -307,7 +307,7 @@ if [ -z "$ROLE" ]; then
              this role with no workers registered — pick manager.)
 
     ${c_bold}worker${c_reset}  — a headless worker. Accepts SSH dispatches from one or more
-             managers. Runs swift test / xcodebuild. No agents, no editor.
+             managers. Runs the build + test toolchain. No agents, no editor.
              Typical: a spare Mac mini / Mac Studio you've designated as
              a build box.
 
