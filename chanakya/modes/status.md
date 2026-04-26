@@ -42,6 +42,8 @@ scripts/status-render-tasks.sh < <(briefs-payload)
 
 Flag `done` tasks awaiting user verification so the user can run `/chanakya test-manifest` to consolidate them.
 
+For each `briefed` / `in-progress` row, append a one-line `└─ <brief.summary first sentence>` below the table row when the brief carries a populated `summary` slice (schema `_shared/schemas/brief.md` § summary, ≤500 tokens). Skip the continuation for legacy briefs whose `summary` is null — silence is informative, no banner needed. The slice is the cheap-read fallback that lets the user judge what's in flight without paging into the full brief body.
+
 ## Step 2 — Git state for in-progress tasks
 
 For in-progress tasks with branches: `git log --oneline -3 <branch>` for recent activity; flag stale tasks (in-progress but no commits in 24+ hours). Pure judgment — no script.
@@ -52,10 +54,12 @@ For in-progress tasks with branches: `git log --oneline -3 <branch>` for recent 
 
 2. **Push queue.** `scripts/push-queue.sh list` prints unread entries as JSONL. Show them, then `scripts/push-queue.sh mark-displayed <id>...` to clear. Summarize recent events from the events-tail payload: "Argus reviewed T001 (flagged, 3 findings), T002 merged at 14:45."
 
-3. **Feedback inbox banner.** If the feedback-inbox snapshot's `total_pending > 0`:
+3. **Suggestions.** `scripts/query-suggestions.sh --format render` prints active (unsuperseded, unresolved) `suggestion_emitted` events as one-line action hints. When the output is non-empty, render under a `=== Suggestions ===` heading. The substrate is generic — new producers (stale-brief detector, hotfix replace, idle node) emit without surface changes here. See `_shared/contracts/events.md` §Suggestion engine for the contract.
+
+4. **Feedback inbox banner.** If the feedback-inbox snapshot's `total_pending > 0`:
    > "Feedback inbox: 3 pending (2 from turnip-ios, 1 from web). Run `/chanakya feedback` to triage."
 
-4. **Rounds + releases.**
+5. **Rounds + releases.**
    ```
    scripts/status-domain.sh rounds
    scripts/status-domain.sh releases
