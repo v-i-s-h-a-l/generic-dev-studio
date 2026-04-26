@@ -98,7 +98,21 @@ Use Glob and Grep to find:
 
 ## Step 6 — Write the brief (type-aware)
 
-Render the type-specific narrative from the template corresponding to the task type (see §6A-D below) into a tempfile, then call `write_brief_artifact` — it writes the YAML canonical form (schema `_shared/schemas/brief.md`, `brief@3.1.0`), emits `brief_state_changed null → draft`, and regenerates `plans/index.yaml`.
+Render the type-specific narrative from the template corresponding to the task type (see §6A-D below) into a tempfile, then call `write_brief_artifact` — it writes the YAML canonical form (schema `_shared/schemas/brief.md`, `brief@3.3.0`), emits `brief_state_changed null → draft`, and regenerates `plans/index.yaml`.
+
+### Dispatch routing (`brief@3.3.0`)
+
+Default `dispatch_agent: achilles` and leave `perf_mode` / `evidence` null — the standard worker path.
+
+Set `dispatch_agent: apollo` when the task is iOS-performance-flavored: memory regression / leak / OOM, thermal throttling, battery / energy drain. In that case:
+
+- `perf_mode` MUST be one of `memory` | `thermal` | `battery` (selects Apollo's mode pack).
+- `evidence` MUST be populated. Either:
+  - `artifacts: [...]` cites pre-captured `.trace` / `MXMetricPayload` / `.xcresult` paths, OR
+  - `capture_plan: "..."` declares the auto-capture Apollo will run before recommending a fix (XcodeBuildMCP / AXe / `xctrace` invocation).
+- `baseline_ref` names the git ref the baseline was captured against — drives Apollo's pre-merge re-measure delta.
+
+If neither artifacts nor capture_plan is available at brief time, `/apollo measure <metric> --capture-only` is the right pre-flight tool to populate `artifacts` before authoring the brief. Briefs that route to Apollo without `evidence` will be refused at dispatch (strict-9 gate, `apollo/_shared/primitives/evidence-gate.md`).
 
 **Required header fields** — every brief MUST include these three fields in its Priority & Complexity / Recommendations block (per `_shared/rules/brief-model-effort.md`):
 
@@ -180,6 +194,8 @@ Don't wait for it. The producer is ~50ms and idempotent; worst case the next sta
 ## Step 8 — Suggest next action
 
 "T001 brief ready (`plans/briefs/<brief-id>.yaml`). Next: T002 is independent and P1 — brief it with `/chanakya brief T002` or launch a worker with `/achilles T001`."
+
+When `dispatch_agent: apollo`, suggest `/apollo <perf_mode> T001` instead of `/achilles T001`.
 
 ---
 
