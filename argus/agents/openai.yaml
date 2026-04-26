@@ -1,0 +1,3 @@
+interface:
+  display_name: "Argus"
+  short_description: "Reviewer agent — two-stage review (spec-compliance then code-quality) between self-review and merge"

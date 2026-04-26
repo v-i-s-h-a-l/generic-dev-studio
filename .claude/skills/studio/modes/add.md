@@ -62,7 +62,15 @@ On failure, surface the specific error:
 - **Author not trusted** — explain the first-time trust gate; offer to approve
 - **Recipe already exists** — point to the existing recipe and suggest `install-recipe.sh` for updates
 
-## Step 4 — Update routing instructions
+## Step 4 — Generate host metadata + update routing
+
+After vendoring, generate an `agents/openai.yaml` inside the skill directory so Codex (and future OpenAI-dialect hosts) can discover it:
+
+```yaml
+interface:
+  display_name: "<Human-readable name>"
+  short_description: "<One line from SKILL.md description>"
+```
 
 If the new skill benefits from explicit routing (model should use it for a specific domain), add a one-line entry to `_shared/skill-routing.md`. The next `sync-host-skills.sh --all` run (or `/studio sync`) propagates it to every host's global instructions file.
 
