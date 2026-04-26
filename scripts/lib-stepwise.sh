@@ -218,6 +218,9 @@ stepwise_validate() {
     clt)                   xcode-select -p >/dev/null 2>&1 ;;
     xcode_app)             [ -e /Applications/Xcode.app ] ;;
     swift)                 command -v swift >/dev/null 2>&1 ;;
+    yq)                    command -v yq >/dev/null 2>&1 ;;
+    coreutils)             command -v gtimeout >/dev/null 2>&1 ;;
+    fswatch)               command -v fswatch >/dev/null 2>&1 ;;
     nodes_json)            [ -f "$HOME/.dev-studio/.runtime/nodes.json" ] ;;
     *) return 2 ;;
   esac
@@ -233,12 +236,12 @@ stepwise_recheck_all() {
   local -a steps=()
   case "$role" in
     manager|dual)
-      steps+=(skill_chanakya skill_achilles skill_argus brew jq git git_user_email nodes_json)
+      steps+=(skill_chanakya skill_achilles skill_argus brew jq yq coreutils fswatch git git_user_email nodes_json)
       ;;
   esac
   case "$role" in
     worker|dual)
-      steps+=(sshd jq rsync git brew clt)
+      steps+=(sshd jq rsync coreutils git brew clt)
       case ",$wroles," in *,xcodebuild,*) steps+=(xcode_app) ;; esac
       case ",$wroles," in *,swift-test,*) steps+=(swift) ;; esac
       ;;
