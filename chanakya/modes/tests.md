@@ -11,23 +11,18 @@ reads:
   - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
   - plans/debriefs/*.yaml                          # post-migration debrief artifacts (schema: _shared/schemas/debrief.md)
   - plans/rounds/*.yaml                            # previous-round retest linkage (schema: _shared/schemas/round.md)
-  - plans/chanakya-master.md                       # legacy fallback until Commit H
-  - plans/chanakya-inbox/<task-id>-tests.md        # legacy per-task test artifact (read-only surface)
-  - plans/chanakya-inbox/processed/<task-id>-debrief.md  # legacy debrief read fallback until Commit H
-  - plans/user-testing-rounds/user-testing-round<N>.md   # legacy round fallback until Commit H
   - journey-map.md                                 # optional project-root journey ordering
   - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
 writes:
-  - plans/rounds/<round-id>.yaml                   # post-migration canonical (schema: _shared/schemas/round.md, round@1.0.0)
+  - plans/rounds/<round-id>.yaml                   # canonical (schema: _shared/schemas/round.md, round@1.0.0)
   - plans/user-testing.md                          # per-task manifest (user-facing checklist surface)
-  - plans/user-testing-rounds/user-testing-round<N>.md   # legacy round markdown during Phase 2.6 transition
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
 # Mode: Test-Manifest (`/chanakya test-manifest [--force]`)
 
-Generate or refresh `~/.dev-studio/<project>/plans/user-testing.md` — the per-task checklist `/chanakya review-feedback` processes. Consult the `briefs.json` snapshot for the `done`-task list (5-minute freshness window; on stale or null `generated_at`, fall back to re-parsing `chanakya-master.md`).
+Generate or refresh `~/.dev-studio/<project>/plans/user-testing.md` — the per-task checklist `/chanakya review-feedback` processes. Consult the `briefs.json` snapshot for the `done`-task list (5-minute freshness window; on stale or null `generated_at`, fall back to `scripts/query-plans.sh --kind=task --state=done`).
 
 ## Step 1 — Dirty-state guard
 
@@ -39,7 +34,7 @@ Run `scripts/tests-dirty-state-check.sh <path-to-user-testing.md>`. Exit 2 means
 
 ## Step 2 — Scan candidate tasks
 
-Run `scripts/tests-scan-candidates.sh`. One candidate id per line. Prefers post-migration index (tasks in `merged` + `user-verifying`); legacy fallback parses `chanakya-master.md` for `Status: done` rows. Empty output → nothing to test; return.
+Run `scripts/tests-scan-candidates.sh`. One candidate id per line. Reads the index for tasks in `merged` + `user-verifying`. Empty output → nothing to test; return.
 
 ## Step 3 — Pull test cases
 
@@ -102,7 +97,7 @@ If `user-testing-round<N>.md` already exists, count `[x]` vs total checkboxes. P
 
 ## Step 3 — Collect candidate tasks
 
-Based on `--scope`. Reuse `scripts/tests-scan-candidates.sh` for `new`; filter its output or re-walk `chanakya-master.md` for `full` / `module`. Exit if zero matches: "No `done` tasks awaiting verification. Nothing to test."
+Based on `--scope`. Reuse `scripts/tests-scan-candidates.sh` for `new`; filter its output or re-query the index (`scripts/query-plans.sh --kind=task`) for `full` / `module`. Exit if zero matches: "No `done` tasks awaiting verification. Nothing to test."
 
 ## Step 4 — Identify re-tests
 
@@ -150,7 +145,7 @@ Write the body (the rendered walkthrough — Setup, Sections, Performance Checkp
 scripts/tests-write-round.sh <round-number> <scope> <tasks-csv> <body-file>
 ```
 
-Prints the minted round UUID. The script delegates to lib-ledger's `write_round_artifact` — YAML canonical + legacy markdown dual-write + `round_state_changed` event + index rebuild, all in one call.
+Prints the minted round UUID. The script delegates to lib-ledger's `write_round_artifact` — YAML canonical write + `round_state_changed` event + index rebuild, all in one call.
 
 ## Step 8 — Report
 
@@ -162,7 +157,7 @@ Prints the minted round UUID. The script delegates to lib-ledger's `write_round_
 
 ## Step 9 — Promote mode (`--promote`)
 
-Run `scripts/tests-promote-round.sh <round-number>` (defaults to the latest round if `--round N` is not given; the wrapper finds the target round YAML by `round_number`, falling back to the legacy markdown).
+Run `scripts/tests-promote-round.sh <round-number>` (defaults to the latest round if `--round N` is not given; the wrapper finds the target round YAML by `round_number`).
 
 - Exit 3 means the gate failed — the script prints how many cases are still unchecked. Surface:
   > "Round N has K failures and J untested cases. Cannot promote — all cases must pass. Fix failures and re-test, or run `/chanakya intake` to file follow-up tasks for the failures."
@@ -171,4 +166,4 @@ Run `scripts/tests-promote-round.sh <round-number>` (defaults to the latest roun
 
 ## Step 10 — Diff mode (`--diff N`)
 
-Run `scripts/tests-diff-rounds.sh <round-a> <round-b>` where round-a is N and round-b is the comparison target (N+1 or the latest completed round). The script loads both (YAML preferred, legacy fallback), matches cases by id, and emits a markdown diff grouped into: regressions introduced, regressions fixed, A-only, B-only, unchanged. Perf cases with `timing_ms` on both sides land in a per-case delta table. Pipe stdout to the user directly; do not write to a file.
+Run `scripts/tests-diff-rounds.sh <round-a> <round-b>` where round-a is N and round-b is the comparison target (N+1 or the latest completed round). The script loads both round YAMLs, matches cases by id, and emits a markdown diff grouped into: regressions introduced, regressions fixed, A-only, B-only, unchanged. Perf cases with `timing_ms` on both sides land in a per-case delta table. Pipe stdout to the user directly; do not write to a file.

@@ -3,14 +3,12 @@ name: Chanakya Sync-Slack
 description: Sync a Slack Lists bug tracker with the Chanakya master plan — Status, Dev Notes, Fixed in Build. Token + project bootstrap flags included.
 type: mode-pack
 schema_version: 1
-transition_notes: _shared/patterns/dual-write-transition.md   # YAML counterpart for `sync.slack_last_synced` lands in Commit G; legacy-only write is waived until then (structural partial, not a drift).
 snapshots: [briefs.json]
 budget_tokens: 3500
 reads:
   - plans/index.yaml                               # post-migration task index (for Slack-row cross-ref)
   - plans/tasks/*.yaml                             # post-migration per-task artifacts
   - plans/releases/*.yaml                          # post-migration release artifacts (build numbers, TF tags)
-  - plans/chanakya-master.md                       # legacy fallback until Commit H
   - .runtime/state/chanakya-snapshots/briefs.json
   - feedback/active.md                             # reminders table (append target below)
 writes:
@@ -19,9 +17,9 @@ writes:
 
 # Mode: Sync-Slack (`/chanakya sync-slack [--list <id>] [--build <number>]`)
 
-Sync a Slack Lists bug tracker with the Chanakya master plan. Reads task statuses from the plan, writes Status + Dev Notes + Fixed in Build back to the Slack list. Designed to run after every TestFlight build upload.
+Sync a Slack Lists bug tracker with Chanakya task state. Reads task statuses from `plans/tasks/*.yaml`, writes Status + Dev Notes + Fixed in Build back to the Slack list. Designed to run after every TestFlight build upload.
 
-Snapshots: `snapshots/briefs.json` for the task→Slack-row cross-reference pass (5-min freshness; post-migration fallback is `scripts/query-plans.sh --kind=task`, with a full `chanakya-master.md` scan still honored during Phase 2.6 transition).
+Snapshots: `snapshots/briefs.json` for the task→Slack-row cross-reference pass (5-min freshness; fallback: `scripts/query-plans.sh --kind=task`).
 
 ## Configuration
 
@@ -67,7 +65,7 @@ When `/chanakya sync-slack --configure` is invoked:
 ## Step 1 — Read current state
 
 1. Fetch all rows: `GET slackLists.items.list?list_id=<id>&limit=50`
-2. Collect all tasks with a `Slack row:` field. Post-migration: `scripts/query-plans.sh --kind=task --has=slack_row` over `plans/tasks/*.yaml`. Legacy fallback: scan `chanakya-master.md`.
+2. Collect all tasks with a `Slack row:` field via `scripts/query-plans.sh --kind=task --has=slack_row` over `plans/tasks/*.yaml`.
 3. Parse each row: extract Issue text, current Status, current Dev Notes content, current Fixed in Build, Reported in Build, row_id.
 
 ## Step 2 — Determine build number
@@ -116,13 +114,13 @@ For each Slack row with a linked Chanakya task:
 ## Step 4 — Guard: detect manual edits
 
 Before writing each row, compare:
-- Slack's current Status vs. what Chanakya last wrote (tracked via `Slack status (last synced):` in the task's master plan entry).
+- Slack's current Status vs. what Chanakya last wrote (tracked via `sync.slack_last_synced` on the task YAML).
 - If they differ (daksh@ manually changed it), skip the Status write and report: "Row <id> status diverged: Chanakya expected 'In progress', Slack shows 'Done'. Skipping — daksh@ may have verified independently."
 - Still write Dev Notes (append-only is safe regardless).
 
 ## Step 5 — Reverse sweep: ingest new rows
 
-For any row in the Slack list that does NOT have a matching task in the master plan:
+For any row in the Slack list that does NOT have a matching task in `plans/tasks/`:
 1. File a new T-task (same logic as Intake Step 1).
 2. Set `Slack row: <list_id> / <row_id>` on the new task.
 3. Report: "New row from daksh@: '<issue text>' — filed as T186."
@@ -142,9 +140,9 @@ API shape per cell:
 }
 ```
 
-## Step 7 — Update master plan
+## Step 7 — Update task sync state
 
-For each synced row, update the task's `Slack status (last synced):` field with the new status and timestamp.
+For each synced row, update the task YAML's `sync.slack_last_synced` field with the new status and timestamp.
 
 ## Step 8 — Report
 

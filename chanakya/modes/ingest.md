@@ -9,16 +9,16 @@ budget_tokens: 3000
 reads:
   - plans/index.yaml                               # post-migration feedback index for dedupe scan
   - plans/feedback/*.yaml                          # post-migration feedback artifacts (schema: _shared/schemas/feedback.md)
-  - feedback/active.md                             # legacy dedupe surface until Commit H
-  - feedback/archive/**/*.md                       # legacy dedupe surface until Commit H
+  - feedback/active.md                             # F-id dedupe surface
+  - feedback/archive/**/*.md                       # F-id dedupe surface
   - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
   - ~/.claude/secrets/slack-bot-token              # bot token for Slack API (read-only)
 writes:
-  - plans/feedback/<feedback-id>.yaml              # post-migration canonical (schema: _shared/schemas/feedback.md, feedback@1.0.0)
-  - plans/feedback-attachments/<feedback-id>/*    # per-feedback asset bundle (post-migration)
+  - plans/feedback/<feedback-id>.yaml              # canonical (schema: _shared/schemas/feedback.md, feedback@1.0.0)
+  - plans/feedback-attachments/<feedback-id>/*     # per-feedback asset bundle
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
-  - feedback/active.md                             # legacy row append during Phase 2.6 transition
-  - feedback/incoming/F<nnn>.md                    # legacy per-record markdown during Phase 2.6 transition
+  - feedback/active.md                             # F-id row append (legacy F-id system, still active)
+  - feedback/incoming/F<nnn>.md                    # F-id per-record markdown (legacy F-id system, still active)
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
@@ -38,18 +38,18 @@ Pull a Slack thread, classify each message, mint F-ids.
 
 1. **Fetch thread.** `conversations.replies?channel=<channel>&ts=<thread-ts>&limit=200` with `Authorization: Bearer <token>`.
 2. **Resolve reporters.** For each unique `user:` ID in the returned messages, call `users.info` once (cache in memory). Prefer `profile.display_name`, fall back to `name`.
-3. **Download attachments.** For each message with `files[]`: `GET <url_private>` with the bot token, save to `~/.dev-studio/<project>/plans/feedback-attachments/<feedback-id>/<file_name>` (post-migration canonical path; legacy mirror at `chanakya-inbox/assets/thread-<thread-ts>/` retained during Phase 2.6 transition). Only HEIC/PNG/JPG/MP4/MOV.
+3. **Download attachments.** For each message with `files[]`: `GET <url_private>` with the bot token, save to `~/.dev-studio/<project>/plans/feedback-attachments/<feedback-id>/<file_name>`. Only HEIC/PNG/JPG/MP4/MOV.
 4. **Classify each message** using the heuristic in `project_feedback_lifecycle.md` (screenshot/video/bullets/bug-language → feedback; short reply/emoji/ack → conversation).
-5. **Dedupe.** Compute source key `slack-thread:<channel>/<thread-ts>/<message-ts>`. Post-migration: query `scripts/query-plans.sh --kind=feedback` and match against the `source_metadata.message_ts` + `channel` pair. Legacy fallback: scan `active.md` + `archive/**` for the source key. If any prior record carries this key, skip the message.
+5. **Dedupe.** Compute source key `slack-thread:<channel>/<thread-ts>/<message-ts>`. Query `scripts/query-plans.sh --kind=feedback` and match against the `source_metadata.message_ts` + `channel` pair; also scan `active.md` + `archive/**` for the source key (the F-id system has its own dedupe surface). If any prior record carries this key, skip the message.
 6. **Mint feedback record.** Mint a UUIDv7 for the new feedback artifact's `id`. Write to `~/.dev-studio/<project>/plans/feedback/<feedback-id>.yaml` per schema `_shared/schemas/feedback.md` (`feedback@1.0.0`). Populate `schema_version`, `state: ingested` (per `_shared/state-machines/feedback-lifecycle.md`), `source: slack-thread`, `reporter`, `source_metadata: {channel, thread_ts, message_ts, build, permalink}`, `ingested_at`, `subject`, `body`, `labels: []`, `linked_tasks: []`, `linked_crashes: []`, `root_cause_id: null`, `attachments: [{path, kind, size_bytes}]`, `resolved_by: null`, `resolved_at: null`.
 
-   **Phase 2.6 transition note:** also append the legacy table row to `feedback/active.md` and write the legacy `feedback/incoming/F<nnn>.md` record (with the next monotonic human-readable F-id) for one cycle so in-flight consumers (`feedback-archive`, `feedback-history`, status sweep) still see the record. Cutover removes both legacy writes at Commit H.
+   Also append a row to `feedback/active.md` and write the matching `feedback/incoming/F<nnn>.md` record (next monotonic F-id) — the F-id system is independent of the YAML migration and continues to back `feedback-archive`, `feedback-history`, and the status sweep.
 7. **Emit event** per new feedback-id via `scripts/write-event.sh` (`_shared/contracts/events.md` + `_shared/contracts/event-emission.md`):
    ```json
    {"ts":"…","agent":"chanakya","event":"feedback_ingested","task":"<feedback-id>","data":{"source":"slack-thread","channel":"<channel>","thread_ts":"<thread-ts>","reporter":"<name>","build":<N>,"legacy_fid":"F<nnn>"}}
    ```
    Then regenerate `plans/index.yaml` via `scripts/rebuild-index.sh`.
-8. **Report** a summary naming both the new feedback-ids and, for continuity during the Phase 2.6 transition, their legacy F-ids: "Ingested 3 new feedback records (F007/F008/F009, UUIDv7 ids <short>…) from #ios-testflight/1745... Skipped 11 conversation messages. Existing dedupes: 2."
+8. **Report** a summary naming both the new feedback-ids and their F-ids: "Ingested 3 new feedback records (F007/F008/F009, UUIDv7 ids <short>…) from #ios-testflight/1745... Skipped 11 conversation messages. Existing dedupes: 2."
 9. **Invalidate feedback-inbox snapshot.** After `active.md` is written, fire `scripts/chanakya-snap.sh feedback-inbox &` in the background. Same reasoning as brief mode: a user who ingests then immediately runs `/chanakya` expects to see the new F-ids without waiting 60 seconds for the snapshot window to expire. Skip this on `--dry-run` (no filesystem writes, nothing to invalidate).
 
 ## `--dry-run`

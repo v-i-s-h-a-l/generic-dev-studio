@@ -9,7 +9,6 @@ budget_tokens: 4000
 reads:
   - plans/index.yaml                               # post-migration task index for existing-task lookup
   - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
-  - plans/chanakya-master.md                       # legacy fallback until Commit H
   - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
 writes:
   - plans/tasks/<task-id>.yaml                     # post-migration canonical (schema: _shared/schemas/task.md, task@1.0.0)
@@ -19,9 +18,9 @@ writes:
 
 # Mode: Intake (`/chanakya intake` or `/chanakya` with no args)
 
-Entry point when there's no existing master plan (or the user has fresh work to add). Produces `chanakya-master.md`.
+Entry point for fresh work. Mints task artifacts under `plans/tasks/<uuid>.yaml` via `lib-ledger.write_task_artifact`.
 
-Snapshots: `snapshots/briefs.json` for existing-task lookup when merging (5-min freshness; fallback: read `chanakya-master.md` directly — this is the authoritative source at intake time).
+Snapshots: `snapshots/briefs.json` for existing-task lookup when merging (5-min freshness; fallback: `scripts/query-plans.sh --kind=task`).
 
 ## Step 1 — Gather tasks
 
@@ -37,7 +36,7 @@ Accept any format. For each task, extract:
 
 ## Step 2 — Read existing tasks
 
-Post-migration surface: list existing tasks via `scripts/query-plans.sh --kind=task` against `plans/tasks/*.yaml`. Merge new tasks with existing ones; resolve ID collisions by issuing fresh UUIDv7 `id`s. The human-readable `T<nnn>` prefix comes from `scripts/next-task-id.sh` — see Step 6. Do not infer it from context here.
+List existing tasks via `scripts/query-plans.sh --kind=task` against `plans/tasks/*.yaml`. Merge new tasks with existing ones; resolve ID collisions by issuing fresh UUIDv7 `id`s. The human-readable `T<nnn>` prefix comes from `scripts/next-task-id.sh` — see Step 6. Do not infer it from context here.
 
 
 If neither surface has prior state, this is a fresh project — proceed to Step 3 with an empty set.
@@ -105,7 +104,7 @@ T015b  — Integration tests: filter + texture   (Type: test-integration, Group:
 T015c  — UI tests: filter selection flow       (Type: test-ui, Group: T015)
 ```
 
-Sub-task IDs use the parent ID + suffix (`a`, `b`, `c`). This keeps the group visually clustered in the master plan and parallelization map.
+Sub-task IDs use the parent ID + suffix (`a`, `b`, `c`). This keeps the group visually clustered in the index and parallelization map.
 
 **What goes into each sub-task at intake (briefs are generated later in Brief mode):**
 
@@ -136,7 +135,7 @@ Apply the skill assignments and record them in the write summary.
 
 ## Step 6 — Write task artifacts
 
-For each newly-captured task (implementation + any sub-tasks), call `write_task_artifact` from lib-ledger — it dual-writes the YAML canonical form (schema `_shared/schemas/task.md`, `task@1.0.0`) and the legacy master-plan row in one shot, seeds `history:`, emits `task_state_changed null → proposed`, and regenerates `plans/index.yaml`. Do not hand-write the YAML.
+For each newly-captured task (implementation + any sub-tasks), call `write_task_artifact` from lib-ledger — it writes the YAML canonical form (schema `_shared/schemas/task.md`, `task@1.0.0`), seeds `history:`, emits `task_state_changed null → proposed`, and regenerates `plans/index.yaml`. Do not hand-write the YAML.
 
 **Concrete invocation** (run in the Bash tool):
 
@@ -144,8 +143,8 @@ For each newly-captured task (implementation + any sub-tasks), call `write_task_
 source scripts/lib-paths.sh
 source scripts/lib-ledger.sh
 
-# Allocate the human-readable T-number. Scans YAML + master plan + legacy dir +
-# event log; the only authoritative source — never guess from in-context samples.
+# Allocate the human-readable T-number. Scans YAML + event log; the only
+# authoritative source — never guess from in-context samples.
 LEGACY_ID=$(scripts/next-task-id.sh)   # e.g. "T268"
 
 TASK_UUID=$(mint_uuidv7)
@@ -157,7 +156,7 @@ write_task_artifact "$TASK_UUID" proposed "<title>" \
 
 The helper initializes `links.{brief,debrief,reviews,release,feedback}` to their zero values, seeds the first `history:` entry, and sets `created_at`/`updated_at` to a single RFC3339 UTC timestamp.
 
-For sub-tasks (T268a/b/c under T268), call `write_task_artifact` once per sub-task with `legacy_task_id=T268a` etc. The parent/child relationship lives in the human-readable title prefix and in the `plans/index.yaml` rollup (the index generator clusters on title prefix). `task@1.0.0` does not encode a `group` field — keeping the schema narrow is deliberate (Phase 2.6 plan §2.1).
+For sub-tasks (T268a/b/c under T268), call `write_task_artifact` once per sub-task with `legacy_task_id=T268a` etc. The parent/child relationship lives in the human-readable title prefix and in the `plans/index.yaml` rollup (the index generator clusters on title prefix). `task@1.0.0` does not encode a `group` field — keeping the schema narrow is deliberate.
 
 **XS tasks.** `size=xs` is introduced separately for trivial direct tasks. Emit `type=direct` together with `size=xs` for those.
 
@@ -178,10 +177,10 @@ Note: Test sub-tasks within different groups CAN run in parallel (T015a and T016
 
 ## Step 8 — Suggest next action
 
-"Master plan created with N task groups (X implementation tasks, Y unit test tasks, Z UI test tasks). Starting T001 briefing (highest priority)..."
+"Filed N task groups (X implementation tasks, Y unit test tasks, Z UI test tasks). Starting T001 briefing (highest priority)..."
 
 Auto-start briefing T001 immediately after printing this message.
 
-## Master Plan Format
+## Task schema
 
-Full schema: `~/.claude/skills/_shared/schemas/master-plan.md`.
+Full schema: `_shared/schemas/task.md` (`task@1.0.0`).

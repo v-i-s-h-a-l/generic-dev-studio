@@ -8,12 +8,12 @@ budget_tokens: 2500
 reads:
   - plans/feedback/*.yaml                          # post-migration feedback artifacts (schema: _shared/schemas/feedback.md)
   - plans/index.yaml                               # post-migration feedback index
-  - feedback/active.md                             # legacy active feedback (until Commit H)
-  - feedback/archive/build-*.md                    # legacy per-build archives (until Commit H)
+  - feedback/active.md                             # F-id active feedback (read source for the report)
+  - feedback/archive/build-*.md                    # F-id per-build archives (read source for the report)
   - .runtime/state/chanakya-snapshots/feedback-inbox.json
 writes:
-  - plans/chanakya-inbox/design-report-<date>.md   # legacy report location (retained; unchanged in Commit F)
-  - plans/chanakya-inbox/product-report-<date>.md  # legacy report location (retained; unchanged in Commit F)
+  - plans/chanakya-inbox/design-report-<date>.md   # report write location
+  - plans/chanakya-inbox/product-report-<date>.md  # report write location
 ---
 
 # Mode: Report-Design (`/chanakya report-design [--build N]`)

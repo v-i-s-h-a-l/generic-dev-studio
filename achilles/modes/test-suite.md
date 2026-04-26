@@ -9,10 +9,8 @@ budget_tokens: 1500
 reads:
   - plans/index.yaml                               # post-migration relational index
   - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
-  - plans/chanakya-master.md                       # legacy fallback until Commit H
 writes:
-  - plans/debriefs/<debrief-id>.yaml               # post-migration canonical (schema: _shared/schemas/debrief.md, debrief@2.0.0, test-suite-run kind)
-  - plans/chanakya-inbox/test-suite-<stamp>-debrief.md  # legacy markdown debrief during Phase 2.6 transition
+  - plans/debriefs/<debrief-id>.yaml               # canonical (schema: _shared/schemas/debrief.md, debrief@2.0.0, test-suite-run kind)
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
@@ -41,25 +39,6 @@ This mode short-circuits the normal task pipeline — no branch, no merge, no Ar
 
    Chanakya's inbox sweep reads the `key_learnings` + green/red signal and resets the corresponding debt counter.
 
-   **Phase 2.6 transition note:** also write the legacy markdown debrief at `plans/chanakya-inbox/test-suite-<stamp>-debrief.md` until Commit H cutover:
-   ```markdown
-   # Debrief: test-suite-<stamp> — Test suite run
-   Type: test-suite-run
-   Completed: <timestamp>
-   HEAD: <sha>
-   Suite: unit | ui | all
-
-   ## Test Results
-   test_result: pass
-   Tests run: 142
-   Tests passed: 142
-   Tests failed: 0
-   Duration: 45s
-
-   ## Coverage
-   - <module>: <pass>/<total>
-   ```
-
 5. **Red result (any test fails):**
    Write the debrief YAML with the same shape as green, but populate `known_issues` and `follow_ups` with the failures:
    - `key_learnings` includes `tests_failed: <N>` and a truncated list.
@@ -67,8 +46,6 @@ This mode short-circuits the normal task pipeline — no branch, no merge, no Ar
    - `follow_ups` lists: `"P0 fix: N failing tests. See known_issues."`.
 
    Debt counter is NOT reset on red — Chanakya files a follow-up fix task from `follow_ups[]`.
-
-   **Phase 2.6 transition note:** also write the legacy markdown form with `test_result: fail`, the `## Failing Tests` section, and the `## Follow-up Tasks` section until Commit H cutover.
 
 6. **Cleanup.** Remove worktree and DerivedData (same as Build Mode green path). On red, retain for inspection.
 

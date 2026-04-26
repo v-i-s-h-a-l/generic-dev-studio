@@ -7,8 +7,7 @@ transition_notes: _shared/patterns/dual-write-transition.md
 budget_tokens: 1200
 snapshots: []
 reads:
-  - plans/briefs/*.yaml                            # post-migration canonical brief
-  - plans/chanakya-tasks/<task-id>-<slug>.md       # legacy markdown (dual-write) until Commit H
+  - plans/briefs/*.yaml                            # canonical brief
   - plans/tasks/<task-id>.yaml                     # parent task for context (type, size, links)
 writes:
   - events/<date>.jsonl                            # brief_review_flagged event per run with findings
@@ -61,10 +60,6 @@ Is `body:` a YAML block-scalar (`body: |`), not a flat-escaped string? Flat-esca
 ### C9 — Figma / design reference staleness
 
 If the brief cites a Figma node id, was the node fetched and inlined (not just linked)? A brief that says "see Figma node 1:533" without the rendered description assumes the worker has MCP access — often wrong. Inlined context is the rule.
-
-### C10 — Dual-write consistency
-
-Does a matching legacy markdown exist at `plans/chanakya-tasks/<task-id>-<slug>.md`? If not, the brief was written via an ad-hoc path that skipped `write_brief_artifact` — a R9 violation (dual-write AND, not OR). Flag and recommend re-authoring through the helper.
 
 ### C11 — Model + reasoning effort recommendations present and sensible
 

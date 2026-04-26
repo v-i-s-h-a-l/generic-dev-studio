@@ -9,9 +9,8 @@ budget_tokens: 2000
 reads:
   - plans/index.yaml                               # post-migration task index
   - plans/tasks/*.yaml                             # post-migration per-task artifacts
-  - plans/chanakya-master.md                       # legacy fallback until Commit H
 writes:
-  - plans/tasks/*.yaml                             # post-migration state transitions (emission switches to YAML in Commit G)
+  - plans/tasks/*.yaml                             # state transitions via lib-ledger
 ---
 
 # Mode: Update (`/chanakya update`)

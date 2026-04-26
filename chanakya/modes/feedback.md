@@ -11,28 +11,27 @@ reads:
   - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
   - plans/rounds/*.yaml                            # post-migration round artifacts (schema: _shared/schemas/round.md)
   - plans/feedback/*.yaml                          # post-migration feedback artifacts (schema: _shared/schemas/feedback.md)
-  - plans/user-testing.md                          # user-authored test-manifest surface (legacy shape, preserved through Phase 2.6)
-  - plans/chanakya-master.md                       # legacy fallback until Commit H
-  - feedback/active.md                             # legacy feedback index until Commit H
-  - feedback/archive/**/*.md                       # legacy archive until Commit H
+  - plans/user-testing.md                          # user-authored test-manifest surface
+  - feedback/active.md                             # legacy feedback index (read-only; see DEGRADED note below)
+  - feedback/archive/**/*.md                       # legacy archive (read-only; see DEGRADED note below)
   - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
 writes:
   - plans/tasks/<task-id>.yaml                     # task state bumps + follow-up task mint (state transitions per _shared/state-machines/task-lifecycle.md)
   - plans/feedback/<feedback-id>.yaml              # feedback state transitions per _shared/state-machines/feedback-lifecycle.md
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
   - plans/user-testing-archive/<ts>.md             # archived test-manifest after processing
-  - feedback/active.md                             # legacy active-list prune during Phase 2.6 transition
-  - feedback/archive/build-<N>.md                  # legacy archive append during Phase 2.6 transition
-  - feedback/incoming/F<nnn>.md                    # legacy staging-file removal during Phase 2.6 transition
+  - feedback/active.md                             # F-id active-list prune (feedback-archive Step 5)
+  - feedback/archive/build-<N>.md                  # F-id archive append (feedback-archive Step 2)
+  - feedback/incoming/F<nnn>.md                    # F-id staging-file removal (feedback-archive Step 5)
   - feedback-inbox/*/processed/*                   # studio-feedback ingestion move target
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
 # Mode: Review-Feedback (`/chanakya review-feedback`)
 
-Parse the user's edits to `user-testing.md` and apply them to the master plan.
+Parse the user's edits to `user-testing.md` and apply them to task state.
 
-Snapshots: `snapshots/briefs.json` for task lookup (5-min freshness — fall back to `chanakya-master.md` when stale). `snapshots/feedback-inbox.json` is checked when the feedback lifecycle is involved (fallback: read `feedback/active.md` directly).
+Snapshots: `snapshots/briefs.json` for task lookup (5-min freshness — fall back to `scripts/query-plans.sh --kind=task` when stale). `snapshots/feedback-inbox.json` is checked when the feedback lifecycle is involved (fallback: read `feedback/active.md` directly).
 
 ## Step 1 — Read the manifest
 
@@ -62,8 +61,6 @@ When a manifest row resolves from a previously-ingested feedback record, also tr
 ## Step 4 — Write changes
 
 For each task/feedback transition above, update the corresponding `plans/tasks/<task-id>.yaml` / `plans/feedback/<feedback-id>.yaml`: bump `updated_at`, append the `history:` entry (task artifacts), and emit `task_state_changed` / `feedback_state_changed` events via `scripts/write-event.sh`. Regenerate `plans/index.yaml` via `scripts/rebuild-index.sh`.
-
-**Phase 2.6 transition note:** also update `chanakya-master.md` (legacy status mutations + new follow-up task rows) until Commit H cutover.
 
 ## Step 5 — Archive the manifest
 

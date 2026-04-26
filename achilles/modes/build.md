@@ -9,10 +9,9 @@ budget_tokens: 2500
 reads:
   - plans/index.yaml                               # post-migration task index (for Unverified-since set)
   - plans/tasks/*.yaml                             # post-migration per-task artifacts
-  - plans/chanakya-master.md                       # legacy: `## Build Debt` block + Unverified-since (until Commit H)
+  - plans/build-debt.yaml                          # `## Build Debt` source (Last green sha, Unverified since)
 writes:
   - plans/debriefs/<debrief-id>.yaml               # canonical build-check debrief (schema: _shared/schemas/debrief.md)
-  - plans/chanakya-inbox/<BUILD_ID>-debrief.md     # legacy write target during Phase 2.6 transition
   - events/<date>.jsonl                            # build-check events (via scripts/write-event.sh)
 ---
 

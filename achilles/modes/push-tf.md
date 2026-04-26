@@ -10,13 +10,11 @@ reads:
   - plans/index.yaml                               # post-migration task + release index
   - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
   - plans/releases/*.yaml                          # prior TestFlight releases for shipping-task range (schema: _shared/schemas/release.md)
-  - plans/chanakya-master.md                       # legacy fallback (## Release Log) until Commit H
 writes:
-  - plans/releases/<release-id>.yaml               # post-migration canonical (schema: _shared/schemas/release.md, release@1.0.0, channel: testflight)
+  - plans/releases/<release-id>.yaml               # canonical (schema: _shared/schemas/release.md, release@1.0.0, channel: testflight)
   - plans/debriefs/<debrief-id>.yaml               # paired release-type debrief (schema: _shared/schemas/debrief.md)
   - plans/tasks/<task-id>.yaml                     # back-ref update: links.release on each shipping task
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh
-  - plans/chanakya-inbox/tf-<build>-debrief.md     # legacy markdown debrief during Phase 2.6 transition
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
@@ -28,10 +26,10 @@ Slack message format (used by `/pushTFBuild`) is defined in `_shared/contracts/b
 
 ## TF1 — Pre-flight: collect shipping tasks
 
-1. Read prior releases. Post-migration: `scripts/query-plans.sh --kind=release --channel=testflight` enumerates prior TestFlight releases from `plans/releases/*.yaml`. Legacy fallback reads `chanakya-master.md` and its `## Release Log` table.
+1. Read prior releases. `scripts/query-plans.sh --kind=release --channel=testflight` enumerates prior TestFlight releases from `plans/releases/*.yaml`.
 2. Find the last TestFlight entry (if any). Note its `commit_sha`.
-3. Collect shipping tasks. Post-migration: `scripts/query-plans.sh --kind=task --state=merged,verified` returns candidates; filter by merge-SHA ancestry (ancestor of current HEAD, descendant of the last TestFlight commit_sha) and by absence of a `links.release` entry. Legacy fallback: status `done` or `verified` with `Merge commit:` in the range, `Released in:` without a `TF-` entry.
-4. If no prior TestFlight release exists, fall back to collecting all merged/verified tasks without a `links.release` (post-migration) or without a `TF-` tag (legacy).
+3. Collect shipping tasks. `scripts/query-plans.sh --kind=task --state=merged,verified` returns candidates; filter by merge-SHA ancestry (ancestor of current HEAD, descendant of the last TestFlight commit_sha) and by absence of a `links.release` entry.
+4. If no prior TestFlight release exists, collect all merged/verified tasks without a `links.release`.
 5. Print the pre-flight summary:
    > "Pre-flight: <N> tasks will ship in this TestFlight build: T015, T016, T017. Proceeding to build..."
 
@@ -86,27 +84,6 @@ Update each shipping task's `plans/tasks/<task-id>.yaml`: set `links.release = <
 **Release debrief** — write the paired debrief as YAML to `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml` per schema `_shared/schemas/debrief.md` (`debrief@2.0.0`). Mint `id` as a UUIDv7. Populate `schema_version`, `task_id: null`, `brief_id: null`, `mode: task` (release treated as a task-mode variant; release-specific context lives in `key_learnings`), `completed_at`, `branch: {worked_on: <BRANCH>, merged_into: null, merge_sha: <HEAD_SHA>}`, `commits: []`, `diff_summary: {files: 0, added_lines: 0, removed_lines: 0}`, `decisions: []`, `tests: {added: [], modified: [], skipped_because: "release-mode debrief; per-task test coverage lives on the individual task debriefs"}`, `testability: null`, `build_gate: full-green`, `build_debt_override: false`, `debt: {build: false, test_unit: false, test_ui: false, notes: null}`, `performance: []`, `key_learnings: []`, `known_issues: []`, `follow_ups: []`, `open_questions: []`, `argus_review: {status: not-invoked, review_id: null, notes: "release-mode; argus gates per-task merges, not release submission"}`.
 
 Regenerate `plans/index.yaml` via `scripts/rebuild-index.sh`.
-
-**Phase 2.6 transition note:** also write the legacy markdown debrief at `~/.dev-studio/<project>/plans/chanakya-inbox/tf-<BUILD_NUMBER>-debrief.md` so Chanakya's inbox sweep (until Commit H cutover) still sees the release:
-
-```markdown
-# Debrief: tf-<BUILD_NUMBER> — TestFlight Release
-Type: testflight-release
-Completed: <YYYY-MM-DD HH:mm IST>
-HEAD: <HEAD_SHA>
-Branch: <BRANCH>
-
-## Release Info
-Build number: <BUILD_NUMBER>
-Version: <VERSION>
-Distribution: TestFlight
-Covers: [T015, T016, T017, ...]
-
-## Tasks Included
-- T015 — <title> (done, merged <merge-date>)
-- T016 — <title> (verified, merged <merge-date>)
-- T017 — <title> (done, merged <merge-date>)
-```
 
 ## TF5 — Report
 

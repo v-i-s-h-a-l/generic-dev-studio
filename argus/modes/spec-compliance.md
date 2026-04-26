@@ -8,7 +8,6 @@ budget_tokens: 1200
 reads:
   - plans/briefs/<brief-id>.yaml                   # what the task was supposed to do
   - plans/tasks/<task-id>.yaml                     # size + type context
-  - plans/chanakya-tasks/<task-id>-*.md            # legacy brief fallback
 writes:
   - events/<date>.jsonl                            # review_requested (stage: spec), review_{approved,flagged,blocked} (stage: spec)
 ---
