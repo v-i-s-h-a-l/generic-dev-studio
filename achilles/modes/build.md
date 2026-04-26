@@ -48,9 +48,9 @@ Detached HEAD — no branch created. Build mode never commits or merges.
 
 ## B3 — Full build at HEAD
 
-Run the full-green build path used by the task mode's Step 6 verbatim, using `$DERIVED` as the DerivedData path and `$BUILD_ID` wherever `<task-id>` appears. Capture `BUILD_STATUS`.
+RUN `scripts/task-build-gate.sh full-green "$BUILD_ID" "$WORKTREE" <scheme> <destination>`. Capture its exit code as `BUILD_STATUS`. The gate owns node dispatch (laptop or remote worker), per-node `xcodebuild.lock` acquisition with 45-min staleness reclaim, DerivedData isolation under `~/.dev-studio/.runtime/derived-data/$BUILD_ID/`, and `build_check_started` / `build_check_passed` / `build_check_failed` event emission. Build-mode reuses the gate without modification: `$BUILD_ID` substitutes for `<task-id>`, and the gate's per-task DerivedData resolver maps it to a build-mode-isolated path.
 
-**Full-green build block** (same contract as the task pipeline): acquire the per-project `xcodebuild.lock` via atomic `mkdir`, run `xcodebuild -scheme <scheme> -destination <dest> -derivedDataPath "$DERIVED" build`, release the lock, check status. See the task mode's build-gate documentation for the lock recipe and reclaim rules.
+Direct `xcodebuild` invocation from this mode is forbidden — the gate is the single chokepoint for build-toolchain entry (REVIEW.md R1 / lint-build-invocations).
 
 ## B4a — Green path
 
@@ -85,16 +85,17 @@ git bisect bad "$HEAD_SHA"
 git bisect good "$LAST_GREEN_SHA"   # from the Build Debt block
 ```
 
-2. **Bisect loop** — for each commit `git bisect` checks out, run the same locked `xcodebuild` (reusing `$DERIVED` to keep SPM warm). Mark good/bad based on exit status:
+2. **Bisect loop** — for each commit `git bisect` checks out, RUN `scripts/task-build-gate.sh full-green "$BUILD_ID" "$WORKTREE" <scheme> <destination>` (same gate, same per-node lock semantics, same DerivedData path so SPM stays warm across iterations). Mark good/bad based on exit status:
 
 ```bash
 while git bisect log | grep -q "^# first bad commit:" ; do break; done
 # loop:
-STATUS=$(run_locked_xcodebuild "$DERIVED")
+scripts/task-build-gate.sh full-green "$BUILD_ID" "$WORKTREE" "$SCHEME" "$DESTINATION"
+STATUS=$?
 if [ $STATUS -eq 0 ]; then git bisect good; else git bisect bad; fi
 ```
 
-Each bisect step acquires the `xcodebuild.lock` for the build and releases it immediately after — siblings are not starved. DerivedData is intentionally **not** cleaned between steps: keeping SPM dependencies resolved is what makes bisect tolerable time-wise.
+Each bisect step acquires the per-node `xcodebuild.lock` via the gate and releases it on exit — siblings are not starved. DerivedData is intentionally **not** cleaned between steps: keeping SPM dependencies resolved is what makes bisect tolerable time-wise.
 
 3. **Bisect verdict** — capture the breaking commit SHA, its subject, the touched files:
 

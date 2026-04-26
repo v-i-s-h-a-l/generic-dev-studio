@@ -89,9 +89,9 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `review_flagged` | Non-blocking findings | `findings` (array of strings), `stage` |
 | `review_blocked` | Hard block — cannot merge | `block_reason`, `check`, `stage` |
 | `brief_review_flagged` | Chanakya brief-review (#104) found one or more checklist defects in an authored brief. Warn-tier; dispatch is not blocked. Empty `findings` is not emitted (clean runs don't emit). | `brief_uuid`, `finding_count`, `findings` (comma-joined C-item IDs, e.g. `"C1,C4,C7"`), `size`, `type` |
-| `test_run_started` | Test phase begins (M/L only) | `slot`, `suite` |
-| `test_run_passed` | Tests green | `duration_s`, `test_count` |
-| `test_run_failed` | Tests red | `failing_tests` (array) |
+| `test_run_started` | Test phase begins. Argus M/L emits via `argus-run-tests.sh` (machine-local, test-slot semaphore). Achilles test-suite mode emits via `task-test-gate.sh` (node-dispatched, per-node xcodebuild lock — #215). | `slot` (argus) \| `node` (achilles), `suite` (argus) \| `scheme`+`test_target`+`worktree` (achilles), `attempt` (achilles) |
+| `test_run_passed` | Tests green | `duration_s`, `test_count`; achilles path additionally carries `node`, `scheme`, `test_target`, `attempt` |
+| `test_run_failed` | Tests red | `failing_tests` (array, argus) \| `node`+`scheme`+`test_target`+`duration_s`+`attempt`+`exit_code` (achilles); achilles also uses `reason: locked_out` + `waited_s` for the 30-min lock timeout |
 | `base_stale` | Base branch advanced since branch point | `base_sha`, `branch_sha` |
 | `review_scoped` | A scope cap was triggered (diff cap, file cap, or xs_skip) | `cap` (`diff_size`\|`file_count`\|`xs_skip`), `value`, `limit` |
 | `argus_gate_skipped` | Argus dispatch exited non-zero without a verdict, OR a `task_merged` fired with no preceding `review_(approved\|flagged\|blocked)` for the same task. Loud-skip sentinel for #154. | `stage`, `idem_key`, `reason` (`unknown_host`\|`missing_manifest`\|`missing_spawn_command`\|`secret_scope_floor_unmet`\|`mktemp_failed`\|`validator_unavailable`\|`handoff_schema_violation`\|`verdict_timeout_<N>s`\|`no_verdict_at_merge`\|`unknown_exit_<rc>`), `exit_code` (where applicable) |

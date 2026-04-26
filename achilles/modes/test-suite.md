@@ -32,13 +32,9 @@ This mode short-circuits the normal task pipeline — no branch, no merge, no Ar
 
 2. **Isolate.** Create a detached-HEAD worktree (same as Build Mode — no branch, no merge). This ensures the test run is against committed HEAD.
 
-3. **Execute tests.** Run the appropriate `xcodebuild test` command(s) through the serialized build lock:
-   ```bash
-   xcodebuild test -scheme <scheme> -destination <dest> \
-     -derivedDataPath "$DERIVED" \
-     -only-testing:<TestTarget>
-   ```
-   Capture: pass count, fail count, individual test names and results, duration.
+3. **Execute tests.** RUN `scripts/task-test-gate.sh <task-id> <worktree> <scheme> <destination> [<TestTarget>]`. The gate owns node-pick + per-node `xcodebuild.lock` acquisition + DerivedData isolation + `test_run_started` / `test_run_passed` / `test_run_failed` event emission. For `unit` / `ui` / `all`, pass the matching test-target (omit the 5th arg to run the whole suite). Capture the gate's exit code; parse pass/fail counts from the captured log if needed for the debrief — counts come back via the `test_count` field on the `test_run_passed` event.
+
+   Direct `xcodebuild` invocation is forbidden — the gate is the single chokepoint for test-toolchain entry (REVIEW.md R1 / lint-build-invocations).
 
 4. **Green result (all tests pass):**
    Write the debrief as YAML to `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml` per schema `_shared/schemas/debrief.md` (`debrief@2.0.0`). Mint `id` as a UUIDv7. Populate `schema_version`, `task_id: null` (test-suite runs are not task-scoped), `brief_id: null`, `mode: task` (test-suite-run is treated as a task-mode variant — the structured `tests` object + `key_learnings` carry the suite context), `completed_at`, `branch: {worked_on: null, merged_into: null, merge_sha: <HEAD_SHA>}` (detached-HEAD worktree; no branch), `commits: []`, `diff_summary: {files: 0, added_lines: 0, removed_lines: 0}`, `decisions: []`, `tests: {added: [], modified: [], skipped_because: null}` (the suite exercises existing tests — `added` stays empty), `testability: null`, `build_gate: full-green`, `build_debt_override: false`, `debt: {build: false, test_unit: false, test_ui: false, notes: null}` (green result — debt counter reset is Chanakya's derived action, not a field), `performance: []`, `key_learnings: ["test-suite-run kind: <unit|ui|all>", "tests_run: <N>", "tests_passed: <N>", "tests_failed: 0", "duration_s: <secs>"]`, `known_issues: []`, `follow_ups: []`, `open_questions: []`, `argus_review: {status: not-invoked, review_id: null, notes: "test-suite-run; no merge, no argus gate"}`.
