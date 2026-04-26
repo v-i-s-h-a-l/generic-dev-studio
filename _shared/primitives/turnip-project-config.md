@@ -9,9 +9,12 @@ type: reference
 ## Xcode Project
 - Repo root: `/Users/vishalsingh/Documents/Turnip.gg/turnip-ios`
 - Project: `/Users/vishalsingh/Documents/Turnip.gg/turnip-ios/zaps-app/Turnip.xcodeproj`
+- Project (worktree-relative): `zaps-app/Turnip.xcodeproj`
 - Scheme: `Zaps`
 - pbxproj: `/Users/vishalsingh/Documents/Turnip.gg/turnip-ios/zaps-app/Turnip.xcodeproj/project.pbxproj`
 - xcpretty: `/Users/vishalsingh/.gem/ruby/2.6.0/bin/xcpretty`
+
+> **Why the worktree-relative form (#238).** This repo has multiple `Turnip.xcodeproj` directories (`zaps-app/`, `turnip-aap/`, the root-level stub) — `xcodebuild` without `-project` auto-picks the first one it finds at the worktree root, which is the stub (no `project.pbxproj`), and bails before scheme resolution. Achilles + the gate scripts pass this relpath to xcodebuild's `-project` flag so the canonical project is pinned regardless of cwd. Constant across all worktrees of this repo.
 
 ## App Store Connect
 - Key ID: `WJQ6D76K8R`

@@ -32,7 +32,7 @@ This mode short-circuits the normal task pipeline — no branch, no merge, no Ar
 
 2. **Isolate.** Create a detached-HEAD worktree (same as Build Mode — no branch, no merge). This ensures the test run is against committed HEAD.
 
-3. **Execute tests.** RUN `scripts/task-test-gate.sh <task-id> <worktree> <scheme> <destination> [<TestTarget>]`. The gate owns node-pick + per-node `xcodebuild.lock` acquisition + DerivedData isolation + `test_run_started` / `test_run_passed` / `test_run_failed` event emission. For `unit` / `ui` / `all`, pass the matching test-target (omit the 5th arg to run the whole suite). Capture the gate's exit code; parse pass/fail counts from the captured log if needed for the debrief — counts come back via the `test_count` field on the `test_run_passed` event.
+3. **Execute tests.** RUN `scripts/task-test-gate.sh <task-id> <worktree> <scheme> <destination> [<TestTarget>] [<project-relpath>]`. The gate owns node-pick + per-node `xcodebuild.lock` acquisition + DerivedData isolation + `test_run_started` / `test_run_passed` / `test_run_failed` event emission. For `unit` / `ui` / `all`, pass the matching test-target (or empty string `""` to run the whole suite). Pass `$PROJECT_RELPATH` (sourced from `_shared/primitives/turnip-project-config.md`'s `Project (worktree-relative)` field, #238) as the 6th arg to pin xcodebuild's `-project` / `-workspace` flag in multi-project repos; pass empty string when unset. Capture the gate's exit code; parse pass/fail counts from the captured log if needed for the debrief — counts come back via the `test_count` field on the `test_run_passed` event.
 
    Direct `xcodebuild` invocation is forbidden — the gate is the single chokepoint for test-toolchain entry (REVIEW.md R1 / lint-build-invocations).
 
