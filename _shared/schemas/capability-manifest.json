@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-04-26T16:04:40Z",
+  "generated_at": "2026-04-26T16:19:29Z",
   "agents": [
     {
       "name": "studio",
@@ -282,10 +282,20 @@
       "name": "apollo",
       "router": "apollo/SKILL.md",
       "description": "iOS performance agent. Per-metric mode packs (memory/thermal/battery) under a strict-9 evidence gate. Refuses recommendations without hard evidence; auto-captures via the execution surface.",
-      "reads": [],
-      "writes": [],
+      "reads": ["~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/<project>/apollo/captures/**", "~/.dev-studio/<project>/apollo/deferred/*.yaml", "~/.dev-studio/<project>/events/**.jsonl"],
+      "writes": ["~/.dev-studio/.runtime/locks/apollo/*", "~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/apollo/recommendations/<id>.md", "~/.dev-studio/<project>/events/<today>.jsonl"],
       "modes": [
-
+        {
+          "name": "memory",
+          "path": "apollo/modes/memory.md",
+          "type": "mode-pack",
+          "description": "Diagnose → measure → propose → patch → re-measure protocol for memory regressions under strict-9 evidence gating. Covers transient peaks, persistent growth, leaks, and OOM kills.",
+          "reads": ["~/.dev-studio/<project>/apollo/captures/**", "~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/<project>/apollo/deferred/*.yaml", "~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/events/**.jsonl"],
+          "writes": ["~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/recommendations/<id>.md", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/events/<today>.jsonl", "~/.dev-studio/.runtime/locks/apollo/*"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 6000
+        }
       ]
     },
     {

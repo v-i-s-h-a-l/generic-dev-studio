@@ -146,6 +146,21 @@ Precedence: `waived` beats `build-only` when both apply. A waived review is the 
 
 **Out of scope for this event:** `brief_started.gate_selected` still records the *selected* gate mode (`lsp-only | full-green`) — that's the input side and intentionally distinct from the outcome.
 
+### Apollo events
+
+Emitted by Apollo mode packs (`apollo/modes/*.md`). Agent field is `apollo`. Every Apollo event carries `mode` (`memory` | `thermal` | `battery`), `artifact_shape`, and `cohort` (`<modelCode>/<osMajor>`) at top level inside `data`. Names ship with #230 (memory mode pack); thermal (#231) and battery (#232) reuse the same envelope.
+
+| Event | Emitted when | Typical `data` keys |
+|---|---|---|
+| `apollo_capture_started` | A capture recipe begins (xctrace record, AXe scenario, MetricKit pastPayload pull) | `mode`, `class`, `recipe`, `cohort`, `scenario`, `signpost`, `tool` |
+| `apollo_capture_completed` | Capture produced an artifact persisted under `apollo/captures/<id>/` | `mode`, `class`, `recipe`, `cohort`, `scenario`, `signpost`, `artifact_path`, `artifact_shape`, `discarded` (`true` when the cohort/noise gate from the mode pack rejected the run; payload retained for forensics, not consumed by the regression-detection layer) |
+| `apollo_capture_deferred` | A required capture exceeds the session budget; row written to `apollo/deferred/<id>.yaml` | `mode`, `class`, `recipe`, `expected_duration_s`, `deferred_id`, `scheduled_at` |
+| `apollo_recommendation` | A recommendation artifact is written at `apollo/recommendations/<id>.md` | `mode`, `class`, `recommendation_id`, `archetype`, `diff_target`, `expected_delta`, `evidence_paths` (array). Verification follow-ups reuse the same event with `status` ∈ {`verified`, `partial`, `regressed`} |
+| `apollo_refused` | The strict-9 gate refused after exhausting the auto-capture decision tree | `mode`, `class`, `reason` (`no_evidence` \| `soft_evidence` \| `cohort_mismatch` \| `signpost_missing` \| `dsym_uuid_mismatch` \| `capability_unavailable` \| `human_required`), `attempted_paths` (array), `unblock_recipes` (array) |
+| `apollo_advisory` | The 1/10 advisory channel fires with a curated canonical anti-pattern citation | `mode`, `class`, `advisory_id` (e.g. `mem:03`), `diff_target`, `measurement_blocked_reason` |
+
+**Why scoped names.** Apollo is the first agent whose primary output is *evidence about other agents' work*, not a direct task mutation. Distinct event names keep regression dashboards (Apollo) separable from task-flow dashboards (Achilles / Argus / Chanakya). The `mode` + `class` pair is the cardinality axis — every Apollo finding is filterable by which signal it's about and which P0 mode owns it.
+
 ### Snapshot events (router-pattern)
 
 Emitted by `scripts/chanakya-snap.sh` (producer side) and by mode packs that consume snapshots (reader side). See `_shared/patterns/router-pattern.md` §Freshness and fallback for the contract. Agent field is `chanakya` on all five.

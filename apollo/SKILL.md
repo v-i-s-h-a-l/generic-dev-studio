@@ -3,7 +3,7 @@ name: apollo
 description: iOS performance agent. Per-metric mode packs (memory/thermal/battery) under a strict-9 evidence gate. Refuses recommendations without hard evidence; auto-captures via the execution surface.
 type: agent-router
 schema_version: 1
-version: 0.1.0
+version: 0.2.0
 budget_tokens: 400
 ---
 
@@ -29,7 +29,7 @@ The gate is the load-bearing invariant. Every mode pack's entry conditions cite 
 
 | Sub-command / invocation | Mode pack | Status |
 |---|---|---|
-| `memory` / "investigate memory regression" / "leak" / "OOM" | `modes/memory.md` | Stage 2a — #230, not yet shipped |
+| `memory` / "investigate memory regression" / "leak" / "OOM" | `modes/memory.md` | Stage 2a — #230, shipped |
 | `thermal` / "thermal throttling" / "device heat" | `modes/thermal.md` | Stage 2b — #231, not yet shipped |
 | `battery` / "battery drain" / "energy regression" | `modes/battery.md` | Stage 2c — #232, not yet shipped |
 | *(no args or free-text)* | infer metric from cited artifact / prompt for one of {memory, thermal, battery} | router-only until Stage 2 |
@@ -69,7 +69,7 @@ At first write of any session (capture emit, recommendation emit, deferred-captu
 
 ## Event trail
 
-Mode packs emit scoped events through `scripts/emit-event.sh`. Names ship with the first mode pack (#230); the catalogue lives at `_shared/contracts/events.md`. Anticipated names: `apollo_capture_started`, `apollo_capture_completed`, `apollo_recommendation`, `apollo_refused`, `apollo_advisory`, `apollo_capture_deferred`. Every event carries `mode`, `artifact_shape`, `cohort`, and (when applicable) `regression_id`.
+Mode packs emit scoped events through `scripts/emit-event.sh`. Catalogue lives at `_shared/contracts/events.md §Apollo events`. Names: `apollo_capture_started`, `apollo_capture_completed`, `apollo_capture_deferred`, `apollo_recommendation`, `apollo_refused`, `apollo_advisory`. Every event carries `mode`, `artifact_shape`, `cohort`, and (when applicable) `recommendation_id`.
 
 ## Runtime artifact paths
 
