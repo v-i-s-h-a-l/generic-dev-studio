@@ -452,6 +452,22 @@ if [ -s "$build_json" ] && command -v jq >/dev/null 2>&1; then
     }]
   ' "$build_json" 2>/dev/null || printf 'null')
 fi
+
+# #265 — success-marker verification on the xcodebuild text path.
+# xcodebuild can exit 0 without compiling (unresolvable destination is the
+# observed case; future misbehaviors may have different shapes). The
+# `** BUILD SUCCEEDED **` line is xcodebuild's own success contract — its
+# absence on an exit-0 run is the silent-success signature. The check is
+# gated to the xcodebuild executor: when the JSON sidecar is present and
+# parsed, errors_json is authoritative and the text projection in stdout
+# does not include the marker.
+success_marker_present=1
+if [ "$errors_json" = "null" ] && [ -s "$build_log" ]; then
+  if ! grep -F '** BUILD SUCCEEDED **' "$build_log" >/dev/null 2>&1; then
+    success_marker_present=0
+  fi
+fi
+
 rm -f "$build_log" "$build_json" 2>/dev/null || true
 
 GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
@@ -459,6 +475,14 @@ GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
 
 if [ "$BUILD_STATUS" -ne 0 ]; then
   data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"errors_json":%s%s}' \
+    "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$errors_json" "$DISPATCH_FIELDS")
+  _emit_terminal build_check_failed "$data"
+  gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
+  exit 2
+fi
+
+if [ "$success_marker_present" -eq 0 ]; then
+  data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"success_marker_absent","errors_json":%s%s}' \
     "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$errors_json" "$DISPATCH_FIELDS")
   _emit_terminal build_check_failed "$data"
   gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
