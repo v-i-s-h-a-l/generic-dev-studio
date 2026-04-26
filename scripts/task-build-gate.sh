@@ -223,6 +223,12 @@ else
   IS_LOCAL=0
 fi
 
+# Surface the dispatch decision to the user — stderr banner + iTerm badge
+# + terminal title. See lib-paths.sh #215. The cleared form lands on every
+# terminal exit path via the trap.
+GATE_START_S=$(date -u +%s)
+gate_announce_start build "$NODE_ID" "$TASK_ID" full-green
+
 LOCK_ROOT="$(resolve_runtime_global)/xcodebuild-lock"
 LOCK="$LOCK_ROOT/$NODE_ID"
 DERIVED=$(resolve_derived_data_for "$TASK_ID")
@@ -236,6 +242,7 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
     "$NODE_ID" "$SCHEME" "$DESTINATION" "$DERIVED" >&2
   _emit_terminal build_check_passed \
     "$(printf '{"mode":"full-green","node":"%s","dry_run":true,"scheme":"%s","attempt":%s}' "$NODE_ID" "$SCHEME" "$ATTEMPT")"
+  gate_announce_done build "$NODE_ID" "$TASK_ID" dry-run 0
   exit 0
 fi
 
@@ -261,6 +268,7 @@ while true; do
     printf 'error: xcodebuild lock wait exceeded %ss\n' "$wait_cap" >&2
     data=$(printf '{"mode":"full-green","reason":"locked_out","waited_s":%s,"attempt":%s}' "$wait_seconds" "$ATTEMPT")
     _emit_terminal build_check_failed "$data"
+    gate_announce_done build "$NODE_ID" "$TASK_ID" locked-out "$wait_seconds"
     exit 3
   fi
   sleep "$backoff"
@@ -271,8 +279,10 @@ done
 # EXIT fires once this script returns. Internal handler is sufficient.
 # Composite: first emit an aborted event iff no terminal was sent, THEN
 # release the lock — preserves the span-close invariant for the full-green
-# branch even when the earlier outer trap got overridden by this one.
-trap '_emit_aborted_if_open; rm -rf "$LOCK" 2>/dev/null; _release_task_lock' EXIT INT TERM
+# branch even when the earlier outer trap got overridden by this one. Also
+# clears the iTerm badge + terminal title so a SIGKILL or unexpected exit
+# doesn't leave a stale "→ m1mini" overlay pinned in the user's pane.
+trap '_emit_aborted_if_open; rm -rf "$LOCK" 2>/dev/null; _release_task_lock; _gate_set_title ""; _gate_set_badge ""' EXIT INT TERM
 
 # Local branch still needs to cd before invoking xcodebuild. Remote branch
 # delegates the cd to the remote shell below — the dispatch still happens
@@ -384,13 +394,18 @@ if [ -s "$build_json" ] && command -v jq >/dev/null 2>&1; then
 fi
 rm -f "$build_log" "$build_json" 2>/dev/null || true
 
+GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
+[ "$GATE_DUR_S" -lt 0 ] && GATE_DUR_S=0
+
 if [ "$BUILD_STATUS" -ne 0 ]; then
   data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"errors_json":%s}' \
     "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$errors_json")
   _emit_terminal build_check_failed "$data"
+  gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
   exit 2
 fi
 
 data=$(printf '{"mode":"full-green","node":"%s","warnings":%s,"scheme":"%s","attempt":%s}' "$NODE_ID" "$warn_count" "$SCHEME" "$ATTEMPT")
 _emit_terminal build_check_passed "$data"
+gate_announce_done build "$NODE_ID" "$TASK_ID" passed "$GATE_DUR_S"
 exit 0
