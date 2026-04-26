@@ -386,6 +386,12 @@ TOUR
 }
 
 cmd_guide() {
+  if ! command -v jq >/dev/null 2>&1; then
+    warn "jq is not installed — some guide features need it."
+    cmd_hint "brew install jq   # or: scripts/bootstrap.sh"
+    echo
+  fi
+
   _guide_resolve_role
 
   printf '\n%s━━━ Studio Configuration Guide ━━━%s\n\n' "$c_cyan" "$c_reset"
