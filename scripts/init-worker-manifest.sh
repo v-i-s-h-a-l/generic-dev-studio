@@ -48,6 +48,9 @@ brew_packages:
     - git
   optional:
     - fswatch       # only if the worker ever runs Achilles workers locally
+    - xcodebuildmcp # structured xcodebuild output for the shim (#178)
+  taps:
+    - getsentry/xcodebuildmcp
 
 # Minimum Xcode version the worker should run for parity. sync-worker
 # warns (drift event) if the worker is below this; doesn't auto-fix
