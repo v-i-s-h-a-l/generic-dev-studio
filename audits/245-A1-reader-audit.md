@@ -158,7 +158,7 @@ Before A.3 can flip the default safely:
 1. **Ship Shape B's `scripts/render-master-plan.sh`** (or promote `build_debt` to `plans/index.yaml`) — the load-bearing prerequisite for `sweep-threshold-actions.sh`. Without this, A.3 breaks build-debt threshold logic. Likely a Stage A.0 / A.1.5 of #245 itself, since the Shape B writer is named in the same arc.
 2. **Wrap `scripts/sweep-ingest.sh:413`** in `_lw_dual_write_enabled` (or extract to a lib-ledger helper). The W! finding above. Half-day.
 3. **Add `legacy_artifact_read` emission** to `scripts/next-task-id.sh` so the master-plan read is observable like the other R-fallback consumers. One-liner.
-4. **Soak**: 30-day production run with `DUAL_WRITE_MODE=yaml-only` on user's project per A.2. Watch for `legacy_artifact_read` emissions classified as `domain:tests` (out of scope), `domain:briefs/candidates` (R-fallback consumers — expected to thin out as projects migrate), and any new domains (= a missed reader from A.1).
+4. **Soak** (evidence-bound, not calendar-bound) per A.2: production run with `DUAL_WRITE_MODE=yaml-only` on user's project until **all** exit conditions hold — ≥30 task cycles completed end-to-end (each exercises brief → debrief → review writer paths), ≥1 release ceremony executed, ≥1 sweep / janitor / analyze run, and zero `legacy_artifact_read` emissions of unaccounted-for domain (`domain:tests` is out-of-scope and `domain:briefs/candidates` are R-fallback consumers — both expected; any new `domain:` value = missed reader from A.1, fix forward, then continue soak). At ~10–20 task cycles/day on this repo, exits in roughly 3–5 days of normal usage rather than a calendar month.
 
 ## A.4 readiness checklist
 

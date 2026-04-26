@@ -80,7 +80,7 @@ Exit codes: `0` — dry-run ran to completion; `2` — dry-run surfaced a blocke
 eval "$(scripts/task-load-spec.sh <task-id-or-empty>)"
 ```
 
-Sets `TASK_MODE` (`brief` | `direct`), `BRIEF_PATH`, `BRIEF_UUID`, `SIZE`, `TYPE`, `ACCEPTANCE_JSON`. Resolves the post-migration YAML brief first; falls back to legacy `plans/chanakya-tasks/<task-id>-*.md` and emits `legacy_artifact_read` on the fallback. Exits 2 with a helpful hint when a non-empty task-id has no brief — surface the message to the user and stop.
+Sets `TASK_MODE` (`brief` | `direct`), `BRIEF_PATH`, `BRIEF_UUID`, `SIZE`, `TYPE`, `ACCEPTANCE_JSON`. Resolves the post-migration YAML brief first; falls back to legacy `plans/chanakya-tasks/<task-id>-*.md` and emits `legacy_artifact_read` on the fallback. Exits 2 with a helpful hint when a non-empty task-id has no brief — surface the message to the user and stop. Exits 5 when the task is in a terminal state (`merged` / `user-verifying` / `verified` / `archived`) — re-dispatch is refused (#263) to prevent duplicate worktrees, second debriefs, and re-runs of release actions in build / push-tf modes. The user may override with `ACHILLES_REOPEN=1` (writes a follow-up debrief on the existing task) or escalate to `/chanakya reopen <task-id>` once the formal reopen lifecycle (#252) lands.
 
 Read the brief body at `$BRIEF_PATH` for the narrative context. If the brief lists `## Required Skills`, invocation is MANDATORY — load them before Step 4. Additional skills are routed at Step 4.0 via `_shared/primitives/design-time-skill-routing.md`. If a listed skill is unavailable in the current host, surface via `report_state: needs_context` rather than proceeding without it.
 
