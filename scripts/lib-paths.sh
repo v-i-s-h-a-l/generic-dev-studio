@@ -335,6 +335,29 @@ resolve_project_root() {
   resolve_project_root_for "$project"
 }
 
+# Per-project environment overrides. Sources $HOME/.dev-studio/<project>/state/env.sh
+# once per shell, if it exists. Idempotent.
+#
+# Why per-project: the studio runs against many projects from one shell; blanket
+# exports in the user's rc files would leak settings across projects. The env.sh
+# file lives under per-project runtime state so it travels with the project.
+#
+# Soak window for #245 A.2 uses this to flip `DUAL_WRITE_MODE=yaml-only` on a
+# single project (turnip-ios) without affecting other projects.
+#
+# Failure semantics: silent. Contexts that don't resolve a project (tests, ad-hoc
+# shells outside any repo) inherit shell defaults — no error.
+_lp_load_project_env() {
+  [ -n "${_LP_PROJECT_ENV_LOADED:-}" ] && return 0
+  _LP_PROJECT_ENV_LOADED=1
+  local project env_file
+  project=$(resolve_project 2>/dev/null) || return 0
+  env_file="$HOME/.dev-studio/$project/state/env.sh"
+  [ -f "$env_file" ] || return 0
+  # shellcheck source=/dev/null
+  . "$env_file"
+}
+
 # Studio-self feedback inbox for a given source-project slug. Feedback records
 # authored in any project route here (see CLAUDE.md "Analysis sessions and
 # privacy"); generic-dev-studio is the destination because that's where the

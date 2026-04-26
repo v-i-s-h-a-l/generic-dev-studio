@@ -75,6 +75,10 @@ LEDGER_LIB_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
 . "$LEDGER_LIB_DIR/lib-paths.sh" 2>/dev/null || true
 
+# Load per-project env overrides (e.g. DUAL_WRITE_MODE during the #245 A.2 soak).
+# No-op outside a project; safe to call repeatedly.
+_lp_load_project_env 2>/dev/null || true
+
 # DRY-RUN buffer — callers can inspect emitted events after the run.
 LEDGER_DRY_RUN_EVENTS=""
 
