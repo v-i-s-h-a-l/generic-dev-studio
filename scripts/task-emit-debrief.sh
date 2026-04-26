@@ -16,8 +16,14 @@
 #
 # Usage:
 #   scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> <state> <fields-json>
-#     state: one of the task-lifecycle.md states (self-reviewed | merged |
-#            blocked | cancelled).
+#     state: one of the task-lifecycle.md states (self-reviewed |
+#            argus-reviewed | merged | blocked | cancelled).
+#
+# Pre-merge mode (#249 Phase 2): pass `argus-reviewed` to *stage* the
+# debrief before task-merge.sh runs. The brief→debriefed transition and
+# the `brief_completed` event are deferred to task-finalize-merge.sh on
+# successful merge. Any other state runs the legacy single-shot path
+# (direct-mode and pre-#249 callers).
 #
 # Stdout: the minted debrief UUID.
 #
@@ -114,8 +120,11 @@ transition_task_state "$TASK_UUID" "$TARGET_STATE" achilles "debrief emitted" ||
   [ "$rc" -eq 3 ] && DUAL_WRITE_PARTIAL=1 || { printf 'error: transition_task_state failed rc=%s\n' "$rc" >&2; exit "$rc"; }
 }
 
-# Brief → debriefed only when we have a brief. Direct-mode skips.
-if [ -n "$BRIEF_UUID" ]; then
+# Brief → debriefed only when we have a brief. Direct-mode skips. The
+# argus-reviewed target state is the pre-merge stage (#249 Phase 2): the
+# brief isn't "complete" until task-finalize-merge.sh runs post-merge, so
+# defer the brief transition + brief_completed event there.
+if [ -n "$BRIEF_UUID" ] && [ "$TARGET_STATE" != "argus-reviewed" ]; then
   transition_brief_state "$BRIEF_UUID" debriefed achilles "task complete" || {
     rc=$?
     [ "$rc" -eq 3 ] && DUAL_WRITE_PARTIAL=1 || { printf 'error: transition_brief_state failed rc=%s\n' "$rc" >&2; exit "$rc"; }
@@ -180,9 +189,11 @@ case "$build_gate" in
     ;;
 esac
 
-data=$(printf '{"gate":"%s","gate_legacy":"%s","merge_sha":"%s","debrief_id":"%s"}' \
-  "$gate" "$gate_legacy" "$merge_sha" "$DEBRIEF_UUID")
-emit_event_keyed achilles task brief_completed "$TASK_UUID" "$data" >/dev/null 2>&1 || true
+if [ "$TARGET_STATE" != "argus-reviewed" ]; then
+  data=$(printf '{"gate":"%s","gate_legacy":"%s","merge_sha":"%s","debrief_id":"%s"}' \
+    "$gate" "$gate_legacy" "$merge_sha" "$DEBRIEF_UUID")
+  emit_event_keyed achilles task brief_completed "$TASK_UUID" "$data" >/dev/null 2>&1 || true
+fi
 
 # Flush the index now that the batch is done.
 export WITHHOLD_INDEX="$saved_withhold"
