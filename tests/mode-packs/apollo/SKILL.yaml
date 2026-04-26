@@ -1,0 +1,64 @@
+# Skill-testing fixture for apollo/SKILL.md
+# Proves: strict-9 evidence gate as load-bearing invariant, auto-capture-before-refuse,
+# per-metric isolation, and the Imgly delegation rule.
+schema: 1
+pack: apollo/SKILL.md
+scenario: |
+  You are Apollo (the iOS performance agent). Describe exactly what happens for
+  each of the following invocations:
+
+    1. User says: "the app feels slow on my phone, fix it." No artifact attached.
+    2. User says: "/apollo memory" with a `.trace` file from `iPhone 12 / iOS 18.6`,
+       but the regression target is `iPhone 16 Pro / iOS 19`.
+    3. User says: "/apollo memory" with no artifact, on a host where XcodeBuildMCP +
+       xctrace are installed and the simulator pool is free.
+    4. User says: "/apollo battery — there's a bad O(n²) loop in the export hot path,
+       fix it." No artifact attached, but the anti-pattern is documented in the
+       canonical-antipatterns list.
+    5. User says: "/apollo memory" and the recommended fix has just been applied —
+       Apollo is asked to verify "regression resolved."
+
+  For each: name what Apollo does, which primitive(s) govern the decision, and
+  what artifact (if any) is required to proceed. Cite the refusal-block shape if
+  Apollo refuses.
+failure_signals:
+  # Without the SKILL, an agent guesses fixes without evidence, ignores cohort,
+  # mishandles the advisory channel, or accepts post-fix verification without
+  # a fresh capture.
+  - "(?i)(refactor|optimi[sz]e).*(without|no).*(evidence|artifact|trace)"
+  - "(?i)(should|might|consider).*(work|help|improve)"
+  - "(?i)(generalize|extrapolate).*(cohort|device|os)"
+  - "(?i)(claim|declare).*(resolved|fixed).*(without|no).*(post.?fix|fresh).*(capture|measurement)"
+success_signals:
+  # Strict-9 gate names: refuse soft/none-tier; advisory only for canonical anti-patterns.
+  - "(?i)(strict-9|9/10|hard.?evidence)"
+  - "(?i)(refuse|BLOCKED).*(no|missing).*(evidence|artifact|capture)"
+  # Auto-capture-before-refuse decision tree.
+  - "(?i)auto.?capture"
+  - "execution-surface\\.md"
+  - "evidence-gate\\.md"
+  # Cohort-awareness rule.
+  - "(?i)(cohort|device.?class).*(mismatch|differ|target)"
+  # Advisory channel constraints.
+  - "(?i)advisory:1"
+  - "(?i)(canonical|curated).*(anti.?pattern)"
+  # Post-fix verification cites a fresh capture (REVIEW.md R10).
+  - "(?i)(post.?fix|fresh).*(capture|measurement|baseline)"
+  # Imgly delegation.
+  - "imgly-engine-expert"
+notes: |
+  The key non-obvious facts encoded only in the SKILL.md router + linked primitives:
+  (a) Apollo refuses cross-metric "feels slow" prompts on purpose — the evidence
+      catalogues diverge per mode and the user must pick {memory, thermal, battery}.
+  (b) Cohort matters: a trace from iPhone 12 / iOS 18.6 does NOT satisfy a
+      recommendation that targets iPhone 16 Pro / iOS 19.
+  (c) Auto-capture-before-refuse: Apollo runs the capability matrix decision tree
+      before emitting the BLOCKED block; refusal is reserved for cases with no
+      capture path or a budget overrun.
+  (d) advisory:1 is only available when measurement is structurally impossible.
+      If the execution surface can produce the artifact, Apollo MUST capture
+      instead of using the advisory channel.
+  (e) Imgly/Metal-specific knowledge is delegated to imgly-engine-expert, not
+      embedded in Apollo modes — Apollo retains measurement + verification only.
+  A fresh agent will either guess fixes from anti-patterns alone, ignore cohort,
+  or claim "resolved" without a post-fix capture.
