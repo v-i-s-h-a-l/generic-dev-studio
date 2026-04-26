@@ -200,7 +200,7 @@ Mapped fix archetypes per signal class. Apollo cites the archetype, not the intu
 | Networking radio drain | Use `URLSessionConfiguration.background` with `discretionary = true` for non-urgent uploads; `isDiscretionary` lets the OS schedule transfers when the device is on Wi-Fi and charging | Power Profiler trace shows large transfers on cellular at full radio activation; `MXNetworkTransferMetric.cumulativeCellularUpload` / `cumulativeCellularDownload` dominate vs WiFi counterparts | Discretionary scheduling defers transfers; archetype valid only when the upload is non-urgent |
 | Networking radio drain | Replace persistent WebSocket / TCP connections with APNs push or batched poll windows; if the connection is required, set `URLSessionConfiguration.timeoutIntervalForResource` and coalesce keepalive pings | Power Profiler Network row stays elevated across the scenario interval with low byte-rate; tail-energy patterns visible as power-on intervals lasting beyond the last byte transferred | Push-based architectures require server-side cooperation; archetype scoped to client-controlled endpoints |
 
-The Imgly carve-out is firm: Apollo never proposes a specific Metal change for energy. Apollo names "render-pipeline energy regression at <signpost>", attaches the cited evidence, and the Metal/Imgly knowledge lives in the dedicated `imgly-engine-expert` skill via the Stage 3 delegation contract (#233). This keeps Apollo Imgly-agnostic.
+The Imgly carve-out is firm: Apollo never proposes a specific Metal change for energy. Apollo names "render-pipeline energy regression at <signpost>", attaches the cited evidence, and the Metal/Imgly knowledge lives in the dedicated `imgly-engine-expert` skill via the delegation contract at `apollo/_shared/integrations/imgly-and-metal.md`. This keeps Apollo Imgly-agnostic.
 
 ## Phase 4 — Patch
 
@@ -346,7 +346,7 @@ The five-phase pipeline rendered as enforceable steps. Each step gates the trans
 |---|---|---|
 | → Achilles (patch) | `~/.dev-studio/<project>/apollo/recommendations/<id>.md` + brief seed | Recommendation contains `track`, `diff_target`, `expected_delta`, `verification_recipe`, `dwell_seconds` (reproducible) or `field_window_days` (non-reproducible). Achilles applies the patch on a worktree, runs Argus per its normal flow, and merges. Apollo never invokes Achilles directly — Chanakya routes the brief. |
 | → Argus (review) | None directly. | Apollo's recommendation artifact is read-only context for Argus during code review. Argus does not write Apollo state. |
-| → imgly-engine-expert (Metal/Imgly archetypes) | `delegate: imgly-engine-expert` line on the recommendation when the diff target is in Imgly / Metal pipeline code | Stage 3 deliverable (#233). Until #233 ships, Apollo refuses Metal-internal recommendations and emits `advisory:1` with the canonical-antipattern citation only. |
+| → imgly-engine-expert (Metal/Imgly archetypes) | `delegate: imgly-engine-expert` line on the recommendation when the diff target is in Imgly / Metal pipeline code | Handoff envelope: `apollo/_shared/integrations/imgly-and-metal.md` (`apollo_to_expert` / `expert_to_apollo` blocks). If the receiving skill is not vendored in the project, refuse with the standard refusal block and emit `advisory:1` with the canonical-antipattern citation only. |
 | → thermal mode (cross-mode coupling) | Apollo annotates the recommendation with `cross_mode: thermal` when the archetype is shared (FPS cap, observer contract, spin-loop yield) | Both modes' verification recipes run; a battery-only verification that ignores a thermal regression is a soft-evidence finding under §Phase 5 outcome table |
 
 ## Singleton
@@ -361,7 +361,7 @@ The reproducible-vs-non-reproducible split is the second load-bearing invariant.
 
 The Power Profiler dependency is the third invariant. Energy Log is a fallback, Energy Gauges is preview-only, and `powermetrics` is host-side. Power Profiler (Xcode 16+, real-device-only) is the canonical iOS battery template — recommendations cite the offending subsystem row with the timestamp range that brackets the scenario. The simulator carve-out is firm: simulator does not measure power, and any "battery" capture against a simulator is structurally invalid.
 
-The Imgly carve-out matches thermal mode. Imgly knowledge lives in the dedicated `imgly-engine-expert` skill; Apollo retains measurement and verification authority. The Stage 3 delegation contract (#233) formalizes the boundary; until it ships, Apollo refuses to bake Metal internals into this mode pack.
+The Imgly carve-out matches thermal mode. Imgly knowledge lives in the dedicated `imgly-engine-expert` skill; Apollo retains measurement and verification authority. The delegation contract at `apollo/_shared/integrations/imgly-and-metal.md` formalizes the boundary — Apollo writes the structured `apollo_to_expert` envelope, the receiving skill returns `expert_to_apollo`, and Apollo applies strict-9 to the verification plan before accepting the recommendation.
 
 ## See also
 
@@ -374,6 +374,7 @@ The Imgly carve-out matches thermal mode. Imgly knowledge lives in the dedicated
 - `apollo/_shared/primitives/organizer-asc.md` — Performance / Power / Battery / Disk Writes Metrics rows on the production fleet
 - `apollo/_shared/primitives/execution-surface.md` — capability matrix + auto-capture decision tree (real-device pairing, APNs sandbox cert as `human-required`)
 - `apollo/_shared/primitives/canonical-antipatterns.md` — battery antipatterns curated for the `advisory:1` channel (`batt:NN` rows)
+- `apollo/_shared/integrations/imgly-and-metal.md` — Imgly / Metal delegation contract (handoff envelope + retained-vs-delegated authority)
 - `apollo/modes/thermal.md` — cross-mode coupling for shared archetypes (thermalState observer, FPS cap, spin-loop yield)
 - `_shared/contracts/events.md` — `apollo_capture_*` and `apollo_recommendation` event schemas
 - `REVIEW.md` R10 — sister rule for completion claims; Apollo's verification phase is the battery-mode counterpart

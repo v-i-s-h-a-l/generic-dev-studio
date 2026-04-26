@@ -88,7 +88,7 @@ That second-to-last step is the whole point. Apollo never says "looks slow, refa
 | Apollo ↔ Achilles | Apollo measures + recommends; Achilles applies. Apollo never writes source files in the worktree. |
 | Apollo ↔ Argus | Argus reviews diffs; Apollo verifies the post-fix metric. A recommendation that lands as a PR loops through Argus normally; Apollo's verification is a follow-on capture. |
 | Apollo ↔ Chanakya | Chanakya dispatches Apollo on a perf brief or a user-triggered investigation. Apollo's findings flow back through the event log; Chanakya files follow-up tasks for the recommended fix. |
-| Apollo ↔ imgly-engine-expert | Apollo retains measurement + verification authority. Imgly/Metal-specific knowledge routes to the existing `imgly-engine-expert` skill via the Stage 3 (#233) delegation contract. |
+| Apollo ↔ imgly-engine-expert | Apollo retains measurement + verification authority. Imgly/Metal-specific knowledge routes to the existing `imgly-engine-expert` skill via the delegation contract at [`_shared/integrations/imgly-and-metal.md`](_shared/integrations/imgly-and-metal.md). |
 
 Stage 5 (#235) wires Chanakya dispatch + Argus interaction policy. Until then, Apollo is invoked directly by the user.
 
@@ -103,7 +103,7 @@ The full stage map lives on issue [#236 (epic)](https://github.com/v-i-s-h-a-l/g
 | 2a | [#230](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/230) | `memory` mode pack | next |
 | 2b | [#231](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/231) | `thermal` mode pack | unblocked |
 | 2c | [#232](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/232) | `battery` mode pack | unblocked |
-| 3 | [#233](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/233) | Imgly/Metal touchpoint + delegation contract | blocked on 2a + 2b |
+| 3 | [#233](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/233) | Imgly/Metal touchpoint + delegation contract | shipped |
 | 4 | [#234](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/234) | SKILL.md + routing.yaml + scaffold | **this PR** |
 | 5 | [#235](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/235) | Chanakya dispatch + Argus interaction policy | blocked on 4 + ≥1 mode |
 

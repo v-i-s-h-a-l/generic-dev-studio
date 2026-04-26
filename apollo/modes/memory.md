@@ -155,7 +155,7 @@ Mapped fix archetypes per signal class. Apollo cites the archetype, not the intu
 | Persistent growth | Release retained `Image` / `CIImage` / `MTLTexture` after presentation | VM Tracker `IOKit` region grows without GPU work; `MXMemoryMetric.peakMemoryUsage` p99 climbs while CPU flat | Critical on iOS — Metal textures live outside the heap and don't show in Allocations |
 | Leak | Break ARC retain cycle (closure capture list, delegate weak-ref) | Leaks template cycle list; Memory Graph cycle highlight; missing `<Type>.deinit` event | Capturing `[weak self]` changes lifetime semantics; the recommendation MUST include the call sites that remain meaningful |
 | Leak | Bridge a CF retain (`Unmanaged.takeRetainedValue` vs `takeUnretainedValue`) correctly | `malloc_history` shows long-lived `CF*` allocation with no app-side `release` site | Wrong direction silently overreleases — recommend always paired with a unit test on the bridge |
-| OOM kill | Lower the per-frame footprint of the Metal command stream (page texture uploads, drop ROI for non-visible layers) | VM Tracker IOKit + `cumulativeForegroundEnergy` co-rise; `MXCrashDiagnostic` callstack roots in render thread | Metal-specific archetypes route to the `imgly-engine-expert` skill via the Stage 3 delegation contract (#233); Apollo retains measurement authority and refuses to bake Metal internals into this mode pack |
+| OOM kill | Lower the per-frame footprint of the Metal command stream (page texture uploads, drop ROI for non-visible layers) | VM Tracker IOKit + `cumulativeForegroundEnergy` co-rise; `MXCrashDiagnostic` callstack roots in render thread | Metal-specific archetypes delegate to `imgly-engine-expert` via `apollo/_shared/integrations/imgly-and-metal.md`; Apollo retains measurement authority and refuses to bake Metal internals into this mode pack |
 
 The Metal carve-out is firm: Apollo never proposes a specific Metal change. Apollo names "render-pipeline footprint regression at <signpost>", attaches the cited evidence, and the Metal/Imgly knowledge lives in the dedicated skill. This keeps Apollo Imgly-agnostic.
 
@@ -278,7 +278,7 @@ The five-phase pipeline rendered as enforceable steps. Each step gates the trans
 |---|---|---|
 | → Achilles (patch) | `~/.dev-studio/<project>/apollo/recommendations/<id>.md` + brief seed | Recommendation contains `diff_target`, `expected_delta`, `verification_recipe`. Achilles applies the patch on a worktree, runs Argus per its normal flow, and merges. Apollo never invokes Achilles directly — Chanakya routes the brief. |
 | → Argus (review) | None directly. | Apollo's recommendation artifact is read-only context for Argus during code review. Argus does not write Apollo state. |
-| → imgly-engine-expert (Metal/Imgly archetypes) | `delegate: imgly-engine-expert` line on the recommendation when the diff target is in Imgly / Metal pipeline code | Stage 3 deliverable (#233). Until #233 ships, Apollo refuses Metal-internal recommendations and emits `advisory:1` with the canonical-antipattern citation only. |
+| → imgly-engine-expert (Metal/Imgly archetypes) | `delegate: imgly-engine-expert` line on the recommendation when the diff target is in Imgly / Metal pipeline code | Handoff envelope: `apollo/_shared/integrations/imgly-and-metal.md` (`apollo_to_expert` / `expert_to_apollo` blocks). If the receiving skill is not vendored in the project, refuse with the standard refusal block and emit `advisory:1` with the canonical-antipattern citation only. |
 
 ## Singleton
 
@@ -290,7 +290,7 @@ The five-phase pipeline maps directly onto memory's four signal classes (per hea
 
 The footprint-vs-RSS distinction is the dominant authorship error in memory work: a Debug-build Allocations trace looks bad on RSS while the Release-build OOM kill is keyed on footprint. Apollo cites footprint by default, RSS only as context, and refuses the bridge without explicit conversion. The cohort pin closes the second-most-common error: a regression flagged on simulator that doesn't reproduce on a 2 GB device cohort (or the inverse).
 
-The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives in the dedicated `imgly-engine-expert` skill; Apollo retains measurement and verification authority. The Stage 3 delegation contract (#233) formalizes the boundary; until it ships, Apollo refuses to bake Metal internals into this mode pack.
+The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives in the dedicated `imgly-engine-expert` skill; Apollo retains measurement and verification authority. The delegation contract at `apollo/_shared/integrations/imgly-and-metal.md` formalizes the boundary — Apollo writes the structured `apollo_to_expert` envelope, the receiving skill returns `expert_to_apollo`, and Apollo applies strict-9 to the verification plan before accepting the recommendation.
 
 ## See also
 
@@ -303,6 +303,7 @@ The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives
 - `apollo/_shared/primitives/organizer-asc.md` — peak memory + OOM rate in ASC Performance Metrics
 - `apollo/_shared/primitives/execution-surface.md` — capability matrix + auto-capture decision tree
 - `apollo/_shared/primitives/canonical-antipatterns.md` — memory antipatterns curated for the `advisory:1` channel
+- `apollo/_shared/integrations/imgly-and-metal.md` — Imgly / Metal delegation contract (handoff envelope + retained-vs-delegated authority)
 - `_shared/contracts/events.md` — `apollo_capture_*` and `apollo_recommendation` event schemas
 - `REVIEW.md` R10 — sister rule for completion claims; Apollo's verification phase is the memory-mode counterpart
 - WWDC24 10173 — Analyze heap memory (canonical for the heap taxonomy)

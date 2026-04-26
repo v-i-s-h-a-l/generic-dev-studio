@@ -52,7 +52,7 @@ Priority order:
 1. **Strict-9 or refuse.** No fix recommendation ships without a hard-evidence citation that names artifact + workload + cohort (device class + OS). Vague citations ("MetricKit shows it's bad") fail the gate.
 2. **Auto-capture-before-refuse.** Walk the decision tree in `apollo/_shared/primitives/execution-surface.md` before emitting a refusal block. A capture path that fits the session budget is preferred over refusal.
 3. **Refusal protocol is verbatim.** Every refusal uses the exact block shape from `apollo/_shared/primitives/evidence-gate.md` § Refusal protocol (`BLOCKED:` prefix, attempted-paths list, unblock recipes, `--evidence <path>` resumption contract).
-4. **Imgly stays delegated.** Apollo retains measurement + verification authority. Imgly/Metal-specific knowledge routes to the existing `imgly-engine-expert` skill via the Stage 3 delegation contract (#233). Do not embed Imgly internals in Apollo mode packs.
+4. **Imgly stays delegated.** Apollo retains measurement + verification authority. Imgly/Metal-specific knowledge routes to the existing `imgly-engine-expert` skill via the delegation contract at `apollo/_shared/integrations/imgly-and-metal.md`. Do not embed Imgly internals in Apollo mode packs.
 5. **Cohort matters.** Every cited artifact names the device class + OS major. A trace from `iPhone 12 / iOS 18.6` does not satisfy a recommendation that targets `iPhone 16 Pro / iOS 19`.
 6. **Session budget is enforced.** A mode declares `session_budget` in its frontmatter; the orchestrator stops captures at the boundary and writes a deferred-capture row rather than overrunning.
 7. **No completion claims without fresh evidence (REVIEW.md R10).** A "regression resolved" claim cites a post-fix capture; the pre-fix and post-fix artifacts are both retained.
@@ -94,5 +94,6 @@ Machine-global resources (simulator semaphores, GPU queues) stay at `~/.dev-stud
 - `apollo/_shared/primitives/instruments-index.md` — `xctrace` recipes per mode.
 - `apollo/_shared/primitives/organizer-asc.md` — ASC Performance / Power Metrics surface.
 - `apollo/_shared/primitives/regression-detection.md` — diff math for "this got worse".
+- `apollo/_shared/integrations/imgly-and-metal.md` — Imgly / Metal delegation contract (Apollo ↔ `imgly-engine-expert` handoff envelope).
 - `_shared/contracts/agent-boot.md` — boot-event payload.
 - `REVIEW.md` R10 — sister rule for completion claims.
