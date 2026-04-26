@@ -869,6 +869,23 @@ if [ "$ROLE" = "worker" ] || [ "$ROLE" = "dual" ]; then
     dim "See setup.html §Always-on node for the full checklist + security considerations."
     if confirm "Apply autorestart now?" "y"; then run sudo pmset -a autorestart 1; fi
   fi
+
+  substep "Disk janitor (auto-installed)"
+  info "Periodic sweep of stale derived-data + worktrees on this node — every 6h."
+  if [ -n "$STUDIO_REPO_DIR" ] && [ -x "$STUDIO_REPO_DIR/scripts/node-janitor.sh" ]; then
+    run mkdir -p "$HOME/.dev-studio/.runtime/bin"
+    run cp "$STUDIO_REPO_DIR/scripts/node-janitor.sh" "$HOME/.dev-studio/.runtime/bin/node-janitor.sh"
+    run chmod +x "$HOME/.dev-studio/.runtime/bin/node-janitor.sh"
+    if [ -x "$STUDIO_REPO_DIR/scripts/install-node-janitor-launchagent.sh" ]; then
+      run "$STUDIO_REPO_DIR/scripts/install-node-janitor-launchagent.sh"
+      ok "node-janitor LaunchAgent installed (every 6h, RunAtLoad)"
+      summary "node-janitor LaunchAgent active"
+    else
+      warn "install-node-janitor-launchagent.sh missing; janitor not scheduled"
+    fi
+  else
+    warn "node-janitor.sh missing from STUDIO_REPO_DIR; skipping"
+  fi
 fi
 
 # ============================================================================
