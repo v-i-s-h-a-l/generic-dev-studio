@@ -133,4 +133,4 @@ Chanakya's debrief-ingest path (Commit G3 rewrite) reads both `mode: task` and `
 
 ## Agent-boot
 
-First write of the session fires `scripts/emit-agent-boot.sh achilles <session-id> <skill-version>`. Idempotent per session.
+First write of the session fires `scripts/emit-agent-boot.sh achilles <session-id>`. Idempotent per session. `skill_version` is read from `achilles/SKILL.md` frontmatter (SSOT per #210), not passed by the caller.

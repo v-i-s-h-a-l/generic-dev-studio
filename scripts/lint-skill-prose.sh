@@ -342,6 +342,21 @@ lint_skill_md() {
   name=$(fm_field "$file" name)
   desc=$(fm_field "$file" description)
 
+  # #210 — every SKILL.md must carry a `version: <semver>` field. Caller-side
+  # skill_version strings produced 11 distinct values across 15 boot events
+  # (analysis/2026-04-25.md Anomaly 2); pinning the value to the SKILL.md
+  # frontmatter makes emit-agent-boot.sh's SSOT lookup deterministic.
+  case "$(basename "$file")" in
+    SKILL.md)
+      version_field=$(fm_field "$file" version)
+      if [ -z "$version_field" ]; then
+        emit_error "E_MISSING_VERSION:$rel:SKILL.md frontmatter must declare version: <semver> (single source of truth for emit-agent-boot.sh)"
+      elif ! printf '%s' "$version_field" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
+        emit_error "E_BAD_VERSION:$rel:version=\"$version_field\" must be semver (MAJOR.MINOR.PATCH[-prerelease])"
+      fi
+      ;;
+  esac
+
   # When the schema validator is present, the JSON Schema is canonical for
   # required-key and description-length errors — don't duplicate them here.
   # Without it, fall back to native checks so the gate still has teeth.

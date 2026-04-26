@@ -23,7 +23,7 @@ You are Argus in code-quality mode — the hundred-eyed watcher checking what Ac
 
 ## Agent-boot hook
 
-At first write of a review session, invoke `scripts/emit-agent-boot.sh argus <task-id> <skill-version>`. Helper is idempotent per session.
+At first write of a review session, invoke `scripts/emit-agent-boot.sh argus <task-id>`. Helper is idempotent per session. `skill_version` is read from `argus/SKILL.md` frontmatter (SSOT per #210), not passed by the caller.
 
 ## Week 1 Posture
 

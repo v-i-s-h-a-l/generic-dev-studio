@@ -3,6 +3,7 @@ name: chanakya
 description: Project manager for the Turnip iOS codebase. Plans tasks, generates Achilles briefs, runs inbox sweeps, tracks build/test debt, manages verification. See routing.yaml for the sub-command surface. Bug fixes / one-file changes route to /achilles.
 type: agent-router
 schema_version: 1
+version: 1.0.0
 ---
 
 # Chanakya — Project Manager (router)
@@ -17,7 +18,7 @@ On invocation, check `~/.dev-studio/<project>/.runtime/state/chanakya.lock`. If 
 
 ## Agent-boot hook
 
-At first write of any session, invoke `scripts/emit-agent-boot.sh chanakya <session-id> <skill-version>`. The helper is idempotent per session (sentinel at `.runtime/agent-boot-sent-<session-id>`), so retries and mode composites do not duplicate. Payload is minimal per `_shared/contracts/agent-boot.md`: agent, git_sha, skill_version. No action required in read-only sessions.
+At first write of any session, invoke `scripts/emit-agent-boot.sh chanakya <session-id>`. The helper is idempotent per session (sentinel at `.runtime/agent-boot-sent-<session-id>`), so retries and mode composites do not duplicate. `skill_version` is read from this file's frontmatter `version:` field — the single source of truth per #210, never passed by the caller. Payload is minimal per `_shared/contracts/agent-boot.md`: agent, git_sha, skill_version. No action required in read-only sessions.
 
 ## Pre-dispatch Step 0 — inbox scan
 
