@@ -80,6 +80,8 @@ Sets `TASK_MODE` (`brief` | `direct`), `BRIEF_PATH`, `BRIEF_UUID`, `SIZE`, `TYPE
 
 Read the brief body at `$BRIEF_PATH` for the narrative context. If the brief lists `## Required Skills`, invocation is MANDATORY — load them before Step 4. Additional skills are routed at Step 4.0 via `_shared/primitives/design-time-skill-routing.md`. If a listed skill is unavailable in the current host, surface via `report_state: needs_context` rather than proceeding without it.
 
+**`BRIEF_SLICE=summary` fallback (#256).** When the env var is set (caller is a sweep / dispatch decision / context-budget-tight subagent), read only the brief's `summary` field (`yq -r '.summary // ""' "$BRIEF_PATH"`) instead of the full body. Skip the body and the `## Required Skills` parse — both belong to the full-brief path. Emit `brief_summary_used` (per `_shared/contracts/events.md` § Achilles events) carrying `brief_uuid=$BRIEF_UUID`, `summary_tokens_est` (word-count × 1.3 — same heuristic as `scripts/lint-brief.sh`), and `reason=caller_request`. If the summary is null (legacy brief, pre-3.2.0), surface `report_state: needs_context` and stop — do not silently fall back to a full read; the caller asked for the slice for a reason. The summary slice is sufficient for sweep gating, dispatch-readiness checks, and status display, but **not** for execution work — Step 4 onward MUST run from the full brief, so callers that pass `BRIEF_SLICE=summary` are by contract not driving the execution pipeline.
+
 Record `WAIT_FOR_USER` (from `--wait`, else `no`). Don't prompt — the flag is the only opt-in.
 
 ### Step 1.5 — Build-debt gate

@@ -3,7 +3,7 @@ name: Chanakya Dispatch-Ready
 description: Briefed tasks where every predecessor has reached merged/verified/archived. The fleet-wide "what can I dispatch right now?" query, grouped by train.
 type: mode-pack
 schema_version: 1
-budget_tokens: 600
+budget_tokens: 800
 snapshots: []
 reads:
   - plans/tasks/*.yaml                             # state + predecessors + train + effort_minutes + recommended_model live per-task
@@ -27,7 +27,7 @@ scripts/query-tasks.sh --dispatch-ready --format=json
 
 Render the result grouped by `train` (tasks without a train fall under `ad-hoc`). Within each train group, sort by `priority` ascending (`p0` first), then `updated_at` ascending so the longest-briefed task surfaces first.
 
-For each row, surface five columns: `<id>  <priority>  <effort_minutes|->  <recommended_model|->  <title>`. `query-tasks.sh --format=json` already includes `priority`, `effort_minutes`, and `recommended_model` — render directly:
+For each row, surface five columns: `<id>  <priority>  <effort_minutes|->  <recommended_model|->  <title>`, then a continuation line carrying the brief's `summary` slice (≤500 tokens, schema `_shared/schemas/brief.md` § summary). `query-tasks.sh --format=json` already includes `priority`, `effort_minutes`, and `recommended_model` — render directly, then resolve each task's live brief and pull `summary`:
 
 ```bash
 scripts/query-tasks.sh --dispatch-ready --format=json \
@@ -37,6 +37,8 @@ scripts/query-tasks.sh --dispatch-ready --format=json \
               | [.id, .priority, (.effort_minutes // "-" | tostring),
                  (.recommended_model // "-"), .title] | @tsv)'
 ```
+
+For each rendered row, look up the latest dispatchable brief (`scripts/query-plans.sh --kind=brief --task=<task-id> --state=ready,dispatched`) and append `  └─ <summary first sentence>` underneath. When `summary` is null (legacy brief, pre-3.2.0), render `  └─ (no summary; pre-3.2.0 brief)` so the gap is visible without forcing a full-brief read.
 
 ## Empty result
 
