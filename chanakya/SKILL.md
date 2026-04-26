@@ -61,6 +61,10 @@ Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debri
 | `feedback-history [filters]` | `modes/feedback.md` |
 | `studio-feedback` / "capture this as feedback" | `modes/feedback.md` |
 | `auto-sweep` | `modes/inbox-sweep.md` (Step 0 re-run + backoff) |
+| `train <show\|list\|burn-down\|dispatch-ready> [name]` | `modes/train.md` |
+| `stale [--days=N] [--state=<state>]` | `modes/stale.md` |
+| `blocked-by <task-id>` | `modes/blocked-by.md` |
+| `dispatch-ready` | `modes/dispatch-ready.md` |
 
 Session-level flags (`--at-laptop`, `--away`, `--auto-sweep`, `--watch`, `--ship-mode`) modify invocation behavior across all modes — they persist to `chanakya_mode.md` and `auto_sweep_state.md` and are honored by every mode pack. `--auto-sweep` specifically re-enters `modes/inbox-sweep.md` on each tick with adaptive backoff (15→30→60→120 min on consecutive blank sweeps; resets to 15 on any activity).
 

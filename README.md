@@ -80,6 +80,12 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /achilles debrief                # direct-debrief: capture in-chat bug-fix as YAML debrief (no brief, no worktree, no Argus)
 /chanakya status                 # tasks in flight + debt gauges + what's next
 /chanakya sweep                  # Step 0 inbox sweep only, no status table (lighter)
+/chanakya train list             # query layer over lean schema: list trains
+/chanakya train show <name>      # tasks in a train, grouped by state
+/chanakya train burn-down <name> # state-count summary for a train
+/chanakya stale [--days=N]       # tasks stuck in their state > N days (default 7)
+/chanakya blocked-by <task-id>   # reverse predecessors lookup — what does shipping this unblock
+/chanakya dispatch-ready         # briefed tasks where every predecessor is merged/verified/archived
 /chanakya test-manifest          # per-task checklist → user-testing.md
 /chanakya test-flow              # journey-ordered walkthrough → round files
 /chanakya review-feedback        # promote passing tasks to verified; file follow-ups for failures
@@ -239,7 +245,7 @@ git clone <this-repo> && cd generic-dev-studio
 brew install fswatch coreutils yq jq
 ```
 
-`yq` (v4+) drives post-2.6 YAML artifacts (`scripts/rebuild-index.sh`, `scripts/query-plans.sh`, `scripts/detect-edits.sh`). `jq` drives event-log normalization in `scripts/migrate-ledger.sh` and dedupe in `scripts/read-events.sh`. Without either, `scripts/migrate-ledger.sh` fails pre-flight.
+`yq` (v4+) drives post-2.6 YAML artifacts (`scripts/rebuild-index.sh`, `scripts/query-plans.sh`, `scripts/query-tasks.sh`, `scripts/detect-edits.sh`). `jq` drives event-log normalization in `scripts/migrate-ledger.sh` and dedupe in `scripts/read-events.sh`. Without either, `scripts/migrate-ledger.sh` fails pre-flight.
 
 ### Git hooks (contributors only)
 
