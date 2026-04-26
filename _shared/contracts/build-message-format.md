@@ -1,10 +1,13 @@
 ---
 name: Build Message Format
-description: Composition rules for TestFlight and App Store submission Slack posts — three-section shape, crash-fix bare-link bullets, regression handling, TF-only cc and rollover
+description: Authoritative composition rules for TestFlight and App Store submission Slack posts — three-section shape, crash-fix bare-link bullets, regression handling, TF-only cc and rollover
 type: reference
+schema_version: 1
 ---
 
 # Build Message Format
+
+**Status: authoritative** (promoted from informal under #287). `studio-tf-push.sh` Step 7 and the `/pushTFBuild` / `/fullSendToAppStore` wrappers compose against this contract; format-iteration work (Phase 4 of #217) updates this file as the single source of truth. Cross-referenced from `_shared/contracts/release-tf-push.md` Step 7 and Stage C's `slack_drafted` event.
 
 Shared composition rules for `#testing` (TF builds) and `#releases` (App Store submissions). Both channels use the same three-section shape: `*New*` / `*Fixed*` / `*Crash fixes*`. **Skip any section with no bullets.** The goal is skimmability — the channel is the changelog index; readers want to know what changed without reading prose.
 
