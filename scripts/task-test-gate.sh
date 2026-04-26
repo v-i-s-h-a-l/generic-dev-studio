@@ -100,10 +100,27 @@ else
 fi
 
 LOCK_ROOT="$(resolve_runtime_global)/xcodebuild-lock"
-LOCK="$LOCK_ROOT/$NODE_ID"
+LOCK_BASE="$LOCK_ROOT/$NODE_ID"
+LOCK=""
 DERIVED=$(resolve_derived_data_for "$TASK_ID")
 mkdir -p "$DERIVED" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$DERIVED" >&2; exit 2; }
-mkdir -p "$(dirname "$LOCK")" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$(dirname "$LOCK")" >&2; exit 2; }
+mkdir -p "$LOCK_BASE" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$LOCK_BASE" >&2; exit 2; }
+
+# Per-node parallel build slots (#218 Stage C / #268). Tests share the
+# slot pool with builds — at slots=1 a test and a build still serialize
+# on slot-1 (identical to pre-#268 cross-gate behaviour); at slots>1 a
+# test pins one slot while builds use the rest. Synthetic `local` is
+# always 1.
+PARALLEL_SLOTS=1
+if [ "$NODE_ID" != "local" ]; then
+  REGISTRY="$(resolve_runtime_global)/nodes.json"
+  if [ -r "$REGISTRY" ] && command -v jq >/dev/null 2>&1; then
+    n=$(jq -r --arg id "$NODE_ID" '.nodes[]? | select(.id == $id) | .parallel_build_slots // 1' "$REGISTRY" 2>/dev/null)
+    case "$n" in ''|*[!0-9]*) n=1 ;; esac
+    [ "$n" -lt 1 ] && n=1
+    PARALLEL_SLOTS=$n
+  fi
+fi
 
 ATTEMPT=1
 GATE_START_S=$(date -u +%s)
@@ -123,27 +140,38 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   exit 0
 fi
 
-# Acquire per-node lock with 30-min wait cap, 45-min staleness reclaim.
-# Same envelope as task-build-gate.sh — keeps build + test phases of one
-# task on the same lock so they can't deadlock each other on cross-node
-# resources.
+# Acquire one of the N slot locks with 30-min wait cap, 45-min staleness
+# reclaim. Same envelope as task-build-gate.sh — keeps build + test
+# phases of one task on the same per-node lock pool so they can't
+# deadlock on cross-node resources. With slots=1 the inner loop tries
+# only `slot-1` so behaviour is identical to the pre-#268 single-dir
+# mkdir-lock.
 wait_seconds=0
 wait_cap=1800
 backoff=10
-while true; do
-  if mkdir "$LOCK" 2>/dev/null; then
-    printf '%s\n' "$$" > "$LOCK/pid"
-    break
-  fi
-  if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +45 2>/dev/null)" ]; then
-    printf 'warn: stale xcodebuild lock (>45m), reclaiming\n' >&2
-    rm -rf "$LOCK"
-    continue
-  fi
+while [ -z "$LOCK" ]; do
+  for s in $(seq 1 "$PARALLEL_SLOTS"); do
+    candidate="$LOCK_BASE/slot-$s"
+    if mkdir "$candidate" 2>/dev/null; then
+      LOCK="$candidate"
+      printf '%s\n' "$$" > "$LOCK/pid"
+      break
+    fi
+    if [ -n "$(find "$candidate" -maxdepth 0 -mmin +45 2>/dev/null)" ]; then
+      printf 'warn: stale xcodebuild lock (>45m, slot %s), reclaiming\n' "$s" >&2
+      rm -rf "$candidate"
+      if mkdir "$candidate" 2>/dev/null; then
+        LOCK="$candidate"
+        printf '%s\n' "$$" > "$LOCK/pid"
+        break
+      fi
+    fi
+  done
+  [ -n "$LOCK" ] && break
   if [ "$wait_seconds" -ge "$wait_cap" ]; then
-    data=$(printf '{"node":"%s","reason":"locked_out","waited_s":%s,"attempt":%s%s}' "$NODE_ID" "$wait_seconds" "$ATTEMPT" "$DISPATCH_FIELDS")
+    data=$(printf '{"node":"%s","reason":"locked_out","waited_s":%s,"slots":%s,"attempt":%s%s}' "$NODE_ID" "$wait_seconds" "$PARALLEL_SLOTS" "$ATTEMPT" "$DISPATCH_FIELDS")
     emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
-    printf 'error: xcodebuild lock wait exceeded %ss\n' "$wait_cap" >&2
+    printf 'error: xcodebuild lock wait exceeded %ss (slots=%s)\n' "$wait_cap" "$PARALLEL_SLOTS" >&2
     gate_announce_done test "$NODE_ID" "$TASK_ID" locked-out "$wait_seconds"
     exit 3
   fi

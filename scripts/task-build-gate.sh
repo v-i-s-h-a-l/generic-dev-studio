@@ -10,13 +10,19 @@
 #                 and a trap that releases the lock on any exit. Red if the
 #                 build exits non-zero.
 #
-# The lock lives under `~/.dev-studio/.runtime/xcodebuild-lock/<node-id>/`
+# The lock lives under `~/.dev-studio/.runtime/xcodebuild-lock/<node-id>/slot-<n>/`
 # — machine-global scope (the serialized resource is the SPM cache + Clang
 # module cache + simulator locks, all process-wide on the node that runs
 # the build) but keyed by dispatch target so a laptop-local build and a
 # mini-dispatched build don't serialize on each other. `<node-id>` is
 # `local` when no remote is picked, preserving pre-B3 behaviour. This is
 # an R4-exempted carve-out documented in file-locations.md.
+#
+# Slot count comes from the node's `parallel_build_slots` field in
+# `~/.dev-studio/.runtime/nodes.json` (default 1; see #218 Stage C / #268).
+# With slots=1 the lock path is `slot-1/` and behaviour is identical to
+# the pre-#268 single-holder model. With slots>1 the queue grants up to N
+# concurrent holders, each pinned to a distinct slot subdir.
 #
 # Usage:
 #   scripts/task-build-gate.sh <mode> <task-id> <worktree> <scheme> <destination> [<project-or-workspace-relpath>]
@@ -277,10 +283,25 @@ GATE_START_S=$(date -u +%s)
 gate_announce_start build "$NODE_ID" "$TASK_ID" full-green
 
 LOCK_ROOT="$(resolve_runtime_global)/xcodebuild-lock"
-LOCK="$LOCK_ROOT/$NODE_ID"
+LOCK_BASE="$LOCK_ROOT/$NODE_ID"
+LOCK=""
 DERIVED=$(resolve_derived_data_for "$TASK_ID")
 mkdir -p "$DERIVED" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$DERIVED" >&2; exit 2; }
-mkdir -p "$(dirname "$LOCK")" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$(dirname "$LOCK")" >&2; exit 2; }
+mkdir -p "$LOCK_BASE" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$LOCK_BASE" >&2; exit 2; }
+
+# Per-node parallel build slots (#218 Stage C / #268). Default 1 keeps the
+# pre-#268 single-holder model. Synthetic `local` is always 1 — it's the
+# not-registered fallback, no nodes.json entry to read.
+PARALLEL_SLOTS=1
+if [ "$NODE_ID" != "local" ]; then
+  REGISTRY="$(resolve_runtime_global)/nodes.json"
+  if [ -r "$REGISTRY" ] && command -v jq >/dev/null 2>&1; then
+    n=$(jq -r --arg id "$NODE_ID" '.nodes[]? | select(.id == $id) | .parallel_build_slots // 1' "$REGISTRY" 2>/dev/null)
+    case "$n" in ''|*[!0-9]*) n=1 ;; esac
+    [ "$n" -lt 1 ] && n=1
+    PARALLEL_SLOTS=$n
+  fi
+fi
 
 # ---------- queue substrate (#266 / #218 Stage A) ----------
 #
@@ -316,30 +337,36 @@ QUEUE_POSITION=$(find "$QUEUE_DIR" -maxdepth 1 -type f -name '*.json' 2>/dev/nul
   | sort | awk -v me="$QUEUE_ENTRY" '{ if ($0 == me) { print NR; exit } }')
 case "$QUEUE_POSITION" in ''|*[!0-9]*) QUEUE_POSITION="$QUEUE_DEPTH" ;; esac
 
-queue_data=$(printf '{"mode":"%s","node":"%s","position":%s,"depth":%s,"attempt":%s%s}' \
-  "$MODE" "$NODE_ID" "$QUEUE_POSITION" "$QUEUE_DEPTH" "$ATTEMPT" "$DISPATCH_FIELDS")
+queue_data=$(printf '{"mode":"%s","node":"%s","position":%s,"depth":%s,"slots":%s,"attempt":%s%s}' \
+  "$MODE" "$NODE_ID" "$QUEUE_POSITION" "$QUEUE_DEPTH" "$PARALLEL_SLOTS" "$ATTEMPT" "$DISPATCH_FIELDS")
 emit_event_keyed achilles task build_queue_position "$TASK_ID" "$queue_data" >/dev/null 2>&1 || true
 
 # Compose: aborted-if-open → queue release → task lock release. The
 # inner-lock release is layered on once that lock is acquired below.
 trap '_emit_aborted_if_open; _release_queue_entry; _release_task_lock' EXIT INT TERM
 
-# Wait until our entry is at the head. Re-GC each iteration so an
-# orphaned entry ahead of us doesn't strand the wait. 30-min envelope
-# matches the inner mkdir-lock's wait cap; combined ceiling is 60 min,
-# but that requires both layers saturated — a substrate anomaly worth
-# surfacing as a failed gate via reason: queue_locked_out.
+# Wait until our entry is in the first PARALLEL_SLOTS positions. Re-GC
+# each iteration so an orphaned entry ahead of us doesn't strand the
+# wait. 30-min envelope matches the inner mkdir-lock's wait cap; combined
+# ceiling is 60 min, but that requires both layers saturated — a
+# substrate anomaly worth surfacing as a failed gate via reason:
+# queue_locked_out. With slots=1 the head set is just {head}, so behaviour
+# is identical to the pre-#268 strict-head wait.
 queue_wait=0
 queue_wait_cap=1800
 queue_backoff=10
 while :; do
   _queue_gc
-  head=$(find "$QUEUE_DIR" -maxdepth 1 -type f -name '*.json' 2>/dev/null | sort | head -1)
-  [ "$head" = "$QUEUE_ENTRY" ] && break
+  if find "$QUEUE_DIR" -maxdepth 1 -type f -name '*.json' 2>/dev/null \
+       | sort | head -n "$PARALLEL_SLOTS" \
+       | grep -qxF "$QUEUE_ENTRY"; then
+    break
+  fi
   if [ "$queue_wait" -ge "$queue_wait_cap" ]; then
-    printf 'error: build-queue wait exceeded %ss (head=%s)\n' "$queue_wait_cap" "$head" >&2
-    data=$(printf '{"mode":"full-green","reason":"queue_locked_out","waited_s":%s,"attempt":%s%s}' \
-      "$queue_wait" "$ATTEMPT" "$DISPATCH_FIELDS")
+    head=$(find "$QUEUE_DIR" -maxdepth 1 -type f -name '*.json' 2>/dev/null | sort | head -1)
+    printf 'error: build-queue wait exceeded %ss (slots=%s head=%s)\n' "$queue_wait_cap" "$PARALLEL_SLOTS" "$head" >&2
+    data=$(printf '{"mode":"full-green","reason":"queue_locked_out","waited_s":%s,"slots":%s,"attempt":%s%s}' \
+      "$queue_wait" "$PARALLEL_SLOTS" "$ATTEMPT" "$DISPATCH_FIELDS")
     _emit_terminal build_check_failed "$data"
     gate_announce_done build "$NODE_ID" "$TASK_ID" locked-out "$queue_wait"
     exit 3
@@ -362,27 +389,37 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   exit 0
 fi
 
-# Acquire the lock with bounded wait. 45-min staleness threshold reclaims a
-# lock whose holder died without cleanup (e.g. SIGKILL from the runner). Wait
-# envelope: 30 min total (180 × 10s). Backoff kept linear — contention is
-# rare and 10s granularity is fine.
+# Acquire one of the N slot locks with bounded wait. 45-min staleness
+# threshold reclaims a slot whose holder died without cleanup (e.g.
+# SIGKILL from the runner). Wait envelope: 30 min total (180 × 10s).
+# Backoff kept linear — contention is rare and 10s granularity is fine.
+# With N=1 the inner loop tries only `slot-1` so behaviour is identical
+# to the pre-#268 single-dir mkdir-lock.
 wait_seconds=0
 wait_cap=1800
 backoff=10
-while true; do
-  if mkdir "$LOCK" 2>/dev/null; then
-    printf '%s\n' "$$" > "$LOCK/pid"
-    break
-  fi
-  # Stale-lock reclaim — mdir mtime beyond 45m → presume orphan.
-  if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +45 2>/dev/null)" ]; then
-    printf 'warn: stale xcodebuild lock (>45m), reclaiming\n' >&2
-    rm -rf "$LOCK"
-    continue
-  fi
+while [ -z "$LOCK" ]; do
+  for s in $(seq 1 "$PARALLEL_SLOTS"); do
+    candidate="$LOCK_BASE/slot-$s"
+    if mkdir "$candidate" 2>/dev/null; then
+      LOCK="$candidate"
+      printf '%s\n' "$$" > "$LOCK/pid"
+      break
+    fi
+    if [ -n "$(find "$candidate" -maxdepth 0 -mmin +45 2>/dev/null)" ]; then
+      printf 'warn: stale xcodebuild lock (>45m, slot %s), reclaiming\n' "$s" >&2
+      rm -rf "$candidate"
+      if mkdir "$candidate" 2>/dev/null; then
+        LOCK="$candidate"
+        printf '%s\n' "$$" > "$LOCK/pid"
+        break
+      fi
+    fi
+  done
+  [ -n "$LOCK" ] && break
   if [ "$wait_seconds" -ge "$wait_cap" ]; then
-    printf 'error: xcodebuild lock wait exceeded %ss\n' "$wait_cap" >&2
-    data=$(printf '{"mode":"full-green","reason":"locked_out","waited_s":%s,"attempt":%s%s}' "$wait_seconds" "$ATTEMPT" "$DISPATCH_FIELDS")
+    printf 'error: xcodebuild lock wait exceeded %ss (slots=%s)\n' "$wait_cap" "$PARALLEL_SLOTS" >&2
+    data=$(printf '{"mode":"full-green","reason":"locked_out","waited_s":%s,"slots":%s,"attempt":%s%s}' "$wait_seconds" "$PARALLEL_SLOTS" "$ATTEMPT" "$DISPATCH_FIELDS")
     _emit_terminal build_check_failed "$data"
     gate_announce_done build "$NODE_ID" "$TASK_ID" locked-out "$wait_seconds"
     exit 3

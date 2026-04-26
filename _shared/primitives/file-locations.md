@@ -53,6 +53,9 @@ Phase 2.6 introduced a uniform per-artifact YAML layout under `plans/` + a singl
 |---|---|---|
 | Root | `~/.dev-studio/<project>/` | — |
 | Plans index | `~/.dev-studio/<project>/plans/index.yaml` | `_shared/contracts/plans-index-validator.md` |
+| Build-debt counter | `~/.dev-studio/<project>/plans/build-debt.yaml` | `_shared/schemas/build-debt.md` |
+| Master-plan preamble (editorial) | `~/.dev-studio/<project>/plans/master-plan-preamble.md` | — (free-form; verbatim included by `scripts/render-master-plan.sh`) |
+| Master plan (rendered projection) | `~/.dev-studio/<project>/plans/chanakya-master.md` | rendered by `scripts/render-master-plan.sh` from preamble + build-debt + tasks + releases YAML; never hand-edited post-#273 |
 | Task artifacts | `~/.dev-studio/<project>/plans/tasks/<task-id>.yaml` | `_shared/schemas/task.md` |
 | Brief artifacts | `~/.dev-studio/<project>/plans/briefs/<brief-id>.yaml` | `_shared/schemas/brief.md` |
 | Debrief artifacts | `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml` | `_shared/schemas/debrief.md` |
@@ -73,9 +76,9 @@ Phase 2.6 introduced a uniform per-artifact YAML layout under `plans/` + a singl
 | Fleet inbox root | `~/.dev-studio/<project>/.runtime/achilles-inbox/` | — |
 | Push queue | `~/.dev-studio/<project>/.runtime/state/push-queue.jsonl` | — |
 | Test-slot semaphore (global) | `~/.dev-studio/.runtime/locks/test-slots/` | — |
-| Xcodebuild lock (global, per-node) | `~/.dev-studio/.runtime/xcodebuild-lock/<node-id>/` — serializes xcodebuild against the SPM cache + Clang module cache + simulator locks on the node that runs the build. R4-exempted carve-out: keyed by dispatch target so a laptop-local build and a mini-dispatched build don't serialize on each other. | — |
-| Build-queue substrate (global, per-node) | `~/.dev-studio/.runtime/build-queue/<node-id>/` — FIFO queue feeding the per-node xcodebuild lock (#266 / #218 Stage A). Each waiter writes `<enqueued_at>-<pid>-<task-id>.json` on entry and removes it on exit; the head entry (oldest enqueued_at) is the next to acquire the lock. Same R4 carve-out as the lock itself: per-node physical-resource serialization. | — |
-| Node registry (global) | `~/.dev-studio/.runtime/nodes.json` — worker nodes reachable over SSH; consumed by `scripts/node-dispatch.sh` / `node-health.sh` / `node-pick.sh` | — |
+| Xcodebuild lock (global, per-node, per-slot) | `~/.dev-studio/.runtime/xcodebuild-lock/<node-id>/slot-<n>/` — serializes xcodebuild against the SPM cache + Clang module cache + simulator locks on the node that runs the build. R4-exempted carve-out: keyed by dispatch target so a laptop-local build and a mini-dispatched build don't serialize on each other. Slot count from the node's `parallel_build_slots` field in `nodes.json` (default 1; #218 Stage C / #268) — at 1 the lock path is `slot-1/` and behaviour is bit-identical to the pre-#268 single-holder lock; at N>1 up to N concurrent holders run, each pinned to a distinct slot subdir. | — |
+| Build-queue substrate (global, per-node) | `~/.dev-studio/.runtime/build-queue/<node-id>/` — FIFO queue feeding the per-node xcodebuild slot locks (#266 / #218 Stage A; slot-aware per #268). Each waiter writes `<enqueued_at>-<pid>-<task-id>.json` on entry and removes it on exit; the first `parallel_build_slots` entries (oldest enqueued_at) are eligible to acquire a slot. Same R4 carve-out as the lock itself: per-node physical-resource serialization. | — |
+| Node registry (global) | `~/.dev-studio/.runtime/nodes.json` — worker nodes reachable over SSH; consumed by `scripts/node-dispatch.sh` / `node-health.sh` / `node-pick.sh`. Recognised fields: `id`, `machine_id`, `host`, `user`, `roles`, `enabled`, optional `parallel_build_slots` (integer, default 1; #268). | — |
 | Snapshot references | `~/.dev-studio/<project>/snapshots/references/` — canonical reference images for snapshot tests; generated on the node tagged `snapshot-canonical` and pulled locally via `scripts/snapshot-sync.sh` | — |
 | Argus result bundles | `/tmp/argus-<task-id>.xcresult` | — |
 
@@ -87,7 +90,7 @@ Kept for historical reads on migrated projects — the directories still hold pr
 
 | Artifact | Path (legacy) | Status |
 |---|---|---|
-| Master plan | `~/.dev-studio/<project>/plans/chanakya-master.md` | Read-only post-migration; replaced by `plans/index.yaml` + `plans/tasks/*.yaml`. |
+| Master plan | `~/.dev-studio/<project>/plans/chanakya-master.md` | Post-#273: a render projection produced by `scripts/render-master-plan.sh` from `plans/{tasks,releases,build-debt}.yaml` + `plans/master-plan-preamble.md`. Never hand-edited — overwritten on every sweep-ingest run. Bootstrap legacy projects via `scripts/extract-master-plan-preamble.sh`. |
 | Task briefs | `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md` | Read-only post-migration; replaced by `plans/briefs/*.yaml`. Direct-path access only (no resolver — #67 retired `resolve_briefs_dir()` on 2026-04-22). |
 | Debrief inbox | `~/.dev-studio/<project>/plans/chanakya-inbox/` | Still holds `assets/` + `*-tests.md` (not migrated by 2.6). `processed/*-debrief.md` preserved per Q18. New debriefs write to `plans/debriefs/*.yaml`. Direct-path access only (no resolver — #67 retired `resolve_chanakya_inbox[_for]()` on 2026-04-22). |
 | Test-case artifacts | `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-tests.md` | Still written here (migration didn't scope test-case artifacts). |
