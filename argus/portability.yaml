@@ -1,11 +1,9 @@
 schema_version: 1
 hosts:
-  - claude-code
-  - codex
+  - all
 scope: global
 notes: |
-  Argus dispatch enforces a stricter security floor than Achilles
-  (secret_scope: none) via env-scrubbing in scripts/dispatch-review.sh —
-  see hosts/ADAPTER-SPEC.md §Env-scrub at Argus dispatch. Cwd-only-secret
-  hosts (Codex 0.123) satisfy the floor when env-scrub is in place; the
-  Argus session itself runs with no inherited secrets.
+  Host-agnostic reviewer. Argus dispatch enforces a stricter security floor
+  than Achilles (secret_scope: none) via env-scrubbing in
+  scripts/dispatch-review.sh. Any host satisfying the floor is supported.
+  Conformance suite: scripts/test-host.sh <host>.

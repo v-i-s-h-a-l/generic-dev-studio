@@ -1,7 +1,6 @@
 schema_version: 1
 hosts:
-  - claude-code
-  - codex
+  - all
 notes: |
   The exemplar uses only POSIX shell + a single model session. It runs on every
   host that satisfies the studio's worker capability floor. Add new hosts as

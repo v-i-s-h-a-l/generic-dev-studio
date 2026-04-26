@@ -1,11 +1,8 @@
 schema_version: 1
 hosts:
-  - claude-code
-  - codex
+  - all
 scope: global
 notes: |
-  Worker capability satisfies the Achilles security floor on Codex
-  (sandbox_profile: workspace-write, secret_scope: cwd-only — see
-  hosts/ADAPTER-SPEC.md). Conformance suite (scripts/test-host.sh codex)
-  passes 9/9 as of 2026-04-25. Cross-host handoff to Argus validates the
-  handoff.schema.json contract.
+  Host-agnostic worker. Any host satisfying the Achilles security floor
+  (sandbox_profile ∈ {workspace-write, full}, secret_scope ∈ {cwd-only, none})
+  is supported. Conformance suite: scripts/test-host.sh <host>.

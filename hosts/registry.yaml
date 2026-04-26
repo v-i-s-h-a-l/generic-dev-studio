@@ -9,22 +9,66 @@
 # Schema versioned via _shared/standards/host-registry.json (validated by
 # scripts/lint-skill-prose.sh when present).
 #
-# All fields are required. None are nullable. Empty values reject at lint time.
+# Required fields: display_name, global_skill_dir, detect_binary.
+# Optional fields marked below. Empty required values reject at lint time.
+#
+# detect_binary: checked by `sync-host-skills.sh --all` to skip hosts whose
+# CLI is not installed on this machine. Value is a binary name resolved via
+# `command -v`. Hosts without the binary on PATH are silently skipped during
+# --all fan-out (explicit single-host sync still works regardless).
+#
+# status: "adapted" = full adapter (./<host>/ dir + capabilities.yaml + hooks);
+#         "provisional" = registry entry only, no adapter yet — sync creates
+#         symlinks but the host can't dispatch workers until adapted.
 
 claude-code:
   display_name: "Claude Code"
+  detect_binary: claude
   global_skill_dir: "~/.claude/skills"
   project_skill_dir: ".claude/skills"
   routing_file: "CLAUDE.md"
-  routing_walks_parents: true       # Claude Code reads CLAUDE.md from cwd up to repo root
+  routing_walks_parents: true
   capabilities_path: ".claude-plugin/capabilities.yaml"
   tool_dialect: claude
+  status: adapted
 
 codex:
   display_name: "OpenAI Codex CLI"
+  detect_binary: codex
   global_skill_dir: "~/.codex/skills"
   project_skill_dir: ".codex/skills"
   routing_file: "AGENTS.md"
-  routing_walks_parents: false      # Codex 0.123 — verified 2026-04-25
+  routing_walks_parents: false
   capabilities_path: ".codex/capabilities.yaml"
   tool_dialect: openai
+  status: adapted
+
+gemini-cli:
+  display_name: "Gemini CLI"
+  detect_binary: gemini
+  global_skill_dir: "~/.gemini/skills"
+  project_skill_dir: ".gemini/skills"
+  routing_file: "AGENTS.md"
+  routing_walks_parents: false
+  tool_dialect: openai
+  status: provisional
+
+cursor:
+  display_name: "Cursor"
+  detect_binary: cursor
+  global_skill_dir: "~/.cursor/skills"
+  project_skill_dir: ".cursor/skills"
+  routing_file: ".cursorrules"
+  routing_walks_parents: true
+  tool_dialect: claude
+  status: provisional
+
+windsurf:
+  display_name: "Windsurf"
+  detect_binary: windsurf
+  global_skill_dir: "~/.windsurf/skills"
+  project_skill_dir: ".windsurf/skills"
+  routing_file: ".windsurfrules"
+  routing_walks_parents: true
+  tool_dialect: claude
+  status: provisional

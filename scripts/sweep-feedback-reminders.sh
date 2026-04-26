@@ -36,25 +36,24 @@ now_s=$(date -u +%s)
 fired_tmp=$(mktemp 2>/dev/null) || exit 0
 
 awk -v now_s="$now_s" -v fired_out="$fired_tmp" '
-  function parse_due(s,   dt, d, t, y, mo, da, h, mi, se, epoch) {
+  function parse_due(s,   y, mo, da, h, mi, se, dt, epoch) {
     # Strip surrounding whitespace; skip separator / header rows.
     gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
     if (s ~ /^-+$/) return -1
     if (s == "" || s ~ /^<!-/) return -1
-    # YYYY-MM-DDTHH:MM:SSZ. We compute epoch inline rather than shelling
-    # out to date(1) per-row — keeps this single awk pass self-contained.
-    if (match(s, /^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})Z/, m)) {
-      y = m[1]; mo = m[2]; da = m[3]
-      h = m[4]; mi = m[5]; se = m[6]
-      # Simplified epoch: (y - 1970) * 365.25 * 86400 + rough month accumulation.
-      # Good enough for due_at comparison (minute-level drift is harmless).
-      # Real precision comes from POSIX mktime; fall back to shelling out if
-      # mktime is unavailable (old awks).
-      dt = sprintf("%d %d %d %d %d %d", y, mo, da, h, mi, se)
-      epoch = mktime(dt)
-      return epoch
-    }
-    return -1
+    # YYYY-MM-DDTHH:MM:SSZ — portable parse via substr (BSD awk lacks the
+    # 3-arg match() array form). Fixed-width spec is reliable here.
+    if (s !~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z/) return -1
+    y  = substr(s, 1, 4) + 0
+    mo = substr(s, 6, 2) + 0
+    da = substr(s, 9, 2) + 0
+    h  = substr(s, 12, 2) + 0
+    mi = substr(s, 15, 2) + 0
+    se = substr(s, 18, 2) + 0
+    if (y < 1970) return -1
+    dt = sprintf("%d %d %d %d %d %d UTC", y, mo, da, h, mi, se)
+    epoch = mktime(dt)
+    return epoch
   }
   BEGIN { in_rem = 0 }
   /^## Reminders/ { in_rem = 1; print; next }

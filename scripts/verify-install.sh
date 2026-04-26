@@ -67,9 +67,14 @@ done
 
 printf '\n'
 if [ $bad -eq 0 ]; then
-  printf 'All %d links verified. Run ./scripts/install.sh if you have added new agents or commands.\n' \
+  printf 'All %d Claude Code links verified.\n' \
     $((${#AGENTS[@]} + ${#COMMANDS[@]}))
-  exit 0
+else
+  printf '%d Claude Code drift item(s). Run ./scripts/install.sh to fix.\n' "$bad"
 fi
-printf '%d drift item(s). Run ./scripts/install.sh to fix missing links; resolve DRIFT/CONFLICT by hand.\n' "$bad"
-exit 1
+
+# Audit all detected hosts via sync-host-skills.sh --audit-only
+printf '\n--- multi-host skill audit ---\n'
+"$SCRIPT_DIR/sync-host-skills.sh" --all --audit-only 2>&1 || bad=$((bad + 1))
+
+[ $bad -gt 0 ] && exit 1 || exit 0

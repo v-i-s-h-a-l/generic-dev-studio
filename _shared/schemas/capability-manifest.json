@@ -5,15 +5,26 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-04-26T08:14:16Z",
+  "generated_at": "2026-04-26T09:09:23Z",
   "agents": [
     {
       "name": "studio",
       "router": ".claude/skills/studio/SKILL.md",
       "description": "Cross-agent studio router. Handles studio-level operations that span agents or concern the studio repo's own conventions (not the user's iOS project). See routing.yaml for the sub-command surface. Task-level work routes to /chanakya, /achilles, /argus.",
-      "reads": ["_shared/** (when diff touches it, for cross-ref)", ".claude/skills/studio/docs.html (existence check only; content not loaded into context)", "~/.claude-personal/projects/<project-hash>/memory/*.md", "~/.claude-personal/projects/<project-hash>/memory/MEMORY.md", "~/.claude-personal/projects/<project-hash>/memory/project_*_pending.md", "~/.dev-studio/.runtime/derived-data/  (machine-global)", "~/.dev-studio/.runtime/nodes.json", "~/.dev-studio/*/  (project roots, via list_fleet_projects)", "~/.dev-studio/<project>/analysis/*.md (prior reports; trend baseline)", "~/.dev-studio/<project>/analysis/*.md (private analysis reports)", "~/.dev-studio/<project>/archive/ (debriefs)", "~/.dev-studio/<project>/event-log.jsonl + events.jsonl (aggregate; verify canonical)", "~/.dev-studio/<project>/events/*.jsonl (daily event-log shards, ≥ 2026-04-17)", "~/.dev-studio/<project>/worker-manifest.yaml", "~/.dev-studio/generic-dev-studio/feedback-inbox/<source>/*.md (studio-feedback; processed/ excluded)", "ARCHITECTURE.md", "CHANGELOG or release notes history (if present)", "CLAUDE.md", "diff under review (via `git diff`)", "gh issue list (if gh authenticated; remote call)", "git log --all (read-only)", "git log since last tag", "git tag (read-only, with subjects)", "git tags + git log (read-only)", "README.md", "RELEASES.md", "REVIEW.md", "ROADMAP.md", "scripts/track-next.sh output", "studio-consolidation/00-plan.md (if present)", "studio-consolidation/latest exit artifact (if present)", "studio-consolidation/parking-lot.md (if arc active)", "studio-consolidation/parking-lot.md (if present)", "TRACKS.md"],
-      "writes": ["~/.dev-studio/.runtime/nodes.json (via configure.sh worker add/remove/enable/disable)", "~/.dev-studio/<project>/analysis/<date>.md (private, never committed)", "~/.dev-studio/<project>/analysis/<today>.md (private, never committed)", "~/.dev-studio/<project>/audit/<date>.md (only in --report mode, private)", "~/Library/LaunchAgents/dev.studio.worker-sync.plist (via configure.sh schedule)", "GH issue state (assign + close)", "GitHub issues (abstract patterns only, privacy-scrubbed)", "GitHub issues on generic-dev-studio (scrubbed abstract patterns only)", "none in default (dry-run); --yes deletes leftover artifacts only", "README.md (only after a release actually ships)", "release draft (chat output; user decides to tag)", "studio-consolidation/parking-lot.md (if arc active; append-only)", "track branch commits"],
+      "reads": ["_shared/** (when diff touches it, for cross-ref)", "_shared/standards/license-allowlist.yaml", ".claude/skills/studio/docs.html (existence check only; content not loaded into context)", "~/.claude-personal/projects/<project-hash>/memory/*.md", "~/.claude-personal/projects/<project-hash>/memory/MEMORY.md", "~/.claude-personal/projects/<project-hash>/memory/project_*_pending.md", "~/.dev-studio/.runtime/derived-data/  (machine-global)", "~/.dev-studio/.runtime/nodes.json", "~/.dev-studio/*/  (project roots, via list_fleet_projects)", "~/.dev-studio/<project>/analysis/*.md (prior reports; trend baseline)", "~/.dev-studio/<project>/analysis/*.md (private analysis reports)", "~/.dev-studio/<project>/archive/ (debriefs)", "~/.dev-studio/<project>/event-log.jsonl + events.jsonl (aggregate; verify canonical)", "~/.dev-studio/<project>/events/*.jsonl (daily event-log shards, ≥ 2026-04-17)", "~/.dev-studio/<project>/worker-manifest.yaml", "~/.dev-studio/generic-dev-studio/feedback-inbox/<source>/*.md (studio-feedback; processed/ excluded)", "ARCHITECTURE.md", "CHANGELOG or release notes history (if present)", "CLAUDE.md", "diff under review (via `git diff`)", "gh issue list (if gh authenticated; remote call)", "git log --all (read-only)", "git log since last tag", "git tag (read-only, with subjects)", "git tags + git log (read-only)", "hosts/registry.yaml", "README.md", "recipes/ (existing recipes, for duplicate detection)", "recipes/trusted-authors.yaml", "RELEASES.md", "REVIEW.md", "ROADMAP.md", "scripts/track-next.sh output", "skills/**/portability.yaml", "studio-consolidation/00-plan.md (if present)", "studio-consolidation/latest exit artifact (if present)", "studio-consolidation/parking-lot.md (if arc active)", "studio-consolidation/parking-lot.md (if present)", "TRACKS.md"],
+      "writes": ["~/.claude/skills/, ~/.codex/skills/, etc. (symlink fan-out via sync-host-skills.sh)", "~/.claude/skills/, ~/.codex/skills/, etc. (symlinks only, via sync-host-skills.sh)", "~/.dev-studio/.runtime/nodes.json (via configure.sh worker add/remove/enable/disable)", "~/.dev-studio/<project>/analysis/<date>.md (private, never committed)", "~/.dev-studio/<project>/analysis/<today>.md (private, never committed)", "~/.dev-studio/<project>/audit/<date>.md (only in --report mode, private)", "~/Library/LaunchAgents/dev.studio.worker-sync.plist (via configure.sh schedule)", "GH issue state (assign + close)", "GitHub issues (abstract patterns only, privacy-scrubbed)", "GitHub issues on generic-dev-studio (scrubbed abstract patterns only)", "none in default (dry-run); --yes deletes leftover artifacts only", "README.md (only after a release actually ships)", "recipes/<author>/<name>.yaml (new recipe)", "release draft (chat output; user decides to tag)", "skills/vendored/<author>/<name>/ (vendored skill content)", "studio-consolidation/parking-lot.md (if arc active; append-only)", "track branch commits"],
       "modes": [
+        {
+          "name": "add",
+          "path": ".claude/skills/studio/modes/add.md",
+          "type": "mode-pack",
+          "description": "Add a skill from a git URL to the studio — auto-generates a recipe, vendors the skill, and fans it out to every installed AI provider in one command.",
+          "reads": ["recipes/ (existing recipes, for duplicate detection)", "recipes/trusted-authors.yaml", "_shared/standards/license-allowlist.yaml", "hosts/registry.yaml"],
+          "writes": ["recipes/<author>/<name>.yaml (new recipe)", "skills/vendored/<author>/<name>/ (vendored skill content)", "~/.claude/skills/, ~/.codex/skills/, etc. (symlink fan-out via sync-host-skills.sh)"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 600
+        },
         {
           "name": "analyze",
           "path": ".claude/skills/studio/modes/analyze.md",
@@ -123,6 +134,17 @@
           "snapshots": [],
           "dry_run": false,
           "budget_tokens": 1200
+        },
+        {
+          "name": "sync",
+          "path": ".claude/skills/studio/modes/sync.md",
+          "type": "mode-pack",
+          "description": "Re-sync all studio-managed skills to every installed AI provider. Ensures symlink farms are current after recipe changes, host installs, or drift.",
+          "reads": ["hosts/registry.yaml", "skills/**/portability.yaml"],
+          "writes": ["~/.claude/skills/, ~/.codex/skills/, etc. (symlinks only, via sync-host-skills.sh)"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 300
         },
         {
           "name": "work",

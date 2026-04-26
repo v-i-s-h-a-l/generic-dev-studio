@@ -20,6 +20,8 @@ The `studio` skill is a **project-scoped vendor skill** shipped at `.claude/skil
 | Studio-level capture (patterns, analysis, parking-lot, rule tweaks) | "add to parking lot", "file a pattern", "capture this for the studio" | `.claude/skills/studio/modes/ingest.md` |
 | Arc-coherence audit (plan ↔ memory ↔ commits drift) | `/studio audit`, "audit the arc", "check plan drift" — also auto-runs silently on SessionStart | `.claude/skills/studio/modes/audit.md` |
 | Pre-work guard (already-shipped / already-tried / already-in-backlog) | `/studio guard <topic>`, "has this been done?", "are we repeating work?" | `.claude/skills/studio/modes/guard.md` |
+| Add a skill from a git URL | `/studio add <url>`, "add this skill", "install this skill", "vendor this" | `.claude/skills/studio/modes/add.md` |
+| Sync skills to all hosts | `/studio sync`, "sync skills", "refresh host skills" | `.claude/skills/studio/modes/sync.md` |
 
 **Do not dispatch through studio for user-project task work.** Task-level intents (implement X, fix bug Y, review Turnip diff) route to `/chanakya`, `/achilles`, `/argus` directly. The studio router is deliberately scoped to operations that concern the studio itself or cut across agents.
 
