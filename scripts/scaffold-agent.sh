@@ -2,11 +2,12 @@
 # scaffold-agent.sh <name> — creates a router-pattern-compliant agent skeleton.
 #
 # Effects:
-#   <name>/SKILL.md           router template (singleton-status line, dispatch stub)
+#   <name>/SKILL.md                    router template (singleton-status line, dispatch stub)
+#   <name>/scaffold-decision.md        capability-collision decision template (#227 M-2)
 #   <name>/modes/.gitkeep
 #   <name>/snapshots/.gitkeep
-#   docs-surface.json         regenerated (if update-surface-manifest.sh present)
-#   GitHub issue              `Build out <name> agent` with labels enhancement,theme/internal
+#   docs-surface.json                  regenerated (if update-surface-manifest.sh present)
+#   GitHub issue                       `Build out <name> agent` with labels enhancement,theme/internal
 
 set -u
 umask 022
@@ -67,6 +68,37 @@ Intent detection order:
 - Enforcement codes: \`_shared/rules/enforcement-contract.md\`.
 EOF
 
+cat > "$AGENT_DIR/scaffold-decision.md" <<EOF
+---
+name: $NAME-scaffold-decision
+description: Per-capability decisions for the $NAME agent — required by scripts/scaffold-audit.sh before committing. See _shared/rules/mode-pack-discipline.md M-2.
+type: doc
+schema_version: 1
+---
+
+# $NAME — scaffold decisions
+
+For every mode pack added to \`$NAME/modes/\`, classify against existing
+agents' capabilities. \`scripts/scaffold-audit.sh $NAME\` greps the
+capability manifest for collisions; this file must address each one.
+
+Per-mode entries — one block per \`$NAME/modes/<mode>.md\`:
+
+<!-- TEMPLATE: replace this section before committing -->
+
+## <mode-name>
+
+**Existing capability(ies) checked:** \`<other-agent>/<other-mode>\`, ...
+
+**Decision:** \`reuse\` | \`extend\` | \`divergent\`
+
+**Justification:** one to three sentences explaining why this agent owns
+the capability instead of reusing or extending the existing one. Reference
+the relevant \`_shared/\` primitive if reuse is impossible.
+
+<!-- repeat the block above for each mode pack you add -->
+EOF
+
 if [ -x "$SCRIPT_DIR/update-surface-manifest.sh" ]; then
   "$SCRIPT_DIR/update-surface-manifest.sh" >/dev/null 2>&1 || true
 fi
@@ -85,5 +117,7 @@ scaffolded: $AGENT_DIR
 next:
   - Add modes/<pack>.md files; one file per sub-command.
   - Fill in the dispatch table and default-mode behavior in $NAME/SKILL.md.
-  - Run \`scripts/lint-architecture.sh\` to verify before committing.
+  - Fill in $NAME/scaffold-decision.md per mode (capability collision audit, #227 M-2).
+  - Run \`scripts/scaffold-audit.sh $NAME\` to detect capability collisions against existing agents.
+  - Run \`scripts/lint-architecture.sh\` and \`scripts/lint-mode-pack.sh\` to verify before committing.
 EOF

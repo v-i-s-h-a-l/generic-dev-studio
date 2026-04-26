@@ -211,6 +211,25 @@ Soft modals are linter-blocks specifically because procedures are not optional �
 
 **Migration carve-out:** the four legacy studio agents (Achilles, Argus, Chanakya, studio router) migrate under issue #172. While that issue is open, the linter accepts them at warn-level; once #172 closes, they drop to block-level alongside everything else.
 
+### R19 — Mode pack discipline (tier: **block + auto-fix** for inline dups; **ask** for missing references; **warn** for token-budget headroom)
+
+Authoritative rule + linter: `_shared/rules/mode-pack-discipline.md` and `scripts/lint-mode-pack.sh` (pre-commit Gate 2e). Three failure shapes to watch in review prose, on top of the structural lint:
+
+- **block + auto-fix** — inline restatement of `_shared/contracts/`, `_shared/rules/`, `_shared/primitives/`, or `_shared/schemas/` content in a mode pack. Replace with a reference. The linter catches 4+ consecutive lines via exact match; reviewers catch paraphrased duplications the heuristic misses.
+- **ask** — a new mode pack that doesn't reference at least one `_shared/` primitive. Almost certainly missed reuse — the agent layer is supposed to compose from shared building blocks. Surface before merging.
+- **warn** — mode pack token estimate (`chars / 4`) > 70% of `budget_tokens`. Heading toward overflow; consider trimming or raising the budget before it crosses.
+
+**Why:** routers stayed nominally lean while mode packs absorbed the prose the routers shed. Without structural enforcement, the cluster duplicates rules and each restatement drifts independently. The lint is the structural gate; this rule is the human-reviewer gate for the cases the lint can't see.
+
+**How to check:**
+- For any `*/modes/*.md` change, eyeball the diff for paragraphs that read like `_shared/`. If they do, grep `_shared/` for the same idea — if a primitive exists, replace with a reference.
+- For any new mode pack added, confirm at least one `_shared/contracts/`, `_shared/rules/`, or `_shared/primitives/` reference is present.
+- Note token-budget headroom from the lint output (warning lines start with `W_MP1_BUDGET_OVER`).
+
+**Fix pattern:** delete the inlined block; insert `See _shared/<area>/<file>.md`. If the duplication is intentional and load-bearing, annotate with `<!-- shared-dup-allowed: <reason> -->` directly above — the lint records the reason but does not block.
+
+**Interaction:** R8 is the soft sibling on token-cost awareness; R19 is the structural gate. R18 + the prose linter handle grammar; R19 + the mode-pack linter handle economics + reuse. Both pre-commit hooks run; both must pass.
+
 ## Deferred / known gaps
 
 Not rules yet — track here so we remember:

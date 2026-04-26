@@ -8,9 +8,11 @@
 #       calls outside the gate scripts (#216).
 #   2d. lint-comms-boundary.sh --staged — agent-comms-boundary contract gate
 #       (#247): writer ownership + lifecycle co-writer enumeration.
+#   2e. lint-mode-pack.sh --staged — mode-pack discipline (MP1–MP4, #227):
+#       budget_tokens enforcement, _shared/* dup detection, router cap.
 #   3.  privacy gate — reject if staged diff leaks another project's runtime.
 #
-# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/3.
+# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/3.
 # Gates 1+1b (manifest regens) always run because stale manifests leak
 # downstream.
 
@@ -85,6 +87,17 @@ if [ -x "$SCRIPTS/lint-comms-boundary.sh" ]; then
   rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '\npre-commit: comms-boundary violations above — see _shared/primitives/agent-comms-boundary.md\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2e — mode-pack discipline linter (#227).
+if [ -x "$SCRIPTS/lint-mode-pack.sh" ]; then
+  "$SCRIPTS/lint-mode-pack.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: mode-pack violations above — see _shared/rules/mode-pack-discipline.md\n' >&2
     printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
     exit 1
   fi
