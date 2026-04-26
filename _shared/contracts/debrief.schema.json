@@ -276,15 +276,11 @@
     },
     "known_issues": {
       "type": "array",
-      "items": {
-        "type": "string"
-      }
+      "items": { "$ref": "#/$defs/concern" }
     },
     "follow_ups": {
       "type": "array",
-      "items": {
-        "type": "string"
-      }
+      "items": { "$ref": "#/$defs/concern" }
     },
     "open_questions": {
       "type": "array",
@@ -383,6 +379,22 @@
     }
   ],
   "$defs": {
+    "concern": {
+      "description": "Debrief concern entry (known_issues / follow_ups). String form is legacy (pre-2.3.0); object form carries a stable id readers/validators can trace into successor briefs (#162). Synthesize an id for legacy strings as `<task-or-debrief-id>-<ki|fu>-<index>` at read time.",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "required": ["id", "text"],
+          "properties": {
+            "id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]+$" },
+            "text": { "type": "string" },
+            "category": { "type": "string" },
+            "severity": { "enum": ["low", "medium", "high", "critical"] }
+          }
+        }
+      ]
+    },
     "uuidv7": {
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
