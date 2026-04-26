@@ -58,7 +58,12 @@ pick_free_worker() {
 }
 
 queue_depth() {
-  grep -c '^{' "$QUEUE" 2>/dev/null | tr -d ' ' || echo 0
+  # #237 — `grep -c` exits 1 on zero matches; the legacy `|| echo 0`
+  # would print twice. Sanitise the captured number instead.
+  local n
+  n=$(grep -c '^{' "$QUEUE" 2>/dev/null | tr -d ' ')
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  printf '%s\n' "$n"
 }
 
 sub="${1:-}"

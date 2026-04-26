@@ -79,8 +79,13 @@ rounds_status() {
     | sed -E 's|.*/user-testing-round([0-9]+)\.md|\1|' | sort -n | tail -1)
   local f="$legacy_dir/user-testing-round${latest_md}.md"
   local total checked
-  total=$(grep -c '^\- \[ \]\|^\- \[x\]' "$f" 2>/dev/null || echo 0)
-  checked=$(grep -c '^\- \[x\]' "$f" 2>/dev/null || echo 0)
+  # #237 — sanitise grep -c rather than `|| echo 0` (which double-prints
+  # on the no-matches path and breaks downstream `[ "$checked" = "$total" ]`
+  # equality comparisons).
+  total=$(grep -c '^\- \[ \]\|^\- \[x\]' "$f" 2>/dev/null)
+  case "$total" in ''|*[!0-9]*) total=0 ;; esac
+  checked=$(grep -c '^\- \[x\]' "$f" 2>/dev/null)
+  case "$checked" in ''|*[!0-9]*) checked=0 ;; esac
   if [ "$checked" = "$total" ] && [ "$total" != "0" ]; then
     printf 'Round %s completed — consider --promote to feed into review-feedback, or generate a new round.\n' "$latest_md"
   else

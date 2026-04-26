@@ -359,8 +359,14 @@ fi
 
 # Parse error + warning counts. Cheap and well-defined — xcodebuild's error
 # lines match `error:` case-insensitively and begin at column 0 or after a path.
-err_count=$(grep -cE '(^|: )error:' "$build_log" 2>/dev/null || echo 0)
-warn_count=$(grep -cE '(^|: )warning:' "$build_log" 2>/dev/null || echo 0)
+# #237 — `grep -c` exits 1 on zero matches. The legacy `|| echo 0` form
+# concatenated grep's "0" with the fallback "0" through a newline,
+# corrupting the JSONL event payload below. The case-statement sanitises
+# empty + non-numeric to 0 without firing on the zero-matches path.
+err_count=$(grep -cE '(^|: )error:' "$build_log" 2>/dev/null)
+case "$err_count" in ''|*[!0-9]*) err_count=0 ;; esac
+warn_count=$(grep -cE '(^|: )warning:' "$build_log" 2>/dev/null)
+case "$warn_count" in ''|*[!0-9]*) warn_count=0 ;; esac
 
 # When the shim wrote a JSON sidecar (xcodebuildmcp executor), capture up to
 # the first 5 error objects for the build_check_failed payload. Bounded to

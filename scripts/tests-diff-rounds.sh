@@ -178,11 +178,12 @@ if [ -s "$perf" ]; then
   printf '\n'
 fi
 
-# Summary counts.
-cases_a=$(grep -c '' "$tmp_a" 2>/dev/null || echo 0)
-cases_b=$(grep -c '' "$tmp_b" 2>/dev/null || echo 0)
-reg_n=$(grep -c '' "$regressions" 2>/dev/null || echo 0)
-fix_n=$(grep -c '' "$fixes" 2>/dev/null || echo 0)
+# Summary counts. #237 — sanitise instead of `|| echo 0` to avoid the
+# double-zero-with-newline corruption when grep matches zero lines.
+cases_a=$(grep -c '' "$tmp_a" 2>/dev/null); case "$cases_a" in ''|*[!0-9]*) cases_a=0 ;; esac
+cases_b=$(grep -c '' "$tmp_b" 2>/dev/null); case "$cases_b" in ''|*[!0-9]*) cases_b=0 ;; esac
+reg_n=$(grep -c '' "$regressions" 2>/dev/null); case "$reg_n" in ''|*[!0-9]*) reg_n=0 ;; esac
+fix_n=$(grep -c '' "$fixes" 2>/dev/null); case "$fix_n" in ''|*[!0-9]*) fix_n=0 ;; esac
 printf '### Summary\n\n'
 printf -- '- Cases: A=%s, B=%s\n' "$cases_a" "$cases_b"
 printf -- '- Regressions: %s\n' "$reg_n"
