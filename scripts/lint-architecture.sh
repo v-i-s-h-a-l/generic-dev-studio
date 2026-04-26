@@ -300,16 +300,21 @@ check_contract_refs() {
   while IFS= read -r hit; do
     [ -z "$hit" ] && continue
     line_no="${hit%%:*}"
-    # Extract every reference on the line (one line may have several).
+    # Extract every reference on the line (one line may have several). The
+    # regex optionally captures an agent prefix (apollo/, chanakya/, ...)
+    # so agent-scoped _shared/ namespaces (e.g. apollo/_shared/primitives/)
+    # are recognized as their own roots, not mis-resolved against the
+    # global _shared/.
     while IFS= read -r match; do
       [ -z "$match" ] && continue
       # Normalize absolute form.
       normalized="${match#~/.claude/skills/}"
-      # Only validate paths under _shared/<subdir>/ (Commit C layout). Bare
-      # _shared/<file>.md references are legacy and get rewritten by the sed
-      # sweep — not this linter's problem to flag twice.
+      # Only validate paths under _shared/<subdir>/ or <agent>/_shared/<subdir>/
+      # (Commit C layout). Bare _shared/<file>.md references are legacy and get
+      # rewritten by the sed sweep — not this linter's problem to flag twice.
       case "$normalized" in
         _shared/*/*) ;;
+        apollo/_shared/*/*|chanakya/_shared/*/*|achilles/_shared/*/*|argus/_shared/*/*) ;;
         *) continue ;;
       esac
       target_path="$REPO_ROOT/$normalized"
@@ -318,8 +323,8 @@ check_contract_refs() {
       if [ ! -e "$target_path" ]; then
         emit_error "E_UNKNOWN_CONTRACT_REF:$file:$line_no:$normalized | reference does not resolve — move/rename or fix"
       fi
-    done < <(printf '%s\n' "${hit#*:}" | grep -oE '(~/\.claude/skills/)?_shared/[a-z-]+/[a-z0-9./_-]+\.(md|json)')
-  done < <(grep -nE '(~/\.claude/skills/)?_shared/[a-z-]+/[a-z0-9./_-]+\.(md|json)' "$file" 2>/dev/null || true)
+    done < <(printf '%s\n' "${hit#*:}" | grep -oE '(~/\.claude/skills/)?(apollo/|chanakya/|achilles/|argus/)?_shared/[a-z-]+/[a-z0-9./_-]+\.(md|json)')
+  done < <(grep -nE '(~/\.claude/skills/)?(apollo/|chanakya/|achilles/|argus/)?_shared/[a-z-]+/[a-z0-9./_-]+\.(md|json)' "$file" 2>/dev/null || true)
 }
 
 # ---------- W_CAPABILITY_STALE ----------

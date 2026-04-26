@@ -1,0 +1,20 @@
+schema_version: 1
+name: apollo
+invocation:
+  slash_command: "/apollo"
+  triggers:
+    - "/apollo"
+    - "/apollo memory"
+    - "/apollo thermal"
+    - "/apollo battery"
+    - "investigate memory regression"
+    - "investigate thermal throttling"
+    - "investigate battery drain"
+    - "OOM crash"
+    - "device heat"
+    - "energy regression"
+    - "where were we on perf"
+domains:
+  - turnip-ios
+  - performance
+  - ios

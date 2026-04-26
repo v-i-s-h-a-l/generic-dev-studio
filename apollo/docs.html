@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apollo — Performance Agent</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-hover: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #ffa657;
+    --accent-subtle: rgba(255, 166, 87, 0.13);
+    --apollo: #ffa657;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --code-bg: #0d1117;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .hero {
+    background: linear-gradient(135deg, #1a1408 0%, #0d1117 50%, #1a0e08 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 80px 0 56px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 60% 40%, rgba(255, 166, 87, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 30% 70%, rgba(210, 153, 34, 0.05) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  .hero h1 {
+    font-size: 3rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 12px;
+    position: relative;
+  }
+
+  .hero h1 .apollo-name { color: var(--apollo); }
+
+  .hero .tagline {
+    font-size: 1.2rem;
+    color: var(--text-muted);
+    position: relative;
+    max-width: 680px;
+    margin: 0 auto;
+  }
+
+  .hero .subtagline {
+    margin-top: 14px;
+    font-size: 0.92rem;
+    color: var(--text-muted);
+    position: relative;
+    opacity: 0.75;
+  }
+
+  .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(13, 17, 23, 0.88);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+
+  .nav-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nav-inner::-webkit-scrollbar { display: none; }
+
+  .nav a {
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 14px 16px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .nav a:hover { color: var(--text); border-bottom-color: var(--border); }
+
+  section { padding: 56px 0; }
+  section + section { border-top: 1px solid var(--border); }
+
+  h2 { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 22px; }
+  h3 { font-size: 1.15rem; font-weight: 600; margin: 28px 0 10px; color: var(--text); }
+  h4 { font-size: 0.95rem; font-weight: 600; margin: 20px 0 8px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+  p { margin-bottom: 14px; color: var(--text-muted); }
+  p strong { color: var(--text); }
+  ul, ol { margin-bottom: 14px; padding-left: 20px; color: var(--text-muted); }
+  li { margin-bottom: 6px; }
+  li strong { color: var(--text); }
+
+  a.inline { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--border); }
+  a.inline:hover { border-bottom-color: var(--accent); }
+
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.85rem;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin: 16px 0;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+
+  pre code { background: transparent; padding: 0; border: none; font-size: inherit; }
+
+  table { width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text-muted); vertical-align: top; }
+  th { color: var(--text); font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  td code { font-size: 0.8rem; }
+  tr:last-child td { border-bottom: none; }
+
+  .mode-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin: 18px 0;
+  }
+  @media (max-width: 800px) { .mode-grid { grid-template-columns: 1fr; } }
+
+  .mode-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .mode-card:hover { border-color: var(--apollo); background: var(--surface-hover); }
+
+  .mode-card code {
+    font-family: 'SF Mono', monospace;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--apollo);
+    display: block;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin-bottom: 4px;
+  }
+
+  .mode-card .status {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .mode-card .status.shipping-soon { color: var(--yellow); }
+  .mode-card .status.scaffold { color: var(--apollo); }
+
+  .mode-card .what { font-size: 0.88rem; color: var(--text-muted); line-height: 1.55; }
+
+  .callout {
+    background: var(--accent-subtle);
+    border: 1px solid rgba(255, 166, 87, 0.3);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 20px 0;
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+  .callout strong { color: var(--apollo); }
+
+  .tier-row {
+    display: grid;
+    grid-template-columns: 100px 100px 1fr 1fr;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: start;
+    font-size: 0.88rem;
+  }
+  .tier-row:last-child { border-bottom: none; }
+  .tier-row .tier-name { font-family: 'SF Mono', monospace; font-weight: 600; color: var(--apollo); }
+  .tier-row .tier-confidence { font-family: 'SF Mono', monospace; color: var(--text-muted); }
+  .tier-row .tier-shape { color: var(--text-muted); }
+  .tier-row .tier-outcome { color: var(--text); }
+  @media (max-width: 720px) { .tier-row { grid-template-columns: 1fr; gap: 4px; } }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 0;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="container">
+    <h1><span class="apollo-name">/apollo</span></h1>
+    <p class="tagline">iOS performance agent. Per-metric mode packs (memory / thermal / battery) under a strict-9 evidence gate. Refuses fix recommendations without hard evidence; auto-captures via the execution surface when possible.</p>
+    <p class="subtagline">Greek god of medicine + the Apollo program — healing + measurement + precision.</p>
+  </div>
+</header>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#what">What it is</a>
+    <a href="#evidence-gate">Evidence gate</a>
+    <a href="#modes">Modes</a>
+    <a href="#execution-surface">Execution surface</a>
+    <a href="#composition">Composition</a>
+    <a href="#roadmap">Roadmap</a>
+    <a href="#troubleshoot">Troubleshoot</a>
+    <a href="#links">Links</a>
+  </div>
+</nav>
+
+<section id="what">
+  <div class="container">
+    <h2>What /apollo is</h2>
+    <p><strong>A dedicated iOS performance agent.</strong> Diagnoses, fixes, and verifies one metric at a time. Composes with the existing topology — Chanakya dispatches, Achilles applies, Argus reviews. Never replaces them.</p>
+    <p>Performance work is orthogonal to feature work. Different evidence (Instruments traces, MetricKit payloads, signposts), different review criteria (cohort-aware, regression-aware), different cadence (often retroactive on shipped code). Bolting onto Argus would bloat the reviewer; folding into Achilles would dilute the worker. A dedicated agent with per-metric mode packs matches the lean architecture cleanly.</p>
+    <div class="callout">
+      <strong>Status — Stage 4 scaffold.</strong> SKILL.md, routing.yaml, and this docs page land here. Mode packs (<a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/230">#230 memory</a>, <a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/231">#231 thermal</a>, <a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/232">#232 battery</a>) ship in Stage 2. Until then, <code>/apollo &lt;metric&gt;</code> refuses with a pointer to the tracking issue.
+    </div>
+  </div>
+</section>
+
+<section id="evidence-gate">
+  <div class="container">
+    <h2>The strict-9 evidence gate</h2>
+    <p>Apollo's core refusal contract: <strong>no fix recommendation without hard evidence</strong>. Performance work is full of plausible-sounding fixes that move no needle. Without a forced citation step, recommendations regress to "looks expensive, refactor it" — the worst kind of advice because it generates churn without verifiable benefit.</p>
+    <h3>Confidence tiers</h3>
+    <div class="tier-row">
+      <div class="tier-name">Tier</div>
+      <div class="tier-confidence">Confidence</div>
+      <div class="tier-shape">Evidence shape</div>
+      <div class="tier-outcome">Outcome</div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-name">Hard</div>
+      <div class="tier-confidence">9/10</div>
+      <div class="tier-shape">named artifact + workload + cohort (device class + OS)</div>
+      <div class="tier-outcome">RECOMMEND with cited artifact</div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-name">Soft</div>
+      <div class="tier-confidence">5–7/10</div>
+      <div class="tier-shape">"looks slow", screenshot, single user report</div>
+      <div class="tier-outcome">REFUSE; auto-capture-before-refuse</div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-name">None</div>
+      <div class="tier-confidence">0</div>
+      <div class="tier-shape">claim with no artifact at all</div>
+      <div class="tier-outcome">REFUSE; auto-capture-before-refuse</div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-name">Advisory</div>
+      <div class="tier-confidence">1/10</div>
+      <div class="tier-shape">curated canonical anti-pattern (the pattern itself is the citation)</div>
+      <div class="tier-outcome">FLAG <code>advisory:1</code> only — no impact claim</div>
+    </div>
+    <h3>Auto-capture-before-refuse</h3>
+    <p>Before refusing, Apollo walks the execution-surface decision tree. If a capture path exists and fits the session budget, Apollo captures the artifact itself rather than refuse. Refusal is reserved for when no capture path exists or the budget is exceeded.</p>
+    <h3>Refusal protocol</h3>
+    <p>Every refusal emits a single block in this exact shape:</p>
+    <pre><code>BLOCKED: &lt;metric&gt; recommendation requires hard evidence; none provided.
+
+Tried to auto-capture via:
+  - &lt;path-A&gt;: &lt;reason it failed or was skipped&gt;
+  - &lt;path-B&gt;: &lt;reason&gt;
+
+To unblock, capture one of:
+  - &lt;artifact-1&gt; — RUN &lt;command&gt;
+  - &lt;artifact-2&gt; — RUN &lt;command&gt;
+
+Resume with `apollo &lt;mode&gt; --evidence &lt;path&gt;`.</code></pre>
+    <p>The <code>--evidence</code> flag is the resumption contract: Apollo accepts a path to the captured artifact and proceeds without re-prompting.</p>
+    <p>Full contract: <code>apollo/_shared/primitives/evidence-gate.md</code>.</p>
+  </div>
+</section>
+
+<section id="modes">
+  <div class="container">
+    <h2>P0 modes</h2>
+    <p>The router's dispatch table is the single source of truth for triggers. Every mode declares its hard-evidence catalogue and session budget; the catalogues diverge per mode and Apollo refuses cross-metric guesses on purpose.</p>
+    <div class="mode-grid">
+      <div class="mode-card">
+        <code>/apollo memory</code>
+        <div class="status shipping-soon">Stage 2a · #230</div>
+        <div class="what">Leak detection, OOM diagnosis, peak / sustained footprint. Hard evidence: Allocations / VM Tracker <code>.trace</code>, <code>MXMemoryMetric</code>, <code>XCTMemoryMetric</code> baseline, <code>MXCrashDiagnostic</code> OOM payload (<code>0xc00010ff</code>).</div>
+      </div>
+      <div class="mode-card">
+        <code>/apollo thermal</code>
+        <div class="status shipping-soon">Stage 2b · #231</div>
+        <div class="what">Thermal throttling, sustained CPU, GPU heat. Hard evidence: <code>MXMetaData.thermalState</code> distribution, CPU Counters / Time Profiler <code>.trace</code>, Metal System Trace, Energy Log instrument.</div>
+      </div>
+      <div class="mode-card">
+        <code>/apollo battery</code>
+        <div class="status shipping-soon">Stage 2c · #232</div>
+        <div class="what">Foreground energy, cumulative CPU per hour, drain regressions. Hard evidence: <code>MXAppRunTimeMetric</code>, ASC Performance Metrics power row, Energy Log <code>.trace</code>, <code>MXCPUMetric</code> per foreground hour.</div>
+      </div>
+    </div>
+    <h3>Phase 2 modes (deferred)</h3>
+    <p>Launch-time, scroll-perf, binary-size, network-efficiency. Each follows the same per-metric mode-pack pattern. Adding one = one file under <code>modes/</code>, one dispatch row in <code>SKILL.md</code>, one fixture at <code>tests/mode-packs/apollo/&lt;mode&gt;.yaml</code>.</p>
+    <h3>Default behavior</h3>
+    <p>Invoking <code>/apollo</code> with no argument prompts once for one of <code>{memory, thermal, battery}</code>. Apollo never guesses across metrics — the evidence catalogues diverge and a wrong guess wastes the auto-capture budget.</p>
+  </div>
+</section>
+
+<section id="execution-surface">
+  <div class="container">
+    <h2>Execution surface</h2>
+    <p>The bounded set of tools Apollo can invoke autonomously. The matrix is intentionally narrow — tools not listed are not in Apollo's autonomous set even if they exist on the host. Adding one requires a primitive update, not an inline opt-in.</p>
+    <table>
+      <thead><tr><th>Tool</th><th>Capability</th><th>Cost</th></tr></thead>
+      <tbody>
+        <tr><td><strong>XcodeBuildMCP</strong></td><td>build / test / archive on simulator + device; XCTest with <code>.xcresult</code> capture; simulator lifecycle</td><td>seconds–minutes</td></tr>
+        <tr><td><strong>AXe</strong> <span style="color:var(--text-muted)">(cameroncooke MCP)</span></td><td>UI scenario automation on simulator + paired device; screen recording for trace anchoring</td><td>per-step seconds</td></tr>
+        <tr><td><strong>XCResultKit</strong> <span style="color:var(--text-muted)">(AvdLee)</span></td><td><code>.xcresult</code> parsing → metrics, attachments, logs, performance metrics</td><td>seconds</td></tr>
+        <tr><td><strong>xctrace</strong></td><td>Instruments trace recording + export by schema; template / device discovery</td><td>per <code>--time-limit</code></td></tr>
+        <tr><td><strong>ChimeHQ/Meter</strong></td><td>MetricKit payload parse + symbolication via local dSYM lookup</td><td>seconds</td></tr>
+        <tr><td><strong>ASC API client</strong></td><td>Performance / Power Metrics fetch; Analytics Reports (rate-limited)</td><td>seconds–minutes</td></tr>
+      </tbody>
+    </table>
+    <h3>Host-capabilities contract</h3>
+    <p>Apollo's host node declares installed tools in <code>~/.dev-studio/.runtime/host-capabilities.yaml</code>. Apollo reads this at boot and refuses to dispatch any mode that depends on an <code>installed: false</code> capability — refusing fast at boot is preferable to refusing mid-investigation with a partially-captured artifact set.</p>
+    <h3>Session budget and deferred capture</h3>
+    <p>Each mode declares a <code>session_budget</code> in frontmatter (default 15 min). When a step would exceed budget, Apollo writes a <code>capture-deferred.yaml</code> row at <code>~/.dev-studio/&lt;project&gt;/apollo/deferred/&lt;id&gt;.yaml</code>; a scheduled sweep drains the queue when the host is idle. Mode packs cite the deferred id in their refusal block so the user can see what's pending.</p>
+    <p>Full contract: <code>apollo/_shared/primitives/execution-surface.md</code>.</p>
+  </div>
+</section>
+
+<section id="composition">
+  <div class="container">
+    <h2>How Apollo composes</h2>
+    <p>Apollo never writes source files. It measures and recommends; Achilles applies; Argus reviews; Chanakya dispatches and tracks. The boundaries are deliberate — a measurement-first agent that also writes code conflates evidence with implementation.</p>
+    <table>
+      <thead><tr><th>Boundary</th><th>Rule</th></tr></thead>
+      <tbody>
+        <tr><td>Apollo ↔ Achilles</td><td>Apollo measures + recommends; Achilles applies. Apollo never writes source files in the worktree.</td></tr>
+        <tr><td>Apollo ↔ Argus</td><td>Argus reviews diffs; Apollo verifies the post-fix metric. A recommendation that lands as a PR loops through Argus normally; Apollo's verification is a follow-on capture.</td></tr>
+        <tr><td>Apollo ↔ Chanakya</td><td>Chanakya dispatches Apollo on a perf brief or a user-triggered investigation. Findings flow back through the event log; Chanakya files follow-up tasks for the recommended fix.</td></tr>
+        <tr><td>Apollo ↔ <code>imgly-engine-expert</code></td><td>Apollo retains measurement + verification authority. Imgly/Metal-specific knowledge routes to the existing <code>imgly-engine-expert</code> skill via the Stage 3 (#233) delegation contract.</td></tr>
+      </tbody>
+    </table>
+    <h3>Cohort awareness</h3>
+    <p>Every cited artifact names the device class + OS major. A trace from <code>iPhone 12 / iOS 18.6</code> does not satisfy a recommendation that targets <code>iPhone 16 Pro / iOS 19</code>. This rule is load-bearing: cross-cohort generalization is one of the most common ways perf recommendations go wrong.</p>
+  </div>
+</section>
+
+<section id="roadmap">
+  <div class="container">
+    <h2>Roadmap</h2>
+    <p>The full stage map lives on issue <a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/236">#236 (epic)</a>.</p>
+    <table>
+      <thead><tr><th>Stage</th><th>Issue</th><th>Deliverable</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>1a</td><td><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/228">#228</a></td><td>Foundational primitives (evidence-gate, MetricKit, signposts)</td><td><span style="color:var(--green)">shipped</span></td></tr>
+        <tr><td>1b</td><td><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/229">#229</a></td><td>Tooling primitives (XCTest, Instruments, ASC, regression, execution-surface)</td><td><span style="color:var(--green)">shipped</span></td></tr>
+        <tr><td>2a</td><td><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/230">#230</a></td><td><code>memory</code> mode pack</td><td><span style="color:var(--yellow)">next</span></td></tr>
+        <tr><td>2b</td><td><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/231">#231</a></td><td><code>thermal</code> mode pack</td><td>unblocked</td></tr>
+        <tr><td>2c</td><td><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/232">#232</a></td><td><code>battery</code> mode pack</td><td>unblocked</td></tr>
+        <tr><td>3</td><td><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/233">#233</a></td><td>Imgly/Metal touchpoint + delegation contract</td><td>blocked on 2a + 2b</td></tr>
+        <tr><td>4</td><td><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/234">#234</a></td><td>SKILL.md + routing.yaml + scaffold</td><td><span style="color:var(--apollo)">this PR</span></td></tr>
+        <tr><td>5</td><td><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/235">#235</a></td><td>Chanakya dispatch + Argus interaction policy</td><td>blocked on 4 + ≥1 mode</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="troubleshoot">
+  <div class="container">
+    <h2>Troubleshoot</h2>
+    <h3>Apollo refused — what now?</h3>
+    <p>Read the <code>BLOCKED:</code> block. It names the artifacts that would unblock + the exact <code>RUN</code> commands. After capturing one, resume with <code>apollo &lt;mode&gt; --evidence &lt;path&gt;</code>.</p>
+    <h3>Apollo says a tool is "installed: false" at boot</h3>
+    <p>Open <code>~/.dev-studio/.runtime/host-capabilities.yaml</code> and verify the entry. If the tool is genuinely installed but the file is wrong, fix the file. Apollo refuses fast on purpose — silent capability degradation breaks the strict-9 gate.</p>
+    <h3>The recommendation cites the wrong cohort</h3>
+    <p>The cited artifact's cohort and the targeted cohort must match. Re-capture against the target device class + OS major, then resume with <code>--evidence</code> on the new artifact.</p>
+    <h3>The advisory channel fired but I want a real recommendation</h3>
+    <p>The advisory channel (<code>advisory:1</code>) is reserved for canonical anti-patterns where measurement is structurally impossible. If measurement <em>is</em> possible, the advisory channel is unavailable and Apollo proceeds to auto-capture. Force a capture with <code>/apollo &lt;mode&gt; --capture &lt;workload&gt;</code> (Stage 5 surface).</p>
+  </div>
+</section>
+
+<section id="links">
+  <div class="container">
+    <h2>Links</h2>
+    <ul>
+      <li><strong>Epic:</strong> <a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/236">#236 — Apollo perf agent</a></li>
+      <li><strong>Sister agents:</strong> <a class="inline" href="../chanakya/docs.html">/chanakya</a> · <code>/achilles</code> · <code>/argus</code></li>
+      <li><strong>Studio router:</strong> <a class="inline" href="../.claude/skills/studio/docs.html">/studio</a> (project-scoped, studio-level ops only)</li>
+      <li><strong>Strict-9 contract:</strong> <code>apollo/_shared/primitives/evidence-gate.md</code></li>
+      <li><strong>Execution surface:</strong> <code>apollo/_shared/primitives/execution-surface.md</code></li>
+      <li><strong>REVIEW.md R10:</strong> sister rule for completion claims</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>Apollo · iOS performance agent · scaffold landed in <a href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/234">#234</a> · part of <a href="https://github.com/v-i-s-h-a-l/generic-dev-studio">generic-dev-studio</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
