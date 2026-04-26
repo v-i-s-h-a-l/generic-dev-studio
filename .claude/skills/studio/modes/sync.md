@@ -29,7 +29,8 @@ This:
 2. Skips hosts whose CLI binary isn't on PATH (`detect_binary` check)
 3. For each detected host, links every skill declaring `hosts: all` (or the specific host) into the host's global skill dir
 4. Reaps stale symlinks from prior fan-outs
-5. Audits the final state
+5. Injects skill routing instructions from `_shared/skill-routing.md` into each host's global instructions file (e.g. `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`) between `<!-- studio:skill-routing:start/end -->` markers
+6. Audits the final state
 
 ## Step 2 — Report
 

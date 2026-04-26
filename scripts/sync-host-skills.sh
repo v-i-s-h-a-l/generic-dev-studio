@@ -7,6 +7,12 @@
 # that no longer exist) are removed. Companion content (_shared, scripts) is
 # always linked alongside skills so SKILL.md prose like `_shared/...` resolves.
 #
+# After linking, injects skill-routing instructions from _shared/skill-routing.md
+# into each host's global instructions file (global_instructions_path in
+# registry.yaml) between <!-- studio:skill-routing:start/end --> markers.
+# This makes skills *discoverable* (the AI knows when to use them), not just
+# *available* (the files exist on disk).
+#
 # Idempotent: a no-op when state is already correct. Self-validating: the
 # audit at the end reports any drift; an exit non-zero means the symlink farm
 # does not match the declared portability.
@@ -41,6 +47,10 @@ if ! command -v yq >/dev/null 2>&1; then
   exit 2
 fi
 [ -f "$REGISTRY" ] || { printf 'sync-host-skills: %s missing\n' "$REGISTRY" >&2; exit 2; }
+
+ROUTING_SOURCE="$REPO_ROOT/_shared/skill-routing.md"
+ROUTING_MARKER_START="<!-- studio:skill-routing:start -->"
+ROUTING_MARKER_END="<!-- studio:skill-routing:end -->"
 
 HOST=""
 DRY_RUN=0
@@ -271,6 +281,53 @@ audit_host() {
   printf '%d\n' "$errors"
 }
 
+inject_routing_instructions() {
+  local host="$1"
+  local instructions_path
+  instructions_path=$(yq -r ".\"$host\".global_instructions_path // \"\"" "$REGISTRY" 2>/dev/null)
+  [ -z "$instructions_path" ] || [ "$instructions_path" = "null" ] && return 0
+  instructions_path="${instructions_path/#\~/$HOME}"
+  [ -f "$ROUTING_SOURCE" ] || return 0
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '[dry-run] would inject routing instructions into %s\n' "$instructions_path"
+    return 0
+  fi
+
+  local marker_start="$ROUTING_MARKER_START"
+  local marker_end="$ROUTING_MARKER_END"
+
+  local stripped
+  stripped=$(mktemp)
+  awk 'NR==1 && /^---$/{s=1;next} s && /^---$/{s=0;next} !s' "$ROUTING_SOURCE" > "$stripped"
+
+  if [ ! -f "$instructions_path" ] || [ ! -s "$instructions_path" ]; then
+    local dir
+    dir=$(dirname "$instructions_path")
+    [ -d "$dir" ] || mkdir -p "$dir"
+    { printf '%s\n' "$marker_start"; cat "$stripped"; printf '%s\n' "$marker_end"; } > "$instructions_path"
+    rm -f "$stripped"
+    printf 'sync-host-skills: created %s with routing instructions\n' "$instructions_path" >&2
+    return 0
+  fi
+
+  if grep -qF "$marker_start" "$instructions_path"; then
+    local tmp
+    tmp=$(mktemp)
+    awk -v start="$marker_start" -v end="$marker_end" -v src="$stripped" '
+      $0 == start { print; while ((getline line < src) > 0) print line; skip=1; next }
+      $0 == end   { skip=0; print; next }
+      !skip { print }
+    ' "$instructions_path" > "$tmp"
+    mv "$tmp" "$instructions_path"
+    printf 'sync-host-skills: updated routing instructions in %s\n' "$instructions_path" >&2
+  else
+    { printf '\n%s\n' "$marker_start"; cat "$stripped"; printf '%s\n' "$marker_end"; } >> "$instructions_path"
+    printf 'sync-host-skills: appended routing instructions to %s\n' "$instructions_path" >&2
+  fi
+  rm -f "$stripped"
+}
+
 sync_one_host() {
   local host="$1"
   if ! yq -r 'keys | .[]' "$REGISTRY" 2>/dev/null | grep -Fxq "$host"; then
@@ -329,6 +386,10 @@ sync_one_host() {
     printf 'sync-host-skills: %d audit issue(s) for host=%s\n' "$audit_errors" "$host" >&2
     return 1
   fi
+  if [ "$AUDIT_ONLY" -eq 0 ]; then
+    inject_routing_instructions "$host"
+  fi
+
   printf 'sync-host-skills: host=%s OK\n' "$host" >&2
   return 0
 }

@@ -29,6 +29,7 @@ claude-code:
   routing_file: "CLAUDE.md"
   routing_walks_parents: true
   capabilities_path: ".claude-plugin/capabilities.yaml"
+  global_instructions_path: "~/.claude-personal/CLAUDE.md"
   tool_dialect: claude
   status: adapted
 
@@ -40,6 +41,7 @@ codex:
   routing_file: "AGENTS.md"
   routing_walks_parents: false
   capabilities_path: ".codex/capabilities.yaml"
+  global_instructions_path: "~/.codex/AGENTS.md"
   tool_dialect: openai
   status: adapted
 
@@ -50,6 +52,7 @@ gemini-cli:
   project_skill_dir: ".gemini/skills"
   routing_file: "AGENTS.md"
   routing_walks_parents: false
+  global_instructions_path: "~/.gemini/GEMINI.md"
   tool_dialect: openai
   status: provisional
 
