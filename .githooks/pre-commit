@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# Pre-commit hook for generic-dev-studio. Six gates in order:
+# Pre-commit hook for generic-dev-studio. Seven gates in order:
 #   1.  update-surface-manifest.sh — regenerate + auto-stage docs-surface.json.
 #   1b. capability-manifest.sh --regen — regenerate + auto-stage the manifest.
 #   2.  lint-architecture.sh --staged — router/frontmatter/dup/surface checks.
 #   2b. lint-skill-prose.sh --staged — Authoring Standard gate (REVIEW.md R18).
 #   2c. lint-build-invocations.sh --staged — block raw xcodebuild / swift
 #       calls outside the gate scripts (#216).
+#   2d. lint-comms-boundary.sh --staged — agent-comms-boundary contract gate
+#       (#247): writer ownership + lifecycle co-writer enumeration.
 #   3.  privacy gate — reject if staged diff leaks another project's runtime.
 #
-# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/3.
+# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/3.
 # Gates 1+1b (manifest regens) always run because stale manifests leak
 # downstream.
 
@@ -72,6 +74,17 @@ if [ -x "$SCRIPTS/lint-build-invocations.sh" ]; then
   rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '\npre-commit: raw xcodebuild / swift invocation found outside the gate scripts — see _shared/primitives/build-gate.md\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2d — comms-boundary linter (#247).
+if [ -x "$SCRIPTS/lint-comms-boundary.sh" ]; then
+  "$SCRIPTS/lint-comms-boundary.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: comms-boundary violations above — see _shared/primitives/agent-comms-boundary.md\n' >&2
     printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
     exit 1
   fi

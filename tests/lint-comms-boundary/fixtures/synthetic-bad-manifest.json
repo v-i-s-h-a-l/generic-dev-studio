@@ -1,0 +1,62 @@
+{
+  "schema_version": {
+    "name": "capability-manifest",
+    "version": "1.0.0",
+    "min_reader": "1.0.0",
+    "deprecated_at": null
+  },
+  "generated_at": "2026-04-27T00:00:00Z",
+  "_comment": "Synthetic violation fixture for scripts/lint-comms-boundary.sh. Each agent below intentionally violates one rule from _shared/primitives/agent-comms-boundary.md. tests/lint-comms-boundary/run.sh asserts the linter catches them all.",
+  "agents": [
+    {
+      "name": "achilles",
+      "modes": [
+        {
+          "name": "fake-review-emitter",
+          "_violates": "B_FORBIDDEN_CREATE — Achilles is not the authorial writer of plans/reviews/.",
+          "writes": [
+            "plans/reviews/<review-id>.yaml                 # achilles emitting reviews directly (schema: _shared/schemas/review.md)"
+          ]
+        },
+        {
+          "name": "fake-brief-payload-mutator",
+          "_violates": "B_LIFECYCLE_OUT_OF_SCOPE on debrief — chanakya is the only enumerated co-writer for debriefs; achilles authorial-writes them but here we're testing a different agent. Tested via the chanakya/fake-debrief-creator below; this row covers the symmetric tasks-class case.",
+          "writes": [
+            "plans/tasks/<task-id>.yaml                     # achilles back-ref allowed (links.debrief)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chanakya",
+      "modes": [
+        {
+          "name": "fake-debrief-creator",
+          "_violates": "B_FORBIDDEN_CREATE — Achilles is the authorial writer of plans/debriefs/.",
+          "writes": [
+            "plans/debriefs/<debrief-id>.yaml               # chanakya creating debriefs directly (schema: _shared/schemas/debrief.md)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "argus",
+      "modes": [
+        {
+          "name": "spec-compliance",
+          "_violates": "B_PASS_THROUGH_VIOLATION — argus/spec-compliance is a pass-through and must not declare writes against reviews. Mode name matches the real one because the lint registry keys on (agent, mode) pairs (see is_pass_through_agent_mode in the linter).",
+          "writes": [
+            "plans/reviews/<review-id>.yaml                 # spec-compliance attempting to author a review (schema: _shared/schemas/review.md)"
+          ]
+        },
+        {
+          "name": "fake-task-payload-mutator",
+          "_violates": "Negative test — argus may write task back-refs (links.reviews append). This row should NOT trigger any error.",
+          "writes": [
+            "plans/tasks/<task-id>.yaml                     # back-ref: links.reviews append"
+          ]
+        }
+      ]
+    }
+  ]
+}
