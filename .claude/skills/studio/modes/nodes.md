@@ -45,7 +45,7 @@ Render as three sections:
 | Section | Source | Show |
 |---|---|---|
 | **Registered workers** | `configure.sh status` (Workers section) | id, host, enabled, roles, user — table form |
-| **Health** | `node-health.sh` | id, status (`healthy`/`unreachable`/`disabled`), load1, host |
+| **Health** | `node-health.sh` | id, status (`healthy`/`moved`/`unreachable`/`disabled`), load1, host |
 | **Fleet activity** | `worker-status.sh` | per-worker pending tasks, busy/idle, last completion |
 | **Schedule** | `configure.sh status` (Scheduled worker-sync section) | active / not scheduled / drift |
 
@@ -65,7 +65,7 @@ After any mutation, re-run `configure.sh status` Workers section so the user see
 scripts/node-health.sh [<id>]
 ```
 
-Output is parseable: `<id>\t<status>\t<load1>\t<host>` per line. Render as a table. Exit code: 0 = at least one healthy; 1 = none healthy. Surface both.
+Output is parseable: `<id>\t<status>\t<load1>\t<host>` per line. Render as a table. Exit code: 0 = at least one healthy; 1 = none healthy. Surface both. Status values: `healthy`, `moved` (reachable but registry's `machine_id` differs from the remote's — `node_machine_id_drift` event fired; re-register via `configure.sh worker add` to clear), `unreachable`, `disabled`. `moved` is dispatchable — node-pick treats it the same as `healthy`.
 
 ## Step 4 — Sync
 

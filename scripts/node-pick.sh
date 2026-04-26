@@ -103,7 +103,9 @@ while IFS= read -r id; do
   row=$("$SCRIPT_DIR/node-health.sh" "$id" 2>/dev/null | head -n 1)
   status=$(printf '%s' "$row" | awk -F'\t' '{print $2}')
   load=$(printf '%s' "$row" | awk -F'\t' '{print $3}')
-  [ "$status" = "healthy" ] || continue
+  # `moved` is dispatchable (#146) — the worker is reachable; the drift
+  # signal is observability via `node_machine_id_drift`, not a block.
+  case "$status" in healthy|moved) ;; *) continue ;; esac
   # Lexicographic compare on zero-padded floats would be cleaner, but awk
   # handles numeric compare correctly and we already have it in hand.
   if [ -z "$best_load" ] || awk -v a="$load" -v b="$best_load" 'BEGIN{exit !(a<b)}'; then

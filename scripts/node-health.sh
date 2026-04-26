@@ -7,7 +7,19 @@
 #
 #   <node-id>\t<status>\t<load1>\t<host>
 #
-# Status is one of: healthy | unreachable | disabled | unknown.
+# Status is one of: healthy | moved | unreachable | disabled | unknown.
+#   - healthy:     reachable AND machine_id matches the registry (or no
+#                  machine_id recorded → comparison skipped).
+#   - moved:       reachable BUT remote machine_id differs from the
+#                  registry's recorded value (#146). Hardware was replaced
+#                  / reinstalled / id was rebound to a different box. Still
+#                  dispatchable — node-pick treats `moved` as eligible —
+#                  but a `node_machine_id_drift` event fires so the user
+#                  can investigate. Re-register via `configure.sh worker
+#                  add` to clear the drift.
+#   - unreachable: probe failed (ssh / uptime non-zero).
+#   - disabled:    `enabled: false` in the registry.
+#   - unknown:     id not in the registry.
 # load1 is the 1-minute load average (float), or `-` if unreachable.
 #
 # Exit codes:
@@ -45,6 +57,19 @@ _emit_unreachable() {
   emit_event_keyed studio dispatch node_unreachable "" "$data" >/dev/null 2>&1 || true
 }
 
+# _emit_machine_id_drift <id> <expected> <observed> — emit when the
+# remote's machine-id contradicts the registry (#146). Truncate ids in
+# data payload to keep the line under the 4096-byte atomicity cap; full
+# values are short UUIDs anyway.
+_emit_machine_id_drift() {
+  local id="$1" expected="$2" observed="$3"
+  command -v emit_event_keyed >/dev/null 2>&1 || return 0
+  local data
+  data=$(printf '{"studio.dispatch.node":"%s","studio.dispatch.expected_machine_id":"%s","studio.dispatch.observed_machine_id":"%s"}' \
+    "$id" "${expected:0:64}" "${observed:0:64}")
+  emit_event_keyed studio dispatch node_machine_id_drift "" "$data" >/dev/null 2>&1 || true
+}
+
 REGISTRY="$(resolve_runtime_global)/nodes.json"
 if [ ! -r "$REGISTRY" ]; then
   [ -n "$TARGET_ID" ] && printf '%s\tunknown\t-\t-\n' "$TARGET_ID"
@@ -60,11 +85,13 @@ command -v jq >/dev/null 2>&1 || { printf 'error: jq required\n' >&2; exit 2; }
 # `.enabled // true` is wrong here — jq's `//` treats `false` like null,
 # so an explicitly-disabled node would appear enabled. Use an if-chain.
 ENABLED_EXPR='(if .enabled == false then "false" else "true" end)'
-ROW_EXPR=".nodes[]? | [.id, (.host // \"-\"), (.user // \"-\"), ${ENABLED_EXPR}] | @tsv"
+# 5th field: registry's machine_id (empty when unset — back-compat, skips
+# the drift check for legacy entries that pre-date #146).
+ROW_EXPR=".nodes[]? | [.id, (.host // \"-\"), (.user // \"-\"), ${ENABLED_EXPR}, (.machine_id // \"\")] | @tsv"
 
 if [ -n "$TARGET_ID" ]; then
   ROWS=$(jq -r --arg id "$TARGET_ID" \
-    "(.nodes[]? | select(.id == \$id) | [.id, (.host // \"-\"), (.user // \"-\"), ${ENABLED_EXPR}] | @tsv)" \
+    "(.nodes[]? | select(.id == \$id) | [.id, (.host // \"-\"), (.user // \"-\"), ${ENABLED_EXPR}, (.machine_id // \"\")] | @tsv)" \
     "$REGISTRY" 2>/dev/null) || ROWS=""
   if [ -z "$ROWS" ]; then
     printf '%s\tunknown\t-\t-\n' "$TARGET_ID"
@@ -90,7 +117,7 @@ command -v timeout  >/dev/null 2>&1 && [ -z "$TIMEOUT_BIN" ] && TIMEOUT_BIN="tim
 
 any_healthy=0
 
-while IFS=$'\t' read -r id host user enabled; do
+while IFS=$'\t' read -r id host user enabled expected_mid; do
   [ -z "$id" ] && continue
   if [ "$enabled" != "true" ]; then
     printf '%s\tdisabled\t-\t%s\n' "$id" "$host"
@@ -105,22 +132,42 @@ while IFS=$'\t' read -r id host user enabled; do
   # that registers itself (so a peer mini can still see laptop's load) would
   # show `unreachable` whenever sshd is disabled at home, even though the
   # local copy of node-pick wants to dispatch work to itself.
+  #
+  # #146 — combined probe pulls uptime + remote machine-id in one SSH so
+  # the drift check costs nothing extra. The marker (`###MID###`) is an
+  # ASCII delimiter that uptime output cannot contain. cat is best-effort
+  # — a worker without `~/.dev-studio/.runtime/machine-id` (pre-Phase-2.5)
+  # returns empty after the marker; we treat that as "drift check skipped"
+  # rather than as a probe failure.
+  observed_mid=""
   if node_is_self "$id"; then
     if ! output=$(uptime 2>&1); then
       _emit_unreachable "$id" "uptime" "$output"
       printf '%s\tunreachable\t-\t%s\n' "$id" "$host"
       continue
     fi
+    observed_mid=$(cat "$(resolve_runtime_global)/machine-id" 2>/dev/null | tr -d '[:space:]')
   else
-    if ! output=$($TIMEOUT_BIN ssh "${SSH_OPTS[@]}" "${user}@${host}" uptime 2>&1); then
+    if ! output=$($TIMEOUT_BIN ssh "${SSH_OPTS[@]}" "${user}@${host}" \
+        'uptime; printf "###MID###\n"; cat ~/.dev-studio/.runtime/machine-id 2>/dev/null' 2>&1); then
       _emit_unreachable "$id" "ssh" "$output"
       printf '%s\tunreachable\t-\t%s\n' "$id" "$host"
       continue
     fi
+    observed_mid=$(printf '%s' "$output" | awk 'f{print; exit} /^###MID###$/{f=1}' | tr -d '[:space:]')
+    output=$(printf '%s' "$output" | awk '/^###MID###$/{exit} {print}')
   fi
   load1=$(printf '%s' "$output" | sed -n 's/.*load[^:]*:[[:space:]]*\([0-9][0-9]*\(\.[0-9]*\)\{0,1\}\).*/\1/p')
   [ -z "$load1" ] && load1="0.00"
-  printf '%s\thealthy\t%s\t%s\n' "$id" "$load1" "$host"
+  # Drift check fires only when both sides know a machine-id. A registry
+  # entry without machine_id (pre-#146) skips silently — re-register via
+  # `configure.sh worker add` to opt in.
+  status="healthy"
+  if [ -n "$expected_mid" ] && [ -n "$observed_mid" ] && [ "$expected_mid" != "$observed_mid" ]; then
+    _emit_machine_id_drift "$id" "$expected_mid" "$observed_mid"
+    status="moved"
+  fi
+  printf '%s\t%s\t%s\t%s\n' "$id" "$status" "$load1" "$host"
   any_healthy=1
 done <<EOF
 $ROWS
