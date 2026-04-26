@@ -190,42 +190,11 @@ The Metal carve-out is firm: Apollo never proposes a specific Metal change. Apol
 
 ## Phase 4 — Patch
 
-Goal: hand the thermal recommendation off to Achilles for the in-tree change. Apollo's authority ends at the recommendation artifact; Apollo never edits source.
-
-Handoff record — Apollo persists a recommendation artifact at `~/.dev-studio/<project>/apollo/recommendations/<id>.md` and emits the brief seed on the studio path Chanakya consumes (note the `dwell_seconds` field is mandatory for thermal handoffs — Achilles needs the dwell to reproduce the scenario):
-
-```yaml
-mode: thermal
-class: <signal-class>
-recommendation_id: <ulid>
-patch_owner: achilles
-brief_kind: impl
-diff_target: <file:line | symbol>
-expected_delta: <metric> p<percentile> -<X>% cohort <modelCode>/<osMajor>
-verification_recipe: <command>
-evidence:
-  - <artifact-path>
-  - <signpost-name>
-  - cohort: <modelCode>/<osMajor>
-  - build: <version>
-  - dwell_seconds: <N>
-```
-
-Achilles owns the patch on a worktree under its standard flow, dispatches Argus under its standard flow, and merges. Apollo never invokes Achilles directly — Chanakya routes the brief seed into a task, and the task threads through the same gates every other Achilles work does.
-
-R17 ownership stays intact: Apollo writes solely under `~/.dev-studio/<project>/apollo/`. The mode pack never reaches `briefs/`, `debriefs/`, the worktree, or task YAML.
+Patch handoff contract: `apollo/_shared/primitives/mode-pack-scaffold.md §Phase 4 — Patch (handoff contract)`. Thermal's mode-specific brief-seed delta extends the base `evidence:` list with `dwell_seconds: <N>` — Achilles needs the dwell to reproduce the scenario, and Apollo refuses any thermal handoff that omits it.
 
 ## Phase 5 — Re-measure
 
-Goal: confirm the thermal regression resolved by re-capturing the matched artifact (same template, scenario, cohort, signpost, **and dwell**) on the patched build, then running the regression-detection math against the pre-fix anchor.
-
-The phase has three terminal states, each emitted as a follow-up event paired with the original `apollo_recommendation` id so the dashboard correlates pre-fix and post-fix outcomes per cohort.
-
-| Outcome | Criterion | Action |
-|---|---|---|
-| Verified | Post-fix capture's metric crosses the `expected_delta` threshold AND `apollo/_shared/primitives/regression-detection.md §Decision rule` returns `confirmed regression resolved` (significance test passes, sample sizes met, cohort exact, dwell-matched) | Emit `apollo_recommendation` follow-up with `status: verified`; persist post-fix artifact alongside pre-fix |
-| Partial | Post-fix capture moves the metric in the right direction but below the threshold or fails significance | Emit follow-up with `status: partial`; recommendation remains open, Apollo names what additional evidence would close it |
-| Regressed | Post-fix capture moves the metric the wrong direction, or a sibling metric (e.g. battery on a "vectorize" archetype, memory on a "lower-res offscreen" archetype) regressed | Emit follow-up with `status: regressed`; recommendation rolled back; new diagnose phase opens with the post-fix artifact as input |
+Re-measure outcome state machine (verified / partial / regressed): `apollo/_shared/primitives/mode-pack-scaffold.md §Phase 5 — Re-measure (outcome state machine)`. Thermal's match-axes tuple is the scaffold base set plus `dwell` — pre-fix and post-fix dwell must match exactly; comparing 60 s vs 360 s captures hides regressions in the dwell delta. Sibling-metric regressions worth flagging on thermal archetypes: battery on the "vectorize" archetype, memory on the "lower-res offscreen" archetype.
 
 Verification artifact requirements (R10 sister-rule for Apollo):
 
@@ -234,8 +203,6 @@ Verification artifact requirements (R10 sister-rule for Apollo):
 | "thermal regression resolved" | post-fix `.trace` of the same template + scenario + cohort + dwell as the pre-fix capture, both retained at `apollo/captures/<id>/`; `MXMetaData.thermalState` distribution shift attested across ≥ 7 days of post-fix MetricKit payloads from the same cohort |
 | "hang resolved" | post-fix Hangs `.trace` under the same scenario showing `hangDuration < 250 ms` AND a fresh `MXHangDiagnostic` window for the build with rate drop |
 | "GPU thermal resolved" | post-fix Metal System Trace under matched sustained scenario AND `MXGPUMetric.cumulativeGPUTime` per-hour drop over the same cohort window |
-
-Apollo refuses any "resolved" claim that lacks a paired post-fix artifact. The pre-fix artifact stays retained — it is the audit trail.
 
 ## Cohort and noise control
 
@@ -272,7 +239,7 @@ The `## Failure modes` table is the procedure-level enforcement: classifications
 
 ## Procedure
 
-The five-phase pipeline rendered as enforceable steps. Each step gates the transition into the next phase; gate failure routes through the auto-capture decision tree before any refusal.
+The five-phase pipeline rendered as enforceable steps. Each step gates the transition into the next phase; gate failure routes through the auto-capture decision tree before any refusal. Steps 5–8 follow `apollo/_shared/primitives/mode-pack-scaffold.md §Procedure boilerplate`; only steps 1–4 (mode-specific signal parsing through gate evaluation) are inlined here. Thermal's match-axes tuple for step 7 extends the scaffold base set with `dwell`, and step 8 requires ≥ 7 days of post-fix MetricKit `MXMetaData.thermalState` distribution when the claim cites field thermal state.
 
 1. **READ** the input artifact and classify the signal into one of {sustained-load throttle, hang-under-thermal, CPU hot loop, GPU-rooted thermal}.
    Before: caller invocation specifies one of `/apollo thermal`, a cited `.trace` / `MXMetricPayload` / `MXDiagnosticPayload`, or free text mentioning thermal / heat / throttling.
@@ -290,21 +257,7 @@ The five-phase pipeline rendered as enforceable steps. Each step gates the trans
    Before: artifact persisted from step 3 (or pre-existing).
    After: gate state ∈ {hard, soft, none, advisory}. Hard advances to step 5; soft and none route through `apollo/_shared/primitives/evidence-gate.md §Refusal protocol`; advisory:1 emits `apollo_advisory` and STOPs without a recommendation.
 
-5. **WRITE** the recommendation artifact at `apollo/recommendations/<id>.md` with the field set from §Phase 3 (evidence, scenario, diff_target, expected_delta, verification_recipe, patch_owner).
-   Before: gate=hard from step 4; archetype selected from §Phase 3 archetype table; Metal-archetype recommendations delegated to the `imgly-engine-expert` skill instead of in-line.
-   After: `apollo_recommendation` event emitted; brief seed YAML written for Chanakya consumption.
-
-6. **RECORD** the handoff to Achilles per §Phase 4; Apollo does NOT mutate the worktree, briefs, or task YAML.
-   Before: recommendation artifact written from step 5.
-   After: brief seed available on the studio path; R17 ownership preserved (no writes outside `apollo/`); event log carries the recommendation id for cross-agent correlation.
-
-7. **RUN** the post-fix capture using the same template, scenario, cohort, signpost, and dwell as the pre-fix capture from step 3.
-   Before: Achilles task closed, Argus verdict approved, merge SHA recorded on the recommendation; the verification recipe from step 5 is reproducible.
-   After: post-fix artifact persisted at `apollo/captures/<id>/post-fix/`; cohort + dwell tags verified to match pre-fix exactly per `apollo/_shared/primitives/regression-detection.md §Cohort normalization`.
-
-8. **EMIT** the verification verdict per §Phase 5 outcome table (`verified` / `partial` / `regressed`) using `apollo/_shared/primitives/regression-detection.md §Decision rule`.
-   Before: pre-fix and post-fix artifacts cohort- and dwell-matched; sample-size minimums met for the cited percentile; ≥ 7 days of post-fix MetricKit `MXMetaData.thermalState` distribution available when the claim cites field thermal state.
-   After: follow-up `apollo_recommendation` event with `status: <outcome>` emitted; pre-fix and post-fix artifacts both retained; on `regressed` outcome a fresh Phase-1 diagnose opens with the post-fix capture as input.
+5–8. **PROCEED** through the scaffold boilerplate (`apollo/_shared/primitives/mode-pack-scaffold.md §Procedure boilerplate`): WRITE the recommendation, RECORD the handoff to Achilles, RUN the post-fix capture matching the base axes plus `dwell`, EMIT the verification verdict.
 
 ## Handoffs
 
@@ -330,6 +283,7 @@ The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives
 
 ## See also
 
+- `apollo/_shared/primitives/mode-pack-scaffold.md` — five-phase pipeline framing, Phase 4 handoff contract, Phase 5 outcome state machine, procedure steps 5–8 boilerplate
 - `apollo/_shared/primitives/evidence-gate.md` — strict-9 contract + refusal protocol the phase gates feed into
 - `apollo/_shared/primitives/metrickit.md` — `MXMetaData.thermalState`, `MXCPUMetric`, `MXCPUExceptionDiagnostic`, `MXHangDiagnostic`, `MXGPUMetric` schemas
 - `apollo/_shared/primitives/signposts.md` — `OSSignposter` shape + privacy default the signal table enforces

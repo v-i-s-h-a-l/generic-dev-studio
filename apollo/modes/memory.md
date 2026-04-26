@@ -161,41 +161,11 @@ The Metal carve-out is firm: Apollo never proposes a specific Metal change. Apol
 
 ## Phase 4 — Patch
 
-Goal: hand the recommendation to Achilles for the in-tree change. Apollo does not edit code.
-
-Handoff record — Apollo writes a recommendation artifact at `~/.dev-studio/<project>/apollo/recommendations/<id>.md` and emits the brief on the studio path Chanakya consumes:
-
-```yaml
-mode: memory
-class: <signal-class>
-recommendation_id: <ulid>
-patch_owner: achilles
-brief_kind: impl
-diff_target: <file:line | symbol>
-expected_delta: <metric> p<percentile> -<X>% cohort <modelCode>/<osMajor>
-verification_recipe: <command>
-evidence:
-  - <artifact-path>
-  - <signpost-name>
-  - cohort: <modelCode>/<osMajor>
-  - build: <version>
-```
-
-Achilles applies the patch on a worktree per its normal flow; Argus reviews per its normal flow. Apollo does not bypass either. The recommendation artifact is the brief seed Chanakya turns into a task — Apollo's role ends at handoff.
-
-R17 ownership stays intact — Apollo writes only under `~/.dev-studio/<project>/apollo/`. No writes reach `briefs/`, `debriefs/`, the worktree, or task YAML.
+Patch handoff contract: `apollo/_shared/primitives/mode-pack-scaffold.md §Phase 4 — Patch (handoff contract)`. Memory mode emits the base brief-seed YAML — no extra fields beyond the scaffold defaults — with `mode: memory` and the cited signal class.
 
 ## Phase 5 — Re-measure
 
-Goal: confirm the regression resolved by capturing the same artifact shape under the same scenario on the patched build, then running the regression-detection math.
-
-The phase has three terminal states, each emitted as an event with `apollo_recommendation` follow-up data so the dashboard can pair pre-fix and post-fix.
-
-| Outcome | Criterion | Action |
-|---|---|---|
-| Verified | Post-fix capture's metric crosses the `expected_delta` threshold AND `apollo/_shared/primitives/regression-detection.md §Decision rule` returns `confirmed regression resolved` (significance test passes, sample sizes met, cohort exact) | Emit `apollo_recommendation` follow-up with `status: verified`; persist post-fix artifact alongside pre-fix |
-| Partial | Post-fix capture moves the metric in the right direction but below the threshold or fails significance | Emit follow-up with `status: partial`; recommendation remains open, Apollo names what additional evidence would close it |
-| Regressed | Post-fix capture moves the metric the wrong direction, or a sibling metric (e.g. CPU on a streaming archetype) regressed | Emit follow-up with `status: regressed`; recommendation rolled back; new diagnose phase opens with the post-fix artifact as input |
+Re-measure outcome state machine (verified / partial / regressed): `apollo/_shared/primitives/mode-pack-scaffold.md §Phase 5 — Re-measure (outcome state machine)`. Memory's match-axes tuple is the scaffold base set: `cohort + scenario + signpost + build`. Sibling-metric regressions worth flagging on memory archetypes include CPU (on the streaming archetype) and thermal (on the autoreleasepool archetype under sustained load).
 
 Verification artifact requirements (R10 sister-rule for Apollo):
 
@@ -204,8 +174,6 @@ Verification artifact requirements (R10 sister-rule for Apollo):
 | "memory regression resolved" | post-fix `.trace` of the same template + scenario + cohort as the pre-fix capture, both retained at `apollo/captures/<id>/` |
 | "OOM rate dropped" | post-fix `MXAppExitMetric` payload from the same cohort, ≥ 48 h post-build availability per `apollo/_shared/primitives/organizer-asc.md §Build availability` |
 | "leak fixed" | post-fix Leaks `.trace` showing zero cycles for the named class AND a `<Type>.deinit` event in the trace timeline |
-
-Apollo refuses any "resolved" claim that lacks a paired post-fix artifact. The pre-fix artifact stays retained — it is the audit trail.
 
 ## Cohort and noise control
 
@@ -238,7 +206,7 @@ The `## Failure modes` table is the procedure-level enforcement: classifications
 
 ## Procedure
 
-The five-phase pipeline rendered as enforceable steps. Each step gates the transition into the next phase; gate failure routes through the auto-capture decision tree before any refusal.
+The five-phase pipeline rendered as enforceable steps. Each step gates the transition into the next phase; gate failure routes through the auto-capture decision tree before any refusal. Steps 5–8 follow `apollo/_shared/primitives/mode-pack-scaffold.md §Procedure boilerplate`; only steps 1–4 (mode-specific signal parsing through gate evaluation) are inlined here. Memory's match-axes tuple for step 7 is the scaffold base set (`cohort + scenario + signpost + build`), and step 8 carries no mode-specific field-window minimum beyond the regression-detection defaults.
 
 1. **READ** the input artifact and classify the signal into one of {transient peak, persistent growth, leak, OOM kill}.
    Before: caller invocation specifies one of `/apollo memory`, a cited `.trace` / `MXMetricPayload` / `MXDiagnosticPayload`, or free text mentioning memory.
@@ -256,21 +224,7 @@ The five-phase pipeline rendered as enforceable steps. Each step gates the trans
    Before: artifact persisted from step 3 (or pre-existing).
    After: gate state ∈ {hard, soft, none, advisory}. Hard advances to step 5; soft and none route through `apollo/_shared/primitives/evidence-gate.md §Refusal protocol`; advisory:1 emits `apollo_advisory` and STOPs without a recommendation.
 
-5. **WRITE** the recommendation artifact at `apollo/recommendations/<id>.md` with the field set from §Phase 3 (evidence, scenario, diff_target, expected_delta, verification_recipe, patch_owner).
-   Before: gate=hard from step 4; archetype selected from §Phase 3 archetype table; Metal-archetype recommendations delegated to the `imgly-engine-expert` skill instead of in-line.
-   After: `apollo_recommendation` event emitted; brief seed YAML written for Chanakya consumption.
-
-6. **RECORD** the handoff to Achilles per §Phase 4; Apollo does NOT mutate the worktree, briefs, or task YAML.
-   Before: recommendation artifact written from step 5.
-   After: brief seed available on the studio path; R17 ownership preserved (no writes outside `apollo/`); event log carries the recommendation id for cross-agent correlation.
-
-7. **RUN** the post-fix capture using the same template, scenario, cohort, and signpost as the pre-fix capture from step 3.
-   Before: Achilles task closed, Argus verdict approved, merge SHA recorded on the recommendation; the verification recipe from step 5 is reproducible.
-   After: post-fix artifact persisted at `apollo/captures/<id>/post-fix/`; cohort tag verified to match pre-fix exactly per `apollo/_shared/primitives/regression-detection.md §Cohort normalization`.
-
-8. **EMIT** the verification verdict per §Phase 5 outcome table (`verified` / `partial` / `regressed`) using `apollo/_shared/primitives/regression-detection.md §Decision rule`.
-   Before: pre-fix and post-fix artifacts cohort-matched; sample-size minimums met for the cited percentile.
-   After: follow-up `apollo_recommendation` event with `status: <outcome>` emitted; pre-fix and post-fix artifacts both retained; on `regressed` outcome a fresh Phase-1 diagnose opens with the post-fix capture as input.
+5–8. **PROCEED** through the scaffold boilerplate (`apollo/_shared/primitives/mode-pack-scaffold.md §Procedure boilerplate`): WRITE the recommendation, RECORD the handoff to Achilles, RUN the post-fix capture matching the base axes, EMIT the verification verdict.
 
 ## Handoffs
 
@@ -294,6 +248,7 @@ The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives
 
 ## See also
 
+- `apollo/_shared/primitives/mode-pack-scaffold.md` — five-phase pipeline framing, Phase 4 handoff contract, Phase 5 outcome state machine, procedure steps 5–8 boilerplate
 - `apollo/_shared/primitives/evidence-gate.md` — strict-9 contract + refusal protocol the phase gates feed into
 - `apollo/_shared/primitives/metrickit.md` — `MXMemoryMetric`, `MXAppExitMetric`, `MXCrashDiagnostic` schemas
 - `apollo/_shared/primitives/signposts.md` — `OSSignposter` shape + privacy default the signal table enforces

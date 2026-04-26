@@ -204,44 +204,16 @@ The Imgly carve-out is firm: Apollo never proposes a specific Metal change for e
 
 ## Phase 4 — Patch
 
-Goal: hand the battery recommendation off to Achilles for the in-tree change. Apollo's authority ends at the recommendation artifact; Apollo never edits source.
+Patch handoff contract: `apollo/_shared/primitives/mode-pack-scaffold.md §Phase 4 — Patch (handoff contract)`. Battery's mode-specific brief-seed deltas:
 
-Handoff record — Apollo persists a recommendation artifact at `~/.dev-studio/<project>/apollo/recommendations/<id>.md` and emits the brief seed on the studio path Chanakya consumes (note the `track`, `dwell_seconds`, and `field_window_days` fields are mandatory for battery handoffs — Achilles needs the track to know which artifact to re-capture and the field-window to know how long to wait before declaring verification):
+- top-level field: `track: <reproducible | non-reproducible | both>` — Achilles needs the track to know which artifact catalogue to re-capture against
+- `evidence:` extension: `dwell_seconds: <N>` on the reproducible track, `field_window_days: <N>` on the non-reproducible track (`both` carries both)
 
-```yaml
-mode: battery
-class: <signal-class>
-track: <reproducible | non-reproducible | both>
-recommendation_id: <ulid>
-patch_owner: achilles
-brief_kind: impl
-diff_target: <file:line | symbol>
-expected_delta: <metric> p<percentile> -<X>% cohort <modelCode>/<osMajor>
-verification_recipe: <command>
-evidence:
-  - <artifact-path>
-  - <signpost-name>
-  - cohort: <modelCode>/<osMajor>
-  - build: <version>
-  - dwell_seconds: <N>          # reproducible track
-  - field_window_days: <N>      # non-reproducible track
-```
-
-Achilles owns the patch on a worktree under its standard flow, dispatches Argus under its standard flow, and merges. Apollo never invokes Achilles directly — Chanakya routes the brief seed into a task, and the task threads through the same gates every other Achilles work does.
-
-R17 ownership stays intact: Apollo writes solely under `~/.dev-studio/<project>/apollo/`. The mode pack never reaches `briefs/`, `debriefs/`, the worktree, or task YAML.
+Apollo refuses any battery handoff that omits `track`; field-window minimums per signal class are documented in §Reproducible vs non-reproducible.
 
 ## Phase 5 — Re-measure
 
-Goal: confirm the battery regression resolved by re-capturing the matched artifact (same template, scenario, cohort, signpost, **track**, and dwell or field-window) on the patched build, then running the regression-detection math against the pre-fix anchor.
-
-The phase has three terminal states, each emitted as a follow-up event paired with the original `apollo_recommendation` id so the dashboard correlates pre-fix and post-fix outcomes per cohort.
-
-| Outcome | Criterion | Action |
-|---|---|---|
-| Verified | Post-fix capture's metric crosses the `expected_delta` threshold AND `apollo/_shared/primitives/regression-detection.md §Decision rule` returns `confirmed regression resolved` (significance test passes, sample sizes met, cohort exact, dwell-matched on reproducible track or ≥ field-window minimum on non-reproducible track) | Emit `apollo_recommendation` follow-up with `status: verified`; persist post-fix artifact alongside pre-fix |
-| Partial | Post-fix capture moves the metric in the right direction but below the threshold or fails significance | Emit follow-up with `status: partial`; recommendation remains open, Apollo names what additional evidence would close it |
-| Regressed | Post-fix capture moves the metric the wrong direction, or a sibling metric (e.g. user-visible latency on a "discretionary upload" archetype, scroll hitch on a "FPS cap" archetype, thermal state on a "spin loop yield" archetype) regressed | Emit follow-up with `status: regressed`; recommendation rolled back; new diagnose phase opens with the post-fix artifact as input |
+Re-measure outcome state machine (verified / partial / regressed): `apollo/_shared/primitives/mode-pack-scaffold.md §Phase 5 — Re-measure (outcome state machine)`. Battery's match-axes tuple extends the scaffold base set with `track` and either `dwell_seconds` (reproducible) or `field_window_days` (non-reproducible) — `both` track requires both to match. Sibling-metric regressions worth flagging on battery archetypes: user-visible latency on the "discretionary upload" archetype, scroll hitch on the "FPS cap" archetype, thermal state on the "spin loop yield" archetype.
 
 Verification artifact requirements (R10 sister-rule for Apollo):
 
@@ -251,8 +223,6 @@ Verification artifact requirements (R10 sister-rule for Apollo):
 | "background overrun resolved" | post-fix Power Profiler under matched background-wake script; `MXAppRunTimeMetric.cumulativeBackgroundTime` per-cohort drop ≥ 14 days post-fix; rate of `MXCPUExceptionDiagnostic` payloads attributed to background callstacks dropped |
 | "always-on subsystem drain resolved" | post-fix Power Profiler with the matched subsystem sub-template; lifecycle signpost showing the subsystem deactivated on the resign-active boundary; for display class, `MXDisplayMetric.averagePixelLuminance` distribution shift over ≥ 7 days post-fix |
 | "networking radio drain resolved" | post-fix Power Profiler + Network instrument paired captures showing reduced connection wake density; `MXNetworkTransferMetric.cumulativeCellularUpload` / `cumulativeCellularDownload` per-fg-hour drop on the same carrier-class cohort over ≥ 7 days |
-
-Apollo refuses any "resolved" claim that lacks a paired post-fix artifact. The pre-fix artifact stays retained — it is the audit trail.
 
 ## Background-activity drain checklist
 
@@ -306,7 +276,7 @@ The `## Failure modes` table is the procedure-level enforcement: classifications
 
 ## Procedure
 
-The five-phase pipeline rendered as enforceable steps. Each step gates the transition into the next phase; gate failure routes through the auto-capture decision tree before any refusal.
+The five-phase pipeline rendered as enforceable steps. Each step gates the transition into the next phase; gate failure routes through the auto-capture decision tree before any refusal. Steps 5–8 follow `apollo/_shared/primitives/mode-pack-scaffold.md §Procedure boilerplate`; only steps 1–4 (mode-specific signal parsing through gate evaluation) are inlined here. Battery's match-axes tuple for step 7 extends the scaffold base set with `track` and either `dwell_seconds` (reproducible) or `field_window_days` (non-reproducible). Step 8 requires ≥ 7 days of post-fix MetricKit `MXAppRunTimeMetric.cumulativeForegroundEnergy` payloads when the claim cites field energy (≥ 14 days for background-overrun claims).
 
 1. **READ** the input artifact and classify the signal into one of {foreground compute drain, background-task overrun, always-on subsystem drain, networking radio drain}; classify the track as reproducible or non-reproducible.
    Before: caller invocation specifies one of `/apollo battery`, a cited `.trace` / `MXMetricPayload` / `MXDiagnosticPayload`, or free text mentioning battery / drain / energy.
@@ -324,21 +294,7 @@ The five-phase pipeline rendered as enforceable steps. Each step gates the trans
    Before: artifact persisted from step 3 (or pre-existing).
    After: gate state ∈ {hard, soft, none, advisory}. Hard advances to step 5; soft and none route through `apollo/_shared/primitives/evidence-gate.md §Refusal protocol` with the battery-specific unblock recipes (Power Profiler trace, `MXAppRunTimeMetric.cumulativeForegroundEnergy` payload); advisory:1 emits `apollo_advisory` and STOPs without a recommendation.
 
-5. **WRITE** the recommendation artifact at `apollo/recommendations/<id>.md` with the field set from §Phase 3 (evidence, track, scenario, diff_target, expected_delta, verification_recipe, patch_owner).
-   Before: gate=hard from step 4; archetype selected from §Phase 3 archetype table; Metal-archetype recommendations delegated to the `imgly-engine-expert` skill instead of in-line.
-   After: `apollo_recommendation` event emitted; brief seed YAML written for Chanakya consumption.
-
-6. **RECORD** the handoff to Achilles per §Phase 4; Apollo does NOT mutate the worktree, briefs, or task YAML.
-   Before: recommendation artifact written from step 5.
-   After: brief seed available on the studio path; R17 ownership preserved (no writes outside `apollo/`); event log carries the recommendation id for cross-agent correlation.
-
-7. **RUN** the post-fix capture using the same template, scenario, cohort, signpost, track, and dwell or field-window as the pre-fix capture from step 3.
-   Before: Achilles task closed, Argus verdict approved, merge SHA recorded on the recommendation; the verification recipe from step 5 is reproducible.
-   After: post-fix artifact persisted at `apollo/captures/<id>/post-fix/`; cohort + dwell or field-window tags verified to match pre-fix exactly per `apollo/_shared/primitives/regression-detection.md §Cohort normalization`.
-
-8. **EMIT** the verification verdict per §Phase 5 outcome table (`verified` / `partial` / `regressed`) using `apollo/_shared/primitives/regression-detection.md §Decision rule`.
-   Before: pre-fix and post-fix artifacts cohort-, track-, and dwell-matched; sample-size minimums met for the cited percentile; ≥ 7 days of post-fix MetricKit `MXAppRunTimeMetric.cumulativeForegroundEnergy` payloads available when the claim cites field energy (≥ 14 days for background-overrun claims).
-   After: follow-up `apollo_recommendation` event with `status: <outcome>` emitted; pre-fix and post-fix artifacts both retained; on `regressed` outcome a fresh Phase-1 diagnose opens with the post-fix capture as input.
+5–8. **PROCEED** through the scaffold boilerplate (`apollo/_shared/primitives/mode-pack-scaffold.md §Procedure boilerplate`): WRITE the recommendation, RECORD the handoff to Achilles, RUN the post-fix capture matching the base axes plus `track` plus `dwell_seconds`-or-`field_window_days`, EMIT the verification verdict.
 
 ## Handoffs
 
@@ -365,6 +321,7 @@ The Imgly carve-out matches thermal mode. Imgly knowledge lives in the dedicated
 
 ## See also
 
+- `apollo/_shared/primitives/mode-pack-scaffold.md` — five-phase pipeline framing, Phase 4 handoff contract, Phase 5 outcome state machine, procedure steps 5–8 boilerplate
 - `apollo/_shared/primitives/evidence-gate.md` — strict-9 contract + refusal protocol the phase gates feed into
 - `apollo/_shared/primitives/metrickit.md` — `MXAppRunTimeMetric`, `MXCPUMetric`, `MXGPUMetric`, `MXDisplayMetric`, `MXNetworkTransferMetric`, `MXDiskIOMetric`, `MXAnimationMetric`, `MXCPUExceptionDiagnostic`, `MXDiskWriteExceptionDiagnostic` schemas
 - `apollo/_shared/primitives/signposts.md` — `OSSignposter` shape + privacy default the signal table enforces
