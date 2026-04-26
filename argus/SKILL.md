@@ -43,7 +43,10 @@ Stage 1 is cheap (diff-only, no test run) so running it first doesn't cost much 
 
 ## Skip threshold (both stages)
 
-Diff <20 lines AND single file AND task size XS → skip Argus entirely. Caller's decision.
+Argus skips entirely when **either** predicate holds. Caller's decision; emit `review_skipped` with the reason.
+
+1. **XS-skip** — diff <20 lines AND single file AND task size XS.
+2. **Apollo-skip** — `brief.dispatch_agent == apollo` (any size). Apollo's strict-9 evidence gate is the merge gate for perf-mode work; running Argus alongside double-gates without adding signal. The pre-merge re-measure step (see `apollo/_shared/primitives/perf-merge-loop.md`) refuses or approves on observed-vs-baseline delta. Spec-compliance against the brief is implicitly satisfied by Apollo's verdict — perf briefs declare a measurable acceptance (delta improved on cohort), and the metrics block on the debrief carries the proof.
 
 ## Standalone invocation
 
