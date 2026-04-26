@@ -180,11 +180,11 @@ Workers (Achilles, Argus) do not route to each other directly. Argus's verdict r
 |---|---|
 | Achilles | Worktree files, task state, debriefs |
 | Chanakya | `briefs/`, task state (via `plans/`), event sweeps |
-| Argus | Verdict events and artifacts only; read-only on the diff |
+| Argus | Verdict events and artifacts; append-only back-refs on `task.links.reviews` per the comms-boundary primitive; read-only on the diff |
 
-Argus must not write to `briefs/`, `debriefs/`, task YAML, or the worktree. Achilles must not write to `briefs/`. Chanakya must not write to the worktree. `scripts/lint-host-agnostic.sh` enforces path-ownership greps; flag any diff that crosses these lines.
+Argus must not mutate task YAML payload, `briefs/`, `debriefs/`, or the worktree. Append-only back-refs (`links.reviews`) are permitted as a lifecycle co-writer per `_shared/primitives/agent-comms-boundary.md` — they uphold the bidirectional invariant in `_shared/contracts/plans-index-validator.md` (`task.links.reviews[] ⇔ review.subject`). Achilles must not write to `briefs/`. Chanakya must not write to the worktree. `scripts/lint-host-agnostic.sh` enforces path-ownership greps; flag any diff that crosses these lines.
 
-**How to check:** in a diff that touches argus modes or argus-emit-verdict.sh, verify no writes reach `plans/briefs/` or worktree paths. In Achilles diffs, verify no `briefs/` mutations.
+**How to check:** in a diff that touches argus modes or argus-emit-verdict.sh, verify writes against `plans/tasks/<task-id>.yaml` are confined to `links.reviews` append (no payload field changes); no writes reach `plans/briefs/`, `plans/debriefs/`, or worktree paths. In Achilles diffs, verify no `briefs/` mutations.
 
 ### R18 — Skill Authoring Standard conformance (tier: **block + auto-fix**)
 
