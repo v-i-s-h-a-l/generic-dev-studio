@@ -22,6 +22,9 @@
 # Exit codes:
 #   0  spec resolved (or direct mode)
 #   2  brief requested but nothing found on either surface
+#   5  task is in a terminal state (#263) — refusing re-dispatch. Override
+#      with ACHILLES_REOPEN=1 (writes a follow-up debrief) or run
+#      `/chanakya reopen <task-id>` for a formal state-machine reopen.
 
 set -u
 umask 022
@@ -120,6 +123,40 @@ error: no brief found for task-id '$TASK_ID'.
   task-id) for direct mode.
 EOF
   exit 2
+fi
+
+# #263 — terminal-state guard. Brief-state filtering above (ready / dispatched
+# / draft) covers post-migration briefs; the legacy markdown fallback has no
+# equivalent guard, so a misclick or terminal-history retrieval re-runs a
+# completed task — fresh worktree, second debrief, in build / push-tf modes
+# a second TF push. Read task state from the YAML SSOT by legacy_task_id and
+# refuse when terminal. ACHILLES_REOPEN=1 is the explicit user override (the
+# brief / debrief shape it writes is captured in #252's reopen lifecycle work,
+# until then the override mints a follow-up debrief on the existing task).
+# Tasks that exist only in legacy markdown have no rich state to read; the
+# guard skips silently in that case, preserving pre-2.6 behaviour.
+if [ -z "${ACHILLES_REOPEN:-}" ] && command -v yq >/dev/null 2>&1; then
+  tasks_dir=$(resolve_tasks_dir_for "$PROJECT")
+  if [ -d "$tasks_dir" ]; then
+    task_state=""
+    while IFS= read -r task_yaml; do
+      [ -z "$task_yaml" ] && continue
+      task_state=$(yq -r '.state // ""' "$task_yaml" 2>/dev/null)
+      [ -n "$task_state" ] && break
+    done < <(grep -l "^legacy_task_id: \"$TASK_ID\"$" "$tasks_dir"/*.yaml 2>/dev/null)
+    case "$task_state" in
+      merged|user-verifying|verified|archived)
+        cat >&2 <<EOF
+error: task '$TASK_ID' is in terminal state '$task_state' — refusing to dispatch.
+  A second dispatch on a completed task creates a duplicate worktree and a
+  second debrief; in build / push-tf modes it can re-run a release action.
+  To reopen for a follow-up dispatch, set ACHILLES_REOPEN=1 (writes a
+  follow-up debrief on the existing task) or run \`/chanakya reopen $TASK_ID\`
+  for a formal state-machine reopen (#252).
+EOF
+        exit 5 ;;
+    esac
+  fi
 fi
 
 # Fill sensible defaults so the caller never trips on an empty var.
