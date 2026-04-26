@@ -51,6 +51,16 @@ EVENTS_DIR=$(resolve_events_dir_for "$PROJECT")
 MASTER_PLAN="$PLANS_DIR/chanakya-master.md"
 LEGACY_DIR="$PLANS_DIR/chanakya-tasks"
 
+# Observability for the dual-write transition (#245 A.1 readiness item 3):
+# emit one legacy_artifact_read per invocation when the legacy master-plan or
+# tasks dir is consulted. Lets the A.2 soak surface allocator dependence on
+# the legacy paths before A.3 flips DUAL_WRITE_MODE=yaml-only.
+if [ -f "$MASTER_PLAN" ] || [ -d "$LEGACY_DIR" ]; then
+  append_event chanakya legacy_artifact_read "" \
+    "{\"domain\":\"next_task_id\",\"reason\":\"legacy_master_plan_or_tasks_dir_grep\",\"caller\":\"next-task-id.sh\",\"prefix\":\"$PREFIX\"}" \
+    2>/dev/null || true
+fi
+
 # "T" is a bare prefix (T001); "TBUILD"/"TUNIT" use a dash separator (TBUILD-1).
 # The dash disambiguates TUNIT-3 from unrelated TUNITx matches.
 if [ "$PREFIX" = "T" ]; then
