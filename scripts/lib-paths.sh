@@ -509,3 +509,47 @@ _quarantine_path() {
   project=$(resolve_project 2>/dev/null) || return 1
   printf '%s\n' "$HOME/.dev-studio/$project/.runtime/state/debrief-quarantine.jsonl"
 }
+
+# #215 — self-node identity. The node registry can include an entry that
+# points at the current machine; node-pick / node-health / node-dispatch
+# must recognize that case and run inline rather than over SSH. The
+# discriminator is `machine_id` (set by scripts/machine-id.sh on bootstrap),
+# never `host` — hostnames change, machine-id files don't.
+#
+# Synthetic id `local` always tests as self (preserves pre-#215 behaviour
+# where `local` is the not-registered fallback).
+
+resolve_self_machine_id() {
+  local mid_script
+  mid_script="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/machine-id.sh"
+  if [ -x "$mid_script" ]; then
+    "$mid_script" 2>/dev/null
+    return 0
+  fi
+  local id_file="$HOME/.dev-studio/.runtime/machine-id"
+  [ -r "$id_file" ] && tr -d '[:space:]' < "$id_file"
+}
+
+node_machine_id_for() {
+  local id="$1" registry
+  [ -n "$id" ] || return 1
+  registry="$(resolve_runtime_global)/nodes.json"
+  [ -r "$registry" ] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  jq -r --arg id "$id" '.nodes[]? | select(.id == $id) | .machine_id // empty' \
+    "$registry" 2>/dev/null
+}
+
+# Returns 0 if <id> refers to this machine. `local` is always self.
+# Any registered entry whose machine_id matches self's machine_id is self.
+# Unknown ids and registry-less hosts return 1 (not self).
+node_is_self() {
+  local id="$1"
+  [ -n "$id" ] || return 1
+  [ "$id" = "local" ] && return 0
+  local self mid
+  self=$(resolve_self_machine_id)
+  [ -n "$self" ] || return 1
+  mid=$(node_machine_id_for "$id")
+  [ -n "$mid" ] && [ "$mid" = "$self" ]
+}

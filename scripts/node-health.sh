@@ -58,6 +58,7 @@ else
 fi
 
 SSH_OPTS=(
+  -n                                # no stdin — otherwise ssh reads the loop's heredoc and starves subsequent iterations (#215)
   -o BatchMode=yes
   -o ConnectTimeout=10
   -o StrictHostKeyChecking=accept-new
@@ -78,14 +79,26 @@ while IFS=$'\t' read -r id host user enabled; do
     printf '%s\tdisabled\t-\t%s\n' "$id" "$host"
     continue
   fi
-  # One call to fetch load + confirm reachability. `uptime` output shape:
+  # `uptime` output shape:
   #   "... load averages: 1.23 1.45 1.67"  (BSD)
   #   "... load average: 1.23, 1.45, 1.67" (Linux)
-  # We grab the first float after "load", matching both.
-  output=$($TIMEOUT_BIN ssh "${SSH_OPTS[@]}" "${user}@${host}" uptime 2>/dev/null) || {
-    printf '%s\tunreachable\t-\t%s\n' "$id" "$host"
-    continue
-  }
+  # First float after "load" matches both.
+  #
+  # #215 — self-entry skips SSH and reads local uptime. Without this a laptop
+  # that registers itself (so a peer mini can still see laptop's load) would
+  # show `unreachable` whenever sshd is disabled at home, even though the
+  # local copy of node-pick wants to dispatch work to itself.
+  if node_is_self "$id"; then
+    output=$(uptime 2>/dev/null) || {
+      printf '%s\tunreachable\t-\t%s\n' "$id" "$host"
+      continue
+    }
+  else
+    output=$($TIMEOUT_BIN ssh "${SSH_OPTS[@]}" "${user}@${host}" uptime 2>/dev/null) || {
+      printf '%s\tunreachable\t-\t%s\n' "$id" "$host"
+      continue
+    }
+  fi
   load1=$(printf '%s' "$output" | sed -n 's/.*load[^:]*:[[:space:]]*\([0-9][0-9]*\(\.[0-9]*\)\{0,1\}\).*/\1/p')
   [ -z "$load1" ] && load1="0.00"
   printf '%s\thealthy\t%s\t%s\n' "$id" "$load1" "$host"

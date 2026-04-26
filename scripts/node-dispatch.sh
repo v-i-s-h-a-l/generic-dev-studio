@@ -57,6 +57,16 @@ fi
 
 command -v jq >/dev/null 2>&1 || { printf 'error: jq required to read %s\n' "$REGISTRY" >&2; exit 2; }
 
+# #215 — self-node short-circuit. A registered entry whose machine_id matches
+# this machine's id is *this* machine; SSH would loop back through the network
+# stack for no benefit (and for a laptop without sshd enabled, would fail).
+# Order matters: precedes the host/user fetch so a self-entry without an
+# externally-reachable host still works.
+if node_is_self "$NODE_ID"; then
+  log_route "node $NODE_ID is self — running locally"
+  exec_local "$@"
+fi
+
 # Extract host/user/enabled for this node. jq's -r -e returns exit 1 iff the
 # filter yields null — lets us detect "not in registry" without a separate
 # probe. Trailing `// empty` on the sub-fields guards against partial entries.
