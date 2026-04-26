@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
-# node-janitor.sh — periodic remote-node disk sweep (#129).
+# node-janitor.sh — periodic remote-node disk sweep (#129, #272).
 #
 # Runs on every worker node (and on dual-role laptops) via a LaunchAgent
-# scheduled at StartInterval=21600 (every 6h). Sweeps direct children of
-# `~/.dev-studio/.runtime/derived-data/` and `~/.dev-studio/.runtime/worktrees/`
-# whose mtime is older than --days N (default 3). Anything newer is treated
-# as in-flight and left alone.
+# scheduled at StartInterval=21600 (every 6h). Sweeps four roots under
+# `~/.dev-studio/.runtime/`, all gated on mtime older than --days N (default 3):
 #
-# Path safety: only direct children (`-mindepth 1 -maxdepth 1 -type d`) of the
-# two hard-coded roots get removed. The roots resolve through lib-paths.sh —
-# no caller-controlled path crosses into rm.
+#   derived-data/<dir>           (worker)  direct children, dir
+#   worktrees/<dir>              (worker)  direct children, dir
+#   logs/<uuid>.{log,exit}       (worker)  uuid-shaped basenames only (#272)
+#   dispatch-registry/<uuid>.json(laptop)  terminal-status entries only (#272)
+#
+# In-flight registry entries (status="in-flight") are never reaped regardless
+# of mtime — the dispatch may still be running.
+#
+# Path safety: each sweep is hard-bounded to direct children of one of the
+# four roots resolved against `runtime_global_dir()`. The logs/registry sweeps
+# use `-name` patterns matching only UUID-shaped basenames so unrelated files
+# in the same dir (e.g. bootstrap-*.log) are never touched. No caller-controlled
+# path crosses into rm.
 #
 # Usage:
 #   scripts/node-janitor.sh [--days N] [--dry-run] [--quiet]
@@ -70,6 +78,27 @@ ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 swept=0
 freed_kb=0
 
+# reap_victim <path> — shared sweep body. Reads DRY_RUN/QUIET from outer scope;
+# updates `swept` and `freed_kb` via name-ref so each sweep loop tallies into
+# the same totals reported in telemetry.
+reap_victim() {
+  local victim="$1"
+  local kb
+  kb=$(du -sk "$victim" 2>/dev/null | awk '{print $1}')
+  kb=${kb:-0}
+  if [ "$DRY_RUN" -eq 1 ]; then
+    [ "$QUIET" -eq 1 ] || printf 'node-janitor: DRY-RUN rm -rf %s (%s KB)\n' "$victim" "$kb"
+    return 0
+  fi
+  if rm -rf -- "$victim" 2>/dev/null; then
+    swept=$((swept + 1))
+    freed_kb=$((freed_kb + kb))
+    [ "$QUIET" -eq 1 ] || printf 'node-janitor: removed %s (%s KB)\n' "$victim" "$kb"
+  else
+    printf 'node-janitor: warn: rm failed on %s\n' "$victim" >&2
+  fi
+}
+
 for root in "${ROOTS[@]}"; do
   [ -d "$root" ] || continue
   # find guarantees direct children only; -mtime +N is "older than N*24h ago".
@@ -79,21 +108,42 @@ for root in "${ROOTS[@]}"; do
       "$root"/*) ;;
       *) continue ;;  # defense-in-depth — find should never emit anything else
     esac
-    kb=$(du -sk "$victim" 2>/dev/null | awk '{print $1}')
-    kb=${kb:-0}
-    if [ "$DRY_RUN" -eq 1 ]; then
-      [ "$QUIET" -eq 1 ] || printf 'node-janitor: DRY-RUN rm -rf %s (%s KB)\n' "$victim" "$kb"
-    else
-      if rm -rf -- "$victim" 2>/dev/null; then
-        swept=$((swept + 1))
-        freed_kb=$((freed_kb + kb))
-        [ "$QUIET" -eq 1 ] || printf 'node-janitor: removed %s (%s KB)\n' "$victim" "$kb"
-      else
-        printf 'node-janitor: warn: rm failed on %s\n' "$victim" >&2
-      fi
-    fi
+    reap_victim "$victim"
   done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -mtime "+$DAYS" 2>/dev/null)
 done
+
+# #272 — dispatch-log sweep (worker side). UUID-shaped basenames only so
+# bootstrap-*.log and other incidental files in the same dir survive.
+LOGS_DIR="$RUNTIME/logs"
+if [ -d "$LOGS_DIR" ]; then
+  while IFS= read -r victim; do
+    [ -n "$victim" ] || continue
+    case "$victim" in
+      "$LOGS_DIR"/*) ;;
+      *) continue ;;
+    esac
+    reap_victim "$victim"
+  done < <(find "$LOGS_DIR" -mindepth 1 -maxdepth 1 -type f -mtime "+$DAYS" \
+            \( -name '????????-????-????-????-????????????.log' \
+            -o -name '????????-????-????-????-????????????.exit' \) 2>/dev/null)
+fi
+
+# #272 — dispatch-registry sweep (laptop side). Reap only entries whose
+# status is terminal (passed/failed/aborted); in-flight entries are left
+# alone regardless of mtime — a long-running dispatch is not garbage.
+REG_DIR="$RUNTIME/dispatch-registry"
+if [ -d "$REG_DIR" ]; then
+  while IFS= read -r victim; do
+    [ -n "$victim" ] || continue
+    case "$victim" in
+      "$REG_DIR"/*) ;;
+      *) continue ;;
+    esac
+    grep -q '"status":"\(passed\|failed\|aborted\)"' "$victim" 2>/dev/null || continue
+    reap_victim "$victim"
+  done < <(find "$REG_DIR" -mindepth 1 -maxdepth 1 -type f -mtime "+$DAYS" \
+            -name '????????-????-????-????-????????????.json' 2>/dev/null)
+fi
 
 # Single-line telemetry — small, append-only, easily grep'd from the laptop
 # via `ssh node tail -F ~/.dev-studio/.runtime/node-janitor.log`.

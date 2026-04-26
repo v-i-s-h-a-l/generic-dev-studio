@@ -124,7 +124,7 @@ scripts/check-xcode-parity.sh m1mini                    # pre-dispatch guard; ex
 scripts/task-write-test-cases.sh T001 '[{...}]'         # twin-write standalone + stdout YAML
 scripts/task-invoke-argus.sh T001 /wt main S            # emits review_requested (Argus invoked via Agent tool)
 scripts/task-merge.sh T001 /wt feature-branch           # merge lock + merge + worktree remove + DerivedData clean
-scripts/node-janitor.sh [--days N] [--dry-run]          # periodic node-side sweep of stale derived-data + worktrees (#129); LaunchAgent-driven
+scripts/node-janitor.sh [--days N] [--dry-run]          # periodic node-side sweep of stale derived-data + worktrees + dispatch logs/registry (#129, #272); LaunchAgent-driven
 scripts/install-node-janitor-launchagent.sh             # render + load every-6h LaunchAgent on the local node (auto-run by bootstrap --worker)
 scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # YAML + legacy md + state flips
 
