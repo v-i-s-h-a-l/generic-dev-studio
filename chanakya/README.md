@@ -17,6 +17,7 @@ All per-project artifacts live under `~/.dev-studio/<project>/` (outside `~/.cla
 | `/chanakya ship T001,T002` | Brief + dispatch to Achilles in one step. Also `ship next`, `ship all` |
 | `/chanakya sweep-debt` | Identify and dispatch all pending test sub-tasks and build checks |
 | `/chanakya verify` | Guided flow: test-flow → you test → promote → review-feedback |
+| `/chanakya reopen T347 --reason="<text>"` | Reopen a closed task (`verified`/`merged`/`archived`/`cancelled`) with a recorded reason and prior-debrief lineage. Re-brief next via `/chanakya brief T347` — the new brief inherits the round-2 context. Conventional reason prefixes: `qa-rejected:`, `design-rejected:`, `product-rejected:`, `regression:`, `incomplete:` |
 | `/chanakya review` | Diff updated PRD against existing tasks |
 | `/chanakya sweep` | Run Step 0 inbox sweep only — no status table (lighter for smoke-tests / pre-dispatch warm-ups) |
 | `/chanakya update` | Sync master plan with git state |

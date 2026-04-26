@@ -50,7 +50,7 @@ For in-progress tasks with branches: `git log --oneline -3 <branch>` for recent 
 
 ## Step 3 — Surface blockers + push queue + feedback
 
-1. **Blockers.** Identify tasks blocked by dependencies; highlight them. Surface `done` tasks awaiting verification.
+1. **Blockers.** Identify tasks blocked by dependencies; highlight them. Surface `done` tasks awaiting verification. Surface `reopened` tasks distinctly from `proposed`: render as "T347 reopened (qa-rejected: …) — needs re-brief" so the user knows the task is round-2 with prior context, not a fresh idea. The reason prefix (`qa-rejected:` / `design-rejected:` / `regression:` / etc.) drives the inline label.
 
 2. **Push queue.** `scripts/push-queue.sh list` prints unread entries as JSONL. Show them, then `scripts/push-queue.sh mark-displayed <id>...` to clear. Summarize recent events from the events-tail payload: "Argus reviewed T001 (flagged, 3 findings), T002 merged at 14:45."
 

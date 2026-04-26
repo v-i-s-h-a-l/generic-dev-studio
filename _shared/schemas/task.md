@@ -119,10 +119,11 @@ Enum values and transitions governed by `state-machines/task-lifecycle.md`:
 proposed → briefed → dispatched → in-progress → self-reviewed → argus-reviewed → merged → user-verifying → verified
                                                                                                         → rejected → briefed (rework)
 verified → archived
+verified | merged | archived | cancelled → reopened → briefed (re-brief) | archived (drop)
 any      → blocked | cancelled | requeued
 ```
 
-`reopened` is reserved for the reopen lifecycle landing in #252 (transitions: `verified | archived | cancelled → reopened → briefed`). Fields `reopen_reason` and `reopen_chain` are present in 1.1.0 so consumers can persist reopen lineage when #252 ships; `task-lifecycle.md` does not yet enumerate the transition.
+The reopen lifecycle (#252) re-enters closed tasks with a recorded `reopen_reason`; prior `links.debrief` appends to `reopen_chain` on transition. See `task-lifecycle.md` for the authoritative transition table and event-payload requirements.
 
 Readers MUST reject unknown state values (no silent degradation), with one carve-out: readers on `task@1.0.0` reject `reopened` (the value did not exist), and writers that need to emit it MUST also write `schema_version.version: 1.1.0` so the reader's min-reader check fails fast rather than silently dropping the state.
 

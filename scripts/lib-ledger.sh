@@ -442,6 +442,7 @@ _state_to_legacy_status() {
     blocked)            printf 'blocked' ;;
     cancelled)          printf 'cancelled' ;;
     archived)           printf 'done' ;;
+    reopened)           printf 'pending' ;;
     *)                  printf '%s' "$1" ;;
   esac
 }

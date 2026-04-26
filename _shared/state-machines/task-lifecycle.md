@@ -23,6 +23,7 @@ Every task routed through the studio traverses this state machine. The existing 
 | `verified` | User signed off via review-feedback. | Chanakya review-feedback mode. |
 | `rejected` | User flagged the work as insufficient. Returns to `briefed` as a rework. | Chanakya review-feedback mode. |
 | `archived` | Terminal; cold-storage after quarterly cleanup. | Chanakya compact mode. |
+| `reopened` | Closed task brought back into the work queue with a recorded reason. Pre-brief — awaiting re-brief or re-archive. | Chanakya reopen mode. |
 
 ## Side states
 
@@ -47,6 +48,12 @@ user-verifying → verified         : user sign-off via review-feedback.
 user-verifying → rejected         : user flags insufficient.
 rejected       → briefed          : Chanakya re-briefs with `rework_of: <task-id>`.
 verified       → archived         : compact sweep moves to archive.
+verified       → reopened         : Chanakya reopen mode (`reopen_reason` REQUIRED).
+merged         → reopened         : Chanakya reopen mode — merged but issue surfaced before user-verifying.
+archived       → reopened         : Chanakya reopen mode — cold-storage task revived.
+cancelled      → reopened         : Chanakya reopen mode — previously-aborted task revived.
+reopened       → briefed          : Chanakya brief mode re-briefs; new brief inherits `reopen_chain`.
+reopened       → archived         : decided not to address; terminal.
 any            → cancelled        : user abort or explicit cancel.
 any            → blocked          : external blocker.
 blocked        → <prior state>    : when blocker resolves.
@@ -56,6 +63,8 @@ requeued       → dispatched       : automatic re-dispatch.
 ```
 
 **Bypass clause — `xs-diff` exemption.** `argus-reviewed` can be skipped for XS-size diffs under 20 lines (per `ROADMAP.md` token-budget-posture rules). The transition `self-reviewed → merged` is legal iff the brief declares `size: XS` and the diff stat reports `<20` lines. Emit `review_scoped` with `cap: xs_skip` when taken.
+
+**Reopen lifecycle.** Closed tasks (`verified | merged | archived | cancelled`) re-enter the work queue through `reopened`. The reopen transition REQUIRES `reopen_reason` (≤ 280 chars; conventional prefixes `qa-rejected:`, `design-rejected:`, `product-rejected:`, `regression:`, `incomplete:`). On entry, the task's prior `links.debrief` (if any) appends to `reopen_chain` so cross-cycle lineage survives. The next re-brief transitions `reopened → briefed`; the new brief carries the reopen reason and prior debrief reference verbatim, and Achilles's resulting debrief inherits `reopen_chain` so the chain accumulates monotonically. Schema fields `reopen_reason` and `reopen_chain` ship in `task@1.1.0` (see `_shared/schemas/task.md`); event payload defined under `task_reopened` in `_shared/contracts/events.md`.
 
 ## Required fields per transition event
 
@@ -96,6 +105,12 @@ stateDiagram-v2
   user_verifying --> rejected
   rejected --> briefed: rework
   verified --> archived
+  verified --> reopened: reopen_reason
+  merged --> reopened: reopen_reason
+  archived --> reopened: revive
+  cancelled --> reopened: revive
+  reopened --> briefed: re-brief
+  reopened --> archived: drop
   in_progress --> requeued: timeout
   self_reviewed --> requeued: crash
   requeued --> dispatched

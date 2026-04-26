@@ -49,6 +49,19 @@ The helper is idempotent — a re-brief no-ops if the section already exists. Us
 
 If `legacy_task_id` is empty (UUID-only task), skip — nothing to key the section on. Callers who want master-plan visibility must supply a legacy id.
 
+## Step 1B — Reopen-aware context (when task state == reopened)
+
+When Step 1 reports `state: reopened`, this is a re-brief. The brief MUST surface the reason and prior outcome verbatim so Achilles knows the work is round-2 and what went wrong the first time. Skip this step entirely when `state: proposed` (fresh task, normal flow).
+
+Pull two values from the task YAML loaded in Step 1:
+
+- `reopen_reason` — required when state is `reopened`; rendered verbatim under a `## Reopen reason` section in the brief body.
+- `reopen_chain[-1]` — the most recent prior debrief id. If present, read `plans/debriefs/<id>.yaml` (or, on legacy fallback, `plans/chanakya-inbox/processed/<legacy-id>-debrief.md`) and quote the prior `key_learnings` / `decisions` / `unresolved` blocks under a `## Prior debrief` section. If the debrief artifact is missing (rare; pre-2.6 task), record one `legacy_artifact_read` event with `domain: debriefs` and proceed with reason-only context.
+
+The brief author does not re-derive Figma context, codebase context, or scope from scratch — it inherits them from the prior brief at `links.brief` (if present) and notes the delta the reopen exposed. This keeps re-briefs cheap and makes the reopen reason the load-bearing change.
+
+Append `prior_debrief: <id>` to the brief frontmatter so downstream tooling (Argus, status mode, queries) can correlate the chain without re-reading the task.
+
 ## Step 2 — File overlap detection
 
 Check if the task's likely target files overlap with files listed in any `in-progress` task's brief. Post-migration surface: `scripts/query-plans.sh --kind=brief --state=dispatched` enumerates the active briefs; match the union of each brief's `writes:` + `reads:` arrays against the new task's expected targets. Legacy fallback scans the brief markdown under `plans/chanakya-tasks/`. On overlap warn the user:
@@ -148,6 +161,8 @@ transition_task_state "<parent-task-uuid>" briefed chanakya "brief minted"
 ```
 
 On re-brief (task already in `briefed`), `set_task_link` overwrites `links.brief` with the new brief-id and `transition_task_state briefed chanakya` is a same-state no-op — safe to call.
+
+On re-brief from `reopened` (after `/chanakya reopen <task-id>`), the same call transitions `reopened → briefed`. `transition_task_state` handles this transparently — no special path. The reopen lineage is already on the task (`reopen_reason`, `reopen_chain`); Step 1B is what carries it into the new brief body.
 
 ## Step 7A — Invalidate briefs snapshot
 

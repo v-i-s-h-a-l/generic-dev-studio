@@ -130,9 +130,13 @@ fi
 # equivalent guard, so a misclick or terminal-history retrieval re-runs a
 # completed task — fresh worktree, second debrief, in build / push-tf modes
 # a second TF push. Read task state from the YAML SSOT by legacy_task_id and
-# refuse when terminal. ACHILLES_REOPEN=1 is the explicit user override (the
-# brief / debrief shape it writes is captured in #252's reopen lifecycle work,
-# until then the override mints a follow-up debrief on the existing task).
+# refuse when terminal. ACHILLES_REOPEN=1 is the explicit user override —
+# legacy escape hatch that mints a follow-up debrief on the existing task
+# without recording reopen lineage. The formal path is `/chanakya reopen`
+# (#252), which transitions the task to `reopened`, stamps reopen_reason,
+# appends the prior debrief id to reopen_chain, and emits task_reopened so
+# the next brief carries the round-2 context. Prefer the formal path when
+# you need provenance; the env-var override remains for one-off recovery.
 # Tasks that exist only in legacy markdown have no rich state to read; the
 # guard skips silently in that case, preserving pre-2.6 behaviour.
 if [ -z "${ACHILLES_REOPEN:-}" ] && command -v yq >/dev/null 2>&1; then
@@ -150,9 +154,11 @@ if [ -z "${ACHILLES_REOPEN:-}" ] && command -v yq >/dev/null 2>&1; then
 error: task '$TASK_ID' is in terminal state '$task_state' — refusing to dispatch.
   A second dispatch on a completed task creates a duplicate worktree and a
   second debrief; in build / push-tf modes it can re-run a release action.
-  To reopen for a follow-up dispatch, set ACHILLES_REOPEN=1 (writes a
-  follow-up debrief on the existing task) or run \`/chanakya reopen $TASK_ID\`
-  for a formal state-machine reopen (#252).
+  Run \`/chanakya reopen $TASK_ID --reason="<text>"\` for a formal
+  state-machine reopen (records reason, appends prior debrief to
+  reopen_chain, emits task_reopened). Set ACHILLES_REOPEN=1 for the legacy
+  override that mints a follow-up debrief without lineage — prefer the
+  formal path when provenance matters.
 EOF
         exit 5 ;;
     esac
