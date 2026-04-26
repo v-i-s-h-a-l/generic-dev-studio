@@ -129,7 +129,7 @@ Then sit idle. Do not stage, commit, or push. Do not trigger Argus. Do not self-
 
 ## Integration with Chanakya
 
-Chanakya's debrief-ingest path (Commit G3 rewrite) reads both `mode: task` and `mode: direct-debrief` uniformly — same schema, different interpretation. Direct-debriefs do not mutate task state (there is no task_id) but they contribute to the knowledge layer, feed follow-up-task minting, and surface in `/chanakya status` under a "Recent direct-debriefs" banner (added in G3 status rewrite).
+Chanakya's debrief-ingest path reads both `mode: task` and `mode: direct-debrief` uniformly — same schema, different interpretation. Direct-debriefs do not mutate task state (there is no task_id) but they contribute to the knowledge layer, feed follow-up-task minting, and surface in `/chanakya status` under a "Recent direct-debriefs" banner.
 
 ## Agent-boot
 

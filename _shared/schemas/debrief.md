@@ -120,7 +120,7 @@ Invoked by `/achilles <task-id>` after merge. `task_id` + `brief_id` both set; `
 
 Invoked by `/achilles debrief` (new in 2.6) with no task binding. `task_id` and `brief_id` both null. `branch` may be partially null if the direct session did not merge. `argus_review.status: not-invoked` is the common case.
 
-Conversational invocation — the mode scans session transcript + working-tree diff, asks inline whether tests are needed, then emits this YAML. See `achilles/modes/debrief.md` (shipped in Commit G).
+Conversational invocation — the mode scans session transcript + working-tree diff, asks inline whether tests are needed, then emits this YAML. See `achilles/modes/debrief.md`.
 
 ## Ingest
 
@@ -154,4 +154,4 @@ The 141 processed debriefs in `chanakya-inbox/processed/` are **copied as-is** t
 - `state-machines/brief-lifecycle.md` — `brief: debriefed` is the trigger for debrief emission.
 - `schemas/task.md` / `schemas/brief.md` — parent artifacts.
 - `schemas/review.md` — the Argus verdict referenced by `argus_review.review_id`.
-- `achilles/modes/debrief.md` — the direct-debrief mode (ships in Commit G).
+- `achilles/modes/debrief.md` — the direct-debrief mode.
