@@ -4,18 +4,20 @@ description: YAML shape for Chanakya-authored Achilles briefs under plans/briefs
 type: reference
 ---
 
-# Brief Schema (`brief@3.1.0`)
+# Brief Schema (`brief@3.2.0`)
 
 Per-brief artifact written to `~/.dev-studio/<project>/plans/briefs/<brief-id>.yaml`. Replaces the markdown briefs that previously lived at `plans/chanakya-tasks/<task-id>-<type>.md`. One file per brief; a task may have many briefs across rework cycles (each with a distinct `id`, same `task_id`).
 
-Version 3.1.0 bumps from the 3.x object-envelope form introduced in Phase 2.5 — schema carrier is now YAML object rather than markdown with YAML preamble, and `reads` / `writes` / `acceptance` / `testability` are structured arrays rather than free-form markdown lists.
+Version 3.2.0 adds the `summary` field — a ≤500-token compact brief slice for cheap reads (status renders, dispatch tables, agent-boot under tight context budgets). Authoring discipline below. Additive over 3.1.0; readers on 3.0.0+ ignore unknown fields.
+
+Version 3.1.0 bumped from the 3.x object-envelope form introduced in Phase 2.5 — schema carrier is YAML object rather than markdown with YAML preamble, and `reads` / `writes` / `acceptance` / `testability` are structured arrays rather than free-form markdown lists.
 
 ## Shape
 
 ```yaml
 schema_version:
   name: brief
-  version: 3.1.0
+  version: 3.2.0
   min_reader: 3.0.0
   deprecated_at: null
 id: 0190f52a-6e11-7c01-8a77-11a05a9e2b4c        # UUIDv7
@@ -43,6 +45,10 @@ testability:
   - "Expose accessibility identifiers on each preset cell."
   - "ViewModel stays struct, no shared state."
 rework_of: null                                  # task-id if this brief is a rework
+summary: |                                       # ≤500 tokens; compact brief slice. Null allowed pre-backfill.
+  Adopt OS_LOG categories for the photo-editor pipeline.
+  Replaces ad-hoc print() at ~30 call sites; analytics route unchanged.
+  Don't change log formatting at call sites — only routing.
 body: |
   # Full markdown brief body.
   #
@@ -69,7 +75,18 @@ body: |
 | `acceptance` | array of strings | yes | Criteria Achilles must satisfy before debriefing. Empty array = no explicit criteria (rare; brief should enumerate). |
 | `testability` | array of strings | yes | Testability mandates — DI seams, accessibility IDs, SOLID checklists relevant to this brief. Empty array for test-type briefs where the brief *is* the test plan. |
 | `rework_of` | UUIDv7 \| null | yes | Task-id being reworked. Null for first-time briefs. |
+| `summary` | string \| null | yes | ≤500 tokens (~385 words; lint via `scripts/lint-brief.sh`). Compact brief slice for cheap reads. Null permitted only for briefs authored before 3.2.0; new briefs MUST populate. |
 | `body` | string (multiline markdown) | yes | Free-form narrative. Preserves the brief template prose. |
+
+### `summary` authoring discipline
+
+The summary is the **shortest fact-dense description that lets a reader decide whether to load the full brief**. Not a TLDR of acceptance criteria — those live in `acceptance`. Three lines max:
+
+1. What this task changes (one sentence).
+2. Why it matters / what triggers it (one sentence).
+3. Key constraint or non-obvious assumption (one sentence).
+
+Consumers (`/chanakya status`, `/chanakya dispatch-ready`, `/chanakya digest`, Achilles agent-boot under `BRIEF_SLICE=summary`) render the field directly — no further trimming. Lint refuses summaries longer than 500 tokens (estimated as `word_count × 1.3`).
 
 ## Lifecycle
 
@@ -108,6 +125,7 @@ Unparseable briefs (malformed YAML preamble, missing task-id) land in `archive/2
 
 | Version | Landed | Changes |
 |---|---|---|
+| 3.2.0 | 2026-04-27 | Added `summary` field — ≤500-token compact brief slice (#256). Additive; `min_reader: 3.0.0`. |
 | 3.1.0 | 2026-04-22 | Full YAML shape — `reads` / `writes` / `acceptance` / `testability` promoted to structured arrays; markdown body kept as multi-line string. `min_reader: 3.0.0`. |
 | 3.0.0 | 2026-04-15 (pre-2.6 envelope form) | Added `schema_version` object, `correlation_id`. |
 | 2.x | pre-2026-04-15 | Markdown with YAML preamble; legacy. |
