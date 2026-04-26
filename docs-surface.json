@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-26T22:22:40Z",
+  "generated_at": "2026-04-26T22:06:09Z",
   "schema": 1,
   "commands": [
     {"name": "chanakya-help", "source": "commands/chanakya-help.md", "description": "", "agent": null, "scope": "global"},
@@ -40,7 +40,7 @@
     {"name": "chanakya.reopen", "source": "chanakya/modes/reopen.md", "agent": "chanakya", "mode": "reopen", "description": "Reopen a closed task. Validates source state (verified | merged | archived | cancelled), records a reopen reason, appends prior debrief id to reopen_chain, transitions state to reopened, and emits task_reopened so the next brief carries the lineage."},
     {"name": "chanakya.review", "source": "chanakya/modes/review.md", "agent": "chanakya", "mode": "review", "description": "`/chanakya review` — user pastes updated PRD; Chanakya diffs against the master plan, marks affected tasks `needs-rework`, regenerates stale briefs, adds new task entries. Pre-dispatch inbox sweep moved to modes/inbox-sweep.md."},
     {"name": "chanakya.ship", "source": "chanakya/modes/ship.md", "agent": "chanakya", "mode": "ship", "description": "Brief + dispatch composite. Resolves targets, checks debt gates, briefs pending tasks, phases dispatch (fleet mode via work-stealing queue; single-session prints commands)."},
-    {"name": "chanakya.status", "source": "chanakya/modes/status.md", "agent": "chanakya", "mode": "status", "description": "Default mode. Renders master-plan summary, git state, blockers, push queue, test-flow round status, and release status. Sub-mode `--task <id>` renders a per-task relation graph (forward + inverse edges via scripts/query-relations.sh)."},
+    {"name": "chanakya.status", "source": "chanakya/modes/status.md", "agent": "chanakya", "mode": "status", "description": "Default mode. Renders master-plan summary, git state, blockers, push queue, test-flow round status, and release status."},
     {"name": "chanakya.sweep-debt", "source": "chanakya/modes/sweep-debt.md", "agent": "chanakya", "mode": "sweep-debt", "description": "Identify and dispatch all pending debt-reduction tasks (test sub-tasks + build checks) in one command."},
     {"name": "chanakya.sweep", "source": "chanakya/modes/sweep.md", "agent": "chanakya", "mode": "sweep", "description": "Inbox-sweep-only invocation. Runs Step 0 (defined in modes/inbox-sweep.md) and exits. No status table, no dashboard, no task list. For smoke-tests, validation passes, and pre-dispatch warm-ups where the full status view is overhead."},
     {"name": "chanakya.sync-slack", "source": "chanakya/modes/sync-slack.md", "agent": "chanakya", "mode": "sync-slack", "description": "Sync a Slack Lists bug tracker with the Chanakya master plan — Status, Dev Notes, Fixed in Build. Token + project bootstrap flags included."},

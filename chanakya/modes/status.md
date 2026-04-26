@@ -1,6 +1,6 @@
 ---
 name: Chanakya Status
-description: Default mode. Renders master-plan summary, git state, blockers, push queue, test-flow round status, and release status.
+description: Default mode. Renders master-plan summary, git state, blockers, push queue, test-flow round status, release status. Sub-mode `--task <id>` renders a per-task relation graph (forward + inverse edges).
 type: mode-pack
 schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
@@ -71,6 +71,33 @@ Judgment call. When `done` tasks exist awaiting verification, suggest both paths
 "T004 and T006 are `done` awaiting manual verification:
 - `/chanakya test-manifest` — per-task verification checklist (feeds into `review-feedback`)
 - `/chanakya test-flow` — single-sitting walkthrough ordered by user journey (N rounds exist, latest: round M)"
+
+## Per-task view (`/chanakya status --task <id>`)
+
+When the user passes `--task <id>` (UUIDv7 or legacy `T<nnn>`), short-circuit Steps 0–4 and render a single-task drill-down focused on relations + state. Use this to answer "what's blocked on T350?", "what shipped that caused T-A?", "is this a duplicate?".
+
+```bash
+scripts/query-relations.sh --task <id>
+```
+
+The script emits a YAML block of forward edges (`predecessors`, `parent`, `duplicate_of`, `similar_to`, `caused_by`, `reopen_chain`) and computed inverse edges (`blocks`, `children`, `duplicates`, `causes`). Each referenced id renders as `<legacy>:<uuid>` so the human read is legible. No inverse field is persisted — the inverse view is recomputed from forward edges across `plans/tasks/*.yaml`.
+
+Render to the user as two grouped sections — **Forward (what this task points at)** and **Inverse (what points at this task)**. Omit empty arrays from the rendered prose; an all-empty relation block is one line: "No relations recorded."
+
+Then read the target task's `plans/tasks/<task-id>.yaml` and surface:
+
+- `state` + most-recent `history[]` entry (who transitioned, when, reason).
+- `links.brief` / `links.debrief` / `links.reviews[-1]` for cross-reference.
+- `verification` block when populated.
+
+Suggest a next action when warranted:
+- `state == briefed` and `forward.predecessors` non-empty → check predecessor states; surface the unmet set.
+- `inverse.blocks` non-empty → "shipping this unblocks N tasks."
+- `inverse.causes` non-empty and `state ∈ {merged, verified}` → "this task is the recorded root cause for N follow-ups."
+- `forward.duplicate_of` non-null → "duplicate of T347 — see canonical task."
+- `forward.similar_to` non-empty → "suspected similar to T347 — knowledge-layer hint, not a hard dependency."
+
+This sub-mode does not load snapshots, render the task table, or fire debt banners — it's a per-task drill-down, not a fleet view.
 
 ## Cross-cutting
 

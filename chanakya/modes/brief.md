@@ -1,6 +1,6 @@
 ---
 name: Chanakya Brief
-description: Brief Generation mode and Brief-All composite. Writes self-contained Achilles briefs with Figma context, codebase context, type-aware structure. Brief-All iterates brief generation across every pending task in priority order.
+description: Brief Generation + Brief-All composite. Writes self-contained Achilles briefs with Figma + codebase context. Runs a similarity probe before authoring (populates `similar_to`, offers duplicate-fold).
 type: mode-pack
 schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
@@ -61,6 +61,29 @@ Pull two values from the task YAML loaded in Step 1:
 The brief author does not re-derive Figma context, codebase context, or scope from scratch — it inherits them from the prior brief at `links.brief` (if present) and notes the delta the reopen exposed. This keeps re-briefs cheap and makes the reopen reason the load-bearing change.
 
 Append `prior_debrief: <id>` to the brief frontmatter so downstream tooling (Argus, status mode, queries) can correlate the chain without re-reading the task.
+
+## Step 1C — Similarity probe (populates `similar_to`)
+
+Before authoring the brief, run a duplicate-fold probe against open tasks. This catches "we already briefed something close to this" — saves the worker from doing redundant work and gives the user a chance to fold instead of fork.
+
+```bash
+scripts/similarity-probe.sh --title "<task title>" \
+  --touchpoints "<comma-joined affinity.touchpoints>" \
+  --exclude "<this-task-id>"
+```
+
+Returns up to 5 ranked matches: `<score>\t<legacy>\t<uuid>\t<state>\t<title>`. Below the 0.20 threshold the script emits nothing — proceed to Step 2 silently.
+
+When matches return, surface a soft hint *before* authoring:
+
+> "T347 (`Add filter preset row to photo editor`, state: briefed, score 0.62) looks similar. Treat as:
+> - **(d)uplicate** — confirmed; mark this task `duplicate_of: T347`, transition to `cancelled`, no brief authored.
+> - **(s)imilar** — knowledge-layer hint; populate `similar_to: [T347]` on the task, then continue to Step 2.
+> - **(n)ew** — distinct work; continue to Step 2 with no edge recorded."
+
+`similar_to` is *suspected*, not blocking — never use it to gate dispatch. `duplicate_of` is *confirmed* and requires `state ∈ {cancelled, archived}` per `_shared/schemas/task.md`. When the user picks `(d)uplicate`, transition state via `lib-ledger` and emit the corresponding `task_state_changed` event; do not author a brief.
+
+When the user picks `(s)imilar`, write the `similar_to` edge to `plans/tasks/<task-id>.yaml` before continuing — the brief authored in Step 6 will reference the prior task in its "Prior context" section automatically.
 
 ## Step 2 — File overlap detection
 
