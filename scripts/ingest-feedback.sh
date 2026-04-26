@@ -21,6 +21,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
 
+# --quiet: silence all output. Used by the SessionStart hook so feedback-inbox
+# state never pulls the active agent's attention (#258). Real ingestion failures
+# leave the record in the inbox — `/studio analyze` surfaces them on next run.
+for arg in "$@"; do
+  case "$arg" in
+    --quiet) exec >/dev/null 2>&1 ;;
+  esac
+done
+
 # Cross-project contamination guard: only generic-dev-studio ingests.
 PROJECT=$(resolve_project 2>/dev/null) || exit 0
 [ "$PROJECT" = "generic-dev-studio" ] || exit 0
