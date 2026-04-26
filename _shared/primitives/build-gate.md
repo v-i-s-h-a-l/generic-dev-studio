@@ -1,7 +1,8 @@
 ---
-name: Build / Test Gate
+name: Build and Test Gate
 description: Single-source-of-truth rule for build- and test-toolchain entry. All such calls in agent code route through the gate scripts (task-build-gate, task-test-gate, swift-test-gate).
 type: reference
+schema_version: 1
 ---
 
 # Build / test gate (toolchain entry rule)
