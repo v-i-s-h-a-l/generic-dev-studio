@@ -11,8 +11,6 @@ reads:
   - plans/tasks/*.yaml                             # post-migration per-task artifacts
   - plans/rounds/*.yaml                            # post-migration round artifacts
   - plans/releases/*.yaml                          # post-migration release artifacts
-  - plans/chanakya-master.md                       # legacy fallback until Commit H
-  - plans/user-testing-rounds/*.md                 # legacy fallback until Commit H
   - events/<date>.jsonl                            # canonical event log
   - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
   - .runtime/state/push-queue.jsonl                # push queue

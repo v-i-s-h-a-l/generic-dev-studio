@@ -159,12 +159,11 @@ The linter loads the matrix from this primitive (parsed at lint time), not from 
 
 ## Drift findings — current state (lint output, 2026-04-27)
 
-`scripts/lint-comms-boundary.sh` against `_shared/schemas/capability-manifest.json`: **0 errors, 9 warnings** — all of which are expected:
+`scripts/lint-comms-boundary.sh` against `_shared/schemas/capability-manifest.json`: **0 errors, 0 warnings** — the B4 master-plan dual-write fleet was promoted to block under #245 A.5 (legacy markdown writes retired; mode-pack `writes:` declarations stripped of `plans/chanakya-master.md` and `plans/chanakya-tasks/*.md`).
 
-1. **B4 master-plan dual-writes (warn, transitional).** Nine modes (`achilles/task` + 8 Chanakya modes) declare writes against `plans/chanakya-master.md` for the Phase 2.6 dual-write window. Each carries `# legacy ... until Commit H` annotations. The lint warns today and **promotes to block once #245 (Commit H) flips `DUAL_WRITE_MODE=yaml-only` as the default**.
-2. **B1/B2/B3 clean.** Every create-shaped write maps to the correct authorial writer; every back-ref / state-transition is performed by an enumerated co-writer.
-3. **B5 pass-through purity clean.** `argus/spec-compliance` writes only `events/`; `chanakya/status` is read-only against task / release / review artifacts.
-4. **B6 schema-ref clean.** Every create-shaped declaration carries a `schema:` annotation.
+1. **B1/B2/B3 clean.** Every create-shaped write maps to the correct authorial writer; every back-ref / state-transition is performed by an enumerated co-writer.
+2. **B5 pass-through purity clean.** `argus/spec-compliance` writes only `events/`; `chanakya/status` is read-only against task / release / review artifacts.
+3. **B6 schema-ref clean.** Every create-shaped declaration carries a `schema:` annotation.
 
 Synthetic violations are exercised by `tests/lint-comms-boundary/run.sh` — a hand-crafted manifest that injects `B_FORBIDDEN_CREATE` and `B_PASS_THROUGH_VIOLATION` cases and asserts the linter catches each.
 

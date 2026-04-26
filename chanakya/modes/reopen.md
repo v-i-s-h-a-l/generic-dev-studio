@@ -30,7 +30,7 @@ State machine: `verified | merged | archived | cancelled → reopened → briefe
 3. **Validate the reason.** `--reason="<text>"` is required, ≤ 280 chars. A free-text reason without a conventional prefix is accepted; the brief mode will surface it verbatim, so callers benefit from prefixing for downstream filtering. Exit 4 on missing or oversize reason.
 
 4. **Apply the transition.** Invoke `scripts/task-reopen.sh <task-id> --reason="<text>"`. The script:
-   - Calls `transition_task_state <uuid> reopened chanakya "<reason>"` from `lib-ledger.sh` — YAML state flip, `updated_at` bump, `history` append, paired legacy `chanakya-master.md` status flip (`reopened → pending` per `_state_to_legacy_status`), and `task_state_changed` event emission. Dual-write contract applies; partial failure exits 3 + emits `dual_write_partial`.
+   - Calls `transition_task_state <uuid> reopened chanakya "<reason>"` from `lib-ledger.sh` — YAML state flip, `updated_at` bump, `history` append, and `task_state_changed` event emission.
    - Stamps `reopen_reason` on the task YAML.
    - Appends `links.debrief` (if present) to `reopen_chain`, deduplicated via `unique_by(.)`.
    - Emits `task_reopened` with `{prior_state, reason, prior_debrief_id, chain_depth}` per `_shared/contracts/events.md`.

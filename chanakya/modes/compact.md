@@ -12,32 +12,31 @@ reads:
   - plans/debriefs/*.yaml                          # post-migration debrief artifacts for key-learnings rollup
   - plans/feedback/*.yaml                          # feedback archive-eligibility pass
   - plans/rounds/*.yaml                            # round archival
-  - plans/chanakya-master.md                       # legacy master plan (slim post-compact)
-  - plans/chanakya-archive.md                      # legacy archive
-  - plans/chanakya-changelog.md                    # legacy changelog
-  - plans/chanakya-inbox/processed/<task-id>-debrief.md  # legacy debrief source until Commit H
-  - feedback/active.md                             # legacy active-list feed
-  - feedback/archive/**/*.md                       # legacy archive
+  - plans/master-plan-preamble.md                  # editorial source for Dashboard/Module Index/Blocked sections (rendered by scripts/render-master-plan.sh)
+  - plans/chanakya-archive.md                      # legacy archive (kept; trimmed in place)
+  - plans/chanakya-changelog.md                    # legacy changelog (kept; trimmed in place)
+  - feedback/active.md                             # F-id active-list feed
+  - feedback/archive/**/*.md                       # F-id archive
   - events/<date>.jsonl                            # budget-report + cleanup data via scripts/read-events.sh
   - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
 writes:
   - plans/tasks/<task-id>.yaml                     # state transitions to archived (per _shared/state-machines/task-lifecycle.md)
   - plans/feedback/<feedback-id>.yaml              # state transitions to archived (per _shared/state-machines/feedback-lifecycle.md)
   - plans/rounds/<round-id>.yaml                   # state transitions to archived
-  - archive/2026-pre-2.6/<task-id>.yaml            # post-migration archival sink (one file per artifact kind)
+  - plans/master-plan-preamble.md                  # Dashboard/Module Index/Blocked regen (consumed by render-master-plan.sh)
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
-  - plans/chanakya-archive.md                      # legacy archive append
-  - plans/chanakya-changelog.md                    # legacy changelog trim
-  - feedback/active.md                             # legacy prune
-  - feedback/archive/build-<N>.md                  # legacy archive append
+  - plans/chanakya-archive.md                      # archive append
+  - plans/chanakya-changelog.md                    # changelog trim
+  - feedback/active.md                             # F-id prune
+  - feedback/archive/build-<N>.md                  # F-id archive append
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
 # Mode: Compact (`/chanakya compact [--dry-run] [--sweep-artifacts] [--auto-compact]`)
 
-Archive verified tasks, regenerate the dashboard and module index, and trim the master plan to actionable items only. Keeps the plan under ~500 lines while preserving full history in the archive.
+Archive verified tasks and regenerate the editorial preamble (Dashboard, Module Index, Blocked-on-External-Input). `chanakya-master.md` is a Shape B projection rendered by `scripts/render-master-plan.sh` from `plans/master-plan-preamble.md` + `plans/build-debt.yaml` + `plans/index.yaml` + `plans/tasks/*.yaml` + `plans/releases/*.yaml`; compact updates the preamble and lets the projector run.
 
-Snapshots: `snapshots/briefs.json` is consulted for the archive-eligibility pass (5-min freshness; stale or null → full master-plan parse). This mode is a producer for the briefs snapshot on completion — callers should run `scripts/chanakya-snap.sh briefs` after compact finishes.
+Snapshots: `snapshots/briefs.json` is consulted for the archive-eligibility pass (5-min freshness; stale or null → `scripts/query-plans.sh --kind=task`). This mode is a producer for the briefs snapshot on completion — callers should run `scripts/chanakya-snap.sh briefs` after compact finishes.
 
 `--sweep-artifacts` (default on) also runs the artifact sweep: rotate event logs, prune old archives, clean stale markers, remove orphaned xcresult bundles and DerivedData, and clean gitignored Playwright MCP telemetry (`.playwright-mcp/`) via `git clean -fdX` (tracked files never touched). Pass `--no-sweep-artifacts` to skip. Full spec: `~/.claude/skills/_shared/rules/cleanup-policy.md`.
 
@@ -46,14 +45,15 @@ Snapshots: `snapshots/briefs.json` is consulted for the archive-eligibility pass
 ## File Structure
 
 ```
-chanakya-master.md          ← slim: Dashboard + debt headers + active tasks only
+master-plan-preamble.md     ← editorial source: Dashboard + Module Index + Blocked
+chanakya-master.md          ← rendered projection (output of render-master-plan.sh)
 chanakya-archive.md         ← full history: verified/done task blocks
 chanakya-changelog.md       ← session changelog entries older than 7 days
 ```
 
 ## Steps
 
-1. **Read master plan.** Parse all tasks with their statuses.
+1. **Enumerate active tasks.** `scripts/query-plans.sh --kind=task` for state.
 
 2. **Identify archivable tasks.** A task is archivable if:
    - Status is `verified`, OR
@@ -65,13 +65,13 @@ chanakya-changelog.md       ← session changelog entries older than 7 days
    - `pending`, `briefed`, `in-progress`, `needs-review` tasks
    - Tasks with `Source:` pointing to a non-archived parent (keep them together)
 
-3. **Transition tasks to `archived` and write archival sink.** Post-migration, for each archivable task: transition `plans/tasks/<task-id>.yaml` state `verified → archived` per `_shared/state-machines/task-lifecycle.md`, append the `history:` entry, bump `updated_at`, and emit `task_state_changed` via `scripts/write-event.sh`. The task YAML stays in place (archived is a terminal state in the live ledger, not a separate directory — per-artifact CHANGELOG in `_shared/schemas/task.md` and the relational index handle querying). Archive-as-archive policy lives in `_shared/rules/cleanup-policy.md` — for 2.6, keep artifacts in `plans/tasks/` and let the `state` field drive archival visibility.
+3. **Transition tasks to `archived`.** For each archivable task: transition `plans/tasks/<task-id>.yaml` state `verified → archived` via `lib-ledger.transition_task_state` (appends `history:`, bumps `updated_at`, emits `task_state_changed`). The task YAML stays in place — archived is a terminal state in the live ledger, not a separate directory; the relational index drives archival visibility. Archive-as-archive policy: `_shared/rules/cleanup-policy.md`.
 
-   **Phase 2.6 transition note:** continue to move the legacy task block from `chanakya-master.md` to `chanakya-archive.md`, trimming Notes to max 5 lines (preserve first 3 + last 2 if longer). Also move any manual-verification child tasks (type `direct (user-run)`) whose parent is being archived. Cutover removes the legacy master/archive writes at Commit H.
+   For the rendered projection, the archive section of `chanakya-archive.md` is appended in place during this step (legacy editorial surface — kept until a YAML-shaped archive viewer ships). Trim Notes to max 5 lines (preserve first 3 + last 2 if longer). Also move any manual-verification child tasks (type `direct (user-run)`) whose parent is being archived.
 
 4. **Convert remaining done tasks to compact rows.** Tasks that are `done` but NOT archived (awaiting verification) get their full block preserved. But XS/direct tasks that have ≤3 lines of Notes can be converted to a compact table row format in a `## Done (Awaiting Verification)` table.
 
-5. **Regenerate Dashboard.** Write/update the `## Dashboard` block at the top of master plan:
+5. **Regenerate Dashboard.** Write/update the `## Dashboard` block in `plans/master-plan-preamble.md` (rendered by `scripts/render-master-plan.sh` into `chanakya-master.md`):
    ```markdown
    ## Dashboard
    - Active: N (X briefed, Y pending, Z in-progress)
@@ -84,7 +84,7 @@ chanakya-changelog.md       ← session changelog entries older than 7 days
    - Stale: <tasks pending/briefed >72h with no activity>
    ```
 
-6. **Regenerate Module Index.** Write/update `## Module Index`:
+6. **Regenerate Module Index.** Write/update `## Module Index` in the preamble:
    ```markdown
    ## Module Index
    - **Filter:** T023, T081, T169 (3 active) | 12 archived
@@ -102,7 +102,7 @@ chanakya-changelog.md       ← session changelog entries older than 7 days
    | T130 | Which blend mode? | daksh@ | 2026-04-16 |
    ```
 
-8. **Trim changelog.** Move entries older than 7 days to `chanakya-changelog.md`. Keep only recent entries in master.
+8. **Trim changelog.** Move entries older than 7 days to `chanakya-changelog.md`. Keep only recent entries in the preamble.
 
 9. **Regenerate Parallelization Map.** Only include active tasks (pending/briefed/in-progress). Remove completed tasks from the map.
 
@@ -114,7 +114,7 @@ chanakya-changelog.md       ← session changelog entries older than 7 days
 
 11. **Report:**
     ```
-    Compacted master plan:
+    Compacted plan state:
     - Archived: 65 tasks (45 verified, 20 infra/audit)
     - Active: 15 tasks
     - Done awaiting verification: 12 tasks
@@ -140,21 +140,19 @@ Print cron setup instructions for nightly 03:00 local compact. Do not configure 
 Compact runs automatically when:
 - `review-feedback` marks ≥3 tasks `verified` in one pass
 - `test-flow --promote` marks tasks verified
-- Master plan exceeds 1500 lines during an inbox sweep
+- The rendered `chanakya-master.md` exceeds 1500 lines during an inbox sweep
 
 On auto-trigger, run compact immediately (non-destructive — `--dry-run` is available as a preview). Report what was archived.
 
-## Master Plan Format (after compaction)
+## Plan format (after compaction)
 
-Post-compaction, the master plan gains a `## Dashboard`, `## Module Index`, and `## Blocked on External Input` block at the top, active tasks only in `## Active Tasks`, done-awaiting-verification in `## Done (Awaiting Verification)` (full blocks for M/L, compact table rows for XS/S), and a trimmed `## Changelog` (last 7 days only — older entries in `chanakya-changelog.md`).
-
-Full schema: `~/.claude/skills/_shared/schemas/master-plan.md`.
+Post-compaction, the preamble carries `## Dashboard`, `## Module Index`, and `## Blocked on External Input`. The rendered `chanakya-master.md` then carries those plus `## Active Tasks`, `## Done (Awaiting Verification)` (full blocks for M/L, compact table rows for XS/S), and a trimmed `## Changelog` (last 7 days; older entries spill to `chanakya-changelog.md`).
 
 ## Post-Feature Wrap-Up
 
 When ALL tasks for a feature are `verified` (check after every inbox sweep and after every `review-feedback`):
 
-1. Read all debriefs for this feature's tasks. Post-migration: resolve each task's `links.debrief` to `plans/debriefs/<debrief-id>.yaml` and read the structured `key_learnings` / `decisions` / `follow_ups` fields directly. Legacy fallback: walk `chanakya-inbox/processed/` for `<task-id>-debrief.md` files during the Phase 2.6 transition.
+1. Read all debriefs for this feature's tasks: resolve each task's `links.debrief` to `plans/debriefs/<debrief-id>.yaml` and read the structured `key_learnings` / `decisions` / `follow_ups` fields directly.
 2. Compile **Key Learnings** from all debriefs into a summary
 3. Write a feature retrospective to project memory:
    - Path: `~/.claude/projects/-Users-vishalsingh-Documents-Turnip-gg-turnip-ios/memory/project_<feature_slug>.md`

@@ -12,15 +12,12 @@ reads:
   - plans/tasks/<task-id>.yaml                     # post-migration per-task artifacts (schema: _shared/schemas/task.md)
   - plans/briefs/<brief-id>.yaml                   # post-migration brief artifacts (schema: _shared/schemas/brief.md)
   - plans/reviews/<review-id>.yaml                 # argus verdict resolution (schema: _shared/schemas/review.md)
-  - plans/chanakya-master.md                       # legacy fallback until Commit H
-  - plans/chanakya-tasks/<task-id>-*.md            # legacy brief fallback until Commit H
   - events/<date>.jsonl                            # via scripts/read-events.sh
 writes:
-  - plans/debriefs/<debrief-id>.yaml               # post-migration canonical (schema: _shared/schemas/debrief.md, debrief@2.0.1, mode: task)
+  - plans/debriefs/<debrief-id>.yaml               # canonical (schema: _shared/schemas/debrief.md, debrief@2.0.1, mode: task)
   - plans/tasks/<task-id>.yaml                     # back-ref update: links.debrief + state transitions per _shared/state-machines/task-lifecycle.md
   - plans/briefs/<brief-id>.yaml                   # brief state transition dispatched → debriefed per _shared/state-machines/brief-lifecycle.md
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
-  - plans/chanakya-inbox/<task-id>-debrief.md      # legacy debrief markdown retained during Phase 2.6 transition
   - plans/chanakya-inbox/<task-id>-tests.md        # test-case artifact (read-write surface for test-manifest)
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
@@ -79,7 +76,7 @@ Exit codes: `0` — dry-run ran to completion; `2` — dry-run surfaced a blocke
 eval "$(scripts/task-load-spec.sh <task-id-or-empty>)"
 ```
 
-Sets `TASK_MODE` (`brief` | `direct`), `BRIEF_PATH`, `BRIEF_UUID`, `SIZE`, `TYPE`, `ACCEPTANCE_JSON`. Resolves the post-migration YAML brief first; falls back to legacy `plans/chanakya-tasks/<task-id>-*.md` and emits `legacy_artifact_read` on the fallback. Exits 2 with a helpful hint when a non-empty task-id has no brief — surface the message to the user and stop. Exits 5 when the task is in a terminal state (`merged` / `user-verifying` / `verified` / `archived`) — re-dispatch is refused (#263) to prevent duplicate worktrees, second debriefs, and re-runs of release actions in build / push-tf modes. The user may override with `ACHILLES_REOPEN=1` (writes a follow-up debrief on the existing task) or escalate to `/chanakya reopen <task-id>` once the formal reopen lifecycle (#252) lands.
+Sets `TASK_MODE` (`brief` | `direct`), `BRIEF_PATH`, `BRIEF_UUID`, `SIZE`, `TYPE`, `ACCEPTANCE_JSON`. Resolves the YAML brief at `plans/briefs/<brief-id>.yaml`. Exits 2 with a helpful hint when a non-empty task-id has no brief — surface the message to the user and stop. Exits 5 when the task is in a terminal state (`merged` / `user-verifying` / `verified` / `archived`) — re-dispatch is refused (#263) to prevent duplicate worktrees, second debriefs, and re-runs of release actions in build / push-tf modes. The user may override with `ACHILLES_REOPEN=1` (writes a follow-up debrief on the existing task) or escalate to `/chanakya reopen <task-id>` once the formal reopen lifecycle (#252) lands.
 
 Read the brief body at `$BRIEF_PATH` for the narrative context. If the brief lists `## Required Skills`, invocation is MANDATORY — load them before Step 4. Additional skills are routed at Step 4.0 via `_shared/primitives/design-time-skill-routing.md`. If a listed skill is unavailable in the current host, surface via `report_state: needs_context` rather than proceeding without it.
 
@@ -350,13 +347,13 @@ On conflict: branch stays alive, DerivedData kept, surface to user. **Do not for
 DEBRIEF_UUID=$(scripts/task-emit-debrief.sh "$TASK_UUID" "$BRIEF_UUID" merged "$FIELDS_JSON")
 ```
 
-Mints a UUIDv7, writes `plans/debriefs/<debrief-id>.yaml` (schema: `_shared/schemas/debrief.md`, `debrief@2.0.1`), sets `tasks/<uuid>.yaml` `links.debrief`, flips the task to the terminal state (3rd arg: `self-reviewed` / `merged` / `blocked` / `cancelled`), flips the paired brief to `debriefed`, emits `debrief_emitted` + `brief_completed`. Legacy markdown (`plans/chanakya-inbox/<task-id>-debrief.md`) + master-plan Status mutation happen when `legacy_task_id` is in `$FIELDS_JSON`.
+Mints a UUIDv7, writes `plans/debriefs/<debrief-id>.yaml` (schema: `_shared/schemas/debrief.md`, `debrief@2.0.1`), sets `tasks/<uuid>.yaml` `links.debrief`, flips the task to the terminal state (3rd arg: `self-reviewed` / `merged` / `blocked` / `cancelled`), flips the paired brief to `debriefed`, emits `debrief_emitted` + `brief_completed`.
 
 `$FIELDS_JSON` is a JSON object whose keys become debrief YAML fields — `branch`, `commits`, `diff_summary`, `decisions`, `tests`, `testability`, `build_gate`, `build_debt_override`, `debt`, `performance`, `key_learnings`, `known_issues`, `follow_ups`, `open_questions`, `argus_review`, plus `legacy_task_id` and `body` for the legacy dual-write. `argus_review.status` is Step 8.5's verdict — `approved` / `flagged` / `blocked`; `not-invoked` is only valid on exempted build-mode / test-suite-mode paths, which don't land here. If Argus returned `flagged`, include a `## Argus Review` block in the `body` field referencing the review file + finding count.
 
 **Debrief is load-bearing for worker-mode detection.** The worker wrapper (`scripts/achilles-worker.sh`) treats a `claude -p` exit with `rc=0` and no debrief as a silent-stuck state and routes the task to `rescue/<task-id>-stuck.md`. Any meaningful outcome — completion, blocked, failed — must write a debrief before exit. Clarifying questions exit one-shot subagents cleanly and trip this detector; prefer the autonomous-default pattern instead of asking.
 
-**Phase 2.6 transition note:** `done` ≠ user-verified — Chanakya promotes to `verified` after test-manifest feedback. Cutover removes the legacy debrief + master-plan writes at Commit H.
+`done` ≠ user-verified — Chanakya promotes to `verified` after test-manifest feedback.
 
 Print a short message to the user:
 

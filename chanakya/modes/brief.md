@@ -10,14 +10,11 @@ reads:
   - plans/index.yaml                               # post-migration task index
   - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
   - plans/briefs/*.yaml                            # post-migration brief artifacts for in-progress overlap checks
-  - plans/chanakya-master.md                       # legacy fallback until Commit H
-  - plans/chanakya-tasks/*.md                      # legacy brief read surface until Commit H
   - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
 writes:
-  - plans/briefs/<brief-id>.yaml                   # post-migration canonical (schema: _shared/schemas/brief.md, brief@3.1.0)
+  - plans/briefs/<brief-id>.yaml                   # canonical (schema: _shared/schemas/brief.md, brief@3.1.0)
   - plans/tasks/<task-id>.yaml                     # back-ref update: links.brief + state bump
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
-  - plans/chanakya-tasks/<task-id>-<slug>.md       # legacy markdown brief retained during Phase 2.6 transition (cutover removes at Commit H)
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
@@ -25,27 +22,12 @@ writes:
 
 This is the most critical mode. The brief must be **completely self-contained** — a worker reads ONLY this file.
 
-Snapshots: `snapshots/briefs.json` (tolerates 5-minute freshness — regenerate via `scripts/chanakya-snap.sh briefs` if older; fallback is a direct read of `chanakya-master.md`). `snapshots/debt.json` is checked on entry to refuse under block state (fallback: parse master-plan debt block directly).
+Snapshots: `snapshots/briefs.json` (tolerates 5-minute freshness — regenerate via `scripts/chanakya-snap.sh briefs` if older; fallback is `scripts/query-plans.sh --kind=task,brief`). `snapshots/debt.json` is checked on entry to refuse under block state (fallback: `scripts/query-plans.sh --kind=debt`).
 
 ## Step 1 — Read task
 
 Post-migration surface: resolve the task via `scripts/query-plans.sh --kind=task --id=<task-id>` against `plans/tasks/<task-id>.yaml` (schema: `_shared/schemas/task.md`, `task@1.0.0`). If the task is `direct` type, note this in the output ("T003 is a direct task — briefing anyway") and continue.
 
-
-## Step 1A — Master-plan registration gate
-
-Before anything else, ensure the task has a `### <legacy-task-id>` section in `chanakya-master.md`. Tasks briefed directly (without running `/chanakya intake`) otherwise dispatch and complete invisibly — when Achilles drops a debrief, the sweep has no master-plan row to update, the debrief flips `emitted → ingested`, and on every subsequent sweep the `state: emitted` filter skips it permanently. This is the "silent double-miss" the 2026-04-23 bug reports documented.
-
-Resolve the task's `legacy_task_id` (from Step 1's task YAML). If `grep -q "^### $legacy_id " chanakya-master.md` returns non-zero, write a stub row immediately:
-
-```bash
-scripts/lib-ledger.sh  # sourced helper
-legacy_master_plan_append_row "$legacy_id" "$title" "$priority" "$type" "brief:stub" "briefed"
-```
-
-The helper is idempotent — a re-brief no-ops if the section already exists. Use `brief:stub` as the `Source:` field so the row is recognizable as brief-time provenance rather than intake-time.
-
-If `legacy_task_id` is empty (UUID-only task), skip — nothing to key the section on. Callers who want master-plan visibility must supply a legacy id.
 
 ## Step 1B — Reopen-aware context (when task state == reopened)
 
@@ -54,7 +36,7 @@ When Step 1 reports `state: reopened`, this is a re-brief. The brief MUST surfac
 Pull two values from the task YAML loaded in Step 1:
 
 - `reopen_reason` — required when state is `reopened`; rendered verbatim under a `## Reopen reason` section in the brief body.
-- `reopen_chain[-1]` — the most recent prior debrief id. If present, read `plans/debriefs/<id>.yaml` (or, on legacy fallback, `plans/chanakya-inbox/processed/<legacy-id>-debrief.md`) and quote the prior `key_learnings` / `decisions` / `unresolved` blocks under a `## Prior debrief` section. If the debrief artifact is missing (rare; pre-2.6 task), record one `legacy_artifact_read` event with `domain: debriefs` and proceed with reason-only context.
+- `reopen_chain[-1]` — the most recent prior debrief id. If present, read `plans/debriefs/<id>.yaml` and quote the prior `key_learnings` / `decisions` / `unresolved` blocks under a `## Prior debrief` section. If the debrief artifact is missing (rare; pre-2.6 task may live under `plans/.legacy-archive/` for recovery), proceed with reason-only context.
 
 The brief author does not re-derive Figma context, codebase context, or scope from scratch — it inherits them from the prior brief at `links.brief` (if present) and notes the delta the reopen exposed. This keeps re-briefs cheap and makes the reopen reason the load-bearing change.
 
@@ -85,7 +67,7 @@ When the user picks `(s)imilar`, write the `similar_to` edge to `plans/tasks/<ta
 
 ## Step 2 — File overlap detection
 
-Check if the task's likely target files overlap with files listed in any `in-progress` task's brief. Post-migration surface: `scripts/query-plans.sh --kind=brief --state=dispatched` enumerates the active briefs; match the union of each brief's `writes:` + `reads:` arrays against the new task's expected targets. Legacy fallback scans the brief markdown under `plans/chanakya-tasks/`. On overlap warn the user:
+Check if the task's likely target files overlap with files listed in any `in-progress` task's brief. `scripts/query-plans.sh --kind=brief --state=dispatched` enumerates the active briefs; match the union of each brief's `writes:` + `reads:` arrays against the new task's expected targets. On overlap warn the user:
 
 "T003 will touch PhotoEditorContainerView.swift, which T001 is currently modifying. Recommend waiting for T001 to finish, or coordinating on separate sections."
 
@@ -116,7 +98,7 @@ Use Glob and Grep to find:
 
 ## Step 6 — Write the brief (type-aware)
 
-Render the type-specific narrative from the template corresponding to the task type (see §6A-D below) into a tempfile, then call `write_brief_artifact` — it dual-writes the YAML canonical form (schema `_shared/schemas/brief.md`, `brief@3.1.0`) and the legacy markdown at `plans/chanakya-tasks/<task-id>-<slug>.md` in one shot, emits `brief_state_changed null → draft`, and regenerates `plans/index.yaml`.
+Render the type-specific narrative from the template corresponding to the task type (see §6A-D below) into a tempfile, then call `write_brief_artifact` — it writes the YAML canonical form (schema `_shared/schemas/brief.md`, `brief@3.1.0`), emits `brief_state_changed null → draft`, and regenerates `plans/index.yaml`.
 
 **Required header fields** — every brief MUST include these three fields in its Priority & Complexity / Recommendations block (per `_shared/rules/brief-model-effort.md`):
 
@@ -149,7 +131,7 @@ write_brief_artifact "$BRIEF_UUID" "<parent-task-uuid>" "<type>" "<size>" \
 transition_brief_state "$BRIEF_UUID" ready chanakya "authored by $USER"
 ```
 
-The helper special-cases `body_file=` (and `body=` for inline) — the YAML emits `body: |` block-scalar and the legacy markdown gets the same content verbatim. Do not hand-write the YAML via the Write tool; the helper owns schema + dual-write + event + index-rebuild as a unit. If you're tempted to bypass it, REVIEW.md R9 (dual-write AND-not-OR) is what you're violating.
+The helper special-cases `body_file=` (and `body=` for inline) — the YAML emits `body: |` block-scalar. Do not hand-write the YAML via the Write tool; the helper owns schema + write + event + index-rebuild as a unit.
 
 State transitions follow `_shared/state-machines/brief-lifecycle.md`: `write_brief_artifact` leaves the brief in `draft`; `transition_brief_state … ready` marks it claimable. Dispatch (`ready → dispatched`) happens when Achilles claims.
 
@@ -173,7 +155,7 @@ Render the body from the template at `~/.claude/skills/_shared/contracts/brief-f
 
 ## Step 7 — Update task back-reference and state
 
-Use `set_task_link` and `transition_task_state` from lib-ledger — both dual-write (YAML + legacy master-plan), emit the right event, and rebuild the index. Do not hand-edit the task YAML via `yq -i` or Write.
+Use `set_task_link` and `transition_task_state` from lib-ledger — both write the YAML, emit the right event, and rebuild the index. Do not hand-edit the task YAML via `yq -i` or Write.
 
 ```bash
 # Still in the Bash tool session from Step 6 (helpers already sourced).
@@ -187,7 +169,7 @@ On re-brief from `reopened` (after `/chanakya reopen <task-id>`), the same call 
 
 ## Step 7A — Invalidate briefs snapshot
 
-After the master-plan write, fire the briefs snapshot producer in the background so the next status read is fresh inside the 60-second window:
+After the brief write, fire the briefs snapshot producer in the background so the next status read is fresh inside the 60-second window:
 
 ```bash
 scripts/chanakya-snap.sh briefs &
@@ -197,17 +179,17 @@ Don't wait for it. The producer is ~50ms and idempotent; worst case the next sta
 
 ## Step 8 — Suggest next action
 
-"T001 brief ready at chanakya-tasks/T001-export-flow.md. Next: T002 is independent and P1 — brief it with `/chanakya brief T002` or launch a worker with `/achilles T001`."
+"T001 brief ready (`plans/briefs/<brief-id>.yaml`). Next: T002 is independent and P1 — brief it with `/chanakya brief T002` or launch a worker with `/achilles T001`."
 
 ---
 
 # Composite: Brief-All (`/chanakya brief-all`)
 
-Brief every `pending` task in the master plan, in priority order, without asking for confirmation between each one.
+Brief every `pending` task, in priority order, without asking for confirmation between each one.
 
 ## Steps
 
-1. Read the master plan. Collect all tasks with status `pending` (exclude `direct` type — those don't need briefs).
+1. Enumerate via `scripts/query-plans.sh --kind=task --state=pending`. Exclude `direct` type — those don't need briefs.
 2. If zero candidates, report: "No pending tasks to brief." Return.
 3. Sort by priority (P0 first), then by task ID.
 4. **Check debt gates.** If build or test debt is in `block` state, filter out implementation tasks and keep only test sub-tasks and TBUILD/TUNIT/TUI tasks. If nothing remains after filtering, report the block and return.

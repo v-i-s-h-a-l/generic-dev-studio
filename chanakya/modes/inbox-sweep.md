@@ -13,15 +13,12 @@ reads:
   - plans/reviews/*.yaml
   - plans/releases/*.yaml
   - plans/feedback/*.yaml
-  - plans/chanakya-master.md                       # legacy fallback until Commit H
-  - plans/chanakya-inbox/**                        # legacy debriefs until Commit H
   - feedback/active.md
   - events/<date>.jsonl                            # via scripts/read-events.sh
 writes:
   - plans/tasks/<task-id>.yaml                     # state transitions + links (via lib-ledger)
   - plans/releases/<release-id>.yaml               # release state transitions on debrief ingest
   - plans/debriefs/<debrief-id>.yaml               # emitted → ingested flip
-  - plans/chanakya-inbox/processed/                # legacy debrief move destination
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
@@ -69,17 +66,9 @@ Pass `--argus-exempt` to `sweep-ingest.sh debrief` when the task matches an exem
 
 After the loop, run `scripts/rebuild-index.sh` once if any debrief was processed — skipping it leaves `plans/index.yaml` stale.
 
-### 0A.1 — Orphan-debrief backfill (double-miss guard)
+### 0A.1 — Orphan-debrief backfill (DEGRADED post-#245 A.5)
 
-Step 0A's `state: emitted` filter permanently skips any debrief that previously flipped to `done`/`ingested` without landing a row in `chanakya-master.md`. To catch that silent double-miss, run:
-
-```bash
-scripts/backfill-orphan-debriefs.sh --apply --quiet
-```
-
-The script scans `plans/debriefs/*.yaml` for entries with `state: done|ingested`, `mode: task`, and no corresponding `### <legacy_task_id>` section in the master plan, and back-fills the missing row (title, priority, type, status mapped from `report_state`, optional merge SHA / concerns / follow-ups annotations). Idempotent — subsequent runs find nothing. Captures `backfilled_count` on stdout for the summary in §Step 0H.
-
-For a one-shot recovery pass over pre-existing orphans (e.g. after the bug lands), the user can run `scripts/backfill-orphan-debriefs.sh` without `--apply` first to preview, then with `--apply` to commit.
+`scripts/backfill-orphan-debriefs.sh` historically reconciled debriefs whose `chanakya-master.md` row was missing. With the legacy markdown surface archived under `plans/.legacy-archive/`, the script's master-plan path is dead — it currently calls a stub-fail helper. A YAML-shaped rewrite (detect debriefs whose `task_id` has no `plans/tasks/<uuid>.yaml`) is tracked separately. Skip the orphan-backfill call until the rewrite ships; sweeps stay correct without it because every YAML write goes through `lib-ledger`.
 
 ### 0B2 — Release debrief Slack sync
 
@@ -103,7 +92,7 @@ Read the stuck state by `grep '"stuck": true'` on the marker — don't re-invoke
 
 ## Step 0C — Threshold actions
 
-`scripts/sweep-threshold-actions.sh` reads the counter in `chanakya-master.md` §`## Build Debt` and fires: counter ≥ 6 + no open TBUILD → mint TBUILD (P1) + emit `build_debt_warned`; counter ≥ 12 → set `build_debt_blocked` state flag + emit `build_debt_blocked`. Rules: `_shared/rules/debt-tracking.md`.
+`scripts/sweep-threshold-actions.sh` reads the counter from `plans/build-debt.yaml` and fires: counter ≥ 6 + no open TBUILD → mint TBUILD (P1) + emit `build_debt_warned`; counter ≥ 12 → set `build_debt_blocked` state flag + emit `build_debt_blocked`. Rules: `_shared/rules/debt-tracking.md`.
 
 ## Step 0D — Stale-artifact janitor
 
@@ -161,8 +150,8 @@ scripts/write-event.sh --agent chanakya --mode inbox-sweep \
 Counts to populate:
 
 - `debriefs_ingested` — count of `state: emitted → ingested` transitions in Step 0A.
-- `orphans_backfilled` — stdout of `scripts/backfill-orphan-debriefs.sh --apply --quiet` in Step 0A.1.
-- `legacy_pickups` — count of `mode=legacy` lines from `sweep-enumerate-debriefs.sh` that got ingested in Step 0A.
+- `orphans_backfilled` — always 0 until the YAML-shaped rewrite of Step 0A.1's backfill ships.
+- `legacy_pickups` — count of `mode=legacy` lines from `sweep-enumerate-debriefs.sh` that got ingested in Step 0A (now consistently 0 post-#245 A.4 — kept in the schema for back-compat).
 - `debriefs_missing` — stdout of `scripts/sweep-detect-missing-debriefs.sh` in Step 0E0 (#249 Phase 1).
 - `events_processed` — rows the event fan-out in Step 0E handled.
 - `reminders_fired` — `feedback_reminder_due` emits in Step 0E2.

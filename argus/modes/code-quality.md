@@ -179,7 +179,7 @@ Canonical paths are in `_shared/primitives/file-locations.md`. Argus-specific no
 | Test result bundle | `/tmp/argus-<task-id>.xcresult` |
 | Diff scratch | `/tmp/argus-<task-id>-diff.txt` |
 | Test output log | `/tmp/argus-<task-id>-test-output.txt` |
-| Review file (legacy, retained until Commit H) | `<project-memory>/reviews/review_<task-id>_<stage>.md` |
+| Review file (legacy markdown, retained alongside the YAML artifact) | `<project-memory>/reviews/review_<task-id>_<stage>.md` |
 
 Schemas + protocols referenced above:
 

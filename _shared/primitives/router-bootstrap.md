@@ -16,7 +16,7 @@ type: primitive
 1. Runtime writes → `~/.dev-studio/**` (never `~/.claude`, `/tmp`, `$HOME`).
 2. No user input in agent workflows — auto-detect or env var with default.
 3. Paths via `scripts/lib-paths.sh`; never hardcode.
-4. Dual-write preserved during Phase 2.6 transition (YAML + legacy; AND, not OR).
+4. Phase 2.6 artifacts (tasks/briefs/rounds/releases/debriefs/reviews) write only the YAML side via `lib-ledger.sh` writers. Legacy markdown surfaces are archived under `plans/.legacy-archive/` (#245 A.4) and the `legacy_*_helpers` are stub-fail (#245 A.5).
 5. No completion claims without fresh verification evidence (REVIEW.md R10).
 6. Worker reports use the 4-state enum per `_shared/contracts/worker-report.md`.
 
