@@ -69,10 +69,12 @@ debt:
 performance: []                                   # array of {operation, timing, device} or []
 key_learnings:
   - "LazyHStack rendering differs from HStack when inside a ScrollView; documented in code."
-known_issues: []
+known_issues: []                                  # see "Concern entries" below — legacy strings or {id, text, category?, severity?}
 follow_ups:
-  - "Backend integration once endpoint lands — T027."
-  - "Dark-mode contrast check in next review round."
+  - id: T271a-fu-1
+    text: "Backend integration once endpoint lands — T027."
+    category: backend-wiring
+  - "Dark-mode contrast check in next review round."   # legacy string form still accepted
 open_questions: []                                # for direct-debrief mode; typically empty in task mode
 argus_review:
   status: approved                                # approved | flagged | blocked | skipped | not-invoked
@@ -133,13 +135,22 @@ metrics: null                                     # 2.2.0; Apollo perf-mode only
 | `debt` | object | yes | `{build, test_unit, test_ui, notes}`. Booleans indicate debt accrued on this run; `notes` optional string. |
 | `performance` | array | yes | Optional perf observations. Empty array when none. |
 | `key_learnings` | array of strings | yes | Non-obvious takeaways future sessions should know. |
-| `known_issues` | array of strings | yes | Unresolved items (e.g., user has not verified yet). |
-| `follow_ups` | array of strings | yes | Future-task hints. Chanakya's debrief-ingest mode may mint tasks from these. |
+| `known_issues` | array of concerns | yes | Unresolved items (e.g., user has not verified yet). Each concern is either a legacy string or `{id, text, category?, severity?}` — see "Concern entries" below. |
+| `follow_ups` | array of concerns | yes | Future-task hints. Chanakya's debrief-ingest mode may mint tasks from these. Same shape as `known_issues`. |
 | `open_questions` | array of strings | yes | Direct-debrief mode uses this for inline questions the user answered. Usually empty for task mode. |
 | `argus_review` | object | yes | `{status, review_id, notes}`. Status `not-invoked` only valid when Argus was bypassed (xs-skip or direct-debrief). |
 | `report_state` | enum \| absent | no | `done` \| `done_with_concerns` \| `blocked` \| `needs_context`. Worker-report contract — see `contracts/worker-report.md`. Absent in pre-2.0.2 debriefs; readers infer from other fields for back-compat. |
 | `executed_with` | object \| absent | no | 2.1.0; `{model_id, host, session_id, duration_s}`. Producer identity for multi-model accountability. Absent in pre-2.1.0 debriefs; readers MUST tolerate absence and either join `events/<date>.jsonl` `agent_boot` records by `task_id` to fill the gap or treat the executor as unknown. Three of the four fields (`model_id`, `host`, `session_id`) are already produced by `scripts/emit-agent-boot.sh`; `duration_s` is computed from the matching `agent_session_completed` event timestamp delta. |
 | `metrics` | object \| null | yes | 2.2.0; Apollo perf-mode only. Null for Achilles task / direct-debrief debriefs. Populated by Apollo when emitting a perf-mode debrief — carries strict-9 evidence (cohort, baseline, observed, delta, verdict) so Chanakya's ingest path can render perf outcomes without re-reading the underlying `.trace` / MXMetric artifact. Sub-shape documented inline with the example above; refusal subobject populated only when `verdict: refused`. |
+
+## Concern entries
+
+`known_issues[]` and `follow_ups[]` accept two shapes:
+
+- **Legacy string** — `"Blend-mode approximations may diverge from IMGLY"`. Pre-2.3.0 debriefs use this exclusively. Readers MUST tolerate it. Inheritance validators synthesize an id at read time as `<legacy-task-id-or-debrief-id>-ki-<index>` (or `-fu-<index>`) where `<index>` is the 1-based array position.
+- **Structured object** — `{id, text, category?, severity?}`. The `id` is stable across the artifact's lifetime (`<emitter-task-id>-ki-<n>` for known-issues, `-fu-<n>` for follow-ups). `category` is an optional short tag the inheritance validator (`scripts/validate-brief-inheritance.sh`) prefers as a grep probe over the full `text`. `severity ∈ {low, medium, high, critical}` is informational — no gate uses it today.
+
+The structured form is the path forward (#162 — concern traceability). New emits should produce structured entries; the legacy form remains a back-compat carve-out for pre-2.3.0 debriefs that the studio does not rewrite. Producers MUST NOT mix shapes within a single array.
 
 ## Modes
 
@@ -173,6 +184,7 @@ The 141 processed debriefs in `chanakya-inbox/processed/` are **copied as-is** t
 
 | Version | Landed | Changes |
 |---|---|---|
+| 2.3.0 | 2026-04-27 | Non-breaking: `known_issues[]` / `follow_ups[]` items may now be `{id, text, category?, severity?}` objects. Legacy string form remains accepted; no migration. Stable ids unblock `scripts/validate-brief-inheritance.sh` (#162 trimmed slice — silent-absorb gate at brief-write time). |
 | 2.2.0 | 2026-04-27 | Non-breaking: add optional `metrics` block (`perf_mode`, `evidence_tier`, `verdict`, `cohort`, `baseline`, `observed`, `delta`, `refusal`) for Apollo perf-mode debriefs. Carries strict-9 evidence so Chanakya can render perf outcomes without re-reading artifacts (#235 Stage 5). Null for non-Apollo debriefs. |
 | 2.1.0 | 2026-04-27 | Non-breaking: add optional `executed_with` block (`model_id`, `host`, `session_id`, `duration_s`) for multi-model accountability and A/B model-routing telemetry. Three fields already emitted by `scripts/emit-agent-boot.sh`; only the schema-side surface lands here (#247 Stage C deliverable 2). |
 | 2.0.2 | 2026-04-23 | Non-breaking: add optional `report_state` field (4-state worker-report enum). Back-compat reader rule in `contracts/worker-report.md`. Drawn from obra/superpowers. |
