@@ -68,3 +68,4 @@ writes:
 - `rules/enforcement-contract.md` — `E_MISSING_RW_DECL` code and fix recipe.
 - `patterns/capability-manifest.md` — aggregates all mode-pack declarations into a roster.
 - `primitives/file-locations.md` — canonical root paths that show up in declarations.
+- `primitives/agent-comms-boundary.md` — authoritative writer / co-writer / reader matrix that these declarations are linted against.
