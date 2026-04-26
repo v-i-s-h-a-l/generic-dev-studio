@@ -110,6 +110,10 @@ Read the stuck state by `grep '"stuck": true'` on the marker — don't re-invoke
 
 `scripts/sweep-janitor.sh all`. Subcommands: `worktrees` (7d mtime, skips live + `.argus-running`), `feedback-assets` (30d + state=archived), `orphan-assets` (7d grace for unreferenced), `scaling-alerts` (warn@50, block@100 sets `feedback_ingest_blocked`). Honors `DRY_RUN=1`. Every delete is prefix-checked against the project root.
 
+## Step 0E0 — Missing-debrief detector (#249 Phase 1)
+
+`scripts/sweep-detect-missing-debriefs.sh` scans today + yesterday's `task_merged` events and emits `debrief_missing` for any whose paired debrief never landed in `plans/debriefs/`. Stale window: 600s — `task_merged` younger than that is ignored so a Step 10 still in-flight isn't falsely flagged. Idempotent per `(task, merge_sha)` so re-runs never duplicate. Catches the dark window between Achilles Step 9 and Step 10 when a session crashes mid-flight, and any `task_merged` from a manual session that bypassed Step 10. Phase 2 will flip the pipeline so the debrief is staged before merge and `task-merge.sh` refuses without one — tracked in a follow-up. Stdout is the count of emits this run; feeds into the sweep summary in Step 0G1.
+
 ## Step 0E — Event handler fan-out
 
 `scripts/sweep-process-events.sh` reads new events since the offset at `.runtime/state/events_offset` and fires:
@@ -122,6 +126,7 @@ Read the stuck state by `grep '"stuck": true'` on the marker — don't re-invoke
 | `review_blocked` | Also push-queue append kind=`review_blocked` with the block reason. |
 | `appstore_watch_stuck` | Push-queue append kind=`appstore_stuck`. |
 | `dual_write_partial` | Push-queue append kind=`drift` + raw line appended to `.runtime/state/drift-log.jsonl`. |
+| `debrief_missing` | Push-queue append kind=`debrief_missing` with `merge_sha` (so `/chanakya status` surfaces "T001 merged at <sha> with no debrief"). |
 | `test_run_failed` / `build_debt_incremented` | No direct action; surfaced in status. |
 
 Offset update is atomic (tmp + mv).
@@ -150,8 +155,8 @@ Emit `inbox_sweep_completed` with the counts collected across Steps 0A–0F, reg
 ```bash
 scripts/write-event.sh --agent chanakya --mode inbox-sweep \
   --event inbox_sweep_completed \
-  --data "$(printf '{"debriefs_ingested":%d,"orphans_backfilled":%d,"legacy_pickups":%d,"events_processed":%d,"reminders_fired":%d}' \
-    "$debriefs_ingested" "$orphans_backfilled" "$legacy_pickups" "$events_processed" "$reminders_fired")"
+  --data "$(printf '{"debriefs_ingested":%d,"orphans_backfilled":%d,"legacy_pickups":%d,"debriefs_missing":%d,"events_processed":%d,"reminders_fired":%d}' \
+    "$debriefs_ingested" "$orphans_backfilled" "$legacy_pickups" "$debriefs_missing" "$events_processed" "$reminders_fired")"
 ```
 
 Counts to populate:
@@ -159,6 +164,7 @@ Counts to populate:
 - `debriefs_ingested` — count of `state: emitted → ingested` transitions in Step 0A.
 - `orphans_backfilled` — stdout of `scripts/backfill-orphan-debriefs.sh --apply --quiet` in Step 0A.1.
 - `legacy_pickups` — count of `mode=legacy` lines from `sweep-enumerate-debriefs.sh` that got ingested in Step 0A.
+- `debriefs_missing` — stdout of `scripts/sweep-detect-missing-debriefs.sh` in Step 0E0 (#249 Phase 1).
 - `events_processed` — rows the event fan-out in Step 0E handled.
 - `reminders_fired` — `feedback_reminder_due` emits in Step 0E2.
 
