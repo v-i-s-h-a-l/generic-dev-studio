@@ -62,7 +62,7 @@ The worker script exports `ACHILLES_AUTONOMOUS=1` automatically. `--wait` is the
 
 `/achilles <task-id> --dry-run` runs the full pipeline with **every write replaced by a log line**. Reads, LSP, static analysis, and computed decisions run normally. Writes, event appends, merges, and external side effects do not. Contract: `_shared/patterns/dry-run.md`.
 
-Set `DRY_RUN=1`. Every extraction script honors it — logging target + idempotency key on stderr, skipping the real mutation. Step 4 emits `DRY-RUN write path=…` for each planned file. Step 6 lsp-only runs normally (read-only); full-green logs the `xcodebuild` and skips it. Step 8.5 emits `DRY-RUN skip argus reason=not-yet-supported` and proceeds as if `approved` (Argus doesn't support `--dry-run` yet). Step 9 logs the checkout/merge/worktree-remove/DerivedData-clean sequence. Events buffer to `LEDGER_DRY_RUN_EVENTS`; print the buffer (`DRY-RUN events (N):`) before Step 11.
+Set `DRY_RUN=1`. Every extraction script honors it — logging target + idempotency key on stderr, skipping the real mutation. Step 4 emits `DRY-RUN write path=…` for each planned file. Step 6 lsp-only runs normally (read-only); full-green logs the `xcodebuild` and skips it. Step 8.5 emits `DRY-RUN skip argus reason=not-yet-supported` and proceeds as if `approved` (Argus doesn't support `--dry-run` yet). Step 9 logs the staged debrief write; Step 10 logs the checkout/merge/worktree-remove/DerivedData-clean sequence; Step 10.5 logs the finalize state flips. Events buffer to `LEDGER_DRY_RUN_EVENTS`; print the buffer (`DRY-RUN events (N):`) before Step 11.
 
 Exit codes: `0` — dry-run ran to completion; `2` — dry-run surfaced a blocker (ambiguous brief, LSP errors, would-block at a gate). Idempotency keys match wet-run byte-for-byte so dry-run output is `diff`-friendly against wet-run artifacts.
 
@@ -266,7 +266,7 @@ Only if Step 6 is green and the task is not on the XS-trivial path that skips Ar
 scripts/achilles-refresh-base.sh "$TASK_ID" "$WORKTREE" "$ORIG_BRANCH" || exit $?
 ```
 
-The script fetches `origin/$ORIG_BRANCH`, counts commits behind, and no-ops if below `ACHILLES_BASE_REFRESH_THRESHOLD` (default `2`). Above threshold it `git merge --no-ff origin/$ORIG_BRANCH` into the worktree branch — merge, not rebase, to match Step 9's convention and to avoid rewriting mid-task commits the debrief references. Exit codes: `0` fresh or refreshed cleanly; `2` merge conflict (script aborted the merge; worktree clean); `3` missing args / worktree gone.
+The script fetches `origin/$ORIG_BRANCH`, counts commits behind, and no-ops if below `ACHILLES_BASE_REFRESH_THRESHOLD` (default `2`). Above threshold it `git merge --no-ff origin/$ORIG_BRANCH` into the worktree branch — merge, not rebase, to match Step 10's convention and to avoid rewriting mid-task commits the debrief references. Exit codes: `0` fresh or refreshed cleanly; `2` merge conflict (script aborted the merge; worktree clean); `3` missing args / worktree gone.
 
 - **Clean refresh:** emits `base_refreshed` with `commits_pulled`. Proceed to Step 8.5.
 - **Fresh (below threshold):** silent no-op, no event. Proceed to Step 8.5.
@@ -316,42 +316,53 @@ eval "$qual_out"
 Broad question: cross-file regression risk, edge cases, diff anomalies, secrets, base staleness, test run (M/L).
 
 - **`approved`:** proceed to Step 9.
-- **`flagged`:** proceed to Step 9 (merge). Include a `## Argus Review` block in the debrief referencing both stages' review files + combined finding count.
+- **`flagged`:** proceed to Step 9 (stage debrief), then Step 10 (merge). Include a `## Argus Review` block in the debrief referencing both stages' review files + combined finding count.
 - **`blocked`:** do NOT merge. Surface block reason + review file. Attempt to fix — **base staleness:** rebase, re-run Steps 5–8.5; **compile/test failure Achilles can fix:** fix, re-run Steps 5–6, re-run Step 8.5 (both stages); **secrets in diff:** remove, re-commit, re-run Step 8.5; **cannot address:** surface, do not merge, debrief with `report_state: blocked`.
 
 Two `review_approved` / `review_flagged` / `review_blocked` events land per task (one per stage, distinguished by `stage: spec | quality`). Chanakya's inbox sweep reads both — see `chanakya/modes/inbox-sweep.md` Step 0A.
 
 Maximum 3 fix-and-re-review cycles before surfacing to the user as unresolvable (cycle count spans both stages).
 
-### Step 9 — Commit, merge back, clean up
+### Step 9 — Stage debrief (pre-merge)
 
 Only if Step 6 is green, Argus returned approved or flagged, and the user hasn't rejected.
 
-**Respect `.argus-running` marker.** Before invoking the merge script, if `$WORKTREE/.argus-running` exists a standalone Argus is still reviewing — poll every 30s up to 10 min, then surface to user. Normal Step 8.5 flow clears the marker automatically.
+**Pre-merge order is load-bearing (#249 Phase 2).** The debrief is staged *before* `task-merge.sh` so the merge script can refuse to merge work that has no debrief — closing the silent-merge dark window where a session crash between merge and debrief left Chanakya holding `briefed` forever. Step 11 finalizes the artifact (stamps `merge_sha`, flips task → `merged`, brief → `debriefed`, emits `brief_completed`) after the merge succeeds.
 
-Commit inside the worktree (unlocked — each worktree has its own index), then hand off the main-checkout merge:
+Commit inside the worktree first (unlocked — each worktree has its own index), then stage the debrief:
 ```bash
 cd "$WORKTREE"
 git add -A
 CALLER_SKILL=achilles-merge safe_git_commit -m "<task-id>: <summary>"   # or several small commits
+
+DEBRIEF_UUID=$(scripts/task-emit-debrief.sh "$TASK_UUID" "$BRIEF_UUID" argus-reviewed "$FIELDS_JSON")
+```
+
+Mints a UUIDv7, writes `plans/debriefs/<debrief-id>.yaml` (schema: `_shared/schemas/debrief.md`, `debrief@2.0.1`) at `state: emitted`, sets `tasks/<uuid>.yaml` `links.debrief`, transitions the task to `argus-reviewed` (idempotent — Argus already moved it there). The brief→debriefed transition and `brief_completed` event are deferred to Step 11.
+
+`$FIELDS_JSON` is a JSON object whose keys become debrief YAML fields — `branch`, `commits`, `diff_summary`, `decisions`, `tests`, `testability`, `build_gate`, `build_debt_override`, `debt`, `performance`, `key_learnings`, `known_issues`, `follow_ups`, `open_questions`, `argus_review`, plus `legacy_task_id` and `body` for the legacy dual-write. `argus_review.status` is Step 8.5's verdict — `approved` / `flagged` / `blocked`; `not-invoked` is only valid on exempted build-mode / test-suite-mode paths, which don't land here. If Argus returned `flagged`, include a `## Argus Review` block in the `body` field referencing the review file + finding count. Leave `branch.merge_sha` empty — Step 11 stamps it.
+
+**Debrief is load-bearing for worker-mode detection.** The worker wrapper (`scripts/achilles-worker.sh`) treats a `claude -p` exit with `rc=0` and no debrief as a silent-stuck state and routes the task to `rescue/<task-id>-stuck.md`. Any meaningful outcome — completion, blocked, failed — must write a debrief before exit. Clarifying questions exit one-shot subagents cleanly and trip this detector; prefer the autonomous-default pattern instead of asking.
+
+### Step 10 — Commit, merge back, clean up
+
+**Respect `.argus-running` marker.** Before invoking the merge script, if `$WORKTREE/.argus-running` exists a standalone Argus is still reviewing — poll every 30s up to 10 min, then surface to user. Normal Step 8.5 flow clears the marker automatically.
+
+```bash
 scripts/task-merge.sh "$TASK_ID" "$WORKTREE" "$ORIG_BRANCH" "Merge <task-id> into $ORIG_BRANCH"
 ```
 
-The script acquires the project-scoped merge lock under `~/.dev-studio/.runtime/merge-lock/<project>` (30-minute staleness reclaim, 30-minute wait envelope), clears a stale `.git/index.lock` per `_shared/primitives/safe-git.md` (emits `stale_index_lock_removed`), checks out `$ORIG_BRANCH`, fetches best-effort, runs `git merge --no-ff achilles/<task-id>`, removes the worktree, cleans DerivedData, emits `task_merged`. Exit codes: `0` merged, `2` conflict (emits `merge_conflict`; worktree + DerivedData retained), `3` locked-out. Prints `MERGE_SHA=<sha>` on success.
+The script acquires the project-scoped merge lock under `~/.dev-studio/.runtime/merge-lock/<project>` (30-minute staleness reclaim, 30-minute wait envelope), enforces the **#249 Phase 2 pre-merge debrief precondition** — refuses with exit `4` and emits `debrief_missing` (`reason: pre_merge_blocked`) when no `state: emitted` debrief exists for `$TASK_ID`. Override with `STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1` for genuine emergencies (`reason: pre_merge_warn`, proceeds). Then clears a stale `.git/index.lock` per `_shared/primitives/safe-git.md` (emits `stale_index_lock_removed`), checks out `$ORIG_BRANCH`, fetches best-effort, runs `git merge --no-ff achilles/<task-id>`, removes the worktree, cleans DerivedData, emits `task_merged`. Exit codes: `0` merged, `2` conflict (emits `merge_conflict`; worktree + DerivedData retained), `3` locked-out, `4` no debrief staged. Prints `MERGE_SHA=<sha>` on success.
 
 On conflict: branch stays alive, DerivedData kept, surface to user. **Do not force-resolve.** On red build (Step 6): don't call this script — the branch + DerivedData stay for the user to inspect.
 
-### Step 10 — Debrief + short user summary
+### Step 10.5 — Finalize debrief (post-merge)
 
 ```bash
-DEBRIEF_UUID=$(scripts/task-emit-debrief.sh "$TASK_UUID" "$BRIEF_UUID" merged "$FIELDS_JSON")
+scripts/task-finalize-merge.sh "$TASK_UUID" "$BRIEF_UUID" "$DEBRIEF_UUID" "$MERGE_SHA" "$FIELDS_JSON"
 ```
 
-Mints a UUIDv7, writes `plans/debriefs/<debrief-id>.yaml` (schema: `_shared/schemas/debrief.md`, `debrief@2.0.1`), sets `tasks/<uuid>.yaml` `links.debrief`, flips the task to the terminal state (3rd arg: `self-reviewed` / `merged` / `blocked` / `cancelled`), flips the paired brief to `debriefed`, emits `debrief_emitted` + `brief_completed`.
-
-`$FIELDS_JSON` is a JSON object whose keys become debrief YAML fields — `branch`, `commits`, `diff_summary`, `decisions`, `tests`, `testability`, `build_gate`, `build_debt_override`, `debt`, `performance`, `key_learnings`, `known_issues`, `follow_ups`, `open_questions`, `argus_review`, plus `legacy_task_id` and `body` for the legacy dual-write. `argus_review.status` is Step 8.5's verdict — `approved` / `flagged` / `blocked`; `not-invoked` is only valid on exempted build-mode / test-suite-mode paths, which don't land here. If Argus returned `flagged`, include a `## Argus Review` block in the `body` field referencing the review file + finding count.
-
-**Debrief is load-bearing for worker-mode detection.** The worker wrapper (`scripts/achilles-worker.sh`) treats a `claude -p` exit with `rc=0` and no debrief as a silent-stuck state and routes the task to `rescue/<task-id>-stuck.md`. Any meaningful outcome — completion, blocked, failed — must write a debrief before exit. Clarifying questions exit one-shot subagents cleanly and trip this detector; prefer the autonomous-default pattern instead of asking.
+Stamps `branch.merge_sha` into the staged debrief, transitions the task `argus-reviewed → merged`, flips the brief to `debriefed` (skip in direct-mode), emits `brief_completed`. Idempotent: state transitions no-op on a second invocation; the merge_sha set is value-equal-skip. Exit `3` if a dual-write partial bubbles up; `0` otherwise.
 
 `done` ≠ user-verified — Chanakya promotes to `verified` after test-manifest feedback.
 
@@ -361,7 +372,7 @@ Print a short message to the user:
 
 ### Step 11 — Signal completion; sit idle
 
-Before writing the debrief, pick a `report_state` from the 4-state worker-report contract (`_shared/contracts/worker-report.md`):
+Pick a `report_state` for the debrief (set in `$FIELDS_JSON` before Step 9 stages the YAML) from the 4-state worker-report contract (`_shared/contracts/worker-report.md`):
 
 | State | Pick when |
 |---|---|
@@ -382,7 +393,7 @@ The `auto:<session-id>` form reads the start-ts stamped by `emit-agent-boot.sh` 
 
 Supports optional `--tokens-input/--tokens-output/--tokens-cache-read/--tokens-cache-write` flags. Duration alone is still useful when token counts aren't available. See `~/.claude/skills/_shared/contracts/events.md` → "Cross-agent events".
 
-After Step 10 + the session-completed event, **sit idle.** Do not self-select the next task. Do not schedule a wake. Do not prompt the user further. Chanakya will process the debrief on its next inbox sweep, read any `review_flagged` events + auto-file follow-ups, and surface to the user via `/chanakya status` or `--auto-sweep`. If the user wants immediate surfacing, they run `/chanakya status`.
+After Step 10.5 + the session-completed event, **sit idle.** Do not self-select the next task. Do not schedule a wake. Do not prompt the user further. Chanakya will process the debrief on its next inbox sweep, read any `review_flagged` events + auto-file follow-ups, and surface to the user via `/chanakya status` or `--auto-sweep`. If the user wants immediate surfacing, they run `/chanakya status`.
 
 ---
 

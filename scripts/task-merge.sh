@@ -21,6 +21,13 @@
 # On conflict: leave worktree + DerivedData intact, emit `merge_conflict`,
 # exit 2 — Achilles caller surfaces to the user.
 #
+# Pre-merge guard (#249 Phase 2): refuses to merge if no debrief is staged
+# for this task under `plans/debriefs/`. Closes the silent-merge dark window
+# Phase 1's detector observes after the fact. Override with the env opt-in
+# `STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1` — emits `debrief_missing` with
+# `reason=pre_merge_warn` and proceeds. Without override: emits the same
+# event with `reason=pre_merge_blocked` and exits 4.
+#
 # Usage:
 #   scripts/task-merge.sh <task-id> <worktree> <orig-branch> [merge-message]
 #
@@ -28,6 +35,7 @@
 #   0  merged cleanly
 #   2  conflict or other merge failure
 #   3  lock wait exceeded (30 min)
+#   4  no debrief staged (#249) — set STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 to override
 
 set -u
 umask 022
@@ -68,6 +76,47 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   printf 'DRY-RUN rm -rf %s\n' "$DERIVED" >&2
   printf 'DRY-RUN git branch -d %s\n' "$BRANCH" >&2
   exit 0
+fi
+
+# ---------- Pre-merge: debrief precondition (#249 Phase 2) ----------
+#
+# Walk plans/debriefs/*.yaml; require an entry whose `legacy_task_id` matches
+# this task and is in the canonical staged state (state == "emitted", or
+# absent — which reads as emitted per inbox-sweep.md back-compat). This is
+# a fail-fast gate run before the lock so a missing-debrief case never
+# blocks other Achilles workers.
+#
+# Strict by default; override with STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 for
+# genuine emergencies. Both paths emit `debrief_missing` so the inbox-sweep
+# surfacing in /chanakya status stays loud.
+DEBRIEFS_DIR=$(resolve_debriefs_dir_for "$PROJECT" 2>/dev/null || echo "")
+debrief_staged=0
+if [ -n "$DEBRIEFS_DIR" ] && [ -d "$DEBRIEFS_DIR" ] && command -v yq >/dev/null 2>&1; then
+  for yaml in "$DEBRIEFS_DIR"/*.yaml; do
+    [ -f "$yaml" ] || continue
+    legacy=$(yq -r '.legacy_task_id // ""' "$yaml" 2>/dev/null || echo "")
+    [ "$legacy" = "$TASK_ID" ] || continue
+    state=$(yq -r '.state // "emitted"' "$yaml" 2>/dev/null || echo emitted)
+    [ "$state" = "emitted" ] || continue
+    debrief_staged=1
+    break
+  done
+fi
+
+if [ "$debrief_staged" -eq 0 ]; then
+  if [ "${STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF:-0}" = "1" ]; then
+    reason="pre_merge_warn"
+  else
+    reason="pre_merge_blocked"
+  fi
+  data=$(printf '{"reason":"%s","branch":"%s"}' "$reason" "$BRANCH")
+  emit_event_keyed achilles task debrief_missing "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  if [ "$reason" = "pre_merge_blocked" ]; then
+    printf 'error: no debrief staged for %s — run scripts/task-emit-debrief.sh (Step 9) before merge.\n' "$TASK_ID" >&2
+    printf '       set STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 to merge anyway (emergencies only).\n' >&2
+    exit 4
+  fi
+  printf 'warn: no debrief staged for %s; STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 set — proceeding.\n' "$TASK_ID" >&2
 fi
 
 # ---------- Acquire lock ----------
