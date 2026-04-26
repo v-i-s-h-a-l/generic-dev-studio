@@ -36,8 +36,66 @@ set -u
 umask 022
 
 ACTION="${1:-}"
-[ -z "$ACTION" ] && { printf 'xcodebuild-shim: usage: %s <build|test> [args...]\n' "$0" >&2; exit 2; }
+[ -z "$ACTION" ] && { printf 'xcodebuild-shim: usage: %s <build|test|build-for-testing> [args...]\n' "$0" >&2; exit 2; }
 shift
+
+# #265 — destination preflight. xcodebuild exits 0 when a name=<sim>
+# destination is missing from the simulator catalog (Xcode major upgrades
+# rename / drop sims; the catalog churns at every major). Build-gate then
+# trusts the 0 as green and emits a hallucinated build_check_passed.
+# Verify the name resolves before the build action runs. generic/platform=
+# and id=<udid> destinations are skipped — neither has a name to look up,
+# and xcodebuild's own resolution path is the source of truth there.
+preflight_destination() {
+  local dest_val="" scheme="" project_arg="" project_val="" next=""
+  for tok in "$@"; do
+    if [ -n "$next" ]; then
+      case "$next" in
+        destination) dest_val="$tok" ;;
+        scheme)      scheme="$tok" ;;
+        project)     project_arg="-project";   project_val="$tok" ;;
+        workspace)   project_arg="-workspace"; project_val="$tok" ;;
+      esac
+      next=""; continue
+    fi
+    case "$tok" in
+      -destination) next="destination" ;;
+      -scheme)      next="scheme" ;;
+      -project)     next="project" ;;
+      -workspace)   next="workspace" ;;
+    esac
+  done
+  [ -z "$dest_val" ] && return 0
+  case "$dest_val" in
+    *generic/*) return 0 ;;
+    *id=*)      return 0 ;;
+  esac
+  local sim_name=""
+  sim_name=$(printf '%s' "$dest_val" | sed -E 's/.*name=([^,]+).*/\1/')
+  [ -z "$sim_name" ] && return 0
+  [ -z "$scheme" ] && return 0
+  local listing rc=0
+  listing=$(xcodebuild ${project_arg:+$project_arg "$project_val"} -scheme "$scheme" -showdestinations 2>&1) || rc=$?
+  # Query failure (scheme typo, project missing, no Xcode) is loud-enough
+  # via the real invocation that follows; suppressing here would mask the
+  # cause behind a generic preflight error. Only block when the query
+  # succeeded AND the requested name is absent.
+  [ "$rc" -ne 0 ] && return 0
+  if printf '%s\n' "$listing" | grep -F "name:$sim_name" >/dev/null 2>&1; then
+    return 0
+  fi
+  printf 'xcodebuild-shim: destination name=%s not in simulator catalog\n' "$sim_name" >&2
+  printf '  available iOS Simulator destinations:\n' >&2
+  printf '%s\n' "$listing" | grep -E 'platform:iOS Simulator.*name:' | sed 's/^/    /' >&2 || true
+  printf '  fix: update the brief'\''s destination, or use generic/platform=iOS Simulator for build-only paths\n' >&2
+  return 2
+}
+
+case "$ACTION" in
+  build|build-for-testing)
+    preflight_destination "$@" || exit 2
+    ;;
+esac
 
 # Decide the executor.
 have_mcp=0
