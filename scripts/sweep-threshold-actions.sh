@@ -25,38 +25,18 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 
 PROJECT=$(resolve_project 2>/dev/null) || exit 0
 PROJECT_ROOT=$(resolve_project_root_for "$PROJECT")
-MASTER="$PROJECT_ROOT/plans/chanakya-master.md"
 BUILD_DEBT_YAML="$PROJECT_ROOT/plans/build-debt.yaml"
 STATE_DIR="$PROJECT_ROOT/.runtime/state"
 BLOCK_FLAG="$STATE_DIR/build_debt_blocked"
 
-# Counter source-of-truth post-#273 is plans/build-debt.yaml. Pre-bootstrap
-# projects fall back to parsing master-plan (R-fallback per A.1 audit) and
-# emit legacy_artifact_read so the read is observable.
-counter=""
+# Counter source-of-truth is plans/build-debt.yaml (post-#273). The
+# master-plan R-fallback parser was retired with #245 A.4 — projects without
+# build-debt.yaml are bootstrapped by scripts/extract-master-plan-preamble.sh.
+counter=0
 if [ -f "$BUILD_DEBT_YAML" ] && command -v yq >/dev/null 2>&1; then
   counter=$(yq -r '.counter // 0' "$BUILD_DEBT_YAML" 2>/dev/null)
 fi
-if [ -z "$counter" ] || [ "$counter" = "null" ]; then
-  if [ -f "$MASTER" ]; then
-    counter=$(awk '
-      /^## Build Debt/ { in_block=1; next }
-      in_block && /^## / { exit }
-      in_block && /^- Counter:/ {
-        t=$0
-        sub(/^.*Counter: */, "", t)
-        sub(/ .*$/, "", t)
-        print t + 0
-        exit
-      }
-    ' "$MASTER")
-    if [ -n "$counter" ]; then
-      emit_event_keyed chanakya inbox-sweep legacy_artifact_read "" \
-        '{"domain":"build_debt","reason":"no_build_debt_yaml"}' >/dev/null 2>&1 || true
-    fi
-  fi
-fi
-counter=${counter:-0}
+[ -z "$counter" ] || [ "$counter" = "null" ] && counter=0
 
 # Check for an existing open TBUILD task in the post-2.6 surface. Grep tasks
 # whose title references TBUILD and whose state is still open — if one exists

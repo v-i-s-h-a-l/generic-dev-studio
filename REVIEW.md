@@ -76,17 +76,18 @@ SKILL.md files load wholesale into every session that invokes the skill. Long pr
 
 **How to check:** after any SKILL.md edit, note the line-count delta. Flag additions >50 lines for a second look.
 
-### R9 — Dual-write preserved during Phase 2.6 transition (tier: **block + auto-fix**)
-Any mode pack or script that mutates a Phase 2.6 artifact (tasks / briefs / rounds / releases / debriefs / reviews) MUST preserve the dual-write contract per `_shared/patterns/dual-write-transition.md`: YAML first, legacy counterpart second, partial-failure loud (`dual_write_partial` event + exit 3). AND, not OR.
+### R9 — YAML-only writes for Phase 2.6 artifacts (tier: **block + auto-fix**)
+Any mode pack or script that mutates a Phase 2.6 artifact (tasks / briefs / rounds / releases / debriefs / reviews) MUST write only the YAML side via the `lib-ledger.sh` writers (`transition_*`, `write_*_artifact`). The legacy markdown surfaces were archived to `plans/.legacy-archive/` under #245 A.4 and the `legacy_*_helpers` are stub-fail (#245 A.5) — calling them, or writing directly into `chanakya-tasks/` / `chanakya-inbox/<task>-debrief.md`, is a regression.
 
-**Why:** `scripts/verify-ledger.sh` caught T218a drift (#76) because a writer mutated the legacy brief markdown without the paired YAML update. The `lib-ledger.sh` helpers (`transition_*`, `write_*_artifact`) make this structurally impossible when used correctly; this rule catches regressions that bypass the helpers.
+**Why:** the dual-write window closed under #245 A.4/A.5. `scripts/verify-ledger.sh` originally caught T218a drift (#76) because a writer mutated the legacy markdown without the paired YAML update; the helper-only discipline that emerged from that incident is now structurally enforced (legacy paths have no live writer). The `_shared/patterns/dual-write-transition.md` primitive is preserved for future migrations of the same shape.
 
 **How to check:**
-- New mode pack writing a Phase 2.6 artifact? Check frontmatter has `transition_notes: _shared/patterns/dual-write-transition.md`. Grep-checkable.
-- New script mutating `plans/<kind>/*.yaml`? Check it uses the `lib-ledger.sh` writers, not ad-hoc `yq -i`. If ad-hoc, must explicitly call the paired `legacy_*` helper before returning success.
-- Any `OR`/`fallback`/`if YAML unavailable` language in prose around a dual-writer? That's the T218a shape. Tighten to explicit AND.
+- New script mutating `plans/<kind>/*.yaml`? Check it uses the `lib-ledger.sh` writers, not ad-hoc `yq -i`. Ad-hoc `yq -i` against a Phase 2.6 artifact bypasses the event emission + index rebuild contract.
+- New writes to `plans/chanakya-master.md` outside `scripts/render-master-plan.sh`? `scripts/lint-comms-boundary.sh` blocks via B4 (post-#245 A.4/A.5) — but if the diff bypasses the manifest declaration, catch it here.
+- New writes to `plans/chanakya-tasks/` or `plans/chanakya-inbox/<task>-debrief.md`? Those paths are archived. Reject.
+- Any call to `legacy_master_plan_*` / `legacy_inbox_*` / `legacy_brief_*` / `legacy_release_log_*`? Those helpers are fail-loud stubs; remove the call site or replace with the YAML writer equivalent.
 
-**Fix pattern:** replace ad-hoc YAML writes with `lib-ledger.sh` helper calls; add `transition_notes` frontmatter to the mode pack; tighten prose to AND-not-OR.
+**Fix pattern:** replace ad-hoc YAML writes with `lib-ledger.sh` helper calls; remove any call to a `legacy_*` helper; if a script is genuinely re-establishing a dual-write window for a *new* migration, follow the `_shared/patterns/dual-write-transition.md` "For future migrations using this pattern" checklist.
 
 ### R10 — No completion claims without fresh verification evidence (tier: **block + auto-fix**)
 

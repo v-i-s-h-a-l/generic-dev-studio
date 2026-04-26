@@ -85,19 +85,20 @@ Phase 2.6 introduced a uniform per-artifact YAML layout under `plans/` + a singl
 
 Queries against the ledger go through `scripts/query-plans.sh --kind=<artifact-kind>` (glob-free; joins via `plans/index.yaml`). Event reads go through `scripts/read-events.sh`. Never glob `plans/**` directly in new code.
 
-### Legacy layout (pre-Phase 2.6, preserved)
+### Legacy layout (pre-Phase 2.6, archived)
 
-Kept for historical reads on migrated projects — the directories still hold pre-cutover artifacts (and `chanakya-inbox/processed/` per Q18 archive-as-is). Until #245 (Commit H) flips `DUAL_WRITE_MODE=yaml-only` as the default, the master-plan + inbox debrief paths below are still dual-written on every artifact mutation; post-flip they become read-only (and post-#245 Phase A.4 are archived under `plans/.legacy-archive/`). Test-case artifacts and `chanakya-inbox/assets/` are out of scope for #245 and continue to be written here.
+Pre-2.6 debrief-shaped artifacts moved under `plans/.legacy-archive/` by `scripts/archive-legacy-surfaces.sh` as part of #245 Stage A.4 (2026-04-27). The companion Stage A.5 deleted every internal writer — `lib-ledger.sh::legacy_*_helpers` are stub fail-loud and the dual-write call sites in writers are gone. The archive root is read-only in practice; only migration tools (`migrate-ledger.sh`, `detect-edits.sh`, `verify-ledger.sh`) consult it.
 
-| Artifact | Path (legacy) | Status |
+| Artifact | Path | Status |
 |---|---|---|
-| Master plan | `~/.dev-studio/<project>/plans/chanakya-master.md` | Post-#273: a render projection produced by `scripts/render-master-plan.sh` from `plans/{tasks,releases,build-debt}.yaml` + `plans/master-plan-preamble.md`. Never hand-edited — overwritten on every sweep-ingest run. Bootstrap legacy projects via `scripts/extract-master-plan-preamble.sh`. |
-| Task briefs | `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md` | Read-only post-migration; replaced by `plans/briefs/*.yaml`. Direct-path access only (no resolver — #67 retired `resolve_briefs_dir()` on 2026-04-22). |
-| Debrief inbox | `~/.dev-studio/<project>/plans/chanakya-inbox/` | Still holds `assets/` + `*-tests.md` (not migrated by 2.6). `processed/*-debrief.md` preserved per Q18. New debriefs write to `plans/debriefs/*.yaml`. Direct-path access only (no resolver — #67 retired `resolve_chanakya_inbox[_for]()` on 2026-04-22). |
-| Test-case artifacts | `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-tests.md` | Still written here (migration didn't scope test-case artifacts). |
+| Master plan | `~/.dev-studio/<project>/plans/chanakya-master.md` | **Live (rendered projection).** Sole writer is `scripts/render-master-plan.sh`, which composes from `plans/{master-plan-preamble.md, build-debt.yaml, tasks/*.yaml, releases/*.yaml}` and runs end-of-sweep. Never hand-edited. Bootstrap legacy projects via `scripts/extract-master-plan-preamble.sh`. |
+| Task briefs | `~/.dev-studio/<project>/plans/.legacy-archive/chanakya-tasks/<task-id>-<slug>.md` | Archived (post-#245 A.4). Replaced by `plans/briefs/*.yaml`. |
+| Debrief inbox | `~/.dev-studio/<project>/plans/chanakya-inbox/` | Mixed: live content (`assets/`, `*-tests.md`, `*-test-cases.md`, `processed/feedback-attachments/`, design/product reports, scratch notes) stays in place. Debrief-shaped files (`*-debrief.md`, `build-*-debrief.md`, `tf-*-debrief.md`, `release-*-debrief.md`, `processed/*-debrief.md`) are archived under `plans/.legacy-archive/chanakya-inbox/`. New debriefs write to `plans/debriefs/*.yaml`. |
+| Test-case artifacts | `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-tests.md` | Live — written by `scripts/task-write-test-cases.sh` (out of scope for #245). |
 | User test manifest | `~/.dev-studio/<project>/plans/user-testing.md` | Read-only post-migration; superseded by `plans/rounds/*.yaml`. |
 | Test-flow rounds | `~/.dev-studio/<project>/plans/user-testing-rounds/user-testing-round<N>.md` | Read-only post-migration; superseded by `plans/rounds/*.yaml`. |
 | Journey map (optional) | `~/.dev-studio/<project>/journey-map.md` | Unchanged — not in ledger scope. |
 | Legacy event files | `~/.dev-studio/<project>/{event-log,events,agents}.{jsonl,log,ndjson}` and `plans/chanakya-events.jsonl` | Read-only post-migration; consolidated into `events/<date>.jsonl`. Migration left the originals in place for recovery; safe to remove in a follow-up sweep. |
+| Archive marker | `~/.dev-studio/<project>/plans/.legacy-archive/ARCHIVED.yaml` | Informational marker written by `scripts/archive-legacy-surfaces.sh`. |
 
-**Resolver status.** The deprecated `resolve_briefs_dir()`, `resolve_chanakya_inbox()`, and `resolve_chanakya_inbox_for()` were retired on 2026-04-22 (#67) after `scripts/detect-edits.sh`, `scripts/achilles-worker.sh`, and `scripts/analyze-collect.sh` upgraded to the YAML shape. Runtime scripts that still need to read the legacy paths (analysis/backfill tools) compose them directly off `resolve_project_root_for()` and emit `legacy_artifact_read` on fallback. New code must target the canonical layout.
+**Resolver status.** `resolve_briefs_dir()`, `resolve_chanakya_inbox()`, and `resolve_chanakya_inbox_for()` were retired on 2026-04-22 (#67). The legacy `lib-ledger::legacy_master_plan_*/legacy_inbox_*/legacy_brief_*/legacy_release_log_*` helpers were retired on 2026-04-27 (#245 A.5) — the function names remain as fail-loud stubs (exit 9) so any straggler caller surfaces immediately rather than degenerating to NameError. Migration / one-shot analysis tools that need to read the archived paths compose them directly off `resolve_plans_dir_for()/.legacy-archive/`. New code must target the canonical layout.

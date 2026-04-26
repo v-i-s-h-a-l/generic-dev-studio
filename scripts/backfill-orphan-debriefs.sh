@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
-# backfill-orphan-debriefs.sh — detect + optionally repair orphan debriefs.
+# backfill-orphan-debriefs.sh — detect orphan debriefs (DEGRADED post-#245 A.4).
 #
 # An orphan debrief is a YAML debrief with `state in {done, ingested}` whose
 # task has NO corresponding `### <legacy_task_id>` section in
 # plans/chanakya-master.md. These are the debriefs the sweep silently missed
 # — once `state != emitted`, Step 0A's filter skips them on every subsequent
 # run and the master plan stays stale forever.
+#
+# DEGRADED MODE (post-#245 A.4): the master-plan is now a rendered projection
+# from plans/tasks/*.yaml — back-filling rows directly into the markdown is no
+# longer meaningful. The legacy_master_plan_append_row helper this script
+# called was retired in #245 A.5; --apply mode currently no-ops (detection
+# still works as a diagnostic). A YAML-shaped rewrite is tracked as a
+# follow-up issue.
 #
 # Two entry points:
 #   1. Fix F (one-shot recovery): user invokes manually once to recover
@@ -47,6 +54,12 @@ while [ $# -gt 0 ]; do
     *) printf 'backfill-orphan-debriefs.sh: unknown arg %s\n' "$1" >&2; exit 2 ;;
   esac
 done
+
+# Post-#245 A.4 caveat: --apply currently no-ops (legacy helper retired). Detect
+# mode is still useful as a diagnostic. Surface the caveat once on --apply runs.
+if [ "$APPLY" = "1" ] && [ "$QUIET" = "0" ]; then
+  printf 'backfill-orphan-debriefs: --apply is currently a no-op (legacy_master_plan_append_row retired in #245 A.5). Detection prints orphans for diagnostic use; YAML-shaped backfill is a follow-up.\n' >&2
+fi
 
 PROJECT=$(resolve_project 2>/dev/null) || { printf 'backfill: no project resolved\n' >&2; exit 2; }
 PROJECT_ROOT=$(resolve_project_root_for "$PROJECT")

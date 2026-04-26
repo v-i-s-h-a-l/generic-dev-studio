@@ -45,21 +45,8 @@ done
 [ -z "$PROJECT" ] && PROJECT=$(resolve_project 2>/dev/null || echo "")
 [ -z "$PROJECT" ] && { printf 'cannot resolve project — pass --project=<slug>\n' >&2; exit 2; }
 
-PLANS_DIR=$(resolve_plans_dir_for "$PROJECT")
 TASKS_DIR=$(resolve_tasks_dir_for "$PROJECT")
 EVENTS_DIR=$(resolve_events_dir_for "$PROJECT")
-MASTER_PLAN="$PLANS_DIR/chanakya-master.md"
-LEGACY_DIR="$PLANS_DIR/chanakya-tasks"
-
-# Observability for the dual-write transition (#245 A.1 readiness item 3):
-# emit one legacy_artifact_read per invocation when the legacy master-plan or
-# tasks dir is consulted. Lets the A.2 soak surface allocator dependence on
-# the legacy paths before A.3 flips DUAL_WRITE_MODE=yaml-only.
-if [ -f "$MASTER_PLAN" ] || [ -d "$LEGACY_DIR" ]; then
-  append_event chanakya legacy_artifact_read "" \
-    "{\"domain\":\"next_task_id\",\"reason\":\"legacy_master_plan_or_tasks_dir_grep\",\"caller\":\"next-task-id.sh\",\"prefix\":\"$PREFIX\"}" \
-    2>/dev/null || true
-fi
 
 # "T" is a bare prefix (T001); "TBUILD"/"TUNIT" use a dash separator (TBUILD-1).
 # The dash disambiguates TUNIT-3 from unrelated TUNITx matches.
@@ -70,18 +57,14 @@ else
 fi
 TOKEN_RE="${PREFIX}${SEP}[0-9]+"
 
-# Emit numeric suffixes from each source to stdout (one per line).
+# Emit numeric suffixes from each source to stdout (one per line). Post-#245
+# A.4 the legacy master-plan + chanakya-tasks dir are archived; both YAML
+# `legacy_task_id` fields and event-log mentions are sufficient to keep the
+# allocator monotonic.
 collect_numbers() {
   if [ -d "$TASKS_DIR" ]; then
     grep -hEo "legacy_task_id: *\"?${TOKEN_RE}" "$TASKS_DIR"/*.yaml 2>/dev/null \
       | grep -oE '[0-9]+$'
-  fi
-  if [ -f "$MASTER_PLAN" ]; then
-    grep -oE "$TOKEN_RE" "$MASTER_PLAN" 2>/dev/null | grep -oE '[0-9]+$'
-  fi
-  if [ -d "$LEGACY_DIR" ]; then
-    find "$LEGACY_DIR" -maxdepth 1 -type f -name '*.md' -print 2>/dev/null \
-      | grep -oE "$TOKEN_RE" | grep -oE '[0-9]+$'
   fi
   if [ -d "$EVENTS_DIR" ]; then
     grep -hoE "\"${TOKEN_RE}\"" "$EVENTS_DIR"/*.jsonl 2>/dev/null \
@@ -90,17 +73,10 @@ collect_numbers() {
 }
 
 # Per-source counts are useful for --explain; compute them only if asked.
-src_yaml=0 src_master=0 src_legacy=0 src_events=0
+src_yaml=0 src_events=0
 if [ "$EXPLAIN" = "1" ]; then
   [ -d "$TASKS_DIR" ] && src_yaml=$(
     grep -hEo "legacy_task_id: *\"?${TOKEN_RE}" "$TASKS_DIR"/*.yaml 2>/dev/null | wc -l | tr -d ' '
-  )
-  [ -f "$MASTER_PLAN" ] && src_master=$(
-    grep -oE "$TOKEN_RE" "$MASTER_PLAN" 2>/dev/null | wc -l | tr -d ' '
-  )
-  [ -d "$LEGACY_DIR" ] && src_legacy=$(
-    find "$LEGACY_DIR" -maxdepth 1 -type f -name '*.md' -print 2>/dev/null \
-      | grep -oE "$TOKEN_RE" | wc -l | tr -d ' '
   )
   [ -d "$EVENTS_DIR" ] && src_events=$(
     grep -hoE "\"${TOKEN_RE}\"" "$EVENTS_DIR"/*.jsonl 2>/dev/null | wc -l | tr -d ' '
@@ -114,8 +90,8 @@ max_n=$(collect_numbers | sort -n | tail -1)
 next_n=$(( max_n + 1 ))
 
 if [ "$EXPLAIN" = "1" ]; then
-  printf 'next-task-id: project=%s prefix=%s max=%s next=%s sources=yaml:%s,master:%s,legacy:%s,events:%s\n' \
-    "$PROJECT" "$PREFIX" "$max_n" "$next_n" "$src_yaml" "$src_master" "$src_legacy" "$src_events" >&2
+  printf 'next-task-id: project=%s prefix=%s max=%s next=%s sources=yaml:%s,events:%s\n' \
+    "$PROJECT" "$PREFIX" "$max_n" "$next_n" "$src_yaml" "$src_events" >&2
 fi
 
 if [ "$PREFIX" = "T" ]; then

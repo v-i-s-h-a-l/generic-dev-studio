@@ -21,7 +21,6 @@ writes:
   - plans/tasks/<task-id>.yaml                     # state transitions + links (via lib-ledger)
   - plans/releases/<release-id>.yaml               # release state transitions on debrief ingest
   - plans/debriefs/<debrief-id>.yaml               # emitted → ingested flip
-  - plans/chanakya-master.md                       # legacy mutation until Commit H
   - plans/chanakya-inbox/processed/                # legacy debrief move destination
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---

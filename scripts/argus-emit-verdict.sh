@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # argus-emit-verdict.sh — Step 7 of the Argus pipeline (+ Step 8 stdout line).
 #
-# Writes the YAML review artifact via `write_review_artifact`, compensates for
-# the stubbed `legacy_review_write_markdown` helper by writing the legacy
-# markdown directly, appends the review to the parent task's `links.reviews`
-# via `append_task_link`, emits the verdict event (handled inside
-# write_review_artifact), appends to the push queue on block, manages result-
-# bundle retention on flag, and prints the Step-8 machine-parseable verdict
-# line on stdout.
+# Writes the YAML review artifact via `write_review_artifact`, also writes a
+# free-form review markdown under the project's Claude memory dir (separate
+# carve-out from plans/, see file-locations.md "Review files (legacy archive)"
+# row — unaffected by #245 A.4), appends the review to the parent task's
+# `links.reviews` via `append_task_link`, emits the verdict event (handled
+# inside write_review_artifact), appends to the push queue on block, manages
+# result-bundle retention on flag, and prints the Step-8 machine-parseable
+# verdict line on stdout.
 #
 # Usage:
 #   scripts/argus-emit-verdict.sh <task-id> <verdict> <findings-json> \
@@ -87,9 +88,9 @@ if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
   exit "$rc"
 fi
 
-# Compensate for the stubbed legacy helper by writing the markdown directly.
-# Path: project-memory (pre-2.6 carve-out); not under ~/.dev-studio/. This
-# is a one-time compensation until the lib-ledger stub fills in at Commit H.
+# Write the legacy review markdown directly. Path: project-memory carve-out
+# (~/.claude/projects/<slug>/memory/reviews/), not under ~/.dev-studio/plans/
+# — separate surface, unaffected by the #245 archive of plans/.legacy-archive.
 if [ -n "$LEGACY_PATH_OVERRIDE" ]; then
   LEGACY_REVIEW_FILE="$LEGACY_PATH_OVERRIDE"
 else

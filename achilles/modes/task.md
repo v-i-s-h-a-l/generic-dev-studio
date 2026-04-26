@@ -20,7 +20,6 @@ writes:
   - plans/tasks/<task-id>.yaml                     # back-ref update: links.debrief + state transitions per _shared/state-machines/task-lifecycle.md
   - plans/briefs/<brief-id>.yaml                   # brief state transition dispatched → debriefed per _shared/state-machines/brief-lifecycle.md
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
-  - plans/chanakya-master.md                       # legacy master-plan status mutation during Phase 2.6 transition
   - plans/chanakya-inbox/<task-id>-debrief.md      # legacy debrief markdown retained during Phase 2.6 transition
   - plans/chanakya-inbox/<task-id>-tests.md        # test-case artifact (read-write surface for test-manifest)
   - events/<date>.jsonl                            # via scripts/write-event.sh
