@@ -4,18 +4,18 @@ description: YAML shape for per-task artifacts under plans/tasks/<task-id>.yaml.
 type: reference
 ---
 
-# Task Schema (`task@1.1.0`)
+# Task Schema (`task@1.2.0`)
 
 Per-task artifact written to `~/.dev-studio/<project>/plans/tasks/<task-id>.yaml`. Replaces the inline per-task markdown block in the legacy master plan. One file per task — the master plan becomes a rendered view, no longer a source of truth (Phase 2.6).
 
-Version 1.1.0 is non-breaking — every new field is optional with a documented default (per `contracts/EVOLUTION.md` rule 1). Readers on 1.0.0 transparently ignore the new fields; writers may emit them when value is known. `min_reader: 1.0.0` keeps the entire active fleet compatible.
+Versions 1.1.0 and 1.2.0 are both non-breaking — every new field is optional with a documented default (per `contracts/EVOLUTION.md` rule 1). Readers on earlier versions transparently ignore the new fields; writers may emit them when value is known. `min_reader: 1.0.0` keeps the entire active fleet compatible.
 
 ## Shape
 
 ```yaml
 schema_version:
   name: task
-  version: 1.1.0
+  version: 1.2.0
   min_reader: 1.0.0
   deprecated_at: null
 id: 0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11       # UUIDv7
@@ -42,6 +42,7 @@ recommended_model: null                          # 1.1.0; opus | sonnet | haiku 
 reopen_reason: null                              # 1.1.0; string; populated when state == reopened (#252)
 reopen_chain: []                                 # 1.1.0; prior debrief-id array (chronological)
 duplicate_of: null                               # 1.1.0; UUIDv7 of the canonical task | null
+caused_by: []                                    # 1.2.0; UUIDv7 array; regression / fallout provenance — task IDs whose ship caused this task to be filed
 verification:                                    # 1.1.0; composite cross-cutting view (denormalized — see §Verification block)
   debrief_id: null
   review_id: null
@@ -104,12 +105,28 @@ All optional; absence semantics documented per `contracts/EVOLUTION.md` rule 1.
 | `reopen_reason` | string \| null | no | `null` | Free-text reason; populated only when `state == reopened`. ≤ 280 chars. |
 | `reopen_chain` | array of UUIDv7 | no | `[]` | Chronological list of prior debrief-ids across reopen cycles. Append-only when state transitions through `reopened`. |
 | `duplicate_of` | UUIDv7 \| null | no | `null` | When set, this task is closed-as-duplicate of the named canonical task. Setting `duplicate_of` requires `state` ∈ `{cancelled, archived}`. |
+| `caused_by` | array of UUIDv7 | no | `[]` | Regression / fallout provenance — tasks whose ship caused this task to be filed. Forward-only edge; the inverse `causes` is computed at read time by `scripts/query-relations.sh` (no stored field). Typical use: a bug task lists the feature task whose merge introduced the regression. (1.2.0) |
 | `verification.debrief_id` | UUIDv7 \| null | no | `null` | Latest verifying debrief. May equal `links.debrief` or differ when verification used a re-run. |
 | `verification.review_id` | UUIDv7 \| null | no | `null` | Argus review that approved the verifying run. May equal `links.reviews[-1]` or differ when verification used a separate review. |
 | `verification.merge_sha` | string \| null | no | `null` | Full-length SHA of the verified merge commit. Equals `debrief.branch.merge_sha` when both are populated. |
 | `verification.build_id` | string \| null | no | `null` | Build identifier from the verifying run (e.g. TestFlight build number). Null until the task ships. |
 
 The `verification` block is **denormalized** — every field can be derived by joining `links.debrief`, `links.reviews`, and `links.release`. Maintained as a cross-cutting projection so a single read of the task answers "is this verified?" without four lookups. Writers (Chanakya `inbox-sweep`, Achilles `task`) keep it in sync with `links.*`; the plans-index validator flags drift.
+
+## Relation edges
+
+The schema carries several relation edges, all forward-only on the storing task. Inverse views are computed at read time by `scripts/query-relations.sh` — no inverse field is persisted, so the SSOT stays on the forward edge.
+
+| Forward edge | Field | Cardinality | Inverse (computed) |
+|---|---|---|---|
+| blocked-by | `predecessors` | many | `blocks` |
+| parent | `parent` | one | `children` |
+| confirmed duplicate | `duplicate_of` | one | `duplicates` |
+| suspected similar | `similar_to` | many | `similar_to` (symmetric hint; not strictly inverse) |
+| caused-by | `caused_by` | many | `causes` |
+| reopen lineage | `reopen_chain` | many (chronological) | (no inverse — chain is per-task history) |
+
+Reverse-index helper: `scripts/query-relations.sh --task <id>` joins these into a `forward:` / `inverse:` block. `/chanakya status --task <id>` renders that block; `/chanakya brief` and `/chanakya intake` consult `similar_to` / `duplicate_of` at author time to surface possible duplicates.
 
 ## States
 
@@ -247,6 +264,7 @@ history:
 
 | Version | Landed | Changes |
 |---|---|---|
+| 1.2.0 | 2026-04-27 | Added `caused_by` (regression / fallout provenance — UUIDv7 array; default `[]`). Forward-only; inverse `causes` is computed at read time by `scripts/query-relations.sh`. Non-breaking; `min_reader: 1.0.0`. New "Relation edges" section enumerates the forward/inverse model across all existing edges. (#282) |
 | 1.1.0 | 2026-04-27 | Lean fields landed (#247 Stage C deliverable 2): `type`, `priority`, `labels`, `parent`, `train`, `release_target`, `released_in`, `predecessors`, `similar_to`, `affinity`, `origin`, `effort_minutes`, `recommended_model`, `reopen_reason`, `reopen_chain`, `duplicate_of`, `verification`. All optional with documented defaults — non-breaking; `min_reader: 1.0.0`. `reopened` reserved in state enum for #252. |
 | 1.0.0 | 2026-04-22 | Initial Phase 2.6 landing — per-task YAML replaces master-plan inline blocks. |
 

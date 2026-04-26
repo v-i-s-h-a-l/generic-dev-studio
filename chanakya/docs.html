@@ -591,6 +591,10 @@ cd generic-dev-studio
       <span>See all tasks, their status, debt gauges, blockers, test rounds, and what's next</span>
     </div>
     <div class="cmd-card">
+      <code>/chanakya status --task &lt;id&gt;</code>
+      <span>Per-task drill-down: forward + computed inverse relation edges (<code>predecessors</code>/<code>blocks</code>, <code>parent</code>/<code>children</code>, <code>duplicate_of</code>/<code>duplicates</code>, <code>caused_by</code>/<code>causes</code>, <code>similar_to</code>), state, last history entry, links. Accepts UUIDv7 or legacy <code>T&lt;nnn&gt;</code>. Backed by <code>scripts/query-relations.sh</code>.</span>
+    </div>
+    <div class="cmd-card">
       <code>/chanakya brief T001</code>
       <span>Generate a self-contained brief (implementation or test brief) with Figma context</span>
     </div>

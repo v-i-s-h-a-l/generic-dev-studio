@@ -1,6 +1,6 @@
 ---
 name: Chanakya Intake
-description: Initial task capture + planning — take a PRD or bullet points, tier into plan-worthy vs direct, expand into task groups with sub-task decisions (unit/integration/UI tests, TDD vs test-after), assign skills, write the master plan.
+description: Initial task capture + planning — PRD/bullets in, similarity-probe for duplicate-fold, tier plan-worthy vs direct, expand into task groups (unit/integration/UI tests), write master plan.
 type: mode-pack
 schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
@@ -43,6 +43,35 @@ Post-migration surface: list existing tasks via `scripts/query-plans.sh --kind=t
 **Phase 2.6 transition:** if no YAML task artifacts exist yet (migration not run), read `~/.dev-studio/<project>/plans/chanakya-master.md` and emit one `legacy_artifact_read` event so the fallback is visible. Cutover removes the legacy read at Commit H.
 
 If neither surface has prior state, this is a fresh project — proceed to Step 3 with an empty set.
+
+## Step 2A — Similarity probe (per candidate task)
+
+Before tiering or expanding into groups, run the duplicate-fold probe against every newly-captured candidate. This catches "we already filed this" before a task ID is minted.
+
+For each candidate `{title, touchpoints?}` from Step 1:
+
+```bash
+scripts/similarity-probe.sh --title "<candidate title>" \
+  --touchpoints "<glob1,glob2>"   # optional; pass when Step 1 inferred them
+```
+
+The script returns up to 5 ranked matches, one per line: `<score>\t<legacy>\t<uuid>\t<state>\t<title>`. Score is a Jaccard-weighted blend of title-token overlap (70%) and touchpoint overlap (30%); matches below 0.20 are dropped. Tasks already `archived`, `cancelled`, or `duplicate_of`-marked are skipped.
+
+When at least one match returns, surface to the user:
+
+> "T347 (`Add filter preset row to photo editor`, state: briefed) looks similar to your candidate `Add filter preset row`. Treat as:
+> - **(d)uplicate** — fold into T347, no new task created.
+> - **(s)imilar** — knowledge-layer hint only; mint the new task with `similar_to: [T347]` and proceed.
+> - **(n)ew** — distinct work; mint normally."
+
+Apply the user's choice:
+- `(d)uplicate` — skip Steps 3–6 for this candidate. If the user wants the fold *recorded* (rather than discarded silently), mint a stub task with `state: cancelled` and `duplicate_of: <canonical-uuid>` so the audit trail survives. Default behavior is silent skip.
+- `(s)imilar` — proceed to Step 3 with `similar_to: [<canonical-uuid>]` recorded for the eventual `write_task_artifact` call.
+- `(n)ew` — proceed normally; no edge recorded.
+
+When the probe returns no matches, proceed to Step 3 silently.
+
+The heuristic is deliberately simple (Jaccard over title tokens + touchpoint globs). Phase 2.7's knowledge layer will replace it with embedding-based search; the probe contract (input → ranked matches) is stable across that swap.
 
 ## Step 3 — Tier tasks
 

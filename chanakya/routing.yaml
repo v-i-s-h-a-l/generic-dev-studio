@@ -5,6 +5,7 @@ invocation:
   triggers:
     - "/chanakya"
     - "/chanakya status"
+    - "/chanakya status --task <id>"
     - "/chanakya intake"
     - "/chanakya brief <task-id>"
     - "/chanakya brief-all"

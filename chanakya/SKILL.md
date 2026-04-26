@@ -35,6 +35,7 @@ Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debri
 | *(no args)* | `modes/status.md` (default) |
 | `intake` | `modes/intake.md` |
 | `status` | `modes/status.md` |
+| `status --task <id>` | `modes/status.md` (§Per-task view — relation graph drill-down) |
 | `brief <task-id>` | `modes/brief.md` |
 | `brief-all` | `modes/brief.md` (composite) |
 | `brief-review <task-id>` | `modes/brief-review.md` (checklist pre-dispatch; warn-tier) |

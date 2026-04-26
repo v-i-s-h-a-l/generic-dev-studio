@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-04-26T22:22:41Z",
+  "generated_at": "2026-04-26T22:06:10Z",
   "agents": [
     {
       "name": "studio",
@@ -494,7 +494,7 @@
           "name": "status",
           "path": "chanakya/modes/status.md",
           "type": "mode-pack",
-          "description": "Default mode. Renders master-plan summary, git state, blockers, push queue, test-flow round status, and release status. Sub-mode `--task <id>` renders a per-task relation graph (forward + inverse edges via scripts/query-relations.sh).",
+          "description": "Default mode. Renders master-plan summary, git state, blockers, push queue, test-flow round status, and release status.",
           "reads": ["plans/index.yaml                               # post-migration task index (schema: _shared/schemas/task.md via plans-index-validator)", "plans/tasks/*.yaml                             # post-migration per-task artifacts", "plans/rounds/*.yaml                            # post-migration round artifacts", "plans/releases/*.yaml                          # post-migration release artifacts", "plans/chanakya-master.md                       # legacy fallback until Commit H", "plans/user-testing-rounds/*.md                 # legacy fallback until Commit H", "events/<date>.jsonl                            # canonical event log", ".runtime/state/chanakya-snapshots/*.json       # snapshot cache", ".runtime/state/push-queue.jsonl                # push queue"],
           "writes": [".runtime/state/push-queue.jsonl                # marks entries displayed"],
           "snapshots": ["briefs.json", "debt.json", "feedback-inbox.json", "events-tail.json"],
