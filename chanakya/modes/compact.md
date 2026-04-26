@@ -26,7 +26,6 @@ writes:
   - plans/rounds/<round-id>.yaml                   # state transitions to archived
   - archive/2026-pre-2.6/<task-id>.yaml            # post-migration archival sink (one file per artifact kind)
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
-  - plans/chanakya-master.md                       # legacy master-plan slim + Dashboard block
   - plans/chanakya-archive.md                      # legacy archive append
   - plans/chanakya-changelog.md                    # legacy changelog trim
   - feedback/active.md                             # legacy prune

@@ -18,7 +18,6 @@ writes:
   - plans/tasks/<task-id>.yaml                     # back-ref update: links.brief + state bump
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
   - plans/chanakya-tasks/<task-id>-<slug>.md       # legacy markdown brief retained during Phase 2.6 transition (cutover removes at Commit H)
-  - plans/chanakya-master.md                       # legacy task-status mutation until Commit H
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
@@ -32,7 +31,6 @@ Snapshots: `snapshots/briefs.json` (tolerates 5-minute freshness — regenerate 
 
 Post-migration surface: resolve the task via `scripts/query-plans.sh --kind=task --id=<task-id>` against `plans/tasks/<task-id>.yaml` (schema: `_shared/schemas/task.md`, `task@1.0.0`). If the task is `direct` type, note this in the output ("T003 is a direct task — briefing anyway") and continue.
 
-**Phase 2.6 transition:** if the YAML artifact is absent (migration has not run), fall back to `~/.dev-studio/<project>/plans/chanakya-master.md` and emit one `legacy_artifact_read` event so the fallback is visible. Cutover removes the legacy read at Commit H.
 
 ## Step 1A — Master-plan registration gate
 

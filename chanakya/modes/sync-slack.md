@@ -14,7 +14,6 @@ reads:
   - .runtime/state/chanakya-snapshots/briefs.json
   - feedback/active.md                             # reminders table (append target below)
 writes:
-  - plans/chanakya-master.md                       # legacy: Slack-status-last-synced writeback (until Commit G emits YAML)
   - feedback/active.md                             # append ingest-reminder rows
 ---
 

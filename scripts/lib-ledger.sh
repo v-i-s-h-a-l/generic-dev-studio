@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
-# lib-ledger.sh — sourced library for ledger mutations (Phase 2.6.5 commit 3).
+# lib-ledger.sh — sourced library for ledger mutations.
 #
-# Every extraction script that mutates a plans/<kind>/ artifact routes through
-# these helpers. The library is load-bearing for the dual-write transition
-# (see _shared/patterns/dual-write-transition.md): one call site, YAML + legacy
-# written atomically from the caller's perspective, partial-failure surfaced
-# via `dual_write_partial` events + exit 3.
+# Every script that mutates a plans/<kind>/ artifact routes through these
+# helpers. Post-#245 (Stage A.4/A.5) the library is YAML-only — the dual-write
+# transition closed when legacy debrief-shaped surfaces moved under
+# plans/.legacy-archive/. The dual-write call sites in the writers below have
+# been removed; the legacy_*_helpers (lower in this file) now fail loud as a
+# safety net for any straggler caller.
+#
+# History: Phase 2.6 introduced the structured YAML layer; Phase 2.6.5 commit
+# 3 wired this library as the single mutation surface; #245 A.3 flipped
+# DUAL_WRITE_MODE default → yaml-only; #245 A.4/A.5 archived legacy surfaces
+# and removed the dual-write code paths entirely. See
+# _shared/patterns/dual-write-transition.md for the pattern (kept as a
+# primitive for any future migration).
 #
 # Exposes:
 #   Utilities
@@ -22,7 +30,7 @@
 #                                             appends event envelope per
 #                                             contracts/event-emission.md
 #
-#   State transitions (dual-write YAML + legacy)
+#   State transitions (YAML-only post-#245 A.5)
 #     transition_task_state    <uuid> <to> <actor> <reason>
 #     transition_brief_state   <uuid> <to> <actor> <reason>
 #     transition_release_state <uuid> <to> <actor> <reason>
@@ -33,7 +41,7 @@
 #     set_task_link    <uuid> <brief|debrief|release> <target-uuid>
 #     append_task_link <uuid> <reviews|feedback>      <target-uuid>
 #
-#   Artifact writers (net-new YAML + legacy dual-write + event)
+#   Artifact writers (YAML + event; no legacy markdown post-#245 A.5)
 #     write_task_artifact     <uuid> <state> <title> [k=v...]
 #     write_brief_artifact    <brief-uuid> <task-uuid> <type> <size> [k=v...]
 #     write_debrief_artifact  <uuid> <task-uuid|null> <brief-uuid|null> <mode> <state> [k=v...]
@@ -41,30 +49,25 @@
 #     write_round_artifact    <uuid> <round-number> <scope> <tasks-csv> <body>
 #     write_release_artifact  <uuid> <channel> <version> <build> <tag> <tasks-csv>
 #
-#   Legacy counterpart helpers (markdown surgery)
-#     legacy_master_plan_set_status    <legacy-id> <status> [commits] [merge]
-#     legacy_master_plan_append_row    <legacy-id> <title> <priority> <type> <source> <status>
-#     legacy_master_plan_archive_task  <legacy-id>
-#     legacy_inbox_move_to_processed   <debrief-filename>
-#     legacy_inbox_write_debrief       <legacy-id> <path> <body>
-#     legacy_brief_write_markdown      <legacy-id> <slug> <body>
-#     legacy_review_write_markdown     <legacy-id> <body>
-#     legacy_round_write_markdown      <round-number> <body>
-#     legacy_release_log_append        <build> <version> <type> <date> <tag> <head> <tasks-csv>
+#   Legacy counterpart helpers (RETIRED — fail loud on call)
+#     legacy_master_plan_set_status / append_row / archive_task
+#     legacy_inbox_move_to_processed / write_debrief
+#     legacy_brief_write_markdown / legacy_review_write_markdown
+#     legacy_round_write_markdown / legacy_release_log_append
 #
 #   Batching
 #     flush_index                             rebuild plans/index.yaml now
 #
 # Env controls (all optional):
-#   DUAL_WRITE_MODE   `yaml-only` (default) | `both`           `both` retained as escape hatch for future migrations (#245 A.3)
 #   DRY_RUN           `1` to log + buffer without filesystem writes
 #   WITHHOLD_INDEX    `1` to skip rebuild-index per mutation (callers batch)
+#
+# (DUAL_WRITE_MODE is no longer consulted post-#245 A.5 — readers are gone.)
 #
 # Exit codes:
 #   0   success
 #   2   validation error (unknown kind, missing file, malformed input)
-#   3   dual-write partial failure (YAML ok, legacy failed) — event emitted
-#   9   not-implemented legacy helper (see stubs below)
+#   9   retired legacy helper called (see _legacy_helper_retired)
 #
 # No `set -e` — sourced into scripts that may or may not want strict mode.
 
@@ -233,31 +236,6 @@ emit_event_keyed() {
   printf '%s\n' "$line"
 }
 
-# ---------- Dual-write gating ----------
-
-# Single consultation point. #245 A.3 flipped the default to yaml-only;
-# `both` retained as escape hatch for any future migration.
-_lw_dual_write_enabled() {
-  case "${DUAL_WRITE_MODE:-yaml-only}" in
-    both) return 0 ;;
-    yaml-only) return 1 ;;
-    *) printf '_lw_dual_write_enabled: unknown DUAL_WRITE_MODE=%s\n' "$DUAL_WRITE_MODE" >&2; return 1 ;;
-  esac
-}
-
-# Emit dual_write_partial + return 3. Shared across every dual-writer.
-_emit_dual_write_partial() {
-  local agent="${1:?}" mode="${2:?}" subject_kind="${3:?}" subject_uuid="${4:?}" legacy_path="${5:?}" reason="${6:?}"
-  local data
-  data=$(printf '{"subject_kind":"%s","subject_uuid":"%s","legacy_path":"%s","reason":"%s"}' \
-    "$(_json_escape "$subject_kind")" \
-    "$(_json_escape "$subject_uuid")" \
-    "$(_json_escape "$legacy_path")" \
-    "$(_json_escape "$reason")")
-  emit_event_keyed "$agent" "$mode" dual_write_partial "$subject_uuid" "$data" >/dev/null || true
-  return 3
-}
-
 # ---------- Index batching ----------
 
 # One rebuild per mutation unless the caller set WITHHOLD_INDEX. Callers with
@@ -372,31 +350,6 @@ _transition_artifact() {
     yq -i \
       ".state = \"$to_state\" | .updated_at = \"$ts\" | .history += [{\"from\": \"$from_state\", \"to\": \"$to_state\", \"actor\": \"$actor\", \"at\": \"$ts\", \"event_id\": \"$event_id\", \"reason\": \"$reason_safe\"}]" \
       "$f" 2>/dev/null || return 2
-  fi
-
-  # Dual-write. The legacy counterpart shape depends on kind.
-  if _lw_dual_write_enabled; then
-    case "$kind" in
-      tasks)
-        if [ -n "$legacy_task_id" ]; then
-          local legacy_status
-          legacy_status=$(_state_to_legacy_status "$to_state")
-          if ! legacy_master_plan_set_status "$legacy_task_id" "$legacy_status"; then
-            local project legacy_path
-            project=$(resolve_project 2>/dev/null || echo unknown)
-            legacy_path="$(resolve_plans_dir_for "$project")/chanakya-master.md"
-            _emit_dual_write_partial "$actor" "$kind" task "$uuid" "$legacy_path" "legacy_master_plan_set_status_failed" || return 3
-          fi
-        fi
-        ;;
-      releases|rounds|reviews|briefs)
-        # These state-only transitions touch the legacy master-plan or markdown
-        # only on status-sensitive transitions. The Phase 2.6.5 spine keeps the
-        # state flip + event emission; the corresponding legacy markdown is
-        # regenerated (not incrementally mutated) by its dedicated writer.
-        :
-        ;;
-    esac
   fi
 
   # Event emission — domain event names match _shared/contracts/events.md.
@@ -607,26 +560,6 @@ write_task_artifact() {
   # Legacy dual-write — append a master-plan row. Legacy task id comes from
   # k=v pairs when present; otherwise we skip (post-cutover tasks have no
   # legacy rowID).
-  if _lw_dual_write_enabled; then
-    local legacy_task_id=""
-    local pair
-    for pair in "$@"; do
-      case "$pair" in
-        legacy_task_id=*) legacy_task_id="${pair#legacy_task_id=}" ;;
-      esac
-    done
-    if [ -n "$legacy_task_id" ]; then
-      local legacy_status
-      legacy_status=$(_state_to_legacy_status "$state")
-      if ! legacy_master_plan_append_row "$legacy_task_id" "$title" "P2" "—" "—" "$legacy_status"; then
-        local project legacy_path
-        project=$(resolve_project 2>/dev/null || echo unknown)
-        legacy_path="$(resolve_plans_dir_for "$project")/chanakya-master.md"
-        _emit_dual_write_partial chanakya task task "$uuid" "$legacy_path" "legacy_master_plan_append_row_failed" || return 3
-      fi
-    fi
-  fi
-
   local data
   data=$(printf '{"from":null,"to":"%s","actor":"chanakya","event_id":"%s"}' \
     "$(_json_escape "$state")" "$event_id")
@@ -674,25 +607,6 @@ write_brief_artifact() {
     _dry_write_log "$f" "$payload" "$idem"
   else
     _atomic_write "$f" "$payload" || return 2
-  fi
-
-  if _lw_dual_write_enabled; then
-    local legacy_task_id="" slug="$type"
-    local pair
-    for pair in "$@"; do
-      case "$pair" in
-        legacy_task_id=*) legacy_task_id="${pair#legacy_task_id=}" ;;
-        slug=*)           slug="${pair#slug=}" ;;
-      esac
-    done
-    if [ -n "$legacy_task_id" ]; then
-      if ! legacy_brief_write_markdown "$legacy_task_id" "$slug" "$_LW_BODY"; then
-        local project legacy_path
-        project=$(resolve_project 2>/dev/null || echo unknown)
-        legacy_path="$(resolve_plans_dir_for "$project")/chanakya-tasks/${legacy_task_id}-${slug}.md"
-        _emit_dual_write_partial chanakya brief brief "$uuid" "$legacy_path" "legacy_brief_write_markdown_failed" || return 3
-      fi
-    fi
   fi
 
   local data
@@ -793,24 +707,6 @@ write_debrief_artifact() {
     _atomic_write "$f" "$payload" || return 2
   fi
 
-  if _lw_dual_write_enabled; then
-    local legacy_task_id=""
-    local pair
-    for pair in "$@"; do
-      case "$pair" in
-        legacy_task_id=*) legacy_task_id="${pair#legacy_task_id=}" ;;
-      esac
-    done
-    if [ -n "$legacy_task_id" ]; then
-      local project legacy_path
-      project=$(resolve_project 2>/dev/null || echo unknown)
-      legacy_path="$(resolve_plans_dir_for "$project")/chanakya-inbox/${legacy_task_id}-debrief.md"
-      if ! legacy_inbox_write_debrief "$legacy_task_id" "$legacy_path" "$_LW_BODY"; then
-        _emit_dual_write_partial achilles debrief debrief "$uuid" "$legacy_path" "legacy_inbox_write_debrief_failed" || return 3
-      fi
-    fi
-  fi
-
   local data
   if [ -n "$_report_state" ]; then
     data=$(printf '{"mode":"%s","state":"%s","report_state":"%s"}' \
@@ -880,16 +776,6 @@ write_review_artifact() {
     _atomic_write "$f" "$payload" || return 2
   fi
 
-  if _lw_dual_write_enabled; then
-    # Legacy reviews are free-form markdown under project memory. The helper is
-    # stubbed exit-9 in this commit; the dual-write tries but does not fail the
-    # caller if the stub reports "not implemented" — reviews are read-mostly
-    # legacy, and pre-cutover dual-write wasn't wired for them (unlike briefs
-    # + debriefs which are actively produced). This is the minimum-risk
-    # default; raise the bar by implementing legacy_review_write_markdown.
-    legacy_review_write_markdown "$subject_uuid" "" >/dev/null 2>&1 || true
-  fi
-
   local data
   data=$(printf '{"subject_kind":"%s","subject_uuid":"%s","verdict":"%s","stage":"%s"}' \
     "$(_json_escape "$subject_kind")" "$(_json_escape "$subject_uuid")" "$(_json_escape "$verdict")" "$(_json_escape "$stage")")
@@ -944,15 +830,6 @@ write_round_artifact() {
     _atomic_write "$f" "$payload" || return 2
   fi
 
-  if _lw_dual_write_enabled; then
-    if ! legacy_round_write_markdown "$round_num" "$body"; then
-      local project legacy_path
-      project=$(resolve_project 2>/dev/null || echo unknown)
-      legacy_path="$(resolve_plans_dir_for "$project")/user-testing-rounds/user-testing-round${round_num}.md"
-      _emit_dual_write_partial chanakya round round "$uuid" "$legacy_path" "legacy_round_write_markdown_failed" || return 3
-    fi
-  fi
-
   local data
   data=$(printf '{"from":null,"to":"open","round_number":%s}' "$round_num")
   emit_event_keyed chanakya round round_state_changed "$uuid" "$data" --idem-key "$idem" >/dev/null || return $?
@@ -998,17 +875,6 @@ write_release_artifact() {
     _atomic_write "$f" "$payload" || return 2
   fi
 
-  if _lw_dual_write_enabled; then
-    local today
-    today=$(date -u +%Y-%m-%d)
-    if ! legacy_release_log_append "$build_num" "$version" "$channel" "$today" "$tag" "" "$tasks_csv"; then
-      local project legacy_path
-      project=$(resolve_project 2>/dev/null || echo unknown)
-      legacy_path="$(resolve_plans_dir_for "$project")/chanakya-master.md"
-      _emit_dual_write_partial achilles release release "$uuid" "$legacy_path" "legacy_release_log_append_failed" || return 3
-    fi
-  fi
-
   local data
   data=$(printf '{"from":null,"to":"released","channel":"%s","tag":"%s"}' \
     "$(_json_escape "$channel")" "$(_json_escape "$tag")")
@@ -1016,211 +882,35 @@ write_release_artifact() {
   _maybe_rebuild_index
 }
 
-# ---------- Legacy counterpart helpers ----------
+# ---------- Legacy counterpart helpers (RETIRED — #245 A.4/A.5) ----------
 #
-# Every helper returns nonzero on any detected drift (missing file, missing
-# section, unparseable row). Callers handle that by emitting dual_write_partial.
-# Helpers that require parsing the master-plan task-section structure reliably
-# are stubbed exit-9 — implementing them safely requires tests against real
-# turnip-ios fixture data, which lands with commits 5+.
+# Phase 2.6 dual-write window closed when #245 archived legacy debrief-shaped
+# surfaces under plans/.legacy-archive/ and removed every internal call site.
+# These function names remain so any straggler caller (out-of-tree script,
+# stale mode-pack example, backfill tool against an unarchived project) fails
+# loud with a clear pointer instead of NameError-degenerating to silence.
+#
+# To re-enable any of these (e.g. a future migration that needs a markdown
+# bridge): rebuild from `git show <pre-A.4-sha>:scripts/lib-ledger.sh` —
+# the legacy implementations are preserved in history, not in the working tree.
 
-_master_plan_path() {
-  local project
-  project=$(resolve_project 2>/dev/null) || return 2
-  printf '%s\n' "$(resolve_plans_dir_for "$project")/chanakya-master.md"
-}
-
-_chanakya_archive_path() {
-  local project
-  project=$(resolve_project 2>/dev/null) || return 2
-  printf '%s\n' "$(resolve_plans_dir_for "$project")/chanakya-archive.md"
-}
-
-_chanakya_inbox_path() {
-  local project
-  project=$(resolve_project 2>/dev/null) || return 2
-  printf '%s\n' "$(resolve_plans_dir_for "$project")/chanakya-inbox"
-}
-
-legacy_master_plan_set_status() {
-  local legacy_id="${1:?legacy_master_plan_set_status <legacy-task-id> <status> [commits] [merge]}"
-  local status="${2:?}"
-  local master
-  master=$(_master_plan_path) || return 2
-  [ -f "$master" ] || { printf 'legacy_master_plan_set_status: missing %s\n' "$master" >&2; return 2; }
-
-  local tmp
-  tmp="$master.tmp.$$"
-  # Update the Status bullet inside the section starting at `### $legacy_id `.
-  # Scope the edit: active only between `### T…` heading for this task and
-  # the next `### ` / `## ` boundary.
-  awk -v id="$legacy_id" -v new="$status" '
-    BEGIN { in_section=0; updated=0 }
-    /^### / {
-      if ($2 == id) { in_section=1 } else { in_section=0 }
-      print; next
-    }
-    /^## / { in_section=0; print; next }
-    in_section==1 && /^- \*\*Status:\*\*/ {
-      sub(/Status:\*\*[[:space:]]*[^[:space:]<]+/, "Status:** " new)
-      updated=1
-      print; next
-    }
-    { print }
-    END { if (!updated) exit 2 }
-  ' "$master" > "$tmp" || { rm -f "$tmp"; return 2; }
-  mv "$tmp" "$master"
-}
-
-legacy_master_plan_append_row() {
-  local legacy_id="${1:?legacy_master_plan_append_row <legacy-id> <title> <priority> <type> <source> <status>}"
-  local title="${2:?}" priority="${3:?}" type="${4:?}" source="${5:?}" status="${6:?}"
-  local master
-  master=$(_master_plan_path) || return 2
-  [ -f "$master" ] || { printf 'legacy_master_plan_append_row: missing %s\n' "$master" >&2; return 2; }
-
-  # Idempotent — if a `### $legacy_id ` heading already exists, no-op.
-  if grep -q "^### $legacy_id " "$master"; then
-    return 0
-  fi
-
-  local tmp
-  tmp="$master.tmp.$$"
-  # Insert the new block at the end of the `## Tasks` section — just before
-  # the next `## ` heading. Append to EOF when `## Tasks` is the final section.
-  awk -v id="$legacy_id" -v title="$title" -v priority="$priority" -v type="$type" -v source="$source" -v status="$status" '
-    BEGIN { in_tasks=0; emitted=0 }
-    /^## Tasks[[:space:]]*$/ { in_tasks=1; print; next }
-    in_tasks==1 && /^## / {
-      printf "### %s — %s\n", id, title
-      printf "- **Priority:** %s\n", priority
-      printf "- **Status:** %s\n", status
-      printf "- **Type:** %s\n", type
-      printf "- **Source:** %s\n", source
-      printf "\n"
-      emitted=1
-      in_tasks=0
-      print; next
-    }
-    { print }
-    END {
-      if (!emitted) {
-        printf "### %s — %s\n", id, title
-        printf "- **Priority:** %s\n", priority
-        printf "- **Status:** %s\n", status
-        printf "- **Type:** %s\n", type
-        printf "- **Source:** %s\n", source
-        printf "\n"
-      }
-    }
-  ' "$master" > "$tmp" || { rm -f "$tmp"; return 2; }
-  mv "$tmp" "$master"
-}
-
-legacy_master_plan_archive_task() {
-  # Moving a full task block from master → archive requires robust section
-  # boundaries (task block may contain `####` subtasks, code fences, etc).
-  # Deferred until commits 5+ land fixtures we can regression-test against.
-  printf 'legacy_master_plan_archive_task: not implemented in Phase 2.6.5 commit 3 — callers must defer task archival to /chanakya compact until commit N\n' >&2
+_legacy_helper_retired() {
+  local fn="$1"
+  printf '%s: legacy markdown surface retired by #245 (Stage A.4/A.5).\n' "$fn" >&2
+  printf '  Call site is stale. New writers must target plans/<kind>/*.yaml only.\n' >&2
+  printf '  See _shared/primitives/file-locations.md and _shared/patterns/dual-write-transition.md.\n' >&2
   return 9
 }
 
-legacy_inbox_move_to_processed() {
-  local filename="${1:?legacy_inbox_move_to_processed <debrief-filename>}"
-  local inbox
-  inbox=$(_chanakya_inbox_path) || return 2
-  local src="$inbox/$filename"
-  local dst="$inbox/processed/$filename"
-  # Idempotent — already-processed file succeeds silently.
-  if [ ! -f "$src" ] && [ -f "$dst" ]; then
-    return 0
-  fi
-  if [ ! -f "$src" ]; then
-    printf 'legacy_inbox_move_to_processed: missing source %s\n' "$src" >&2
-    return 2
-  fi
-  mkdir -p "$inbox/processed" || return 2
-  mv "$src" "$dst"
-}
-
-legacy_inbox_write_debrief() {
-  local legacy_id="${1:?legacy_inbox_write_debrief <legacy-id> <path> <body>}"
-  local path="${2:?}" body="${3:-}"
-  mkdir -p "$(dirname "$path")" || return 2
-  printf '%s\n' "$body" > "$path"
-}
-
-legacy_brief_write_markdown() {
-  local legacy_id="${1:?legacy_brief_write_markdown <legacy-id> <slug> <body>}"
-  local slug="${2:?}" body="${3:-}"
-  local project tasks_dir path
-  project=$(resolve_project 2>/dev/null) || return 2
-  tasks_dir="$(resolve_plans_dir_for "$project")/chanakya-tasks"
-  path="$tasks_dir/${legacy_id}-${slug}.md"
-  mkdir -p "$tasks_dir" || return 2
-  printf '%s\n' "$body" > "$path"
-}
-
-legacy_review_write_markdown() {
-  # Legacy reviews are free-form markdown under the worktree's argus scratch
-  # area, not a stable studio-managed path. Writing a canonical legacy review
-  # requires resolving the worktree that owns the review subject — deferred.
-  printf 'legacy_review_write_markdown: not implemented in Phase 2.6.5 commit 3 — callers must limit to YAML-only until commit N\n' >&2
-  return 9
-}
-
-legacy_round_write_markdown() {
-  local round_num="${1:?legacy_round_write_markdown <round-number> <body>}"
-  local body="${2:-}"
-  local project rounds_dir path
-  project=$(resolve_project 2>/dev/null) || return 2
-  rounds_dir="$(resolve_plans_dir_for "$project")/user-testing-rounds"
-  path="$rounds_dir/user-testing-round${round_num}.md"
-  mkdir -p "$rounds_dir" || return 2
-  printf '%s\n' "$body" > "$path"
-}
-
-legacy_release_log_append() {
-  local build="${1:?legacy_release_log_append <build> <version> <type> <date> <tag> <head> <tasks-csv>}"
-  local version="${2:?}" type="${3:?}" date_str="${4:?}" tag="${5:?}" head="${6:-}" tasks_csv="${7:-}"
-  local master
-  master=$(_master_plan_path) || return 2
-  [ -f "$master" ] || { printf 'legacy_release_log_append: missing %s\n' "$master" >&2; return 2; }
-
-  # Idempotent — if the Tag already appears in the Release Log, no-op.
-  if grep -F "| $tag |" "$master" 2>/dev/null | grep -q .; then
-    return 0
-  fi
-
-  # Append a new row right before the next `## ` heading after `## Release Log`.
-  # Row shape matches master-plan.md §Release Log.
-  local tasks_cell="${tasks_csv//,/, }"
-  local tmp
-  tmp="$master.tmp.$$"
-  awk -v build="$build" -v version="$version" -v type="$type" -v date="$date_str" \
-      -v tag="$tag" -v head="$head" -v tasks="$tasks_cell" '
-    BEGIN { in_log=0; emitted=0 }
-    /^## Release Log/ { in_log=1; print; next }
-    in_log==1 && /^## / {
-      printf "| %s | %s | %s | %s | %s | %s | %s |\n", build, version, type, date, tag, head, tasks
-      emitted=1
-      in_log=0
-      print; next
-    }
-    { print }
-    END {
-      if (!emitted && in_log==1) {
-        printf "| %s | %s | %s | %s | %s | %s | %s |\n", build, version, type, date, tag, head, tasks
-      } else if (!emitted) {
-        printf "\n## Release Log\n\n"
-        printf "| Build | Version | Type | Date | Tag | HEAD | Tasks Included |\n"
-        printf "|-------|---------|------|------|-----|------|---------------|\n"
-        printf "| %s | %s | %s | %s | %s | %s | %s |\n", build, version, type, date, tag, head, tasks
-      }
-    }
-  ' "$master" > "$tmp" || { rm -f "$tmp"; return 2; }
-  mv "$tmp" "$master"
-}
+legacy_master_plan_set_status()    { _legacy_helper_retired legacy_master_plan_set_status; }
+legacy_master_plan_append_row()    { _legacy_helper_retired legacy_master_plan_append_row; }
+legacy_master_plan_archive_task()  { _legacy_helper_retired legacy_master_plan_archive_task; }
+legacy_inbox_move_to_processed()   { _legacy_helper_retired legacy_inbox_move_to_processed; }
+legacy_inbox_write_debrief()       { _legacy_helper_retired legacy_inbox_write_debrief; }
+legacy_brief_write_markdown()      { _legacy_helper_retired legacy_brief_write_markdown; }
+legacy_review_write_markdown()     { _legacy_helper_retired legacy_review_write_markdown; }
+legacy_round_write_markdown()      { _legacy_helper_retired legacy_round_write_markdown; }
+legacy_release_log_append()        { _legacy_helper_retired legacy_release_log_append; }
 
 # ---------- Build-debt YAML (Stage A.0 / #273) ----------
 #

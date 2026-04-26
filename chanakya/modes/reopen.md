@@ -12,7 +12,6 @@ reads:
   - plans/debriefs/<debrief-id>.yaml               # for prior debrief reference (read-only)
 writes:
   - plans/tasks/<task-id>.yaml                     # state → reopened, reopen_reason, reopen_chain append, history append
-  - plans/chanakya-master.md                       # legacy status flip (via lib-ledger _state_to_legacy_status → "pending")
   - events/<date>.jsonl                            # via scripts/write-event.sh: task_state_changed + task_reopened
 ---
 

@@ -20,7 +20,6 @@ writes:
   - plans/tasks/<task-id>.yaml                     # task state bumps + follow-up task mint (state transitions per _shared/state-machines/task-lifecycle.md)
   - plans/feedback/<feedback-id>.yaml              # feedback state transitions per _shared/state-machines/feedback-lifecycle.md
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
-  - plans/chanakya-master.md                       # legacy master-plan mutation during Phase 2.6 transition
   - plans/user-testing-archive/<ts>.md             # archived test-manifest after processing
   - feedback/active.md                             # legacy active-list prune during Phase 2.6 transition
   - feedback/archive/build-<N>.md                  # legacy archive append during Phase 2.6 transition

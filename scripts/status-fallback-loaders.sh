@@ -28,31 +28,21 @@ PROJECT=$(resolve_project 2>/dev/null) || exit 2
 PROJECT_ROOT=$(resolve_project_root_for "$PROJECT")
 
 load_briefs() {
-  # Prefer post-migration query-plans.sh (authoritative). Legacy parser is the
-  # Phase 2.6 transition fallback.
+  # Post-#245 A.4 query-plans.sh is authoritative; chanakya-snap (rebuilt under
+  # #281 to read tasks/*.yaml directly) is the secondary path for callers that
+  # want a snapshot file. Empty payload on both miss — the legacy master-plan
+  # parser was retired with the dual-write window.
   local tasks
   if tasks=$("$SCRIPT_DIR/query-plans.sh" --kind=task 2>/dev/null) && [ -n "$tasks" ]; then
     printf '%s\n' "$tasks"
     return 0
   fi
-  local master="$PROJECT_ROOT/plans/chanakya-master.md"
-  if [ ! -f "$master" ]; then
-    printf '{"tasks":[],"total":0,"source":"empty"}\n'
-    return 0
-  fi
-  # Emit one legacy_artifact_read per sweep per domain — observable.
-  append_event chanakya legacy_artifact_read "" \
-    '{"domain":"briefs","reason":"plans_index_missing","caller":"status-fallback-loaders"}' \
-    2>/dev/null || true
-  # Use the same awk that scripts/chanakya-snap.sh produce_briefs uses — keep the
-  # two paths in sync by delegating. chanakya-snap's `briefs` subcommand writes
-  # to the snapshot file; we need the same payload on stdout.
   local snap_file="$PROJECT_ROOT/.runtime/state/chanakya-snapshots/briefs.json"
   "$SCRIPT_DIR/chanakya-snap.sh" briefs >/dev/null 2>&1
   if [ -f "$snap_file" ]; then
     cat "$snap_file"
   else
-    printf '{"tasks":[],"total":0,"source":"legacy_fallback_unavailable"}\n'
+    printf '{"tasks":[],"total":0,"source":"empty"}\n'
   fi
 }
 

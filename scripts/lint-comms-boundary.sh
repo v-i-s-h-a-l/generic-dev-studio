@@ -252,13 +252,14 @@ check_row() {
     esac
   fi
 
-  # B4 — master-plan dual-write. Currently warn-tier (pre-#245). Skip
-  # render-master-plan.sh writer (the legitimate post-flip path).
+  # B4 — master-plan dual-write. Block-tier post-#245 A.4/A.5 (the legacy
+  # mutating writers in lib-ledger.sh are retired; the only legitimate writer
+  # of plans/chanakya-master.md is render-master-plan.sh).
   if [ "$class" = "master-plan" ]; then
     case "$write_decl" in
       *"$RENDER_WRITER"*) return 0 ;;
     esac
-    emit_warn "W_MASTER_PLAN_DUAL_WRITE:$source_loc | $agent/$mode writes plans/chanakya-master.md (transitional dual-write; will block once #245 / Commit H lands)"
+    emit_error "B_MASTER_PLAN_DUAL_WRITE:$source_loc:class=$class | $agent/$mode writes plans/chanakya-master.md — only $RENDER_WRITER may write the rendered projection (see _shared/primitives/agent-comms-boundary.md §B4 and #245 A.4/A.5)"
     return 0
   fi
 

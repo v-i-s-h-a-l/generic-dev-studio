@@ -41,12 +41,13 @@ PROJECT_ROOT=$(resolve_project_root_for "$PROJECT")
 TASKS_DIR=$(resolve_tasks_dir_for "$PROJECT")
 RELEASES_DIR=$(resolve_releases_dir_for "$PROJECT")
 
-# `file is yaml?` — trailing `.yaml` distinguishes post-migration artifacts
-# from legacy markdown debriefs in the same mixed inbox. Every subcommand
-# branches on this flag to parse the right shape.
-is_yaml=0
+# Post-#245 A.4 the inbox is YAML-only; legacy markdown debriefs are archived
+# under plans/.legacy-archive/ and sweep-enumerate-debriefs no longer surfaces
+# them. We still assert the suffix here to fail loud if a stale caller passes
+# a markdown source.
 case "$SRC" in
-  *.yaml) is_yaml=1 ;;
+  *.yaml) ;;
+  *) printf 'sweep-ingest: refusing non-YAML source %s — legacy markdown debrief surface retired by #245 A.4\n' "$SRC" >&2; exit 2 ;;
 esac
 
 # Atomically bump `accumulated_count` on an active waive file for the given
@@ -98,44 +99,29 @@ ingest_debrief() {
   local to_state="merged" errors_present="" mode="task"
   local merged_into="" argus_reason="" argus_notes=""
 
-  if [ "$is_yaml" = "1" ]; then
-    command -v yq >/dev/null 2>&1 || { printf 'ingest_debrief: yq required for YAML surface\n' >&2; return 2; }
-    yaml_parse_check "$SRC" sweep-ingest-debrief || return 2
-    debrief_uuid=$(yq -r '.id // ""' "$SRC" 2>/dev/null || echo "")
-    task_uuid=$(yq -r '.task_id // ""' "$SRC" 2>/dev/null || echo "")
-    [ "$task_uuid" = "null" ] && task_uuid=""
-    legacy_task_id=$(yq -r '.legacy_task_id // ""' "$SRC" 2>/dev/null || echo "")
-    merge_sha=$(yq -r '.branch.merge_sha // ""' "$SRC" 2>/dev/null || echo "")
-    merged_into=$(yq -r '.branch.merged_into // ""' "$SRC" 2>/dev/null || echo "")
-    [ "$merged_into" = "null" ] && merged_into=""
-    argus_status=$(yq -r '.argus_review.status // "not-invoked"' "$SRC" 2>/dev/null || echo "not-invoked")
-    argus_reason=$(yq -r '.argus_review.reason // ""' "$SRC" 2>/dev/null || echo "")
-    [ "$argus_reason" = "null" ] && argus_reason=""
-    argus_notes=$(yq -r '.argus_review.notes // ""' "$SRC" 2>/dev/null || echo "")
-    [ "$argus_notes" = "null" ] && argus_notes=""
-    review_uuid=$(yq -r '.argus_review.review_id // ""' "$SRC" 2>/dev/null || echo "")
-    [ "$review_uuid" = "null" ] && review_uuid=""
-    follow_ups_count=$(yq -r '.follow_ups // [] | length' "$SRC" 2>/dev/null || echo 0)
-    mode=$(yq -r '.mode // "task"' "$SRC" 2>/dev/null || echo task)
-    # When errors are present (debrief carries a non-empty errors array or
-    # build_gate: red), route the task to `blocked` instead of `merged`.
-    errors_present=$(yq -r '.errors // [] | length' "$SRC" 2>/dev/null || echo 0)
-    if [ "${errors_present:-0}" -gt 0 ]; then
-      to_state="blocked"
-    fi
-  else
-    # Legacy markdown — extract the minimum needed: task id from filename,
-    # merge SHA + argus verdict from headers. Mode is always `task` for legacy.
-    legacy_task_id=$(basename "$SRC" | sed -n 's/\(.*\)-debrief\.md$/\1/p')
-    merge_sha=$(grep -m1 '^Merge SHA:' "$SRC" 2>/dev/null | awk '{print $3}')
-    [ -z "$merge_sha" ] && merge_sha=$(grep -m1 '^- *\*\*Merge SHA' "$SRC" 2>/dev/null | sed -E 's/.*:[[:space:]]*//')
-    if grep -qiE 'argus[[:space:]]*:[[:space:]]*(not invoked|skipped|bypassed|did not run)' "$SRC" 2>/dev/null; then
-      argus_status="not-invoked"
-    elif grep -qiE '^##[[:space:]]*Argus Review' "$SRC" 2>/dev/null; then
-      # Best-effort verdict sniff — anything else means Argus did run.
-      argus_status="approved"
-    fi
-    follow_ups_count=$(awk '/^## Follow-up Tasks/{in=1; next} /^## /{in=0} in && /^- /{n++} END{print n+0}' "$SRC" 2>/dev/null || echo 0)
+  command -v yq >/dev/null 2>&1 || { printf 'ingest_debrief: yq required\n' >&2; return 2; }
+  yaml_parse_check "$SRC" sweep-ingest-debrief || return 2
+  debrief_uuid=$(yq -r '.id // ""' "$SRC" 2>/dev/null || echo "")
+  task_uuid=$(yq -r '.task_id // ""' "$SRC" 2>/dev/null || echo "")
+  [ "$task_uuid" = "null" ] && task_uuid=""
+  legacy_task_id=$(yq -r '.legacy_task_id // ""' "$SRC" 2>/dev/null || echo "")
+  merge_sha=$(yq -r '.branch.merge_sha // ""' "$SRC" 2>/dev/null || echo "")
+  merged_into=$(yq -r '.branch.merged_into // ""' "$SRC" 2>/dev/null || echo "")
+  [ "$merged_into" = "null" ] && merged_into=""
+  argus_status=$(yq -r '.argus_review.status // "not-invoked"' "$SRC" 2>/dev/null || echo "not-invoked")
+  argus_reason=$(yq -r '.argus_review.reason // ""' "$SRC" 2>/dev/null || echo "")
+  [ "$argus_reason" = "null" ] && argus_reason=""
+  argus_notes=$(yq -r '.argus_review.notes // ""' "$SRC" 2>/dev/null || echo "")
+  [ "$argus_notes" = "null" ] && argus_notes=""
+  review_uuid=$(yq -r '.argus_review.review_id // ""' "$SRC" 2>/dev/null || echo "")
+  [ "$review_uuid" = "null" ] && review_uuid=""
+  follow_ups_count=$(yq -r '.follow_ups // [] | length' "$SRC" 2>/dev/null || echo 0)
+  mode=$(yq -r '.mode // "task"' "$SRC" 2>/dev/null || echo task)
+  # When errors are present (debrief carries a non-empty errors array or
+  # build_gate: red), route the task to `blocked` instead of `merged`.
+  errors_present=$(yq -r '.errors // [] | length' "$SRC" 2>/dev/null || echo 0)
+  if [ "${errors_present:-0}" -gt 0 ]; then
+    to_state="blocked"
   fi
 
   # Resolve task UUID when we only have a legacy id (YAML debriefs may carry
@@ -159,7 +145,7 @@ ingest_debrief() {
   # Mint follow-up tasks from the debrief's array. For direct-debriefs, pass
   # source_debrief= so the new task can be traced back even without a parent.
   follow_ups_minted=0
-  if [ "$is_yaml" = "1" ] && [ "${follow_ups_count:-0}" -gt 0 ]; then
+  if [ "${follow_ups_count:-0}" -gt 0 ]; then
     i=0
     while [ "$i" -lt "$follow_ups_count" ]; do
       title=$(yq -r ".follow_ups[$i] // \"\"" "$SRC" 2>/dev/null | head -c 200)
@@ -181,15 +167,9 @@ ingest_debrief() {
   # transition_debrief_state helper today (debriefs have no state-machine
   # doc; the state field was added post-hoc in debrief@2.0.1). Direct yq
   # edit mirrors the mode-pack's existing idiom.
-  if [ "$is_yaml" = "1" ] && command -v yq >/dev/null 2>&1; then
+  if command -v yq >/dev/null 2>&1; then
     ts=$(iso_ts_now)
     yq -i ".state = \"ingested\" | .updated_at = \"$ts\"" "$SRC" 2>/dev/null || true
-  fi
-
-  # Legacy cleanup — move source to processed/ so the next sweep doesn't
-  # re-pick it up. Idempotent inside lib-ledger helper.
-  if [ "$is_yaml" = "0" ]; then
-    legacy_inbox_move_to_processed "$(basename "$SRC")" || true
   fi
 
   # Main event. Task field is the legacy id when present (readable across
@@ -243,17 +223,10 @@ ingest_debrief() {
 # ---- build-check ---------------------------------------------------------
 ingest_build_check() {
   local result="" broken_sha=""
-  local master="$PROJECT_ROOT/plans/chanakya-master.md"
-  if [ "$is_yaml" = "1" ]; then
-    command -v yq >/dev/null 2>&1 || return 2
-    yaml_parse_check "$SRC" sweep-ingest-build-check || return 2
-    result=$(yq -r '.result // .build_gate // ""' "$SRC" 2>/dev/null || echo "")
-    broken_sha=$(yq -r '.broken_commit_sha // ""' "$SRC" 2>/dev/null || echo "")
-  else
-    # Legacy header: `result: pass|fail` or `Result: green|red`.
-    result=$(grep -m1 -iE '^result:|^Result:' "$SRC" 2>/dev/null | awk -F': *' '{print tolower($2)}')
-    broken_sha=$(grep -m1 '^Breaking commit:' "$SRC" 2>/dev/null | awk '{print $3}')
-  fi
+  command -v yq >/dev/null 2>&1 || return 2
+  yaml_parse_check "$SRC" sweep-ingest-build-check || return 2
+  result=$(yq -r '.result // .build_gate // ""' "$SRC" 2>/dev/null || echo "")
+  broken_sha=$(yq -r '.broken_commit_sha // ""' "$SRC" 2>/dev/null || echo "")
 
   # Normalize: `green|pass|full-green` → green; `red|fail` → red; else inconclusive.
   case "$result" in
@@ -266,22 +239,8 @@ ingest_build_check() {
   case "$result" in
     green)
       # Canonical YAML write — projector regenerates the master-plan section
-      # on end-of-run. Legacy markdown mutation runs in parallel under the
-      # dual-write window (gated by _lw_dual_write_enabled, no-op post-A.3).
+      # on end-of-run.
       build_debt_reset_green "" "${broken_sha:-}" >/dev/null 2>&1 || true
-      if [ -f "$master" ] && _lw_dual_write_enabled; then
-        tmp="$master.tmp.$$"
-        awk '
-          BEGIN { in_block=0 }
-          /^## Build Debt/ { in_block=1; print; next }
-          in_block && /^## / { in_block=0; print; next }
-          in_block && /^- Counter:/ {
-            sub(/Counter: *[0-9]+/, "Counter: 0")
-            print; next
-          }
-          { print }
-        ' "$master" > "$tmp" 2>/dev/null && mv "$tmp" "$master" || rm -f "$tmp"
-      fi
       ;;
     red)
       # File a P0 fix task referencing the broken commit. TBUILD-N allocator
@@ -306,78 +265,28 @@ ingest_build_check() {
         > "$PROJECT_ROOT/.runtime/state/build_debt_blocked" 2>/dev/null || true
       # Canonical YAML annotation — projector renders the markdown section.
       build_debt_annotate_red "${broken_sha:-unknown}" "TBUILD-$next_n" >/dev/null 2>&1 || true
-      # Legacy markdown annotation runs under dual-write window; no-op post-A.3.
-      if [ -f "$master" ] && _lw_dual_write_enabled; then
-        tmp="$master.tmp.$$"
-        awk -v sha="${broken_sha:-unknown}" '
-          BEGIN { in_block=0; annotated=0 }
-          /^## Build Debt/ { in_block=1; print; next }
-          in_block && /^## / { in_block=0; print; next }
-          in_block && /^- Counter:/ {
-            line=$0
-            t=line; sub(/^.*Counter: */, "", t); sub(/ .*$/, "", t); n=t+0
-            sub(/Counter: *[0-9]+/, sprintf("Counter: %d", n+1), line)
-            print line
-            next
-          }
-          in_block && /^- Broken commit:/ {
-            sub(/Broken commit:.*/, "Broken commit: " sha)
-            annotated=1
-            print; next
-          }
-          in_block && !annotated && /^- Blocked by:/ {
-            sub(/Blocked by:.*/, "Blocked by: TBUILD-fix")
-            print
-            print "- Broken commit: " sha
-            annotated=1
-            next
-          }
-          { print }
-        ' "$master" > "$tmp" 2>/dev/null && mv "$tmp" "$master" || rm -f "$tmp"
-      fi
       ;;
     inconclusive)
       printf 'inconclusive build-check — leaving counter (source=%s)\n' "$SRC" >&2
       ;;
   esac
 
-  # Move the legacy source to processed/ so it isn't re-picked next sweep.
-  if [ "$is_yaml" = "0" ]; then
-    legacy_inbox_move_to_processed "$(basename "$SRC")" || true
-  else
-    # YAML build-check debriefs flip to ingested via inline yq (no state
-    # machine for build-check specifically — symmetric with debrief handler).
-    command -v yq >/dev/null 2>&1 && \
-      yq -i ".state = \"ingested\" | .updated_at = \"$(iso_ts_now)\"" "$SRC" 2>/dev/null || true
-  fi
+  # YAML build-check debriefs flip to ingested via inline yq (no state machine
+  # for build-check specifically — symmetric with debrief handler).
+  yq -i ".state = \"ingested\" | .updated_at = \"$(iso_ts_now)\"" "$SRC" 2>/dev/null || true
 }
 
 # ---- release -------------------------------------------------------------
 ingest_release() {
   local tag="" build_num="" channel="" version="" head_sha="" tasks_csv=""
-  if [ "$is_yaml" = "1" ]; then
-    command -v yq >/dev/null 2>&1 || return 2
-    yaml_parse_check "$SRC" sweep-ingest-release || return 2
-    tag=$(yq -r '.tag // ""' "$SRC" 2>/dev/null || echo "")
-    build_num=$(yq -r '.build_number // ""' "$SRC" 2>/dev/null || echo "")
-    channel=$(yq -r '.channel // ""' "$SRC" 2>/dev/null || echo "")
-    version=$(yq -r '.version // ""' "$SRC" 2>/dev/null || echo "")
-    head_sha=$(yq -r '.commit_sha // ""' "$SRC" 2>/dev/null || echo "")
-    tasks_csv=$(yq -r '.tasks // [] | join(",")' "$SRC" 2>/dev/null || echo "")
-  else
-    # Legacy markdown header shape: `Build number: 3031`, `Version: 1.4.2`,
-    # `Distribution: testflight-release`, `Git tag: tf-3031`, etc.
-    build_num=$(grep -m1 '^Build number:' "$SRC" 2>/dev/null | awk -F': *' '{print $2}')
-    version=$(grep -m1 '^Version:' "$SRC" 2>/dev/null | awk -F': *' '{print $2}')
-    tag=$(grep -m1 -E '^(Git )?tag:' "$SRC" 2>/dev/null | awk -F': *' '{print $2}')
-    head_sha=$(grep -m1 -E '^HEAD( SHA)?:' "$SRC" 2>/dev/null | awk -F': *' '{print $2}')
-    if grep -qi 'Distribution.*testflight\|^Type: *testflight-release' "$SRC" 2>/dev/null; then
-      channel=testflight
-    else
-      channel=appstore
-    fi
-    tasks_csv=$(grep -m1 -E '^Covers?:' "$SRC" 2>/dev/null | awk -F': *' '{print $2}' | tr -d ' ')
-  fi
+  command -v yq >/dev/null 2>&1 || return 2
+  yaml_parse_check "$SRC" sweep-ingest-release || return 2
+  tag=$(yq -r '.tag // ""' "$SRC" 2>/dev/null || echo "")
+  build_num=$(yq -r '.build_number // ""' "$SRC" 2>/dev/null || echo "")
+  channel=$(yq -r '.channel // ""' "$SRC" 2>/dev/null || echo "")
+  version=$(yq -r '.version // ""' "$SRC" 2>/dev/null || echo "")
+  head_sha=$(yq -r '.commit_sha // ""' "$SRC" 2>/dev/null || echo "")
+  tasks_csv=$(yq -r '.tasks // [] | join(",")' "$SRC" 2>/dev/null || echo "")
 
   # Existence check — if a release with this tag already exists we just flip
   # state and move on. Prevents duplicate legacy Release Log rows and
@@ -414,13 +323,8 @@ ingest_release() {
   # State transition — idempotent on re-run (no-op when already released).
   transition_release_state "$release_uuid" released chanakya "debrief ingested" || true
 
-  # Legacy cleanup.
-  if [ "$is_yaml" = "0" ]; then
-    legacy_inbox_move_to_processed "$(basename "$SRC")" || true
-  else
-    command -v yq >/dev/null 2>&1 && \
-      yq -i ".state = \"ingested\" | .updated_at = \"$(iso_ts_now)\"" "$SRC" 2>/dev/null || true
-  fi
+  command -v yq >/dev/null 2>&1 && \
+    yq -i ".state = \"ingested\" | .updated_at = \"$(iso_ts_now)\"" "$SRC" 2>/dev/null || true
 }
 
 case "$SUBCMD" in

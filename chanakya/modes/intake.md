@@ -14,7 +14,6 @@ reads:
 writes:
   - plans/tasks/<task-id>.yaml                     # post-migration canonical (schema: _shared/schemas/task.md, task@1.0.0)
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
-  - plans/chanakya-master.md                       # legacy master-plan row mutation during Phase 2.6 transition
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
@@ -40,7 +39,6 @@ Accept any format. For each task, extract:
 
 Post-migration surface: list existing tasks via `scripts/query-plans.sh --kind=task` against `plans/tasks/*.yaml`. Merge new tasks with existing ones; resolve ID collisions by issuing fresh UUIDv7 `id`s. The human-readable `T<nnn>` prefix comes from `scripts/next-task-id.sh` — see Step 6. Do not infer it from context here.
 
-**Phase 2.6 transition:** if no YAML task artifacts exist yet (migration not run), read `~/.dev-studio/<project>/plans/chanakya-master.md` and emit one `legacy_artifact_read` event so the fallback is visible. Cutover removes the legacy read at Commit H.
 
 If neither surface has prior state, this is a fresh project — proceed to Step 3 with an empty set.
 
