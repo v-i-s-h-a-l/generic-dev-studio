@@ -14,7 +14,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash scripts/ingest-feedback.sh 2>&1 | head -20 || true"
+            "command": "bash scripts/ingest-feedback.sh --quiet || true"
           },
           {
             "type": "command",
