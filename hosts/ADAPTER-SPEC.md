@@ -110,11 +110,13 @@ Every adapter must pass `scripts/test-host.sh <host-name>` before claiming suppo
 
 ## Adding a new adapter (step-by-step)
 
-1. Create `.<host>/` directory at the repo root.
-2. Write `.<host>/capabilities.yaml` with all six required fields.
-3. Write `.<host>/INSTALL.md` covering: symlink setup, hook-config pointer, root-instruction-file creation.
-4. Write or symlink the host-native root instruction file (`AGENTS.md`, `GEMINI.md`, etc.) at the repo root. Content: one paragraph describing the studio + a pointer to `CLAUDE.md` for the canonical instructions.
-5. Wire hooks: copy or adapt `hooks/session-start.sh` into the host's hook-config format. See `hooks/` for canonical scripts.
-6. Run `scripts/lint-host-agnostic.sh` — fix any security-floor violations.
-7. Run `scripts/test-host.sh <host-name>` — all four tasks must PASS.
-8. Add the host to the conformance matrix table in `ARCHITECTURE.md §Host-agnosticism`.
+1. Add a row to `hosts/registry.yaml` with: `display_name`, `detect_binary` (CLI name on PATH), `global_skill_dir`, `project_skill_dir`, `routing_file`, `routing_walks_parents`, `tool_dialect`, and `status: provisional`. The `detect_binary` field enables `sync-host-skills.sh --all` to auto-detect whether this host is installed; `status: provisional` marks the entry as registry-only (no adapter dir yet). This alone is enough for skills declaring `hosts: all` to be symlinked into the host's skill dir on machines where the binary is installed.
+2. Create `.<host>/` directory at the repo root.
+3. Write `.<host>/capabilities.yaml` with all six required fields.
+4. Write `.<host>/INSTALL.md` covering: symlink setup, hook-config pointer, root-instruction-file creation.
+5. Write or symlink the host-native root instruction file (`AGENTS.md`, `GEMINI.md`, etc.) at the repo root. Content: one paragraph describing the studio + a pointer to `CLAUDE.md` for the canonical instructions.
+6. Wire hooks: copy or adapt `hooks/session-start.sh` into the host's hook-config format. See `hooks/` for canonical scripts.
+7. Run `scripts/lint-host-agnostic.sh` — fix any security-floor violations.
+8. Run `scripts/test-host.sh <host-name>` — all four tasks must PASS.
+9. Update `status` in `hosts/registry.yaml` from `provisional` to `adapted`.
+10. Add the host to the conformance matrix table in `ARCHITECTURE.md §Host-agnosticism`.

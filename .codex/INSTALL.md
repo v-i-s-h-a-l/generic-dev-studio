@@ -8,56 +8,49 @@ Sets up the generic-dev-studio for use with the OpenAI Codex CLI (v0.120+). Afte
 - `jq` and `yq` installed (same as the Claude Code requirement).
 - Repo cloned to a local path.
 
-## 1 — Symlink canonical content
-
-Codex discovers skills, agents, and commands from the repo root. The canonical content lives there already; no symlinks are needed for the core skills.
-
-For any host-specific overrides, place them under `.codex/` and prefix them so they don't shadow canonical names:
+## Quick start
 
 ```sh
-# No-op for standard setup. Custom skill overrides go here if needed.
-ls .codex/
+scripts/install.sh
 ```
 
-## 2 — Root instruction file
+This installs Claude Code links and then runs `sync-host-skills.sh --all`, which auto-detects Codex on PATH and creates symlinks at `~/.codex/skills/` for every skill declaring `hosts: all` in its `portability.yaml`.
 
-Codex reads `AGENTS.md` at the repo root as its primary instruction file (created in H7; forward-reference). If `AGENTS.md` does not yet exist, create a placeholder:
+## What gets linked
+
+- **Agents:** `achilles`, `argus` (Chanakya is Claude Code-only today; see #141)
+- **Companions:** `_shared`, `scripts` (so SKILL.md relative paths resolve)
+- **Vendored skills:** all skills in `skills/vendored/` and `skills/owned/` that declare `hosts: all`
+
+## Root instruction file
+
+Codex reads `AGENTS.md` at the repo root as its primary instruction file. This is a symlink to `CLAUDE.md`.
+
+## Hooks
+
+`.codex/hooks-codex.json` (symlink to `hooks/hooks-codex.json`) wires session-start hooks. Point Codex at it:
 
 ```sh
-# Placeholder until H7 lands
-echo "See CLAUDE.md for full instructions." > AGENTS.md
-```
-
-Once H7 ships, `AGENTS.md` will be a first-class file at the repo root with shared content between Claude Code (`CLAUDE.md`) and Codex.
-
-## 3 — Wire hooks
-
-Codex reads its hook configuration from `.codex/hooks-codex.json` (created in H8; forward-reference). Once H8 ships, point Codex at it:
-
-```sh
-# Codex CLI hook config (set in your Codex workspace settings or shell env)
 export CODEX_HOOKS_CONFIG=".codex/hooks-codex.json"
 ```
 
-The hook scripts themselves are canonical under `hooks/` at the repo root. `hooks-codex.json` maps Codex's hook event names to those scripts.
-
-## 4 — Verify capabilities
+## Verify
 
 ```sh
-python3 -c 'import yaml, sys; yaml.safe_load(open(sys.argv[1]))' .codex/capabilities.yaml && echo "capabilities.yaml: OK"
+scripts/verify-install.sh        # audits all detected hosts including Codex
+scripts/sync-host-skills.sh codex --audit-only   # Codex-only audit
 ```
 
-## 5 — Run conformance test
-
-Once `scripts/test-host.sh` is available (H10), verify the adapter end-to-end:
+## Conformance test
 
 ```sh
-scripts/test-host.sh codex
+scripts/test-host.sh codex       # 4 happy-path + 4 failure-mode tasks
 ```
 
-All four tasks must PASS before the adapter is considered production-ready.
+All tasks must PASS before the adapter is considered production-ready. By default uses the mock shim at `tests/conformance/mock-codex/`; set `STUDIO_CODEX_BIN` to test against a real Codex binary.
 
 ## Notes
 
-- Codex's `sandbox_profile: workspace-write` satisfies the Achilles security floor (see `hosts/ADAPTER-SPEC.md §Security floor`).
-- Tool dialect is `openai` — mode packs that reference tools by name use OpenAI tool vocabulary when running on Codex. The canonical mode packs are dialect-neutral; tool-specific references live in host-adapter overlays.
+- Codex's `sandbox_profile: workspace-write` satisfies the Achilles security floor (see `hosts/ADAPTER-SPEC.md`).
+- Codex does **not** walk parent directories for `AGENTS.md` — it must be at the cwd.
+- Codex scans `~/.codex/skills/` + `<cwd>/.codex/skills/` (merged, symlinks followed).

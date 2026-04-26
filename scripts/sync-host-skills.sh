@@ -99,7 +99,7 @@ skill_declares_host() {
     [ "$host" = "claude-code" ] && return 0   # default for unmigrated skills
     return 1
   fi
-  yq -r '.hosts[]' "$portability" 2>/dev/null | grep -Fxq "$host"
+  yq -r '.hosts[]' "$portability" 2>/dev/null | grep -Fxq -e "$host" -e "all"
 }
 
 resolve_skill_dir() {
@@ -333,10 +333,21 @@ sync_one_host() {
   return 0
 }
 
+host_binary_installed() {
+  local host="$1" bin
+  bin=$(yq -r ".\"$host\".detect_binary // \"\"" "$REGISTRY" 2>/dev/null)
+  [ -z "$bin" ] && return 0          # no detect_binary → assume present
+  command -v "$bin" >/dev/null 2>&1
+}
+
 if [ "$ALL" -eq 1 ]; then
   rc=0
   while IFS= read -r h; do
     [ -z "$h" ] && continue
+    if ! host_binary_installed "$h"; then
+      printf 'sync-host-skills: host=%s skipped (binary not found on PATH)\n' "$h" >&2
+      continue
+    fi
     sync_one_host "$h" || rc=$?
   done < <(yq -r 'keys | .[]' "$REGISTRY")
   exit "$rc"

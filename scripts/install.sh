@@ -5,6 +5,10 @@
 # so /chanakya, /achilles, /argus are reachable anywhere (typically your iOS
 # project), and the corresponding slash commands work anywhere.
 #
+# After Claude Code-specific setup, runs sync-host-skills.sh --all to fan out
+# skills to every detected host (Codex, Gemini, Cursor, etc.) whose binary is
+# on PATH. New hosts added to hosts/registry.yaml are picked up automatically.
+#
 # The `studio` skill is deliberately NOT installed globally — it lives at
 # .claude/skills/studio/ inside this repo and auto-loads only when your cwd
 # is inside generic-dev-studio. Installing it globally would cause studio
@@ -106,4 +110,13 @@ printf '  created: %d  already-correct: %d  warnings: %d\n' \
 if [ $DRY_RUN -eq 1 ]; then
   printf '  mode: dry-run (no changes applied)\n'
 fi
+
+# Fan out to all detected hosts (Codex, Gemini, Cursor, etc.)
+printf '\n--- multi-host skill fan-out ---\n'
+if [ $DRY_RUN -eq 1 ]; then
+  "$SCRIPT_DIR/sync-host-skills.sh" --all --dry-run 2>&1 || printf 'install.sh: multi-host fan-out reported drift; run sync-host-skills.sh --all to inspect\n'
+else
+  "$SCRIPT_DIR/sync-host-skills.sh" --all 2>&1 || printf 'install.sh: multi-host fan-out reported drift; run sync-host-skills.sh --all to inspect\n'
+fi
+
 [ $warned -gt 0 ] && exit 2 || exit 0

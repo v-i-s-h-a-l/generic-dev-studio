@@ -27,6 +27,8 @@ Task-level work on the user's iOS project (`/chanakya`, `/achilles`, `/argus` ow
 | `help` / `/studio-help` / "show me the docs" / "how does this work?" | `modes/help.md` |
 | `audit` / "audit the arc" / "check plan drift" / auto-invoked by SessionStart | `modes/audit.md` |
 | `guard <keywords>` / "has this been done?" / "are we repeating work?" | `modes/guard.md` |
+| `add <url>` / "add this skill" / "install this skill" / "vendor this" | `modes/add.md` |
+| `sync` / "sync skills" / "fan out skills" / "refresh host skills" | `modes/sync.md` |
 | `janitor [--yes]` / "clean up the studio" / "what's reclaimable across projects?" / "sweep all projects" | `modes/janitor.md` |
 | `nodes` / `nodes status` / `nodes add\|remove\|enable\|disable` / `nodes health` / `nodes sync` / `nodes schedule` / "show the fleet" / "list workers" / "are the workers up?" / "register a worker" / "sync the workers" | `modes/nodes.md` |
 
