@@ -17,6 +17,19 @@
 # Exit codes:
 #   0   picked a node (or `local`)
 #   2   bad args / registry parse error
+#
+# Side channel:
+#   STUDIO_DISPATCH_REASON_FILE — if set to a writable path, node-pick
+#   writes a single line with the dispatch reason for the caller to fold
+#   into its event payloads. One of:
+#     healthy | fallback:unreachable | fallback:no-role | fallback:disabled
+#   Callers (build/test gates) pre-create the file, read it after the
+#   pick, and tag `studio.dispatch.reason` on their gate events. Keeping
+#   stdout = node-id preserves the long-standing caller contract.
+#
+# R14: every fallback path emits `node_fallback` so analytics can tell
+# "ran locally because we wanted to" from "fell back because the mini was
+# down" — see issue #137 + REVIEW.md R14.
 
 set -u
 umask 022
@@ -24,18 +37,38 @@ umask 022
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-ledger.sh
+. "$SCRIPT_DIR/lib-ledger.sh" 2>/dev/null || true
 
 ROLE="${1:?usage: node-pick.sh <role>}"
 
+# _record_reason <reason> — write to side-channel file (best-effort).
+_record_reason() {
+  [ -n "${STUDIO_DISPATCH_REASON_FILE:-}" ] || return 0
+  printf '%s\n' "$1" > "$STUDIO_DISPATCH_REASON_FILE" 2>/dev/null || true
+}
+
+# _emit_fallback <reason> — discriminating event for R14. Reason matches
+# the gate-event enum so dashboards can join on one field.
+_emit_fallback() {
+  local reason="$1"
+  command -v emit_event_keyed >/dev/null 2>&1 || return 0
+  local data
+  data=$(printf '{"studio.dispatch.requested_node":"","studio.dispatch.resolved_node":"local","studio.dispatch.role":"%s","studio.dispatch.reason":"%s"}' \
+    "$ROLE" "$reason")
+  emit_event_keyed studio dispatch node_fallback "" "$data" >/dev/null 2>&1 || true
+}
+
 REGISTRY="$(resolve_runtime_global)/nodes.json"
 if [ ! -r "$REGISTRY" ]; then
+  _record_reason "fallback:unreachable"
+  _emit_fallback "fallback:unreachable"
   echo "local"
   exit 0
 fi
 
 command -v jq >/dev/null 2>&1 || { printf 'error: jq required\n' >&2; exit 2; }
 
-# Candidate ids: enabled nodes that advertise <role>.
 # Drop `.enabled == false` explicitly — jq's `//` treats false like null,
 # so `(.enabled // true) == true` would incorrectly include disabled nodes.
 CANDIDATES=$(jq -r --arg role "$ROLE" \
@@ -43,6 +76,19 @@ CANDIDATES=$(jq -r --arg role "$ROLE" \
   "$REGISTRY" 2>/dev/null) || CANDIDATES=""
 
 if [ -z "$CANDIDATES" ]; then
+  # Distinguish "no node has this role" from "all role-bearing nodes are
+  # disabled" — the two have different operational meanings (config gap
+  # vs deliberate disable) and different fixes.
+  ANY_ROLE=$(jq -r --arg role "$ROLE" \
+    '.nodes[]? | select(.roles? // [] | index($role)) | .id' \
+    "$REGISTRY" 2>/dev/null) || ANY_ROLE=""
+  if [ -z "$ANY_ROLE" ]; then
+    _record_reason "fallback:no-role"
+    _emit_fallback "fallback:no-role"
+  else
+    _record_reason "fallback:disabled"
+    _emit_fallback "fallback:disabled"
+  fi
   echo "local"
   exit 0
 fi
@@ -69,8 +115,11 @@ $CANDIDATES
 EOF
 
 if [ -z "$best" ]; then
+  _record_reason "fallback:unreachable"
+  _emit_fallback "fallback:unreachable"
   echo "local"
   exit 0
 fi
 
+_record_reason "healthy"
 echo "$best"

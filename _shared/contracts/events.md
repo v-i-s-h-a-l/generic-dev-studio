@@ -175,6 +175,29 @@ Emitted by `scripts/chanakya-snap.sh` (producer side) and by mode packs that con
 
 **Why five.** `generated` / `failed` on the producer side let us alert if a domain stops refreshing. `hit` / `miss` / `stale` on the consumer side let us measure the actual pre-warm win (ratio of hits to total reads) and detect when a staleness window is too tight (high stale-rate on a domain with frequent writes).
 
+### Dispatch events (issue #137)
+
+Emitted by `scripts/node-pick.sh` and `scripts/node-health.sh`. Agent field is `studio`, mode field is `dispatch`. Payload fields use the `studio.dispatch.*` namespace (see §"Non-conforming studio fields"). These are the discriminating events that close the R14 silent-skip gap on the dispatch layer — every fallback or probe failure leaves a queryable trace.
+
+| Event | Emitted when | Typical `data` keys |
+|---|---|---|
+| `node_fallback` | `node-pick.sh` resolved to `local` because no remote candidate qualified — registry missing, role unknown, all role-bearing nodes disabled, or all enabled candidates unreachable | `studio.dispatch.requested_node` (currently always `""` — node-pick has no preferred-node concept), `studio.dispatch.resolved_node` (`local`), `studio.dispatch.role`, `studio.dispatch.reason` (`fallback:unreachable`\|`fallback:no-role`\|`fallback:disabled`) |
+| `node_unreachable` | `node-health.sh` probe (uptime over ssh, or local uptime for self-entry) returned non-zero. One emit per failed probe — node-pick may invoke node-health multiple times in a single `pick`, so a single user-facing operation can produce multiple emits | `studio.dispatch.node`, `studio.dispatch.probe` (`ssh`\|`uptime`), `studio.dispatch.error` (≤200 chars; truncated; backslashes/quotes JSON-escaped) |
+| `node_disabled_flip` | A node's `enabled` state flips (manual toggle via the `nodes` mode pack, or future auto-disable on N consecutive failures). **Schema-only registration today — no current writer.** Wire when a toggle script lands. | `studio.dispatch.node`, `studio.dispatch.from` (`enabled`\|`disabled`), `studio.dispatch.to`, `studio.dispatch.reason` (short string; e.g. `manual`\|`auto_failures`\|`other`) |
+
+#### `studio.dispatch.*` fields stamped on existing gate events
+
+`task-build-gate.sh`, `task-test-gate.sh`, and `swift-test-gate.sh` stamp the dispatch context on `build_check_started` / `build_check_passed` / `build_check_failed` / `build_check_aborted` (build/swift-test gates) and `test_run_started` / `test_run_passed` / `test_run_failed` (test gate). LSP-only mode runs entirely local and emits no dispatch tags — distinguishable from a tagged-but-`local` full-green run.
+
+| Field | Values | Notes |
+|---|---|---|
+| `studio.dispatch.node` | node id from `nodes.json`, or `local` | Same value as the legacy `node` field on these events; kept for back-compat. |
+| `studio.dispatch.role` | `xcodebuild` \| `swift-test` | Capability label requested from `node-pick.sh`. |
+| `studio.dispatch.reason` | `healthy` \| `fallback:unreachable` \| `fallback:no-role` \| `fallback:disabled` \| `override` (reserved) | `healthy` when a remote node was picked; `fallback:*` mirrors `node_fallback.reason`. `override` reserved for future env-driven local pinning. |
+| `studio.dispatch.xcode_version` | semver string (e.g. `16.4`) or `""` | Best-effort pull from `~/.dev-studio/.runtime/node-parity-cache.json`. Empty when the cache hasn't probed the node yet. |
+
+Side channel: gates set `STUDIO_DISPATCH_REASON_FILE` to a temp path before invoking `node-pick.sh`; node-pick writes one line (the reason value) to that file, gates read it, fold it into the payload, then unlink. Stdout of `node-pick.sh` remains the picked node id only — preserves the long-standing caller contract.
+
 ### Cross-agent events (every agent emits)
 
 | Event | Emitted when | Typical `data` keys |

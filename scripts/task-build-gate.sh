@@ -112,6 +112,32 @@ if [ -r "$ATTEMPTS_FILE" ]; then
 fi
 printf '%s\n' "$ATTEMPT" > "$ATTEMPTS_FILE" 2>/dev/null || true
 
+# Pre-flight dispatch decision (issue #137 — every build_check_* event
+# carries the studio.dispatch.* tags). LSP doesn't dispatch — empty
+# fragment for that mode keeps the start-event shape unchanged. For
+# full-green, run node-pick BEFORE the start emit so analytics can join
+# fallback rate to first-try success without a separate stream.
+NODE_ID=""
+DISPATCH_FIELDS=""
+if [ "$MODE" = "full-green" ]; then
+  REASON_FILE=$(mktemp 2>/dev/null || printf '/tmp/dispatch-reason-%s' "$$")
+  : > "$REASON_FILE" 2>/dev/null || true
+  NODE_ID=$(STUDIO_DISPATCH_REASON_FILE="$REASON_FILE" \
+    "$SCRIPT_DIR/node-pick.sh" xcodebuild 2>/dev/null || echo local)
+  DISPATCH_REASON=$(tr -d '\n' < "$REASON_FILE" 2>/dev/null)
+  rm -f "$REASON_FILE" 2>/dev/null || true
+  [ -z "$DISPATCH_REASON" ] && DISPATCH_REASON="healthy"
+  # Best-effort xcode_version pull from the parity cache. Cache miss is
+  # routine on cold setups — emit empty rather than block on the lookup.
+  XCODE_VER=""
+  PARITY_CACHE="$(resolve_runtime_global)/node-parity-cache.json"
+  if [ -r "$PARITY_CACHE" ] && command -v jq >/dev/null 2>&1; then
+    XCODE_VER=$(jq -r --arg id "$NODE_ID" '.nodes[$id].xcodebuild.version // ""' "$PARITY_CACHE" 2>/dev/null)
+  fi
+  DISPATCH_FIELDS=$(printf ',"studio.dispatch.node":"%s","studio.dispatch.role":"xcodebuild","studio.dispatch.reason":"%s","studio.dispatch.xcode_version":"%s"' \
+    "$NODE_ID" "$DISPATCH_REASON" "$XCODE_VER")
+fi
+
 # Trap-based terminal-span closure. Without this, any exit path between
 # build_check_started and the pass/fail emit (cd failures, missing args,
 # SIGKILL, stale-lock retry-loop bail-outs) would leave an open span that
@@ -130,9 +156,9 @@ _emit_aborted_if_open() {
   fi
   local data
   if [ -n "$reason" ]; then
-    data=$(printf '{"mode":"%s","attempt":%s,"exit_code":%s,"reason":"%s"}' "$MODE" "$ATTEMPT" "$rc" "$reason")
+    data=$(printf '{"mode":"%s","attempt":%s,"exit_code":%s,"reason":"%s"%s}' "$MODE" "$ATTEMPT" "$rc" "$reason" "$DISPATCH_FIELDS")
   else
-    data=$(printf '{"mode":"%s","attempt":%s,"exit_code":%s}' "$MODE" "$ATTEMPT" "$rc")
+    data=$(printf '{"mode":"%s","attempt":%s,"exit_code":%s%s}' "$MODE" "$ATTEMPT" "$rc" "$DISPATCH_FIELDS")
   fi
   emit_event_keyed achilles task build_check_aborted "$TASK_ID" "$data" >/dev/null 2>&1 || true
   rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
@@ -150,7 +176,7 @@ _emit_terminal() {
 }
 
 # Announce the attempt so analysis can bucket red gates by mode + retry.
-start_data=$(printf '{"mode":"%s","worktree":"%s","attempt":%s}' "$MODE" "$WORKTREE" "$ATTEMPT")
+start_data=$(printf '{"mode":"%s","worktree":"%s","attempt":%s%s}' "$MODE" "$WORKTREE" "$ATTEMPT" "$DISPATCH_FIELDS")
 emit_event_keyed achilles task build_check_started "$TASK_ID" "$start_data" >/dev/null 2>&1 || true
 trap '_emit_aborted_if_open; _release_task_lock' EXIT INT TERM
 
@@ -220,20 +246,14 @@ fi
 [ -n "$SCHEME" ] || { printf 'error: scheme required for full-green mode\n' >&2; exit 2; }
 [ -n "$DESTINATION" ] || { printf 'error: destination required for full-green mode\n' >&2; exit 2; }
 
-# Route xcodebuild through node-dispatch so an SSH-reachable mini (or any
-# future node tagged `xcodebuild`) can absorb the M/L build cost. The lock
-# is scoped per node: two workers dispatching to `mini` still serialize on
-# the mini's cache + simulator resources, but a laptop-local build running
-# against `local` runs in parallel with a mini build — different machines,
-# different serialized resources. `node-pick` returns `local` when no
-# remote is registered or healthy, so hosts without a registry keep the
-# pre-B3 behaviour bit-for-bit under `xcodebuild-lock/local/`.
-NODE_ID=$("$SCRIPT_DIR/node-pick.sh" xcodebuild 2>/dev/null || echo local)
-
-# #215 — when node-pick returns the current machine (either synthetic `local`
-# or a registered self-id like `laptop`), run inline. Source-sync + SSH would
-# loop back through the network stack, and ssh to self is not guaranteed (no
-# sshd at home is the common case).
+# NODE_ID was resolved during pre-flight (above) so the start event could
+# carry studio.dispatch.* tags. The lock is scoped per node: two workers
+# dispatching to `mini` still serialize on the mini's cache + simulator
+# resources; a laptop-local build runs in parallel with a mini build.
+# #215 — when node-pick returns the current machine (either synthetic
+# `local` or a registered self-id like `laptop`), run inline. Source-sync
+# + SSH would loop back through the network stack, and ssh to self is not
+# guaranteed (no sshd at home is the common case).
 if node_is_self "$NODE_ID"; then
   IS_LOCAL=1
 else
@@ -244,7 +264,7 @@ else
   # behind a 7-day TTL) so the guard's worst case is one extra round trip
   # before a real M/L build's lock acquire.
   if ! "$SCRIPT_DIR/check-xcode-parity.sh" "$NODE_ID"; then
-    data=$(printf '{"mode":"full-green","node":"%s","reason":"xcode_major_drift","attempt":%s}' "$NODE_ID" "$ATTEMPT")
+    data=$(printf '{"mode":"full-green","node":"%s","reason":"xcode_major_drift","attempt":%s%s}' "$NODE_ID" "$ATTEMPT" "$DISPATCH_FIELDS")
     _emit_terminal build_check_failed "$data"
     exit 2
   fi
@@ -268,7 +288,7 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   printf 'DRY-RUN xcodebuild node=%s scheme=%s destination=%s -derivedDataPath=%s\n' \
     "$NODE_ID" "$SCHEME" "$DESTINATION" "$DERIVED" >&2
   _emit_terminal build_check_passed \
-    "$(printf '{"mode":"full-green","node":"%s","dry_run":true,"scheme":"%s","attempt":%s}' "$NODE_ID" "$SCHEME" "$ATTEMPT")"
+    "$(printf '{"mode":"full-green","node":"%s","dry_run":true,"scheme":"%s","attempt":%s%s}' "$NODE_ID" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")"
   gate_announce_done build "$NODE_ID" "$TASK_ID" dry-run 0
   exit 0
 fi
@@ -293,7 +313,7 @@ while true; do
   fi
   if [ "$wait_seconds" -ge "$wait_cap" ]; then
     printf 'error: xcodebuild lock wait exceeded %ss\n' "$wait_cap" >&2
-    data=$(printf '{"mode":"full-green","reason":"locked_out","waited_s":%s,"attempt":%s}' "$wait_seconds" "$ATTEMPT")
+    data=$(printf '{"mode":"full-green","reason":"locked_out","waited_s":%s,"attempt":%s%s}' "$wait_seconds" "$ATTEMPT" "$DISPATCH_FIELDS")
     _emit_terminal build_check_failed "$data"
     gate_announce_done build "$NODE_ID" "$TASK_ID" locked-out "$wait_seconds"
     exit 3
@@ -438,14 +458,14 @@ GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
 [ "$GATE_DUR_S" -lt 0 ] && GATE_DUR_S=0
 
 if [ "$BUILD_STATUS" -ne 0 ]; then
-  data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"errors_json":%s}' \
-    "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$errors_json")
+  data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"errors_json":%s%s}' \
+    "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$errors_json" "$DISPATCH_FIELDS")
   _emit_terminal build_check_failed "$data"
   gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
   exit 2
 fi
 
-data=$(printf '{"mode":"full-green","node":"%s","warnings":%s,"scheme":"%s","attempt":%s}' "$NODE_ID" "$warn_count" "$SCHEME" "$ATTEMPT")
+data=$(printf '{"mode":"full-green","node":"%s","warnings":%s,"scheme":"%s","attempt":%s%s}' "$NODE_ID" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
 _emit_terminal build_check_passed "$data"
 gate_announce_done build "$NODE_ID" "$TASK_ID" passed "$GATE_DUR_S"
 exit 0

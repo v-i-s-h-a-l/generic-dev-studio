@@ -71,7 +71,20 @@ esac
 # The build gate uses `xcodebuild`; the test gate uses `swift-test`. Both
 # resolve to the same machines today, but the role split keeps future
 # differentiation cheap (e.g. a node with simulators but no Xcode).
-NODE_ID=$("$SCRIPT_DIR/node-pick.sh" swift-test 2>/dev/null || echo local)
+REASON_FILE=$(mktemp 2>/dev/null || printf '/tmp/dispatch-reason-%s' "$$")
+: > "$REASON_FILE" 2>/dev/null || true
+NODE_ID=$(STUDIO_DISPATCH_REASON_FILE="$REASON_FILE" \
+  "$SCRIPT_DIR/node-pick.sh" swift-test 2>/dev/null || echo local)
+DISPATCH_REASON=$(tr -d '\n' < "$REASON_FILE" 2>/dev/null)
+rm -f "$REASON_FILE" 2>/dev/null || true
+[ -z "$DISPATCH_REASON" ] && DISPATCH_REASON="healthy"
+XCODE_VER=""
+PARITY_CACHE="$(resolve_runtime_global)/node-parity-cache.json"
+if [ -r "$PARITY_CACHE" ] && command -v jq >/dev/null 2>&1; then
+  XCODE_VER=$(jq -r --arg id "$NODE_ID" '.nodes[$id].xcodebuild.version // ""' "$PARITY_CACHE" 2>/dev/null)
+fi
+DISPATCH_FIELDS=$(printf ',"studio.dispatch.node":"%s","studio.dispatch.role":"swift-test","studio.dispatch.reason":"%s","studio.dispatch.xcode_version":"%s"' \
+  "$NODE_ID" "$DISPATCH_REASON" "$XCODE_VER")
 
 if node_is_self "$NODE_ID"; then
   IS_LOCAL=1
@@ -80,7 +93,7 @@ else
   # Pre-flight Xcode-version drift guard (#136). Same contract as
   # task-build-gate.sh — block on major drift, warn on minor/patch.
   if ! "$SCRIPT_DIR/check-xcode-parity.sh" "$NODE_ID"; then
-    data=$(printf '{"node":"%s","reason":"xcode_major_drift","attempt":%s}' "$NODE_ID" "$ATTEMPT")
+    data=$(printf '{"node":"%s","reason":"xcode_major_drift","attempt":%s%s}' "$NODE_ID" "${ATTEMPT:-1}" "$DISPATCH_FIELDS")
     emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
     exit 2
   fi
@@ -96,15 +109,15 @@ ATTEMPT=1
 GATE_START_S=$(date -u +%s)
 gate_announce_start test "$NODE_ID" "$TASK_ID" full-test
 
-start_data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","worktree":"%s","attempt":%s}' \
-  "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$WORKTREE" "$ATTEMPT")
+start_data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","worktree":"%s","attempt":%s%s}' \
+  "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$WORKTREE" "$ATTEMPT" "$DISPATCH_FIELDS")
 emit_event_keyed achilles task test_run_started "$TASK_ID" "$start_data" >/dev/null 2>&1 || true
 
 if [ "${DRY_RUN:-0}" = "1" ]; then
   printf 'DRY-RUN xcodebuild test node=%s scheme=%s destination=%s test-target=%s -derivedDataPath=%s\n' \
     "$NODE_ID" "$SCHEME" "$DESTINATION" "${TEST_TARGET:-<all>}" "$DERIVED" >&2
-  data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","dry_run":true,"attempt":%s}' \
-    "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$ATTEMPT")
+  data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","dry_run":true,"attempt":%s%s}' \
+    "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$ATTEMPT" "$DISPATCH_FIELDS")
   emit_event_keyed achilles task test_run_passed "$TASK_ID" "$data" >/dev/null 2>&1 || true
   gate_announce_done test "$NODE_ID" "$TASK_ID" dry-run 0
   exit 0
@@ -128,7 +141,7 @@ while true; do
     continue
   fi
   if [ "$wait_seconds" -ge "$wait_cap" ]; then
-    data=$(printf '{"node":"%s","reason":"locked_out","waited_s":%s,"attempt":%s}' "$NODE_ID" "$wait_seconds" "$ATTEMPT")
+    data=$(printf '{"node":"%s","reason":"locked_out","waited_s":%s,"attempt":%s%s}' "$NODE_ID" "$wait_seconds" "$ATTEMPT" "$DISPATCH_FIELDS")
     emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
     printf 'error: xcodebuild lock wait exceeded %ss\n' "$wait_cap" >&2
     gate_announce_done test "$NODE_ID" "$TASK_ID" locked-out "$wait_seconds"
@@ -173,7 +186,7 @@ else
   . "$SCRIPT_DIR/lib-source-sync.sh"
   REL_WORKTREE=$(sourcesync_push "$NODE_ID" "$WORKTREE") || {
     printf 'task-test-gate: source sync to %s failed\n' "$NODE_ID" >&2
-    data=$(printf '{"node":"%s","reason":"source_sync_failed","attempt":%s}' "$NODE_ID" "$ATTEMPT")
+    data=$(printf '{"node":"%s","reason":"source_sync_failed","attempt":%s%s}' "$NODE_ID" "$ATTEMPT" "$DISPATCH_FIELDS")
     emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
     exit 2
   }
@@ -215,15 +228,15 @@ TEST_COUNT="${TEST_COUNT:-0}"
 rm -f "$test_log" 2>/dev/null || true
 
 if [ "$TEST_STATUS" -eq 0 ]; then
-  data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"test_count":%s,"attempt":%s}' \
-    "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$TEST_COUNT" "$ATTEMPT")
+  data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"test_count":%s,"attempt":%s%s}' \
+    "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$TEST_COUNT" "$ATTEMPT" "$DISPATCH_FIELDS")
   emit_event_keyed achilles task test_run_passed "$TASK_ID" "$data" >/dev/null 2>&1 || true
   gate_announce_done test "$NODE_ID" "$TASK_ID" passed "$DURATION_S"
   exit 0
 fi
 
-data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"attempt":%s,"exit_code":%s}' \
-  "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$ATTEMPT" "$TEST_STATUS")
+data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"attempt":%s,"exit_code":%s%s}' \
+  "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$ATTEMPT" "$TEST_STATUS" "$DISPATCH_FIELDS")
 emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
 gate_announce_done test "$NODE_ID" "$TASK_ID" failed "$DURATION_S"
 exit 2
