@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-04-26T16:55:12Z",
+  "generated_at": "2026-04-26T17:07:03Z",
   "agents": [
     {
       "name": "studio",
@@ -285,6 +285,17 @@
       "reads": ["~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/<project>/apollo/captures/**", "~/.dev-studio/<project>/apollo/deferred/*.yaml", "~/.dev-studio/<project>/events/**.jsonl"],
       "writes": ["~/.dev-studio/.runtime/locks/apollo/*", "~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/apollo/recommendations/<id>.md", "~/.dev-studio/<project>/events/<today>.jsonl"],
       "modes": [
+        {
+          "name": "battery",
+          "path": "apollo/modes/battery.md",
+          "type": "mode-pack",
+          "description": "Diagnose → measure → propose → patch → re-measure protocol for battery / energy regressions under strict-9 evidence gating. Covers foreground compute, background overrun, always-on subsystems, and radio drain.",
+          "reads": ["~/.dev-studio/<project>/apollo/captures/**", "~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/<project>/apollo/deferred/*.yaml", "~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/events/**.jsonl"],
+          "writes": ["~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/recommendations/<id>.md", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/events/<today>.jsonl", "~/.dev-studio/.runtime/locks/apollo/*"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 6000
+        },
         {
           "name": "memory",
           "path": "apollo/modes/memory.md",
