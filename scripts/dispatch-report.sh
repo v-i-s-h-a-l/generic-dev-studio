@@ -151,6 +151,34 @@ else
   printf '  no build_queue_position events in window\n'
 fi
 
+# --- Dispatch harvests (#271). Each `dispatch_harvested` is a session that
+# would have re-run a build/test on the worker but reused a prior dispatch's
+# result instead — the user-visible reconnect-and-harvest win. Surface
+# count per node + the harvested exit-code split so saturation of the
+# resumable-dispatch path is visible without `query-events`.
+printf '\n## Dispatch harvests (reconnect-and-harvest, #271)\n\n'
+# shellcheck disable=SC2086
+harvest_total=$(cat $files 2>/dev/null \
+  | jq -r 'select(.event=="dispatch_harvested") | 1' 2>/dev/null | wc -l | tr -d ' ')
+if [ "$harvest_total" -gt 0 ]; then
+  printf '  %-20s %-10s %-10s %s\n' "node" "harvests" "rc=0" "rc!=0"
+  printf '  %-20s %-10s %-10s %s\n' "----" "--------" "----" "-----"
+  # shellcheck disable=SC2086
+  cat $files 2>/dev/null \
+    | jq -r 'select(.event=="dispatch_harvested")
+             | "\(.data.node // "unknown")\t\(.data.exit_code // 0)"' 2>/dev/null \
+    | awk -F'\t' '
+        { n[$1]++; if ($2+0 == 0) green[$1]++; else red[$1]++ }
+        END {
+          for (k in n) {
+            g = green[k] + 0; r = red[k] + 0
+            printf "  %-20s %-10s %-10s %s\n", k, n[k], g, r
+          }
+        }' | sort -k2 -rn
+else
+  printf '  no dispatch_harvested events in window\n'
+fi
+
 # --- Top failure reasons on build_check_failed (the "what's actually
 # breaking" view, complementary to fallback).
 printf '\n## Top build_check_failed reasons\n\n'
