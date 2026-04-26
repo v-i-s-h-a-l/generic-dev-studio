@@ -1216,3 +1216,130 @@ legacy_release_log_append() {
   ' "$master" > "$tmp" || { rm -f "$tmp"; return 2; }
   mv "$tmp" "$master"
 }
+
+# ---------- Build-debt YAML (Stage A.0 / #273) ----------
+#
+# Canonical source for the build-debt counter is plans/build-debt.yaml. The
+# `## Build Debt` section in chanakya-master.md is a render projection produced
+# by scripts/render-master-plan.sh. Schema: _shared/schemas/build-debt.md.
+#
+# Pre-#273 projects keep mutating master-plan inline (sweep-ingest.sh's awk
+# blocks) under the dual-write window; the YAML helpers below run alongside so
+# both surfaces stay coherent through the soak. Post-A.3 the master-plan
+# mutations no-op and the projector regenerates the markdown from YAML.
+
+build_debt_path() {
+  local project
+  project=$(resolve_project 2>/dev/null) || return 2
+  printf '%s\n' "$(resolve_plans_dir_for "$project")/build-debt.yaml"
+}
+
+build_debt_init() {
+  local f
+  f=$(build_debt_path) || return 2
+  [ -f "$f" ] && return 0
+  mkdir -p "$(dirname "$f")" || return 2
+  local ts
+  ts=$(iso_ts_now)
+  cat > "$f" <<EOF
+schema_version: {name: build-debt, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}
+counter: 0
+state: silent
+warn_at: 6
+block_at: 12
+last_green: null
+last_green_sha: null
+unverified_since: []
+broken_commit_sha: null
+open_check_task: null
+blocked_by: null
+next_tbuild_n: 1
+notes: null
+updated_at: $ts
+EOF
+}
+
+# Read a single field. Defaults to "counter". Empty stdout when YAML missing or
+# yq unavailable; callers gate on emptiness.
+build_debt_get() {
+  local field="${1:-counter}"
+  local f
+  f=$(build_debt_path) || return 0
+  [ -f "$f" ] || return 0
+  command -v yq >/dev/null 2>&1 || return 0
+  yq -r ".${field} // \"\"" "$f" 2>/dev/null
+}
+
+# Apply a yq mutation expression. Auto-creates the file if missing. Always
+# bumps updated_at.
+_build_debt_yq_apply() {
+  local expr="${1:?_build_debt_yq_apply <yq-expression>}"
+  local f
+  f=$(build_debt_path) || return 2
+  build_debt_init || return 2
+  command -v yq >/dev/null 2>&1 || { printf 'build_debt: yq required\n' >&2; return 2; }
+  local ts
+  ts=$(iso_ts_now)
+  yq -i "${expr} | .updated_at = \"${ts}\"" "$f" 2>/dev/null || return 2
+}
+
+_build_debt_state_for_counter() {
+  local counter="${1:-0}" warn_at="${2:-6}" block_at="${3:-12}"
+  if [ "$counter" -ge "$block_at" ]; then printf 'block\n'
+  elif [ "$counter" -ge "$warn_at" ]; then printf 'warn\n'
+  else printf 'silent\n'
+  fi
+}
+
+# Reset on green build-check. Clears unverified_since, broken_commit_sha,
+# blocked_by, open_check_task. Sets last_green/last_green_sha. State → silent.
+build_debt_reset_green() {
+  local last_green="${1:-}" last_sha="${2:-}"
+  local lg_expr=".last_green = null"
+  local lgs_expr=".last_green_sha = null"
+  if [ -n "$last_green" ]; then lg_expr=".last_green = \"$(_json_escape "$last_green")\""; fi
+  if [ -n "$last_sha" ]; then lgs_expr=".last_green_sha = \"$(_json_escape "$last_sha")\""; fi
+  _build_debt_yq_apply ".counter = 0 | .state = \"silent\" | .unverified_since = [] | .broken_commit_sha = null | .blocked_by = null | .open_check_task = null | ${lg_expr} | ${lgs_expr}"
+}
+
+# Increment on lsp-only debrief or red build-check. Optionally append a task-id
+# to unverified_since. State recomputed from new counter.
+build_debt_increment() {
+  local task_id="${1:-}" overridden="${2:-0}"
+  build_debt_init || return 2
+  local cur warn_at block_at
+  cur=$(build_debt_get counter); cur=${cur:-0}
+  warn_at=$(build_debt_get warn_at); warn_at=${warn_at:-6}
+  block_at=$(build_debt_get block_at); block_at=${block_at:-12}
+  local new_counter=$(( cur + 1 ))
+  local new_state
+  new_state=$(_build_debt_state_for_counter "$new_counter" "$warn_at" "$block_at")
+  local append_expr=""
+  if [ -n "$task_id" ]; then
+    local entry="$task_id"
+    [ "$overridden" = "1" ] && entry="${task_id}[overridden]"
+    append_expr=" | .unverified_since += [\"$(_json_escape "$entry")\"]"
+  fi
+  _build_debt_yq_apply ".counter = ${new_counter} | .state = \"${new_state}\"${append_expr}"
+}
+
+# Annotate a red build-check: increment counter, set broken_commit_sha,
+# blocked_by, force state=block (red builds block regardless of counter).
+build_debt_annotate_red() {
+  local broken_sha="${1:-unknown}" blocked_by="${2:-TBUILD-fix}"
+  build_debt_init || return 2
+  local cur
+  cur=$(build_debt_get counter); cur=${cur:-0}
+  local new_counter=$(( cur + 1 ))
+  _build_debt_yq_apply ".counter = ${new_counter} | .state = \"block\" | .broken_commit_sha = \"$(_json_escape "$broken_sha")\" | .blocked_by = \"$(_json_escape "$blocked_by")\""
+}
+
+# Allocate the next TBUILD-N legacy id atomically. Prints the integer N and
+# bumps next_tbuild_n in the YAML.
+build_debt_allocate_tbuild_n() {
+  build_debt_init || return 2
+  local n
+  n=$(build_debt_get next_tbuild_n); n=${n:-1}
+  _build_debt_yq_apply ".next_tbuild_n = $(( n + 1 ))" || return 2
+  printf '%s\n' "$n"
+}

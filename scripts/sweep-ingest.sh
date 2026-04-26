@@ -265,10 +265,11 @@ ingest_build_check() {
 
   case "$result" in
     green)
-      # Reset the Build Debt counter in-place, scoped to the `## Build Debt`
-      # section. Matches the awk idiom used by legacy_master_plan_set_status
-      # (bounded by the next `##` heading).
-      if [ -f "$master" ]; then
+      # Canonical YAML write — projector regenerates the master-plan section
+      # on end-of-run. Legacy markdown mutation runs in parallel under the
+      # dual-write window (gated by _lw_dual_write_enabled, no-op post-A.3).
+      build_debt_reset_green "" "${broken_sha:-}" >/dev/null 2>&1 || true
+      if [ -f "$master" ] && _lw_dual_write_enabled; then
         tmp="$master.tmp.$$"
         awk '
           BEGIN { in_block=0 }
@@ -283,10 +284,9 @@ ingest_build_check() {
       fi
       ;;
     red)
-      # File a P0 fix task referencing the broken commit. Next TBUILD
-      # sequence number is tracked via counter in the master plan (best
-      # effort — legacy id resolves as TBUILD-N where N is the next free
-      # integer based on existing files).
+      # File a P0 fix task referencing the broken commit. TBUILD-N allocator
+      # remains here (operates on the task YAML directory; build-debt YAML's
+      # next_tbuild_n is for threshold-script's mint, not this red path).
       next_n=1
       if [ -d "$TASKS_DIR" ]; then
         max_n=$(grep -hE '^legacy_task_id: *"?TBUILD-' "$TASKS_DIR"/*.yaml 2>/dev/null \
@@ -304,8 +304,10 @@ ingest_build_check() {
       printf 'red_build: true\nbroken_commit_sha: %s\nset_at: %s\n' \
         "${broken_sha:-unknown}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         > "$PROJECT_ROOT/.runtime/state/build_debt_blocked" 2>/dev/null || true
-      # Annotate the debt block with the breaking commit for visibility.
-      if [ -f "$master" ]; then
+      # Canonical YAML annotation — projector renders the markdown section.
+      build_debt_annotate_red "${broken_sha:-unknown}" "TBUILD-$next_n" >/dev/null 2>&1 || true
+      # Legacy markdown annotation runs under dual-write window; no-op post-A.3.
+      if [ -f "$master" ] && _lw_dual_write_enabled; then
         tmp="$master.tmp.$$"
         awk -v sha="${broken_sha:-unknown}" '
           BEGIN { in_block=0; annotated=0 }
@@ -395,51 +397,17 @@ ingest_release() {
     release_uuid="$existing_uuid"
   fi
 
-  # Back-reference: tag each covered task's links.release + legacy master-
-  # plan `Released in:` row. The master-plan edit is inline here since the
-  # lib-ledger helper doesn't exist yet.
+  # Back-reference: tag each covered task's links.release. The master-plan
+  # `- **Released in:** TF-N` annotation is rendered by render-master-plan.sh
+  # from these links every sweep — no inline awk write here. (Closes the
+  # unguarded-writer (W!) finding from audits/245-A1-reader-audit.md.)
   if [ -n "$tasks_csv" ]; then
-    tag_label="TF-$build_num"
-    [ "$channel" = "appstore" ] && tag_label="AS-$build_num"
     IFS=',' read -r -a tarr <<< "$tasks_csv"
     for t in "${tarr[@]}"; do
       t=$(printf '%s' "$t" | tr -d ' ')
       [ -z "$t" ] && continue
       tu=$(resolve_task_uuid_by_legacy_id "$t")
       [ -n "$tu" ] && set_task_link "$tu" release "$release_uuid" || true
-      # Legacy master-plan `Released in:` annotation, scoped to this task's
-      # section. Comma-separated if a row already has a value (multi-release
-      # tasks accrue labels).
-      master="$PROJECT_ROOT/plans/chanakya-master.md"
-      if [ -f "$master" ]; then
-        tmp="$master.tmp.$$"
-        awk -v id="$t" -v label="$tag_label" '
-          BEGIN { in_section=0; annotated=0 }
-          /^### / {
-            if ($2 == id) in_section=1
-            else {
-              if (in_section && !annotated) print "- **Released in:** " label
-              in_section=0
-            }
-            print; next
-          }
-          /^## / {
-            if (in_section && !annotated) print "- **Released in:** " label
-            in_section=0
-            print; next
-          }
-          in_section && /^- \*\*Released in:\*\*/ {
-            # Append label idempotently — skip if already present.
-            if (index($0, label) == 0) {
-              sub(/$/, ", " label)
-            }
-            annotated=1
-            print; next
-          }
-          { print }
-          END { if (in_section && !annotated) print "- **Released in:** " label }
-        ' "$master" > "$tmp" 2>/dev/null && mv "$tmp" "$master" || rm -f "$tmp"
-      fi
     done
   fi
 
@@ -461,4 +429,13 @@ case "$SUBCMD" in
   release)     ingest_release     "$@" ;;
 esac
 rc=$?
+
+# Re-render the projected master-plan markdown from YAML sources after every
+# successful ingest. Idempotent — same inputs produce byte-identical output.
+# Failure here doesn't fail the ingest (the YAML write is canonical; the
+# markdown is a derivative).
+if [ "$rc" = "0" ]; then
+  bash "$SCRIPT_DIR/render-master-plan.sh" >/dev/null 2>&1 || true
+fi
+
 exit "$rc"
