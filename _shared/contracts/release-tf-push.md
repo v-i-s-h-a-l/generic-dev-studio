@@ -120,7 +120,7 @@ Emit `dsym_uploaded` with `data: { build: NEW_BUILD_NUMBER, count_succeeded, cou
 
 Run only when Steps 4 and 5 both verified successful.
 
-Compose the build-message body from the user's commits since the last shared TF build. Find the last shared build by reading recent `#testing` history (`conversations.history`), filtering for messages from the studio's posting bot identity that match `build NNNN is available on TestFlight`. The matching `Bump build number to NNNN` commit is the lower bound for `git log --no-merges --author="<owner>" --format=...`.
+Compose the build-message body from the user's commits since the last shared TF build. Find the last shared build via `scripts/slack-fetch.sh history --channel #testing` (wraps `conversations.history`), filtering for messages from the studio's posting bot identity that match `build NNNN is available on TestFlight`. The matching `Bump build number to NNNN` commit is the lower bound for `git log --no-merges --author="<owner>" --format=...`. Thread-reply scans for cc-mention attribution use `scripts/slack-fetch.sh replies --channel <id> --ts <parent-ts>`; display-name resolution uses `scripts/slack-fetch.sh user --user <U>`.
 
 Format the body per `_shared/contracts/build-message-format.md` — three-section shape (`*New*` / `*Fixed*` / `*Crash fixes*`, skip empty sections), feature rollup, regression labelling, rollover bullet `• includes changes from <PREV_BUILD_NUMBER>` when stacking on an unreleased TF.
 
@@ -140,7 +140,7 @@ D1 of issue #217 locks this gate. The driver does not auto-send. A future iterat
 
 ### Step 9 — Send to Slack
 
-Post via `chat.postMessage` to `#testing` per `_shared/primitives/slack-post.md`. Capture the response `ts` as `PARENT_TS`; assert non-empty before any thread reply. Strip the parenthesised display names from the body before sending — they are reviewer-only.
+Post via `scripts/slack-post.sh --channel #testing --text <body>` (wraps `chat.postMessage` per `_shared/primitives/slack-post.md`). Capture the response `ts` as `PARENT_TS`; assert non-empty before any thread reply via `scripts/slack-post.sh --thread-ts <PARENT_TS>`. Strip the parenthesised display names from the body before sending — they are reviewer-only.
 
 Emit `slack_sent` with `data: { build: NEW_BUILD_NUMBER, channel: "#testing", parent_ts: PARENT_TS, message_chars }`.
 
@@ -180,7 +180,9 @@ This matches `_shared/contracts/idempotency.md` §Per-action keys: the writable 
 - `_shared/primitives/appstore-connect-jwt.md` — JWT minting helper invoked in Step 1.
 - `_shared/primitives/safe-git.md` — `safe_git_commit` wrapper used in Step 3.
 - `_shared/primitives/slack-post.md` — token loading, `chat.postMessage`, `<!here>` rule, parent-once invariant.
-- `_shared/contracts/build-message-format.md` — Slack-body composition rules referenced in Step 7.
+- `scripts/slack-post.sh` — write primitive (`chat.postMessage`); used by Step 9.
+- `scripts/slack-fetch.sh` — read primitive (`conversations.history` / `.replies` / `users.info`); used by Step 7.
+- `_shared/contracts/build-message-format.md` — authoritative Slack-body composition rules referenced in Step 7.
 - `_shared/contracts/events.md` — top-level event log schema; this contract registers the seven events above into that catalog.
 - `_shared/contracts/idempotency.md` — keyed-emit dedupe semantics referenced under §Idempotency.
 - `scripts/node-pick.sh` — implements `--requires-secret-scope` filter consumed by Stage C.
