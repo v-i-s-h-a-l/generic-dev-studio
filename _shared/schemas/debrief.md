@@ -4,18 +4,18 @@ description: YAML shape for Achilles-authored debriefs under plans/debriefs/<deb
 type: reference
 ---
 
-# Debrief Schema (`debrief@2.1.0`)
+# Debrief Schema (`debrief@2.3.0`)
 
-Per-debrief artifact written to `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml`. Replaces the markdown debriefs that previously landed at `plans/chanakya-inbox/<task-id>-debrief.md`. Authored by Achilles in `task` mode (paired with a brief) or in `debrief` mode (direct-debrief, no brief).
+Per-debrief artifact written to `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml`. Replaces the markdown debriefs that previously landed at `plans/chanakya-inbox/<task-id>-debrief.md`. Authored by Achilles in `task` mode (paired with a brief), Achilles in `debrief` mode (direct-debrief, no brief), or Apollo in any perf-mode (`metrics:` block populated, `executed_with.host` reflects Apollo's surface).
 
-Version 2.0.0 was a breaking change from the legacy markdown format (`contracts/debrief-format.md`). Prose narratives are kept as strings inside typed fields so Chanakya's ingest path does not need NLP to locate "Decisions Made" or "Build Verification" — they are structured. Subsequent 2.x bumps (2.0.1, 2.0.2, 2.1.0) are non-breaking additive changes; `min_reader: 2.0.0` keeps the entire active fleet compatible.
+Version 2.0.0 was a breaking change from the legacy markdown format (`contracts/debrief-format.md`). Prose narratives are kept as strings inside typed fields so Chanakya's ingest path does not need NLP to locate "Decisions Made" or "Build Verification" — they are structured. Subsequent 2.x bumps (2.0.1, 2.0.2, 2.1.0, 2.2.0, 2.3.0) are non-breaking additive changes; `min_reader: 2.0.0` keeps the entire active fleet compatible.
 
 ## Shape
 
 ```yaml
 schema_version:
   name: debrief
-  version: 2.1.0
+  version: 2.3.0
   min_reader: 2.0.0
   deprecated_at: null
 id: 0190f52a-79aa-7d02-8b88-33ce5fe65e66        # UUIDv7
@@ -79,6 +79,36 @@ argus_review:
   review_id: 0190f52a-7a11-7e03-8c99-44df6fd77a77 # null if not-invoked
   notes: null
 report_state: done                                # done | done_with_concerns | blocked | needs_context — see contracts/worker-report.md
+metrics: null                                     # 2.2.0; Apollo perf-mode only. Null for Achilles task / direct-debrief.
+# Example of a populated Apollo metrics block (memory regression):
+# metrics:
+#   perf_mode: memory                             # memory | thermal | battery — mirrors brief.perf_mode
+#   evidence_tier: 9                              # 9 (hard) | 1 (advisory; canonical anti-pattern only)
+#   verdict: approved                             # approved | refused | advisory
+#   cohort:
+#     device: "iPhone 16 Pro"                     # Capture device — strict-9 cohort match enforced
+#     os: "iOS 19.0"
+#     build: "Release"
+#   baseline:
+#     artifact_path: "~/.dev-studio/<project>/perf/baseline-2026-04-27.trace"
+#     artifact_kind: trace                        # trace | mxmetric | xcresult | signpost | energy-log | asc-perf
+#     measure: "peak_resident_mb"
+#     value: 412.3
+#     unit: "MB"
+#   observed:
+#     artifact_path: "~/.dev-studio/<project>/perf/post-fix-2026-04-27.trace"
+#     artifact_kind: trace
+#     measure: "peak_resident_mb"
+#     value: 287.1
+#     unit: "MB"
+#   delta:
+#     absolute: -125.2
+#     pct: -30.4
+#     direction: improved                         # improved | regressed | unchanged
+#   refusal: null                                 # Object when verdict: refused; null otherwise.
+#   # When refusal is non-null:
+#   #   reason: "Capture cohort mismatch — baseline iPhone 12, target iPhone 16 Pro"
+#   #   required_action: "Re-capture baseline on target cohort"
 ```
 
 ## Fields
@@ -109,6 +139,7 @@ report_state: done                                # done | done_with_concerns | 
 | `argus_review` | object | yes | `{status, review_id, notes}`. Status `not-invoked` only valid when Argus was bypassed (xs-skip or direct-debrief). |
 | `report_state` | enum \| absent | no | `done` \| `done_with_concerns` \| `blocked` \| `needs_context`. Worker-report contract — see `contracts/worker-report.md`. Absent in pre-2.0.2 debriefs; readers infer from other fields for back-compat. |
 | `executed_with` | object \| absent | no | 2.1.0; `{model_id, host, session_id, duration_s}`. Producer identity for multi-model accountability. Absent in pre-2.1.0 debriefs; readers MUST tolerate absence and either join `events/<date>.jsonl` `agent_boot` records by `task_id` to fill the gap or treat the executor as unknown. Three of the four fields (`model_id`, `host`, `session_id`) are already produced by `scripts/emit-agent-boot.sh`; `duration_s` is computed from the matching `agent_session_completed` event timestamp delta. |
+| `metrics` | object \| null | yes | 2.2.0; Apollo perf-mode only. Null for Achilles task / direct-debrief debriefs. Populated by Apollo when emitting a perf-mode debrief — carries strict-9 evidence (cohort, baseline, observed, delta, verdict) so Chanakya's ingest path can render perf outcomes without re-reading the underlying `.trace` / MXMetric artifact. Sub-shape documented inline with the example above; refusal subobject populated only when `verdict: refused`. |
 
 ## Modes
 
@@ -142,6 +173,7 @@ The 141 processed debriefs in `chanakya-inbox/processed/` are **copied as-is** t
 
 | Version | Landed | Changes |
 |---|---|---|
+| 2.2.0 | 2026-04-27 | Non-breaking: add optional `metrics` block (`perf_mode`, `evidence_tier`, `verdict`, `cohort`, `baseline`, `observed`, `delta`, `refusal`) for Apollo perf-mode debriefs. Carries strict-9 evidence so Chanakya can render perf outcomes without re-reading artifacts (#235 Stage 5). Null for non-Apollo debriefs. |
 | 2.1.0 | 2026-04-27 | Non-breaking: add optional `executed_with` block (`model_id`, `host`, `session_id`, `duration_s`) for multi-model accountability and A/B model-routing telemetry. Three fields already emitted by `scripts/emit-agent-boot.sh`; only the schema-side surface lands here (#247 Stage C deliverable 2). |
 | 2.0.2 | 2026-04-23 | Non-breaking: add optional `report_state` field (4-state worker-report enum). Back-compat reader rule in `contracts/worker-report.md`. Drawn from obra/superpowers. |
 | 2.0.1 | 2026-04-22 | Non-breaking: add `state` field (`emitted` \| `ingested` \| `superseded`). Missing `state` is read as `emitted` for back-compat. Motivated by direct-debriefs having no parent-task history to mark as ingested. |
