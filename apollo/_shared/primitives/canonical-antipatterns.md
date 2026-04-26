@@ -1,6 +1,6 @@
 ---
 name: Canonical anti-patterns primitive
-description: Curated 1/10 advisory channel for Apollo. Documented anti-patterns where the pattern itself is the citation; only when measurement is structurally impossible. Memory rows seeded by Stage 2a.
+description: Curated 1/10 advisory channel for Apollo. Documented anti-patterns cited only when measurement is structurally impossible. Memory + thermal rows seeded (Stage 2a + 2b).
 type: reference
 schema_version: 1
 ---
@@ -47,7 +47,16 @@ The `measurement_path: blocked` line is mandatory. If the reason names a path th
 
 ## Thermal anti-patterns (Stage 2b — #231)
 
-To be added by #231. The row-id namespace is `therm:NN`.
+| Row id | Pattern | Diff signal | Why advisory, not recommendation |
+|---|---|---|---|
+| `therm:01` | App does sustained CPU / GPU / capture / encode work but registers no `ProcessInfo.thermalStateDidChangeNotification` observer | Codebase contains a render loop, encoder pipeline, ML inference loop, or capture session AND no `addObserver`/`NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)` / `NSProcessInfoThermalStateDidChangeNotification` registration anywhere | The app cannot shed load under thermal pressure; the OS will throttle silently and user-visible regression magnitude is workload-dependent. Without a sustained-load trace, magnitude is unknown |
+| `therm:02` | High-frequency timer or display-link animation not paused under `.serious` thermal state | `Timer.scheduledTimer`, `CADisplayLink`, or `Combine.Timer.publish` driving UI / capture / DSP at ≥ 1 Hz AND no thermalState observer reducing cadence | Cost depends on what the timer drives; without Time Profiler under sustained dwell, the impact is theoretical |
+| `therm:03` | `.userInteractive` / `.userInitiated` QoS on background-shaped work (export, indexing, prefetch, encode) | `Task(priority: .userInitiated)` or `DispatchQueue.global(qos: .userInteractive)` wrapping work that is not user-blocking and has no frame deadline | High-QoS pins work to P-cores per Apple's scheduler; the heat cost is real but only resolved by per-core CPU Counters under load |
+| `therm:04` | Busy-wait / CPU spin loop with no yield, no sleep, no `await` | `while !condition { … }` body without `Thread.sleep`, `Task.yield()`, `await`, or `DispatchSemaphore.wait` | Pure heat production with zero useful work; documented in Apple's Energy Efficiency Guide. Without a Time Profiler trace pinning the spin, the duration / wakeup pattern is unmeasured |
+| `therm:05` | Foreground `CLLocationManager` at `kCLLocationAccuracyBest` / `BestForNavigation` without thermal-state throttling | CLLocationManager configured at maximum accuracy, `startUpdatingLocation()` invoked, no thermalState observer reducing accuracy or pausing | High-accuracy GPS is documented as a sustained thermal source (Apple Energy Efficiency Guide); magnitude is device- and reception-dependent |
+| `therm:06` | Per-frame construction of `CIImage`, `MTLCommandBuffer`, or `MTLCommandQueue` inside a render / display callback | `CIImage(...)` / `device.makeCommandQueue()` / `commandBuffer()` invoked inside a `CADisplayLink` callback or `MTKView.draw(in:)` at frame rate, no caching / reuse | Metal best-practices document buffer reuse as canonical; without Metal System Trace evidence the per-frame allocation cost is speculative. Apollo refuses Metal-internal recommendations until Stage 3 (#233) ships — see `apollo/modes/thermal.md` Metal carve-out |
+| `therm:07` | Continuous foreground ML inference on `MLComputeUnits.all` (or repeated `VNCoreMLRequest`) with no thermal gating | `MLModel.prediction(...)` or `VNCoreMLRequest` invoked per frame / per scenario tick, `computeUnits` left at `.all` or `.cpuAndGPU`, no thermalState observer | Neural Engine + GPU + CPU placement is workload-dependent; without per-cohort capture the heat cost cannot be attributed to ML vs the rest of the pipeline |
+| `therm:08` | `AVCaptureSession` running at high FPS / resolution with no shed path under `.serious` | `AVCaptureDevice.activeFormat` set to a high-FPS / high-resolution format, session running in foreground, no thermalState observer reducing FPS or resolution | Capture-pipeline thermal cost scales non-linearly with FPS × resolution; without Metal System Trace + Energy Log under sustained dwell the magnitude is unmeasured |
 
 ## Battery anti-patterns (Stage 2c — #232)
 
@@ -71,7 +80,13 @@ A pattern-match-on-diff system that flags "looks expensive" is the regression Ap
 - `apollo/_shared/primitives/evidence-gate.md` — the 1/10 advisory channel definition and its narrow scope
 - `apollo/_shared/primitives/execution-surface.md` — the auto-capture decision tree the advisory route only fires after exhausting
 - `apollo/modes/memory.md` — consumer of the `mem:NN` rows
+- `apollo/modes/thermal.md` — consumer of the `therm:NN` rows
 - WWDC18 219 — Image and Graphics Best Practices (canonical for `mem:01`)
 - WWDC21 10180 — Detect and diagnose memory issues (canonical for `mem:02`–`mem:05`)
 - Apple "ARC: Strong Reference Cycles for Closures" — Swift Programming Language guide (canonical for `mem:03`)
 - WWDC18 416 — iOS Memory Deep Dive (canonical for `mem:07`)
+- Apple "Reacting to thermal state changes" + `ProcessInfo.thermalStateDidChangeNotification` reference (canonical for `therm:01`, `therm:02`, `therm:05`, `therm:08`)
+- Apple Energy Efficiency Guide for iOS Apps — high-QoS / busy-wait / location accuracy guidance (canonical for `therm:03`, `therm:04`, `therm:05`)
+- WWDC25 308 — Optimize CPU performance with Instruments (canonical for `therm:03`, `therm:04`)
+- Apple Metal best-practices — command-buffer / queue reuse (canonical for `therm:06`)
+- WWDC22 10027 / Core ML compute-unit selection guidance (canonical for `therm:07`)

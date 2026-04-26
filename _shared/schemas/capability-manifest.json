@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-04-26T16:34:18Z",
+  "generated_at": "2026-04-26T16:44:14Z",
   "agents": [
     {
       "name": "studio",
@@ -290,6 +290,17 @@
           "path": "apollo/modes/memory.md",
           "type": "mode-pack",
           "description": "Diagnose → measure → propose → patch → re-measure protocol for memory regressions under strict-9 evidence gating. Covers transient peaks, persistent growth, leaks, and OOM kills.",
+          "reads": ["~/.dev-studio/<project>/apollo/captures/**", "~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/<project>/apollo/deferred/*.yaml", "~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/events/**.jsonl"],
+          "writes": ["~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/recommendations/<id>.md", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/events/<today>.jsonl", "~/.dev-studio/.runtime/locks/apollo/*"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 6000
+        },
+        {
+          "name": "thermal",
+          "path": "apollo/modes/thermal.md",
+          "type": "mode-pack",
+          "description": "Diagnose → measure → propose → patch → re-measure protocol for thermal regressions under strict-9 evidence gating. Covers sustained-load throttle, hang-under-thermal, CPU hot loops, and GPU-rooted heat.",
           "reads": ["~/.dev-studio/<project>/apollo/captures/**", "~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/<project>/apollo/deferred/*.yaml", "~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/events/**.jsonl"],
           "writes": ["~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/recommendations/<id>.md", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/events/<today>.jsonl", "~/.dev-studio/.runtime/locks/apollo/*"],
           "snapshots": [],

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-26T16:34:17Z",
+  "generated_at": "2026-04-26T16:44:13Z",
   "schema": 1,
   "commands": [
     {"name": "chanakya-help", "source": "commands/chanakya-help.md", "description": "", "agent": null, "scope": "global"},
@@ -24,6 +24,7 @@
     {"name": "achilles.test-suite", "source": "achilles/modes/test-suite.md", "agent": "achilles", "mode": "test-suite", "description": "Composite test-suite mode (`/achilles test-suite <unit|ui|all>`). Runs the full test suite (not individual task tests) against committed HEAD and produces a debrief that resets the corresponding debt counter on Chanakya's next sweep."},
     {"name": "achilles.worker", "source": "achilles/modes/worker.md", "agent": "achilles", "mode": "worker", "description": "Fleet worker mode. Turns the current session into a fleet pane — claims a slot atomically, starts a background watch loop, and spawns a fresh worker per dispatched task. The session is the operator-facing wrapper; the bash loop is the IPC primitive."},
     {"name": "apollo.memory", "source": "apollo/modes/memory.md", "agent": "apollo", "mode": "memory", "description": "Diagnose → measure → propose → patch → re-measure protocol for memory regressions under strict-9 evidence gating. Covers transient peaks, persistent growth, leaks, and OOM kills."},
+    {"name": "apollo.thermal", "source": "apollo/modes/thermal.md", "agent": "apollo", "mode": "thermal", "description": "Diagnose → measure → propose → patch → re-measure protocol for thermal regressions under strict-9 evidence gating. Covers sustained-load throttle, hang-under-thermal, CPU hot loops, and GPU-rooted heat."},
     {"name": "argus.code-quality", "source": "argus/modes/code-quality.md", "agent": "argus", "mode": "code-quality", "description": "Stage 2 of two-stage Argus review. Cross-file regressions, edge cases, diff anomalies, secrets, base-branch staleness, M/L test run, TDD red→green. Runs iff Stage 1 returned approved or flagged. Previously the sole Argus pass; split 2026-04-23."},
     {"name": "argus.spec-compliance", "source": "argus/modes/spec-compliance.md", "agent": "argus", "mode": "spec-compliance", "description": "Stage 1 of the two-stage Argus review. Narrow check — does the diff match the brief? Nothing extra, nothing missed. Runs before code-quality. Drawn from obra/superpowers/subagent-driven-development."},
     {"name": "chanakya.brief-review", "source": "chanakya/modes/brief-review.md", "agent": "chanakya", "mode": "brief-review", "description": "Checklist-driven quality pass over an authored brief before dispatch. Warn-tier, not block — ships even with findings. Catches brief defects that cascade into rework. Runs standalone via `/chanakya brief-review <task-id>`; not auto-invoked."},
