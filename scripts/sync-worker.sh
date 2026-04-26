@@ -99,6 +99,63 @@ fi
 REQUIRED_BREW=$(yq -r '.brew_packages.required[]?' "$MANIFEST" 2>/dev/null)
 OPTIONAL_BREW=$(yq -r '.brew_packages.optional[]?' "$MANIFEST" 2>/dev/null)
 BREW_TAPS=$(yq -r '.brew_packages.taps[]?' "$MANIFEST" 2>/dev/null)
+
+# ---------- merge tools.yaml (universal base) ----------
+# tools.yaml is the single source of truth for studio dependencies. The
+# manifest is the project-specific override layer. Merge is ADDITIVE:
+# tools.yaml entries augment, never remove from, the manifest's lists.
+TOOLS_YAML="$SCRIPT_DIR/tools.yaml"
+if [ -r "$TOOLS_YAML" ]; then
+  WORKER_ROLES_CSV=$(printf '%s' "$ENTRY" | jq -r '(.roles // []) | join(",")')
+
+  _tools_raw=$(yq -r '
+    .tools[] |
+    select(any(.roles[]; . == "worker" or . == "dual")) |
+    [.tier, .install_type, (.install_target // ""), (.install_tap // ""), (.conditional_on // "")] |
+    @tsv
+  ' "$TOOLS_YAML" 2>/dev/null)
+
+  while IFS=$'\t' read -r _t_tier _t_itype _t_target _t_tap _t_cond; do
+    [ -z "$_t_target" ] && continue
+    case "$_t_itype" in
+      brew|brew-cask|brew-tap) ;;
+      *) continue ;;
+    esac
+    if [ -n "$_t_cond" ]; then
+      case "$_t_cond" in
+        worker_role:*)
+          _req_role="${_t_cond#worker_role:}"
+          case ",$WORKER_ROLES_CSV," in
+            *,"$_req_role",*) ;;
+            *) continue ;;
+          esac
+          ;;
+      esac
+    fi
+    if [ -n "$_t_tap" ]; then
+      if ! printf '%s\n' "$BREW_TAPS" | grep -qxF "$_t_tap"; then
+        BREW_TAPS=$(printf '%s\n%s' "$BREW_TAPS" "$_t_tap")
+      fi
+    fi
+    if printf '%s\n' "$REQUIRED_BREW" | grep -qxF "$_t_target" \
+       || printf '%s\n' "$OPTIONAL_BREW" | grep -qxF "$_t_target"; then
+      continue
+    fi
+    case "$_t_tier" in
+      required|recommended)
+        REQUIRED_BREW=$(printf '%s\n%s' "$REQUIRED_BREW" "$_t_target")
+        ;;
+      optional)
+        OPTIONAL_BREW=$(printf '%s\n%s' "$OPTIONAL_BREW" "$_t_target")
+        ;;
+    esac
+  done <<< "$_tools_raw"
+
+  REQUIRED_BREW=$(printf '%s\n' "$REQUIRED_BREW" | sed '/^$/d')
+  OPTIONAL_BREW=$(printf '%s\n' "$OPTIONAL_BREW" | sed '/^$/d')
+  BREW_TAPS=$(printf '%s\n' "$BREW_TAPS" | sed '/^$/d')
+fi
+
 XCODE_MIN=$(yq -r '.xcode_version_min // ""' "$MANIFEST" 2>/dev/null)
 
 emit_event_keyed sync worker worker_sync_started "$WORKER_ID" \
@@ -216,7 +273,18 @@ if [ -n "$SKILL_HOSTS" ]; then
   esac
 
   if [ -n "$repo_rel" ]; then
-    skill_dirs=(skills _shared scripts hosts achilles argus chanakya .claude)
+    skill_dirs=(skills _shared scripts hosts .claude .codex .claude-plugin)
+    for _candidate in "$REPO_ROOT"/*/; do
+      [ -d "$_candidate" ] || continue
+      [ -f "$_candidate/SKILL.md" ] || continue
+      _cname=$(basename "$_candidate")
+      _already=0
+      for _existing in "${skill_dirs[@]}"; do
+        [ "$_existing" = "$_cname" ] && { _already=1; break; }
+      done
+      [ "$_already" = "1" ] && continue
+      skill_dirs+=("$_cname")
+    done
     skill_sync_ok=1
 
     for dir in "${skill_dirs[@]}"; do
@@ -258,7 +326,11 @@ fi
 # These are invoked by task-build-gate.sh's remote branch via $HOME-relative
 # paths — a stable anchor independent of the repo location on either machine.
 RUNTIME_BIN_REL=".dev-studio/.runtime/bin"
-RUNTIME_BIN_SCRIPTS=(xcodebuild-shim.sh)
+RUNTIME_BIN_SCRIPTS=()
+for _shim in "$SCRIPT_DIR"/*-shim.sh; do
+  [ -f "$_shim" ] || continue
+  RUNTIME_BIN_SCRIPTS+=("$(basename "$_shim")")
+done
 
 if [ "$DRY_RUN" = "1" ]; then
   for _rbs in "${RUNTIME_BIN_SCRIPTS[@]}"; do
@@ -304,4 +376,9 @@ emit_event_keyed sync worker worker_sync_completed "$WORKER_ID" \
   >/dev/null 2>&1 || true
 printf 'sync-worker: %s — applied %d, drift %d, optional-missing %d\n' \
   "$WORKER_ID" "$applied" "${#drift[@]}" "${#optional_missing[@]}"
+
+if ! launchctl print "gui/$(id -u)/dev.studio.worker-sync" >/dev/null 2>&1; then
+  printf 'hint: scheduled worker sync is not active — run:\n'
+  printf '  scripts/schedule-worker-sync.sh --install [--interval daily|hourly|weekly]\n'
+fi
 exit 0
