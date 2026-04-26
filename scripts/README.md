@@ -118,7 +118,7 @@ eval "$(scripts/task-load-spec.sh T001)"                # TASK_MODE/BRIEF_PATH/S
 scripts/task-build-debt-gate.sh [--override]            # exit 2 if blocked; emits build_debt_blocked
 scripts/task-claim.sh <task-uuid> <brief-uuid> <size>   # task + brief state transitions
 eval "$(scripts/task-worktree-setup.sh T001 /repo)"     # PROJECT/ORIG_BRANCH/ORIG_HEAD/WORKTREE
-scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" # xcodebuild + lock
+scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" # xcodebuild + lock; exit 4 = duplicate-invocation refused (#209)
 scripts/task-write-test-cases.sh T001 '[{...}]'         # twin-write standalone + stdout YAML
 scripts/task-invoke-argus.sh T001 /wt main S            # emits review_requested (Argus invoked via Agent tool)
 scripts/task-merge.sh T001 /wt feature-branch           # merge lock + merge + worktree remove + DerivedData clean

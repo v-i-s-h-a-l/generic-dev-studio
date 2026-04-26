@@ -27,6 +27,8 @@
 #   1  skipped     — diff is not package-only (caller must escalate to
 #                    task-build-gate.sh). NO events emitted on this path.
 #   2  red         — swift test failed, or swift unavailable, or bad args
+#   4  refused     — another build-check for this task is already in flight
+#                    on this machine. No started/aborted events emitted. #209.
 #
 # Step 6 routing contract: a 0 means the gate is green and merge can
 # proceed; a 1 means "I don't apply, run the size-driven gate"; a 2 is
@@ -106,9 +108,33 @@ EOF
 # Per-task attempt counter — same contract + storage layout as
 # task-build-gate.sh so analytics can join across both gate flavors.
 PROJECT=$(resolve_project 2>/dev/null || echo unknown)
-ATTEMPTS_DIR="$(resolve_project_root_for "$PROJECT")/.runtime/state/build-check-attempts"
+PROJECT_ROOT="$(resolve_project_root_for "$PROJECT")"
+ATTEMPTS_DIR="$PROJECT_ROOT/.runtime/state/build-check-attempts"
 ATTEMPTS_FILE="$ATTEMPTS_DIR/$TASK_ID"
 mkdir -p "$ATTEMPTS_DIR" 2>/dev/null || true
+
+# Per-task duplicate-invocation guard (#209). Same contract as
+# task-build-gate.sh. Refuses concurrent invocations on the same task
+# before emitting started, eliminating duplicate started events as a
+# source of the started/passed asymmetry.
+TASK_LOCK_DIR="$PROJECT_ROOT/.runtime/state/build-check-locks"
+TASK_LOCK="$TASK_LOCK_DIR/$TASK_ID"
+mkdir -p "$TASK_LOCK_DIR" 2>/dev/null || true
+if ! mkdir "$TASK_LOCK" 2>/dev/null; then
+  if [ -n "$(find "$TASK_LOCK" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then
+    rm -rf "$TASK_LOCK"
+    mkdir "$TASK_LOCK" 2>/dev/null || { printf 'swift-test-gate: cannot acquire task lock: %s\n' "$TASK_LOCK" >&2; exit 4; }
+  else
+    printf 'swift-test-gate: another build-check for %s is in flight; refusing\n' "$TASK_ID" >&2
+    exit 4
+  fi
+fi
+printf '%s\n' "$$" > "$TASK_LOCK/pid" 2>/dev/null || true
+# See task-build-gate.sh — installs lock-release before the full trap
+# replaces it, so a bail-out before started-emit still clears the lock.
+_release_task_lock() { rm -rf "$TASK_LOCK" 2>/dev/null || true; }
+trap _release_task_lock EXIT INT TERM
+
 ATTEMPT=1
 if [ -r "$ATTEMPTS_FILE" ]; then
   prev=$(tr -d '[:space:]' < "$ATTEMPTS_FILE" 2>/dev/null || echo 0)
@@ -124,8 +150,18 @@ TERMINAL_EMITTED=0
 _emit_aborted_if_open() {
   local rc=$?
   [ "$TERMINAL_EMITTED" = "1" ] && return 0
+  # rc=0 with no terminal emitted is a logic contradiction — see #209.
+  local reason=""
+  if [ "$rc" = "0" ]; then
+    reason="clean_exit_no_verdict"
+    rc=255
+  fi
   local data
-  data=$(printf '{"mode":"swift-test","attempt":%s,"exit_code":%s}' "$ATTEMPT" "$rc")
+  if [ -n "$reason" ]; then
+    data=$(printf '{"mode":"swift-test","attempt":%s,"exit_code":%s,"reason":"%s"}' "$ATTEMPT" "$rc" "$reason")
+  else
+    data=$(printf '{"mode":"swift-test","attempt":%s,"exit_code":%s}' "$ATTEMPT" "$rc")
+  fi
   emit_event_keyed achilles task build_check_aborted "$TASK_ID" "$data" >/dev/null 2>&1 || true
   rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
 }
@@ -141,7 +177,7 @@ file_count=$(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ')
 start_data=$(printf '{"mode":"swift-test","worktree":"%s","package":"%s","files":%s,"attempt":%s}' \
   "$WORKTREE" "$PKG_ROOT" "$file_count" "$ATTEMPT")
 emit_event_keyed achilles task build_check_started "$TASK_ID" "$start_data" >/dev/null 2>&1 || true
-trap _emit_aborted_if_open EXIT INT TERM
+trap '_emit_aborted_if_open; _release_task_lock' EXIT INT TERM
 
 # DRY-RUN — log the invocation, skip the real test run. Idempotency-key
 # parity with task-build-gate.sh so wet/dry-run output diffs cleanly.

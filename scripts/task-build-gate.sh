@@ -26,6 +26,8 @@
 #   0  green
 #   2  red (build / LSP errors, missing tools, bad args)
 #   3  locked-out (30-minute wait exceeded)
+#   4  refused — another build-check for this task is already in flight on
+#      this machine. No started/aborted events emitted. See #209.
 
 set -u
 umask 022
@@ -54,9 +56,37 @@ esac
 # the project-scoped runtime dir; reset when a terminal event lands. See
 # issue #106.
 PROJECT=$(resolve_project 2>/dev/null || echo unknown)
-ATTEMPTS_DIR="$(resolve_project_root_for "$PROJECT")/.runtime/state/build-check-attempts"
+PROJECT_ROOT="$(resolve_project_root_for "$PROJECT")"
+ATTEMPTS_DIR="$PROJECT_ROOT/.runtime/state/build-check-attempts"
 ATTEMPTS_FILE="$ATTEMPTS_DIR/$TASK_ID"
 mkdir -p "$ATTEMPTS_DIR" 2>/dev/null || true
+
+# Per-task duplicate-invocation guard (#209). Refuses concurrent invocations
+# for the same task before any started event is emitted, so the started/
+# passed asymmetry can't be inflated by accidental re-fires (parallel
+# Achilles re-entry, hung wrapper retried by hand). Stale lock reclaim at
+# 60 min covers PID death; the inner per-node xcodebuild lock continues to
+# serialize across tasks, this lock only catches same-task duplicates.
+TASK_LOCK_DIR="$PROJECT_ROOT/.runtime/state/build-check-locks"
+TASK_LOCK="$TASK_LOCK_DIR/$TASK_ID"
+mkdir -p "$TASK_LOCK_DIR" 2>/dev/null || true
+if ! mkdir "$TASK_LOCK" 2>/dev/null; then
+  if [ -n "$(find "$TASK_LOCK" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then
+    rm -rf "$TASK_LOCK"
+    mkdir "$TASK_LOCK" 2>/dev/null || { printf 'task-build-gate: cannot acquire task lock: %s\n' "$TASK_LOCK" >&2; exit 4; }
+  else
+    printf 'task-build-gate: another build-check for %s is in flight; refusing\n' "$TASK_ID" >&2
+    exit 4
+  fi
+fi
+printf '%s\n' "$$" > "$TASK_LOCK/pid" 2>/dev/null || true
+# Install lock-release immediately so any bail-out between here and the
+# full trap below still cleans up. The full trap (set after started-emit)
+# composes _emit_aborted_if_open in front; either trap form releases the
+# lock as the last action.
+_release_task_lock() { rm -rf "$TASK_LOCK" 2>/dev/null || true; }
+trap _release_task_lock EXIT INT TERM
+
 ATTEMPT=1
 if [ -r "$ATTEMPTS_FILE" ]; then
   prev=$(tr -d '[:space:]' < "$ATTEMPTS_FILE" 2>/dev/null || echo 0)
@@ -73,8 +103,20 @@ TERMINAL_EMITTED=0
 _emit_aborted_if_open() {
   local rc=$?
   [ "$TERMINAL_EMITTED" = "1" ] && return 0
+  # rc=0 with no terminal emitted is a logic contradiction (script reached
+  # a clean exit without emitting pass/fail). Stamp a reason so analytics
+  # can detect the bug-shape and force a non-zero exit_code per #209.
+  local reason=""
+  if [ "$rc" = "0" ]; then
+    reason="clean_exit_no_verdict"
+    rc=255
+  fi
   local data
-  data=$(printf '{"mode":"%s","attempt":%s,"exit_code":%s}' "$MODE" "$ATTEMPT" "$rc")
+  if [ -n "$reason" ]; then
+    data=$(printf '{"mode":"%s","attempt":%s,"exit_code":%s,"reason":"%s"}' "$MODE" "$ATTEMPT" "$rc" "$reason")
+  else
+    data=$(printf '{"mode":"%s","attempt":%s,"exit_code":%s}' "$MODE" "$ATTEMPT" "$rc")
+  fi
   emit_event_keyed achilles task build_check_aborted "$TASK_ID" "$data" >/dev/null 2>&1 || true
   rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
 }
@@ -93,7 +135,7 @@ _emit_terminal() {
 # Announce the attempt so analysis can bucket red gates by mode + retry.
 start_data=$(printf '{"mode":"%s","worktree":"%s","attempt":%s}' "$MODE" "$WORKTREE" "$ATTEMPT")
 emit_event_keyed achilles task build_check_started "$TASK_ID" "$start_data" >/dev/null 2>&1 || true
-trap _emit_aborted_if_open EXIT INT TERM
+trap '_emit_aborted_if_open; _release_task_lock' EXIT INT TERM
 
 # ---------- lsp-only ----------
 #
@@ -220,7 +262,7 @@ done
 # Composite: first emit an aborted event iff no terminal was sent, THEN
 # release the lock — preserves the span-close invariant for the full-green
 # branch even when the earlier outer trap got overridden by this one.
-trap '_emit_aborted_if_open; rm -rf "$LOCK" 2>/dev/null' EXIT INT TERM
+trap '_emit_aborted_if_open; rm -rf "$LOCK" 2>/dev/null; _release_task_lock' EXIT INT TERM
 
 # Local branch still needs to cd before invoking xcodebuild. Remote branch
 # delegates the cd to the remote shell below — the dispatch still happens
