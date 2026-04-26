@@ -57,14 +57,15 @@ Idempotency key is `<agent>:agent-boot:<session-id>` — dedupes re-fires within
 `scripts/emit-agent-boot.sh` writes the event + touches the sentinel:
 
 ```bash
-scripts/emit-agent-boot.sh <agent> <session-id> <skill-version>
+scripts/emit-agent-boot.sh <agent> <session-id>
 ```
 
 - `<agent>` — one of `chanakya`, `achilles`, `argus`.
 - `<session-id>` — caller-chosen identifier stable for the session (e.g. a mode's PID + wall-clock, or a task-id for per-task sessions).
-- `<skill-version>` — read from the SKILL.md frontmatter `version:` field.
 
-The script resolves `git_sha` by running `git rev-parse --short HEAD` in the studio repo (path resolved via `$ACHILLES_STUDIO_REPO` env var or the git toplevel ancestor of the calling script). The event lands in the project event log via `lib-paths.sh`'s `append_event` helper.
+`skill_version` is **not** a caller argument. Per #210, the script reads it from `<agent>/SKILL.md`'s frontmatter `version:` field — the single source of truth. When the parse fails (file missing, no `version:` field, value is not semver), the script emits the sentinel string `unresolved` rather than `unknown` / `---`. Analytics keyed on `skill_version` can join on `unresolved` deterministically; ambiguous strings cannot. Caller-side strings produced 11 distinct values across 15 boot events (analysis/2026-04-25.md Anomaly 2) — the SSOT closes that gap.
+
+The script resolves `git_sha` by running `git rev-parse --short HEAD` in the studio repo (resolved via the script's own location, not the caller's cwd — Achilles worktrees would otherwise resolve to the user's project repo). The event lands in the project event log via `lib-paths.sh`'s `append_event` helper.
 
 Idempotency is enforced by sentinel: if `~/.dev-studio/<project>/.runtime/agent-boot-sent-<session-id>` exists, the helper no-ops.
 

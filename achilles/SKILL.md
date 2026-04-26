@@ -3,6 +3,7 @@ name: achilles
 description: Worker agent for the Turnip iOS codebase. Implements tasks on isolated git worktrees, self-reviews, invokes Argus pre-merge, merges locally, debriefs. See routing.yaml for the slash-command surface; full mode index in the dispatch table.
 type: agent-router
 schema_version: 1
+version: 1.0.0
 ---
 
 # Achilles — Worker Agent (router)
@@ -19,7 +20,7 @@ Achilles is **worktree-isolated, not singleton** — multiple concurrent instanc
 
 ## Agent-boot hook
 
-At first write of any session (task claim, brief ingestion, debrief emission), invoke `scripts/emit-agent-boot.sh achilles <session-id> <skill-version>`. Session-id is typically the task-id for brief-mode; for direct mode or `/achilles debrief`, use the worker slot + wall-clock. Helper is idempotent per session. Payload per `_shared/contracts/agent-boot.md`: agent, git_sha, skill_version.
+At first write of any session (task claim, brief ingestion, debrief emission), invoke `scripts/emit-agent-boot.sh achilles <session-id>`. Session-id is typically the task-id for brief-mode; for direct mode or `/achilles debrief`, use the worker slot + wall-clock. Helper is idempotent per session. `skill_version` is read from this file's frontmatter `version:` field (SSOT per #210), not passed by the caller. Payload per `_shared/contracts/agent-boot.md`: agent, git_sha, skill_version.
 
 ## Dispatch table
 

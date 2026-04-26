@@ -3,6 +3,7 @@ name: studio
 description: Cross-agent studio router. Handles studio-level operations that span agents or concern the studio repo's own conventions (not the user's iOS project). See routing.yaml for the sub-command surface. Task-level work routes to /chanakya, /achilles, /argus.
 type: agent-router
 schema_version: 1
+version: 1.0.0
 ---
 
 # Studio — Router
