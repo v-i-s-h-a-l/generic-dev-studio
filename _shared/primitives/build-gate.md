@@ -18,7 +18,9 @@ Every `xcodebuild`, `swift build`, and `swift test` invocation in agent code or 
 | Achilles test-suite mode | `scripts/task-test-gate.sh` | `xcodebuild test` under per-node lock |
 | Argus M/L review test phase | `scripts/argus-run-tests.sh` | machine-local test-slot semaphore (intentional carve-out — runs against `Argus-N` simulators that are per-machine) |
 
-The gates own three responsibilities: node-pick (route to a healthy worker tagged for the role, fall back to local), lock acquisition (per-node `xcodebuild-lock/<node-id>/` with 45-min staleness reclaim, fed by a per-node FIFO queue at `build-queue/<node-id>/` per #266 so concurrent waiters acquire in enqueue order rather than racing the mkdir), and event emission (`build_check_*` for build, `build_queue_position` on enqueue, `test_run_*` for test). Skipping the gate skips all three.
+The gates own three responsibilities: node-pick (route to a healthy worker tagged for the role, fall back to local), lock acquisition (per-node `xcodebuild-lock/<node-id>/slot-<n>/` with 45-min staleness reclaim, fed by a per-node FIFO queue at `build-queue/<node-id>/` per #266 so concurrent waiters acquire in enqueue order rather than racing the mkdir), and event emission (`build_check_*` for build, `build_queue_position` on enqueue, `test_run_*` for test). Skipping the gate skips all three.
+
+Slot count comes from the node's `parallel_build_slots` field in `~/.dev-studio/.runtime/nodes.json` (default 1). At slots=1 the queue grants a single concurrent holder on `slot-1` — bit-identical to the pre-#268 single-dir lock. At slots>N the queue grants up to N concurrent holders, each pinned to a distinct `slot-<n>` subdir; build and test gates share the slot pool so a test pins one slot while builds use the rest. Bump `parallel_build_slots: 2+` on a node with capacity for parallel builds (#218 Stage C / #268).
 
 ## Why a single chokepoint
 
@@ -36,7 +38,7 @@ The laptop (and any future worker) carries `swift-test` + `xcodebuild` roles onl
 
 ## Self-node identity
 
-A registered node entry whose `machine_id` matches the running machine's `machine_id` is *self*. The gates short-circuit SSH for self-nodes (run inline) but keep the lock keyed by the registered id — so a laptop-local build and a mini-dispatched build serialize on different locks and run in parallel, while two laptop-local builds queue on `xcodebuild-lock/laptop/`. Helpers live in `scripts/lib-paths.sh`: `resolve_self_machine_id`, `node_machine_id_for`, `node_is_self`.
+A registered node entry whose `machine_id` matches the running machine's `machine_id` is *self*. The gates short-circuit SSH for self-nodes (run inline) but keep the lock keyed by the registered id — so a laptop-local build and a mini-dispatched build serialize on different locks and run in parallel, while two laptop-local builds queue on `xcodebuild-lock/laptop/slot-*/`. Helpers live in `scripts/lib-paths.sh`: `resolve_self_machine_id`, `node_machine_id_for`, `node_is_self`.
 
 ## Lint enforcement
 
