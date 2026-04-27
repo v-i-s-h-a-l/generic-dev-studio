@@ -98,6 +98,8 @@ Orchestration (dispatch, status, inbox sweep): Sonnet. Initial planning with amb
 
 Fleet dispatch (multi-worker fan-out, queue enqueue/drain/list/clear, per-worker inbox contract, refusal rules) belongs to `modes/ship.md` and `modes/sweep-debt.md`. Worker inbox paths, IPC format, and event emissions (`task_dispatched`) are documented in those mode packs. Chanakya always emits `task_dispatched` immediately before shelling out to `scripts/achilles-dispatch.sh`.
 
+**Perf-mode briefs route to Apollo, not Achilles.** When `modes/brief.md` authors a brief with `dispatch_agent: apollo` (memory / thermal / battery investigation), the dispatch suggestion in Step 8 routes to `/apollo <perf_mode>` and Argus skips that merge entirely (Apollo's strict-9 re-measure delta is the gate). Brief schema fields and authoring rules: `_shared/schemas/brief.md` §3.3.0 + `chanakya/modes/brief.md` Step 6 "Dispatch routing". The Apollo surface itself lives at `/apollo` — see that agent's docs for mode packs and `/apollo measure <metric>` (capture-only pre-flight).
+
 ## Session-completion event
 
 Every Chanakya session emits `agent_session_completed` at exit with `mode`, `duration_s`, `files_read`, `files_written`, and (if available) `tokens`. See `_shared/patterns/chanakya-principles.md` and `_shared/contracts/events.md`.

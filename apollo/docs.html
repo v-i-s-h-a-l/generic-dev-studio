@@ -348,7 +348,14 @@ Resume with `apollo &lt;mode&gt; --evidence &lt;path&gt;`.</code></pre>
         <div class="status shipping-soon">Stage 2c · #232</div>
         <div class="what">Foreground energy, cumulative CPU per hour, drain regressions. Hard evidence: <code>MXAppRunTimeMetric</code>, ASC Performance Metrics power row, Energy Log <code>.trace</code>, <code>MXCPUMetric</code> per foreground hour.</div>
       </div>
+      <div class="mode-card">
+        <code>/apollo measure &lt;metric&gt;</code>
+        <div class="status shipping-soon">Stage 5 · #235</div>
+        <div class="what">Capture-only path. Produces one hard-evidence artifact for a named metric on a named cohort, then exits — no fix, no patch dispatch. Pre-flight tool for Chanakya brief authoring (populates <code>evidence.artifacts[]</code>) and for cohort re-capture after a perf-merge refusal. <code>--capture-only</code> alias on the diagnostic mode packs has the same effect.</div>
+      </div>
     </div>
+    <h3>Perf-mode dispatch from Chanakya</h3>
+    <p>Briefs declared with <code>dispatch_agent: apollo</code> route to Apollo instead of Achilles, with <code>perf_mode</code> selecting the diagnostic mode pack and <code>evidence</code> pre-flighting the strict-9 gate at brief-write time. Argus skips these merges entirely (<code>argus/SKILL.md</code> §Skip threshold) — Apollo's re-measure delta on the brief's cohort is the merge gate. Loop spec: <code>apollo/_shared/primitives/perf-merge-loop.md</code>.</p>
     <h3>Phase 2 modes (deferred)</h3>
     <p>Launch-time, scroll-perf, binary-size, network-efficiency. Each follows the same per-metric mode-pack pattern. Adding one = one file under <code>modes/</code>, one dispatch row in <code>SKILL.md</code>, one fixture at <code>tests/mode-packs/apollo/&lt;mode&gt;.yaml</code>.</p>
     <h3>Default behavior</h3>
