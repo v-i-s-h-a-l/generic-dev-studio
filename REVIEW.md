@@ -226,6 +226,16 @@ Authoritative rule + linter: `_shared/rules/mode-pack-discipline.md` and `script
 - For any new mode pack added, confirm at least one `_shared/contracts/`, `_shared/rules/`, or `_shared/primitives/` reference is present.
 - Note token-budget headroom from the lint output (warning lines start with `W_MP1_BUDGET_OVER`).
 
+### R20 — Worktree isolation: never edit the main checkout (tier: **block**)
+
+Every session that writes to this repo must work in a dedicated `git worktree` (see CLAUDE.md §Worktree protocol). The main checkout is read-only during concurrent sessions.
+
+**Why:** parallel Claude Code sessions share the same filesystem and git index. `git add` and `git reset` in one session can silently pick up the other session's unstaged edits, producing accidental co-mingling in commits. The pathspec workaround (`git commit -- <paths>`) is insufficient — it only filters the working-tree layer; pre-staged index pollution from the other session still commits regardless. Worktree isolation is the structural fix.
+
+**How to check:** before making any edit in this repo, confirm `git worktree list` shows a dedicated non-main path as the active worktree. If the current working directory is the main checkout, stop — create a worktree first.
+
+**Retired:** the previous guidance to use `git commit -- <paths>` + `git restore --staged :/` (memory: `feedback_session_scoped_commits.md`) is superseded by this rule. Pathspec is no longer the mitigation; worktree isolation is.
+
 **Fix pattern:** delete the inlined block; insert `See _shared/<area>/<file>.md`. If the duplication is intentional and load-bearing, annotate with `<!-- shared-dup-allowed: <reason> -->` directly above — the lint records the reason but does not block.
 
 **Interaction:** R8 is the soft sibling on token-cost awareness; R19 is the structural gate. R18 + the prose linter handle grammar; R19 + the mode-pack linter handle economics + reuse. Both pre-commit hooks run; both must pass.

@@ -8,6 +8,25 @@ A multi-session refactor is in progress. Before taking any architectural action,
 
 If the user asks "where were we" or similar, invoke `/resume-plan` — it reads the above and reports.
 
+## Worktree protocol (hard rule — no exceptions)
+
+**Never edit the main checkout of this repo directly.** Every session that writes to `generic-dev-studio` must work in a dedicated `git worktree`:
+
+```bash
+git worktree add /tmp/studio-<slug> main   # create isolated tree
+# ... do all work + commits here ...
+git push origin main                        # or cherry-pick/merge back to main
+git worktree remove /tmp/studio-<slug>     # clean up when done
+```
+
+**Why this is a hard rule:** parallel Claude Code sessions share the same process user and filesystem. When two sessions run in the main checkout simultaneously, one session's `git add` or `git reset` can pick up the other session's unstaged edits — producing accidental co-mingling in commits and making post-hoc untangling expensive or impossible (especially when origin has already advanced). Worktree isolation eliminates the problem at the source: only one session owns a given tree, no shared index, no cross-session bleed.
+
+**This replaces the pathspec rule** (`git commit -- <paths>`). The pathspec approach was a workaround for shared-tree chaos; worktree isolation removes the chaos. The pathspec rule (REVIEW.md) is retired.
+
+**Achilles already follows this** — `scripts/task-worktree-setup.sh` creates per-task worktrees. This rule extends the same discipline to interactive (Chanakya / studio) sessions.
+
+**Worktree lifecycle for interactive sessions:** create before the first write; push/merge after the session's logical unit of work is done; remove immediately after. If the session ends without writing anything, the worktree cleanup is a no-op.
+
 ## Studio router (systematic triggers)
 
 The `studio` skill is a **project-scoped vendor skill** shipped at `.claude/skills/studio/`. It is the cross-agent router for studio-level operations. Its Tier 1 modes cover the six most common studio-scoped user intents. When any of the phrases below fire, dispatch into the matching mode (slash commands are thin wrappers — the mode pack is authoritative):
