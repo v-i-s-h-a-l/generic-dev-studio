@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-27T00:12:10Z",
+  "generated_at": "2026-04-27T00:14:25Z",
   "schema": 1,
   "commands": [
     {"name": "chanakya-help", "source": "commands/chanakya-help.md", "description": "", "agent": null, "scope": "global"},
@@ -34,6 +34,7 @@
     {"name": "chanakya.brief-review", "source": "chanakya/modes/brief-review.md", "agent": "chanakya", "mode": "brief-review", "description": "Checklist-driven quality pass over an authored brief before dispatch. Warn-tier, not block — ships even with findings. Catches brief defects that cascade into rework. Runs standalone via `/chanakya brief-review <task-id>`; not auto-invoked."},
     {"name": "chanakya.brief", "source": "chanakya/modes/brief.md", "agent": "chanakya", "mode": "brief", "description": "Brief Generation + Brief-All composite. Writes self-contained Achilles briefs with Figma + codebase context. Runs a similarity probe before authoring (populates `similar_to`, offers duplicate-fold)."},
     {"name": "chanakya.compact", "source": "chanakya/modes/compact.md", "agent": "chanakya", "mode": "compact", "description": "Archive verified tasks, regenerate Dashboard + Module Index + Blocked list, trim changelog, optionally sweep artifacts. Includes implicit feedback-archive + index regeneration."},
+    {"name": "chanakya.digest", "source": "chanakya/modes/digest.md", "agent": "chanakya", "mode": "digest", "description": "State-change rollup over a time window (day/week/month). Groups task_state_changed events by destination state, with per-train breakdowns. Default window is day."},
     {"name": "chanakya.dispatch-ready", "source": "chanakya/modes/dispatch-ready.md", "agent": "chanakya", "mode": "dispatch-ready", "description": "Briefed tasks where every predecessor has reached merged/verified/archived. The fleet-wide \"what can I dispatch right now?\" query, grouped by train."},
     {"name": "chanakya.feedback-reports", "source": "chanakya/modes/feedback-reports.md", "agent": "chanakya", "mode": "feedback-reports", "description": "Render reporter-facing feedback reports — design (category=design or UI/UX module) and product (category=clarification/enhancement). Read-only; writes a dated markdown file to chanakya-inbox. Sub-commands report-design and report-product."},
     {"name": "chanakya.feedback", "source": "chanakya/modes/feedback.md", "agent": "chanakya", "mode": "feedback", "description": "Full feedback lifecycle (review, archive, history, studio-feedback) excluding Slack ingestion (which lives in modes/ingest.md). Applies user-testing edits to the master plan and promotes verified records to per-build archive."},

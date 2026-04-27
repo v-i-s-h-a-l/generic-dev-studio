@@ -81,6 +81,7 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `task_awaiting_user` | Subagent cannot pick a default and must block for user input. Always paired with a debrief at `status: blocked_awaiting_input`. | `question` (≤200 chars), `brief_excerpt` (≤200 chars, the Phase-0 block or the ambiguous spec line), `mode` (`autonomous`\|`interactive`) |
 | `task_cancelled` | User cancelled a pending or in-flight task (`scripts/achilles-cancel.sh` or an Achilles abort). Paired with no `task_completed`. | `stage` (`pending`\|`in_flight`\|`merged`), `reason` (`user_abort`\|`replaced`\|`stale_brief`\|`other`), `worker` (`worker-N` if known) |
 | `task_rescued` | Worker moved a task to `rescue/` — either `timeout` (rc=124 from `gtimeout`) or `silent_stuck` (rc=0 with no debrief written). Emitted by `scripts/achilles-worker.sh`. Visible equivalent of the rescue file, so Chanakya can surface + push without polling worker directories. | `reason` (`timeout`\|`silent_stuck`), `timeout_s` (only on timeout), `rc`, `debrief_written` (0\|1), `worker` (`worker-N`) |
+| `self_review_iterated` | Step 5 triggered a fix-and-rerun — a material finding was found, fixed, and the skill stack re-invoked. Only emitted when `iteration >= 2` (i.e. the cap was reached). Paired with `self_review_path` pointing to the written artifact under `plans/self-reviews/`. | `iteration` (always 2 at cap), `converged` (false if material findings remained after the fix), `material_skills` (array of skill names that returned `material`) |
 
 ### Argus events
 
