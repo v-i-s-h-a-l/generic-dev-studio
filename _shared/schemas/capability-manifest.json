@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-04-27T00:17:19Z",
+  "generated_at": "2026-04-27T08:40:17Z",
   "agents": [
     {
       "name": "studio",
@@ -620,7 +620,7 @@
           "writes": [],
           "snapshots": [],
           "dry_run": false,
-          "budget_tokens": 450
+          "budget_tokens": 600
         },
         {
           "name": "train",
