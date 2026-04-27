@@ -1,0 +1,39 @@
+# Skill-testing fixture for chanakya/modes/touchpoint.md
+# Proves: reverse affinity.touchpoints index — the mode finds tasks by their
+# declared file globs, not by title/state, and renders the matched-glob column.
+schema: 1
+pack: chanakya/modes/touchpoint.md
+scenario: |
+  A developer asks: "/chanakya touchpoint Project/FilterPreset/FilterPresetRow.swift"
+
+  There are three tasks in plans/tasks/:
+
+  Task A (id: T401, state: merged, updated_at: 2026-04-20):
+    affinity.touchpoints: ["Project/FilterPreset/**", "ProjectTests/FilterPreset/**"]
+
+  Task B (id: T402, state: in-progress, updated_at: 2026-04-25):
+    affinity.touchpoints: ["Project/FilterPreset/FilterPresetRow.swift"]
+
+  Task C (id: T403, state: proposed, updated_at: 2026-04-18):
+    affinity.touchpoints: ["Project/Camera/**"]
+
+  Walk through what the mode does, which tasks match the query path, how results
+  are sorted, and what the output table looks like. Name the script invoked and
+  the matched-glob column values.
+failure_signals:
+  # Without the pack the model invents a generic search approach (title keyword
+  # match, state filter) rather than the specific touchpoints reverse-index.
+  - "(?i)(search|grep|filter).*(title|name|keyword)"
+  - "(?i)state.*(filter|query)"
+success_signals:
+  # With the pack it cites the correct script and output shape.
+  - "query-tasks.sh"
+  - "--touchpoints"
+  - "matched.glob|matched_glob|MATCHED"
+  # T402 (most recent) comes before T401; T403 does not match Camera glob.
+  - "T402|T401"
+notes: |
+  The fixture tests three things: (1) glob semantics — "Project/FilterPreset/**"
+  matches the concrete path, (2) sort order — T402 (2026-04-25) before T401
+  (2026-04-20), (3) non-matching task C is excluded. The failure signals catch
+  the common fallback of treating this as a title/state query.
