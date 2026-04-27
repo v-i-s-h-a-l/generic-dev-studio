@@ -34,11 +34,12 @@ The gate is the load-bearing invariant. Every mode pack's entry conditions cite 
 | `memory` / "investigate memory regression" / "leak" / "OOM" | `modes/memory.md` | Stage 2a — #230, shipped |
 | `thermal` / "thermal throttling" / "device heat" | `modes/thermal.md` | Stage 2b — #231, shipped |
 | `battery` / "battery drain" / "energy regression" | `modes/battery.md` | Stage 2c — #232, shipped |
+| `measure <metric>` / `--capture-only` | `modes/measure.md` | Stage 5 — #235, shipped |
 | *(no args or free-text)* | infer metric from cited artifact / prompt for one of {memory, thermal, battery} | router-only until Stage 2 |
 
 Phase 2 modes (launch-time, scroll-perf, binary-size, network-efficiency) are deferred. Adding a mode = one file under `modes/`, one dispatch row, one fixture at `tests/mode-packs/apollo/<mode>.yaml`. Same rule as every other router in this repo.
 
-`measure <metric>` / `--capture-only` (capture artifacts without recommending a fix) is a Stage 5 deliverable (#235) — declared here for forward visibility, not yet routable.
+`/apollo measure <metric>` (capture-only) is the pre-flight tool for Chanakya brief authoring — it produces a hard-evidence artifact path that the brief's `evidence.artifacts[]` references, then exits without recommending a fix. The diagnostic mode packs (memory/thermal/battery) accept `--capture-only` as an alias for the same exit-after-capture behavior.
 
 ## Intent detection
 

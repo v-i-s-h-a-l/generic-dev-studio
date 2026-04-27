@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-04-27T00:04:59Z",
+  "generated_at": "2026-04-27T00:06:39Z",
   "agents": [
     {
       "name": "studio",
@@ -306,6 +306,17 @@
           "snapshots": [],
           "dry_run": false,
           "budget_tokens": 6000
+        },
+        {
+          "name": "measure",
+          "path": "apollo/modes/measure.md",
+          "type": "mode-pack",
+          "description": "Capture-only — produce a hard-evidence artifact (.trace, MXMetricPayload, .xcresult, signpost log, energy log, ASC perf row) without recommending a fix. Pre-flight tool for Chanakya brief authoring when dispatch_agent: apollo is set but evidence.artifacts is empty.",
+          "reads": ["~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/.runtime/host-capabilities.yaml"],
+          "writes": ["~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/events/<today>.jsonl", "~/.dev-studio/.runtime/locks/apollo/*"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 3000
         },
         {
           "name": "memory",
