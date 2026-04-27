@@ -63,7 +63,9 @@ Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debri
 | `auto-sweep` | `modes/inbox-sweep.md` (Step 0 re-run + backoff) |
 | `train <show\|list\|burn-down\|dispatch-ready> [name]` | `modes/train.md` |
 | `stale [--days=N] [--state=<state>]` | `modes/stale.md` |
+| `digest [day\|week\|month]` | `modes/digest.md` |
 | `blocked-by <task-id>` | `modes/blocked-by.md` |
+| `touchpoint <file-or-glob> [--limit=N]` | `modes/touchpoint.md` |
 | `dispatch-ready` | `modes/dispatch-ready.md` |
 | `urgent <free-text>` | `modes/urgent-ingest.md` (fast-path: minimal brief + immediate Achilles dispatch, skips brief-review) |
 

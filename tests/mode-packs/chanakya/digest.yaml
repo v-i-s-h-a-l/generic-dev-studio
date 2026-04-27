@@ -1,0 +1,31 @@
+# Skill-testing fixture for chanakya/modes/digest.md
+# Proves: event-log sourcing, idempotency_key deduplication, per-train grouping,
+# lifecycle-ordered output, and correct empty-window handling.
+schema: 1
+pack: chanakya/modes/digest.md
+scenario: |
+  The user runs `/chanakya digest day`. The event log for today contains 10
+  task_state_changed events. Two of those events share the same idempotency_key
+  (a duplicate emitted by a retry). Three tasks belong to train "lean-task-arc";
+  the rest have no train field. Describe step-by-step what the mode does, name
+  the source it reads for train membership, explain how duplicates are handled,
+  and show what the final output looks like — specifically which events are
+  counted and how per-train breakdowns appear for states with mixed trains.
+failure_signals:
+  # Without the pack the subagent cannot cite the dedup mechanism or the
+  # task-YAML join — it will either ask for code or omit the idempotency logic.
+  - "(?i)(provide|share).*(code|file|path|repo)"
+  - "(?i)(need|require).*(more (info|context)|access to)"
+  - "(?i)not sure (how|what)"
+success_signals:
+  # With the pack it must cite: event log source, idempotency_key dedup,
+  # plans/tasks/*.yaml join, lifecycle order, per-train breakdown rule.
+  - "idempotency_key"
+  - "plans/tasks"
+  - "train"
+  - "(?i)(lifecycle|proposed.*briefed|briefed.*dispatched)"
+notes: |
+  The dedup-on-idempotency_key rule is load-bearing — without it a retry
+  storm inflates the counts. The train-join is the other load-bearing step:
+  events don't carry train, so a subagent without the pack will either invent
+  a train field on events or omit per-train grouping entirely.
