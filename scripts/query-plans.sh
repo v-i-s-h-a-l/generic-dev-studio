@@ -29,22 +29,55 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 PROJECT=""
 KIND=""
 FORMAT="yaml"
+TOUCHES_GLOB=""
 declare -a FILTERS=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --project)   PROJECT="${2:?--project requires slug}"; shift 2 ;;
-    --kind=*)    KIND="${1#--kind=}"; shift ;;
-    --kind)      KIND="${2:?--kind requires value}"; shift 2 ;;
-    --format=*)  FORMAT="${1#--format=}"; shift ;;
-    --format)    FORMAT="${2:?--format requires value}"; shift 2 ;;
-    --*=*)       FILTERS+=("$1"); shift ;;
+    --project)    PROJECT="${2:?--project requires slug}"; shift 2 ;;
+    --kind=*)     KIND="${1#--kind=}"; shift ;;
+    --kind)       KIND="${2:?--kind requires value}"; shift 2 ;;
+    --format=*)   FORMAT="${1#--format=}"; shift ;;
+    --format)     FORMAT="${2:?--format requires value}"; shift 2 ;;
+    --touches=*)  TOUCHES_GLOB="${1#--touches=}"; shift ;;
+    --touches)    TOUCHES_GLOB="${2:?--touches requires a glob}"; shift 2 ;;
+    --*=*)        FILTERS+=("$1"); shift ;;
     -h|--help)
       sed -n '3,/^$/p' "$0" | sed 's/^# \{0,1\}//'
       exit 2 ;;
     *) printf 'unknown arg: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
+
+# --touches: reverse-index query over affinity.touchpoints.
+# Scans per-task YAMLs directly (index doesn't store touchpoints).
+if [ -n "$TOUCHES_GLOB" ]; then
+  if [ -z "$PROJECT" ]; then
+    PROJECT=$(resolve_project 2>/dev/null) || {
+      printf 'error: no project resolved. Pass --project <slug>.\n' >&2
+      exit 2
+    }
+  fi
+  if [ -n "${ACHILLES_PROJECT_ROOT:-}" ]; then
+    _TP_ROOT="$ACHILLES_PROJECT_ROOT"
+  else
+    _TP_ROOT=$(resolve_project_root_for "$PROJECT")
+  fi
+  _TP_DIR="$_TP_ROOT/plans/tasks"
+  command -v yq >/dev/null 2>&1 || { printf 'error: --touches requires yq (v4+)\n' >&2; exit 2; }
+  [ -d "$_TP_DIR" ] || { printf 'no tasks dir: %s\n' "$_TP_DIR" >&2; exit 0; }
+  _found=0
+  for _f in "$_TP_DIR"/*.yaml; do
+    [ -f "$_f" ] || continue
+    if yq -e '.affinity.touchpoints[]? | select(. != null) | select(test("'"$TOUCHES_GLOB"'"))' \
+        "$_f" >/dev/null 2>&1; then
+      yq eval '.' "$_f"
+      _found=$(( _found + 1 ))
+    fi
+  done
+  [ "$_found" -gt 0 ] || printf 'no tasks with touchpoints matching: %s\n' "$TOUCHES_GLOB" >&2
+  exit 0
+fi
 
 if [ -z "$KIND" ]; then
   printf 'error: --kind is required (one of tasks, briefs, debriefs, reviews, rounds, releases, feedback, crashes)\n' >&2
