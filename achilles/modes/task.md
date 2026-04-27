@@ -18,7 +18,7 @@ writes:
   - plans/tasks/<task-id>.yaml                     # back-ref update: links.debrief + state transitions per _shared/state-machines/task-lifecycle.md
   - plans/briefs/<brief-id>.yaml                   # brief state transition dispatched → debriefed per _shared/state-machines/brief-lifecycle.md
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
-  - plans/chanakya-inbox/<task-id>-tests.md        # test-case artifact (read-write surface for test-manifest)
+  - plans/tests/<task-id>-tests.md                 # test-case artifact (read-write surface for test-manifest)
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
@@ -275,7 +275,7 @@ Record `GATE = "lsp-only" | "full-green" | "swift-test"` for the debrief's `## B
 TEST_YAML=$(scripts/task-write-test-cases.sh "$TASK_ID" "$CASES_JSON")
 ```
 
-Twin-writes `plans/chanakya-inbox/<task-id>-tests.md` (Chanakya's `/chanakya test-manifest` reads this) and returns the YAML block for splicing into the debrief's `tests.added:` field. Each case carries preconditions, steps, expected result. Runs regardless of `WAIT_FOR_USER`.
+Twin-writes `plans/tests/<task-id>-tests.md` (Chanakya's `/chanakya test-manifest` reads this) and returns the YAML block for splicing into the debrief's `tests.added:` field. Each case carries preconditions, steps, expected result. Runs regardless of `WAIT_FOR_USER`.
 
 ### Step 8 — Optional wait for user feedback
 

@@ -68,7 +68,7 @@ After the loop, run `scripts/rebuild-index.sh` once if any debrief was processed
 
 ### 0A.1 — Orphan-debrief backfill (DEGRADED post-#245 A.5)
 
-`scripts/backfill-orphan-debriefs.sh` historically reconciled debriefs whose `chanakya-master.md` row was missing. With the legacy markdown surface archived under `plans/.legacy-archive/`, the script's master-plan path is dead — it currently calls a stub-fail helper. A YAML-shaped rewrite (detect debriefs whose `task_id` has no `plans/tasks/<uuid>.yaml`) is tracked separately. Skip the orphan-backfill call until the rewrite ships; sweeps stay correct without it because every YAML write goes through `lib-ledger`.
+`scripts/backfill-orphan-debriefs.sh` is currently degraded — its master-plan write path calls a stub-fail helper. A YAML-shaped rewrite (detect debriefs whose `task_id` has no `plans/tasks/<uuid>.yaml` counterpart) is tracked separately. Skip the orphan-backfill call until the rewrite ships; sweeps stay correct without it because every YAML write goes through `lib-ledger`.
 
 ### 0B2 — Release debrief Slack sync
 

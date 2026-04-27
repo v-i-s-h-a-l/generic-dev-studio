@@ -36,7 +36,7 @@ When Step 1 reports `state: reopened`, this is a re-brief. The brief MUST surfac
 Pull two values from the task YAML loaded in Step 1:
 
 - `reopen_reason` — required when state is `reopened`; rendered verbatim under a `## Reopen reason` section in the brief body.
-- `reopen_chain[-1]` — the most recent prior debrief id. If present, read `plans/debriefs/<id>.yaml` and quote the prior `key_learnings` / `decisions` / `unresolved` blocks under a `## Prior debrief` section. If the debrief artifact is missing (rare; pre-2.6 task may live under `plans/.legacy-archive/` for recovery), proceed with reason-only context.
+- `reopen_chain[-1]` — the most recent prior debrief id. If present, read `plans/debriefs/<id>.yaml` and quote the prior `key_learnings` / `decisions` / `unresolved` blocks under a `## Prior debrief` section. If the debrief artifact is missing, proceed with reason-only context.
 
 The brief author does not re-derive Figma context, codebase context, or scope from scratch — it inherits them from the prior brief at `links.brief` (if present) and notes the delta the reopen exposed. This keeps re-briefs cheap and makes the reopen reason the load-bearing change.
 

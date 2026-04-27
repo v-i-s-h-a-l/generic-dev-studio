@@ -216,6 +216,49 @@ check_mp3() {
 }
 
 # ----------------------------------------------------------------------
+# MP5 — retired-pattern gate (cross-agent)
+# Reads _shared/rules/retired-patterns.md and blocks on any ERE match
+# in the target file. Applies to both SKILL.md routers and mode packs.
+# ----------------------------------------------------------------------
+RETIRED_PATTERNS_FILE="$REPO_ROOT/_shared/rules/retired-patterns.md"
+RETIRED_PATTERNS=""   # lazy-loaded
+
+load_retired_patterns() {
+  [ -n "$RETIRED_PATTERNS" ] && return 0
+  [ -f "$RETIRED_PATTERNS_FILE" ] || { RETIRED_PATTERNS=" "; return 0; }
+  # Extract lines between <!-- lint:patterns:start --> and <!-- lint:patterns:end -->.
+  # Strip full-line comments (# ...) and blank lines.
+  RETIRED_PATTERNS=$(awk '
+    /<!--[[:space:]]*lint:patterns:start[[:space:]]*-->/ { in_block=1; next }
+    /<!--[[:space:]]*lint:patterns:end[[:space:]]*-->/   { in_block=0; next }
+    !in_block { next }
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    { gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print }
+  ' "$RETIRED_PATTERNS_FILE")
+  [ -z "$RETIRED_PATTERNS" ] && RETIRED_PATTERNS=" "
+  return 0
+}
+
+check_mp5() {
+  local file="$1"
+  local rel="${file#"$REPO_ROOT/"}"
+  load_retired_patterns
+  [ "$RETIRED_PATTERNS" = " " ] && return 0
+
+  while IFS= read -r pattern; do
+    [ -z "$pattern" ] && continue
+    local hit lineno
+    hit=$(grep -nE "$pattern" "$file" 2>/dev/null | head -1)
+    [ -z "$hit" ] && continue
+    lineno="${hit%%:*}"
+    emit_block "E_MP5_RETIRED_PATTERN:$rel:$lineno:matches retired pattern [$pattern] — see _shared/rules/retired-patterns.md for replacement"
+  done <<EOF
+$RETIRED_PATTERNS
+EOF
+}
+
+# ----------------------------------------------------------------------
 # Target collection
 # ----------------------------------------------------------------------
 collect_targets() {
@@ -287,9 +330,11 @@ main() {
     [ -f "$abs" ] || continue
     if is_router "$rel"; then
       check_mp3 "$abs"
+      check_mp5 "$abs"
     elif is_mode_pack "$rel"; then
       check_mp1 "$abs"
       check_mp2 "$abs"
+      check_mp5 "$abs"
     fi
   done <<EOF
 $targets

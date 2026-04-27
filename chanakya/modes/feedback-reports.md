@@ -12,8 +12,8 @@ reads:
   - feedback/archive/build-*.md                    # F-id per-build archives (read source for the report)
   - .runtime/state/chanakya-snapshots/feedback-inbox.json
 writes:
-  - plans/chanakya-inbox/design-report-<date>.md   # report write location
-  - plans/chanakya-inbox/product-report-<date>.md  # report write location
+  - plans/reports/design-report-<date>.md          # report write location
+  - plans/reports/product-report-<date>.md         # report write location
 ---
 
 # Mode: Report-Design (`/chanakya report-design [--build N]`)
@@ -29,7 +29,7 @@ Snapshots: `snapshots/feedback-inbox.json` for the active-record pass (5-min fre
 
 ## Output
 
-Markdown table + detail blocks. Printed to stdout and written to `~/.dev-studio/<project>/plans/chanakya-inbox/design-report-<YYYY-MM-DD>.md`.
+Markdown table + detail blocks. Printed to stdout and written to `~/.dev-studio/<project>/plans/reports/design-report-<YYYY-MM-DD>.md`.
 
 ```markdown
 # Design Feedback — <date> [--build N if scoped]
@@ -45,7 +45,7 @@ Markdown table + detail blocks. Printed to stdout and written to `~/.dev-studio/
 **Reporter:** @pranjali
 **Reported:** build 3140 (slack-thread:#ios-testflight/1745000000.000400)
 **Chanakya's interpretation:** the reset button on the crop view should restore both the crop rect AND the rotation state. Currently it only resets the rect.
-**Screenshot:** ![F007](chanakya-inbox/assets/thread-1745000000/F007-crop-reset.png) _or_ `(deleted — F007-crop-reset.png, …)`
+**Screenshot:** ![F007](feedback/assets/thread-1745000000/F007-crop-reset.png) _or_ `(deleted — F007-crop-reset.png, …)`
 **Linked task:** T215 (`in-progress`)
 **Status:** triaged
 
@@ -63,4 +63,4 @@ Filter to records with `reported_build == N` OR `fixed_build == N`.
 
 Same format as Report-Design but filtered to `category ∈ {clarification, enhancement}`. Intended audience: Toufiq (PRD) and BE team.
 
-Written to `chanakya-inbox/product-report-<YYYY-MM-DD>.md`.
+Written to `plans/reports/product-report-<YYYY-MM-DD>.md`.

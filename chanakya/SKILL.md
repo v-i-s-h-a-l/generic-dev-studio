@@ -26,7 +26,7 @@ At first write of any session, invoke `scripts/emit-agent-boot.sh chanakya <sess
 
 ## Pre-dispatch Step 0 — inbox scan
 
-Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debriefs/*.yaml` (filter: `state: emitted`) + legacy `plans/chanakya-inbox/` for unprocessed debriefs, processes today's event log, runs the stale-artifact janitor, dispatches feedback reminders, and ingests any studio-feedback files. The full procedure (Steps 0A–0G) lives in `modes/inbox-sweep.md`; the router's responsibility is only to invoke it once before the user-requested mode runs. Sweep-only invocation: `/chanakya sweep` runs Step 0 and exits.
+Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debriefs/*.yaml` (filter: `state: emitted`) for unprocessed debriefs, processes today's event log, runs the stale-artifact janitor, dispatches feedback reminders, and ingests any studio-feedback files. The full procedure (Steps 0A–0G) lives in `modes/inbox-sweep.md`; the router's responsibility is only to invoke it once before the user-requested mode runs. Sweep-only invocation: `/chanakya sweep` runs Step 0 and exits.
 
 ## Dispatch table
 

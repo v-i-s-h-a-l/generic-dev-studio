@@ -58,7 +58,7 @@ Instructions:
 ---
 
 ## T013 — <Title>
-Debrief: `chanakya-inbox/processed/T013-debrief.md`
+Debrief: `plans/debriefs/<uuid>.yaml`
 
 - [ ] Case 1: <preconditions> → <steps> → <expected result>
   Notes: 

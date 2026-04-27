@@ -49,7 +49,7 @@ Flags route into the dispatched mode without changing the pack: `--wait`, `--for
 Priority order when dispatching:
 
 1. **Explicit arg** — `/achilles build`, `/achilles push-tf`, `/achilles group T001`, etc. Token matches above win immediately.
-2. **Task-id pattern** — a bare token matching `T\d+[a-z]?` (e.g. `T001`, `T015a`) or a brief file path under `chanakya-tasks/` → `modes/task.md` in brief mode.
+2. **Task-id pattern** — a bare token matching `T\d+[a-z]?` (e.g. `T001`, `T015a`) or a brief file path under `plans/tasks/` → `modes/task.md` in brief mode.
 3. **Conversational switch** — mid-session, if the user says "actually capture this as feedback" or similar, re-dispatch inline to the matching mode without requiring a new invocation.
 4. **Default** — no arg and no task-id → `modes/task.md` in direct mode (Achilles asks what needs to be done, keeps clarifications minimal).
 

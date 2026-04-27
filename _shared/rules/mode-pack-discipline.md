@@ -39,6 +39,14 @@ The lint records the reason but does not block.
 
 `<agent>/SKILL.md` MUST be ≤ 80 non-blank, non-comment lines. Routers exist to dispatch — anything load-bearing belongs in a mode pack or a `_shared/` artifact.
 
+### MP5 — Retired-pattern gate (cross-agent, block)
+
+`_shared/rules/retired-patterns.md` catalogs behavioral patterns that have been retired from scripts, libs, or shared contracts. `lint-mode-pack.sh` reads the ERE list from that file and blocks on any match in any `*/modes/*.md` or `*/SKILL.md` across all agents.
+
+**When a script retires a write path or behavioral contract:** add the grep pattern to `_shared/rules/retired-patterns.md` in the same commit and run the lint to catch and fix all existing hits. R21 (REVIEW.md) is the human gate for paraphrased references the grep can't see.
+
+This check is intentionally cross-agent. Retired patterns don't respect agent boundaries — a pattern retired from lib-ledger can show up in Achilles, Argus, Chanakya, or Apollo mode packs. The lint sweeps all of them.
+
 ### MP4 — Grandfather list
 
 `scripts/lint-mode-pack-grandfather.txt` lists files known to violate MP1/MP3 with a target cleanup date. Listed files emit a warning instead of a block until their date passes. Once the date is in the past, the lint blocks regardless. Format documented at the top of the grandfather file.
@@ -48,5 +56,6 @@ The grandfather list is not an indefinite reprieve — entries without a target 
 ## Interaction with other rules
 
 - **R8** (token-cost awareness for skill prose) is the soft sibling — applies to all SKILL.md / mode prose at review time. MP1 is the hard floor: it blocks at commit time.
-- **R18** (Skill Authoring Standard) operates on grammar and frontmatter shape via `lint-skill-prose.sh`. MP1–MP4 operate on token economics and inline duplication. The two linters compose; both run in pre-commit.
+- **R18** (Skill Authoring Standard) operates on grammar and frontmatter shape via `lint-skill-prose.sh`. MP1–MP5 operate on token economics, inline duplication, and retired-pattern hygiene. The two linters compose; both run in pre-commit.
 - **R19** (REVIEW.md) is the prose-level gate for human reviewers; the lint is the structural enforcement.
+- **R21** (REVIEW.md) is the companion rule for MP5: it requires updating `retired-patterns.md` whenever a script retires a behavioral pattern.
