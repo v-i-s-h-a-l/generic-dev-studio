@@ -106,6 +106,7 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 
 | Event | Emitted when | Typical `data` keys |
 |---|---|---|
+| `brief_dispatched` | Chanakya transitions a brief to `ready` (hand-off to dispatch queue). Chanakya-side audit anchor — lets sweep detect dispatched-but-never-started briefs without reading worker writes. Emitted after `transition_brief_state ready`; the matching `brief_started` fires Achilles-side at Step 1. | `brief_uuid`, `task_id`, `type`, `size`, `dispatch_agent` (`achilles`\|`apollo`) |
 | `task_verified` | review-feedback promotes task | `method` (`review-feedback` \| `test-flow`) |
 | `cleanup_completed` | compact sweep finishes | `archived`, `freed_gb` |
 | `task_dispatched` | Chanakya writes a task file to a worker inbox (Ship/Dispatch/Sweep-debt modes) | `worker` (`worker-N` or `any`), `flags` (string), `from_brief` (`true`\|`false`) |

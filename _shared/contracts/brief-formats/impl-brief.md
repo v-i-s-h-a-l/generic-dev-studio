@@ -47,6 +47,32 @@ Before starting, load these skills for guidance:
 - `/figma-to-swiftui` — for translating Figma designs
 - `/swiftui-pro` — for SwiftUI best practices
 
+<!-- Bug context section — render when parent task type=bug. Omit entirely for feature/refactor/direct. -->
+## Bug Context
+<!-- Only present when type=bug. All subsections are required for bug briefs. -->
+
+### Steps to Reproduce
+<!-- Numbered steps that reliably trigger the bug. Must be non-empty; validate-brief.sh blocks ready-flip if absent. Mirrors the `reproducer:` schema field. -->
+1. <Step one>
+2. <Step two>
+3. <Observe the bug>
+
+### Expected
+<What should happen>
+
+### Actual
+<What actually happens — include error text, crash log excerpt, or screenshot reference if relevant>
+
+### Affected Files
+<!-- File anchors with line ranges where the defect is believed to live. -->
+- `path/to/suspect.swift:42–67` — <why this range is implicated>
+
+### Linked Issues
+<!-- `Closes #N` for fixes; `Refs #M` for related issues. -->
+- Closes #<N>
+
+<!-- End bug context section -->
+
 ## Figma Context
 
 ### <Component Name> (node `<nodeId>`)
