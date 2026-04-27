@@ -210,7 +210,19 @@ Before asking the user to look, review your own diff.
 
 **Test review** (for test tasks): independent tests (no shared mutable state), descriptive names, no flaky patterns (timing assertions, simulator-state reliance), mocks minimal.
 
-Fix what you find. This is **one** iteration — don't spiral.
+Fix what you find. **One iteration — structural cap (#222 A2-5).**
+
+A material finding triggers one fix-and-rerun. If the second pass still surfaces material findings, stop. Set `debt.self_review_unconverged: true` in `$FIELDS_JSON`; `report_state` escalates to `done_with_concerns` at Step 11. Emit `self_review_iterated` (see `_shared/contracts/events.md`) whenever `iteration >= 2`.
+
+**Test-coverage delta gate (#222 A2-6)** — feature, refactor, and direct tasks only; skip for bug-type and test-only tasks. After the fix pass: if the diff touched non-test implementation files but no test file was modified or added, populate `debt.tests_unaffected: [<changed symbols or file paths>]` in `$FIELDS_JSON` and escalate `report_state` to `done_with_concerns` at Step 11.
+
+**Self-review artifact (#222 A2-4).** After the fix pass (or the single pass when no material finding), emit:
+
+```bash
+SELF_REVIEW_PATH=$(scripts/task-write-self-review.sh "$TASK_ID" "$SELF_REVIEW_JSON")
+```
+
+`$SELF_REVIEW_JSON` carries `iteration`, `converged`, `skill_verdicts`, `diff_stats`, `findings`, `coverage_delta_checked`, `coverage_delta_found`. Full schema: `_shared/schemas/self-review.md`. Argus Stage 2 reads this artifact.
 
 ### Step 6 — Build gate (size-driven, serialized across Achilles instances)
 
