@@ -687,6 +687,10 @@ cd generic-dev-studio
       <span>Tasks whose latest state transition is older than N days (default 7). Surfaces forgotten <code>briefed</code> tasks, abandoned <code>in-progress</code> branches, <code>merged</code> tasks awaiting verification. Optional <code>--state</code> narrows the scope; output groups by state with the canonical follow-up surfaced per group.</span>
     </div>
     <div class="cmd-card">
+      <code>/chanakya digest [day|week|month]</code>
+      <span>State-change rollup over a time window (default: <code>day</code> = last 24h). Reads <code>task_state_changed</code> events from the event log, groups by destination state, and shows per-train breakdowns when multiple trains are present. Answers "what moved today/this week/this month?"</span>
+    </div>
+    <div class="cmd-card">
       <code>/chanakya blocked-by &lt;task-id&gt;</code>
       <span>Reverse <code>predecessors</code> lookup &mdash; lists every task whose dispatch is gated on <code>&lt;task-id&gt;</code> shipping. Same data as <code>query-relations.sh --task &lt;id&gt; | inverse.blocks</code>, surfaced as a first-class command. Answers "if I ship T347, what unblocks?"</span>
     </div>
