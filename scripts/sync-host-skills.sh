@@ -88,11 +88,31 @@ COMPANIONS=(_shared scripts)
 
 # Canonical skill roots — directories containing a SKILL.md AND optionally a
 # portability.yaml. A root may be a top-level studio agent (achilles, argus,
-# chanakya), a project-scoped vendor skill (.claude/skills/<name>), an owned
-# skill (skills/owned/<name>), or a vendored skill (skills/vendored/<author>/<name>).
+# chanakya, apollo, …), a project-scoped vendor skill (.claude/skills/<name>),
+# an owned skill (skills/owned/<name>), or a vendored skill
+# (skills/vendored/<author>/<name>).
+#
+# Top-level agents are discovered automatically (maxdepth 2 from repo root,
+# excluding non-agent dirs). Adding a new top-level agent dir with a SKILL.md
+# is sufficient — no manual update to this script required.
 candidate_roots() {
-  ( cd "$REPO_ROOT" && find achilles apollo argus chanakya .claude/skills skills/owned skills/vendored \
-      -maxdepth 4 -name 'SKILL.md' -type f 2>/dev/null \
+  ( cd "$REPO_ROOT" && {
+      # Auto-discover top-level agent dirs (any direct child with a SKILL.md).
+      # Exclude companion dirs (_shared, scripts), tool dirs (.git, .claude at
+      # depth-1 since its skills are handled below), and test/doc dirs.
+      find . -maxdepth 2 -name 'SKILL.md' -type f \
+        -not -path './.git/*' \
+        -not -path './.claude/*' \
+        -not -path './skills/*' \
+        -not -path './_shared/*' \
+        -not -path './tests/*' \
+        -not -path './docs*' \
+        2>/dev/null
+      # Project-scoped vendor skills, owned skills, and vendored skills
+      # (live deeper than maxdepth 2).
+      find .claude/skills skills/owned skills/vendored \
+        -maxdepth 4 -name 'SKILL.md' -type f 2>/dev/null
+    } \
     | while IFS= read -r f; do dirname "$f"; done \
     | sort -u )
 }
