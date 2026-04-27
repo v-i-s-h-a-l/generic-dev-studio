@@ -58,6 +58,7 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | Event | Emitted when | Typical `data` keys |
 |---|---|---|
 | `brief_started` | Achilles begins Step 1 (load spec) | `size` |
+| `brief_summary_used` | Achilles Step 1 read only the brief's `summary` slice (`BRIEF_SLICE=summary`) instead of the full body — context-budget fallback per `_shared/schemas/brief.md` § summary. Pairs with `brief_started`; mutually exclusive with full-brief reads on the same task. | `brief_uuid`, `summary_tokens_est` (word_count × 1.3, matches `lint-brief.sh`), `reason` (`context_budget`\|`caller_request`) |
 | `brief_completed` | All steps done, debrief written | `gate`, `gate_legacy`, `merge_sha`, `debrief_id` |
 | `brief_failed` | Any unrecoverable failure | `reason`, `step` |
 | `task_started` | Step 2 — task claimed, branch created | `branch`, `base_sha` |
