@@ -51,6 +51,13 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-dispatch-registry.sh"
 # shellcheck source=lib-dispatch-harvest.sh
 . "$SCRIPT_DIR/lib-dispatch-harvest.sh"
+# shellcheck source=lib-build-queue.sh
+. "$SCRIPT_DIR/lib-build-queue.sh"
+
+# STUDIO_BUILD_PRIORITY — build priority for the per-node queue (#267).
+# Values: release | task (default) | background
+# TF/AS callers (studio-tf-push.sh) set release; Achilles uses the default task.
+BUILD_PRIORITY="${STUDIO_BUILD_PRIORITY:-task}"
 
 MODE="${1:?usage: task-build-gate.sh <lsp-only|full-green> <task-id> <worktree> <scheme> <destination> [<project-or-workspace-relpath>]}"
 TASK_ID="${2:?task-id required}"
@@ -397,33 +404,20 @@ if [ "$NODE_ID" != "local" ]; then
   fi
 fi
 
-# ---------- queue substrate (#266 / #218 Stage A) ----------
+# ---------- queue substrate (#266 / #218 Stage A+B) ----------
 #
-# FIFO queue feeding the per-node mkdir-lock below. Pure ordering — no
-# priority logic yet (lands in #218-B). Each waiter writes an entry
-# `<enqueued_at>-<pid>-<task-id>.json`; the head (oldest enqueued_at by
-# lexical sort) acquires the lock next. The queue lives at
-# `~/.dev-studio/.runtime/build-queue/<node-id>/` — sibling of the lock
-# itself; R4-exempted carve-out documented in file-locations.md.
-#
-# 45-min stale-entry GC matches the lock-dir staleness threshold so an
-# orphaned waiter (gate killed mid-flight without trap-based dequeue)
-# doesn't strand the queue. The inner mkdir-lock retains its own 45-min
-# reclaim — the two layers are independent.
+# Priority-aware queue (#267) feeding the per-node mkdir-lock below.
+# lib-build-queue.sh provides bq_enqueue / bq_wait / bq_release.
+# Filename format: <rank>-<enqueued_at>-<pid>-<task-id>.json
+# rank: 0=release, 1=task (default), 2=background
+# Release entries sort ahead of task entries regardless of arrival time.
+# 45-min stale-entry GC is handled inside bq_wait.
 QUEUE_DIR="$(resolve_runtime_global)/build-queue/$NODE_ID"
-mkdir -p "$QUEUE_DIR" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$QUEUE_DIR" >&2; exit 2; }
-ENQUEUED_AT=$(date -u +%s)
-QUEUE_ENTRY="$QUEUE_DIR/$(printf '%010d-%d-%s.json' "$ENQUEUED_AT" "$$" "$TASK_ID")"
-printf '{"id":"%s","enqueued_at":%s,"pid":%s,"role":"xcodebuild"}\n' \
-  "$TASK_ID" "$ENQUEUED_AT" "$$" > "$QUEUE_ENTRY" 2>/dev/null \
-  || { printf 'error: cannot write queue entry %s\n' "$QUEUE_ENTRY" >&2; exit 2; }
+QUEUE_ENTRY=$(bq_enqueue "$QUEUE_DIR" "$TASK_ID" "$BUILD_PRIORITY") \
+  || { printf 'error: bq_enqueue failed\n' >&2; exit 2; }
 
-_release_queue_entry() { rm -f "$QUEUE_ENTRY" 2>/dev/null || true; }
-_queue_gc() {
-  find "$QUEUE_DIR" -maxdepth 1 -type f -name '*.json' -mmin +45 -delete 2>/dev/null || true
-}
+_release_queue_entry() { bq_release "$QUEUE_ENTRY"; }
 
-_queue_gc
 QUEUE_DEPTH=$(find "$QUEUE_DIR" -maxdepth 1 -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
 case "$QUEUE_DEPTH" in ''|*[!0-9]*) QUEUE_DEPTH=1 ;; esac
 [ "$QUEUE_DEPTH" -lt 1 ] && QUEUE_DEPTH=1
@@ -431,8 +425,8 @@ QUEUE_POSITION=$(find "$QUEUE_DIR" -maxdepth 1 -type f -name '*.json' 2>/dev/nul
   | sort | awk -v me="$QUEUE_ENTRY" '{ if ($0 == me) { print NR; exit } }')
 case "$QUEUE_POSITION" in ''|*[!0-9]*) QUEUE_POSITION="$QUEUE_DEPTH" ;; esac
 
-queue_data=$(printf '{"mode":"%s","node":"%s","position":%s,"depth":%s,"slots":%s,"attempt":%s%s}' \
-  "$MODE" "$NODE_ID" "$QUEUE_POSITION" "$QUEUE_DEPTH" "$PARALLEL_SLOTS" "$ATTEMPT" "$DISPATCH_FIELDS")
+queue_data=$(printf '{"mode":"%s","node":"%s","position":%s,"depth":%s,"slots":%s,"attempt":%s,"priority":"%s"%s}' \
+  "$MODE" "$NODE_ID" "$QUEUE_POSITION" "$QUEUE_DEPTH" "$PARALLEL_SLOTS" "$ATTEMPT" "$BUILD_PRIORITY" "$DISPATCH_FIELDS")
 emit_event_keyed achilles task build_queue_position "$TASK_ID" "$queue_data" >/dev/null 2>&1 || true
 
 # Compose: aborted-if-open → queue release → task lock release. The
@@ -446,28 +440,10 @@ trap '_emit_aborted_if_open; _release_queue_entry; _release_task_lock' EXIT INT 
 # substrate anomaly worth surfacing as a failed gate via reason:
 # queue_locked_out. With slots=1 the head set is just {head}, so behaviour
 # is identical to the pre-#268 strict-head wait.
-queue_wait=0
-queue_wait_cap=1800
-queue_backoff=10
-while :; do
-  _queue_gc
-  if find "$QUEUE_DIR" -maxdepth 1 -type f -name '*.json' 2>/dev/null \
-       | sort | head -n "$PARALLEL_SLOTS" \
-       | grep -qxF "$QUEUE_ENTRY"; then
-    break
-  fi
-  if [ "$queue_wait" -ge "$queue_wait_cap" ]; then
-    head=$(find "$QUEUE_DIR" -maxdepth 1 -type f -name '*.json' 2>/dev/null | sort | head -1)
-    printf 'error: build-queue wait exceeded %ss (slots=%s head=%s)\n' "$queue_wait_cap" "$PARALLEL_SLOTS" "$head" >&2
-    data=$(printf '{"mode":"full-green","reason":"queue_locked_out","waited_s":%s,"slots":%s,"attempt":%s%s}' \
-      "$queue_wait" "$PARALLEL_SLOTS" "$ATTEMPT" "$DISPATCH_FIELDS")
-    _emit_terminal build_check_failed "$data"
-    gate_announce_done build "$NODE_ID" "$TASK_ID" locked-out "$queue_wait"
-    exit 3
-  fi
-  sleep "$queue_backoff"
-  queue_wait=$((queue_wait + queue_backoff))
-done
+bq_wait "$QUEUE_DIR" "$QUEUE_ENTRY" "$PARALLEL_SLOTS" 1800 "$TASK_ID" "$NODE_ID" || {
+  gate_announce_done build "$NODE_ID" "$TASK_ID" locked-out 1800
+  exit 3
+}
 
 # DRY-RUN — log the invocation, skip the lock + xcodebuild. Idempotency
 # key matches the wet-run's path so diff-comparison works

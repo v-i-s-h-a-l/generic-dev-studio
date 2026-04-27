@@ -151,6 +151,49 @@ else
   printf '  no build_queue_position events in window\n'
 fi
 
+# --- Priority queue wait times (#267). build_queue_granted carries waited_s
+# and priority so saturation per class is visible without raw event queries.
+printf '\n## Build-queue wait time by priority class\n\n'
+# shellcheck disable=SC2086
+granted_total=$(cat $files 2>/dev/null \
+  | jq -r 'select(.event=="build_queue_granted") | 1' 2>/dev/null | wc -l | tr -d ' ')
+if [ "$granted_total" -gt 0 ]; then
+  printf '  %-12s %-8s %-14s %s\n' "priority" "count" "avg_waited_s" "max_waited_s"
+  printf '  %-12s %-8s %-14s %s\n' "--------" "-----" "------------" "------------"
+  # shellcheck disable=SC2086
+  cat $files 2>/dev/null \
+    | jq -r 'select(.event=="build_queue_granted")
+             | "\(.data.priority // "task")\t\(.data.waited_s // 0)"' 2>/dev/null \
+    | awk -F'\t' '
+        { pri=$1; w=$2+0; cnt[pri]++; sum[pri]+=w; if (w > mx[pri]) mx[pri]=w }
+        END {
+          for (k in cnt) {
+            avg = (cnt[k] > 0) ? int(sum[k]/cnt[k]) : 0
+            printf "  %-12s %-8s %-14s %s\n", k, cnt[k], avg, mx[k]
+          }
+        }' | sort -k1
+else
+  printf '  no build_queue_granted events in window\n'
+fi
+
+# --- Promotions (#267). build_queue_promoted fires when a release build
+# jumps ahead of older task entries. Surface count + skipped totals.
+printf '\n## Build-queue promotions (release jumped ahead of task)\n\n'
+# shellcheck disable=SC2086
+promo_total=$(cat $files 2>/dev/null \
+  | jq -r 'select(.event=="build_queue_promoted") | 1' 2>/dev/null | wc -l | tr -d ' ')
+if [ "$promo_total" -gt 0 ]; then
+  printf '  %-12s %-10s %s\n' "promoted" "skipped" "waited_s"
+  printf '  %-12s %-10s %s\n' "--------" "-------" "--------"
+  # shellcheck disable=SC2086
+  cat $files 2>/dev/null \
+    | jq -r 'select(.event=="build_queue_promoted")
+             | "\(.data.promoted_task // "?")\t\(.data.skipped_count // 0)\t\(.data.waited_s // 0)"' 2>/dev/null \
+    | awk -F'\t' '{ printf "  %-12s %-10s %s\n", $1, $2, $3 }' | head -10
+else
+  printf '  no build_queue_promoted events in window\n'
+fi
+
 # --- Dispatch harvests (#271). Each `dispatch_harvested` is a session that
 # would have re-run a build/test on the worker but reused a prior dispatch's
 # result instead — the user-visible reconnect-and-harvest win. Surface
