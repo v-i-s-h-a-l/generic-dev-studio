@@ -240,6 +240,25 @@ Every session that writes to this repo must work in a dedicated `git worktree` (
 
 **Interaction:** R8 is the soft sibling on token-cost awareness; R19 is the structural gate. R18 + the prose linter handle grammar; R19 + the mode-pack linter handle economics + reuse. Both pre-commit hooks run; both must pass.
 
+### R21 — Retired-pattern hygiene: update catalog on every retirement (tier: **block + auto-fix**)
+
+When any script, lib (`lib-ledger.sh`, `lib-paths.sh`, etc.), or shared contract retires a write path, naming convention, or behavioral pattern:
+
+1. Add the ERE to `_shared/rules/retired-patterns.md` (catalog table + patterns block) **in the same commit**.
+2. Run `scripts/lint-mode-pack.sh` across all mode packs immediately and fix every hit in the same commit.
+3. Note the retired pattern in the commit message so the trail is traceable.
+
+The lint (MP5) is the machine gate — it blocks at pre-commit on any mode pack or SKILL.md that references a cataloged pattern. This rule is the human-reviewer gate for **paraphrased** references (e.g., "write the markdown file" instead of "write the legacy markdown") that grep can't see.
+
+**Why:** retired patterns don't respect agent boundaries. A pattern retired from lib-ledger can silently persist in Achilles, Argus, Chanakya, or Apollo mode packs. Agents on script-backed hosts (claude-code) follow the scripts and ignore stale prose; agents on prose-driven hosts (Codex) execute the prose literally. Without a cross-agent catalog, each host diverges independently and the only signal is a bug report.
+
+**How to check:** for any diff that modifies `lib-ledger.sh`, `lib-paths.sh`, or a `_shared/contracts/*.md` or `_shared/patterns/*.md` file — ask: "did this retire a write path or remove a behavior?" If yes, confirm `_shared/rules/retired-patterns.md` has a new entry. If the entry is missing, this is a block.
+
+**Fix pattern:**
+1. Add entry to `_shared/rules/retired-patterns.md` catalog table.
+2. Add ERE to the `<!-- lint:patterns:start -->` block.
+3. Run `scripts/lint-mode-pack.sh` — fix all `E_MP5_RETIRED_PATTERN` hits.
+
 ## Deferred / known gaps
 
 Not rules yet — track here so we remember:
