@@ -138,7 +138,7 @@ scripts/argus-emit-verdict.sh "$TASK_ID" "$VERDICT" "$FINDINGS_JSON" \
   --task-uuid "$TASK_UUID" [--block-reason "$REASON"]
 ```
 
-`$FINDINGS_JSON` is a JSON array per `_shared/schemas/review.md` § Findings: `{rule, tier, message, path}`. The script writes the YAML artifact under `plans/reviews/<review-id>.yaml` (one artifact per stage), writes the legacy markdown under `<project-memory>/reviews/review_<task-id>_<stage>.md`, appends the review id to the task's `links.reviews`, emits the verdict event (`review_approved` / `review_flagged` / `review_blocked`) with `stage: quality`, and on `blocked` appends a row to the per-project push queue. Result-bundle retention: approve/flag deletes immediately, block retains for 48h.
+`$FINDINGS_JSON` is a JSON array per `_shared/schemas/review.md` § Findings: `{rule, tier, message, path}`. The script writes the YAML artifact under `plans/reviews/<review-id>.yaml` (one artifact per stage), appends the review id to the task's `links.reviews`, emits the verdict event (`review_approved` / `review_flagged` / `review_blocked`) with `stage: quality`, and on `blocked` appends a row to the per-project push queue. Result-bundle retention: approve/flag deletes immediately, block retains for 48h.
 
 ### Step 8 — Return verdict to Achilles
 
@@ -181,7 +181,7 @@ Canonical paths are in `_shared/primitives/file-locations.md`. Argus-specific no
 | Test result bundle | `/tmp/argus-<task-id>.xcresult` |
 | Diff scratch | `/tmp/argus-<task-id>-diff.txt` |
 | Test output log | `/tmp/argus-<task-id>-test-output.txt` |
-| Review file (legacy markdown, retained alongside the YAML artifact) | `<project-memory>/reviews/review_<task-id>_<stage>.md` |
+| Review artifact (YAML) | `plans/reviews/<review-id>.yaml` |
 
 Schemas + protocols referenced above:
 
