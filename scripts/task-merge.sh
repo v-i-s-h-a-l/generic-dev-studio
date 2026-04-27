@@ -191,6 +191,18 @@ git worktree remove --force "$WORKTREE" >/dev/null 2>&1 || {
 }
 rm -rf "$DERIVED" 2>/dev/null || true
 
+# Remove claim sidecar written by task-claim.sh (#221). Read brief UUID from
+# task artifact; tolerate missing task file (post-migration edge case).
+_task_yaml=$(resolve_project_root_for "$PROJECT" 2>/dev/null)/plans/tasks/${TASK_ID}.yaml
+if [ -f "$_task_yaml" ]; then
+  _brief_uuid=$(yq -r '.links.brief // ""' "$_task_yaml" 2>/dev/null || true)
+  if [ -n "$_brief_uuid" ]; then
+    _claim_file=$(resolve_project_root_for "$PROJECT" 2>/dev/null)/plans/briefs/${_brief_uuid}.claim
+    rm -f "$_claim_file" 2>/dev/null || true
+  fi
+fi
+unset _task_yaml _brief_uuid _claim_file
+
 # Branch is now fully merged into ORIG_BRANCH (merge commit above). -d (not -D)
 # refuses if git sees any non-fast-forward state — the happy path always
 # succeeds, any refusal surfaces as a warning without losing work.
