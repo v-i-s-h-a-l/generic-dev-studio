@@ -91,7 +91,7 @@ COMPANIONS=(_shared scripts)
 # chanakya), a project-scoped vendor skill (.claude/skills/<name>), an owned
 # skill (skills/owned/<name>), or a vendored skill (skills/vendored/<author>/<name>).
 candidate_roots() {
-  ( cd "$REPO_ROOT" && find achilles argus chanakya .claude/skills skills/owned skills/vendored \
+  ( cd "$REPO_ROOT" && find achilles apollo argus chanakya .claude/skills skills/owned skills/vendored \
       -maxdepth 4 -name 'SKILL.md' -type f 2>/dev/null \
     | while IFS= read -r f; do dirname "$f"; done \
     | sort -u )

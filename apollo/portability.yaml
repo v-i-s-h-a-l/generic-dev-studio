@@ -3,9 +3,8 @@ hosts:
   - claude-code
 scope: global
 incompatible:
-  codex: "Apollo's execution surface (XcodeBuildMCP, AXe, xctrace, ASC) hasn't been verified portable to Codex yet. Stage 5 (#235) widens portability after the first mode pack lands and runs a host-conformance pass; until then, Apollo is claude-code only."
+  codex: "Apollo's execution surface (XcodeBuildMCP, AXe, xctrace, ASC) hasn't been verified portable to Codex yet. Portability gated on a host-conformance pass (scripts/test-host.sh)."
 notes: |
-  Apollo is in scaffold state (Stage 4, #234). Mode packs (#230 memory,
-  #231 thermal, #232 battery) ship in Stage 2; portability to additional
-  hosts is gated on a working mode pack + the conformance suite at
-  scripts/test-host.sh.
+  Apollo Stage 5 (#235) complete. Memory, thermal, battery, and measure
+  mode packs shipped. Portability to additional hosts gated on a working
+  Codex host-conformance pass (scripts/test-host.sh).
