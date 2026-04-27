@@ -5,7 +5,7 @@ type: mode-pack
 schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [briefs.json, debt.json]
-budget_tokens: 4400
+budget_tokens: 5200
 reads:
   - plans/index.yaml                               # post-migration task index
   - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
@@ -90,6 +90,18 @@ Use Glob and Grep to find:
 4. **Architectural constraints** — read relevant memory files from project memory
 5. **Testing context** — find existing test files for the module (`*Tests.swift`, `*UITests.swift`), existing accessibility identifier enums, test helpers/utilities, and the project's test organization pattern
 
+## Step 4A — Infer and write affinity.touchpoints
+
+After authoring the "Files to Modify" list in Step 4, write those paths to `affinity.touchpoints` on the task YAML. This lets `achilles-dispatch.sh` detect parallel-unsafe tasks and lets Argus scope its neighbor scan (#254).
+
+```bash
+source scripts/lib-paths.sh && source scripts/lib-ledger.sh
+# Annotation write — bumps updated_at + rebuilds index; no state event emitted.
+set_task_touchpoints "<task-uuid>" "<path1>" "<path2>"
+```
+
+Skip when `affinity.touchpoints` is already non-empty, or the task has no "Files to Modify" section (direct / test-run-only types).
+
 ## Step 5 — Determine branch strategy
 
 - Independent task: propose a new branch name (convention: `v/<feature-slug>` or `achilles/<task-id>`)
@@ -161,6 +173,18 @@ scripts/self-review-brief.sh "$BRIEF_PATH" || exit $?
 
 # Flip draft → ready so the brief becomes claimable.
 transition_brief_state "$BRIEF_UUID" ready chanakya "authored by $USER"
+
+# Emit Chanakya-side dispatch anchor (#220 A2-3 / events.md §brief_dispatched).
+# Lets sweep detect dispatched-but-never-started briefs without reading worker writes.
+TASK_YAML="$(resolve_tasks_dir_for "$(resolve_project)")/<parent-task-uuid>.yaml"
+BRIEF_DISPATCH_TYPE=$(yq -r '.type // "impl"' "$TASK_YAML")
+BRIEF_DISPATCH_SIZE=$(yq -r '.size // "m"' "$TASK_YAML")
+BRIEF_DISPATCH_AGENT=$(yq -r '.dispatch_agent // "achilles"' "$BRIEF_PATH")
+emit_event_keyed chanakya brief brief_dispatched "$BRIEF_UUID" \
+  "$(jq -nc --arg bu "$BRIEF_UUID" --arg ti "<parent-task-uuid>" \
+             --arg ty "$BRIEF_DISPATCH_TYPE" --arg sz "$BRIEF_DISPATCH_SIZE" \
+             --arg da "$BRIEF_DISPATCH_AGENT" \
+     '{brief_uuid:$bu, task_id:$ti, type:$ty, size:$sz, dispatch_agent:$da}')"
 ```
 
 The helper special-cases `body_file=` (and `body=` for inline) — the YAML emits `body: |` block-scalar. Do not hand-write the YAML via the Write tool; the helper owns schema + write + event + index-rebuild as a unit.
@@ -172,6 +196,7 @@ State transitions follow `_shared/state-machines/brief-lifecycle.md`: `write_bri
 Render the body from the template at `~/.claude/skills/_shared/contracts/brief-formats/impl-brief.md`.
 
 The `## Testability Requirements` section (captured both as the `testability:` array field and inlined in `body:`) must include: SOLID principles, accessibility identifiers, localization (if task touches UI strings — see `~/.claude/skills/_shared/rules/localization-rules.md` for the full ruleset), and test seams.
+**Bug briefs (task `type: bug`):** render the `## Bug Context` section from the impl-brief template (Steps to Reproduce, Expected, Actual, Affected Files, Linked Issues) — all mandatory for bug briefs. Pass `reproducer="<steps>"` to `write_brief_artifact` so the YAML field is populated. `scripts/validate-brief.sh` (via `self-review-brief.sh`) blocks the `draft → ready` flip if neither the body section nor the YAML field is present (#220 A2-1 / brief@3.4.0).
 
 ### 6B — Unit test brief (Type: test-unit)
 

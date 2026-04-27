@@ -172,6 +172,42 @@ printf '%s\n' "$new_events" | while IFS= read -r line; do
       fi
       push_append debrief_missing "$task" "merged at ${merge_sha:-<unknown>} with no debrief"
       ;;
+    argus_gate_skipped)
+      # Auto-file a GitHub issue for infra-broken skip reasons (#244).
+      # Operational reasons (verdict_timeout, no_verdict_at_merge) are no-ops here.
+      if command -v jq >/dev/null 2>&1; then
+        ags_reason=$(printf '%s' "$line" | jq -r '.data.reason // ""' 2>/dev/null)
+        ags_host=$(printf '%s' "$line" | jq -r '.data.host // "unknown"' 2>/dev/null)
+        ags_idem=$(printf '%s' "$line" | jq -r '.data.idem_key // ""' 2>/dev/null)
+        case "$ags_reason" in
+          unknown_host|missing_manifest|missing_spawn_command|secret_scope_floor_unmet)
+            ags_title="Argus infra-failure: ${ags_reason} on ${ags_host}"
+            existing=""
+            if command -v gh >/dev/null 2>&1; then
+              existing=$(gh issue list --label bug --state open --limit 100 \
+                --json number,title 2>/dev/null \
+                | jq -r --arg t "$ags_title" '.[] | select(.title == $t) | .number' 2>/dev/null \
+                | head -1)
+            fi
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" \
+                --body "Repeat occurrence at $(date -u +%Y-%m-%dT%H:%M:%SZ). idem_key: \`${ags_idem}\`" \
+                >/dev/null 2>&1 \
+                || printf 'warn: could not comment on #%s for argus infra-failure\n' "$existing"
+            else
+              ags_body=$(printf '**reason:** `%s`\n**host:** `%s`\n**idem_key:** `%s`\n\nAuto-filed by inbox sweep on %s.' \
+                "$ags_reason" "$ags_host" "$ags_idem" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+              gh issue create \
+                --label "bug" --label "theme/internal" \
+                --title "$ags_title" \
+                --body "$ags_body" \
+                >/dev/null 2>&1 \
+                || printf 'warn: could not file issue for argus infra-failure: %s on %s\n' "$ags_reason" "$ags_host"
+            fi
+            ;;
+        esac
+      fi
+      ;;
     test_run_failed|build_debt_incremented)
       # No direct action — Chanakya surfaces these via status summaries.
       :

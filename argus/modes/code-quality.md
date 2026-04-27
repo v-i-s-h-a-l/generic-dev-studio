@@ -35,12 +35,14 @@ Everything else (diff anomalies, edge-case gaps, test adequacy, regression risk)
 
 | Cap | Limit | Rule |
 |---|---|---|
-| Cross-file scan files | 10 | For Check 1, load at most 10 neighbor files. Most-referenced first, then alphabetical. |
+| Cross-file scan files | 10 (default); affinity-scoped when set | For Check 1, load at most 10 neighbor files. When `affinity.touchpoints` is non-empty on the task, restrict neighbor scan to files matching those globs + 1-hop imports first; the 10-file cap still applies within that set. Emit `review_scoped` with `scope: affinity` instead of `scope: default`. |
 | Lines per scanned neighbor | 50 | `head -50` or targeted grep window. Full file only if ≤ 50 lines. |
 | Max diff size loaded | 500 | Sort changed files by change size desc; load up to 500 lines total. |
 | Skip threshold (XS-trivial) | Skip | Diff <20 lines AND single file AND task size XS → skip Argus entirely (both stages). |
 
 `argus-diff-extract.sh` emits `review_scoped` for the first two caps automatically. XS-trivial skip is judgment — caller decides to skip before invoking Argus.
+
+**Affinity-scoped scan.** Before Step 2, read `plans/tasks/<task-uuid>.yaml` via `yq -r '.affinity.touchpoints[]?'`. When non-empty, pass the glob list to `argus-diff-extract.sh` to filter neighbors before applying the 10-file cap. When empty or the task YAML is missing, fall through to the default neighbor pick. (#254)
 
 ## Invocation
 

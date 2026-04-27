@@ -38,8 +38,9 @@
 #     transition_round_state   <uuid> <to> <actor> <reason>
 #
 #   Link mutations (task-side; no events — callers emit)
-#     set_task_link    <uuid> <brief|debrief|release> <target-uuid>
-#     append_task_link <uuid> <reviews|feedback>      <target-uuid>
+#     set_task_link         <uuid> <brief|debrief|release> <target-uuid>
+#     append_task_link      <uuid> <reviews|feedback>      <target-uuid>
+#     set_task_touchpoints  <uuid> <path...>               annotation; bumps updated_at + index
 #
 #   Artifact writers (YAML + event; no legacy markdown post-#245 A.5)
 #     write_task_artifact     <uuid> <state> <title> [k=v...]
@@ -449,6 +450,28 @@ append_task_link() {
   yq -i \
     ".links.$link_kind = ((.links.$link_kind // []) + [\"$target\"] | unique) | .updated_at = \"$ts\"" \
     "$f" 2>/dev/null || return 2
+  _maybe_rebuild_index
+}
+
+# Annotate task with file-path globs the task is expected to touch.
+# Not a state transition — no event emitted. Bumps updated_at + rebuilds index.
+# Usage: set_task_touchpoints <task-uuid> <path1> [<path2> ...]
+set_task_touchpoints() {
+  local uuid="${1:?set_task_touchpoints <task-uuid> <path...>}"
+  shift
+  local f
+  f=$(_artifact_path tasks "$uuid") || return 2
+  [ -f "$f" ] || { printf 'set_task_touchpoints: no task at %s\n' "$f" >&2; return 2; }
+  local ts arr sep
+  ts=$(iso_ts_now)
+  arr="["; sep=""
+  for p in "$@"; do arr="${arr}${sep}$(yaml_quote "$p")"; sep=", "; done
+  arr="${arr}]"
+  if [ "${DRY_RUN:-0}" = "1" ]; then
+    _dry_write_log "$f" "affinity.touchpoints=$arr" "set_task_touchpoints:$uuid"
+    return 0
+  fi
+  yq -i ".affinity.touchpoints = $arr | .updated_at = \"$ts\"" "$f" 2>/dev/null || return 2
   _maybe_rebuild_index
 }
 
