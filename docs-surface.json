@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-27T00:04:58Z",
+  "generated_at": "2026-04-27T00:06:38Z",
   "schema": 1,
   "commands": [
     {"name": "chanakya-help", "source": "commands/chanakya-help.md", "description": "", "agent": null, "scope": "global"},
@@ -25,6 +25,7 @@
     {"name": "achilles.test-suite", "source": "achilles/modes/test-suite.md", "agent": "achilles", "mode": "test-suite", "description": "Composite test-suite mode (`/achilles test-suite <unit|ui|all>`). Runs the full test suite (not individual task tests) against committed HEAD and produces a debrief that resets the corresponding debt counter on Chanakya's next sweep."},
     {"name": "achilles.worker", "source": "achilles/modes/worker.md", "agent": "achilles", "mode": "worker", "description": "Fleet worker mode. Turns the current session into a fleet pane — claims a slot atomically, starts a background watch loop, and spawns a fresh worker per dispatched task. The session is the operator-facing wrapper; the bash loop is the IPC primitive."},
     {"name": "apollo.battery", "source": "apollo/modes/battery.md", "agent": "apollo", "mode": "battery", "description": "Diagnose → measure → propose → patch → re-measure protocol for battery / energy regressions under strict-9 evidence gating. Covers foreground compute, background overrun, always-on subsystems, and radio drain."},
+    {"name": "apollo.measure", "source": "apollo/modes/measure.md", "agent": "apollo", "mode": "measure", "description": "Capture-only — produce a hard-evidence artifact (.trace, MXMetricPayload, .xcresult, signpost log, energy log, ASC perf row) without recommending a fix. Pre-flight tool for Chanakya brief authoring when dispatch_agent: apollo is set but evidence.artifacts is empty."},
     {"name": "apollo.memory", "source": "apollo/modes/memory.md", "agent": "apollo", "mode": "memory", "description": "Diagnose → measure → propose → patch → re-measure protocol for memory regressions under strict-9 evidence gating. Covers transient peaks, persistent growth, leaks, and OOM kills."},
     {"name": "apollo.thermal", "source": "apollo/modes/thermal.md", "agent": "apollo", "mode": "thermal", "description": "Diagnose → measure → propose → patch → re-measure protocol for thermal regressions under strict-9 evidence gating. Covers sustained-load throttle, hang-under-thermal, CPU hot loops, and GPU-rooted heat."},
     {"name": "argus.code-quality", "source": "argus/modes/code-quality.md", "agent": "argus", "mode": "code-quality", "description": "Stage 2 of two-stage Argus review. Cross-file regressions, edge cases, diff anomalies, secrets, base-branch staleness, M/L test run, TDD red→green. Runs iff Stage 1 returned approved or flagged. Previously the sole Argus pass; split 2026-04-23."},
