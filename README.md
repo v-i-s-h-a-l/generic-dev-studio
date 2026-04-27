@@ -145,14 +145,16 @@ achilles/
   SKILL.md         # worker agent — isolated execution pipeline + Argus pre-merge gate
 
 apollo/
-  SKILL.md         # performance agent (scaffold) — per-metric mode packs (memory/thermal/battery)
-                   #   under a strict-9 evidence gate; auto-capture-before-refuse via execution surface
+  SKILL.md         # performance agent — per-metric mode packs (memory/thermal/battery) +
+                   #   measure (capture-only) under a strict-9 evidence gate; auto-capture-
+                   #   before-refuse via execution surface; dispatched from Chanakya when
+                   #   brief.dispatch_agent: apollo (Argus skips those merges)
   README.md        # overview + composition with chanakya/achilles/argus
   docs.html        # quick-reference docs page
   _shared/primitives/      # cross-cutting primitives — evidence-gate, execution-surface,
                            #   metrickit, signposts, xctest-baselines, instruments-index,
-                           #   organizer-asc, regression-detection
-  modes/                   # per-metric mode packs (Stage 2 deliverables — #230/#231/#232)
+                           #   organizer-asc, regression-detection, perf-merge-loop
+  modes/                   # per-metric mode packs (#230/#231/#232) + measure (#235)
 
 .claude/skills/studio/    # project-scoped vendor skill — auto-loads when cwd is in this repo
   SKILL.md         # cross-agent router — studio-level ops (resume-plan, review, release,
