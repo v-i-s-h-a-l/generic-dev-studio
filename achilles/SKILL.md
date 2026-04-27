@@ -10,6 +10,12 @@ version: 1.0.0
 
 ## Bootstrap
 
+**Skills-root resolution.** All bare `scripts/…` and `_shared/…` paths in this file and its mode packs are relative to the **skills-root** (the parent of this agent's directory — where `scripts/`, `_shared/`, and per-agent dirs live as siblings), NOT this file's directory. Resolve once at session start and prefix every bare path when running or reading:
+
+```bash
+SKILLS_ROOT=""; for _d in ~/.claude/skills ~/.codex/skills ~/.gemini/skills; do [ -d "$_d/scripts" ] && [ -d "$_d/_shared" ] && SKILLS_ROOT="$_d" && break; done; [ -z "$SKILLS_ROOT" ] && echo "skills-root not found; run /studio sync" >&2
+```
+
 Before proceeding, read `_shared/primitives/router-bootstrap.md`. On hosts whose adapter injects a session-start preamble, this is already in context; on others (see `AGENTS.md` and `hosts/ADAPTER-SPEC.md` for the host roster) the primitive itself is your source of truth — read it explicitly.
 
 **Layout self-check (#262).** RUN `scripts/skill-self-check.sh achilles` at session start. Exit 0 → proceed. Exit 2 → the deployed layout is missing anchors named in `_shared/distribution/expected-layout.yaml`; surface the message to the user and stop. Exit 3 → manifest unreadable or agent not declared; same — stop and surface. Refusing to dispatch with a partial deploy is intentional: silent degradation accumulates invisibly-incomplete debriefs and event-log gaps.
