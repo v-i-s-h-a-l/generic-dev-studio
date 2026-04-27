@@ -50,6 +50,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
+# shellcheck source=lib-build-queue.sh
+. "$SCRIPT_DIR/lib-build-queue.sh"
 
 # Project config (from _shared/primitives/turnip-project-config.md).
 PROJECT_ROOT="/Users/vishalsingh/Documents/Turnip.gg/turnip-ios"
@@ -245,9 +247,23 @@ EOF
   fi
 
   # Phase 2 — Archive (Step 4).
+  # Acquire priority-queue slot before running xcodebuild so TF/AS builds
+  # jump ahead of queued Achilles task builds without preempting in-flight
+  # ones (#267). Priority=release → rank 0 → sorts before task (rank 1).
   local ARCHIVE_PATH="/tmp/${SCHEME}-${NEW_BUILD_NUMBER}.xcarchive"
   local archive_started_at archive_duration_s=0
   archive_started_at=$(date +%s)
+
+  local _bq_dir _bq_entry=""
+  _bq_dir="$(resolve_runtime_global)/build-queue/$NODE"
+  if [ "$DRY_RUN_FLAG" != "1" ] && [ "${STUDIO_TF_PUSH_SKIP_NODE_PICK:-0}" != "1" ]; then
+    _bq_entry=$(STUDIO_BUILD_PRIORITY=release bq_enqueue "$_bq_dir" \
+      "release-${NEW_BUILD_NUMBER}" release) \
+      || halt_failed prereq "build-queue enqueue failed"
+    trap 'bq_release "${_bq_entry:-}"' EXIT INT TERM
+    bq_wait "$_bq_dir" "$_bq_entry" 1 1800 "release-${NEW_BUILD_NUMBER}" "$NODE" \
+      || halt_failed prereq "build-queue wait timed out"
+  fi
 
   if [ "$DRY_RUN_FLAG" = "1" ]; then
     printf 'studio-tf-push: [dry-run] would archive scheme=%s build=%s → %s\n' \
@@ -270,6 +286,8 @@ EOF
     [ -d "$ARCHIVE_PATH" ] || halt_failed archive "xcarchive missing at $ARCHIVE_PATH"
     archive_duration_s=$(( $(date +%s) - archive_started_at ))
   fi
+  # Release queue slot as soon as archive completes — don't hold it through upload.
+  bq_release "${_bq_entry:-}"
 
   emit_release archive_completed "$(_json_obj \
     "build=$NEW_BUILD_NUMBER" \
