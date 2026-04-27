@@ -1,10 +1,10 @@
 schema_version: 1
 hosts:
   - claude-code
+  - codex
 scope: global
-incompatible:
-  codex: "Apollo's execution surface (XcodeBuildMCP, AXe, xctrace, ASC) hasn't been verified portable to Codex yet. Portability gated on a host-conformance pass (scripts/test-host.sh)."
 notes: |
   Apollo Stage 5 (#235) complete. Memory, thermal, battery, and measure
-  mode packs shipped. Portability to additional hosts gated on a working
-  Codex host-conformance pass (scripts/test-host.sh).
+  mode packs shipped. Codex host runs in degraded mode (analysis-only —
+  no capture tools available); see apollo/SKILL.md §Degraded mode and
+  apollo/_shared/primitives/execution-surface.md §Codex host (#294).

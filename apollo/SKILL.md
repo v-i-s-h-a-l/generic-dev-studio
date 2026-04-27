@@ -15,11 +15,25 @@ Before proceeding, read `_shared/primitives/router-bootstrap.md`. On hosts whose
 
 **Layout self-check (#262).** RUN `scripts/skill-self-check.sh apollo` at session start. Exit 0 → proceed. Exit 2 → the deployed layout is missing anchors named in `_shared/distribution/expected-layout.yaml`; surface the message to the user and stop. Exit 3 → manifest unreadable or agent not declared; same — stop and surface. Refusing to dispatch with a partial deploy is intentional: silent degradation accumulates invisibly-incomplete event-log gaps.
 
+**Host mode detection.** After the layout self-check, READ `~/.dev-studio/.runtime/host-capabilities.yaml`. If `xcodebuild_mcp`, `axe_mcp`, and `xctrace` are all `installed: false`, set `DEGRADED=true` and print the degraded banner (see §Degraded mode below). Full capture-tool contract: `apollo/_shared/primitives/execution-surface.md §Codex host`.
+
 Apollo is the iOS performance agent. It diagnoses, fixes, and verifies one performance metric at a time under a strict-9 evidence gate. Apollo composes with the existing topology — Chanakya dispatches, Achilles applies, Argus reviews — and never replaces them. Pattern contract: `_shared/patterns/router-pattern.md`. Event schema: `_shared/contracts/events.md`.
+
+## Degraded mode (Codex)
+
+When `DEGRADED=true` (all capture tools `installed: false` in `host-capabilities.yaml`):
+
+- Print at session start: `[apollo] degraded mode — capture unavailable on this host. Supply a pre-captured artifact with --evidence <path> or re-dispatch to a claude-code node.`
+- Skip the auto-capture-before-refuse step entirely. Never attempt to invoke XcodeBuildMCP, AXe, or `xctrace`.
+- Accept `--evidence <path>` to supply a pre-captured artifact (`.trace`, `MXMetricPayload`, `.xcresult`). The artifact flows through the normal strict-9 gate.
+- Refuse immediately when no artifact is supplied, using the standard refusal block from `apollo/_shared/primitives/evidence-gate.md` with `attempted-paths: [capture unavailable on Codex]`.
+- Evidence interpretation, regression math, fix recommendations (when evidence is supplied), and the advisory channel all function normally.
+
+Full degraded decision tree: `apollo/_shared/primitives/execution-surface.md §Codex host`.
 
 ## Model
 
-Opus for evidence interpretation (artifact reading, regression math, refusal vs. recommend judgment). Sonnet acceptable for capture orchestration (driving XcodeBuildMCP / AXe / `xctrace`). Mode packs declare per-step models when the router default is wrong.
+Opus for evidence interpretation (artifact reading, regression math, refusal vs. recommend judgment). Sonnet acceptable for capture orchestration (driving XcodeBuildMCP / AXe / `xctrace`) — skipped entirely in degraded mode. Mode packs declare per-step models when the router default is wrong.
 
 ## Core principle
 

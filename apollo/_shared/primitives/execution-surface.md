@@ -123,6 +123,35 @@ When a mode-pack step needs evidence that wasn't supplied, Apollo walks this tre
 
 Step 2's session-budget check is the corollary that prevents Apollo from looping on a 10-minute trace inside a 2-minute session. Budgets per mode are declared in mode-pack frontmatter (`session_budget: 900s`).
 
+## Codex host — degraded mode
+
+On a Codex node none of the capture tools are available (no Xcode, no macOS MCP servers). Apollo detects this at boot by reading `host-capabilities.yaml` (below): if all of `xcodebuild_mcp`, `axe_mcp`, and `xctrace` are `installed: false`, Apollo enters **degraded mode**.
+
+**What changes in degraded mode:**
+
+1. The auto-capture-before-refuse decision tree step 2 is skipped entirely. Apollo never attempts to invoke a capture tool.
+2. Pre-captured artifacts supplied by the caller via `--evidence <path>` are accepted as hard evidence and flow through the normal strict-9 gate.
+3. Session start prints a one-line banner:
+
+   ```
+   [apollo] degraded mode — capture unavailable on this host.
+   Supply a pre-captured artifact with --evidence <path> or re-dispatch to a claude-code node.
+   ```
+
+4. When no artifact is supplied, Apollo refuses immediately using the standard refusal block from `evidence-gate.md`, with `attempted-paths: [none — capture unavailable on Codex]` and an unblock recipe that names how to supply an artifact.
+
+**What stays the same:** evidence interpretation, regression math, fix recommendations (when hard evidence is supplied), the advisory channel, and the strict-9 gate itself.
+
+**Degraded decision tree (replaces step 2 when degraded=true):**
+
+```
+1. Does an artifact already exist on disk or was --evidence <path> supplied?
+   yes → cite it; continue normally.
+   no  → refuse immediately (refusal protocol in evidence-gate.md);
+         attempted-paths: [capture unavailable on Codex];
+         unblock: supply --evidence <path> or re-dispatch to claude-code node.
+```
+
 ## Tool installation contract
 
 Apollo's host node (Achilles fleet machine) declares installed tools in `~/.dev-studio/.runtime/host-capabilities.yaml`:
@@ -137,6 +166,21 @@ tools:
   chimehq_meter:     { installed: true, version: "<x.y.z>" }
   asc_api_key:       { installed: true, scopes: ["perfPower", "analyticsReports"] }
 ```
+
+On a Codex node the file declares all capture tools as `installed: false`:
+
+```yaml
+host: <machine-id>
+tools:
+  xcodebuild_mcp:    { installed: false }
+  axe_mcp:           { installed: false }
+  xcresultkit_swift: { installed: false }
+  xctrace:           { installed: false }
+  chimehq_meter:     { installed: false }
+  asc_api_key:       { installed: false }
+```
+
+Apollo reads this at boot. If `xcodebuild_mcp`, `axe_mcp`, and `xctrace` are all `installed: false`, Apollo enters degraded mode (see §Codex host above).
 
 Apollo reads this file at boot and refuses to dispatch any mode that depends on an `installed: false` capability — refusing fast at boot is preferable to refusing mid-investigation with a partially-captured artifact set.
 
