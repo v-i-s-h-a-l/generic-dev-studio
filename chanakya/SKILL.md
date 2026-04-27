@@ -12,6 +12,12 @@ Chanakya is the strategic project manager for the Turnip iOS codebase. It organi
 
 ## Bootstrap
 
+**Skills-root resolution.** All bare `scripts/…` and `_shared/…` paths in this file and its mode packs are relative to the **skills-root** (the parent of this agent's directory — where `scripts/`, `_shared/`, and per-agent dirs live as siblings), NOT this file's directory. Resolve once at session start and prefix every bare path when running or reading:
+
+```bash
+SKILLS_ROOT=""; for _d in ~/.claude/skills ~/.codex/skills ~/.gemini/skills; do [ -d "$_d/scripts" ] && [ -d "$_d/_shared" ] && SKILLS_ROOT="$_d" && break; done; [ -z "$SKILLS_ROOT" ] && echo "skills-root not found; run /studio sync" >&2
+```
+
 **Layout self-check (#262).** RUN `scripts/skill-self-check.sh chanakya` at session start. Exit 0 → proceed. Exit 2 → the deployed layout is missing anchors named in `_shared/distribution/expected-layout.yaml`; surface the message to the user and stop. Exit 3 → manifest unreadable or agent not declared; same — stop and surface. Refusing to dispatch with a partial deploy is intentional: silent degradation accumulates invisibly-incomplete debriefs and event-log gaps.
 
 ## Singleton
@@ -92,16 +98,10 @@ Snapshots are hints, not truth. Every mode declares a freshness window and falls
 | `snapshots/feedback-inbox.json` | Unprocessed feedback items | `chanakya-snap.sh feedback-inbox` (or post-ingest) | `feedback`, `feedback-reports`, `ingest`, `review` |
 | `snapshots/events-tail.json` | Last ~100 events | `chanakya-snap.sh events-tail` (or post-sweep Step 0E) | `status`, `review` |
 
-## Model + MCP hygiene
-
-Orchestration (dispatch, status, inbox sweep): Sonnet. Initial planning with ambiguous PRDs: Opus. Event-processing / sync / ingest modes: Haiku is viable (~15× cost reduction). Enable MCPs selectively — iMessage/Telegram only in `--away`; Figma only for brief generation; don't load Figma for Chanakya-only / Achilles / Argus sessions. Telegram MCP can disconnect silently — prefer iMessage as primary push. Silent-push fallback: the push queue at `~/.dev-studio/<project>/.runtime/state/push-queue.jsonl` is durable; `modes/status.md` surfaces it on next run.
+**Model + MCP hygiene.** Orchestration (dispatch, status, inbox sweep): Sonnet. Initial planning with ambiguous PRDs: Opus. Event-processing / sync / ingest modes: Haiku is viable (~15× cost reduction). Enable MCPs selectively — iMessage/Telegram only in `--away`; Figma only for brief generation; don't load Figma for Chanakya-only / Achilles / Argus sessions. Telegram MCP can disconnect silently — prefer iMessage as primary push. Silent-push fallback: the push queue at `~/.dev-studio/<project>/.runtime/state/push-queue.jsonl` is durable; `modes/status.md` surfaces it on next run.
 
 ## Multi-worker fleet dispatch
 
-Fleet dispatch (multi-worker fan-out, queue enqueue/drain/list/clear, per-worker inbox contract, refusal rules) belongs to `modes/ship.md` and `modes/sweep-debt.md`. Worker inbox paths, IPC format, and event emissions (`task_dispatched`) are documented in those mode packs. Chanakya always emits `task_dispatched` immediately before shelling out to `scripts/achilles-dispatch.sh`.
+Fleet dispatch (multi-worker fan-out, queue enqueue/drain/list/clear, per-worker inbox contract, refusal rules) belongs to `modes/ship.md` and `modes/sweep-debt.md`. Worker inbox paths, IPC format, and event emissions (`task_dispatched`) are documented in those mode packs. Chanakya always emits `task_dispatched` immediately before shelling out to `scripts/achilles-dispatch.sh`. Every session emits `agent_session_completed` at exit per `_shared/contracts/events.md`.
 
 **Perf-mode briefs route to Apollo, not Achilles.** When `modes/brief.md` authors a brief with `dispatch_agent: apollo` (memory / thermal / battery investigation), the dispatch suggestion in Step 8 routes to `/apollo <perf_mode>` and Argus skips that merge entirely (Apollo's strict-9 re-measure delta is the gate). Brief schema fields and authoring rules: `_shared/schemas/brief.md` §3.3.0 + `chanakya/modes/brief.md` Step 6 "Dispatch routing". The Apollo surface itself lives at `/apollo` — see that agent's docs for mode packs and `/apollo measure <metric>` (capture-only pre-flight).
-
-## Session-completion event
-
-Every Chanakya session emits `agent_session_completed` at exit with `mode`, `duration_s`, `files_read`, `files_written`, and (if available) `tokens`. See `_shared/patterns/chanakya-principles.md` and `_shared/contracts/events.md`.

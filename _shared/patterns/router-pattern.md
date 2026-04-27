@@ -100,6 +100,20 @@ Removing or renaming a mode is a breaking change (user-invocable surface) — fo
 - **Lu Ban:** router-first from birth (Phase 4).
 - **Argus:** not applied today; revisit if SKILL.md crosses 500 lines.
 
+## Path resolution (skills-root convention)
+
+Bare `scripts/…` and `_shared/…` paths in SKILL.md and mode packs are relative to the **skills-root** — the directory that contains `scripts/`, `_shared/`, and per-agent dirs as siblings. At the host deployment (`~/.claude/skills/` on Claude Code, `~/.codex/skills/` on Codex, etc.) these are typically symlinks back to the canonical repo; the skills-root is their common parent.
+
+Every owned-agent SKILL.md must include a **skills-root resolution block** at the top of its Bootstrap section, before any path reference. The block resolves `SKILLS_ROOT` via a host-portable probe and instructs the LLM to prefix all bare paths. Without this block the LLM will attempt to resolve paths relative to the skill's own directory or the project CWD — both wrong, since `scripts/` and `_shared/` are siblings at the skills-root, not children of the agent dir.
+
+Canonical resolution:
+
+```bash
+SKILLS_ROOT=""; for _d in ~/.claude/skills ~/.codex/skills ~/.gemini/skills; do [ -d "$_d/scripts" ] && [ -d "$_d/_shared" ] && SKILLS_ROOT="$_d" && break; done
+```
+
+Project-scoped skills (e.g., `.claude/skills/studio/`) are exempt — their CWD is the repo root, so bare paths resolve naturally.
+
 ## Invariants not negotiable
 
 - Router file always small (<100 lines prose).

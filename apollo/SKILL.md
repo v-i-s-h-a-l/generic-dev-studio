@@ -11,6 +11,12 @@ budget_tokens: 400
 
 ## Bootstrap
 
+**Skills-root resolution.** All bare `scripts/…` and `_shared/…` paths in this file and its mode packs are relative to the **skills-root** (the parent of this agent's directory — where `scripts/`, `_shared/`, and per-agent dirs live as siblings), NOT this file's directory. Resolve once at session start and prefix every bare path when running or reading:
+
+```bash
+SKILLS_ROOT=""; for _d in ~/.claude/skills ~/.codex/skills ~/.gemini/skills; do [ -d "$_d/scripts" ] && [ -d "$_d/_shared" ] && SKILLS_ROOT="$_d" && break; done; [ -z "$SKILLS_ROOT" ] && echo "skills-root not found; run /studio sync" >&2
+```
+
 Before proceeding, read `_shared/primitives/router-bootstrap.md`. On hosts whose adapter injects a session-start preamble, this is already in context; on others (see `AGENTS.md` and `hosts/ADAPTER-SPEC.md` for the host roster) the primitive itself is your source of truth — read it explicitly.
 
 **Layout self-check (#262).** RUN `scripts/skill-self-check.sh apollo` at session start. Exit 0 → proceed. Exit 2 → the deployed layout is missing anchors named in `_shared/distribution/expected-layout.yaml`; surface the message to the user and stop. Exit 3 → manifest unreadable or agent not declared; same — stop and surface. Refusing to dispatch with a partial deploy is intentional: silent degradation accumulates invisibly-incomplete event-log gaps.
@@ -103,14 +109,4 @@ Machine-global resources (simulator semaphores, GPU queues) stay at `~/.dev-stud
 
 ## Cross-refs
 
-- `apollo/_shared/primitives/evidence-gate.md` — strict-9 contract + refusal protocol.
-- `apollo/_shared/primitives/execution-surface.md` — capability matrix + auto-capture decision tree.
-- `apollo/_shared/primitives/metrickit.md` — payload schemas referenced as hard evidence.
-- `apollo/_shared/primitives/signposts.md` — interval data shape.
-- `apollo/_shared/primitives/xctest-baselines.md` — baseline diff math.
-- `apollo/_shared/primitives/instruments-index.md` — `xctrace` recipes per mode.
-- `apollo/_shared/primitives/organizer-asc.md` — ASC Performance / Power Metrics surface.
-- `apollo/_shared/primitives/regression-detection.md` — diff math for "this got worse".
-- `apollo/_shared/integrations/imgly-and-metal.md` — Imgly / Metal delegation contract (Apollo ↔ `imgly-engine-expert` handoff envelope).
-- `_shared/contracts/agent-boot.md` — boot-event payload.
-- `REVIEW.md` R10 — sister rule for completion claims.
+Per-metric primitives and capture contracts: `apollo/_shared/primitives/` (evidence-gate, execution-surface, metrickit, signposts, xctest-baselines, instruments-index, organizer-asc, regression-detection). Imgly delegation: `apollo/_shared/integrations/imgly-and-metal.md`. Boot event: `_shared/contracts/agent-boot.md`. Completion claims: REVIEW.md R10.
