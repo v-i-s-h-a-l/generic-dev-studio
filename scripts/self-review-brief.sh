@@ -45,4 +45,10 @@ if ! "$SCRIPT_DIR/validate-brief-inheritance.sh" "$BRIEF" "${PRED_ARGS[@]}"; the
   FAIL=1
 fi
 
+
+# Bug-reproducer gate (#220 A2-1)
+if ! "$SCRIPT_DIR/validate-brief.sh" "$BRIEF"; then
+  FAIL=1
+fi
+
 exit "$FAIL"

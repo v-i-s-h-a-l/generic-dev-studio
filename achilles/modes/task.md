@@ -80,6 +80,13 @@ Sets `TASK_MODE` (`brief` | `direct`), `BRIEF_PATH`, `BRIEF_UUID`, `SIZE`, `TYPE
 
 Read the brief body at `$BRIEF_PATH` for the narrative context. If the brief lists `## Required Skills`, invocation is MANDATORY — load them before Step 4. Additional skills are routed at Step 4.0 via `_shared/primitives/design-time-skill-routing.md`. If a listed skill is unavailable in the current host, surface via `report_state: needs_context` rather than proceeding without it.
 
+**Skill-adherence tracking (#220 A2-2).** At Step 1, record two lists:
+
+- `SKILLS_REQUIRED` — skill names listed under `## Required Skills` in the brief body (parse once; empty list if no section present).
+- `SKILLS_INVOKED` — starts empty; **each time you invoke a `/skill-name` command during this session**, append the name. Maintain throughout Steps 4–5.
+
+Both live in-context only. They feed `debt.skills_unused` at Step 11.
+
 **`BRIEF_SLICE=summary` fallback (#256).** When the env var is set (caller is a sweep / dispatch decision / context-budget-tight subagent), read only the brief's `summary` field (`yq -r '.summary // ""' "$BRIEF_PATH"`) instead of the full body. Skip the body and the `## Required Skills` parse — both belong to the full-brief path. Emit `brief_summary_used` (per `_shared/contracts/events.md` § Achilles events) carrying `brief_uuid=$BRIEF_UUID`, `summary_tokens_est` (word-count × 1.3 — same heuristic as `scripts/lint-brief.sh`), and `reason=caller_request`. If the summary is null (legacy brief, pre-3.2.0), surface `report_state: needs_context` and stop — do not silently fall back to a full read; the caller asked for the slice for a reason. The summary slice is sufficient for sweep gating, dispatch-readiness checks, and status display, but **not** for execution work — Step 4 onward MUST run from the full brief, so callers that pass `BRIEF_SLICE=summary` are by contract not driving the execution pipeline.
 
 Record `WAIT_FOR_USER` (from `--wait`, else `no`). Don't prompt — the flag is the only opt-in.
@@ -98,7 +105,16 @@ No flag → silent pass. Flag present without `--override` → exit 2 and stop (
 scripts/task-claim.sh "$TASK_UUID" "$BRIEF_UUID" "$SIZE"
 ```
 
-Flips `tasks/<uuid>.yaml` to `in-progress` (with legacy master-plan Status dual-write) and `briefs/<uuid>.yaml` to `dispatched`. Emits `brief_started`. Direct mode passes empty `$BRIEF_UUID` and the brief transition is skipped.
+Flips `tasks/<uuid>.yaml` to `in-progress` and `briefs/<uuid>.yaml` to `dispatched`. Emits `brief_started`. Direct mode passes empty `$BRIEF_UUID` and the brief transition is skipped.
+
+**Duplicate-claim guard (#221).** Before mutating state, the script checks whether the brief is already `dispatched` with a live worktree at `~/.dev-studio/$PROJECT/worktrees/$TASK_UUID`. If so, it exits `4` with a descriptive message — two Achilles sessions cannot hold the same brief. Recovery options:
+
+| Override | Effect |
+|---|---|
+| `--steal` flag | Force-transfers the claim; warns on stderr. |
+| `ACHILLES_RECLAIM_OK=1` | Env-based override; same effect as `--steal`. |
+
+If the worktree is gone (orphan: Achilles crashed without cleanup), the script detects the stale claim and reclaims automatically. On a successful claim, a sidecar at `plans/briefs/<brief-uuid>.claim` records `worker_id` and `claimed_at`; it is removed by `task-merge.sh` at Step 10. See `_shared/state-machines/brief-lifecycle.md §Re-claim rules` for the full decision matrix.
 
 ### Step 3 — Isolate: branch from a clean slate
 
@@ -382,6 +398,13 @@ Pick a `report_state` for the debrief (set in `$FIELDS_JSON` before Step 9 stage
 | `done_with_concerns` | Merged, but at least one of: build debt accrued, tests skipped, Argus flagged, known issues surfaced |
 | `blocked` | No merge — hard stop on external dependency, unresolvable state, or Argus `blocked` verdict |
 | `needs_context` | No merge — brief missing information (ambiguous spec, absent reference, unstated decision) |
+
+
+**Skills-unused audit (#220 A2-2).** Compute `SKILLS_UNUSED = SKILLS_REQUIRED - SKILLS_INVOKED` (set difference). If non-empty:
+- Set `report_state: done_with_concerns` (or keep `blocked`/`needs_context` if already set).
+- Populate `debt.skills_unused: [<list of skill names>]` in `$FIELDS_JSON` before Step 9.
+
+A skill is considered "invoked" if its name appears in `SKILLS_INVOKED`. The check is strict — if you were unable to load a required skill (host limitation), surface via `report_state: needs_context` at Step 1 instead of reaching this point.
 
 Pass `report_state=<value>` to `write_debrief_artifact` (via the debrief path documented in `_shared/schemas/debrief.md`). The helper validates the enum and refuses invalid values.
 
