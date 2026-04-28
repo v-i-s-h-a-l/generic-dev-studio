@@ -4,9 +4,11 @@ description: YAML shape for Chanakya-authored Achilles briefs under plans/briefs
 type: reference
 ---
 
-# Brief Schema (`brief@3.4.0`)
+# Brief Schema (`brief@3.5.0`)
 
 Per-brief artifact written to `~/.dev-studio/<project>/plans/briefs/<brief-id>.yaml`. Replaces the markdown briefs that previously lived at `plans/chanakya-tasks/<task-id>-<type>.md`. One file per brief; a task may have many briefs across rework cycles (each with a distinct `id`, same `task_id`).
+
+Version 3.5.0 promotes `legacy_task_id` to a documented field (#296). Previously undocumented and caller-dependent — `task-load-spec.sh` relied on it for brief resolution but hand-authored briefs silently omitted it, breaking Achilles dispatch. Now auto-resolved from the parent task YAML by `write_brief_artifact` when not passed explicitly. `validate-brief.sh` enforces presence when the parent task carries one.
 
 Version 3.3.0 adds explicit dispatch routing: `dispatch_agent` (optional enum, default `achilles`) and `evidence` (required when `dispatch_agent: apollo`). Apollo Stage 5 (#235) wiring — perf briefs declare their target agent at brief-write time so dispatch is deterministic and Apollo's strict-9 evidence gate can pre-flight at brief creation rather than at refusal time. Additive over 3.2.0; readers on 3.0.0+ ignore unknown fields and continue dispatching to Achilles.
 
@@ -18,13 +20,14 @@ Version 3.1.0 bumped from the 3.x object-envelope form introduced in Phase 2.5 �
 
 ```yaml
 schema_version:
-  # brief@3.4.0
+  # brief@3.5.0
   name: brief
-  version: 3.4.0
+  version: 3.5.0
   min_reader: 3.0.0
   deprecated_at: null
 id: 0190f52a-6e11-7c01-8a77-11a05a9e2b4c        # UUIDv7
 task_id: 0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11   # UUIDv7 of the parent task
+legacy_task_id: "T042"                           # human-readable task ID from parent task
 type: impl                                       # impl | unit-test | ui-test | integration-test | tdd
 size: m                                          # xs | s | m | l
 state: ready                                     # draft | ready | dispatched | debriefed | superseded | archived
@@ -75,6 +78,7 @@ body: |
 | `schema_version` | object | yes | Per `contracts/schema-version.md`. `min_reader: 3.0.0` — readers on brief@2.x or older reject. |
 | `id` | string (UUIDv7) | yes | Stable for the life of this brief. |
 | `task_id` | string (UUIDv7) | yes | Parent task. Must resolve to an existing `task.yaml`. |
+| `legacy_task_id` | string \| null | no | Human-readable task ID (e.g. `T042`) from the parent task. Auto-resolved by `write_brief_artifact` from `tasks/<task_id>.yaml` when not passed explicitly. Required when the parent task carries one; null for UUID-only tasks. Used by `task-load-spec.sh` secondary resolution and `backfill-legacy-yaml.sh` dedup. |
 | `type` | enum | yes | One of `impl`, `unit-test`, `ui-test`, `integration-test`, `tdd`. Drives brief-template expansion in Chanakya's brief mode. |
 | `size` | enum | yes | `xs` \| `s` \| `m` \| `l`. Must match the parent task's `size`. |
 | `state` | enum | yes | Per `state-machines/brief-lifecycle.md`. |
@@ -140,6 +144,7 @@ Unparseable briefs (malformed YAML preamble, missing task-id) land in `archive/2
 
 | Version | Landed | Changes |
 |---|---|---|
+| 3.5.0 | 2026-04-28 | Promoted `legacy_task_id` to documented field (#296). Auto-resolved by `write_brief_artifact`; `validate-brief.sh` enforces presence. Fixes Achilles dispatch failure on hand-authored briefs. Additive; `min_reader: 3.0.0`. |
 | 3.4.0 | 2026-04-27 | Added `reproducer` field — machine-readable bug reproducer, required when parent task `type: bug` (#220 A2-1). Additive; `min_reader: 3.0.0`. |
 | 3.3.0 | 2026-04-27 | Added `dispatch_agent` / `perf_mode` / `evidence` fields — explicit dispatch routing + Apollo evidence pre-flight (#235). Additive; `min_reader: 3.0.0`. |
 | 3.2.0 | 2026-04-27 | Added `summary` field — ≤500-token compact brief slice (#256). Additive; `min_reader: 3.0.0`. |

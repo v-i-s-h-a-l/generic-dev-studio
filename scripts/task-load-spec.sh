@@ -56,32 +56,51 @@ SIZE=""
 TYPE=""
 ACCEPTANCE_JSON='[]'
 
-# Preferred surface: post-2.6 YAML via query-plans.sh. Matches briefs by
-# legacy_task_id (carried on migrated briefs) and filters to dispatchable
-# states. yq pulls typed fields.
+# _try_brief_candidate — test one brief YAML for dispatchable state, populate
+# globals on match. Returns 0 if matched, 1 otherwise.
+_try_brief_candidate() {
+  local candidate="$1"
+  [ -r "$candidate" ] || return 1
+  local state
+  state=$(yq -r '.state // "null"' "$candidate" 2>/dev/null || echo null)
+  case "$state" in
+    ready|dispatched|draft) ;;
+    *) return 1 ;;
+  esac
+  BRIEF_PATH="$candidate"
+  BRIEF_UUID=$(yq -r '.id // ""' "$candidate" 2>/dev/null || echo "")
+  SIZE=$(yq -r '.size // ""' "$candidate" 2>/dev/null || echo "")
+  TYPE=$(yq -r '.type // ""' "$candidate" 2>/dev/null || echo "")
+  ACCEPTANCE_JSON=$(yq -o=json -I=0 '.acceptance // []' "$candidate" 2>/dev/null || echo '[]')
+  return 0
+}
+
+# Primary surface: UUID-based resolution via task YAML's links.brief (#296).
+# This is the most reliable path — task.links.brief is always populated and
+# does not depend on the brief carrying legacy_task_id.
 if command -v yq >/dev/null 2>&1; then
+  tasks_dir=$(resolve_tasks_dir_for "$PROJECT")
+  briefs_dir=$(resolve_briefs_dir_for "$PROJECT")
+  if [ -d "$tasks_dir" ] && [ -d "$briefs_dir" ]; then
+    while IFS= read -r task_yaml; do
+      [ -z "$task_yaml" ] && continue
+      brief_uuid_link=$(yq -r '.links.brief // ""' "$task_yaml" 2>/dev/null || echo "")
+      [ -z "$brief_uuid_link" ] && continue
+      candidate="$briefs_dir/${brief_uuid_link}.yaml"
+      _try_brief_candidate "$candidate" && break
+    done < <(grep -l "^legacy_task_id: \"$TASK_ID\"$" "$tasks_dir"/*.yaml 2>/dev/null)
+  fi
+fi
+
+# Secondary surface: grep briefs by legacy_task_id. Catches briefs whose
+# parent task YAML is missing or whose links.brief is stale/empty.
+if [ -z "$BRIEF_PATH" ] && command -v yq >/dev/null 2>&1; then
   briefs_dir=$(resolve_briefs_dir_for "$PROJECT")
   if [ -d "$briefs_dir" ]; then
-    # Walk all briefs carrying this legacy_task_id; pick the first in a
-    # dispatchable state. Re-briefs leave the old brief in `debriefed` and
-    # mint a new one in `ready` — `head -1` alone could pick either by
-    # filesystem order and mask the live brief behind a stale one, forcing
-    # a legacy fallback even when a valid YAML brief exists.
-    match=""
     while IFS= read -r candidate; do
       [ -z "$candidate" ] && continue
-      state=$(yq -r '.state // "null"' "$candidate" 2>/dev/null || echo null)
-      case "$state" in
-        ready|dispatched|draft) match="$candidate"; break ;;
-      esac
+      _try_brief_candidate "$candidate" && break
     done < <(grep -l "^legacy_task_id: \"$TASK_ID\"$" "$briefs_dir"/*.yaml 2>/dev/null)
-    if [ -n "$match" ]; then
-      BRIEF_PATH="$match"
-      BRIEF_UUID=$(yq -r '.id // ""' "$match" 2>/dev/null || echo "")
-      SIZE=$(yq -r '.size // ""' "$match" 2>/dev/null || echo "")
-      TYPE=$(yq -r '.type // ""' "$match" 2>/dev/null || echo "")
-      ACCEPTANCE_JSON=$(yq -o=json -I=0 '.acceptance // []' "$match" 2>/dev/null || echo '[]')
-    fi
   fi
 fi
 

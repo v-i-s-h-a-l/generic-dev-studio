@@ -41,7 +41,7 @@ if ! "$SCRIPT_DIR/lint-brief.sh" "$BRIEF"; then
   FAIL=1
 fi
 
-if ! "$SCRIPT_DIR/validate-brief-inheritance.sh" "$BRIEF" "${PRED_ARGS[@]}"; then
+if ! "$SCRIPT_DIR/validate-brief-inheritance.sh" "$BRIEF" ${PRED_ARGS[@]+"${PRED_ARGS[@]}"}; then
   FAIL=1
 fi
 

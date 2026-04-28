@@ -6,6 +6,9 @@
 # self-review-brief.sh so callers stay one-line.
 #
 # Current checks:
+#   R-LTID-1 — legacy_task_id required when parent task has one (#296).
+#     Prevents Achilles dispatch failure via task-load-spec.sh secondary
+#     resolution path. Warns (not blocks) to avoid breaking pre-3.5.0 briefs.
 #   R-BUG-1 — reproducer required for bug briefs.
 #     When parent task type=bug: brief must have non-empty `reproducer:` YAML
 #     field (brief@3.4.0+) OR a non-empty ## Steps to Reproduce section in body.
@@ -50,6 +53,18 @@ if [ -n "$TASK_ID" ]; then
     warn "task file not found at $TASK_FILE; skipping bug-reproducer check"
   fi
 fi
+
+# ---------- R-LTID-1 — legacy_task_id required when parent task has one ----------
+
+if [ -n "$TASK_ID" ] && [ -r "${TASKS_DIR}/${TASK_ID}.yaml" ]; then
+  TASK_LTID=$(yq -r '.legacy_task_id // ""' "${TASKS_DIR}/${TASK_ID}.yaml")
+  BRIEF_LTID=$(yq -r '.legacy_task_id // ""' "$BRIEF")
+  if [ -n "$TASK_LTID" ] && [ -z "$BRIEF_LTID" ]; then
+    fail "Brief missing legacy_task_id (parent task has '$TASK_LTID'). task-load-spec.sh secondary resolution will fail. Use write_brief_artifact (auto-resolves) or pass legacy_task_id=$TASK_LTID explicitly (#296)."
+  fi
+fi
+
+# ---------- R-BUG-1 — reproducer required for bug briefs ----------
 
 if [ "$BRIEF_TYPE" = "bug" ]; then
   REPRODUCER_FIELD=$(yq -r '.reproducer // ""' "$BRIEF")
