@@ -285,7 +285,7 @@ mkdir -p ~/.dev-studio/$PROJECT/.runtime/{achilles-inbox,state}
 mkdir -p ~/.dev-studio/.runtime/locks/test-slots
 ```
 
-### Permissions
+### Claude Permissions
 
 Add to `~/.claude/settings.json` under `permissions.allow`:
 
@@ -299,6 +299,25 @@ Add to `~/.claude/settings.json` under `permissions.allow`:
 ```
 
 `~/.dev-studio/` sits outside `~/.claude/` on purpose — agents read/write their artifacts unattended without tripping the self-mod guard.
+
+### Codex Permissions
+
+Codex needs the same runtime root in its workspace-write sandbox. Launch with an explicit writable root:
+
+```sh
+codex --sandbox workspace-write --add-dir ~/.dev-studio
+```
+
+Or persist it in `~/.codex/config.toml`:
+
+```toml
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+writable_roots = ["/Users/<you>/.dev-studio"]
+```
+
+For unattended Achilles workers, combine the writable root with `--ask-for-approval never`.
 
 ---
 
