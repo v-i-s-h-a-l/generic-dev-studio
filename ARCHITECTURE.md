@@ -109,6 +109,32 @@ Iterating on extraction is harder than adding inline; default to inline until pa
 
 **Explicitly not adopted.** LiteLLM-style universal model routers (hosts own inference). MCP as the worker tool transport (file I/O + shell already works). Framework adoption (AutoGen / LangGraph / CrewAI) — we steal patterns, not dependencies. Marketplace publishing per host (we're not shipping to marketplaces; conformance testing replaces it).
 
+### Forge / Field terminology
+
+**Forge** is the studio's control plane: this repository, its studio skill, scripts, rules, issue triage, planning doctrine, host diagnostics, telemetry, and release process. Forge work is about improving the orchestration system itself. Today, Forge primarily ingests user conversation and explicit web research; Slack, PRDs, Figma, and design docs are Field inputs unless a future Forge mode explicitly adopts them.
+
+**Field** is the execution plane used inside an Apple-platform project: Chanakya, Achilles, Argus, Apollo, future Lu Ban / Chiron, project ledgers, task lifecycles, Slack/Figma/PRD ingestion, build gates, and worker machines. Field work is where product features, bugs, reviews, verification, and project-specific automation run.
+
+The laptop is the Forge reference machine for now. The Mac mini is a helper worker node, currently used for Swift testing and `xcodebuild`; Forge does not depend on it for control-plane decisions.
+
+Forge is the proving ground for orchestration automation before it graduates to Field. New orchestration ideas should first be dogfooded on Forge work where possible: intake, issue triage, dependency linking, duplicate detection, planning quality, and output reliability. Once measured and stable, the same pattern can be hardened for Field.
+
+Quality claims in Forge must be quantitative where possible. Prefer metrics such as task completion rate, reopen rate, review reject rate, clarification rate, duplicate-detection precision, blocked-by link coverage, time from intake to actionable brief, and false-positive triage rate. Use `verified` / `inferred` / `unknown` language when recording facts so planning does not silently drift from evidence.
+
+### Model-role policy
+
+Forge defines model roles by capability, not vendor. Host adapters map these roles to concrete model names. This keeps the doctrine portable across Codex/OpenAI, Claude/Anthropic, Gemini, and future hosts.
+
+| Role | Purpose | Default capability |
+|---|---|---|
+| `forge-architect` | Doctrine, architecture, phase planning, hard tradeoffs | strongest reasoning model available |
+| `forge-verifier` | Challenge pass for drift, unsupported claims, contradictions | independent strong reasoning pass |
+| `forge-editor` | Rewrite, docs shaping, release-note polish | balanced model with strong instruction following |
+| `forge-triage` | Classification, labels, duplicate scan, brief summaries | fast/cost-efficient model |
+| `field-worker` | Project implementation or review work | selected by the Field host and task risk |
+
+Concrete model names are intentionally not canonical here. They change faster than the doctrine. Any implementation that spawns a new shell/window for a model role should resolve through host capabilities and a versioned model registry, defaulting to OpenAI/Codex models only when the user has not explicitly requested another provider. If the user requests Anthropic, Gemini, or another provider, the role resolver should use that host's mapped model for the same capability tier.
+
 ---
 
 ## Design Vision (2026-04-20 synthesis)
