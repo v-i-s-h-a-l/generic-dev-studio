@@ -600,6 +600,29 @@ write_brief_artifact() {
   # body_file=<path> lets callers pass large renders without shell-arg bloat.
   _extract_body_and_rest "$@"
 
+  # Resolve legacy_task_id from the parent task YAML when not passed
+  # explicitly as a k=v arg (#296). Guarantees every brief carries the
+  # field regardless of caller discipline.
+  local _has_legacy_tid=0
+  local _kv
+  for _kv in "${_LW_REST_ARGS[@]+"${_LW_REST_ARGS[@]}"}"; do
+    case "$_kv" in legacy_task_id=*) _has_legacy_tid=1; break ;; esac
+  done
+  if [ "$_has_legacy_tid" -eq 0 ] && command -v yq >/dev/null 2>&1; then
+    local _project _tasks_dir _task_file _resolved_ltid
+    _project=$(resolve_project 2>/dev/null) || true
+    if [ -n "$_project" ]; then
+      _tasks_dir=$(resolve_tasks_dir_for "$_project")
+      _task_file="$_tasks_dir/${task_uuid}.yaml"
+      if [ -r "$_task_file" ]; then
+        _resolved_ltid=$(yq -r '.legacy_task_id // ""' "$_task_file" 2>/dev/null || echo "")
+        if [ -n "$_resolved_ltid" ]; then
+          _LW_REST_ARGS+=("legacy_task_id=$_resolved_ltid")
+        fi
+      fi
+    fi
+  fi
+
   local f ts
   f=$(_artifact_path briefs "$uuid") || return 2
   ts=$(iso_ts_now)
@@ -608,7 +631,7 @@ write_brief_artifact() {
 
   local payload
   payload=$({
-    printf 'schema_version: {name: brief, version: 3.1.0, min_reader: 3.0.0, deprecated_at: null}\n'
+    printf 'schema_version: {name: brief, version: 3.5.0, min_reader: 3.0.0, deprecated_at: null}\n'
     printf 'id: %s\n' "$uuid"
     printf 'task_id: %s\n' "$task_uuid"
     printf 'type: %s\n' "$type"
