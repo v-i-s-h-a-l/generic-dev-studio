@@ -1,69 +1,71 @@
 ---
 name: Debrief Format
-description: File schema for task debriefs written to chanakya-inbox after Achilles completes.
+description: Active Achilles debrief contract. Debriefs are YAML artifacts under plans/debriefs/ and validate against debrief.schema.json.
 type: reference
 ---
 
 # Shared: Debrief Format
 
-Write to `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-debrief.md`:
+Active debrief producers write YAML to:
 
-```markdown
-# Debrief: <task-id> — <Title>
-Completed: <YYYY-MM-DD HH:mm IST>
+`~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml`
 
-## Summary
-<2-3 sentences on what was done>
+The canonical schema is `_shared/contracts/debrief.schema.json`; the human
+field guide is `_shared/schemas/debrief.md`.
 
-## Commits
-- <hash> — <one-line description>
+Minimum active shape:
 
-## Files Changed
-- <file path> — <what changed>
-
-## Branch
-- Worked on: `achilles/<task-id>`
-- Merged into: `<ORIG_BRANCH>` (local, --no-ff)
-- Merge commit: `<hash>`
-
-## Build Verification
-build_gate: lsp-only | full-green
-build_debt_override: false         <!-- true only if --ignore-build-debt was used -->
-
-## Testability Report
-<!-- For implementation tasks -->
-- **SOLID adherence:** <brief summary>
-- **Accessibility IDs defined:** <path to identifier enum file, count of identifiers added>
-- **Test seams exposed:** <list of protocols/interfaces created for testing>
-- **Architecture pattern followed:** <pattern name, any deviations>
-- **Localization:** <"N strings added via .localized, key namespace: filter.presets.*"> | <"n/a — no user-visible strings"> | <"module unlocalized — follow-up task filed: T0XX">
-<!-- For test tasks -->
-- **Tests written:** <count>
-- **Tests passing:** <count>
-- **Tests failing:** <count, with reasons>
-- **Coverage areas:** <what's covered>
-- **Gaps:** <what's not covered and why>
-
-## Decisions Made
-- <any deviations from the brief and why>
-
-## Test Cases
-<copy of <task-id>-tests.md>
-
-## Performance
-<!-- Include if any timing data was observed -->
-- <operation>: <timing> on <device/simulator>
-
-## Key Learnings
-- <patterns, gotchas, things future sessions should know>
-
-## Known Issues
-- <unresolved — e.g., "user has not manually verified yet">
-
-## Follow-up Tasks
-- <manual-verification follow-up always present when WAIT_FOR_USER=no or on timeout>
-- <new tasks discovered during implementation>
-- <refactoring tasks for test utilities if patterns were duplicated>
+```yaml
+schema_version:
+  name: debrief
+  version: 2.3.0
+  min_reader: 2.0.0
+  deprecated_at: null
+id: <uuidv7>
+task_id: <uuidv7-or-null>
+brief_id: <uuidv7-or-null>
+mode: task
+state: emitted
+completed_at: <rfc3339-utc>
+branch:
+  worked_on: achilles/<task-id>
+  merged_into: <branch-or-null>
+  merge_sha: <sha-or-null>
+commits: []
+diff_summary:
+  files: 0
+  added_lines: 0
+  removed_lines: 0
+decisions: []
+tests:
+  added: []
+  modified: []
+  skipped_because: null
+testability: null
+build_gate: lsp-only
+build_debt_override: false
+debt:
+  build: false
+  test_unit: false
+  test_ui: false
+  notes: null
+performance: []
+key_learnings: []
+known_issues: []
+follow_ups: []
+open_questions: []
+argus_review:
+  status: not-invoked
+  review_id: null
+  notes: null
+report_state: done
+metrics: null
 ```
 
-After writing the debrief: update master plan — set status to `done`, record commit hashes and merge commit. `done` ≠ `verified`. Chanakya promotes to `verified` after the user processes test-manifest feedback.
+Task-mode writers normally call `scripts/task-emit-debrief.sh`, which wraps
+`write_debrief_artifact` from `scripts/lib-ledger.sh`, validates the payload,
+sets `tasks/<uuid>.yaml` `links.debrief`, and emits `debrief_emitted`.
+
+The archived pre-Phase 2.6 section-header template lives at
+`_shared/contracts/.legacy/debrief-format-md.md` for old artifact readability
+only. Active writers MUST NOT use it.

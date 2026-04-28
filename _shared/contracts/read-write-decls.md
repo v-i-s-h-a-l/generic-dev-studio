@@ -49,7 +49,7 @@ reads:
   - ~/.dev-studio/<project>/events/**.jsonl
   - ~/.dev-studio/<project>/.runtime/achilles-inbox/**/*.task
 writes:
-  - ~/.dev-studio/<project>/plans/chanakya-inbox/*-debrief.md
+  - ~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml
   - ~/.dev-studio/<project>/plans/chanakya-inbox/*-tests.md
   - ~/.dev-studio/<project>/worktrees/*
   - ~/.dev-studio/<project>/events/<today>.jsonl

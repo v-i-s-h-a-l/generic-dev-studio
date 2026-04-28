@@ -176,18 +176,13 @@ process_task() {
   tail -n 40 "$LOG" 2>/dev/null || true
   printf '──────────────────────────────────\n'
 
-  # Silent-stuck detection looks for a debrief in either shape (post-2.6
-  # YAML canonical OR pre-2.6 markdown legacy). During the dual-write
-  # window, task-mode writers may emit one or both — at-least-one-present
-  # is sufficient to conclude the subagent completed cleanly.
+  # Silent-stuck detection looks for the canonical YAML debrief. The
+  # markdown debrief surface was archived under #245 A.4/A.5.
   local project_root
   project_root=$(resolve_project_root_for "$PROJECT")
-  local debrief_legacy="$project_root/plans/chanakya-inbox/$task_id-debrief.md"
   local debriefs_dir_new="$project_root/plans/debriefs"
   local debrief_exists=0
-  if [ -f "$debrief_legacy" ]; then
-    debrief_exists=1
-  elif [ -d "$debriefs_dir_new" ]; then
+  if [ -d "$debriefs_dir_new" ]; then
     # Canonical YAML debriefs are named by debrief-id (UUID), not task-id,
     # so we grep for the task_id: scalar across the dir. -l exits fast on
     # first hit. Bound by -maxdepth 1 — debriefs are flat.

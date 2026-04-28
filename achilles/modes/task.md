@@ -370,7 +370,7 @@ DEBRIEF_UUID=$(scripts/task-emit-debrief.sh "$TASK_UUID" "$BRIEF_UUID" argus-rev
 
 Mints a UUIDv7, writes `plans/debriefs/<debrief-id>.yaml` (schema: `_shared/schemas/debrief.md`, `debrief@2.0.1`) at `state: emitted`, sets `tasks/<uuid>.yaml` `links.debrief`, transitions the task to `argus-reviewed` (idempotent — Argus already moved it there). The brief→debriefed transition and `brief_completed` event are deferred to Step 11.
 
-`$FIELDS_JSON` is a JSON object whose keys become debrief YAML fields — `branch`, `commits`, `diff_summary`, `decisions`, `tests`, `testability`, `build_gate`, `build_debt_override`, `debt`, `performance`, `key_learnings`, `known_issues`, `follow_ups`, `open_questions`, `argus_review`, plus `legacy_task_id` and `body` for the legacy dual-write. `argus_review.status` is Step 8.5's verdict — `approved` / `flagged` / `blocked`; `not-invoked` is only valid on exempted build-mode / test-suite-mode paths, which don't land here. If Argus returned `flagged`, include a `## Argus Review` block in the `body` field referencing the review file + finding count. Leave `branch.merge_sha` empty — Step 11 stamps it.
+`$FIELDS_JSON` is a JSON object whose keys become debrief YAML fields — `branch`, `commits`, `diff_summary`, `decisions`, `tests`, `testability`, `build_gate`, `build_debt_override`, `debt`, `performance`, `key_learnings`, `known_issues`, `follow_ups`, `open_questions`, `argus_review`, plus `legacy_task_id` for compatibility with older task IDs. `argus_review.status` is Step 8.5's verdict — `approved` / `flagged` / `blocked`; `not-invoked` is only valid on exempted build-mode / test-suite-mode paths, which don't land here. If Argus returned `flagged`, reference the review file + finding count in `argus_review.notes`. Leave `branch.merge_sha` empty — Step 11 stamps it.
 
 **Debrief is load-bearing for worker-mode detection.** The worker wrapper (`scripts/achilles-worker.sh`) treats a `claude -p` exit with `rc=0` and no debrief as a silent-stuck state and routes the task to `rescue/<task-id>-stuck.md`. Any meaningful outcome — completion, blocked, failed — must write a debrief before exit. Clarifying questions exit one-shot subagents cleanly and trip this detector; prefer the autonomous-default pattern instead of asking.
 
@@ -392,7 +392,7 @@ On conflict: branch stays alive, DerivedData kept, surface to user. **Do not for
 scripts/task-finalize-merge.sh "$TASK_UUID" "$BRIEF_UUID" "$DEBRIEF_UUID" "$MERGE_SHA" "$FIELDS_JSON"
 ```
 
-Stamps `branch.merge_sha` into the staged debrief, transitions the task `argus-reviewed → merged`, flips the brief to `debriefed` (skip in direct-mode), emits `brief_completed`. Idempotent: state transitions no-op on a second invocation; the merge_sha set is value-equal-skip. Exit `3` if a dual-write partial bubbles up; `0` otherwise.
+Stamps `branch.merge_sha` into the staged debrief, transitions the task `argus-reviewed → merged`, flips the brief to `debriefed` (skip in direct-mode), emits `brief_completed`. Idempotent: state transitions no-op on a second invocation; the merge_sha set is value-equal-skip.
 
 `done` ≠ user-verified — Chanakya promotes to `verified` after test-manifest feedback.
 
