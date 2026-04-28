@@ -24,6 +24,12 @@ Capture file for ideas that surface in conversation. `/capture` appends here ret
 
 - 2026-04-25 13:02 — Three-bucket drift typology for skill design (mental model, not implementation): **contract-anchored drift** (mitigated by JSON schemas + linters — already in scope), **model-dependent drift** (mitigated by deterministic verbs, decision tables not nested conditionals, SKILL.md-as-grammar — Phase A), **interpretation drift** (mitigated by sentinel vocabulary STOP/PROCEED/RETRY/SKIP/ESCALATE/EMIT/RECORD/BLOCK + numbered procedures + pre/post-conditions). Useful framework for sequencing future skill-quality work and explaining *why* the Authoring Standard takes the shape it does. [theme/internal]
 
+- 2026-04-28 08:35 — Forge/Field doctrine: make `Forge` the repo's official control-plane term and `Field` the Apple-project execution plane. Forge should first dogfood orchestration automation on its own work: conversation/web intake, key-tap triage, issue graph links, phase planning, and quantitative reliability gates. Field ingestion sources such as Slack, PRDs, and Figma stay out of Forge until a specific Forge mode adopts them. [theme/internal]
+
+- 2026-04-28 08:36 — Studio model roles as a future host-agnostic control surface: define roles such as `forge-architect`, `forge-verifier`, `forge-editor`, and `forge-triage`, then let a studio sub-command or wrapper spawn a fresh host session with the right model capability. Default provider can be OpenAI/Codex, but explicit provider requests such as Anthropic should resolve through the same role map instead of hardcoded commands. [theme/host-agnostic]
+
+- 2026-04-28 08:37 — Host-agnostic capture wrapper: existing `/capture` is useful but Claude-shaped through transcript paths and the Agent tool. Future work should preserve the behavior (dedupe session ideas into `IDEAS.md`, remind when pickable) behind a Forge wrapper that can read host-specific transcript/session state through adapters. [theme/host-agnostic]
+
 ---
 
 ## In design
