@@ -21,21 +21,19 @@
 # On conflict: leave worktree + DerivedData intact, emit `merge_conflict`,
 # exit 2 — Achilles caller surfaces to the user.
 #
-# Pre-merge guard (#249 Phase 2): refuses to merge if no debrief is staged
-# for this task under `plans/debriefs/`. Closes the silent-merge dark window
-# Phase 1's detector observes after the fact. Override with the env opt-in
-# `STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1` — emits `debrief_missing` with
-# `reason=pre_merge_warn` and proceeds. Without override: emits the same
-# event with `reason=pre_merge_blocked` and exits 4.
+# Pre-merge guard: checks the three independent safety signals before acquiring
+# the merge lock: build passed, Argus verdict present, and debrief emitted or
+# staged. One missing signal warns and proceeds; two or more missing signals
+# block unless --force is passed.
 #
 # Usage:
-#   scripts/task-merge.sh <task-id> <worktree> <orig-branch> [merge-message]
+#   scripts/task-merge.sh <task-id> <worktree> <orig-branch> [--force] [merge-message]
 #
 # Exit codes:
 #   0  merged cleanly
 #   2  conflict or other merge failure
 #   3  lock wait exceeded (30 min)
-#   4  no debrief staged (#249) — set STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 to override
+#   4  merge safety gate blocked — pass --force to override
 
 set -u
 umask 022
@@ -46,10 +44,23 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
 
-TASK_ID="${1:?usage: task-merge.sh <task-id> <worktree> <orig-branch> [merge-message]}"
+TASK_ID="${1:?usage: task-merge.sh <task-id> <worktree> <orig-branch> [--force] [merge-message]}"
 WORKTREE="${2:?worktree required}"
 ORIG_BRANCH="${3:?orig-branch required}"
-MERGE_MSG="${4:-Merge $TASK_ID into $ORIG_BRANCH}"
+shift 3
+FORCE_MERGE=0
+merge_parts=()
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE_MERGE=1 ;;
+    *) merge_parts+=("$arg") ;;
+  esac
+done
+if [ "${#merge_parts[@]}" -gt 0 ]; then
+  MERGE_MSG="${merge_parts[*]}"
+else
+  MERGE_MSG="Merge $TASK_ID into $ORIG_BRANCH"
+fi
 
 [ -d "$WORKTREE" ] || { printf 'error: worktree not a directory: %s\n' "$WORKTREE" >&2; exit 2; }
 
@@ -78,45 +89,102 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   exit 0
 fi
 
-# ---------- Pre-merge: debrief precondition (#249 Phase 2) ----------
-#
-# Walk plans/debriefs/*.yaml; require an entry whose `legacy_task_id` matches
-# this task and is in the canonical staged state (state == "emitted", or
-# absent — which reads as emitted per inbox-sweep.md back-compat). This is
-# a fail-fast gate run before the lock so a missing-debrief case never
-# blocks other Achilles workers.
-#
-# Strict by default; override with STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 for
-# genuine emergencies. Both paths emit `debrief_missing` so the inbox-sweep
-# surfacing in /chanakya status stays loud.
-DEBRIEFS_DIR=$(resolve_debriefs_dir_for "$PROJECT" 2>/dev/null || echo "")
-debrief_staged=0
-if [ -n "$DEBRIEFS_DIR" ] && [ -d "$DEBRIEFS_DIR" ] && command -v yq >/dev/null 2>&1; then
+# ---------- Pre-merge: composite safety gate ----------
+json_array_from_csv() {
+  local csv="$1"
+  if [ -z "$csv" ]; then
+    printf '[]'
+    return 0
+  fi
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s\n' "$csv" | jq -c -R 'split(",")'
+    return 0
+  fi
+  local out="" item
+  IFS=',' read -r -a _items <<< "$csv"
+  for item in "${_items[@]}"; do
+    item=${item//\\/\\\\}
+    item=${item//\"/\\\"}
+    if [ -n "$out" ]; then out="$out,"; fi
+    out="$out\"$item\""
+  done
+  printf '[%s]' "$out"
+}
+
+event_exists_for_task() {
+  local pattern="$1" log_dir
+  log_dir=$(resolve_events_dir_for "$PROJECT" 2>/dev/null || echo "")
+  [ -n "$log_dir" ] && [ -d "$log_dir" ] || return 1
+  grep -E "\"task\":\"$TASK_ID\".*\"event\":\"($pattern)\"|\"event\":\"($pattern)\".*\"task\":\"$TASK_ID\"" "$log_dir"/*.jsonl >/dev/null 2>&1
+}
+
+debrief_event_exists_for_task() {
+  event_exists_for_task "debrief_emitted"
+}
+
+staged_debrief_exists_for_task() {
+  local yaml legacy task_uuid state
+  [ -n "$DEBRIEFS_DIR" ] && [ -d "$DEBRIEFS_DIR" ] || return 1
+  command -v yq >/dev/null 2>&1 || return 1
   for yaml in "$DEBRIEFS_DIR"/*.yaml; do
     [ -f "$yaml" ] || continue
     legacy=$(yq -r '.legacy_task_id // ""' "$yaml" 2>/dev/null || echo "")
-    [ "$legacy" = "$TASK_ID" ] || continue
+    task_uuid=$(yq -r '.task_id // ""' "$yaml" 2>/dev/null || echo "")
+    [ "$legacy" = "$TASK_ID" ] || [ "$task_uuid" = "$TASK_ID" ] || continue
     state=$(yq -r '.state // "emitted"' "$yaml" 2>/dev/null || echo emitted)
     [ "$state" = "emitted" ] || continue
-    debrief_staged=1
-    break
+    return 0
   done
+  return 1
+}
+
+DEBRIEFS_DIR=$(resolve_debriefs_dir_for "$PROJECT" 2>/dev/null || echo "")
+present_count=0
+missing_csv=""
+
+if event_exists_for_task "build_check_passed|build_passed"; then
+  present_count=$((present_count + 1))
+else
+  missing_csv="${missing_csv:+$missing_csv,}build_passed"
 fi
 
-if [ "$debrief_staged" -eq 0 ]; then
-  if [ "${STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF:-0}" = "1" ]; then
-    reason="pre_merge_warn"
+if event_exists_for_task "review_approved|review_flagged"; then
+  present_count=$((present_count + 1))
+else
+  missing_csv="${missing_csv:+$missing_csv,}review_verdict"
+fi
+
+if debrief_event_exists_for_task || staged_debrief_exists_for_task; then
+  present_count=$((present_count + 1))
+else
+  missing_csv="${missing_csv:+$missing_csv,}debrief"
+fi
+
+missing_count=$((3 - present_count))
+missing_json=$(json_array_from_csv "$missing_csv")
+
+if [ "$missing_count" -ge 2 ]; then
+  data=$(printf '{"task_id":"%s","branch":"%s","missing_signals":%s,"signal_count":%s,"missing_count":%s}' \
+    "$TASK_ID" "$BRANCH" "$missing_json" "$present_count" "$missing_count")
+  if [ "$FORCE_MERGE" -eq 1 ]; then
+    emit_event_keyed achilles task merge_safety_override "$TASK_ID" "$data" >/dev/null 2>&1 || true
+    printf 'warn: merge safety override for %s; missing signals: %s\n' "$TASK_ID" "$missing_csv" >&2
   else
-    reason="pre_merge_blocked"
-  fi
-  data=$(printf '{"reason":"%s","branch":"%s"}' "$reason" "$BRANCH")
-  emit_event_keyed achilles task debrief_missing "$TASK_ID" "$data" >/dev/null 2>&1 || true
-  if [ "$reason" = "pre_merge_blocked" ]; then
-    printf 'error: no debrief staged for %s — run scripts/task-emit-debrief.sh (Step 9) before merge.\n' "$TASK_ID" >&2
-    printf '       set STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 to merge anyway (emergencies only).\n' >&2
+    emit_event_keyed achilles task merge_safety_blocked "$TASK_ID" "$data" >/dev/null 2>&1 || true
+    printf 'error: merge safety check failed for %s; missing signals: %s\n' "$TASK_ID" "$missing_csv" >&2
+    printf '       pass --force to merge anyway (emergencies only).\n' >&2
     exit 4
   fi
-  printf 'warn: no debrief staged for %s; STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 set — proceeding.\n' "$TASK_ID" >&2
+elif [ "$missing_count" -eq 1 ]; then
+  data=$(printf '{"task_id":"%s","branch":"%s","missing_signals":%s,"signal_count":%s,"missing_count":%s}' \
+    "$TASK_ID" "$BRANCH" "$missing_json" "$present_count" "$missing_count")
+  emit_event_keyed achilles task merge_safety_warn "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  # Back-compat for existing inbox-sweep surfacing of debrief-only warnings.
+  if [ "$missing_csv" = "debrief" ]; then
+    debrief_data=$(printf '{"reason":"pre_merge_warn","branch":"%s"}' "$BRANCH")
+    emit_event_keyed achilles task debrief_missing "$TASK_ID" "$debrief_data" >/dev/null 2>&1 || true
+  fi
+  printf 'warn: merge safety check missing signal for %s: %s\n' "$TASK_ID" "$missing_csv" >&2
 fi
 
 # ---------- Acquire lock ----------

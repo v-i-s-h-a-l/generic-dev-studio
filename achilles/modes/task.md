@@ -357,7 +357,7 @@ Maximum 3 fix-and-re-review cycles before surfacing to the user as unresolvable 
 
 Only if Step 6 is green, Argus returned approved or flagged, and the user hasn't rejected.
 
-**Pre-merge order is load-bearing (#249 Phase 2).** The debrief is staged *before* `task-merge.sh` so the merge script can refuse to merge work that has no debrief — closing the silent-merge dark window where a session crash between merge and debrief left Chanakya holding `briefed` forever. Step 11 finalizes the artifact (stamps `merge_sha`, flips task → `merged`, brief → `debriefed`, emits `brief_completed`) after the merge succeeds.
+**Pre-merge order is load-bearing (#249/#300).** The debrief is staged *before* `task-merge.sh` so the merge script can count it alongside the build and review signals. Two or more missing safety signals block the merge; exactly one missing signal warns and proceeds. Step 11 finalizes the artifact (stamps `merge_sha`, flips task → `merged`, brief → `debriefed`, emits `brief_completed`) after the merge succeeds.
 
 Commit inside the worktree first (unlocked — each worktree has its own index), then stage the debrief:
 ```bash
@@ -382,7 +382,7 @@ Mints a UUIDv7, writes `plans/debriefs/<debrief-id>.yaml` (schema: `_shared/sche
 scripts/task-merge.sh "$TASK_ID" "$WORKTREE" "$ORIG_BRANCH" "Merge <task-id> into $ORIG_BRANCH"
 ```
 
-The script acquires the project-scoped merge lock under `~/.dev-studio/.runtime/merge-lock/<project>` (30-minute staleness reclaim, 30-minute wait envelope), enforces the **#249 Phase 2 pre-merge debrief precondition** — refuses with exit `4` and emits `debrief_missing` (`reason: pre_merge_blocked`) when no `state: emitted` debrief exists for `$TASK_ID`. Override with `STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1` for genuine emergencies (`reason: pre_merge_warn`, proceeds). Then clears a stale `.git/index.lock` per `_shared/primitives/safe-git.md` (emits `stale_index_lock_removed`), checks out `$ORIG_BRANCH`, fetches best-effort, runs `git merge --no-ff achilles/<task-id>`, removes the worktree, cleans DerivedData, emits `task_merged`. Exit codes: `0` merged, `2` conflict (emits `merge_conflict`; worktree + DerivedData retained), `3` locked-out, `4` no debrief staged. Prints `MERGE_SHA=<sha>` on success.
+The script checks the composite merge safety gate before taking the project-scoped merge lock. Required signals are `build_check_passed`, `review_approved` or `review_flagged`, and `debrief_emitted` or a staged `plans/debriefs/*.yaml` with `state: emitted`. Two or more missing signals refuse with exit `4` and emit `merge_safety_blocked`; exactly one missing signal emits `merge_safety_warn` and proceeds. `--force` overrides a block and emits `merge_safety_override`. Then the script acquires the merge lock under `~/.dev-studio/.runtime/merge-lock/<project>` (30-minute staleness reclaim, 30-minute wait envelope), clears a stale `.git/index.lock` per `_shared/primitives/safe-git.md` (emits `stale_index_lock_removed`), checks out `$ORIG_BRANCH`, fetches best-effort, runs `git merge --no-ff achilles/<task-id>`, removes the worktree, cleans DerivedData, emits `task_merged`. Exit codes: `0` merged, `2` conflict (emits `merge_conflict`; worktree + DerivedData retained), `3` locked-out, `4` composite safety gate blocked. Prints `MERGE_SHA=<sha>` on success.
 
 On conflict: branch stays alive, DerivedData kept, surface to user. **Do not force-resolve.** On red build (Step 6): don't call this script — the branch + DerivedData stay for the user to inspect.
 

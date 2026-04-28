@@ -7,18 +7,17 @@
 # `debrief_missing` event. Idempotent per `(task, merge_sha)` — re-runs
 # never duplicate.
 #
-# Catches the dark window between Step 9 (`task-merge.sh` emits
-# `task_merged`) and Step 10 (`task-emit-debrief.sh` writes the YAML +
-# emits `debrief_emitted`) when a session crashes mid-flight, plus any
-# `task_merged` produced by a manual session that bypassed Step 10.
+# Catches any `task_merged` produced by a manual session that bypassed the
+# staged-debrief path, plus historical dark-window cases from before Step 9
+# staged the debrief before merge.
 #
 # Stale window: a `task_merged` event younger than 600s is skipped — Step
 # 10 may still be running. Only sufficiently-aged events qualify, so the
 # normal pipeline never trips a false positive.
 #
-# Phase 1 of #249 — observability. Phase 2 flips the pipeline so the
-# debrief is staged BEFORE merge and `task-merge.sh` refuses without one;
-# tracked separately. See `_shared/contracts/events.md` § `debrief_missing`.
+# Phase 1 of #249 — observability. The active merge path now stages the
+# debrief BEFORE merge and `task-merge.sh` counts it in the #300 composite
+# safety gate. See `_shared/contracts/events.md` § `debrief_missing`.
 #
 # Usage:
 #   scripts/sweep-detect-missing-debriefs.sh

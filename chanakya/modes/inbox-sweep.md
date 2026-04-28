@@ -100,7 +100,7 @@ Read the stuck state by `grep '"stuck": true'` on the marker — don't re-invoke
 
 ## Step 0E0 — Missing-debrief detector (#249 Phase 1)
 
-`scripts/sweep-detect-missing-debriefs.sh` scans today + yesterday's `task_merged` events and emits `debrief_missing` for any whose paired debrief never landed in `plans/debriefs/`. Stale window: 600s — `task_merged` younger than that is ignored so a Step 10 still in-flight isn't falsely flagged. Idempotent per `(task, merge_sha)` so re-runs never duplicate. Catches the dark window between Achilles Step 9 and Step 10 when a session crashes mid-flight, and any `task_merged` from a manual session that bypassed Step 10. Phase 2 will flip the pipeline so the debrief is staged before merge and `task-merge.sh` refuses without one — tracked in a follow-up. Stdout is the count of emits this run; feeds into the sweep summary in Step 0G1.
+`scripts/sweep-detect-missing-debriefs.sh` scans today + yesterday's `task_merged` events and emits `debrief_missing` for any whose paired debrief never landed in `plans/debriefs/`. Stale window: 600s — `task_merged` younger than that is ignored so a Step 10.5 finalize still in-flight isn't falsely flagged. Idempotent per `(task, merge_sha)` so re-runs never duplicate. Catches manual merges that bypass the staged-debrief path, plus historical dark-window cases from before Achilles staged the debrief before merge. Stdout is the count of emits this run; feeds into the sweep summary in Step 0G1.
 
 ## Step 0E — Event handler fan-out
 

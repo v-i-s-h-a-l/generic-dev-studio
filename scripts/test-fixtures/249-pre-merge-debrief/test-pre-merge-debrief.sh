@@ -5,16 +5,12 @@
 # building a synthetic git repo + worktree + plans/debriefs/ tree under a
 # tempdir, then running the script in three scenarios:
 #
-#   1. Debrief staged (state: emitted) for the task → script proceeds
-#      past the precondition; fails the actual merge harmlessly because
-#      there's no Argus + no committed branch state. Exit code is 0 or 2,
-#      not 4. The point is: the precondition didn't refuse.
-#   2. No debrief staged, default (strict) → exit 4, `debrief_missing`
-#      event fires with reason=pre_merge_blocked. Merge does NOT run.
-#   3. No debrief staged, STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 →
-#      `debrief_missing` event fires with reason=pre_merge_warn; merge
-#      proceeds (and may fail for unrelated test-fixture reasons —
-#      we only assert reason+event, not exit 0).
+#   1. Debrief staged (state: emitted) plus build/review signals → script
+#      proceeds past the composite precondition.
+#   2. No debrief staged and no other safety signals → exit 4,
+#      `merge_safety_blocked` names debrief as one of the missing signals.
+#   3. No debrief staged but build/review signals present → `debrief_missing`
+#      event fires with reason=pre_merge_warn and merge proceeds.
 #
 # Per CLAUDE.md: smoke-test against synthetic fixtures only; never the
 # live turnip ledger. Runtime paths are HOME-overridden to a tempdir.
@@ -83,6 +79,14 @@ count_events() {
   printf '%s\n' "${n:-0}"
 }
 
+append_event() {
+  local event="$1" log
+  log=$(events_log)
+  mkdir -p "$(dirname "$log")"
+  printf '{"ts":"2026-04-28T00:00:00Z","agent":"fixture","event":"%s","task":"%s","data":{}}\n' \
+    "$event" "$TASK_ID" >> "$log"
+}
+
 # ---------- Scenario 2: no debrief, strict (default) ----------
 rm -f "$PROJ_ROOT/events"/*.jsonl 2>/dev/null || true
 set +e
@@ -90,23 +94,29 @@ set +e
 rc=$?
 set -e
 assert "scenario 2 strict refuses with exit 4" "[ $rc -eq 4 ]"
-assert "scenario 2 emits debrief_missing event" \
-  "[ \$(count_events 'debrief_missing') -ge 1 ]"
+assert "scenario 2 emits merge_safety_blocked event" \
+  "[ \$(count_events 'merge_safety_blocked') -ge 1 ]"
 log=$(events_log)
-assert "scenario 2 reason is pre_merge_blocked" \
-  "grep -q 'pre_merge_blocked' '$log'"
+assert "scenario 2 names debrief as missing" \
+  "grep -q 'debrief' '$log'"
 
-# ---------- Scenario 3: no debrief, permissive ----------
+# ---------- Scenario 3: no debrief, but other safety signals present ----------
+rm -rf "$WORKTREE" 2>/dev/null || true
+git -C "$REPO" worktree prune
+git -C "$REPO" branch -D "achilles/$TASK_ID" >/dev/null 2>&1 || true
+git -C "$REPO" worktree add -q -b "achilles/$TASK_ID" "$WORKTREE"
+printf 'work3\n' > "$WORKTREE/work3.txt"
+git -C "$WORKTREE" add work3.txt
+git -C "$WORKTREE" commit -q -m "$TASK_ID: work3"
+
 rm -f "$PROJ_ROOT/events"/*.jsonl 2>/dev/null || true
+append_event build_check_passed
+append_event review_approved
 set +e
-STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 \
-  "$REPO_SCRIPTS/task-merge.sh" "$TASK_ID" "$WORKTREE" main "Merge $TASK_ID into main" >/dev/null 2>&1
+"$REPO_SCRIPTS/task-merge.sh" "$TASK_ID" "$WORKTREE" main "Merge $TASK_ID into main" >/dev/null 2>&1
 rc=$?
 set -e
-# rc may be 0 (merge clean) or 2 (merge fails for unrelated reasons in this
-# minimal repo); the assertion is on the precondition NOT refusing (rc != 4)
-# AND the debrief_missing(pre_merge_warn) event firing.
-assert "scenario 3 permissive does not exit 4" "[ $rc -ne 4 ]"
+assert "scenario 3 one missing signal merges" "[ $rc -eq 0 ]"
 assert "scenario 3 emits debrief_missing event" \
   "[ \$(count_events 'debrief_missing') -ge 1 ]"
 log=$(events_log)
@@ -136,6 +146,8 @@ updated_at: 2026-04-27T00:00:00Z
 YAML
 
 rm -f "$PROJ_ROOT/events"/*.jsonl 2>/dev/null || true
+append_event build_check_passed
+append_event review_approved
 set +e
 "$REPO_SCRIPTS/task-merge.sh" "$TASK_ID" "$WORKTREE" main "Merge $TASK_ID into main" >/dev/null 2>&1
 rc=$?

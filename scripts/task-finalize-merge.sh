@@ -7,9 +7,9 @@
 #
 # Splits the responsibilities of the legacy single-shot task-emit-debrief.sh
 # call so the debrief artifact is *staged* before merge (Step 9), then
-# *finalized* after merge (this script). The pre-merge stage is what lets
-# task-merge.sh refuse merges that lack a debrief — closing the silent-
-# merge dark window #249 was filed for.
+# *finalized* after merge (this script). The pre-merge stage feeds
+# task-merge.sh's composite safety gate so a missing debrief is counted before
+# the merge rather than discovered only by the post-hoc sweep.
 #
 # Idempotent: every mutation is keyed by (subject, from-state>to-state) or
 # is a value-set on a YAML field, so reruns of the finalize step on the
