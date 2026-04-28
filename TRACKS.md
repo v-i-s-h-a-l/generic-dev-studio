@@ -1,6 +1,6 @@
 # Parallel Tracks
 
-Two independent work tracks running concurrently. Each session works on one track only.
+Independent work tracks. Each session works on one track only.
 
 ## How to use
 
@@ -64,9 +64,69 @@ Track A owns **Step 8.5**. Track B owns **Step 6**.
 These are different sections — edits don't conflict.  
 **Merge rule:** Track A merges to main first. Track B rebases `track/build-opt` on `main` before opening its PR (one rebase, trivial).
 
-## Adding a third track
+## Track C — forge-safety (`track/forge-safety`)
 
-1. Add a row to this file.
+**Label:** `track:forge-safety`
+**Branch:** `track/forge-safety`
+**Issues:** 7 analysis bugs — safety floor + data integrity + operational fixes
+**Merge order:** merges independently (no file overlap with A or B)
+**Forge flag system:** 🟢 Green (autonomous) / 🟡 Yellow (deploy-gated) / 🔴 Red (user-gated)
+
+### Execution waves
+
+| Wave | Issues | Deps | Flag | Can parallelize |
+|---|---|---|---|---|
+| 1 | #299 (Argus infra root causes) | none | 🟢 | yes — independent |
+| 1 | #301 (debrief contract + writer) | none | 🟢 | yes — independent |
+| 1 | #279 (debrief enforcement) | none | 🟢 | yes — independent |
+| 1 | #76 (dual-write audit) | none | 🟢 | yes — independent |
+| 2 | #298 (sweep blind spots) | Blocked by: #301 | 🟢 | after #301 |
+| 2 | #300 (cascade circuit breaker) | Blocked by: #299, #279 | 🟡 | after #299 + #279 |
+| 3 | #97 (App Store version) | Blocked by: #300 | 🔴 | after #300; needs user API key |
+
+### Flag definitions
+
+- 🟢 **Green** — fully autonomous. Implement, verify against acceptance criteria, commit, close. No user touchpoint.
+- 🟡 **Yellow** — can be built autonomously, but deployment is gated on upstream issues. Build in parallel, hold merge until deps are verified.
+- 🔴 **Red** — hard user dependency. Cannot complete acceptance criteria without user action (API keys, live API calls, device verification). Implement all automatable parts, then pause with a clear "user action needed" summary.
+
+### Files owned
+
+| File | Notes |
+|---|---|
+| `scripts/task-merge.sh` | #279 (debrief precondition), #300 (composite gate) |
+| `scripts/task-emit-debrief.sh` | #279 (--stage / --finalize split) |
+| `scripts/sweep-enumerate-debriefs.sh` | #298 (blind spot fixes) |
+| `scripts/dispatch-review.sh` | #299 (Argus preflight checks) |
+| `scripts/check-merge-precondition.sh` | #279 (new — reusable git hook) |
+| `_shared/contracts/debrief-format.md` | #301 (rewrite to YAML schema) |
+| `_shared/contracts/.legacy/` | #301 (archive old MD template) |
+| `_shared/patterns/dual-write-transition.md` | #76 (new primitive) |
+| `achilles/modes/task.md` | #279 (Steps 8.6–8.7 + Step 9 rewrite) |
+| `chanakya/modes/*.md` | #76 (audit: dual-write prose fixes) |
+| `argus/SKILL.md` | #76 (audit), #299 (preflight) |
+| `pushTFBuild.md` | #97 (Step 1c endpoint fix) |
+| Mode packs touched by #76 audit | read-only audit; write only if OR→AND fix needed |
+
+### Acceptance gate
+
+Track is complete when:
+1. All 7 issues closed
+2. Every AC (acceptance criterion) on every issue verified by synthetic test or runtime check
+3. Zero `argus_gate_skipped` events in the first full day post-deploy (#299 AC6)
+4. Zero non-archived `.md` debriefs in the canonical debriefs directory (#301 AC5)
+5. Zero false-positive merge blocks on next 10 real Achilles runs (#300 AC9)
+
+### Shared file conflicts
+
+| File | This track | Other track | Conflict? |
+|---|---|---|---|
+| `achilles/modes/task.md` | Steps 8.6–9 | Track A: Step 8.5, Track B: Step 6 | No — different sections |
+| `scripts/dispatch-review.sh` | Argus preflight | Track A: Argus dispatch | Possible — review at merge time |
+
+## Adding a new track
+
+1. Add a section to this file.
 2. Create a `track/<name>` branch.
 3. Create a `track:<name>` GH label.
-4. Add owned files to the table (verify no overlap with A or B).
+4. Add owned files to the table (verify no overlap with existing tracks).
