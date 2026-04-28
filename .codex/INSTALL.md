@@ -34,6 +34,31 @@ Codex reads `AGENTS.md` at the repo root as its primary instruction file. This i
 export CODEX_HOOKS_CONFIG=".codex/hooks-codex.json"
 ```
 
+## Permissions
+
+Codex must be able to write the studio runtime root as well as the active project worktree. This is the Codex equivalent of the Claude `permissions.allow` entries in the main README; without it, Achilles build gates can still prompt when they write `~/.dev-studio/**` or per-task DerivedData.
+
+One-shot launch:
+
+```sh
+codex --sandbox workspace-write --add-dir ~/.dev-studio
+```
+
+Persistent config in `~/.codex/config.toml`:
+
+```toml
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+writable_roots = ["/Users/<you>/.dev-studio"]
+```
+
+For unattended workers, also use the non-interactive approval policy:
+
+```sh
+codex --sandbox workspace-write --add-dir ~/.dev-studio --ask-for-approval never
+```
+
 ## Verify
 
 ```sh
@@ -51,6 +76,6 @@ All tasks must PASS before the adapter is considered production-ready. By defaul
 
 ## Notes
 
-- Codex's `sandbox_profile: workspace-write` satisfies the Achilles security floor (see `hosts/ADAPTER-SPEC.md`).
+- Codex's `sandbox_profile: workspace-write` satisfies the Achilles security floor when `~/.dev-studio` is included as a writable root (see `hosts/ADAPTER-SPEC.md`).
 - Codex does **not** walk parent directories for `AGENTS.md` — it must be at the cwd.
 - Codex scans `~/.codex/skills/` + `<cwd>/.codex/skills/` (merged, symlinks followed).
