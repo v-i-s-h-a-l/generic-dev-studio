@@ -137,12 +137,10 @@ fi
 
 # ---- Step 2: resolve STUDIO_HOST + capability manifest ----------------------
 HOST="${STUDIO_HOST:-claude-code}"
-case "$HOST" in
-  claude-code) host_dir="$REPO_ROOT/.claude-plugin" ;;
-  codex)       host_dir="$REPO_ROOT/.codex" ;;
-  *) SKIP_REASON="unknown_host"; printf 'dispatch-review: unknown STUDIO_HOST=%s (no adapter)\n' "$HOST" >&2; exit 1 ;;
-esac
-manifest="$host_dir/capabilities.yaml"
+manifest=$(resolve_capabilities_manifest "$HOST" "$REPO_ROOT") || {
+  SKIP_REASON="unknown_host"; printf 'dispatch-review: host "%s" has no capabilities_path in registry\n' "$HOST" >&2; exit 1
+}
+host_dir=$(dirname "$manifest")
 [ -f "$manifest" ] || { SKIP_REASON="missing_manifest"; printf 'dispatch-review: missing %s\n' "$manifest" >&2; exit 1; }
 
 yaml_field() {

@@ -42,6 +42,9 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 REGISTRY="$REPO_ROOT/hosts/registry.yaml"
 
+# shellcheck source=lib-paths.sh
+. "$SCRIPT_DIR/lib-paths.sh"
+
 if ! command -v yq >/dev/null 2>&1; then
   printf 'sync-host-skills: yq is required\n' >&2
   exit 2
@@ -227,6 +230,10 @@ remove_stale() {
         if [ "$expected_scope" = "global" ] && [ -d "$target" ]; then continue; fi
         ;;
     esac
+    # Adapter dirs (.claude-plugin, .codex, …) — keep if host is adapted.
+    if [ -d "$target" ] && [ -f "$target/capabilities.yaml" ]; then
+      if [ "$expected_scope" = "global" ]; then continue; fi
+    fi
     # Skill: declared portable + scope match + canonical present → keep
     if [ -d "$target" ] && [ -f "$target/SKILL.md" ]; then
       if skill_declares_host "$skill_rel" "$host"; then
@@ -284,6 +291,21 @@ audit_host() {
       errors=$((errors + 1))
     fi
   done
+
+  # Adapter dir — adapted hosts must have their capabilities dir deployed.
+  local _audit_status _audit_adapter_dir _audit_adapter_name
+  _audit_status=$(resolve_host_status "$host" "$REPO_ROOT")
+  if [ "$_audit_status" = "adapted" ]; then
+    _audit_adapter_dir=$(resolve_capabilities_dir "$host" "$REPO_ROOT") || true
+    if [ -n "$_audit_adapter_dir" ] && [ -d "$_audit_adapter_dir" ]; then
+      _audit_adapter_name="${_audit_adapter_dir#"$REPO_ROOT/"}"
+      target="$skill_dir/$_audit_adapter_name"
+      if [ ! -L "$target" ] || [ "$(readlink "$target")" != "$_audit_adapter_dir" ]; then
+        printf 'AUDIT_MISSING_ADAPTER:%s adapter dir not deployed at %s\n' "$host" "$target" >&2
+        errors=$((errors + 1))
+      fi
+    fi
+  fi
 
   for link in "$skill_dir"/*; do
     [ -L "$link" ] || continue
@@ -373,6 +395,21 @@ sync_one_host() {
     for c in "${COMPANIONS[@]}"; do
       ensure_link "$REPO_ROOT/$c" "$skill_dir/$c" || true
     done
+    # Adapter dir — capabilities manifest + host-specific config (#297).
+    # Only deployed for adapted hosts (status: adapted in registry).
+    # Provisional hosts have no adapter dir to deploy.
+    local _host_status _adapter_dir
+    _host_status=$(resolve_host_status "$host" "$REPO_ROOT")
+    if [ "$_host_status" = "adapted" ]; then
+      _adapter_dir=$(resolve_capabilities_dir "$host" "$REPO_ROOT") || true
+      if [ -n "$_adapter_dir" ] && [ -d "$_adapter_dir" ]; then
+        local _adapter_name="${_adapter_dir#"$REPO_ROOT/"}"
+        ensure_link "$_adapter_dir" "$skill_dir/$_adapter_name" || true
+      elif [ -n "$_adapter_dir" ]; then
+        printf 'sync-host-skills: WARN host=%s status=adapted but adapter dir %s missing from repo\n' \
+          "$host" "$_adapter_dir" >&2
+      fi
+    fi
     # Skills, by portability declaration. Scope determines target dir:
     #   global  → host's global_skill_dir
     #   project → repo's <project_skill_dir>; skipped if canonical IS that path

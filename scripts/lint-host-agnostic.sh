@@ -24,6 +24,10 @@ umask 022
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+REGISTRY="$REPO_ROOT/hosts/registry.yaml"
+
+# shellcheck source=lib-paths.sh
+. "$SCRIPT_DIR/lib-paths.sh"
 
 STAGED=0
 [ "${1:-}" = "--staged" ] && STAGED=1
@@ -90,10 +94,17 @@ check_prose_portability() {
 # regular file (to ensure canonical content is not forked).
 # -----------------------------------------------------------------------
 check_no_template_forks() {
-  local host_dirs=(".codex" ".claude-plugin")
+  local host_dirs=()
+  while IFS= read -r _h; do
+    [ -n "$_h" ] || continue
+    local _d
+    _d=$(resolve_capabilities_dir "$_h" "$REPO_ROOT" 2>/dev/null) || continue
+    _d="${_d#"$REPO_ROOT/"}"
+    host_dirs+=("$_d")
+  done < <(yq -r 'keys | .[]' "$REGISTRY" 2>/dev/null)
   local agent_dirs=("achilles" "argus")
   local host_dir agent_dir basename host_file
-  for host_dir in "${host_dirs[@]}"; do
+  for host_dir in "${host_dirs[@]+"${host_dirs[@]}"}"; do
     [ -d "$REPO_ROOT/$host_dir" ] || continue
     for agent_dir in "${agent_dirs[@]}"; do
       [ -d "$REPO_ROOT/$agent_dir" ] || continue
@@ -160,8 +171,16 @@ check_capability_security_floor() {
       emit_warn "W_ARGUS_SECRET_SCOPE:$host_dir/capabilities.yaml:secret_scope=cwd-only | Argus dispatch on this host requires secret_scope: none; add a dedicated Argus adapter or route Argus to a none-scoped host"
     fi
   done < <(
-    find "$REPO_ROOT/.codex" "$REPO_ROOT/.claude-plugin" "${extra_dirs[@]+"${extra_dirs[@]}"}" \
-      -maxdepth 1 -name 'capabilities.yaml' 2>/dev/null
+    # Discover adapter dirs from registry instead of hardcoding paths.
+    while IFS= read -r _lh; do
+      [ -n "$_lh" ] || continue
+      _lm=$(resolve_capabilities_manifest "$_lh" "$REPO_ROOT" 2>/dev/null) || continue
+      [ -f "$_lm" ] && printf '%s\n' "$_lm"
+    done < <(yq -r 'keys | .[]' "$REGISTRY" 2>/dev/null)
+    # Extra dirs from test harness.
+    if [ ${#extra_dirs[@]} -gt 0 ]; then
+      find "${extra_dirs[@]}" -maxdepth 1 -name 'capabilities.yaml' 2>/dev/null
+    fi
   )
 }
 

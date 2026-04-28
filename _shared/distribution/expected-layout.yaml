@@ -30,6 +30,20 @@ companions:
     - scripts/lib-paths.sh
     - scripts/lib-ledger.sh
 
+# Host adapter dirs deployed by sync-host-skills.sh (#297).
+# Each adapted host's capabilities dir must be present at the skills-root.
+# skill-self-check.sh detects the current host from the skills-root path
+# and validates only the matching adapter.
+adapters:
+  claude-code:
+    global_skill_dir: "~/.claude/skills"
+    required_files:
+      - .claude-plugin/capabilities.yaml
+  codex:
+    global_skill_dir: "~/.codex/skills"
+    required_files:
+      - .codex/capabilities.yaml
+
 agents:
   achilles:
     required_files:
