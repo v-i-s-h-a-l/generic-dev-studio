@@ -77,13 +77,11 @@ fi
 REVIEW_ID=$(mint_uuidv7)
 
 # Primary write: YAML artifact + verdict event. lib-ledger attempts the
-# legacy dual-write via the stubbed helper (returns 9, swallowed via `|| true`
-# inside write_review_artifact).
 write_review_artifact "$REVIEW_ID" task "$TASK_UUID" "$VERDICT" "$FINDINGS_JSON" "$STAGE"
 rc=$?
 if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
-  # rc=3 is `dual_write_partial` and is expected here because the legacy
-  # helper is stubbed. Any other nonzero is a real failure.
+  # rc=3 is retained for older dual-write-aware callers. Any other nonzero is
+  # a real failure.
   printf 'error: write_review_artifact failed rc=%s\n' "$rc" >&2
   exit "$rc"
 fi

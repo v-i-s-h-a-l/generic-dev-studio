@@ -38,7 +38,7 @@ Worker panes auto-title as `<project>:worker-N` (iTerm/tmux OSC 0) so you can te
 
 After each dispatched task, the pane prints the last 40 lines of `worker.log` so questions or errors from the subagent are visible without tailing the log from a separate pane.
 
-**Stuck-state detection:** if `claude -p` exits `rc=0` but no debrief was written at `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-debrief.md`, the worker treats the task as silently stuck (the subagent almost certainly exited after asking a clarifying question the one-shot process could never answer). The task file goes to `rescue/` and a sidecar `<task-id>-stuck.md` captures the flags, timestamp, and last 200 lines of log. Operator decides whether to re-brief and re-dispatch.
+**Stuck-state detection:** if `claude -p` exits `rc=0` but no YAML debrief for the task exists under `~/.dev-studio/<project>/plans/debriefs/`, the worker treats the task as silently stuck (the subagent almost certainly exited after asking a clarifying question the one-shot process could never answer). The task file goes to `rescue/` and a sidecar `<task-id>-stuck.md` captures the flags, timestamp, and last 200 lines of log. Operator decides whether to re-brief and re-dispatch.
 
 In your Chanakya session (or any shell):
 
@@ -89,7 +89,7 @@ eval "$(scripts/argus-setup.sh T001 S /path/to/worktree)"           # marker + r
 TASK_ID=T001 eval "$(scripts/argus-diff-extract.sh /path main)"     # BASE_SHA + DIFF_PATH + scope-cap events
 scripts/argus-run-tests.sh T001 MyScheme MyTests                    # xcodebuild + test-slot mgmt; exit 0 green, 3 red
 scripts/argus-verify-tdd.sh T001 /path main MyScheme MyTests        # red→green verify; exit 0 ok, 2 flag, 3 block
-scripts/argus-emit-verdict.sh T001 approved '[]' --task-uuid <uuid> # YAML + legacy md + back-ref + verdict event + stdout line
+scripts/argus-emit-verdict.sh T001 approved '[]' --task-uuid <uuid> # YAML verdict + back-ref + event + stdout line
 scripts/emit-agent-session-completed.sh argus review T001 auto:T001 --verdict approved   # shared session-close (any agent); auto: resolves start-ts from emit-agent-boot stamp
 
 # Chanakya inbox sweep — mechanical extractions from modes/inbox-sweep.md (Phase 2.6.5):
@@ -107,7 +107,7 @@ scripts/push-queue.sh append --kind review_blocked --task T001 --text "..."   # 
 # Chanakya test-manifest + test-flow — extractions from modes/tests.md (Phase 2.6.5):
 scripts/tests-dirty-state-check.sh <path>               # exit 2 if user-testing.md has checked boxes or Notes
 scripts/tests-scan-candidates.sh                        # enumerate merged + user-verifying tasks
-scripts/tests-pull-cases.sh <task-id>                   # YAML `cases:` block from debrief (YAML + legacy fallback)
+scripts/tests-pull-cases.sh <task-id>                   # YAML `cases:` block from debrief
 scripts/tests-write-manifest.sh [--force]               # stdin YAML → plans/user-testing.md
 scripts/tests-write-round.sh <N> <scope> <tasks-csv> <body-file>   # round artifact via lib-ledger write_round_artifact
 scripts/tests-promote-round.sh <N>                      # gate-check + pre-checked manifest; exit 3 on gate fail
@@ -126,7 +126,7 @@ scripts/task-invoke-argus.sh T001 /wt main S            # emits review_requested
 scripts/task-merge.sh T001 /wt feature-branch           # merge lock + merge + worktree remove + DerivedData clean
 scripts/node-janitor.sh [--days N] [--dry-run]          # periodic node-side sweep of stale derived-data + worktrees + dispatch logs/registry (#129, #272); LaunchAgent-driven
 scripts/install-node-janitor-launchagent.sh             # render + load every-6h LaunchAgent on the local node (auto-run by bootstrap --worker)
-scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # YAML + legacy md + state flips
+scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # YAML debrief + state flips
 
 # Studio-feedback ingestion (auto-fires via SessionStart hook + Chanakya Step 0F):
 scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio

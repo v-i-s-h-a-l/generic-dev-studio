@@ -26,7 +26,7 @@
 # Exit codes:
 #   0  finalized
 #   2  missing args / artifact not found
-#   3  dual-write partial (propagated)
+#   3  reserved for retired dual-write partials
 
 set -u
 umask 022

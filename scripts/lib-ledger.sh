@@ -542,8 +542,7 @@ _emit_body_block() {
 
 # ---------- Artifact writers ----------
 #
-# Same shape as _transition_artifact — YAML-first, legacy second, event last.
-# Partial failure (YAML ok, legacy fail) emits dual_write_partial + exits 3.
+# Same shape as _transition_artifact: write YAML first, then emit the event.
 
 write_task_artifact() {
   local uuid="${1:?write_task_artifact <uuid> <state> <title> [k=v...]}"
@@ -580,9 +579,6 @@ write_task_artifact() {
     _atomic_write "$f" "$payload" || return 2
   fi
 
-  # Legacy dual-write — append a master-plan row. Legacy task id comes from
-  # k=v pairs when present; otherwise we skip (post-cutover tasks have no
-  # legacy rowID).
   local data
   data=$(printf '{"from":null,"to":"%s","actor":"chanakya","event_id":"%s"}' \
     "$(_json_escape "$state")" "$event_id")
@@ -595,8 +591,8 @@ write_brief_artifact() {
   local task_uuid="${2:?}" type="${3:?}" size="${4:?}"
   shift 4
 
-  # Body (multi-line markdown) is special-cased: block-scalar YAML in the
-  # canonical file; flat string copy for the legacy markdown dual-write.
+  # Body (multi-line prose) is special-cased as block-scalar YAML in the
+  # canonical file.
   # body_file=<path> lets callers pass large renders without shell-arg bloat.
   _extract_body_and_rest "$@"
 

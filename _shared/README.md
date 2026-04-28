@@ -19,7 +19,7 @@ Post Phase 2.5 Commit C, layout is frozen: later phases land new files in existi
 | `schema-version.md` | Object-form SemVer + `min_reader` + `deprecated_at`. |
 | `event-emission.md` | Producer-side event rules. |
 | `read-write-decls.md` | Mode-pack frontmatter for declared reads / writes. |
-| `debrief-format.md` | Achilles → Chanakya debrief shape (legacy markdown; superseded by `schemas/debrief.md` in 2.6). |
+| `debrief-format.md` | Active Achilles → Chanakya debrief contract; YAML under `plans/debriefs/`, validated by `debrief.schema.json`. |
 | `events.md` | Event log schema, atomicity, offset, event catalog. |
 | `build-message-format.md` | Authoritative producer → Slack build-posting contract (#287). |
 | `release-tf-push.md` | Studio-owned TestFlight / App Store push procedure — prerequisites, archive, upload, dSYM, Slack draft, human-approval gate, send. Event taxonomy + `requires_secret_scope` declaration. Phase 2 (#217 Stage B). |
