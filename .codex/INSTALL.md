@@ -21,6 +21,7 @@ This installs Claude Code links and then runs `sync-host-skills.sh --all`, which
 - **Agents:** `achilles`, `argus` (Chanakya is Claude Code-only today; see #141)
 - **Companions:** `_shared`, `scripts` (so SKILL.md relative paths resolve)
 - **Vendored skills:** all skills in `skills/vendored/` and `skills/owned/` that declare `hosts: all`
+- **Project-scoped studio router:** `.codex/skills/studio` points at the canonical `.claude/skills/studio` router, so `$studio` is visible only inside this repo.
 
 ## Root instruction file
 
