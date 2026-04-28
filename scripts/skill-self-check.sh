@@ -85,6 +85,26 @@ check_file() { [ -f "$SKILLS_ROOT/$1" ] || [ -L "$SKILLS_ROOT/$1" ] || record_mi
 while IFS= read -r d; do [ -n "$d" ] && check_dir  "$d"; done < <(yq -r '.companions.required_dirs[]?' "$MANIFEST" 2>/dev/null)
 while IFS= read -r f; do [ -n "$f" ] && check_file "$f"; done < <(yq -r '.companions.required_files[]?' "$MANIFEST" 2>/dev/null)
 
+# Adapter (#297) — detect current host from SKILLS_ROOT, validate its
+# capabilities manifest is deployed. Resolves by matching SKILLS_ROOT against
+# each adapter's global_skill_dir in the manifest. No match = skip (running
+# from repo root, not a deployed tree).
+_detected_host=""
+while IFS= read -r _adapter_host; do
+  [ -n "$_adapter_host" ] || continue
+  _adapter_skill_dir=$(yq -r ".adapters.\"$_adapter_host\".global_skill_dir // \"\"" "$MANIFEST" 2>/dev/null)
+  [ -n "$_adapter_skill_dir" ] || continue
+  _adapter_skill_dir="${_adapter_skill_dir/#\~/$HOME}"
+  if [ "$SKILLS_ROOT" = "$_adapter_skill_dir" ]; then
+    _detected_host="$_adapter_host"
+    break
+  fi
+done < <(yq -r '.adapters | keys | .[]' "$MANIFEST" 2>/dev/null)
+if [ -n "$_detected_host" ]; then
+  while IFS= read -r f; do [ -n "$f" ] && check_file "$f"; done \
+    < <(yq -r ".adapters.\"$_detected_host\".required_files[]?" "$MANIFEST" 2>/dev/null)
+fi
+
 # Agent-specific. mikefarah/yq doesn't support --arg, so AGENT (validated
 # above to be safe identifier chars only) is interpolated directly.
 agent_present=$(yq -r ".agents | has(\"$AGENT\")" "$MANIFEST" 2>/dev/null)

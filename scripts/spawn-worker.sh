@@ -46,14 +46,14 @@ done
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
-HOST="${STUDIO_HOST:-claude-code}"
-case "$HOST" in
-  claude-code) host_dir="$REPO_ROOT/.claude-plugin" ;;
-  codex)       host_dir="$REPO_ROOT/.codex" ;;
-  *) printf 'spawn-worker: unknown STUDIO_HOST=%s (no adapter)\n' "$HOST" >&2; exit 1 ;;
-esac
+# shellcheck source=lib-paths.sh
+. "$SCRIPT_DIR/lib-paths.sh"
 
-manifest="$host_dir/capabilities.yaml"
+HOST="${STUDIO_HOST:-claude-code}"
+manifest=$(resolve_capabilities_manifest "$HOST" "$REPO_ROOT") || {
+  printf 'spawn-worker: host "%s" has no capabilities_path in registry\n' "$HOST" >&2; exit 1
+}
+host_dir=$(dirname "$manifest")
 [ -f "$manifest" ] || { printf 'spawn-worker: missing %s\n' "$manifest" >&2; exit 1; }
 
 yaml_field() {

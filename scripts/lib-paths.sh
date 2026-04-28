@@ -626,3 +626,37 @@ _gate_set_badge() {
   b64=$(printf '%s' "$content" | base64 | tr -d '\n')
   printf '\033]1337;SetBadgeFormat=%s\007' "$b64" >&2
 }
+
+# #297 — resolve the absolute path to a host's capabilities.yaml manifest.
+# Reads capabilities_path from hosts/registry.yaml relative to $base_dir.
+# Returns 1 (no output) if the host has no capabilities_path in the registry.
+resolve_capabilities_manifest() {
+  local host="${1:?usage: resolve_capabilities_manifest <host> <base-dir>}"
+  local base_dir="${2:?usage: resolve_capabilities_manifest <host> <base-dir>}"
+  local registry="$base_dir/hosts/registry.yaml"
+  [ -f "$registry" ] || return 1
+  command -v yq >/dev/null 2>&1 || return 1
+  local cap_path
+  cap_path=$(yq -r ".\"$host\".capabilities_path // \"\"" "$registry" 2>/dev/null)
+  [ -z "$cap_path" ] || [ "$cap_path" = "null" ] && return 1
+  printf '%s\n' "$base_dir/$cap_path"
+}
+
+# #297 — resolve the host adapter directory (dirname of capabilities manifest).
+resolve_capabilities_dir() {
+  local manifest
+  manifest=$(resolve_capabilities_manifest "$@") || return 1
+  dirname "$manifest"
+}
+
+# #297 — resolve host status (adapted | provisional) from registry.
+resolve_host_status() {
+  local host="${1:?usage: resolve_host_status <host> <base-dir>}"
+  local base_dir="${2:?usage: resolve_host_status <host> <base-dir>}"
+  local registry="$base_dir/hosts/registry.yaml"
+  [ -f "$registry" ] || return 1
+  command -v yq >/dev/null 2>&1 || return 1
+  local _hs_val
+  _hs_val=$(yq -r ".\"$host\".status // \"provisional\"" "$registry" 2>/dev/null)
+  printf '%s\n' "$_hs_val"
+}
