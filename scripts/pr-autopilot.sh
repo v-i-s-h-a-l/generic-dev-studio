@@ -3,7 +3,7 @@
 #
 # Usage:
 #   scripts/pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked \
-#       [--review-host <host>] [--summary-file <path>] [--method auto|merge|squash|rebase]
+#       [--review-host <host>] [--summary-file <path>] [--expected-head-sha <sha>] [--method auto|merge|squash|rebase]
 #   scripts/pr-autopilot.sh <pr> --bypass-review --user-approved-bypass <url>
 #
 # The reviewer itself runs without GitHub/API tokens. This parent-side wrapper
@@ -14,7 +14,7 @@ set -eu
 umask 022
 
 usage() {
-  printf 'usage: pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked [--review-host <host>] [--summary-file <path>] [--method auto|merge|squash|rebase]\n' >&2
+  printf 'usage: pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked [--review-host <host>] [--summary-file <path>] [--expected-head-sha <sha>] [--method auto|merge|squash|rebase]\n' >&2
   printf '   or: pr-autopilot.sh <pr> --bypass-review --user-approved-bypass <url>\n' >&2
   exit 2
 }
@@ -26,6 +26,7 @@ shift
 VERDICT=""
 REVIEW_HOST="${STUDIO_REVIEW_HOST:-codex-reviewer}"
 SUMMARY_FILE=""
+EXPECTED_HEAD_SHA=""
 METHOD="auto"
 BYPASS_REVIEW=0
 USER_APPROVED_BYPASS=""
@@ -35,6 +36,7 @@ while [ $# -gt 0 ]; do
     --verdict) VERDICT="${2:?}"; shift 2 ;;
     --review-host) REVIEW_HOST="${2:?}"; shift 2 ;;
     --summary-file) SUMMARY_FILE="${2:?}"; shift 2 ;;
+    --expected-head-sha) EXPECTED_HEAD_SHA="${2:?}"; shift 2 ;;
     --method) METHOD="${2:?}"; shift 2 ;;
     --bypass-review) BYPASS_REVIEW=1; shift ;;
     --user-approved-bypass) USER_APPROVED_BYPASS="${2:?}"; shift 2 ;;
@@ -71,6 +73,10 @@ pr_json=$(gh pr view "$PR" --json headRefOid,url) \
   || { printf 'pr-autopilot: failed to read PR %s\n' "$PR" >&2; exit 1; }
 head_sha=$(printf '%s' "$pr_json" | jq -r '.headRefOid')
 pr_url=$(printf '%s' "$pr_json" | jq -r '.url')
+[ -z "$EXPECTED_HEAD_SHA" ] || [ "$head_sha" = "$EXPECTED_HEAD_SHA" ] || {
+  printf 'pr-autopilot: refusing gate for PR %s; reviewed HEAD_SHA=%s but current HEAD_SHA=%s\n' "$PR" "$EXPECTED_HEAD_SHA" "$head_sha" >&2
+  exit 1
+}
 
 summary="No reviewer summary file supplied."
 if [ -n "$SUMMARY_FILE" ]; then
@@ -95,4 +101,4 @@ if [ "$VERDICT" = "blocked" ]; then
   exit 1
 fi
 
-"$SCRIPT_DIR/pr-merge-finalize.sh" "$PR" --method "$METHOD"
+"$SCRIPT_DIR/pr-merge-finalize.sh" "$PR" --method "$METHOD" --expected-head-sha "$head_sha"

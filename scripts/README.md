@@ -133,6 +133,7 @@ scripts/ingest-feedback.sh                              # idempotent; silent no-
 
 # Studio PR autopilot primitives (#318):
 scripts/pr-reviewer-eligibility.sh codex-reviewer       # no-prompt/no-secret reviewer host preflight
+scripts/pr-headless-review.sh <pr>                      # run eligible reviewer, post gate, merge if non-blocked
 scripts/pr-autopilot.sh <pr> --verdict approved         # post reviewer gate, then merge if non-blocked
 scripts/pr-merge-finalize.sh <pr> --method auto         # <4 commits=rebase, larger main=merge commit, then fetch/prune
 
