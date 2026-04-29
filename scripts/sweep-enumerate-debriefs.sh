@@ -14,8 +14,8 @@
 # Non-ingestable blind spots are diagnostics, not queue items. They print to
 # stderr so existing stdout consumers keep parsing only ingestable rows:
 #
-#   legacy-debrief\t<path>\tmode=legacy
-#   misrouted-debrief\t<path>\tlocation=chanakya-inbox
+#   legacy-debrief\t<path>\tmode=legacy remediation=archive-or-migrate-to-plans-debriefs-yaml
+#   misrouted-debrief\t<path>\tlocation=chanakya-inbox remediation=move-to-plans-debriefs-yaml
 #   apollo-deferred\t<path>\tstale_blocker=false
 #   stale-deferred\t<path>\tstale_blocker=true blocker=<id> blocker_state=<state>
 #
@@ -78,7 +78,7 @@ DEBRIEFS_DIR=$(resolve_debriefs_dir_for "$PROJECT" 2>/dev/null || echo "")
 if [ -n "$DEBRIEFS_DIR" ] && [ -d "$DEBRIEFS_DIR" ]; then
   for md in "$DEBRIEFS_DIR"/*.md; do
     [ -f "$md" ] || continue
-    diagnostic "$(printf 'legacy-debrief\t%s\tmode=legacy' "$md")"
+    diagnostic "$(printf 'legacy-debrief\t%s\tmode=legacy remediation=archive-or-migrate-to-plans-debriefs-yaml' "$md")"
     legacy_md_count=$((legacy_md_count + 1))
   done
 fi
@@ -129,7 +129,7 @@ CHANAKYA_INBOX="$PLANS_DIR/chanakya-inbox"
 if [ -d "$CHANAKYA_INBOX" ]; then
   for f in "$CHANAKYA_INBOX"/*-debrief.yaml "$CHANAKYA_INBOX"/*-debrief.md; do
     [ -f "$f" ] || continue
-    diagnostic "$(printf 'misrouted-debrief\t%s\tlocation=chanakya-inbox' "$f")"
+    diagnostic "$(printf 'misrouted-debrief\t%s\tlocation=chanakya-inbox remediation=move-to-plans-debriefs-yaml' "$f")"
     misrouted_count=$((misrouted_count + 1))
   done
 fi
