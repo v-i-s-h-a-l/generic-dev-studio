@@ -115,6 +115,11 @@ Read the stuck state by `grep '"stuck": true'` on the marker — don't re-invoke
 | `appstore_watch_stuck` | Push-queue append kind=`appstore_stuck`. |
 | `dual_write_partial` | Push-queue append kind=`drift` + raw line appended to `.runtime/state/drift-log.jsonl`. |
 | `debrief_missing` | Push-queue append kind=`debrief_missing` with `merge_sha` (so `/chanakya status` surfaces "T001 merged at <sha> with no debrief"). |
+| `review_pending` | Push-queue append kind=`review_pending`, making repaired Argus-skip facts visible in `/chanakya status`. |
+| `direct_main_ungated_merge` | Push-queue append kind=`ungated_merge` for protected-branch merges without review evidence. |
+| `debrief_concerns` | Push-queue append kind=`debrief_concerns` for `report_state: done_with_concerns`. |
+| `debrief_needs_context` | Push-queue append kind=`debrief_needs_context` for `report_state: needs_context`. |
+| `follow_up_mint_failed` | Push-queue append kind=`follow_up_mint_failed`; structured follow-ups never disappear silently. |
 | `argus_gate_skipped` | When `reason ∈ {unknown_host, missing_manifest, missing_spawn_command, secret_scope_floor_unmet}`: idempotently file `bug` + `theme/internal` GitHub issue titled "Argus infra-failure: `<reason>` on `<host>`"; if an open issue with that title already exists, append a comment with the timestamp and `idem_key` instead. Operational reasons (`verdict_timeout_*`, `no_verdict_at_merge`) are no-ops. See `scripts/sweep-process-events.sh`. |
 | `test_run_failed` / `build_debt_incremented` | No direct action; surfaced in status. |
 
