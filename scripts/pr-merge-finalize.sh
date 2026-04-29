@@ -3,7 +3,7 @@
 #
 # Usage:
 #   scripts/pr-merge-finalize.sh <pr-number-or-url> [--method auto|merge|squash|rebase] \
-#       [--bypass-review --user-approved-bypass <url>]
+#       [--expected-head-sha <sha>] [--bypass-review --user-approved-bypass <url>]
 #
 # This script intentionally performs GitHub PR flow only. It never pushes a
 # base branch directly. Branch deletion is delegated to gh pr merge
@@ -13,7 +13,7 @@ set -eu
 umask 022
 
 usage() {
-  printf 'usage: pr-merge-finalize.sh <pr-number-or-url> [--method auto|merge|squash|rebase] [--bypass-review --user-approved-bypass <url>]\n' >&2
+  printf 'usage: pr-merge-finalize.sh <pr-number-or-url> [--method auto|merge|squash|rebase] [--expected-head-sha <sha>] [--bypass-review --user-approved-bypass <url>]\n' >&2
   exit 2
 }
 
@@ -22,12 +22,17 @@ PR="$1"
 shift
 
 METHOD="auto"
+EXPECTED_HEAD_SHA=""
 BYPASS_REVIEW=0
 USER_APPROVED_BYPASS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --method)
       METHOD="${2:?}"
+      shift 2
+      ;;
+    --expected-head-sha)
+      EXPECTED_HEAD_SHA="${2:?}"
       shift 2
       ;;
     --bypass-review)
@@ -94,6 +99,10 @@ url=$(printf '%s' "$json" | jq -r '.url')
 number=$(printf '%s' "$json" | jq -r '.number')
 head_sha=$(printf '%s' "$json" | jq -r '.headRefOid')
 commit_count=$(printf '%s' "$json" | jq -r '.commits | length')
+[ -z "$EXPECTED_HEAD_SHA" ] || [ "$head_sha" = "$EXPECTED_HEAD_SHA" ] || {
+  printf 'pr-merge-finalize: refusing merge for PR #%s; reviewed HEAD_SHA=%s but current HEAD_SHA=%s\n' "$number" "$EXPECTED_HEAD_SHA" "$head_sha" >&2
+  exit 1
+}
 
 [ "$state" = "OPEN" ] || { printf 'pr-merge-finalize: PR is not open (state=%s)\n' "$state" >&2; exit 1; }
 [ "$is_draft" = "false" ] || { printf 'pr-merge-finalize: PR is draft\n' >&2; exit 1; }

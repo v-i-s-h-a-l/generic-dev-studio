@@ -351,6 +351,8 @@
       <li>No singleton lock, no <code>agent_boot</code> telemetry — studio is a conversational tool, not a fleet worker.</li>
       <li>No writes outside <code>~/.dev-studio/&lt;project&gt;/audit/</code> (audit reports in <code>--report</code> mode). Everything else is read-only chat output + file edits you approve.</li>
     </ul>
+    <h3>PR autopilot</h3>
+    <p>Routine studio PRs run <code>scripts/pr-headless-review.sh &lt;pr&gt;</code>. The script selects an eligible no-secret reviewer host, captures <code>STUDIO_REVIEW_VERDICT</code>, posts the <code>studio:pr-review-gate</code> comment, and merges only when the verdict is not <code>blocked</code>. Merge cleanup deletes the remote branch and refreshes refs with <code>git fetch --prune</code>.</p>
   </div>
 </section>
 

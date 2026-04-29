@@ -57,7 +57,7 @@ reviewer_profile=$(yaml_field "$manifest" reviewer_profile)
 [ "$reviewer_profile" = "true" ] || fail not_reviewer_profile "$manifest"
 
 case "$spawn_command" in
-  *"--ask-for-approval never"*|*"--approval-policy never"*) ;;
+  *"--ask-for-approval never"*|*"--approval-policy never"*|*"-c approval_policy=never"*|*"--config approval_policy=never"*) ;;
   *) fail prompt_floor_unmet "spawn_command must force no-prompt execution" ;;
 esac
 
@@ -79,6 +79,10 @@ case "$HOST" in
       *"--ephemeral"* ) ;;
       *) fail persistent_session_state "Codex reviewer must pass --ephemeral" ;;
     esac
+    # shellcheck disable=SC2206
+    spawn_argv=( $spawn_command )
+    "${spawn_argv[@]}" --help >/dev/null 2>&1 \
+      || fail invalid_spawn_command "Codex reviewer spawn command is not accepted by the installed CLI"
     ;;
 esac
 
