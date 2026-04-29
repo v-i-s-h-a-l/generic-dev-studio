@@ -150,7 +150,15 @@ Read each bullet aloud. Red flags:
 
 Semver (`MAJOR.MINOR.PATCH`). When proposing a bump, state *which rule triggered it* — forces explicit reasoning, catches mistakes.
 
-### Decide the bump by asking three questions
+### Decide the bump by asking these questions
+
+**0. Is this a narrow follow-up to the current release arc?**
+If yes → **PATCH**, even when the follow-up adds a small tool or report. Use this lane when all of these are true:
+- The previous MINOR release already introduced the user-facing arc.
+- The new work makes that arc safer, more measurable, or less painful without changing the mental model.
+- There is no migration, no renamed surface, no new mode, and no new workflow family.
+
+Examples: a diagnostic report for the freshly shipped Forge safety floor, a small status view that explains an existing queue, or a focused helper script that measures a just-released gate. This keeps narrow reliability follow-ups grouped under the release they clarify instead of pretending every small additive script starts a new arc.
 
 **1. Does the user need to change anything to upgrade?**
 If yes → **breaking**. Examples in this repo:
@@ -175,7 +183,7 @@ If yes → **fix**.
 
 **Pre-1.0** (we are here):
 - Breaking → bump **MINOR** (0.1 → 0.2) + prominent Migration section in notes
-- Additive → bump **MINOR**
+- Additive → bump **MINOR**, except narrow follow-ups that satisfy question 0 → **PATCH**
 - Fix → bump **PATCH**
 
 Rationale: semver §4 says `0.y.z` is for "anything may change." Collapsing breaking and additive into MINOR avoids premature 1.0 churn without deceiving users — the Migration section carries the weight when it's breaking.
