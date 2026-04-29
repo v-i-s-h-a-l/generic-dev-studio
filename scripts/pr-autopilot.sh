@@ -3,7 +3,7 @@
 #
 # Usage:
 #   scripts/pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked \
-#       [--review-host <host>] [--summary-file <path>] [--method merge|squash|rebase]
+#       [--review-host <host>] [--summary-file <path>] [--method auto|merge|squash|rebase]
 #   scripts/pr-autopilot.sh <pr> --bypass-review --user-approved-bypass <url>
 #
 # The reviewer itself runs without GitHub/API tokens. This parent-side wrapper
@@ -14,7 +14,7 @@ set -eu
 umask 022
 
 usage() {
-  printf 'usage: pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked [--review-host <host>] [--summary-file <path>] [--method merge|squash|rebase]\n' >&2
+  printf 'usage: pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked [--review-host <host>] [--summary-file <path>] [--method auto|merge|squash|rebase]\n' >&2
   printf '   or: pr-autopilot.sh <pr> --bypass-review --user-approved-bypass <url>\n' >&2
   exit 2
 }
@@ -26,7 +26,7 @@ shift
 VERDICT=""
 REVIEW_HOST="${STUDIO_REVIEW_HOST:-codex-reviewer}"
 SUMMARY_FILE=""
-METHOD="squash"
+METHOD="auto"
 BYPASS_REVIEW=0
 USER_APPROVED_BYPASS=""
 
