@@ -88,12 +88,23 @@ event_log=$(resolve_event_log) || {
 # set on each early-exit path before `exit 1`; success path zeroes it.
 DISPATCH_TERMINAL_EMITTED=0
 SKIP_REASON=""
+PREFLIGHT_EMITTED=0
+_emit_preflight_failed() {
+  [ "$PREFLIGHT_EMITTED" = "1" ] && return 0
+  local reason="${1:?reason}" host="${2:-${HOST:-unknown}}" detail="${3:-}"
+  local data
+  data=$(printf '{"stage":"%s","idem_key":"%s","reason":"%s","host":"%s","detail":"%s"}' \
+    "$STAGE" "$IDEM_KEY" "$reason" "$host" "$(_json_escape "$detail")")
+  emit_event_keyed argus review argus_preflight_failed "$TASK_ID" "$data" \
+    --idem-key "preflight:$IDEM_KEY:$reason" >/dev/null 2>&1 || true
+  PREFLIGHT_EMITTED=1
+}
 _emit_skip_if_open() {
   [ "$DISPATCH_TERMINAL_EMITTED" = "1" ] && return 0
   local rc=$?
   local reason="${SKIP_REASON:-unknown_exit_$rc}"
   emit_event_keyed argus review argus_gate_skipped "$TASK_ID" \
-    "{\"stage\":\"$STAGE\",\"idem_key\":\"$IDEM_KEY\",\"reason\":\"$reason\",\"exit_code\":$rc}" \
+    "{\"stage\":\"$STAGE\",\"idem_key\":\"$IDEM_KEY\",\"reason\":\"$reason\",\"host\":\"${HOST:-unknown}\",\"exit_code\":$rc}" \
     --idem-key "$IDEM_KEY" >/dev/null 2>&1 || true
 }
 trap _emit_skip_if_open EXIT INT TERM
@@ -138,10 +149,18 @@ fi
 # ---- Step 2: resolve STUDIO_HOST + capability manifest ----------------------
 HOST="${STUDIO_HOST:-claude-code}"
 manifest=$(resolve_capabilities_manifest "$HOST" "$REPO_ROOT") || {
-  SKIP_REASON="unknown_host"; printf 'dispatch-review: host "%s" has no capabilities_path in registry\n' "$HOST" >&2; exit 1
+  SKIP_REASON="unknown_host"
+  _emit_preflight_failed "$SKIP_REASON" "$HOST" "host not found in hosts/registry.yaml or missing capabilities_path"
+  printf 'dispatch-review: host not found: %s (no capabilities_path in hosts/registry.yaml)\n' "$HOST" >&2
+  exit 1
 }
 host_dir=$(dirname "$manifest")
-[ -f "$manifest" ] || { SKIP_REASON="missing_manifest"; printf 'dispatch-review: missing %s\n' "$manifest" >&2; exit 1; }
+[ -f "$manifest" ] || {
+  SKIP_REASON="missing_manifest"
+  _emit_preflight_failed "$SKIP_REASON" "$HOST" "$manifest"
+  printf 'dispatch-review: manifest not found: %s\n' "$manifest" >&2
+  exit 1
+}
 
 yaml_field() {
   grep -E "^${2}:[[:space:]]" "$1" 2>/dev/null \
@@ -151,7 +170,12 @@ yaml_field() {
 }
 SPAWN_COMMAND=$(yaml_field "$manifest" spawn_command)
 SECRET_SCOPE=$(yaml_field "$manifest" secret_scope)
-[ -n "$SPAWN_COMMAND" ] || { SKIP_REASON="missing_spawn_command"; printf 'dispatch-review: %s missing spawn_command\n' "$manifest" >&2; exit 1; }
+[ -n "$SPAWN_COMMAND" ] || {
+  SKIP_REASON="missing_spawn_command"
+  _emit_preflight_failed "$SKIP_REASON" "$HOST" "$manifest missing spawn_command"
+  printf 'dispatch-review: %s missing spawn_command\n' "$manifest" >&2
+  exit 1
+}
 
 # ---- Step 3: Argus security floor ------------------------------------------
 # Reference host (claude-code) is documented-exempt (see hosts/ADAPTER-SPEC.md).
@@ -161,6 +185,7 @@ SECRET_SCOPE=$(yaml_field "$manifest" secret_scope)
 # injection in a diff to exfiltrate.
 if [ "$HOST" != "claude-code" ] && [ "$SECRET_SCOPE" != "none" ]; then
   SKIP_REASON="secret_scope_floor_unmet"
+  _emit_preflight_failed "$SKIP_REASON" "$HOST" "secret_scope=$SECRET_SCOPE"
   printf 'dispatch-review: refuse — host=%s declares secret_scope=%s; Argus dispatch requires secret_scope: none. Add a dedicated Argus adapter (see hosts/ADAPTER-SPEC.md §Argus security floor) or route Argus to a none-scoped host.\n' \
     "$HOST" "$SECRET_SCOPE" >&2
   exit 1

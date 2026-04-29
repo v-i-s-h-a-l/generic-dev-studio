@@ -31,7 +31,7 @@ The studio has ~30 mode packs across Chanakya, Achilles, Argus, and upcoming Lu 
           "path": "achilles/modes/task.md",
           "type": "mode-pack",
           "reads": ["~/.dev-studio/<project>/plans/chanakya-tasks/*.md", "…"],
-          "writes": ["~/.dev-studio/<project>/plans/chanakya-inbox/*-debrief.md", "…"],
+          "writes": ["~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml", "…"],
           "snapshots": [],
           "dry_run": true,
           "budget_tokens": 6000

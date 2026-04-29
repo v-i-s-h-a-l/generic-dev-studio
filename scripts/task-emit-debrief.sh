@@ -4,15 +4,14 @@
 # Wraps lib-ledger's `write_debrief_artifact` with the task-mode-specific
 # follow-ons: mint a UUIDv7 for the debrief, set the task's
 # `links.debrief` back-ref, flip the task + brief states to their post-merge
-# values, and emit `brief_completed`. The debrief artifact + its own
-# `debrief_emitted` event + legacy markdown dual-write are handled inside
-# `write_debrief_artifact`.
+# values, and emit `brief_completed`. The debrief artifact and its own
+# `debrief_emitted` event are handled inside `write_debrief_artifact`.
 #
 # The debrief-fields-json is an object whose keys become YAML lines via
 # `_append_kv_lines` (lib-ledger). Keys starting with `[` / `{` are passed
 # through as inline YAML; everything else is yaml-quoted. Typical keys:
 #   legacy_task_id, branch, commits, diff_summary, build_gate,
-#   build_debt_override, argus_review, body (legacy markdown payload).
+#   build_debt_override, argus_review, body.
 #
 # Usage:
 #   scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> <state> <fields-json>
@@ -30,7 +29,7 @@
 # Exit codes:
 #   0  debrief written + state flips applied
 #   2  missing args or artifact not found
-#   3  dual-write partial (propagated)
+#   3  reserved for retired dual-write partials
 
 set -u
 umask 022
@@ -102,9 +101,8 @@ export WITHHOLD_INDEX=1
 write_debrief_artifact "$DEBRIEF_UUID" "$TASK_UUID" "$BRIEF_ARG" task emitted ${KV_ARGS[@]+"${KV_ARGS[@]}"} || {
   rc=$?
   [ "$rc" -ne 3 ] && { printf 'error: write_debrief_artifact failed rc=%s\n' "$rc" >&2; exit "$rc"; }
-  # rc=3 = dual-write partial — YAML landed, legacy failed. Continue with the
-  # state flips + event so the canonical shape reflects reality; surface
-  # exit 3 at the end.
+  # rc=3 is retained for older callers that still understand the retired
+  # dual-write partial code. YAML is the only active debrief artifact.
   DUAL_WRITE_PARTIAL=1
 }
 

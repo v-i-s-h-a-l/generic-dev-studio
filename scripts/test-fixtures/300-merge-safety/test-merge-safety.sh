@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-# test-pre-merge-debrief.sh — fixture for #249 after the #300 composite gate.
-#
-# The staged debrief remains a first-class pre-merge signal. The composite
-# gate owns block-vs-warn: missing debrief alone warns; missing debrief plus
-# another absent signal blocks.
+# test-merge-safety.sh — fixture for #300 composite merge safety gate.
 
 set -eu
 umask 022
@@ -13,13 +9,13 @@ REPO_SCRIPTS=$(cd "$SCRIPT_DIR/../.." && pwd)
 
 command -v yq >/dev/null 2>&1 || { printf 'skip: yq not installed\n' >&2; exit 0; }
 
-TMPROOT=$(mktemp -d -t pre-merge-debrief.XXXXXX)
+TMPROOT=$(mktemp -d -t merge-safety.XXXXXX)
 trap 'rm -rf "$TMPROOT"' EXIT
 
 export HOME="$TMPROOT/home"
 mkdir -p "$HOME"
 
-PROJECT="fixture-249"
+PROJECT="fixture-300"
 PROJ_ROOT="$HOME/.dev-studio/$PROJECT"
 mkdir -p "$PROJ_ROOT/plans/debriefs" "$PROJ_ROOT/events"
 
@@ -32,7 +28,7 @@ printf 'seed\n' > "$REPO/seed.txt"
 git -C "$REPO" add seed.txt
 git -C "$REPO" commit -q -m 'seed'
 
-TASK_ID="T249"
+TASK_ID="T300"
 WORKTREE="$TMPROOT/wt-$TASK_ID"
 git -C "$REPO" worktree add -q -b "achilles/$TASK_ID" "$WORKTREE"
 
@@ -58,11 +54,11 @@ emit_event_line() {
 }
 
 stage_debrief() {
-  cat > "$PROJ_ROOT/plans/debriefs/01234567-89ab-7cde-8000-000000000249.yaml" <<YAML
+  cat > "$PROJ_ROOT/plans/debriefs/01234567-89ab-7cde-8000-000000000300.yaml" <<YAML
 schema: debrief@2.0.1
 state: emitted
 mode: task
-task_id: 00000000-0000-7000-8000-000000000249
+task_id: 00000000-0000-7000-8000-000000000300
 legacy_task_id: $TASK_ID
 created_at: 2026-04-29T00:00:00Z
 updated_at: 2026-04-29T00:00:00Z
@@ -73,7 +69,27 @@ run_safety_only() {
   STUDIO_MERGE_SAFETY_ONLY=1 "$REPO_SCRIPTS/task-merge.sh" "$TASK_ID" "$WORKTREE" main "$@" >/dev/null 2>&1
 }
 
-# Missing debrief only: warn, do not block.
+# 0 of 3 signals: block and list all three missing.
+reset_runtime
+set +e
+run_safety_only
+rc=$?
+set -e
+assert "zero signals blocks" "[ $rc -eq 4 ]"
+assert "zero signals emits merge_safety_blocked" "grep -q 'merge_safety_blocked' '$(events_log)'"
+assert "zero signals names all missing" "grep -Fq '\"missing_signals\":[\"build\",\"review\",\"debrief\"]' '$(events_log)'"
+
+# 1 of 3 signals present: block because two are absent.
+reset_runtime
+emit_event_line build_check_passed
+set +e
+run_safety_only
+rc=$?
+set -e
+assert "one present signal blocks" "[ $rc -eq 4 ]"
+assert "one present signal names review and debrief" "grep -Fq '\"missing_signals\":[\"review\",\"debrief\"]' '$(events_log)'"
+
+# 2 of 3 signals present: warn and pass.
 reset_runtime
 emit_event_line build_check_passed
 emit_event_line review_approved
@@ -81,21 +97,10 @@ set +e
 run_safety_only
 rc=$?
 set -e
-assert "missing debrief only passes composite gate" "[ $rc -eq 0 ]"
-assert "missing debrief only emits debrief warn" "grep -q 'pre_merge_warn' '$(events_log)'"
-assert "missing debrief only emits merge safety warn" "grep -q 'merge_safety_warn' '$(events_log)'"
+assert "two present signals warn-pass" "[ $rc -eq 0 ]"
+assert "two present emits merge_safety_warn" "grep -q 'merge_safety_warn' '$(events_log)'"
 
-# Missing debrief plus review: block.
-reset_runtime
-emit_event_line build_check_passed
-set +e
-run_safety_only
-rc=$?
-set -e
-assert "missing debrief plus review blocks" "[ $rc -eq 4 ]"
-assert "composite block marks debrief blocked" "grep -q 'pre_merge_blocked' '$(events_log)'"
-
-# Staged debrief with build + review: pass quietly.
+# 3 of 3 signals present: pass with no safety event.
 reset_runtime
 stage_debrief
 emit_event_line build_check_passed
@@ -104,7 +109,16 @@ set +e
 run_safety_only
 rc=$?
 set -e
-assert "staged debrief passes composite gate" "[ $rc -eq 0 ]"
-assert "staged debrief emits no debrief_missing" "! grep -q 'debrief_missing' '$(events_log)'"
+assert "three signals pass" "[ $rc -eq 0 ]"
+assert "three signals emit no merge_safety event" "! grep -q 'merge_safety_' '$(events_log)'"
+
+# --force bypasses a composite block and emits override.
+reset_runtime
+set +e
+run_safety_only --force
+rc=$?
+set -e
+assert "force bypasses zero-signal block" "[ $rc -eq 0 ]"
+assert "force emits merge_safety_override" "grep -q 'merge_safety_override' '$(events_log)'"
 
 printf 'PASS: %s assertions\n' "$assertions"
