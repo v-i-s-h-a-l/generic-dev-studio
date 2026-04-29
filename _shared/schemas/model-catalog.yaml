@@ -1,0 +1,112 @@
+# Model catalog — refreshable policy, not buried in shell scripts.
+#
+# Hand-maintained source of truth for which models exist per provider family,
+# their intelligence tier, role suitability, and reasoning-effort behaviour.
+# Refresh cadence: every 3-4 weeks (issue #322 cadence comment), plus manual
+# refresh on provider/model failure indicating drift. Normal PR review reads
+# this file at gate time — no live web fetch.
+#
+# Schema:
+#   id                         — canonical model id used at the CLI/API
+#   provider_family            — anthropic | openai | google
+#   intelligence_tier          — low | medium | high | max  (ordered)
+#   roles                      — role tags consumed by model-policy.yaml
+#   reasoning_effort_supported — true|false (Anthropic uses thinking, not effort)
+#   default_reasoning_effort   — minimal|low|medium|high|null
+#   aliases                    — stable provider-side aliases (latest pointers)
+#   dated_snapshot             — dated snapshot id when the provider exposes one
+#   source_url                 — official doc URL used for verification
+#   last_verified_at           — ISO date the entry was last walked against the source
+#                                (null = never verified; treat as needs-refresh)
+
+schema_version:
+  name: model-catalog
+  version: 1.0.0
+  min_reader: 1.0.0
+
+last_refreshed_at: "2026-04-30"
+next_refresh_due: "2026-05-21"
+
+intelligence_tiers:
+  - low
+  - medium
+  - high
+  - max
+
+# Resolution order within a family follows list order: the first match for
+# (family, intelligence_tier, role) wins. Keep the list ordered preferred-first
+# inside each tier.
+models:
+  - id: claude-opus-4-7
+    provider_family: anthropic
+    intelligence_tier: max
+    roles:
+      - implementer.heavyweight
+      - reviewer.heavyweight
+    reasoning_effort_supported: false
+    default_reasoning_effort: null
+    aliases:
+      - claude-opus-latest
+    dated_snapshot: null
+    source_url: "https://docs.anthropic.com/en/docs/about-claude/models/overview"
+    last_verified_at: "2026-04-30"
+
+  - id: claude-sonnet-4-6
+    provider_family: anthropic
+    intelligence_tier: high
+    roles:
+      - implementer.heavyweight
+      - reviewer.heavyweight
+      - reviewer.fallback
+    reasoning_effort_supported: false
+    default_reasoning_effort: null
+    aliases:
+      - claude-sonnet-latest
+    dated_snapshot: null
+    source_url: "https://docs.anthropic.com/en/docs/about-claude/models/overview"
+    last_verified_at: "2026-04-30"
+
+  - id: claude-haiku-4-5-20251001
+    provider_family: anthropic
+    intelligence_tier: medium
+    roles:
+      - reviewer.fallback
+    reasoning_effort_supported: false
+    default_reasoning_effort: null
+    aliases:
+      - claude-haiku-latest
+      - claude-haiku-4-5
+    dated_snapshot: claude-haiku-4-5-20251001
+    source_url: "https://docs.anthropic.com/en/docs/about-claude/models/overview"
+    last_verified_at: "2026-04-30"
+
+  # OpenAI / Codex entries below are placeholders pending a verification walk
+  # against https://platform.openai.com/docs/models. Mark `last_verified_at`
+  # back to a real date only after refresh confirms the ids are live.
+  - id: gpt-5
+    provider_family: openai
+    intelligence_tier: max
+    roles:
+      - implementer.heavyweight
+      - reviewer.heavyweight
+    reasoning_effort_supported: true
+    default_reasoning_effort: high
+    aliases:
+      - gpt-5-latest
+    dated_snapshot: null
+    source_url: "https://platform.openai.com/docs/models"
+    last_verified_at: null
+
+  - id: gpt-5-codex
+    provider_family: openai
+    intelligence_tier: high
+    roles:
+      - implementer.heavyweight
+      - reviewer.heavyweight
+      - reviewer.fallback
+    reasoning_effort_supported: true
+    default_reasoning_effort: medium
+    aliases: []
+    dated_snapshot: null
+    source_url: "https://platform.openai.com/docs/models"
+    last_verified_at: null

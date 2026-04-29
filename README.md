@@ -124,7 +124,7 @@ scripts/fleet-cleanup.sh [--dry-run|--all]  # soft sweep / full teardown
 scripts/waive-start.sh argus "<reason>" "<sunset_trigger>"  # open a structured pause
 scripts/waive-lift.sh argus                                 # lift the pause; reports merges-skipped count
 scripts/backfill-orphan-debriefs.sh [--apply] [--quiet]     # recover tasks that finished but slipped the master plan
-scripts/pr-headless-review.sh <pr>                          # run no-secret reviewer gate, then merge if non-blocked
+scripts/pr-headless-review.sh <pr> [--impl-host h]          # run no-secret reviewer gate (catalog-driven model pick #322), then merge if non-blocked
 ```
 
 **Minimal-intervention by default.** Chanakya runs end-to-end without stopping for confirmation. The only points where it pauses are: Slack publish, first-time config writes (`--configure-token`, `--configure`), merge conflicts, and `--wait` mode feedback windows.

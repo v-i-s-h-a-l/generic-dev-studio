@@ -1,0 +1,43 @@
+# Reviewer/implementer model policy. Pairs with _shared/schemas/model-catalog.yaml.
+#
+# Selection runs in pure shell + yq via scripts/resolve-reviewer.sh — zero LLM
+# tokens are spent on selection. See _shared/schemas/MODEL-CATALOG.md for the
+# end-to-end flow.
+
+schema_version:
+  name: model-policy
+  version: 1.0.0
+  min_reader: 1.0.0
+
+# Map role tags to default intelligence tiers. The resolver walks the catalog
+# for entries whose `roles` list contains the requested tag and whose
+# `intelligence_tier` matches.
+roles:
+  implementer.heavyweight:
+    tier: high
+  reviewer.heavyweight:
+    tier: high
+  reviewer.fallback:
+    tier: medium
+
+# Reviewer independence. The reviewer host family must differ from the
+# implementation host family by default. When only same-family reviewers are
+# eligible, the resolver escalates the intelligence tier one notch instead of
+# blocking. Hard block fires only when no reviewer host is eligible at all.
+reviewer_independence:
+  default: prefer-different-family
+  same_family_collision: escalate          # medium -> high -> max -> max
+  no_eligible_reviewer: block              # caller must pass --user-approved-bypass
+  preferred_family_order:
+    - anthropic
+    - openai
+    - google
+
+# Reasoning-effort defaults per role. Only consumed for hosts whose catalog
+# entries have `reasoning_effort_supported: true`. The collision floor lifts
+# the effort for any reviewer that ends up running on the implementer's
+# family — high-intelligence-tier model paired with high effort.
+reasoning_effort:
+  reviewer.heavyweight: high
+  reviewer.fallback: medium
+  same_family_collision_floor: high

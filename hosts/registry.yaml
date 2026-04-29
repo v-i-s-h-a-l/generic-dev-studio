@@ -20,6 +20,10 @@
 # status: "adapted" = full adapter (./<host>/ dir + capabilities.yaml + hooks);
 #         "provisional" = registry entry only, no adapter yet — sync creates
 #         symlinks but the host can't dispatch workers until adapted.
+#
+# provider_family: structural grouping for reviewer-independence enforcement.
+# Reviewer family must differ from implementer family by default
+# (_shared/rules/model-policy.yaml). Allowed values: anthropic, openai, google.
 
 claude-code:
   display_name: "Claude Code"
@@ -31,6 +35,7 @@ claude-code:
   capabilities_path: ".claude-plugin/capabilities.yaml"
   global_instructions_path: "~/.claude-personal/CLAUDE.md"
   tool_dialect: claude
+  provider_family: anthropic
   status: adapted
 
 claude-reviewer:
@@ -43,6 +48,7 @@ claude-reviewer:
   capabilities_path: ".claude-reviewer/capabilities.yaml"
   global_instructions_path: "~/.claude-personal/CLAUDE.md"
   tool_dialect: claude
+  provider_family: anthropic
   status: adapted
 
 codex:
@@ -55,6 +61,7 @@ codex:
   capabilities_path: ".codex/capabilities.yaml"
   global_instructions_path: "~/.codex/AGENTS.md"
   tool_dialect: openai
+  provider_family: openai
   status: adapted
 
 codex-reviewer:
@@ -67,6 +74,7 @@ codex-reviewer:
   capabilities_path: ".codex-reviewer/capabilities.yaml"
   global_instructions_path: "~/.codex/AGENTS.md"
   tool_dialect: openai
+  provider_family: openai
   status: adapted
 
 gemini-cli:
@@ -78,6 +86,7 @@ gemini-cli:
   routing_walks_parents: false
   global_instructions_path: "~/.gemini/GEMINI.md"
   tool_dialect: openai
+  provider_family: google
   status: provisional
 
 cursor:
