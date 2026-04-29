@@ -83,8 +83,8 @@ rc=$?
 assert "sweep exits zero" "[ $rc -eq 0 ]"
 assert "stdout keeps two ingestable YAML rows" "[ \$(wc -l < '$OUT' | tr -d ' ') -eq 2 ]"
 assert "stdout rows remain three-column queue items" "awk -F '\t' 'NF != 3 { exit 1 } \$1 !~ /^(task-debrief|direct-debrief|manual-build-check|release)\$/ { exit 1 }' '$OUT'"
-assert "legacy md blind spot is diagnosed" "grep -q 'TEST-debrief.md.*mode=legacy' '$ERR'"
-assert "misrouted inbox debrief is diagnosed" "grep -q 'TEST-debrief.yaml.*location=chanakya-inbox' '$ERR'"
+assert "legacy md blind spot is diagnosed with remediation" "grep -q 'TEST-debrief.md.*mode=legacy.*remediation=archive-or-migrate-to-plans-debriefs-yaml' '$ERR'"
+assert "misrouted inbox debrief is diagnosed with remediation" "grep -q 'TEST-debrief.yaml.*location=chanakya-inbox.*remediation=move-to-plans-debriefs-yaml' '$ERR'"
 assert "stale Apollo deferral is diagnosed" "grep -q 'TEST.yaml.*stale_blocker=true' '$ERR'"
 assert "summary counts all classes" "grep -q '5 items (2 yaml, 1 legacy-md, 1 misrouted, 1 stale-deferred)' '$ERR'"
 

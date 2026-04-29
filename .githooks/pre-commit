@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-commit hook for generic-dev-studio. Seven gates in order:
+# Pre-commit hook for generic-dev-studio. Eight gates in order:
 #   1.  update-surface-manifest.sh — regenerate + auto-stage docs-surface.json.
 #   1b. capability-manifest.sh --regen — regenerate + auto-stage the manifest.
 #   2.  lint-architecture.sh --staged — router/frontmatter/dup/surface checks.
@@ -10,9 +10,11 @@
 #       (#247): writer ownership + lifecycle co-writer enumeration.
 #   2e. lint-mode-pack.sh --staged — mode-pack discipline (MP1–MP4, #227):
 #       budget_tokens enforcement, _shared/* dup detection, router cap.
+#   2f. lint-debrief-writers.sh --staged — block legacy markdown/misrouted
+#       active debrief write paths (#311).
 #   3.  privacy gate — reject if staged diff leaks another project's runtime.
 #
-# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/3.
+# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/3.
 # Gates 1+1b (manifest regens) always run because stale manifests leak
 # downstream.
 
@@ -98,6 +100,17 @@ if [ -x "$SCRIPTS/lint-mode-pack.sh" ]; then
   rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '\npre-commit: mode-pack violations above — see _shared/rules/mode-pack-discipline.md\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2f — debrief writer target linter (#311).
+if [ -x "$SCRIPTS/lint-debrief-writers.sh" ]; then
+  "$SCRIPTS/lint-debrief-writers.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: legacy/misrouted debrief writer found — use plans/debriefs/<id>.yaml via lib-ledger\n' >&2
     printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
     exit 1
   fi
