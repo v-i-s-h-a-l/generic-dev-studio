@@ -1015,6 +1015,12 @@ scripts/backfill-orphan-debriefs.sh --apply   # write missing rows to chanakya-m
 scripts/backfill-orphan-debriefs.sh --apply --quiet  # machine-readable count (used by sweep)</code></pre>
   <p>Runs automatically as Step 0A.1 on every <code>/chanakya sweep</code>. Idempotent — re-runs find nothing if the plan is already up to date. Emits <code>debrief_backfilled</code> per recovery. The sweep summary names the count explicitly: "2 new + 3 orphans back-filled". Closes <a href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/91">#91</a> <a href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/92">#92</a>.</p>
 
+  <h3 style="margin-top: 32px;">Forge latency report</h3>
+  <p>Measure task-flow latency from canonical event logs without weakening review gates. The report ranks measured stages by total time, prints p50/p90 and sample counts, compares end-to-end task duration before/after a cutover, and lists missing timestamp pairs as telemetry gaps.</p>
+  <pre><code>scripts/forge-latency-report.sh --days 14
+scripts/forge-latency-report.sh --project turnip-ios --since 2026-04-01 --cutover 2026-04-28</code></pre>
+  <p>Measured stages use explicit <code>duration_s</code> fields or paired start/end events such as <code>task_dispatched → task_completed</code>, <code>build_check_started → build_check_passed</code>, and <code>review_requested → review_approved</code>. Missing or impossible durations are reported, not counted as zero.</p>
+
   <h3 style="margin-top: 32px;">Achilles base-branch auto-refresh</h3>
   <p>Before handing off to Argus (Step 8.5), Achilles fetches and merges the base branch if the worktree has fallen behind by more than a configurable threshold (default: 2 commits). Prevents stale-merge false blocks from Argus — previously required a manual re-run.</p>
   <pre><code># Invoked automatically by Achilles Step 8.4 — not usually run directly.
