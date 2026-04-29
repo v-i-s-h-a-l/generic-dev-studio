@@ -41,7 +41,7 @@ secret_scope: <str>              # Secret visibility: "inherit-env" | "cwd-only"
 |---|---|
 | `none` | No isolation — full host env inherited. |
 | `host-native` | Host's default sandbox (e.g. Claude Code's built-in permission system). |
-| `workspace-write` | Write access to CWD + `~/.dev-studio/**`; no broader filesystem writes. |
+| `workspace-write` | Write access to CWD + `~/.dev-studio/**`; no broader filesystem writes. The adapter install guide must document how the host materializes that writable root. |
 | `full` | Fully isolated container; no network, no home dir, explicit allow-list only. |
 
 **`secret_scope`** — where secrets are visible inside a worker session:

@@ -1,12 +1,11 @@
 schema_version: 1
 hosts:
   - claude-code
+  - codex
 scope: project
 notes: |
   Studio router is a project-scoped vendor skill — it auto-loads only when
   cwd is inside generic-dev-studio. Installing it globally would cause studio
-  ops to misfire from unrelated projects. Codex compatibility deferred: the
-  router's modes invoke many studio-specific scripts that are bash-driven and
-  portable in principle, but conformance has not been verified end-to-end on
-  Codex; widen `hosts:` to include codex once that work lands (tracked under
-  the skill-distribution arc).
+  ops to misfire from unrelated projects. Codex support is project-scoped via
+  .codex/skills/studio; keep the canonical router under .claude/skills/studio
+  until the host adapter layout grows a host-neutral project-skill root.
