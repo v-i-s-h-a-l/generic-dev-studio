@@ -1,0 +1,14 @@
+# Claude reviewer adapter (Claude Code CLI)
+#
+# Dedicated review profile for headless PR/review gates. This is intentionally
+# separate from .claude-plugin/capabilities.yaml: the normal Claude Code
+# reference adapter is host-native and inherits caller environment/config, while
+# reviewer sessions must be no-prompt, read-only, and receive no inherited
+# GitHub/API token environment from the parent studio session.
+supports_hooks: false
+spawn_command: "claude -p --permission-mode dontAsk --setting-sources project --disable-slash-commands --no-session-persistence --strict-mcp-config --mcp-config {} --tools Read,Grep,Glob"
+block_for_event_strategy: tail
+tool_dialect: claude
+sandbox_profile: read-only
+secret_scope: none
+reviewer_profile: true

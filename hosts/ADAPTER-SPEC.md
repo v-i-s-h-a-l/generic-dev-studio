@@ -73,6 +73,16 @@ secret_scope = none
 
 **Why:** Argus consumes diffs and emits verdicts. It never calls an external API, reads user credentials, or writes to cloud services. Injecting any secret into an Argus session is unnecessary surface — a future prompt-injection in a diff could exfiltrate it.
 
+### PR reviewer profiles (Forge gate — reads PR payloads, emits verdicts)
+
+PR review gates use dedicated reviewer profiles (`reviewer_profile: true`), not
+normal worker/reference adapters. A reviewer profile must declare
+`secret_scope: none`, force no-prompt headless execution, and keep the session
+read-only unless a narrow auto-fix path is explicitly designed later.
+
+Do not make a normal worker profile eligible by relaxing the gate. Add a
+dedicated `<host>-reviewer` adapter with its own manifest and enforcement.
+
 ### Env-scrub at Argus dispatch
 
 `scripts/dispatch-review.sh` enforces the Argus floor at spawn time by env-scrubbing the subprocess. Only PATH/HOME/LANG/USER, the host plugin-root, and explicit task-context vars cross the boundary; `ANTHROPIC_API_KEY`, `GH_TOKEN`/`GITHUB_TOKEN`, and arbitrary inherited env are dropped. The host CLI re-authenticates from its own keychain inside the spawned session.
