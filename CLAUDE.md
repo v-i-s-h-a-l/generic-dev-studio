@@ -100,6 +100,20 @@ If the issue appears in `FORGE-RELIABILITY.md`, update that lookup's `Status` in
 
 When the user asks "what's pending?" / "what's on the list?" / "what's next?" — run `gh issue list` and surface; don't load the issue list speculatively into context.
 
+## Request shaping (non-negotiable)
+
+Every host session in this repo must help sharpen feature, bug-fix, workflow, and planning requests before implementation or capture. Treat user wording as the starting point, not a fixed spec.
+
+When the user proposes or asks for work:
+
+- Suggest improvements when a clearer scope, better acceptance criteria, safer rollout, or simpler implementation path is visible.
+- Redirect the request when it belongs in a different layer, agent, mode, issue, or workflow; explain the routing briefly.
+- Surface meaningful edge cases and adjacent use cases before work starts when they could change the implementation, tests, rollout, or user-facing behavior.
+- For issues and briefs, include the refined shape: goal, impact, before/after behavior, acceptance criteria, edge cases, and non-goals when useful.
+- Apply the same habit to changes to these instructions: improve the prompt itself, not just transcribe it.
+
+Keep this pragmatic. Do not turn tiny edits into ceremony, do not block urgent fixes on speculative polish, and do not expand scope silently. If an improvement is obvious and low-risk, fold it in; if it changes behavior, cost, priority, or runtime risk, surface it before implementation.
+
 ## Auto-apply tiers (reduce user touchpoints)
 
 The studio's own rules and conventions are auto-improvable. Some changes apply silently; some require a quick OK. Default to action; ask only when there's real ambiguity.
