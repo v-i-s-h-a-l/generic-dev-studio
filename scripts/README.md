@@ -131,6 +131,10 @@ scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # 
 # Studio-feedback ingestion (auto-fires via SessionStart hook + Chanakya Step 0F):
 scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
 
+# Studio PR autopilot primitives (#318):
+scripts/pr-reviewer-eligibility.sh codex-reviewer       # no-prompt/no-secret reviewer host preflight
+scripts/pr-merge-finalize.sh <pr> --method squash       # gh PR merge + delete remote branch + fetch/prune
+
 # Chanakya sweep-time detections (Step 0E3, auto-invoked by Chanakya):
 scripts/detect-edits.sh --quiet                         # emits brief_edited + debrief_edited
 

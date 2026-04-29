@@ -1,0 +1,13 @@
+# Codex reviewer adapter (OpenAI Codex CLI, v0.120+)
+#
+# Dedicated review profile for headless PR/review gates. This is intentionally
+# separate from .codex/capabilities.yaml: the normal Codex worker adapter uses
+# cwd-only secrets for Achilles-style implementation, while reviewer sessions
+# must receive no inherited API/GitHub token environment and must not prompt.
+supports_hooks: false
+spawn_command: "codex exec --ignore-user-config --ignore-rules --ephemeral --sandbox read-only --ask-for-approval never"
+block_for_event_strategy: tail
+tool_dialect: openai
+sandbox_profile: read-only
+secret_scope: none
+reviewer_profile: true
