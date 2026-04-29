@@ -22,9 +22,12 @@ timeline
              : v0.6.0 — Host-agnostic workers + skill distribution + Apollo perf-agent
              : v0.7.0 — priority queue + Chanakya intelligence
              : v0.7.1 — dispatch fixes + Codex degraded mode
-    Coming next : Knowledge layer — memory-query + synthesis across debriefs
-                : Lu Ban — a dedicated architect agent for design dialogue
-                : iOS depth — first-class Swift/SwiftUI/UIKit intelligence
+    Coming next : Forge reliability freeze — fix known bugs before new feature arcs
+                : Canonical artifacts — no stranded debriefs or hidden sweep misses
+                : Issue graph hygiene — duplicate, blocked-by, caused-by, urgent triage
+    Deferred : Knowledge layer — memory-query + synthesis across debriefs
+             : Lu Ban — a dedicated architect agent for design dialogue
+             : iOS depth — first-class Swift/SwiftUI/UIKit intelligence
     Long term : External integrations (Crashlytics, Linear, …)
               : Design pipeline — Figma → code with high fidelity
               : Conversational planning from ambient input
