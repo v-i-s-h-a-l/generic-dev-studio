@@ -8,6 +8,24 @@ A multi-session refactor is in progress. Before taking any architectural action,
 
 If the user asks "where were we" or similar, invoke `/resume-plan` — it reads the above and reports.
 
+## Where workflow rules live (hard rule — no exceptions)
+
+**Workflow rules and process enforcement live in the repo, not in assistant memory.** The repo travels — clones to other machines, future contributors, different model harnesses. Memory does not. A rule that exists only in one assistant's memory is a rule that vanishes the moment the user clones the repo elsewhere or switches to another model.
+
+| Where the rule belongs | Examples |
+|---|---|
+| `CLAUDE.md` / `AGENTS.md` (host-routed instructions) | Workflow conventions, enforcement directives, layer-separation rules |
+| `REVIEW.md` | Diff-review rules with tier (block / ask / warn) |
+| `RELEASES.md` / `THEMES.md` | Release procedure, theme taxonomy |
+| `_shared/rules/*.md`, `_shared/standards/*.md` | Cross-agent discipline, lint contracts |
+| `scripts/` + pre-commit hooks (`hooks/`, `~/.githooks/`) | Mechanical enforcement |
+| GitHub issues (label: `enhancement`, `track:*`, `roadmap`) | Tracked work that hasn't shipped yet |
+| Assistant memory (`~/.claude-personal/projects/<hash>/memory/`) | User-specific *context* that genuinely belongs to the user-assistant relationship — preferences, identity hints, prior-session breadcrumbs. **Not workflow rules.** |
+
+**Process rules MUST allow a user-controlled override.** Hard gates that fire without an escape hatch leave the user wedged. The override is the user's lever, not the assistant's — assistants must never bypass on their own initiative. Common patterns: `STUDIO_BYPASS_*=1` env vars, `--bypass-*` flags, explicit `git commit --no-verify` documented as an emergency lever.
+
+**How to apply:** when the user says "remember X" / "from now on do Y" / "always do Z", first ask: is X a fact about *the user* (preference, identity, context) or a *workflow rule*? If workflow, encode it in the relevant repo file above and offer to add a hook or script when mechanical enforcement is the right shape. If pure user context, then memory is fine. When in doubt, default to repo — repo travels, memory doesn't.
+
 ## Worktree protocol (hard rule — no exceptions)
 
 **Never edit the main checkout of this repo directly.** Every session that writes to `generic-dev-studio` must work in a dedicated `git worktree`:
