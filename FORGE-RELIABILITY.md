@@ -9,7 +9,26 @@ This file is intentionally small and hand-maintained. It records the issues we h
 - When closing or superseding an issue listed here, update its `Status` in the same PR or follow-up cleanup commit.
 - When a new reliability bug is filed, add it to **Safety-Floor Queue** if it can strand work, hide artifacts, bypass review, or make status/analytics lie.
 - When a new agent-improvement issue is filed, add it to **Capability-Next Queue** only if it changes how an existing agent reasons, reviews, debugs, routes, or spends tokens.
+- Keep **Up Next** at exactly 10 open tasks in priority order. When a new issue is created during planning and belongs in the next 10, insert it immediately and demote the last row.
+- Refresh **Up Next** automatically when any of the top 3 rows close; that is the point where the list would otherwise have only 7 live tasks after the completed work is removed.
 - Do not add every backlog item. This is a curated control-plane lookup, not a mirror of GitHub Issues.
+
+## Up Next
+
+Curated next 10 for Forge reliability work. This list is the quick lookup; GitHub Issues remains the source of truth for state.
+
+| Rank | Issue | Why Now |
+|---:|---|---|
+| 1 | [#318](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/318) PR merge autopilot with headless reviewer gate | Close the accepted residual-risk wording now that free-private branch protection is unavailable; keep script-path enforcement as the contract. |
+| 2 | [#321](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/321) Add dedicated claude-reviewer adapter for PR review gates | Avoid Codex-only review gates and enable independent reviewer selection. |
+| 3 | [#322](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/322) Add provider model catalog and reviewer model policy | Gives reviewer/worker selection a maintained model source instead of hardcoded stale names. |
+| 4 | [#323](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/323) Improve Chanakya brief quality | Smaller, measurable briefs improve Achilles output, Argus review, and future test generation. |
+| 5 | [#316](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/316) Sweep ingest silently skips lifecycle side effects | Prevents canonical debrief facts from being absorbed without queue/status/review side effects. |
+| 6 | [#315](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/315) Ledger bypass suppresses event emission and sweep hooks | Closes direct artifact paths that make downstream hooks silently no-op. |
+| 7 | [#314](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/314) Canonical event log reconstruction can hide lifecycle windows | Makes event-log loss bounded and recoverable instead of falsely precise. |
+| 8 | [#313](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/313) Argus dispatch fails when host registry is missing | Keeps the review gate available from deployed skills layouts. |
+| 9 | [#195](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/195) Merged task shown as briefed / missing debrief | Repairs status drift where completed work looks pending. |
+| 10 | [#97](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/97) App Store live version lookup must use app-scoped endpoint | Fixes release/status logic that depends on a forbidden endpoint. |
 
 ## Safety-Floor Queue
 
