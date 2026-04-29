@@ -96,6 +96,8 @@ When the user agrees on new work in chat (explicitly: "let's do X", "let's plan 
 
 When work lands on `main` that closes an issue, close the issue with a one-line note pointing at the commit/PR.
 
+If the issue appears in `FORGE-RELIABILITY.md`, update that lookup's `Status` in the same PR or immediate cleanup commit. The file is the curated active-track index; do not let it drift from GitHub.
+
 When the user asks "what's pending?" / "what's on the list?" / "what's next?" — run `gh issue list` and surface; don't load the issue list speculatively into context.
 
 ## Auto-apply tiers (reduce user touchpoints)
