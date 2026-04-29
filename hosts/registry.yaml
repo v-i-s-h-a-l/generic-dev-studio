@@ -45,6 +45,18 @@ codex:
   tool_dialect: openai
   status: adapted
 
+codex-reviewer:
+  display_name: "OpenAI Codex CLI Reviewer"
+  detect_binary: codex
+  global_skill_dir: "~/.codex/skills"
+  project_skill_dir: ".codex/skills"
+  routing_file: "AGENTS.md"
+  routing_walks_parents: false
+  capabilities_path: ".codex-reviewer/capabilities.yaml"
+  global_instructions_path: "~/.codex/AGENTS.md"
+  tool_dialect: openai
+  status: adapted
+
 gemini-cli:
   display_name: "Gemini CLI"
   detect_binary: gemini
