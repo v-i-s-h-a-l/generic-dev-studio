@@ -174,18 +174,68 @@ ensure_dir() {
   fi
 }
 
+resolve_symlink_target() {
+  # $1 = symlink path. Prints an absolute target path, resolving relative
+  # symlinks from the link's containing directory.
+  local link="$1" raw dir base
+  raw=$(readlink "$link") || return 1
+  case "$raw" in
+    /*) printf '%s\n' "$raw" ;;
+    *)
+      dir=$(dirname "$link")
+      base=$(basename "$raw")
+      ( cd "$dir" && cd "$(dirname "$raw")" && printf '%s/%s\n' "$(pwd -P)" "$base" )
+      ;;
+  esac
+}
+
+symlink_points_to() {
+  # $1 = symlink path, $2 = expected absolute target path.
+  [ -L "$1" ] || return 1
+  [ "$(resolve_symlink_target "$1" 2>/dev/null || true)" = "$2" ]
+}
+
+link_target_for() {
+  # $1 = canonical absolute source, $2 = absolute destination. Global host
+  # skill links stay absolute. Project-scoped links inside this repo are
+  # relative so committed .codex/skills links survive worktree cleanup.
+  local src="$1" dst="$2" src_rel dst_dir dst_rel ups n i
+  case "$src:$dst" in
+    "$REPO_ROOT"/*:"$REPO_ROOT"/*)
+      src_rel="${src#"$REPO_ROOT/"}"
+      dst_dir=$(dirname "$dst")
+      dst_rel="${dst_dir#"$REPO_ROOT/"}"
+      if [ "$dst_rel" = "$dst_dir" ] || [ -z "$dst_rel" ]; then
+        printf '%s\n' "$src_rel"
+        return
+      fi
+      n=$(printf '%s\n' "$dst_rel" | awk -F/ '{print NF}')
+      ups=""
+      i=0
+      while [ "$i" -lt "$n" ]; do
+        ups="../$ups"
+        i=$((i + 1))
+      done
+      printf '%s%s\n' "$ups" "$src_rel"
+      ;;
+    *)
+      printf '%s\n' "$src"
+      ;;
+  esac
+}
+
 ensure_link() {
   # $1 = canonical absolute path, $2 = symlink absolute path. Idempotent.
   # Drift-safe: never overwrites a non-symlink or a symlink to an unexpected
   # target.
-  local src="$1" dst="$2" existing
+  local src="$1" dst="$2" existing link_target
   if [ ! -e "$src" ]; then
     printf 'MISSING_CANONICAL:%s (skipping link %s)\n' "$src" "$dst" >&2
     return 1
   fi
   if [ -L "$dst" ]; then
     existing=$(readlink "$dst")
-    [ "$existing" = "$src" ] && return 0
+    symlink_points_to "$dst" "$src" && return 0
     printf 'DRIFT:%s -> %s (expected %s) — leaving in place; reconcile manually\n' \
       "$dst" "$existing" "$src" >&2
     return 1
@@ -197,7 +247,8 @@ ensure_link() {
   if [ "$DRY_RUN" -eq 1 ]; then
     printf '[dry-run] ln -s %s %s\n' "$src" "$dst"
   else
-    ln -s "$src" "$dst"
+    link_target=$(link_target_for "$src" "$dst")
+    ln -s "$link_target" "$dst"
   fi
   return 0
 }
@@ -217,7 +268,7 @@ remove_stale() {
   [ -d "$dir" ] || return 0
   for link in "$dir"/*; do
     [ -L "$link" ] || continue
-    target=$(readlink "$link")
+    target=$(resolve_symlink_target "$link" 2>/dev/null || readlink "$link")
     case "$target" in
       "$REPO_ROOT"/*) : ;;
       *) continue ;;            # foreign symlink; not ours to manage
@@ -277,7 +328,7 @@ audit_host() {
       expected_dir="$skill_dir"
     fi
     target="$expected_dir/$name"
-    if [ ! -L "$target" ] || [ "$(readlink "$target")" != "$REPO_ROOT/$rel" ]; then
+    if ! symlink_points_to "$target" "$REPO_ROOT/$rel"; then
       printf 'AUDIT_MISSING:%s declares host=%s scope=%s but symlink %s missing or wrong\n' \
         "$rel" "$host" "$scope" "$target" >&2
       errors=$((errors + 1))
@@ -286,7 +337,7 @@ audit_host() {
 
   for c in "${COMPANIONS[@]}"; do
     target="$skill_dir/$c"
-    if [ ! -L "$target" ] || [ "$(readlink "$target")" != "$REPO_ROOT/$c" ]; then
+    if ! symlink_points_to "$target" "$REPO_ROOT/$c"; then
       printf 'AUDIT_MISSING_COMPANION:%s missing or wrong target\n' "$target" >&2
       errors=$((errors + 1))
     fi
@@ -300,7 +351,7 @@ audit_host() {
     if [ -n "$_audit_adapter_dir" ] && [ -d "$_audit_adapter_dir" ]; then
       _audit_adapter_name="${_audit_adapter_dir#"$REPO_ROOT/"}"
       target="$skill_dir/$_audit_adapter_name"
-      if [ ! -L "$target" ] || [ "$(readlink "$target")" != "$_audit_adapter_dir" ]; then
+      if ! symlink_points_to "$target" "$_audit_adapter_dir"; then
         printf 'AUDIT_MISSING_ADAPTER:%s adapter dir not deployed at %s\n' "$host" "$target" >&2
         errors=$((errors + 1))
       fi
@@ -309,7 +360,7 @@ audit_host() {
 
   for link in "$skill_dir"/*; do
     [ -L "$link" ] || continue
-    target=$(readlink "$link")
+    target=$(resolve_symlink_target "$link" 2>/dev/null || readlink "$link")
     case "$target" in
       "$REPO_ROOT"/*) : ;;
       *) continue ;;
