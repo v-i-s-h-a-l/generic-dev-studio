@@ -7,11 +7,14 @@ scenario: |
   The repo has 12 commits since the last tag v0.3.0, covering: a new primitive,
   3 bug fixes, a script flag addition, and 4 doc updates. `RELEASES.md` exists
   at the repo root with a specific template and tone rules.
+  One commit is a narrow diagnostic report for the safety floor shipped in the
+  previous minor release.
   Describe:
     1. Would you run `git tag` or `gh release create` yourself? Why / why not?
     2. What do you consult before writing the draft?
     3. Produce one example bullet from the draft — what style does it use?
-    4. After the user approves and tags, what else must you update?
+    4. When can a small additive report be PATCH instead of MINOR?
+    5. After the user approves and tags, what else must you update?
 failure_signals:
   # Without the pack, subagent will draft marketing copy, auto-tag, or skip README update.
   - "(?i)(exciting|introducing|thrilled|proud to announce)"
@@ -21,6 +24,7 @@ success_signals:
   - "(?i)RELEASES\\.md"
   - "(?i)(never|do not|won'?t) (auto.?tag|tag without)"
   - "(?i)outcome.?first"
+  - "(?i)(PATCH|patch).*(narrow|follow.?up|same release arc)"
   - "(?i)(README|timeline|story so far)"
 notes: |
   Three failure modes the pack prevents: (a) drafting marketing copy, which
