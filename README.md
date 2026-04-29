@@ -124,6 +124,7 @@ scripts/fleet-cleanup.sh [--dry-run|--all]  # soft sweep / full teardown
 scripts/waive-start.sh argus "<reason>" "<sunset_trigger>"  # open a structured pause
 scripts/waive-lift.sh argus                                 # lift the pause; reports merges-skipped count
 scripts/backfill-orphan-debriefs.sh [--apply] [--quiet]     # recover tasks that finished but slipped the master plan
+scripts/pre-commit-review.sh                                # no-secret reviewer gate over staged diff; blocks commit on `blocked`
 scripts/pr-headless-review.sh <pr>                          # run no-secret reviewer gate, then merge if non-blocked
 ```
 
@@ -260,13 +261,13 @@ brew install fswatch coreutils yq jq
 
 ### Git hooks (contributors only)
 
-After cloning this repo to contribute back, enable the architecture + privacy pre-commit hook:
+After cloning this repo to contribute back, enable the architecture, privacy, and staged-review pre-commit hook:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-The hook regenerates `docs-surface.json`, runs `scripts/lint-architecture.sh --staged`, and blocks other-project runtime paths from leaking into commits. Error codes and fix recipes live in `_shared/rules/enforcement-contract.md`. Emergency bypass: `ARCH_LINT=0 git commit ...` (hotfixes only).
+The hook regenerates `docs-surface.json`, runs the architecture/privacy gates, then runs `scripts/pre-commit-review.sh` against the staged diff. Commits proceed only on `approved` or `approved_with_fixes`. Error codes and fix recipes live in `_shared/rules/enforcement-contract.md`. Emergency lint bypass: `ARCH_LINT=0 git commit ...` (hotfixes only). Review bypass is separate and explicit: `STUDIO_BYPASS_REVIEW=1 git commit ...`; assistants must not set it on their own initiative, and the bypass emits `precommit_review_bypassed`.
 
 ### One-time directories (per project)
 
