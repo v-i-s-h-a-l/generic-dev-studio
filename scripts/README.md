@@ -133,6 +133,7 @@ scripts/ingest-feedback.sh                              # idempotent; silent no-
 
 # Studio PR autopilot primitives (#318):
 scripts/pr-reviewer-eligibility.sh codex-reviewer       # no-prompt/no-secret reviewer host preflight
+scripts/pr-autopilot.sh <pr> --verdict approved         # post reviewer gate, then merge if non-blocked
 scripts/pr-merge-finalize.sh <pr> --method squash       # gh PR merge + delete remote branch + fetch/prune
 
 # Chanakya sweep-time detections (Step 0E3, auto-invoked by Chanakya):
