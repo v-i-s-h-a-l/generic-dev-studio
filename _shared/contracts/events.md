@@ -86,6 +86,14 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `task_rescued` | Worker moved a task to `rescue/` — either `timeout` (rc=124 from `gtimeout`) or `silent_stuck` (rc=0 with no debrief written). Emitted by `scripts/achilles-worker.sh`. Visible equivalent of the rescue file, so Chanakya can surface + push without polling worker directories. | `reason` (`timeout`\|`silent_stuck`), `timeout_s` (only on timeout), `rc`, `debrief_written` (0\|1), `worker` (`worker-N`) |
 | `self_review_iterated` | Step 5 triggered a fix-and-rerun — a material finding was found, fixed, and the skill stack re-invoked. Only emitted when `iteration >= 2` (i.e. the cap was reached). Paired with `self_review_path` pointing to the written artifact under `plans/self-reviews/`. | `iteration` (always 2 at cap), `converged` (false if material findings remained after the fix), `material_skills` (array of skill names that returned `material`) |
 
+### Studio events
+
+| Event | Emitted when | Typical `data` keys |
+|---|---|---|
+| `precommit_review_passed` | `scripts/pre-commit-review.sh` received `approved` or `approved_with_fixes` for the staged diff. | `verdict`, `review_host`, `branch`, `head`, `patch_id` |
+| `precommit_review_blocked` | `scripts/pre-commit-review.sh` received `blocked` for the staged diff and rejected the commit. | `verdict`, `review_host`, `branch`, `head`, `patch_id` |
+| `precommit_review_bypassed` | User explicitly skipped the staged-diff review gate with `STUDIO_BYPASS_REVIEW=1` or `--bypass-review`. Assistants must not set this bypass on their own initiative. | `verdict` (`bypassed`), `review_host`, `branch`, `head`, `patch_id`, `bypass_source` (`env`\|`flag`) |
+
 ### Argus events
 
 | Event | Emitted when | Typical `data` keys |
