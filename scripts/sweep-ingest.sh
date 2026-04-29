@@ -84,6 +84,49 @@ resolve_task_uuid_by_legacy_id() {
     | xargs -I{} basename {} .yaml 2>/dev/null
 }
 
+event_idem_seen() {
+  local idem="${1:?event_idem_seen <idempotency-key>}"
+  local events_dir
+  events_dir=$(resolve_events_dir_for "$PROJECT" 2>/dev/null) || return 1
+  [ -d "$events_dir" ] || return 1
+  grep -F "\"idempotency_key\":\"$idem\"" "$events_dir"/*.jsonl >/dev/null 2>&1
+}
+
+emit_reconcile_event() {
+  local event="${1:?emit_reconcile_event <event> <task> <data> <subject> <content>}"
+  local task="${2:-}"
+  local data="${3:-{\}}"
+  local subject="${4:-}"
+  local content="${5:-}"
+  [ -n "$subject" ] || subject="$event:${task:-system}"
+
+  local idem
+  idem=$(idem_key chanakya inbox-sweep "$subject" "$event:$content")
+  event_idem_seen "$idem" && return 0
+  emit_event_keyed chanakya inbox-sweep "$event" "$task" "$data" --idem-key "$idem" >/dev/null || true
+}
+
+task_followup_seen() {
+  local debrief_uuid="${1:?task_followup_seen <debrief-id> <index>}"
+  local index="${2:?}"
+  [ -d "$TASKS_DIR" ] || return 1
+  local f
+  for f in "$TASKS_DIR"/*.yaml; do
+    [ -f "$f" ] || continue
+    grep -F "source_debrief: \"$debrief_uuid\"" "$f" >/dev/null 2>&1 || continue
+    grep -F "source_follow_up_index: $index" "$f" >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
+
+argus_infra_reason() {
+  case "$1" in
+    unknown_host|missing_manifest|missing_spawn_command|secret_scope_floor_unmet|mktemp_failed|validator_unavailable|handoff_schema_violation)
+      return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # ---- debrief -------------------------------------------------------------
 ingest_debrief() {
   local argus_exempt=0
@@ -94,9 +137,9 @@ ingest_debrief() {
     esac
   done
 
-  local debrief_uuid="" legacy_task_id="" merge_sha="" task_uuid=""
+  local debrief_uuid="" legacy_task_id="" merge_sha="" task_uuid="" event_task=""
   local argus_status="not-invoked" review_uuid="" follow_ups_count=0
-  local to_state="merged" errors_present="" mode="task"
+  local to_state="merged" errors_present="" mode="task" report_state=""
   local merged_into="" argus_reason="" argus_notes=""
 
   command -v yq >/dev/null 2>&1 || { printf 'ingest_debrief: yq required\n' >&2; return 2; }
@@ -117,11 +160,20 @@ ingest_debrief() {
   [ "$review_uuid" = "null" ] && review_uuid=""
   follow_ups_count=$(yq -r '.follow_ups // [] | length' "$SRC" 2>/dev/null || echo 0)
   mode=$(yq -r '.mode // "task"' "$SRC" 2>/dev/null || echo task)
-  # When errors are present (debrief carries a non-empty errors array or
-  # build_gate: red), route the task to `blocked` instead of `merged`.
+  report_state=$(yq -r '.report_state // "done_with_concerns"' "$SRC" 2>/dev/null || echo "done_with_concerns")
+  [ "$report_state" = "null" ] && report_state="done_with_concerns"
+  case "$report_state" in
+    done|done_with_concerns) to_state="merged" ;;
+    blocked)                to_state="blocked" ;;
+    needs_context)          to_state="blocked" ;;
+    *)                      report_state="done_with_concerns"; to_state="merged" ;;
+  esac
+  # When errors are present, route the task to `blocked` even if an older
+  # debrief omitted report_state.
   errors_present=$(yq -r '.errors // [] | length' "$SRC" 2>/dev/null || echo 0)
   if [ "${errors_present:-0}" -gt 0 ]; then
     to_state="blocked"
+    report_state="blocked"
   fi
 
   # Resolve task UUID when we only have a legacy id (YAML debriefs may carry
@@ -129,6 +181,7 @@ ingest_debrief() {
   if [ -z "$task_uuid" ] && [ -n "$legacy_task_id" ]; then
     task_uuid=$(resolve_task_uuid_by_legacy_id "$legacy_task_id")
   fi
+  event_task="${legacy_task_id:-$task_uuid}"
 
   # Task-side state + link mutations. Direct-debriefs (no task_uuid) skip
   # these — the debrief stands alone per inbox-sweep.md §uniform-ingest.
@@ -145,20 +198,35 @@ ingest_debrief() {
   # Mint follow-up tasks from the debrief's array. For direct-debriefs, pass
   # source_debrief= so the new task can be traced back even without a parent.
   follow_ups_minted=0
+  follow_ups_failed=0
   if [ "${follow_ups_count:-0}" -gt 0 ]; then
     i=0
     while [ "$i" -lt "$follow_ups_count" ]; do
-      title=$(yq -r ".follow_ups[$i] // \"\"" "$SRC" 2>/dev/null | head -c 200)
-      [ -z "$title" ] && { i=$((i+1)); continue; }
-      new_uuid=$(mint_uuidv7)
-      if [ -z "$task_uuid" ] && [ -n "$debrief_uuid" ]; then
-        write_task_artifact "$new_uuid" proposed "$title" \
-          "source_debrief=$debrief_uuid" >/dev/null 2>&1 || true
-      else
-        write_task_artifact "$new_uuid" proposed "$title" \
-          "source_task=${legacy_task_id:-$task_uuid}" >/dev/null 2>&1 || true
+      title=$(yq -r ".follow_ups[$i].title // .follow_ups[$i].summary // .follow_ups[$i].description // .follow_ups[$i] // \"\"" "$SRC" 2>/dev/null | head -c 200)
+      if [ -z "$title" ] || [ "$title" = "null" ]; then
+        follow_ups_failed=$(( follow_ups_failed + 1 ))
+        fail_data=$(printf '{"debrief_id":"%s","follow_up_index":%s,"reason":"follow_up_title_missing"}' \
+          "$(_json_escape "$debrief_uuid")" "$i")
+        emit_reconcile_event follow_up_mint_failed "$event_task" "$fail_data" "${debrief_uuid:-$SRC}" "follow-up:$i:title-missing"
+        i=$((i+1))
+        continue
       fi
-      follow_ups_minted=$(( follow_ups_minted + 1 ))
+      if [ -n "$debrief_uuid" ] && task_followup_seen "$debrief_uuid" "$i"; then
+        i=$(( i + 1 ))
+        continue
+      fi
+      new_uuid=$(mint_uuidv7)
+      if write_task_artifact "$new_uuid" proposed "$title" \
+          "source_debrief=$debrief_uuid" \
+          "source_task=${legacy_task_id:-$task_uuid}" \
+          "source_follow_up_index=$i" >/dev/null 2>&1; then
+        follow_ups_minted=$(( follow_ups_minted + 1 ))
+      else
+        follow_ups_failed=$(( follow_ups_failed + 1 ))
+        fail_data=$(printf '{"debrief_id":"%s","follow_up_index":%s,"reason":"write_task_artifact_failed"}' \
+          "$(_json_escape "$debrief_uuid")" "$i")
+        emit_reconcile_event follow_up_mint_failed "$event_task" "$fail_data" "${debrief_uuid:-$SRC}" "follow-up:$i:failed"
+      fi
       i=$(( i + 1 ))
     done
   fi
@@ -176,10 +244,28 @@ ingest_debrief() {
   # events tail) else the UUID; empty for direct-debriefs per the contract.
   argus_skip_bool="false"
   [ "$argus_status" = "not-invoked" ] && argus_skip_bool="true"
-  data=$(printf '{"follow_ups_minted":%s,"argus_skip_detected":%s,"mode":"%s"}' \
-    "$follow_ups_minted" "$argus_skip_bool" "$mode")
-  event_task="${legacy_task_id:-$task_uuid}"
-  emit_event_keyed chanakya inbox-sweep debrief_ingested "$event_task" "$data" >/dev/null || true
+  data=$(printf '{"follow_ups_minted":%s,"follow_ups_failed":%s,"argus_skip_detected":%s,"mode":"%s","report_state":"%s"}' \
+    "$follow_ups_minted" "$follow_ups_failed" "$argus_skip_bool" "$(_json_escape "$mode")" "$(_json_escape "$report_state")")
+  emit_reconcile_event debrief_ingested "$event_task" "$data" "${debrief_uuid:-$SRC}" "state=ingested;report_state=$report_state"
+
+  if [ -n "$merge_sha" ]; then
+    completed_data=$(printf '{"merge_sha":"%s","source":"debrief_reconcile","debrief_id":"%s"}' \
+      "$(_json_escape "$merge_sha")" "$(_json_escape "$debrief_uuid")")
+    emit_reconcile_event task_completed "$event_task" "$completed_data" "${debrief_uuid:-$SRC}" "task-completed:$merge_sha"
+  fi
+
+  case "$report_state" in
+    done_with_concerns)
+      concern_data=$(printf '{"debrief_id":"%s","report_state":"done_with_concerns","reason":"debrief_report_state"}' \
+        "$(_json_escape "$debrief_uuid")")
+      emit_reconcile_event debrief_concerns "$event_task" "$concern_data" "${debrief_uuid:-$SRC}" "done_with_concerns"
+      ;;
+    needs_context)
+      context_data=$(printf '{"debrief_id":"%s","report_state":"needs_context","reason":"debrief_report_state"}' \
+        "$(_json_escape "$debrief_uuid")")
+      emit_reconcile_event debrief_needs_context "$event_task" "$context_data" "${debrief_uuid:-$SRC}" "needs_context"
+      ;;
+  esac
 
   # review_pending — unless the caller flagged `--argus-exempt` (the mode
   # pack matches the exemption list in prose; we just honor the flag), or a
@@ -192,9 +278,17 @@ ingest_debrief() {
     else
       esc_sha=${merge_sha//\"/\\\"}
       pending_data=$(printf '{"merge_sha":"%s","reason":"argus_skipped_in_debrief"}' "$esc_sha")
-      emit_event_keyed chanakya inbox-sweep review_pending "$event_task" "$pending_data" >/dev/null || true
+      emit_reconcile_event review_pending "$event_task" "$pending_data" "${debrief_uuid:-$SRC}" "review-pending:$merge_sha"
       bump_waive_counter argus 2>/dev/null || true
     fi
+  fi
+
+  if [ "$argus_status" = "not-invoked" ] && argus_infra_reason "$argus_reason"; then
+    gate_data=$(printf '{"stage":"quality","idem_key":"%s","reason":"%s","host":"%s","source":"debrief_reconcile"}' \
+      "$(_json_escape "debrief:${debrief_uuid:-$SRC}:argus_gate_skipped")" \
+      "$(_json_escape "$argus_reason")" \
+      "$(_json_escape "${argus_notes:-unknown}")")
+    emit_reconcile_event argus_gate_skipped "$event_task" "$gate_data" "${debrief_uuid:-$SRC}" "argus-gate-skipped:$argus_reason"
   fi
 
   # Protected-branch ungated-merge audit (#108). Fires iff a debrief records a
@@ -214,7 +308,7 @@ ingest_debrief() {
         esc_mode=${mode//\"/\\\"}
         audit_data=$(printf '{"merge_sha":"%s","merged_into":"%s","mode":"%s","reason":"argus_not_invoked_no_citation"}' \
           "$esc_sha" "$esc_branch" "$esc_mode")
-        emit_event_keyed chanakya inbox-sweep direct_main_ungated_merge "$event_task" "$audit_data" >/dev/null || true
+        emit_reconcile_event direct_main_ungated_merge "$event_task" "$audit_data" "${debrief_uuid:-$SRC}" "ungated:$merged_into:$merge_sha"
         ;;
     esac
   fi
