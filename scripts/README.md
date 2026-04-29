@@ -61,6 +61,7 @@ scripts/achilles-queue.sh clear                # wipe queue (abort scenarios onl
 # Usage analysis (read-only, from this repo — see ANALYSIS.md):
 scripts/analyze-collect.sh --project turnip-ios         # stats dump for a usage-analysis pass
 scripts/analyze-collect.sh --project turnip-ios --since 2026-04-01
+scripts/forge-latency-report.sh --project turnip-ios --days 14   # stage-level task latency + review-gate comparison
 
 # Event log reader (dedupes on producer.agent + idempotency_key; see _shared/contracts/event-emission.md):
 scripts/read-events.sh                                  # current project, deduped

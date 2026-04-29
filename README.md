@@ -125,6 +125,7 @@ scripts/fleet-cleanup.sh [--dry-run|--all]  # soft sweep / full teardown
 scripts/waive-start.sh argus "<reason>" "<sunset_trigger>"  # open a structured pause
 scripts/waive-lift.sh argus                                 # lift the pause; reports merges-skipped count
 scripts/backfill-orphan-debriefs.sh [--apply] [--quiet]     # recover tasks that finished but slipped the master plan
+scripts/forge-latency-report.sh --days 14                   # stage-level Forge task latency from event logs
 scripts/pre-commit-review.sh                                # no-secret reviewer gate over staged diff; blocks commit on `blocked`
 scripts/pr-headless-review.sh <pr>                          # run no-secret reviewer gate, then merge if non-blocked
 ```
@@ -191,6 +192,7 @@ scripts/                # multi-worker fleet (BETA)
   achilles-dispatch.sh  # write task file to least-loaded (or pinned) worker inbox
   achilles-queue.sh     # work-stealing dispatch queue — enqueue/drain/list/depth/clear
   analyze-collect.sh    # mechanical stats for usage-analysis passes (see ANALYSIS.md)
+  forge-latency-report.sh  # stage-level task latency + review-gate comparison from event logs
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   appstore-watch.sh     # polls ASC for pending submission; finalizes draft release + Slack on release
