@@ -19,16 +19,16 @@ Curated next 10 for Forge reliability work. This list is the quick lookup; GitHu
 
 | Rank | Issue | Why Now |
 |---:|---|---|
-| 1 | [#325](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/325) Harden PR autopilot merge method and local cleanup | Fixes the just-observed autopilot cleanup failure and locks in merge-method policy. |
-| 2 | [#318](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/318) PR merge autopilot with headless reviewer gate | Close the accepted residual-risk wording now that free-private branch protection is unavailable; keep script-path enforcement as the contract. |
-| 3 | [#321](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/321) Add dedicated claude-reviewer adapter for PR review gates | Avoid Codex-only review gates and enable independent reviewer selection. |
-| 4 | [#322](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/322) Add provider model catalog and reviewer model policy | Gives reviewer/worker selection a maintained model source instead of hardcoded stale names. |
-| 5 | [#323](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/323) Improve Chanakya brief quality | Smaller, measurable briefs improve Achilles output, Argus review, and future test generation. |
-| 6 | [#316](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/316) Sweep ingest silently skips lifecycle side effects | Prevents canonical debrief facts from being absorbed without queue/status/review side effects. |
-| 7 | [#315](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/315) Ledger bypass suppresses event emission and sweep hooks | Closes direct artifact paths that make downstream hooks silently no-op. |
-| 8 | [#314](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/314) Canonical event log reconstruction can hide lifecycle windows | Makes event-log loss bounded and recoverable instead of falsely precise. |
-| 9 | [#313](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/313) Argus dispatch fails when host registry is missing | Keeps the review gate available from deployed skills layouts. |
-| 10 | [#195](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/195) Merged task shown as briefed / missing debrief | Repairs status drift where completed work looks pending. |
+| 1 | [#318](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/318) PR merge autopilot with headless reviewer gate | Close the accepted residual-risk wording now that free-private branch protection is unavailable; keep script-path enforcement as the contract. |
+| 2 | [#321](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/321) Add dedicated claude-reviewer adapter for PR review gates | Avoid Codex-only review gates and enable independent reviewer selection. |
+| 3 | [#322](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/322) Add provider model catalog and reviewer model policy | Gives reviewer/worker selection a maintained model source instead of hardcoded stale names. |
+| 4 | [#323](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/323) Improve Chanakya brief quality | Smaller, measurable briefs improve Achilles output, Argus review, and future test generation. |
+| 5 | [#315](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/315) Ledger bypass suppresses event emission and sweep hooks | Closes direct artifact paths that make downstream hooks silently no-op. |
+| 6 | [#314](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/314) Canonical event log reconstruction can hide lifecycle windows | Makes event-log loss bounded and recoverable instead of falsely precise. |
+| 7 | [#313](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/313) Argus dispatch fails when host registry is missing | Keeps the review gate available from deployed skills layouts. |
+| 8 | [#195](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/195) Merged task shown as briefed / missing debrief | Repairs status drift where completed work looks pending. |
+| 9 | [#97](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/97) App Store live version lookup must use app-scoped endpoint | Release/status logic must not depend on a forbidden top-level endpoint. |
+| 10 | [#76](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/76) Audit mode-pack dual-write during Phase 2.6 transition | Ensures no active prose or writer still mutates retired legacy surfaces. |
 
 ## Safety-Floor Queue
 
@@ -36,7 +36,7 @@ These remain eligible during the Forge reliability freeze because they prevent s
 
 | Issue | Status | Class | Why It Belongs Here |
 |---|---|---|---|
-| [#316](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/316) Sweep ingest silently skips lifecycle side effects when debrief facts are present but events are missing | Open | Reliability bug | Inbox sweep must reconcile canonical debrief facts into queue drain, review-skip, audit, status, and follow-up signals. |
+| [#316](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/316) Sweep ingest silently skips lifecycle side effects when debrief facts are present but events are missing | Closed | Reliability bug | Inbox sweep must reconcile canonical debrief facts into queue drain, review-skip, audit, status, and follow-up signals. |
 | [#315](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/315) Ledger bypass with non-canonical task IDs suppresses event emission and sweep hooks | Open | Reliability bug | Direct artifact creation can bypass lib-ledger contracts and make downstream hooks silently no-op. |
 | [#314](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/314) Canonical event log reconstruction can hide lifecycle windows from sweeps | Open | Reliability bug | Event-log loss makes sweeps and analytics falsely precise unless gaps are bounded and recoverable. |
 | [#313](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/313) Argus dispatch fails when host registry is missing from deployed skills layout | Open | Reliability bug | Review gate availability depends on host registry deployment and deterministic infra-failure handling. |
@@ -48,7 +48,7 @@ These remain eligible during the Forge reliability freeze because they prevent s
 | [#97](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/97) App Store live version lookup must use app-scoped endpoint | Open | Reliability bug | Release/status logic must not depend on a forbidden top-level endpoint. |
 | [#76](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/76) Audit mode-pack dual-write during Phase 2.6 transition | Open | Reliability bug | Ensures no active prose or writer still mutates retired legacy surfaces. |
 | [#318](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/318) PR merge autopilot with headless reviewer gate | Open | Safety-floor hardening | Makes PR review and merge flow explicit: headless reviewer first, critical blockers stop only that PR, and integration advances only through GitHub PR merge. |
-| [#325](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/325) Harden PR autopilot merge method and local cleanup | Open | Reliability bug | Prevents a successful remote merge from being reported as failed because local cleanup ran from a detached or stale worktree. |
+| [#325](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/325) Harden PR autopilot merge method and local cleanup | Closed | Reliability bug | Prevents a successful remote merge from being reported as failed because local cleanup ran from a detached or stale worktree. |
 
 ## PR Autopilot Policy
 
@@ -61,6 +61,7 @@ Issue [#318](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/318) defin
 - Codex review uses a dedicated `codex-reviewer` adapter/profile with `secret_scope: none`; do not flip the normal Codex worker adapter unless the spawn path enforces the same no-secret boundary.
 - Parent studio sessions MUST post a machine-readable `studio:pr-review-gate` PR comment before merge; `blocked` stops that PR, while `approved` and `approved_with_fixes` permit merge.
 - Merge only through GitHub PR flow; after merge, delete the stale remote branch and refresh local refs with `git fetch --prune`.
+- `--method auto` uses rebase for PRs with fewer than 4 commits, including PRs targeting `main`; larger `main` PRs use merge commits, while non-`main` PRs continue to rebase.
 - Bypass is not interactive and is not implicit: `pr-merge-finalize.sh` refuses ungated PRs unless passed `--bypass-review --user-approved-bypass <github-url>`, and records that bypass on the PR.
 
 ## Capability-Next Queue
