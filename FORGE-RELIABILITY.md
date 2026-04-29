@@ -19,7 +19,7 @@ Curated next 10 for Forge reliability work. This list is the quick lookup; GitHu
 
 | Rank | Issue | Why Now |
 |---:|---|---|
-| 1 | [#321](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/321) Add dedicated claude-reviewer adapter for PR review gates | Avoid Codex-only review gates and enable independent reviewer selection. |
+| 1 | [#347](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/347) Measure Forge task latency after review-gate enforcement | Confirms whether review gates caused a real slowdown and shows which stage to optimize without weakening safety. |
 | 2 | [#322](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/322) Add provider model catalog and reviewer model policy | Gives reviewer/worker selection a maintained model source instead of hardcoded stale names. |
 | 3 | [#323](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/323) Improve Chanakya brief quality | Smaller, measurable briefs improve Achilles output, Argus review, and future test generation. |
 | 4 | [#315](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/315) Ledger bypass suppresses event emission and sweep hooks | Closes direct artifact paths that make downstream hooks silently no-op. |
@@ -37,6 +37,7 @@ These remain eligible during the Forge reliability freeze because they prevent s
 | Issue | Status | Class | Why It Belongs Here |
 |---|---|---|---|
 | [#316](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/316) Sweep ingest silently skips lifecycle side effects when debrief facts are present but events are missing | Closed | Reliability bug | Inbox sweep must reconcile canonical debrief facts into queue drain, review-skip, audit, status, and follow-up signals. |
+| [#347](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/347) Measure Forge task latency after review-gate enforcement | Open | Observability | Review-gate slowdown claims must be measured by stage so optimization targets evidence without weakening the safety floor. |
 | [#315](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/315) Ledger bypass with non-canonical task IDs suppresses event emission and sweep hooks | Open | Reliability bug | Direct artifact creation can bypass lib-ledger contracts and make downstream hooks silently no-op. |
 | [#314](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/314) Canonical event log reconstruction can hide lifecycle windows from sweeps | Open | Reliability bug | Event-log loss makes sweeps and analytics falsely precise unless gaps are bounded and recoverable. |
 | [#313](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/313) Argus dispatch fails when host registry is missing from deployed skills layout | Open | Reliability bug | Review gate availability depends on host registry deployment and deterministic infra-failure handling. |
