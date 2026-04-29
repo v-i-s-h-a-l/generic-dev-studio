@@ -43,7 +43,7 @@ Don't draft without consulting it. If the user invokes this mode without `RELEAS
 Check RELEASES.md's "When to tag" criteria against the commits since last tag.
 
 - **Not crossed** → say so in one sentence; stop. Don't spam a suggestion.
-- **Crossed** → determine the version bump (PATCH for fixes, MINOR for additive/breaking pre-1.0) and continue to Step 4. No separate "should we tag?" prompt — the user already asked for a release.
+- **Crossed** → determine the version bump from RELEASES.md. Use PATCH for fixes and for narrow follow-ups to the current release arc; use MINOR for broader additive or breaking pre-1.0 changes. Continue to Step 4. No separate "should we tag?" prompt — the user already asked for a release.
 
 ## Step 4 — Draft, tag, release, update README (single pass)
 
