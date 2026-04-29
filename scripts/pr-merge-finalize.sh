@@ -154,11 +154,20 @@ if [ "$METHOD" = "auto" ]; then
 fi
 
 printf 'Merging PR via GitHub: %s\n' "$url"
+remote_merge_warning=""
 case "$METHOD" in
-  merge)  gh pr merge "$PR" --merge --delete-branch ;;
-  squash) gh pr merge "$PR" --squash --delete-branch ;;
-  rebase) gh pr merge "$PR" --rebase --delete-branch ;;
+  merge)  merge_cmd=(gh pr merge "$PR" --merge --delete-branch) ;;
+  squash) merge_cmd=(gh pr merge "$PR" --squash --delete-branch) ;;
+  rebase) merge_cmd=(gh pr merge "$PR" --rebase --delete-branch) ;;
 esac
+if ! "${merge_cmd[@]}"; then
+  merged_state=$(gh pr view "$PR" --json state --jq '.state' 2>/dev/null || true)
+  if [ "$merged_state" != "MERGED" ]; then
+    printf 'pr-merge-finalize: GitHub merge failed and PR is not merged (state=%s)\n' "${merged_state:-unknown}" >&2
+    exit 1
+  fi
+  remote_merge_warning="gh_merge_returned_nonzero_after_remote_merge"
+fi
 
 cleanup_failed=0
 cleanup_notes=""
@@ -229,5 +238,6 @@ fi
 printf 'PR_MERGED=1\n'
 printf 'BASE_REF=%s\n' "$base_ref"
 printf 'MERGE_METHOD=%s\n' "$METHOD"
+[ -n "$remote_merge_warning" ] && printf 'REMOTE_MERGE_WARNING=%s\n' "$remote_merge_warning"
 printf 'LOCAL_CLEANUP_FAILED=%s\n' "$cleanup_failed"
 [ -n "$cleanup_notes" ] && printf 'LOCAL_CLEANUP_NOTES=%s\n' "$cleanup_notes"
