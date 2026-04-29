@@ -33,6 +33,18 @@ claude-code:
   tool_dialect: claude
   status: adapted
 
+claude-reviewer:
+  display_name: "Claude Code Reviewer"
+  detect_binary: claude
+  global_skill_dir: "~/.claude-reviewer/skills"
+  project_skill_dir: ".claude-reviewer/skills"
+  routing_file: "CLAUDE.md"
+  routing_walks_parents: true
+  capabilities_path: ".claude-reviewer/capabilities.yaml"
+  global_instructions_path: "~/.claude-personal/CLAUDE.md"
+  tool_dialect: claude
+  status: adapted
+
 codex:
   display_name: "OpenAI Codex CLI"
   detect_binary: codex

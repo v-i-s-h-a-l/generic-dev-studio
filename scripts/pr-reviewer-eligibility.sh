@@ -57,15 +57,58 @@ reviewer_profile=$(yaml_field "$manifest" reviewer_profile)
 [ "$reviewer_profile" = "true" ] || fail not_reviewer_profile "$manifest"
 
 case "$spawn_command" in
-  *"--ask-for-approval never"*|*"--approval-policy never"*|*"-c approval_policy=never"*|*"--config approval_policy=never"*) ;;
+  *"--ask-for-approval never"*|*"--approval-policy never"*|*"-c approval_policy=never"*|*"--config approval_policy=never"*|*"--permission-mode dontAsk"*) ;;
   *) fail prompt_floor_unmet "spawn_command must force no-prompt execution" ;;
 esac
 
 case "$spawn_command" in
   *"--dangerously-bypass-approvals-and-sandbox"*) fail unsafe_spawn_command "dangerous sandbox bypass is forbidden" ;;
+  *"--dangerously-skip-permissions"*) fail unsafe_spawn_command "dangerous permission bypass is forbidden" ;;
 esac
 
 case "$HOST" in
+  claude*|*claude*)
+    # shellcheck disable=SC2206
+    spawn_argv=( $spawn_command )
+    case "$spawn_command" in
+      *" -p "*|*" --print "*) ;;
+      *) fail interactive_spawn_command "Claude reviewer must use -p/--print" ;;
+    esac
+    case "$spawn_command" in
+      *"--setting-sources project"*) ;;
+      *) fail inherited_user_config "Claude reviewer must restrict setting sources to project" ;;
+    esac
+    case "$spawn_command" in
+      *"--disable-slash-commands"*) ;;
+      *) fail inherited_slash_commands "Claude reviewer must disable slash commands" ;;
+    esac
+    case "$spawn_command" in
+      *"--no-session-persistence"*) ;;
+      *) fail persistent_session_state "Claude reviewer must disable session persistence" ;;
+    esac
+    case "$spawn_command" in
+      *"--strict-mcp-config"*) ;;
+      *) fail inherited_mcp_config "Claude reviewer must use strict MCP config" ;;
+    esac
+    tools_value=""
+    i=0
+    while [ "$i" -lt "${#spawn_argv[@]}" ]; do
+      case "${spawn_argv[$i]}" in
+        --tools)
+          i=$((i + 1))
+          tools_value="${spawn_argv[$i]:-}"
+          ;;
+        --tools=*)
+          tools_value="${spawn_argv[$i]#--tools=}"
+          ;;
+      esac
+      i=$((i + 1))
+    done
+    [ "$tools_value" = "Read,Grep,Glob" ] \
+      || fail write_tool_floor_unmet "Claude reviewer tools must exactly equal Read,Grep,Glob"
+    "${spawn_argv[@]}" --help >/dev/null 2>&1 \
+      || fail invalid_spawn_command "Claude reviewer spawn command is not accepted by the installed CLI"
+    ;;
   codex*|*codex*)
     case "$spawn_command" in
       *"--ignore-user-config"* ) ;;
