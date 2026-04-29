@@ -98,7 +98,7 @@ printf '%s\n' "$new_events" | while IFS= read -r line; do
   [ -z "$event" ] && continue
 
   case "$event" in
-    task_completed|brief_failed|merge_conflict|task_awaiting_user|task_rescued)
+    task_completed|debrief_ingested|brief_failed|merge_conflict|task_awaiting_user|task_rescued)
       drain_queue
       ;;
   esac
@@ -171,6 +171,29 @@ printf '%s\n' "$new_events" | while IFS= read -r line; do
         merge_sha=$(printf '%s' "$line" | jq -r '.data.merge_sha // ""' 2>/dev/null)
       fi
       push_append debrief_missing "$task" "merged at ${merge_sha:-<unknown>} with no debrief"
+      ;;
+    review_pending)
+      merge_sha=""
+      if command -v jq >/dev/null 2>&1; then
+        merge_sha=$(printf '%s' "$line" | jq -r '.data.merge_sha // ""' 2>/dev/null)
+      fi
+      push_append review_pending "$task" "merged without Argus${merge_sha:+ at $merge_sha}"
+      ;;
+    direct_main_ungated_merge)
+      merged_into=""
+      if command -v jq >/dev/null 2>&1; then
+        merged_into=$(printf '%s' "$line" | jq -r '.data.merged_into // ""' 2>/dev/null)
+      fi
+      push_append ungated_merge "$task" "merged into protected branch ${merged_into:-<unknown>} without review evidence"
+      ;;
+    debrief_concerns)
+      push_append debrief_concerns "$task" "completed with concerns recorded in debrief"
+      ;;
+    debrief_needs_context)
+      push_append debrief_needs_context "$task" "needs context before redispatch"
+      ;;
+    follow_up_mint_failed)
+      push_append follow_up_mint_failed "$task" "structured follow-up could not be minted"
       ;;
     argus_gate_skipped)
       # Auto-file a GitHub issue for infra-broken skip reasons (#244).
