@@ -81,7 +81,7 @@ $cleanup_paths
 EOF
 }
 
-json=$(gh pr view "$PR" --json number,state,isDraft,mergeable,mergeStateStatus,headRefName,headRefOid,headRepositoryOwner,baseRefName,url) \
+json=$(gh pr view "$PR" --json number,state,isDraft,mergeable,mergeStateStatus,headRefName,headRefOid,headRepositoryOwner,baseRefName,url,commits) \
   || { printf 'pr-merge-finalize: failed to read PR %s\n' "$PR" >&2; exit 1; }
 
 state=$(printf '%s' "$json" | jq -r '.state')
@@ -93,6 +93,7 @@ head_ref=$(printf '%s' "$json" | jq -r '.headRefName')
 url=$(printf '%s' "$json" | jq -r '.url')
 number=$(printf '%s' "$json" | jq -r '.number')
 head_sha=$(printf '%s' "$json" | jq -r '.headRefOid')
+commit_count=$(printf '%s' "$json" | jq -r '.commits | length')
 
 [ "$state" = "OPEN" ] || { printf 'pr-merge-finalize: PR is not open (state=%s)\n' "$state" >&2; exit 1; }
 [ "$is_draft" = "false" ] || { printf 'pr-merge-finalize: PR is draft\n' >&2; exit 1; }
@@ -146,7 +147,9 @@ EOF
 fi
 
 if [ "$METHOD" = "auto" ]; then
-  if [ "$base_ref" = "main" ]; then
+  if [ "$commit_count" -lt 4 ]; then
+    METHOD="rebase"
+  elif [ "$base_ref" = "main" ]; then
     METHOD="merge"
   else
     METHOD="rebase"
@@ -237,7 +240,9 @@ fi
 
 printf 'PR_MERGED=1\n'
 printf 'BASE_REF=%s\n' "$base_ref"
+printf 'PR_COMMITS=%s\n' "$commit_count"
 printf 'MERGE_METHOD=%s\n' "$METHOD"
 [ -n "$remote_merge_warning" ] && printf 'REMOTE_MERGE_WARNING=%s\n' "$remote_merge_warning"
 printf 'LOCAL_CLEANUP_FAILED=%s\n' "$cleanup_failed"
 [ -n "$cleanup_notes" ] && printf 'LOCAL_CLEANUP_NOTES=%s\n' "$cleanup_notes"
+exit 0
