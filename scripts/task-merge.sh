@@ -21,21 +21,18 @@
 # On conflict: leave worktree + DerivedData intact, emit `merge_conflict`,
 # exit 2 — Achilles caller surfaces to the user.
 #
-# Pre-merge guard (#249 Phase 2): refuses to merge if no debrief is staged
-# for this task under `plans/debriefs/`. Closes the silent-merge dark window
-# Phase 1's detector observes after the fact. Override with the env opt-in
-# `STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1` — emits `debrief_missing` with
-# `reason=pre_merge_warn` and proceeds. Without override: emits the same
-# event with `reason=pre_merge_blocked` and exits 4.
+# Pre-merge safety guard (#300): checks build, review, and staged-debrief
+# signals together. One missing signal warns; two or three missing signals
+# block unless `--force` is passed.
 #
 # Usage:
-#   scripts/task-merge.sh <task-id> <worktree> <orig-branch> [merge-message]
+#   scripts/task-merge.sh <task-id> <worktree> <orig-branch> [--force] [merge-message]
 #
 # Exit codes:
 #   0  merged cleanly
 #   2  conflict or other merge failure
 #   3  lock wait exceeded (30 min)
-#   4  no debrief staged (#249) — set STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 to override
+#   4  merge safety gate blocked (#300) — pass --force only for emergencies
 
 set -u
 umask 022
@@ -49,7 +46,23 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 TASK_ID="${1:?usage: task-merge.sh <task-id> <worktree> <orig-branch> [merge-message]}"
 WORKTREE="${2:?worktree required}"
 ORIG_BRANCH="${3:?orig-branch required}"
-MERGE_MSG="${4:-Merge $TASK_ID into $ORIG_BRANCH}"
+shift 3
+FORCE_MERGE=0
+MERGE_MSG=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --force) FORCE_MERGE=1; shift ;;
+    *)
+      if [ -z "$MERGE_MSG" ]; then
+        MERGE_MSG="$1"
+      else
+        MERGE_MSG="$MERGE_MSG $1"
+      fi
+      shift
+      ;;
+  esac
+done
+MERGE_MSG="${MERGE_MSG:-Merge $TASK_ID into $ORIG_BRANCH}"
 
 [ -d "$WORKTREE" ] || { printf 'error: worktree not a directory: %s\n' "$WORKTREE" >&2; exit 2; }
 
@@ -62,6 +75,7 @@ REPO_ROOT=$(git -C "$WORKTREE" rev-parse --path-format=absolute --git-common-dir
 [ -z "$REPO_ROOT" ] && { printf 'error: cannot resolve main repo from worktree %s\n' "$WORKTREE" >&2; exit 2; }
 
 PROJECT=$(basename "$REPO_ROOT")
+export ACHILLES_PROJECT="$PROJECT"
 LOCK_ROOT="$(resolve_runtime_global)/merge-lock"
 LOCK="$LOCK_ROOT/$PROJECT"
 DERIVED=$(resolve_derived_data_for "$TASK_ID")
@@ -78,17 +92,16 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   exit 0
 fi
 
-# ---------- Pre-merge: debrief precondition (#249 Phase 2) ----------
+# ---------- Pre-merge: composite safety gate (#300) ----------
 #
 # Walk plans/debriefs/*.yaml; require an entry whose `legacy_task_id` matches
 # this task and is in the canonical staged state (state == "emitted", or
-# absent — which reads as emitted per inbox-sweep.md back-compat). This is
-# a fail-fast gate run before the lock so a missing-debrief case never
-# blocks other Achilles workers.
+# absent — which reads as emitted per inbox-sweep.md back-compat).
 #
-# Strict by default; override with STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 for
-# genuine emergencies. Both paths emit `debrief_missing` so the inbox-sweep
-# surfacing in /chanakya status stays loud.
+# The debrief check is one of three safety signals. Missing debrief remains
+# loud through `debrief_missing`, but the composite gate decides whether the
+# merge blocks: two or more absent signals block, exactly one absent signal
+# warns and proceeds.
 DEBRIEFS_DIR=$(resolve_debriefs_dir_for "$PROJECT" 2>/dev/null || echo "")
 debrief_staged=0
 if [ -n "$DEBRIEFS_DIR" ] && [ -d "$DEBRIEFS_DIR" ] && command -v yq >/dev/null 2>&1; then
@@ -103,20 +116,72 @@ if [ -n "$DEBRIEFS_DIR" ] && [ -d "$DEBRIEFS_DIR" ] && command -v yq >/dev/null 
   done
 fi
 
-if [ "$debrief_staged" -eq 0 ]; then
-  if [ "${STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF:-0}" = "1" ]; then
-    reason="pre_merge_warn"
-  else
-    reason="pre_merge_blocked"
+events_dir=$(resolve_events_dir_for "$PROJECT" 2>/dev/null || echo "")
+event_log=""
+[ -n "$events_dir" ] && event_log="$events_dir/$(date -u +%Y-%m-%d).jsonl"
+_task_has_event() {
+  local event_pattern="${1:?event pattern required}"
+  [ -n "$event_log" ] && [ -f "$event_log" ] || return 1
+  grep "\"task\":\"$TASK_ID\"" "$event_log" 2>/dev/null \
+    | grep -E "\"event\":\"($event_pattern)\"" >/dev/null 2>&1
+}
+
+merge_safety_check() {
+  local missing="" missing_count=0 missing_json
+  if ! _task_has_event "build_check_passed"; then
+    missing="${missing:+$missing,}build"
+    missing_count=$((missing_count + 1))
   fi
-  data=$(printf '{"reason":"%s","branch":"%s"}' "$reason" "$BRANCH")
-  emit_event_keyed achilles task debrief_missing "$TASK_ID" "$data" >/dev/null 2>&1 || true
-  if [ "$reason" = "pre_merge_blocked" ]; then
-    printf 'error: no debrief staged for %s — run scripts/task-emit-debrief.sh (Step 9) before merge.\n' "$TASK_ID" >&2
-    printf '       set STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 to merge anyway (emergencies only).\n' >&2
-    exit 4
+  if ! _task_has_event "review_approved|review_flagged"; then
+    missing="${missing:+$missing,}review"
+    missing_count=$((missing_count + 1))
   fi
-  printf 'warn: no debrief staged for %s; STUDIO_ALLOW_MERGE_WITHOUT_DEBRIEF=1 set — proceeding.\n' "$TASK_ID" >&2
+  if [ "$debrief_staged" -eq 0 ]; then
+    missing="${missing:+$missing,}debrief"
+    missing_count=$((missing_count + 1))
+  fi
+
+  if [ "$debrief_staged" -eq 0 ]; then
+    local debrief_reason="pre_merge_warn"
+    [ "$missing_count" -ge 2 ] && debrief_reason="pre_merge_blocked"
+    data=$(printf '{"reason":"%s","branch":"%s"}' "$debrief_reason" "$BRANCH")
+    emit_event_keyed achilles task debrief_missing "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  fi
+
+  if [ "$missing_count" -eq 0 ]; then
+    return 0
+  fi
+
+  missing_json=$(printf '%s' "$missing" | awk -F, '{
+    printf "["
+    for (i = 1; i <= NF; i++) {
+      printf "%s\"%s\"", (i == 1 ? "" : ","), $i
+    }
+    printf "]"
+  }')
+  data=$(printf '{"branch":"%s","missing_signals":%s,"signal_count":%s}' "$BRANCH" "$missing_json" "$missing_count")
+  if [ "$missing_count" -ge 2 ]; then
+    if [ "$FORCE_MERGE" -eq 1 ]; then
+      emit_event_keyed achilles task merge_safety_override "$TASK_ID" "$data" >/dev/null 2>&1 || true
+      printf 'warn: merge safety override for %s; missing signals: %s\n' "$TASK_ID" "$missing" >&2
+      return 0
+    fi
+    emit_event_keyed achilles task merge_safety_blocked "$TASK_ID" "$data" >/dev/null 2>&1 || true
+    printf 'error: merge safety blocked for %s; missing signals: %s\n' "$TASK_ID" "$missing" >&2
+    printf '       pass --force only for emergencies after recording the reason externally.\n' >&2
+    return 4
+  fi
+
+  emit_event_keyed achilles task merge_safety_warn "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  printf 'warn: merge safety missing one signal for %s: %s\n' "$TASK_ID" "$missing" >&2
+  return 0
+}
+
+merge_safety_check || exit $?
+
+if [ "${STUDIO_MERGE_SAFETY_ONLY:-0}" = "1" ]; then
+  printf 'MERGE_SAFETY_OK=1\n'
+  exit 0
 fi
 
 # ---------- Acquire lock ----------
@@ -216,9 +281,12 @@ git branch -d "$BRANCH" >/dev/null 2>&1 || {
 # argus_gate_skipped with reason=no_verdict_at_merge so the dark window is
 # loud rather than dark. XS-trivial diffs that legitimately bypass Argus also
 # trip this; readers join with task size to suppress the false positive.
-event_log=$(resolve_event_log 2>/dev/null || echo "")
+events_dir=$(resolve_events_dir_for "$PROJECT" 2>/dev/null || echo "")
+event_log=""
+[ -n "$events_dir" ] && event_log="$events_dir/$(date -u +%Y-%m-%d).jsonl"
 if [ -n "$event_log" ] && [ -f "$event_log" ]; then
-  if ! grep -E "\"task\":\"$TASK_ID\".*\"event\":\"review_(approved|flagged|blocked)\"" "$event_log" >/dev/null 2>&1; then
+  if ! grep "\"task\":\"$TASK_ID\"" "$event_log" 2>/dev/null \
+    | grep -E "\"event\":\"review_(approved|flagged|blocked)\"" >/dev/null 2>&1; then
     skip_data=$(printf '{"reason":"no_verdict_at_merge","branch":"%s","merge_sha":"%s"}' "$BRANCH" "$MERGE_SHA")
     emit_event_keyed argus review argus_gate_skipped "$TASK_ID" "$skip_data" >/dev/null 2>&1 || true
   fi

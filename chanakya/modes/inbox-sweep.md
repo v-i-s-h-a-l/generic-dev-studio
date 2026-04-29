@@ -32,7 +32,7 @@ First `/chanakya` invocation in a session (no `--auto-sweep`): proceed directly 
 
 ## Step 0 — Enumerate + ingest debriefs
 
-Run `scripts/sweep-enumerate-debriefs.sh`. Output is tab-separated `<kind>\t<path>\t<mode>` lines. For each line, invoke `scripts/sweep-ingest.sh <kind> <path> [flags]`.
+Run `scripts/sweep-enumerate-debriefs.sh`. Stdout is tab-separated `<kind>\t<path>\t<mode>` ingestable lines. For each stdout line, invoke `scripts/sweep-ingest.sh <kind> <path> [flags]`. Stderr may also contain diagnostic blind-spot lines (`mode=legacy`, `location=chanakya-inbox`, `stale_blocker=true`, or active Apollo deferred rows) plus a count summary; surface those to the user, but do not pass them to `sweep-ingest.sh`.
 
 ### 0A — Uniform debrief ingest (task + direct-debrief)
 
@@ -152,7 +152,7 @@ Counts to populate:
 
 - `debriefs_ingested` — count of `state: emitted → ingested` transitions in Step 0A.
 - `orphans_backfilled` — always 0 until the YAML-shaped rewrite of Step 0A.1's backfill ships.
-- `legacy_pickups` — count of `mode=legacy` lines from `sweep-enumerate-debriefs.sh` that got ingested in Step 0A (now consistently 0 post-#245 A.4 — kept in the schema for back-compat).
+- `legacy_pickups` — count of stderr diagnostic `mode=legacy` lines from `sweep-enumerate-debriefs.sh`; these are non-ingestable blind spots post-#245 A.4, kept in the summary schema for back-compat and operator visibility.
 - `debriefs_missing` — stdout of `scripts/sweep-detect-missing-debriefs.sh` in Step 0E0 (#249 Phase 1).
 - `events_processed` — rows the event fan-out in Step 0E handled.
 - `reminders_fired` — `feedback_reminder_due` emits in Step 0E2.

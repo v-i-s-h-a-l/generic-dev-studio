@@ -107,10 +107,12 @@ fi
 #
 # Reject commits whose staged diff references another project's runtime path.
 # `~/.dev-studio/<other-project>/` leakage into a public repo is a CLAUDE.md
-# privacy violation. Current project (resolved from git toplevel) is exempt;
-# so is `.runtime/` which is machine-global.
+# privacy violation. Current project (resolved from origin so worktree basenames
+# do not become false project slugs) is exempt; so is `.runtime/`.
 . "$SCRIPTS/lib-paths.sh" 2>/dev/null || true
-CURRENT=$(basename "$REPO_ROOT")
+origin_url=$(git remote get-url origin 2>/dev/null || true)
+CURRENT=$(basename "$origin_url" .git 2>/dev/null || true)
+[ -z "$CURRENT" ] && CURRENT=$(basename "$REPO_ROOT")
 HOME_DS="$HOME/.dev-studio"
 
 # The set of known project slugs under ~/.dev-studio that aren't the current

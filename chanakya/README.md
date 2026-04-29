@@ -226,7 +226,7 @@ Achilles: [reads files, finds the bug, fixes it]
            Added allowsHitTesting(false) to stickers during comparison mode.
            Commit: abc1234."
 
-Achilles: [writes debrief to inbox]
+Achilles: [writes YAML debrief to plans/debriefs/<debrief-id>.yaml]
           "No briefed tasks in the master plan. Want me to look at something else?"
 ```
 
@@ -278,8 +278,8 @@ Achilles: [reads brief — has everything: Figma specs, file paths, patterns]
 
 You:     Looks good.
 
-Achilles: [writes debrief to chanakya-inbox/T001-debrief.md]
-          [marks T001 as done in master plan]
+Achilles: [writes YAML debrief to plans/debriefs/<debrief-id>.yaml]
+          [links the debrief from the task artifact]
 ```
 
 ---
@@ -409,10 +409,10 @@ Achilles: [finds the file, reads the rotation code, fixes the overflow]
           "Fixed. Wrapped angle with .truncatingRemainder(dividingBy: 360).
            Commit: xyz7890."
 
-Achilles: [writes debrief to chanakya-inbox/direct-xyz7890-debrief.md]
+Achilles: [writes direct-mode YAML debrief to plans/debriefs/<debrief-id>.yaml]
 ```
 
-Next time Chanakya runs, it picks up the ad-hoc debrief and logs it in the master plan.
+Next time Chanakya runs, it picks up the direct debrief and ingests the structured artifact.
 
 ---
 
@@ -589,11 +589,9 @@ After a typical feature lifecycle, here's what the file tree looks like:
       T001-tests.md                           # Test cases (written by Achilles)
       T002-format-selection.md
       ...
-    chanakya-inbox/
-      direct-xyz7890-debrief.md               # Unprocessed ad-hoc debrief
-      processed/
-        T001-debrief.md                       # Processed by Chanakya
-        T002-debrief.md
+    debriefs/
+      0190f52a-...yaml                        # Structured Achilles debriefs
+      0190f52b-...yaml
   worktrees/                                  # Per-task isolated checkouts
     T001/                                     # branch achilles/T001 — removed on clean merge
     build-20260415-143200/                    # /achilles build — detached HEAD, retained on red

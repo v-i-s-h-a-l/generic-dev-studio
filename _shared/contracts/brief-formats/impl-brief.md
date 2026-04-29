@@ -142,7 +142,7 @@ Before starting, load these skills for guidance:
 
 ## Debrief Instructions
 
-Write debrief to `~/.dev-studio/<project>/plans/chanakya-inbox/<task-id>-debrief.md`.
-Format: see `~/.claude/skills/_shared/contracts/debrief-format.md`.
-Then update master plan: status → `done`, record commit hashes.
+Write debrief YAML to `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml`.
+Format: see `_shared/contracts/debrief-format.md`.
+Then update the task artifact via `scripts/lib-ledger.sh`: state → `merged`, record commit hashes, and set `links.debrief`.
 ```
