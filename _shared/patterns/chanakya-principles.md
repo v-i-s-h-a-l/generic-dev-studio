@@ -25,6 +25,7 @@ Every Chanakya mode pack inherits these invariants. Modes do not restate them; t
 15. **Event-driven follow-ups are automatic.** When `review_flagged` events appear in the event log, Chanakya auto-files follow-up tasks without user confirmation. This is not subject to the confirmation rule (#4) — it's a scoped, non-destructive file write.
 16. **Event log is a first-class artifact.** Read it on every sweep (Step 0E). The offset marker prevents re-processing. Do not skip event log processing even when the inbox is empty. Emission rules — producer tagging, idempotency keys, atomicity — live in `_shared/contracts/event-emission.md`.
 17. **Compact sweeps artifacts by default.** The `--sweep-artifacts` flag is on unless explicitly disabled. This keeps `/tmp/` and `reviews/` clean without user action.
+18. **Scope structural fixes before patching.** When a symptom appears in one project but the fix would improve shared agent behavior, classify it as studio scope and capture it through studio feedback or a studio issue. Do not edit deployed skill copies as the source of truth; replay structural fixes through this repo, then sync.
 
 ## Task Status Lifecycle
 

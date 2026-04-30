@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # task-worktree-setup.sh — Step 3 of the Achilles task mode.
 #
-# Captures the pre-dispatch ORIG_BRANCH + ORIG_HEAD from the shared main
-# checkout (so the uncommitted working tree stays untouched) and creates the
+# Captures the explicit dispatch base, or falls back to the pre-dispatch
+# ORIG_BRANCH + ORIG_HEAD from the shared main checkout, and creates the
 # isolated worktree at `~/.dev-studio/<project>/worktrees/<task-id>`. Prints
 # eval-able export lines the caller sources — matches argus-setup.sh's
 # contract so downstream steps can pick up PROJECT/ORIG_BRANCH/ORIG_HEAD/
 # WORKTREE without re-forking git.
 #
 # Usage:
-#   eval "$(scripts/task-worktree-setup.sh <task-id> <repo-root>)"
+#   eval "$(scripts/task-worktree-setup.sh <task-id> <repo-root> [base-branch])"
 #
 # Exit codes:
 #   0  worktree created (or simulated under DRY_RUN=1)
@@ -24,6 +24,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 
 TASK_ID="${1:?usage: task-worktree-setup.sh <task-id> <repo-root>}"
 REPO_ROOT="${2:?repo-root required}"
+BASE_BRANCH="${3:-}"
 
 [ -d "$REPO_ROOT/.git" ] || git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1 || {
   printf 'error: %s is not a git repo\n' "$REPO_ROOT" >&2
@@ -32,10 +33,26 @@ REPO_ROOT="${2:?repo-root required}"
 
 PROJECT=$(basename "$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)") \
   || { printf 'error: cannot resolve project slug from %s\n' "$REPO_ROOT" >&2; exit 2; }
-ORIG_BRANCH=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null) \
-  || { printf 'error: git rev-parse --abbrev-ref HEAD failed\n' >&2; exit 2; }
-ORIG_HEAD=$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null) \
-  || { printf 'error: git rev-parse HEAD failed\n' >&2; exit 2; }
+if [ -n "$BASE_BRANCH" ]; then
+  ORIG_BRANCH="$BASE_BRANCH"
+  if ! ORIG_HEAD=$(git -C "$REPO_ROOT" rev-parse "$BASE_BRANCH" 2>/dev/null); then
+    if ! ORIG_HEAD=$(git -C "$REPO_ROOT" rev-parse "origin/$BASE_BRANCH" 2>/dev/null); then
+      printf 'error: dispatch base branch %s not found locally or at origin/%s\n' "$BASE_BRANCH" "$BASE_BRANCH" >&2
+      exit 2
+    fi
+    if [ "${DRY_RUN:-0}" = "1" ]; then
+      printf 'DRY-RUN git branch %s origin/%s\n' "$BASE_BRANCH" "$BASE_BRANCH" >&2
+    elif ! git -C "$REPO_ROOT" branch "$BASE_BRANCH" "origin/$BASE_BRANCH" >/dev/null 2>&1; then
+      printf 'error: dispatch base branch %s exists only at origin/%s, but local branch creation failed\n' "$BASE_BRANCH" "$BASE_BRANCH" >&2
+      exit 2
+    fi
+  fi
+else
+  ORIG_BRANCH=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null) \
+    || { printf 'error: git rev-parse --abbrev-ref HEAD failed\n' >&2; exit 2; }
+  ORIG_HEAD=$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null) \
+    || { printf 'error: git rev-parse HEAD failed\n' >&2; exit 2; }
+fi
 
 WORKTREE="$HOME/.dev-studio/$PROJECT/worktrees/$TASK_ID"
 BRANCH="achilles/$TASK_ID"

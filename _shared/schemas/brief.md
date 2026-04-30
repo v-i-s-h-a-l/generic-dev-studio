@@ -4,11 +4,13 @@ description: YAML shape for Chanakya-authored Achilles briefs under plans/briefs
 type: reference
 ---
 
-# Brief Schema (`brief@3.5.0`)
+# Brief Schema (`brief@3.7.0`)
 
 Per-brief artifact written to `~/.dev-studio/<project>/plans/briefs/<brief-id>.yaml`. Replaces the markdown briefs that previously lived at `plans/chanakya-tasks/<task-id>-<type>.md`. One file per brief; a task may have many briefs across rework cycles (each with a distinct `id`, same `task_id`).
 
 Version 3.6.0 adds `recommended_models`, a task-level best-result and fast-turnaround recommendation pair resolved from `_shared/rules/model-recommendation.md` and `_shared/schemas/model-catalog.yaml`. Additive over 3.5.0; readers on 3.0.0+ ignore unknown fields.
+
+Version 3.7.0 adds optional `base_branch`, a dispatch-time branch base for briefs that must start from a non-current branch. Omit it for normal tasks; `task-worktree-setup.sh` falls back to the operator checkout only when this field is absent.
 
 Version 3.5.0 promotes `legacy_task_id` to a documented field (#296). Previously undocumented and caller-dependent — `task-load-spec.sh` relied on it for brief resolution but hand-authored briefs silently omitted it, breaking Achilles dispatch. Now auto-resolved from the parent task YAML by `write_brief_artifact` when not passed explicitly. `validate-brief.sh` enforces presence when the parent task carries one.
 
@@ -22,9 +24,9 @@ Version 3.1.0 bumped from the 3.x object-envelope form introduced in Phase 2.5 �
 
 ```yaml
 schema_version:
-  # brief@3.6.0
+  # brief@3.7.0
   name: brief
-  version: 3.6.0
+  version: 3.7.0
   min_reader: 3.0.0
   deprecated_at: null
 id: 0190f52a-6e11-7c01-8a77-11a05a9e2b4c        # UUIDv7
@@ -65,6 +67,7 @@ recommended_models:
     model_id: claude-haiku-default
     reasoning_effort: low
   rationale: "Small low-novelty implementation against established patterns."
+base_branch: main                                  # optional; explicit dispatch base when not current checkout
 perf_mode: null                                  # null | memory | thermal | battery. Required when dispatch_agent: apollo.
 evidence:                                        # Required when dispatch_agent: apollo. Null otherwise.
   artifacts:                                     # Pre-captured evidence paths (relative to project root or absolute).
@@ -105,6 +108,7 @@ body: |
 | `reproducer` | string \| null | no | Required when parent task `type == bug`; null otherwise. Plain text or numbered steps. Mirrors `## Steps to Reproduce` in `body`. `scripts/validate-brief.sh` blocks `draft → ready` when both this field is null and the body section is absent (#220 A2-1). |
 | `dispatch_agent` | enum | no | `achilles` \| `apollo`. Default `achilles`. Determines which worker Chanakya dispatches to and whether Argus runs. Set to `apollo` for perf-mode briefs (memory / thermal / battery). |
 | `recommended_models` | object \| null | no | Output of `_shared/rules/model-recommendation.md`: `{best_result, fast_turnaround, rationale}`. Each recommendation carries `tier`, `model_id`, and `reasoning_effort`. Null allowed for pre-3.6.0 briefs; new briefs SHOULD populate it. |
+| `base_branch` | string \| null | no | Explicit branch/ref base for dispatch when the task must start somewhere other than the operator's current checkout. Readers try the local ref, then `origin/<base_branch>`. Null/absent preserves existing checkout-derived behavior. |
 | `perf_mode` | enum \| null | no | `memory` \| `thermal` \| `battery` \| null. MUST be non-null when `dispatch_agent: apollo`; MUST be null otherwise. Selects the Apollo mode pack. |
 | `evidence` | object \| null | no | Required when `dispatch_agent: apollo`; null otherwise. Object: `{artifacts: [paths], capture_plan: string \| null, baseline_ref: string}`. Either `artifacts` is non-empty (pre-captured) OR `capture_plan` describes the auto-capture Apollo will run before recommending a fix. Pre-flights Apollo's strict-9 evidence gate at brief-creation time. |
 | `summary` | string \| null | yes | ≤500 tokens (~385 words; lint via `scripts/lint-brief.sh`). Compact brief slice for cheap reads. Null permitted only for briefs authored before 3.2.0; new briefs MUST populate. |
@@ -134,7 +138,7 @@ Transitions emit `brief_state_changed` per `contracts/events.md`.
 
 ## Out of scope
 
-The schema deliberately omits a base-branch tip SHA field (#264). Brief-write time and dispatch time are minutes-to-hours apart; a SHA captured at write time goes stale before the worktree is set up. Base-stale detection is dispatch-time only — `task_started.base_sha` records the live SHA at Step 2 and `base_refreshed` / `base_refresh_conflict` (Step 8.4) handle drift. Brief writers MUST NOT add a tip SHA to `body` prose either; the brief is the spec, the live tree is the SHA. Enforcement convention only — no schema field to violate.
+The schema deliberately omits a base-branch tip SHA field (#264). Brief-write time and dispatch time are minutes-to-hours apart; a SHA captured at write time goes stale before the worktree is set up. `base_branch` may name a branch/ref, but base-stale detection is dispatch-time only — `task_started.base_sha` records the live SHA at Step 2 and `base_refreshed` / `base_refresh_conflict` (Step 8.4) handle drift. Brief writers MUST NOT add a tip SHA to `body` prose either; the brief is the spec, the live tree is the SHA.
 
 ## Links
 
@@ -157,6 +161,7 @@ Unparseable briefs (malformed YAML preamble, missing task-id) land in `archive/2
 
 | Version | Landed | Changes |
 |---|---|---|
+| 3.7.0 | 2026-04-30 | Added optional `base_branch` for explicit dispatch bases (#374). Additive; `min_reader: 3.0.0`. |
 | 3.6.0 | 2026-04-30 | Added optional `recommended_models` pair for task-level model selection (#65). Additive; `min_reader: 3.0.0`. |
 | 3.5.0 | 2026-04-28 | Promoted `legacy_task_id` to documented field (#296). Auto-resolved by `write_brief_artifact`; `validate-brief.sh` enforces presence. Fixes Achilles dispatch failure on hand-authored briefs. Additive; `min_reader: 3.0.0`. |
 | 3.4.0 | 2026-04-27 | Added `reproducer` field — machine-readable bug reproducer, required when parent task `type: bug` (#220 A2-1). Additive; `min_reader: 3.0.0`. |

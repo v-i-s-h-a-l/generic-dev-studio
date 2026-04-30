@@ -208,6 +208,21 @@ _emit_terminal() {
   rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
 }
 
+classify_remote_failure() {
+  local log="$1"
+  if [ ! -r "$log" ]; then
+    printf 'remote_harness_failure'
+    return 0
+  fi
+  if grep -Eq 'command not found|No such file or directory|cd: .*No such|swift: not found|xcodebuild: not found' "$log"; then
+    printf 'remote_shell_path_failed'
+  elif grep -q 'success marker missing' "$log"; then
+    printf 'remote_success_marker_missing'
+  else
+    printf 'build_invocation_failed'
+  fi
+}
+
 file_count=$(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ')
 start_data=$(printf '{"mode":"swift-test","worktree":"%s","package":"%s","files":%s,"attempt":%s%s}' \
   "$WORKTREE" "$PKG_ROOT" "$file_count" "$ATTEMPT" "$DISPATCH_FIELDS")
@@ -272,16 +287,19 @@ if [ "$HARVESTED" = "1" ]; then
   case "$err_count" in ''|*[!0-9]*) err_count=0 ;; esac
   warn_count=$(grep -cE '(^|: )warning:' "$test_log" 2>/dev/null)
   case "$warn_count" in ''|*[!0-9]*) warn_count=0 ;; esac
-  rm -f "$test_log" 2>/dev/null || true
   GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
   [ "$GATE_DUR_S" -lt 0 ] && GATE_DUR_S=0
   if [ "$TEST_STATUS" -ne 0 ]; then
+    failure_reason=$(classify_remote_failure "$test_log")
+    rm -f "$test_log" 2>/dev/null || true
     data=$(printf '{"mode":"swift-test","node":"%s","errors":%s,"warnings":%s,"package":"%s","attempt":%s,"harvested":true%s}' \
       "$NODE_ID" "$err_count" "$warn_count" "$PKG_ROOT" "$ATTEMPT" "$DISPATCH_FIELDS")
+    data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" '. + {reason:$reason}')
     _emit_terminal build_check_failed "$data"
     gate_announce_done swift-test "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
     exit 2
   fi
+  rm -f "$test_log" 2>/dev/null || true
   data=$(printf '{"mode":"swift-test","node":"%s","warnings":%s,"package":"%s","files":%s,"attempt":%s,"harvested":true%s}' \
     "$NODE_ID" "$warn_count" "$PKG_ROOT" "$file_count" "$ATTEMPT" "$DISPATCH_FIELDS")
   _emit_terminal build_check_passed "$data"
@@ -371,19 +389,25 @@ err_count=$(grep -cE '(^|: )error:' "$test_log" 2>/dev/null)
 case "$err_count" in ''|*[!0-9]*) err_count=0 ;; esac
 warn_count=$(grep -cE '(^|: )warning:' "$test_log" 2>/dev/null)
 case "$warn_count" in ''|*[!0-9]*) warn_count=0 ;; esac
-rm -f "$test_log" 2>/dev/null || true
 
 GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
 [ "$GATE_DUR_S" -lt 0 ] && GATE_DUR_S=0
 
 if [ "$TEST_STATUS" -ne 0 ]; then
+  failure_reason="build_invocation_failed"
+  if ! node_is_self "$NODE_ID"; then
+    failure_reason=$(classify_remote_failure "$test_log")
+  fi
+  rm -f "$test_log" 2>/dev/null || true
   data=$(printf '{"mode":"swift-test","node":"%s","errors":%s,"warnings":%s,"package":"%s","attempt":%s%s}' \
     "$NODE_ID" "$err_count" "$warn_count" "$PKG_ROOT" "$ATTEMPT" "$DISPATCH_FIELDS")
+  data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" '. + {reason:$reason}')
   _emit_terminal build_check_failed "$data"
   gate_announce_done swift-test "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
   exit 2
 fi
 
+rm -f "$test_log" 2>/dev/null || true
 data=$(printf '{"mode":"swift-test","node":"%s","warnings":%s,"package":"%s","files":%s,"attempt":%s%s}' \
   "$NODE_ID" "$warn_count" "$PKG_ROOT" "$file_count" "$ATTEMPT" "$DISPATCH_FIELDS")
 _emit_terminal build_check_passed "$data"

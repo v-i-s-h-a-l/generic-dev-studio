@@ -76,7 +76,7 @@ Exit codes: `0` — dry-run ran to completion; `2` — dry-run surfaced a blocke
 eval "$(scripts/task-load-spec.sh <task-id-or-empty>)"
 ```
 
-Sets `TASK_MODE` (`brief` | `direct`), `BRIEF_PATH`, `BRIEF_UUID`, `SIZE`, `TYPE`, `ACCEPTANCE_JSON`. Resolves the YAML brief at `plans/briefs/<brief-id>.yaml`. Exits 2 with a helpful hint when a non-empty task-id has no brief — surface the message to the user and stop. Exits 5 when the task is in a terminal state (`merged` / `user-verifying` / `verified` / `archived`) — re-dispatch is refused (#263) to prevent duplicate worktrees, second debriefs, and re-runs of release actions in build / push-tf modes. The user may override with `ACHILLES_REOPEN=1` (writes a follow-up debrief on the existing task) or escalate to `/chanakya reopen <task-id>` once the formal reopen lifecycle (#252) lands.
+Sets `TASK_MODE` (`brief` | `direct`), `BRIEF_PATH`, `BRIEF_UUID`, `SIZE`, `TYPE`, `BASE_BRANCH`, `ACCEPTANCE_JSON`. Resolves the YAML brief at `plans/briefs/<brief-id>.yaml`. Exits 2 with a helpful hint when a non-empty task-id has no brief — surface the message to the user and stop. Exits 5 when the task is in a terminal state (`merged` / `user-verifying` / `verified` / `archived`) — re-dispatch is refused (#263) to prevent duplicate worktrees, second debriefs, and re-runs of release actions in build / push-tf modes. Exits 6 when the brief is not `ready`; run the authoring step named in the error, or set `ACHILLES_ALLOW_NON_READY_BRIEF=1` only for intentional recovery. The user may override terminal-state refusal with `ACHILLES_REOPEN=1` (writes a follow-up debrief on the existing task) or escalate to `/chanakya reopen <task-id>` once the formal reopen lifecycle (#252) lands.
 
 Read the brief body at `$BRIEF_PATH` for the narrative context. If the brief lists `## Required Skills`, invocation is MANDATORY — load them before Step 4. Additional skills are routed at Step 4.0 via `_shared/primitives/design-time-skill-routing.md`. If a listed skill is unavailable in the current host, surface via `report_state: needs_context` rather than proceeding without it.
 
@@ -119,10 +119,10 @@ If the worktree is gone (orphan: Achilles crashed without cleanup), the script d
 ### Step 3 — Isolate: branch from a clean slate
 
 ```bash
-eval "$(scripts/task-worktree-setup.sh <task-id> <repo-root>)"
+eval "$(scripts/task-worktree-setup.sh <task-id> <repo-root> "$BASE_BRANCH")"
 ```
 
-Captures `ORIG_BRANCH` + `ORIG_HEAD` from the committed tip (leaves the user's uncommitted work in the main checkout untouched), creates the worktree at `~/.dev-studio/$PROJECT/worktrees/<task-id>` on branch `achilles/<task-id>`, and exports `PROJECT`, `ORIG_BRANCH`, `ORIG_HEAD`, `WORKTREE`. All subsequent work runs inside `$WORKTREE`. Honors `DRY_RUN`.
+Uses the brief's explicit `BASE_BRANCH` when present; otherwise captures `ORIG_BRANCH` + `ORIG_HEAD` from the committed tip (leaves the user's uncommitted work in the main checkout untouched), creates the worktree at `~/.dev-studio/$PROJECT/worktrees/<task-id>` on branch `achilles/<task-id>`, and exports `PROJECT`, `ORIG_BRANCH`, `ORIG_HEAD`, `WORKTREE`. All subsequent work runs inside `$WORKTREE`. Honors `DRY_RUN`.
 
 ### Step 4 — Implement
 
