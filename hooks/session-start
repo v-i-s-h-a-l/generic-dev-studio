@@ -33,6 +33,12 @@ elif [ -n "${CODEX_PLUGIN_ROOT:-}" ]; then
 else
   exit 0
 fi
+SESSION_START_AT=$(date -u +%s)
+SESSION_START_BUDGET_S="${STUDIO_SESSION_START_BUDGET_S:-5}"
+case "$SESSION_START_BUDGET_S" in
+  -[0-9]*|[0-9]*) ;;
+  *) SESSION_START_BUDGET_S=5 ;;
+esac
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
@@ -234,6 +240,27 @@ track_out=$(track_banner 2>/dev/null || true)
 if [ -n "$track_out" ]; then
   ctx="${ctx}${track_out}"
 fi
+
+SESSION_START_DURATION_S=$(( $(date -u +%s) - SESSION_START_AT ))
+SESSION_START_STATUS="completed"
+if [ "$SESSION_START_DURATION_S" -gt "$SESSION_START_BUDGET_S" ]; then
+  SESSION_START_STATUS="budget_exceeded"
+  ctx="${ctx}"$'\n\n'"*SessionStart latency warning: ${SESSION_START_DURATION_S}s exceeded ${SESSION_START_BUDGET_S}s budget.*"
+fi
+
+emit_session_start_timing() {
+  # shellcheck source=../scripts/lib-ledger.sh
+  . "$REPO_ROOT/scripts/lib-ledger.sh" 2>/dev/null || return 0
+  local data
+  data=$(printf '{"host":"%s","status":"%s","duration_s":%s,"budget_s":%s}' \
+    "$(_json_escape "$STUDIO_HOST")" \
+    "$(_json_escape "$SESSION_START_STATUS")" \
+    "$SESSION_START_DURATION_S" \
+    "$SESSION_START_BUDGET_S")
+  emit_event_keyed studio session-start session_start_completed "" "$data" \
+    --idem-key "session-start:$STUDIO_HOST:$SESSION_START_AT" >/dev/null 2>&1 || true
+}
+emit_session_start_timing
 
 # JSON-escape the context (quotes, backslashes, newlines, tabs).
 json_escape() {

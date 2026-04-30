@@ -102,6 +102,7 @@ scripts/sweep-threshold-actions.sh                      # Step 0C — warn@6 fil
 scripts/sweep-janitor.sh all                            # Step 0D — worktrees/feedback-assets/orphans/scaling-alerts (honors DRY_RUN)
 scripts/sweep-process-events.sh                         # Step 0E — event fan-out (drain / push-queue / follow-ups / drift log)
 scripts/sweep-feedback-reminders.sh                     # Step 0E2 — emits feedback_reminder_due for past-due rows
+scripts/lib-sweep-timing.sh                             # best-effort sweep_phase_completed timing helper
 scripts/sweep-adaptive-backoff.sh 1                     # Step 0G — 900→1800→3600→7200 on blank; reset 900 on activity
 scripts/push-queue.sh append --kind review_blocked --task T001 --text "..."   # used by sweep + argus
 

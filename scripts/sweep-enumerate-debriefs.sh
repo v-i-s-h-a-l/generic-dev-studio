@@ -28,11 +28,16 @@ umask 022
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-ledger.sh
+. "$SCRIPT_DIR/lib-ledger.sh"
+# shellcheck source=lib-sweep-timing.sh
+. "$SCRIPT_DIR/lib-sweep-timing.sh"
 
 PROJECT=$(resolve_project 2>/dev/null) || exit 0
 PROJECT_ROOT=$(resolve_project_root_for "$PROJECT")
 PLANS_DIR=$(resolve_plans_dir_for "$PROJECT")
 TASKS_DIR=$(resolve_tasks_dir_for "$PROJECT")
+sweep_timing_start
 
 yaml_count=0
 legacy_md_count=0
@@ -170,4 +175,5 @@ if [ "$diagnostic_count" -gt 0 ]; then
     "$total" "$yaml_count" "$legacy_md_count" "$misrouted_count" "$stale_deferred_count" "$active_deferred_count")"
 fi
 
+sweep_timing_emit enumerate completed "$yaml_count"
 exit 0

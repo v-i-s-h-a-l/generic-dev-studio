@@ -39,6 +39,11 @@ cat > "$events_dir/2026-04-29.jsonl" <<'JSONL'
 {"ts":"2026-04-29T14:00:00Z","agent":"chanakya","event":"task_dispatched","task":"T004","data":{}}
 {"ts":"2026-04-29T14:03:00Z","agent":"achilles","event":"task_started","task":"T004","data":{}}
 {"ts":"2026-04-29T15:10:00Z","agent":"achilles","event":"task_completed","task":"T004","data":{}}
+{"ts":"2026-04-29T16:00:00Z","agent":"studio","event":"pr_autopilot_completed","task":"361","data":{"duration_s":12,"status":"completed"}}
+{"ts":"2026-04-29T16:01:00Z","agent":"studio","event":"pr_merge_finalize_completed","task":"361","data":{"duration_s":18,"status":"completed","cleanup_failed":false}}
+{"ts":"2026-04-29T16:02:00Z","agent":"chanakya","event":"sweep_phase_completed","task":"","data":{"project":"demo","phase":"process-events","status":"completed","item_count":4,"duration_s":7}}
+{"ts":"2026-04-29T16:03:00Z","agent":"chanakya","event":"sweep_phase_completed","task":"","data":{"project":"demo","phase":"feedback-reminders","status":"noop","item_count":0,"duration_s":0}}
+{"ts":"2026-04-29T16:04:00Z","agent":"studio","event":"session_start_completed","task":"","data":{"host":"codex","status":"completed","duration_s":2,"budget_s":5}}
 JSONL
 
 out="$TMPROOT/out"
@@ -76,6 +81,31 @@ grep -q 'post   samples=2' "$out" || {
 }
 grep -q 'pre-commit_review: 1 gap(s)' "$out" || {
   printf 'precommit telemetry gap missing\n' >&2
+  cat "$out" >&2
+  exit 1
+}
+grep -Eq '^pr_autopilot[[:space:]]+1[[:space:]]+12' "$out" || {
+  printf 'pr_autopilot aggregate missing\n' >&2
+  cat "$out" >&2
+  exit 1
+}
+grep -Eq '^pr_merge_finalize[[:space:]]+1[[:space:]]+18' "$out" || {
+  printf 'pr_merge_finalize aggregate missing\n' >&2
+  cat "$out" >&2
+  exit 1
+}
+grep -Eq '^sweep:process-events[[:space:]]+1[[:space:]]+7' "$out" || {
+  printf 'sweep process-events aggregate missing\n' >&2
+  cat "$out" >&2
+  exit 1
+}
+grep -Eq '^sweep:feedback-reminders[[:space:]]+1[[:space:]]+0' "$out" || {
+  printf 'sweep feedback-reminders no-op aggregate missing\n' >&2
+  cat "$out" >&2
+  exit 1
+}
+grep -Eq '^session_start[[:space:]]+1[[:space:]]+2' "$out" || {
+  printf 'session_start aggregate missing\n' >&2
   cat "$out" >&2
   exit 1
 }
