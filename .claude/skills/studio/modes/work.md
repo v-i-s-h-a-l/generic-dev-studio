@@ -1,6 +1,6 @@
 ---
 name: Studio Work Mode
-description: Autonomous issue worker for a parallel track. Claims the next unassigned issue in the track, implements it on the track branch, commits, closes the issue, and loops. Entry point for /studio work <track> or STUDIO_TRACK env var auto-start.
+description: Autonomous issue worker for a parallel track. Claims issues, commits them to the track branch, then opens one final reviewed PR to main with cleanup and summary.
 type: mode-pack
 schema_version: 1
 budget_tokens: 600
@@ -11,11 +11,12 @@ reads:
 writes:
   - track branch commits
   - GH issue state (assign + close)
+  - track PR
 ---
 
 # Mode: Work
 
-Autonomous worker for a named parallel track. Runs a pick → implement → commit → close loop until the track is complete or the user interrupts.
+Autonomous worker for a named parallel track. Runs a pick → shape → implement → commit → close loop on the track branch, then opens one final PR for the whole track and runs the normal studio PR review/automerge/cleanup path.
 
 ## Entry
 
@@ -23,9 +24,13 @@ Triggered by:
 - `/studio work <track>` — explicit invocation
 - `STUDIO_TRACK=<track>` env var at session start (SessionStart hook injects the first directive automatically; subsequent issues loop via this mode)
 
+Without the `work` sub-command, start the host session with `STUDIO_TRACK=<track>` from inside `generic-dev-studio`; the session-start directive enters this mode automatically.
+
 ## Step 1 — Identify track
 
 From the arg or `STUDIO_TRACK` env var. Validate against `TRACKS.md` (branch must exist, label must exist).
+
+Use a dedicated worktree for the track branch. The track branch starts from `main` and accumulates the per-issue commits. Individual issues do not get their own PRs.
 
 ## Step 2 — Claim next issue
 
@@ -38,15 +43,38 @@ The script handles branch checkout, `git pull`, GH assignment, and `Blocked by: 
 
 ## Step 3 — Implement
 
-Read the issue body. It is the full spec — acceptance criteria, scope, files to touch. Implement exactly that scope. No more.
+Read the issue body. It is the full spec only if it has already been shaped well enough to execute.
+
+Before implementing, run a scope-shaping checkpoint:
+
+- If the issue has goal, impact, acceptance criteria, clear before/after behavior, non-goals or equivalent scope boundaries, and no obvious missed edge case, proceed.
+- If the issue appears to be a raw idea that was not shaped through `/studio ingest`, or if the implementation would benefit from a materially better scope, stop before editing and offer a short refined plan for user review.
+- If the refinement changes behavior, cost, priority, runtime risk, ownership, or file ownership, do not proceed until the user approves or redirects.
+- If the issue is small, mechanical, and already clear, do not add ceremony; proceed.
+
+When stopping for shaping, include the command the user can use to capture the refined idea:
+
+```
+/studio ingest "<refined studio-work proposal>"
+```
+
+After the checkpoint passes, implement exactly the approved scope. No more.
 
 **Studio repo work (not iOS):** implement directly — write scripts, edit mode packs, update SKILL.md, add fixtures. Do not spawn Achilles.
 
 **File ownership rule:** only touch files in this track's ownership column in `TRACKS.md`. If an implementation requires a file owned by another track, stop and surface to the user instead of editing it.
 
-## Step 4 — Review gate
+## Step 4 — Per-issue gate
 
-Before committing: if the diff touches any `scripts/*.sh`, `SKILL.md`, or `_shared/*` file, or is >100 lines — walk `REVIEW.md` rules. Auto-fix `block+auto-fix` tier silently. Surface `ask` tier before changing. Note `warn` tier in commit message.
+Individual issues on a track do not open PRs and do not run the headless PR reviewer.
+
+Before committing, still honor local safety gates:
+
+- pre-commit hooks run normally
+- if the diff touches any `scripts/*.sh`, `SKILL.md`, or `_shared/*` file, or is >100 lines, walk `REVIEW.md` rules locally
+- auto-fix `block+auto-fix` tier silently
+- surface `ask` tier before changing
+- note `warn` tier in the commit message
 
 ## Step 5 — Commit
 
@@ -70,20 +98,36 @@ gh issue close <N> --comment "Implemented in $(git rev-parse --short HEAD) on tr
 
 ## Step 7 — Loop
 
-Run `scripts/track-next.sh <track>` again. If exit 0, go to Step 3. If exit 1, track is complete — report and stop.
+Run `scripts/track-next.sh <track>` again. If exit 0, go to Step 3. If exit 1 with `TRACK_COMPLETE`, proceed to Step 8. If exit 1 with `TRACK_BLOCKED`, stop and apply `modes/summary.md`.
 
 Print a one-line checkpoint after each closed issue so the user can interrupt:
 ```
 ✓ #N closed. Picking next issue...
 ```
 
-## Step 8 — Completion report
+## Step 8 — Final track PR
+
+When the track is complete:
+
+1. Rebase the track branch on current `main`.
+2. Open one PR from `track/<name>` to `main`.
+3. Run the normal final review path:
+   - local `REVIEW.md` pass for the final PR diff
+   - `scripts/pr-headless-review.sh <pr> --method auto`
+4. If the review is non-blocked, let the autopilot merge path complete.
+5. Delete the remote track branch, prune refs, and remove the track worktree when the merge is confirmed.
+6. Apply `modes/summary.md`.
+
+Do not merge unreviewed final track work. Do not push directly to `main`.
+
+## Step 9 — Completion report
 
 When the work loop stops for any reason, apply `modes/summary.md` before the final response.
 
 The report must cover:
 
 - issues claimed, closed, skipped, or blocked
+- PR URL, review verdict, merge commit, and cleanup status when a final PR ran
 - branch name and latest commit(s)
 - files or workflow surfaces changed
 - verification commands run, or explicitly not run
@@ -94,9 +138,10 @@ The report must cover:
 ## When to stop without completing
 
 - File ownership conflict (Step 3)
-- Review gate surfaces an `ask`-tier finding (Step 4)
+- Per-issue gate surfaces an `ask`-tier finding (Step 4)
 - Build/test failure that needs user judgment
-- `TRACK_COMPLETE` (Step 7)
+- Scope-shaping checkpoint needs user approval (Step 3)
+- Final PR review blocks the merge (Step 8)
 
 In all cases: report clearly what was done, what was left, and what the user needs to decide.
 

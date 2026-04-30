@@ -327,12 +327,13 @@
 /studio analyze [proj]    # sweep studio-feedback inbox + event logs for &lt;proj&gt;
 /studio summary           # end-of-task/session report: done, changed, verified, next command
 /studio guard "topic"     # has this work been done before?
+/studio work &lt;track&gt;      # run a parallel track, then final reviewed PR + cleanup + summary
 /studio janitor [--yes]   # cross-project sweep of stale artifacts (dry-run by default)
 /studio nodes             # day-2 fleet management — status, add, sync, health, schedule, recheck
 /studio tf-push [--dry-run]  # studio-owned TestFlight / App Store Connect push (live work gated on STUDIO_TF_PUSH_LIVE=1)
 /studio-setup             # onboard THIS machine (--manager / --worker / --dual; no args → interactive manager)
 /studio-help              # open this docs page</code></pre>
-    <p>Most users type <code>/studio</code> and let intent detection pick the mode. Sub-commands above are also available conversationally — "where were we", "any issues with this diff?", "should we tag?" all route correctly.</p>
+    <p>Most users type <code>/studio</code> and let intent detection pick the mode. Sub-commands above are also available conversationally — "where were we", "any issues with this diff?", "should we tag?" all route correctly. For unattended track work without the sub-command, start the session with <code>STUDIO_TRACK=&lt;track&gt;</code>.</p>
   </div>
 </section>
 
@@ -405,6 +406,11 @@
         <code>/studio summary</code>
         <div class="triggers">"safe to end session", "what changed?", "wrap this up"</div>
         <div class="what">Reusable end-of-task/session report. Checks available evidence, separates automated work from user-pending actions, and reports <strong>Done</strong>, <strong>Changed</strong>, <strong>Verified</strong>, <strong>Not Done</strong>, <strong>Next</strong>, and <strong>Safe To End</strong>. Other modes can compose it with <code>+ summary</code>.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio work &lt;track&gt;</code>
+        <div class="triggers"><code>STUDIO_TRACK=&lt;track&gt;</code> at session start</div>
+        <div class="what">Autonomous parallel-track loop. Claims the next issue, checks whether the issue is sufficiently shaped, commits each issue to <code>track/&lt;name&gt;</code> without per-issue PRs, then opens one final PR to <code>main</code>. The final PR runs the local review pass plus <code>scripts/pr-headless-review.sh &lt;pr&gt; --method auto</code>; non-blocked reviews merge through the standard autopilot path, clean up the branch/worktree, and finish with <code>/studio summary</code>.</div>
       </div>
       <div class="mode-card">
         <code>/studio guard "&lt;topic&gt;"</code>

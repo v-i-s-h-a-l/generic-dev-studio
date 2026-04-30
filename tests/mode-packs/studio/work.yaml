@@ -9,8 +9,11 @@ scenario: |
 failure_signals:
   - "track is complete"
 success_signals:
+  - "one PR from `track/<name>` to `main`"
+  - "scripts/pr-headless-review.sh <pr> --method auto"
   - "apply `modes/summary.md`"
   - "issues claimed, closed, skipped, or blocked"
   - "whether it is safe to end the session"
 notes: |
-  Ensures work mode does not stop with only the old one-line checkpoint.
+  Ensures work mode does not stop with only the old one-line checkpoint, and
+  that track completion goes through the final reviewed PR path.
