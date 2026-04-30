@@ -32,6 +32,7 @@ invocation:
     - "update the workers"
     - "are the workers in sync"
     - "/studio work <track>"
+    - "/studio work chain <manifest>"
     - "STUDIO_TRACK=<track>"
     - "/studio tf-push"
     - "/studio tf-push --dry-run"
