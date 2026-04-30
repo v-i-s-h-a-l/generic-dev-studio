@@ -326,6 +326,7 @@ else
   # explicitly so `--package-path` resolves on the remote.
   # shellcheck source=lib-source-sync.sh
   . "$SCRIPT_DIR/lib-source-sync.sh"
+  sourcesync_start_warmup_once "$NODE_ID" "$PROJECT" "$WORKTREE" "" "" ""
   REL_WORKTREE=$(sourcesync_push "$NODE_ID" "$WORKTREE") || {
     printf 'swift-test-gate: source sync to %s failed\n' "$NODE_ID" >&2
     data=$(printf '{"mode":"swift-test","reason":"source_sync_failed","node":"%s","attempt":%s%s}' "$NODE_ID" "$ATTEMPT" "$DISPATCH_FIELDS")

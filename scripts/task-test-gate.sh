@@ -75,6 +75,8 @@ case "$PROJECT_RELPATH" in
     ;;
 esac
 
+PROJECT=$(resolve_project 2>/dev/null || echo unknown)
+
 # Pick a swift-test-tagged node — same role as swift-test-gate.sh asks for.
 # The build gate uses `xcodebuild`; the test gate uses `swift-test`. Both
 # resolve to the same machines today, but the role split keeps future
@@ -276,6 +278,7 @@ else
   # extracted to avoid premature factoring.
   # shellcheck source=lib-source-sync.sh
   . "$SCRIPT_DIR/lib-source-sync.sh"
+  sourcesync_start_warmup_once "$NODE_ID" "$PROJECT" "$WORKTREE" "$SCHEME" "$DESTINATION" "$PROJECT_RELPATH"
   REL_WORKTREE=$(sourcesync_push "$NODE_ID" "$WORKTREE") || {
     printf 'task-test-gate: source sync to %s failed\n' "$NODE_ID" >&2
     data=$(printf '{"node":"%s","reason":"source_sync_failed","attempt":%s%s}' "$NODE_ID" "$ATTEMPT" "$DISPATCH_FIELDS")

@@ -63,6 +63,9 @@
 #       root and rsyncs only those directories back to the matching local
 #       root. Prints retrieved local paths, one per line.
 #
+#   sourcesync_start_warmup_once <node-id> <project> <worktree> [scheme] [destination] [project-relpath]
+#       I/O: launches node-warmup.sh in the background once per session/node.
+#
 # Design notes:
 #   - rsync uses --delete on PUSH so the remote tree is an exact mirror
 #     of the local source. PULL functions never --delete — they
@@ -96,9 +99,29 @@ _sourcesync_now_ms() {
 }
 
 _sourcesync_state_file() {
-  local node_id="${1:?node-id required}" rel="${2:?relative path required}" key
+  local node_id="${1:?node-id required}" rel="${2:?relative path required}" key session_id
   key=$(printf '%s' "$rel" | cksum | awk '{print $1}')
-  printf '%s/source-sync/%s/%s.%s.full\n' "$(resolve_project_root)/.runtime/state" "$node_id" "${STUDIO_SESSION_ID:-${PPID:-$$}}" "$key"
+  session_id="${SOURCE_SYNC_SESSION_ID:-${STUDIO_SESSION_ID:-${PPID:-$$}}}"
+  printf '%s/source-sync/%s/%s.%s.full\n' "$(resolve_project_root)/.runtime/state" "$node_id" "$session_id" "$key"
+}
+
+sourcesync_start_warmup_once() {
+  local node_id="${1:?node-id required}" project="${2:?project required}" worktree="${3:?worktree required}"
+  local scheme="${4:-}" destination="${5:-}" project_relpath="${6:-}" session_id marker_dir marker script_dir
+  node_is_self "$node_id" && return 0
+  session_id="${SOURCE_SYNC_SESSION_ID:-${STUDIO_SESSION_ID:-${PPID:-$$}}}"
+  marker_dir="$(resolve_project_root_for "$project")/.runtime/state/sessions"
+  marker="$marker_dir/source-warmup-${session_id}-${node_id}"
+  mkdir -p "$marker_dir" 2>/dev/null || return 0
+  mkdir "$marker" 2>/dev/null || return 0
+  script_dir=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+  SOURCE_SYNC_SESSION_ID="$session_id" \
+    NODE_WARMUP_WORKTREE="$worktree" \
+    NODE_WARMUP_SCHEME="$scheme" \
+    NODE_WARMUP_DESTINATION="$destination" \
+    NODE_WARMUP_PROJECT_RELPATH="$project_relpath" \
+    nohup "$script_dir/node-warmup.sh" "$node_id" "$project" >/dev/null 2>&1 &
+  printf '%s\n' "$!" >"$marker/pid" 2>/dev/null || true
 }
 
 # sourcesync_relative_to_home <local-path>
