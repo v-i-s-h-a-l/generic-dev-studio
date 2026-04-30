@@ -1,0 +1,22 @@
+# Skill-testing fixture for .claude/skills/studio/modes/summary.md
+# See _shared/primitives/skill-testing.md for schema + authoring rules.
+schema: 1
+pack: .claude/skills/studio/modes/summary.md
+scenario: |
+  A studio task just merged PR #366, closed issues #97 and #362, ran fixture
+  tests, and left one unrelated stash. The user asks: "safe to end session?"
+
+  Produce the final response.
+failure_signals:
+  - "The task is done\\."
+  - "Let me know if"
+success_signals:
+  - "Safe To End"
+  - "Done:"
+  - "Changed:"
+  - "Verified:"
+  - "Not Done:"
+  - "Command:"
+notes: |
+  Catches regressions where the final response becomes a vague prose summary
+  instead of the reusable completion-report shape.

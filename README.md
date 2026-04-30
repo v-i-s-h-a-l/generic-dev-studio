@@ -61,6 +61,8 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /studio release                  # draft release notes per RELEASES.md (never auto-tags)
 /studio ingest                   # capture a single studio-level pattern / rule-tweak proposal
 /studio analyze [<project>]      # sweep studio-feedback inbox + event logs for a project
+/studio summary                  # end-of-task/session report: done, changed, verified, next command
+/studio <mode> ... + summary     # run a studio mode, then finish with the standard report shape
 /studio help                     # open the studio docs page in your browser
 /studio-help                     # slash-command shortcut for /studio help
 /studio nodes                    # day-2 fleet management — status, add, remove, health, sync, schedule

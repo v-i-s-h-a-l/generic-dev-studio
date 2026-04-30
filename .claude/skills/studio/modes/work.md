@@ -7,6 +7,7 @@ budget_tokens: 600
 reads:
   - TRACKS.md
   - scripts/track-next.sh output
+  - .claude/skills/studio/modes/summary.md
 writes:
   - track branch commits
   - GH issue state (assign + close)
@@ -75,6 +76,20 @@ Print a one-line checkpoint after each closed issue so the user can interrupt:
 ```
 ✓ #N closed. Picking next issue...
 ```
+
+## Step 8 — Completion report
+
+When the work loop stops for any reason, apply `modes/summary.md` before the final response.
+
+The report must cover:
+
+- issues claimed, closed, skipped, or blocked
+- branch name and latest commit(s)
+- files or workflow surfaces changed
+- verification commands run, or explicitly not run
+- user-pending decisions separated from automated work
+- the next command to resume the track when applicable
+- whether it is safe to end the session
 
 ## When to stop without completing
 
