@@ -328,6 +328,7 @@
 /studio summary           # end-of-task/session report: done, changed, verified, next command
 /studio guard "topic"     # has this work been done before?
 /studio work &lt;track&gt;      # run a parallel track, then final reviewed PR + cleanup + summary
+/studio work chain chains.yaml  # run issue chains with fresh sessions, reviewed PRs, cleanup
 /studio janitor [--yes]   # cross-project sweep of stale artifacts (dry-run by default)
 /studio nodes             # day-2 fleet management — status, add, sync, health, diagnose, schedule, recheck
 /studio tf-push [--dry-run]  # studio-owned TestFlight / App Store Connect push (live work gated on STUDIO_TF_PUSH_LIVE=1)
@@ -411,6 +412,11 @@
         <code>/studio work &lt;track&gt;</code>
         <div class="triggers"><code>STUDIO_TRACK=&lt;track&gt;</code> at session start</div>
         <div class="what">Autonomous parallel-track loop. Claims the next issue, checks whether the issue is sufficiently shaped, commits each issue to <code>track/&lt;name&gt;</code> without per-issue PRs, then opens one final PR to <code>main</code>. The final PR runs the local review pass plus <code>scripts/pr-headless-review.sh &lt;pr&gt; --method auto</code>; non-blocked reviews merge through the standard autopilot path, clean up the branch/worktree, and finish with <code>/studio summary</code>.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio work chain &lt;manifest.yaml&gt;</code>
+        <div class="triggers">"run these chains end to end", "fresh session per chain"</div>
+        <div class="what">Script-backed chain runner for studio issue work. Each chain starts from latest <code>main</code> into a feature branch; each issue gets its own branch, <code>/tmp</code> worktree, and fresh host session (<code>codex exec</code> by default, configurable per chain). Completed issue branches fast-forward into the chain branch; the final chain PR runs <code>scripts/pr-headless-review.sh &lt;pr&gt; --method auto</code>, merges only through autopilot, then prunes refs and removes worktrees. Dry-run first with <code>scripts/studio-chain-runner.sh chains.yaml --dry-run</code>.</div>
       </div>
       <div class="mode-card">
         <code>/studio guard "&lt;topic&gt;"</code>
