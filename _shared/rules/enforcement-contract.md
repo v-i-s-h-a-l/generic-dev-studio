@@ -56,6 +56,6 @@ Bypass leaves a paper trail: the `ARCH_LINT=0` env is visible in the commit's re
 
 ## Scope
 
-- Pre-commit hook runs the linter with `--staged`, so only files in the commit are evaluated for per-file checks.
-- Cross-file checks (`E_DUP_PROSE`, `E_SURFACE_REMOVED`, `W_CAPABILITY_STALE`) always scan the full tree — duplication, surface-removal, and manifest staleness are not local concerns.
+- Pre-commit hook runs the linter with `--staged`, so only files in the commit are evaluated for per-file checks. Repository-wide audits such as duplicate prose, global fixture debt, and adapter security-floor warnings run through `scripts/lint-architecture.sh --full` unless the staged diff touches their specific surfaces.
+- Cross-file checks stay full-tree in `--full`. In `--staged`, surface-removal still compares against the staged manifest, while duplicate prose, capability staleness, fixture debt, and host-agnostic adapter checks run only when the staged diff touches their relevant surfaces.
 - `_shared/patterns/router-pattern.md` and `_shared/patterns/singleton-invariants.md` are the source of truth for why these rules exist. This file is the operational mapping.

@@ -3,6 +3,7 @@
 #
 # Usage:
 #   scripts/lint-architecture.sh            # lint every matching file (standalone)
+#   scripts/lint-architecture.sh --full     # same as standalone; explicit audit mode
 #   scripts/lint-architecture.sh --staged   # lint only staged files (pre-commit)
 #
 # Exit 0 on pass (warnings allowed on stderr). Exit 1 on any block-tier
@@ -19,21 +20,47 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 . "$SCRIPT_DIR/lib-paths.sh" 2>/dev/null || true
 
 STAGED=0
-if [ "${1:-}" = "--staged" ]; then
-  STAGED=1
-fi
+case "${1:-}" in
+  --staged) STAGED=1 ;;
+  --full|"") ;;
+  *) printf 'usage: lint-architecture.sh [--staged|--full]\n' >&2; exit 2 ;;
+esac
 
 ERRORS=0
 WARNINGS=0
+ERROR_LINES=""
+WARN_LINES=""
 
 emit_error() {
-  printf '%s\n' "$1"
+  ERROR_LINES="${ERROR_LINES}${1}"$'\n'
   ERRORS=$((ERRORS + 1))
 }
 
 emit_warn() {
-  printf '%s\n' "$1" >&2
+  WARN_LINES="${WARN_LINES}${1}"$'\n'
   WARNINGS=$((WARNINGS + 1))
+}
+
+print_findings() {
+  if [ "$ERRORS" -gt 0 ]; then
+    printf 'Architecture errors (%d)\n' "$ERRORS" >&2
+    printf '%s' "$ERROR_LINES" >&2
+  fi
+  if [ "$WARNINGS" -gt 0 ]; then
+    printf 'Architecture warnings (%d)\n' "$WARNINGS" >&2
+    printf '%s' "$WARN_LINES" >&2
+  fi
+  printf 'lint-architecture: %d errors, %d warnings%s\n' \
+    "$ERRORS" "$WARNINGS" "$([ "$STAGED" -eq 1 ] && printf ' (staged)' || printf ' (full)')" >&2
+}
+
+staged_names() {
+  git -C "$REPO_ROOT" diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true
+}
+
+staged_matches() {
+  local pattern="$1"
+  staged_names | grep -E "$pattern" >/dev/null 2>&1
 }
 
 # Resolve the file set to lint. Staged mode intersects the full candidate list
@@ -50,7 +77,7 @@ collect_candidates() {
 
 filter_staged() {
   local staged
-  staged=$(git -C "$REPO_ROOT" diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
+  staged=$(staged_names)
   [ -z "$staged" ] && return 0
   local f rel
   while IFS= read -r f; do
@@ -218,7 +245,16 @@ check_dup_prose() {
   hashes=$(mktemp)
   local file
   # Walk every candidate that exists in the file tree (full set — dup detection
-  # must see every file, not just staged, to spot new/existing duplicates).
+  # must see every file in full mode. In staged mode, only staged SKILL/mode
+  # files are used as duplicate sources; they are still compared against the
+  # full repo below.
+  local source_files
+  if [ "$STAGED" -eq 1 ]; then
+    source_files=$(collect_candidates | filter_staged)
+  else
+    source_files=$(collect_candidates)
+  fi
+  [ -n "$source_files" ] || { rm -f "$tmp" "$hashes"; return 0; }
   while IFS= read -r file; do
     [ -z "$file" ] && continue
     case "$file" in
@@ -246,7 +282,30 @@ check_dup_prose() {
           s=""; for (i=1;i<=10;i++) s = s buf[(NR+i)%10] SEP;
           printf "%s\t%s\n", f, s
       } }' >> "$tmp" 2>/dev/null || true
-  done < <(collect_candidates)
+  done <<< "$source_files"
+  if [ "$STAGED" -eq 1 ]; then
+    while IFS= read -r file; do
+      [ -z "$file" ] && continue
+      if printf '%s\n' "$source_files" | grep -Fxq "$file"; then
+        continue
+      fi
+      case "$file" in
+        */modes/*.md) ;;
+        */SKILL.md)
+          local _agent_dir
+          _agent_dir=$(dirname "$file")
+          [ -d "$_agent_dir/modes" ] || continue
+          ;;
+        *) continue ;;
+      esac
+      prose_only "$file" \
+        | sed '/^[[:space:]]*$/d' \
+        | awk -v f="$file" 'BEGIN { SEP = "\x1f" } { buf[NR%10]=$0; if (NR>=10) {
+            s=""; for (i=1;i<=10;i++) s = s buf[(NR+i)%10] SEP;
+            printf "%s\t%s\n", f, s
+        } }' >> "$tmp" 2>/dev/null || true
+    done < <(collect_candidates)
+  fi
   # Hash each window.
   while IFS=$'\t' read -r file window; do
     [ -z "$window" ] && continue
@@ -332,6 +391,9 @@ check_contract_refs() {
 # any staged modes/*.md file. User regenerates intentionally during analysis
 # sessions — never promoted to block per §4 of PHASE-2-5-PLAN.md.
 check_capability_stale() {
+  if [ "$STAGED" -eq 1 ] && ! staged_matches '(^|/)modes/.*\.md$|(^|/)SKILL\.md$|^scripts/capability-manifest\.sh$'; then
+    return 0
+  fi
   local manifest="$REPO_ROOT/_shared/schemas/capability-manifest.json"
   [ -f "$manifest" ] || return 0
   local manifest_mtime mode_mtime mode_file newest=0
@@ -363,6 +425,10 @@ mtime_secs() {
 check_pack_fixtures() {
   local fixture_root="$REPO_ROOT/tests/mode-packs"
   local pack rel agent mode fixture
+  local pack_source fixture_source
+  if [ "$STAGED" -eq 1 ]; then
+    pack_source=$(collect_candidates | filter_staged | grep -E '(^|/)modes/.*\.md$|(^|/)SKILL\.md$' || true)
+  fi
   # Every pack (modes/*.md + agent SKILL.md post-refactor) → expected fixture.
   while IFS= read -r pack; do
     [ -z "$pack" ] && continue
@@ -381,13 +447,23 @@ check_pack_fixtures() {
       emit_warn "W_MISSING_PACK_FIXTURE:$rel:expected=$fixture | author a fixture per _shared/primitives/skill-testing.md"
     fi
   done < <(
-    find "$REPO_ROOT" -mindepth 3 -maxdepth 3 -type f -path '*/modes/*.md' 2>/dev/null
-    find "$REPO_ROOT" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' 2>/dev/null
+    if [ "$STAGED" -eq 1 ]; then
+      printf '%s\n' "$pack_source"
+    else
+      find "$REPO_ROOT" -mindepth 3 -maxdepth 3 -type f -path '*/modes/*.md' 2>/dev/null
+      find "$REPO_ROOT" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' 2>/dev/null
+    fi
   )
   # Orphan check: every fixture names a pack that must exist.
   [ -d "$fixture_root" ] || return 0
   command -v yq >/dev/null 2>&1 || return 0
   local f pack_rel pack_abs
+  if [ "$STAGED" -eq 1 ]; then
+    fixture_source=$(git -C "$REPO_ROOT" diff --cached --name-only --diff-filter=ACMR 2>/dev/null \
+      | grep -E '^tests/mode-packs/.*\.yaml$' \
+      | sed "s|^|$REPO_ROOT/|" || true)
+    [ -n "$fixture_source" ] || return 0
+  fi
   while IFS= read -r f; do
     [ -z "$f" ] && continue
     pack_rel=$(yq -r '.pack // ""' "$f" 2>/dev/null)
@@ -399,7 +475,13 @@ check_pack_fixtures() {
     if [ ! -f "$pack_abs" ]; then
       emit_error "E_ORPHAN_FIXTURE:${f#"$REPO_ROOT/"}:pack=$pack_rel not found | pack was renamed/removed — update or delete fixture"
     fi
-  done < <(find "$fixture_root" -type f -name '*.yaml' 2>/dev/null)
+  done < <(
+    if [ "$STAGED" -eq 1 ]; then
+      printf '%s\n' "$fixture_source"
+    else
+      find "$fixture_root" -type f -name '*.yaml' 2>/dev/null
+    fi
+  )
 }
 
 # ---------- E_SURFACE_REMOVED ----------
@@ -471,8 +553,11 @@ main() {
     esac
   done <<< "$files"
 
-  # Cross-file checks (always full-set, regardless of --staged).
-  check_dup_prose
+  # Cross-file checks. Staged mode keeps these scoped to relevant staged
+  # surfaces; full mode is the explicit audit path for repository sweeps.
+  if [ "$STAGED" -eq 0 ] || staged_matches '(^|/)modes/.*\.md$|(^|/)SKILL\.md$'; then
+    check_dup_prose
+  fi
   check_surface_removed
   check_capability_stale
   check_pack_fixtures
@@ -480,15 +565,30 @@ main() {
   # Host-agnostic sub-linter. Pass through --staged flag so pre-commit mode
   # applies block-tier prose checks; standalone allows pre-sweep warnings.
   local ha_lint="$SCRIPT_DIR/lint-host-agnostic.sh"
-  if [ -x "$ha_lint" ]; then
+  if [ -x "$ha_lint" ] && { [ "$STAGED" -eq 0 ] || staged_matches '^(achilles|argus|hosts|\.codex|\.claude-plugin)/|^scripts/(lint-host-agnostic|dispatch-review|spawn-worker)\.sh$'; }; then
     local ha_args=()
     [ "$STAGED" -eq 1 ] && ha_args=("--staged")
-    if ! "$ha_lint" ${ha_args[@]+"${ha_args[@]}"} 2>&1; then
-      ERRORS=$((ERRORS + 1))
+    local ha_output ha_rc ha_errors_before
+    ha_errors_before="$ERRORS"
+    ha_output=$("$ha_lint" ${ha_args[@]+"${ha_args[@]}"} 2>&1)
+    ha_rc=$?
+    if [ -n "$ha_output" ]; then
+      while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        case "$line" in
+          *" errors, "*" warnings") ;;
+          E_*) emit_error "$line" ;;
+          W_*) emit_warn "$line" ;;
+          *) emit_warn "$line" ;;
+        esac
+      done <<< "$ha_output"
+    fi
+    if [ "$ha_rc" -ne 0 ] && [ "$ERRORS" -eq "$ha_errors_before" ]; then
+      emit_error "E_HOST_AGNOSTIC:lint-host-agnostic exited $ha_rc without a machine-readable error"
     fi
   fi
 
-  printf '%d errors, %d warnings\n' "$ERRORS" "$WARNINGS" >&2
+  print_findings
   [ "$ERRORS" -eq 0 ]
 }
 
