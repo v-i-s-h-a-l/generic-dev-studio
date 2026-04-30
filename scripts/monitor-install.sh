@@ -9,8 +9,11 @@ set -eu
 umask 022
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+# shellcheck source=lib-paths.sh
+. "$SCRIPT_DIR/lib-paths.sh"
+
 PLIST="$HOME/Library/LaunchAgents/dev.studio.node-monitor.plist"
-LOG_DIR="$HOME/.dev-studio/.runtime/logs"
+LOG_DIR="$(resolve_runtime_global)/logs"
 LABEL="dev.studio.node-monitor"
 
 CHANNEL="${STUDIO_NODE_ALERT_CHANNEL:-notification}"
