@@ -283,6 +283,7 @@ for brief_md in "$LEGACY_TASKS_DIR"/*.md; do
       fi
 
       if ! write_brief_artifact "$brief_uuid" "$task_uuid" "$type" "$size" \
+          "awaiting_user=false" \
           "legacy_task_id=${tid}" "body_file=${brief_md}" 2>&1; then
         printf '  ERROR: write_brief_artifact failed for %s\n' "$tid" >&2
         errors=$((errors + 1))

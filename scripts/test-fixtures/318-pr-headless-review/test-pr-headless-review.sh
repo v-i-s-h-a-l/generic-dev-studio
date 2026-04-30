@@ -95,7 +95,7 @@ assert() {
 out="$TMPROOT/out.txt"
 bash "$ROOT/scripts/pr-headless-review.sh" 123 --review-host codex-reviewer --method auto > "$out" 2>"$out.err"
 rc=$?
-EVENT_LOG=$(find "$HOME/.dev-studio" -type f -name '2026-04-30.jsonl' | head -1)
+EVENT_LOG=$(find "$HOME/.dev-studio" -type f -path '*/events/2026-04-30.jsonl' | head -1)
 
 assert "headless review exits zero" "[ '$rc' -eq 0 ]"
 assert "review host reported" "grep -q 'PR_REVIEW_HOST=codex-reviewer' '$out'"

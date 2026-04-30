@@ -158,7 +158,12 @@ BODY_FILE="$PROJECT_ROOT/.runtime/tmp/brief-body-<LEGACY_ID>.md"
 # Then:
 
 BRIEF_UUID=$(mint_uuidv7)
+# Mint as draft for the lint+transition flow (default authoring path).
+# Pass `awaiting_user=true` instead if the brief intentionally ships with
+# `## Open questions` / `## Decisions pending` for the user to resolve;
+# pass `state=ready` to skip draft entirely when the brief is final at mint.
 write_brief_artifact "$BRIEF_UUID" "<parent-task-uuid>" "<type>" "<size>" \
+  awaiting_user=false \
   legacy_task_id=<T-number> \
   slug=<short-kebab-slug> \
   summary="<one-sentence change>. <one-sentence why>. <one-sentence key constraint>." \
@@ -189,7 +194,7 @@ emit_event_keyed chanakya brief brief_dispatched "$BRIEF_UUID" \
 
 The helper special-cases `body_file=` (and `body=` for inline) — the YAML emits `body: |` block-scalar. Do not hand-write the YAML via the Write tool; the helper owns schema + write + event + index-rebuild as a unit.
 
-State transitions follow `_shared/state-machines/brief-lifecycle.md`: `write_brief_artifact` leaves the brief in `draft`; `transition_brief_state … ready` marks it claimable. Dispatch (`ready → dispatched`) happens when Achilles claims.
+State transitions follow `_shared/state-machines/brief-lifecycle.md`. `write_brief_artifact` requires explicit mint intent — pass `awaiting_user=false` (default authoring path: brief lands as `draft`, caller transitions to `ready` after lint), `awaiting_user=true` + `## Open questions` body section (when the brief intentionally ships with author-resolvable decisions; fires `brief_awaiting_user` for sweep surface), or `state=ready` (atomic flows that skip the draft phase entirely). Calls without one of these are refused.
 
 ### 6A — Implementation brief (Type: feature | bugfix | refactor | direct)
 
