@@ -11,10 +11,11 @@ type: reference
 Load the bot token once before any Slack API calls:
 
 ```bash
-SLACK_BOT_TOKEN=$(cat ~/.claude/secrets/slack-bot-token)
+export STUDIO_RELEASE_PROJECT="<project>"
+SLACK_BOT_TOKEN=$(cat ~/.dev-studio/${STUDIO_RELEASE_PROJECT}/secrets/slack-bot-token)
 ```
 
-The token file is stored out-of-repo at `~/.claude/secrets/slack-bot-token` (chmod 600). If the file is missing, halt and ask the user to run `/chanakya sync-slack --configure-token`.
+The token file is stored out-of-repo at `~/.dev-studio/<project>/secrets/slack-bot-token` (chmod 600). Scripts resolve `<project>` through `scripts/lib-release-config.sh`; set `STUDIO_RELEASE_PROJECT` when running from the studio repo for another project. If the file is missing, halt and configure the project-scoped secret.
 
 ## chat.postMessage Pattern
 

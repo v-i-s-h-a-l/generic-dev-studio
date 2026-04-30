@@ -17,10 +17,9 @@ type: reference
 > **Why the worktree-relative form (#238).** This repo has multiple `Turnip.xcodeproj` directories (`zaps-app/`, `turnip-aap/`, the root-level stub) — `xcodebuild` without `-project` auto-picks the first one it finds at the worktree root, which is the stub (no `project.pbxproj`), and bails before scheme resolution. Achilles + the gate scripts pass this relpath to xcodebuild's `-project` flag so the canonical project is pinned regardless of cwd. Constant across all worktrees of this repo.
 
 ## App Store Connect
-- Key ID: `WJQ6D76K8R`
-- Issuer ID: `1fa9f26b-7b13-459a-9225-1ca8d9c51fca`
-- Key file: `~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8`
-- App ID: `6502945736`
+- Runtime config: `~/.dev-studio/<project>/config/release.env`
+- Key file: `~/.dev-studio/<project>/secrets/appstoreconnect/AuthKey_<key-id>.p8`
+- App ID: configured as `STUDIO_TF_APP_ID`
 - Bundle ID: `gg.zaps.ios`
 
 ## Crashlytics

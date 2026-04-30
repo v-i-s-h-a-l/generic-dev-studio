@@ -116,12 +116,18 @@ fi
 exec "$REAL_GIT" "\$@"
 SH
 chmod +x "$TMPHOME/bin/git"
+printf 'fixture-key\n' > "$TMPHOME/AuthKey_preflight_fixture.p8"
 if PATH="$TMPHOME/bin:$PATH" \
     STUDIO_TF_PUSH_LIVE=1 \
     STUDIO_TF_PUSH_SKIP_NODE_PICK=1 \
+    STUDIO_TF_SLACK_DEFERRED=1 \
     STUDIO_RELEASE_TAG="release-fixture-362" \
     STUDIO_TF_PROJECT_ROOT="$PROJECT" \
     STUDIO_TF_PBXPROJ="$PBX" \
+    STUDIO_TF_APP_ID="fixture-app" \
+    STUDIO_TF_ASC_KEY_ID="fixture-key" \
+    STUDIO_TF_ASC_ISSUER_ID="fixture-issuer" \
+    STUDIO_TF_ASC_KEY_PATH="$TMPHOME/AuthKey_preflight_fixture.p8" \
     "$REPO/scripts/studio-tf-push.sh" push >"$TMPHOME/preflight.out" 2>&1; then
   echo "FAIL: failed push preflight should halt"; exit 1
 fi
@@ -175,6 +181,9 @@ if PATH="$TMPHOME/bin:$PATH" \
     STUDIO_RELEASE_TAG="release-fixture-97" \
     STUDIO_TF_PROJECT_ROOT="$PROJECT" \
     STUDIO_TF_PBXPROJ="$PBX" \
+    STUDIO_TF_APP_ID="fixture-app" \
+    STUDIO_TF_ASC_KEY_ID="fixture-key" \
+    STUDIO_TF_ASC_ISSUER_ID="fixture-issuer" \
     STUDIO_TF_ASC_KEY_PATH="$ASC_KEY" \
     STUDIO_TF_BUILDS_RESPONSE_FILE="$BUILDS_JSON" \
     STUDIO_TF_VERSIONS_RESPONSE_FILE="$VERSIONS_JSON" \
@@ -188,6 +197,22 @@ if "$REAL_GIT" -C "$PROJECT" log --oneline --grep="Bump build number" | grep -q 
   echo "FAIL: build-number commit was created after empty live version"; exit 1
 fi
 echo "PASS: empty live-version response is not treated as no conflict"
+
+echo
+echo "=== Test 9: release config resolves under per-project dev-studio root ==="
+CONFIG_ROOT="$TMPHOME/.dev-studio/fixture-ios"
+mkdir -p "$CONFIG_ROOT/config" "$CONFIG_ROOT/secrets/appstoreconnect"
+cat > "$CONFIG_ROOT/config/release.env" <<'ENV'
+STUDIO_TF_APP_ID="fixture-app-from-config"
+STUDIO_TF_ASC_KEY_ID="fixture-key-from-config"
+STUDIO_TF_ASC_ISSUER_ID="fixture-issuer-from-config"
+ENV
+CONFIG_OUT=$(HOME="$TMPHOME" STUDIO_RELEASE_PROJECT=fixture-ios bash -c \
+  '. "$0/scripts/lib-release-config.sh"; load_release_config; printf "%s|%s|%s\n" "$RELEASE_PROJECT" "$STUDIO_TF_APP_ID" "$(release_asc_key_path "$STUDIO_TF_ASC_KEY_ID")"' "$REPO")
+EXPECTED_PATH="$TMPHOME/.dev-studio/fixture-ios/secrets/appstoreconnect/AuthKey_fixture-key-from-config.p8"
+[ "$CONFIG_OUT" = "fixture-ios|fixture-app-from-config|$EXPECTED_PATH" ] \
+  || { echo "FAIL: unexpected release config output: $CONFIG_OUT"; exit 1; }
+echo "PASS: release config and default ASC key path are project-scoped"
 
 echo
 echo "All checks passed."

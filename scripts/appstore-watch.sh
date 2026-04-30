@@ -29,8 +29,12 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-release-config.sh
+. "$SCRIPT_DIR/lib-release-config.sh"
 
 PROJECT=$(resolve_project 2>/dev/null) || exit 0
+STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-$PROJECT}"
+load_release_config || exit 0
 ROOT=$(resolve_project_root_for "$PROJECT")
 MARKER="$ROOT/.runtime/state/pending-appstore-review.json"
 [ -f "$MARKER" ] || exit 0
@@ -71,6 +75,13 @@ URL=$(read_field github_release_url)
 KEY_PATH=$(read_field asc_key_path)
 ISSUER_ID=$(read_field asc_issuer_id)
 KEY_ID=$(read_field asc_key_id)
+
+APP_ID="${APP_ID:-${STUDIO_TF_APP_ID:-}}"
+KEY_ID="${KEY_ID:-${STUDIO_TF_ASC_KEY_ID:-}}"
+ISSUER_ID="${ISSUER_ID:-${STUDIO_TF_ASC_ISSUER_ID:-}}"
+if [ -z "$KEY_PATH" ]; then
+  KEY_PATH=$(release_asc_key_path "$KEY_ID" 2>/dev/null || true)
+fi
 
 for f in TAG VERSION APP_ID KEY_PATH ISSUER_ID KEY_ID; do
   if [ -z "${!f}" ]; then
@@ -166,7 +177,7 @@ PY
     fi
 
     if [ "$SLACK_DONE" != "True" ] && [ "$SLACK_DONE" != "true" ]; then
-      SLACK_TOKEN_FILE="$HOME/.claude/secrets/slack-bot-token"
+      SLACK_TOKEN_FILE=$(release_slack_token_file)
       if [ -r "$SLACK_TOKEN_FILE" ] && [ -n "$PARENT_TS" ] && [ -n "$CHANNEL" ]; then
         SLACK_BOT_TOKEN=$(cat "$SLACK_TOKEN_FILE")
         MSG="🎉 Live on App Store — notes: $URL"

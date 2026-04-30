@@ -30,8 +30,9 @@ Before Step 1:
 
 - Repo at `_shared/primitives/turnip-project-config.md::project_root` is checked out and clean (`git status` shows no unstaged or staged paths). The version-bump commit in Step 5 must be the only delta this run introduces.
 - The active branch is the branch the user wants on TestFlight. The driver does not switch branches.
-- ASC private key is readable at `_shared/primitives/turnip-project-config.md::asc_key_path`.
-- Slack bot token is readable per `_shared/primitives/slack-post.md` (`~/.claude/secrets/slack-bot-token`, chmod 600).
+- Project release config is readable at `~/.dev-studio/<project>/config/release.env`.
+- ASC private key is readable at `~/.dev-studio/<project>/secrets/appstoreconnect/AuthKey_<key-id>.p8` or the `STUDIO_TF_ASC_KEY_PATH` configured in `release.env`.
+- Slack bot token is readable per `_shared/primitives/slack-post.md` (`~/.dev-studio/<project>/secrets/slack-bot-token`, chmod 600).
 - `python3` resolves and the `pyjwt` package is importable (used to mint the ASC JWT — see `_shared/primitives/appstore-connect-jwt.md`).
 - Non-interactive GitHub push works for the active branch: `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never git push --dry-run --porcelain -u origin HEAD` succeeds. This preflight runs before any build-number or version mutation; auth failures must not open a credential prompt or create a stranded release commit.
 - Slack notification credentials are verified before mutation unless `STUDIO_TF_SLACK_DEFERRED=1` explicitly marks the run as upload-only/deferred-notification.

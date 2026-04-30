@@ -22,8 +22,9 @@
 #              against synthetic fixtures with no Slack credential present.
 #
 # Token:
-#   Read from $STUDIO_SLACK_TOKEN_FILE if set, else ~/.claude/secrets/slack-bot-token.
-#   Missing-or-unreadable → fail loud per R14: exit 2, no network call.
+#   Read from $STUDIO_SLACK_TOKEN_FILE if set, else
+#   ~/.dev-studio/<project>/secrets/slack-bot-token. Missing-or-unreadable →
+#   fail loud per R14: exit 2, no network call.
 #
 # Exit codes:
 #   0   success (live ok=true, or dry-run clean walk)
@@ -32,6 +33,10 @@
 
 set -u
 umask 022
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+# shellcheck source=lib-release-config.sh
+. "$SCRIPT_DIR/lib-release-config.sh"
 
 SUBCOMMAND="${1:-}"
 case "$SUBCOMMAND" in
@@ -89,7 +94,11 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-TOKEN_FILE="${STUDIO_SLACK_TOKEN_FILE:-$HOME/.claude/secrets/slack-bot-token}"
+load_release_config || {
+  printf 'slack-fetch: could not resolve release config project\n' >&2
+  exit 2
+}
+TOKEN_FILE=$(release_slack_token_file)
 if [ ! -r "$TOKEN_FILE" ]; then
   printf 'slack-fetch: token file %s not readable — refuse to fetch (R14)\n' "$TOKEN_FILE" >&2
   exit 2

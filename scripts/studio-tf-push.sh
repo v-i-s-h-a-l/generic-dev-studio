@@ -35,6 +35,10 @@
 #   STUDIO_TF_PUSH_LIVE=1         required for non-dry-run external effects.
 #                                 Wrappers set this; bare CLI invocations do
 #                                 not, so accidental live pushes are blocked.
+#   STUDIO_RELEASE_PROJECT        project slug for release config/secrets under
+#                                 ~/.dev-studio/<project>/.
+#   STUDIO_RELEASE_CONFIG_FILE    override config file path (default:
+#                                 ~/.dev-studio/<project>/config/release.env).
 #   STUDIO_RELEASE_TAG            if set, `push` reuses this tag instead of
 #                                 minting one. Wrappers generate the tag up
 #                                 front so that `push` and later `emit` calls
@@ -52,20 +56,28 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-ledger.sh"
 # shellcheck source=lib-build-queue.sh
 . "$SCRIPT_DIR/lib-build-queue.sh"
+# shellcheck source=lib-release-config.sh
+. "$SCRIPT_DIR/lib-release-config.sh"
 
-# Project config (from _shared/primitives/turnip-project-config.md). The
-# STUDIO_TF_* overrides keep synthetic fixtures out of the real iOS checkout.
+STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-${STUDIO_TF_PROJECT_SLUG:-}}"
+load_release_config || {
+  printf 'studio-tf-push: could not resolve release config project\n' >&2
+  exit 2
+}
+
+# Project config is loaded from ~/.dev-studio/<project>/config/release.env.
+# STUDIO_TF_* env overrides keep synthetic fixtures out of the real checkout.
 PROJECT_ROOT="${STUDIO_TF_PROJECT_ROOT:-/Users/vishalsingh/Documents/Turnip.gg/turnip-ios}"
 PBXPROJ="${STUDIO_TF_PBXPROJ:-$PROJECT_ROOT/zaps-app/Turnip.xcodeproj/project.pbxproj}"
 PROJECT_RELPATH="${STUDIO_TF_PROJECT_RELPATH:-zaps-app/Turnip.xcodeproj}"
-ASC_KEY_ID="${STUDIO_TF_ASC_KEY_ID:-WJQ6D76K8R}"
-ASC_ISSUER_ID="${STUDIO_TF_ASC_ISSUER_ID:-1fa9f26b-7b13-459a-9225-1ca8d9c51fca}"
-ASC_KEY_PATH="${STUDIO_TF_ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8}"
-APP_ID="${STUDIO_TF_APP_ID:-6502945736}"
+ASC_KEY_ID="${STUDIO_TF_ASC_KEY_ID:-}"
+ASC_ISSUER_ID="${STUDIO_TF_ASC_ISSUER_ID:-}"
+ASC_KEY_PATH=$(release_asc_key_path "$ASC_KEY_ID" 2>/dev/null || true)
+APP_ID="${STUDIO_TF_APP_ID:-}"
 GSIP_PATH="${STUDIO_TF_GSIP_PATH:-$PROJECT_ROOT/zaps-app/Zaps/Firebase/Prod/GoogleService-Info.plist}"
 XCPRETTY="${STUDIO_TF_XCPRETTY:-/Users/vishalsingh/.gem/ruby/2.6.0/bin/xcpretty}"
 ASC_TIMEOUT="${STUDIO_TF_ASC_TIMEOUT:-20}"
-SLACK_TOKEN_FILE="${STUDIO_SLACK_TOKEN_FILE:-$HOME/.claude/secrets/slack-bot-token}"
+SLACK_TOKEN_FILE=$(release_slack_token_file)
 
 _json_obj() {
   local out='{}'
@@ -112,6 +124,10 @@ preflight_push_release() {
 
   [ -d "$PROJECT_ROOT/.git" ] || halt_failed prereq "project git checkout missing at $PROJECT_ROOT; no mutation occurred"
   [ -r "$PBXPROJ" ] || halt_failed prereq "pbxproj unreadable at $PBXPROJ; no mutation occurred"
+  [ -n "$APP_ID" ] || halt_failed prereq "STUDIO_TF_APP_ID missing in $RELEASE_CONFIG_FILE; no mutation occurred"
+  [ -n "$ASC_KEY_ID" ] || halt_failed prereq "STUDIO_TF_ASC_KEY_ID missing in $RELEASE_CONFIG_FILE; no mutation occurred"
+  [ -n "$ASC_ISSUER_ID" ] || halt_failed prereq "STUDIO_TF_ASC_ISSUER_ID missing in $RELEASE_CONFIG_FILE; no mutation occurred"
+  [ -n "$ASC_KEY_PATH" ] || halt_failed prereq "STUDIO_TF_ASC_KEY_PATH missing and no key-id default could be derived; no mutation occurred"
   case "$branch" in
     main|master|trunk|develop|release/*)
       halt_failed prereq "active branch '$branch' is a base branch — no mutation occurred; switch to a feature branch"
@@ -508,6 +524,13 @@ cmd_appstore() {
   RELEASE_TAG="${STUDIO_RELEASE_TAG:-release-${BUILD}-$(date -u +%Y%m%d-%H%M%S)}"
   if [ "$DRY_RUN_FLAG" != "1" ] && [ "$LIVE" != "1" ]; then
     halt_failed prereq "STUDIO_TF_PUSH_LIVE=1 required for non-dry-run appstore submission"
+  fi
+  if [ "$DRY_RUN_FLAG" != "1" ]; then
+    [ -n "$APP_ID" ] || halt_failed prereq "STUDIO_TF_APP_ID missing in $RELEASE_CONFIG_FILE"
+    [ -n "$ASC_KEY_ID" ] || halt_failed prereq "STUDIO_TF_ASC_KEY_ID missing in $RELEASE_CONFIG_FILE"
+    [ -n "$ASC_ISSUER_ID" ] || halt_failed prereq "STUDIO_TF_ASC_ISSUER_ID missing in $RELEASE_CONFIG_FILE"
+    [ -n "$ASC_KEY_PATH" ] || halt_failed prereq "STUDIO_TF_ASC_KEY_PATH missing and no key-id default could be derived"
+    [ -r "$ASC_KEY_PATH" ] || halt_failed prereq "ASC key unreadable at $ASC_KEY_PATH"
   fi
   route_to_release_node
 

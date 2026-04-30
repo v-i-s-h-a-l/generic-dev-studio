@@ -26,7 +26,7 @@ All per-project artifacts live under `~/.dev-studio/<project>/` (outside `~/.cla
 | `/chanakya review-feedback` | Promote passing tasks to `verified`; file follow-ups for failures |
 | `/chanakya compact` | Archive verified tasks, slim plan to actionable items only |
 | `/chanakya sync-slack` | Sync Slack bug list statuses and Dev Notes with master plan |
-| `/chanakya sync-slack --configure-token` | One-time: save Slack bot token to `~/.claude/secrets/` |
+| `/chanakya sync-slack --configure-token` | Save Slack bot token to `~/.dev-studio/<project>/secrets/` |
 | `/chanakya sync-slack --configure` | One-time: configure project Slack list IDs in project memory |
 | `/achilles T001` | Execute a briefed task. XS/S → LSP-only gate; M/L → full xcodebuild. Merges immediately on green. |
 | `/achilles T001 --wait` | Same pipeline but pauses up to 10 min for test feedback before merging |
@@ -570,7 +570,7 @@ Keeps a Slack Lists bug tracker synchronized with the Chanakya master plan. Read
 
 **Auto-triggered:** When Chanakya processes a TestFlight release debrief, it automatically computes the Slack sync and presents the table for confirmation before writing.
 
-Token is stored at `~/.claude/secrets/slack-bot-token` (chmod 600), cross-project. Project config (list ID, column IDs, stakeholder handles) lives in `project_slack_list_sync.md` in project memory.
+Token is stored at `~/.dev-studio/<project>/secrets/slack-bot-token` (chmod 600). Project config (list ID, column IDs, stakeholder handles) lives in `project_slack_list_sync.md` in project memory.
 
 ---
 

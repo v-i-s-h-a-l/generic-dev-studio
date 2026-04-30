@@ -26,9 +26,9 @@ Snapshots: `snapshots/briefs.json` for the task→Slack-row cross-reference pass
 All project-specific constants are in the project memory file `project_slack_list_sync.md`. Read it at mode entry for:
 - List ID, column IDs, status option IDs, GitHub repo URL, stakeholder handles
 
-**Bot token:** Read from `~/.claude/secrets/slack-bot-token` (single-line file, chmod 600). This token is cross-project (one Slack app) and does NOT live in per-project memory.
+**Bot token:** Read from `~/.dev-studio/<project>/secrets/slack-bot-token` (single-line file, chmod 600). The token is project-scoped so multiple Field projects on the same machine can use different Slack workspaces/apps.
 
-If `~/.claude/secrets/slack-bot-token` is missing, halt with:
+If `~/.dev-studio/<project>/secrets/slack-bot-token` is missing, halt with:
 > "Run `/chanakya sync-slack --configure-token` to set up the Slack bot token."
 
 If `project_slack_list_sync.md` is missing, halt with:
@@ -40,18 +40,18 @@ If `project_slack_list_sync.md` is missing, halt with:
 |------|---------|
 | `--list <id>` | Override default list ID. Schema discovery runs fresh for new lists. |
 | `--build <number>` | Current TestFlight build number. Used for "Fixed in Build" column and Dev Notes entries. If omitted, read from latest `Bump build number` commit in git log. |
-| `--configure-token` | Bootstrap: prompt for the Slack bot token once and write it to `~/.claude/secrets/slack-bot-token` (chmod 600). Creates `~/.claude/secrets/` dir (chmod 700) if missing. Cross-project — run once globally. |
+| `--configure-token` | Bootstrap: prompt for the Slack bot token and write it to `~/.dev-studio/<project>/secrets/slack-bot-token` (chmod 600). Creates the project `secrets/` dir (chmod 700) if missing. |
 | `--configure` | Bootstrap: interactively populate `project_slack_list_sync.md` in project memory with list ID, column IDs, status option IDs, repo URL, and stakeholder handles. |
 
 ## `--configure-token` mode
 
 When `/chanakya sync-slack --configure-token` is invoked:
 
-1. Create `~/.claude/secrets/` if it doesn't exist: `mkdir -m 700 -p ~/.claude/secrets/`
+1. Resolve the current project slug and create `~/.dev-studio/<project>/secrets/` if it doesn't exist: `mkdir -m 700 -p ~/.dev-studio/<project>/secrets/`
 2. Ask the user: "Paste the Slack bot token (xoxb-...):"
-3. Write the token to `~/.claude/secrets/slack-bot-token`: `printf '%s' '<token>' > ~/.claude/secrets/slack-bot-token && chmod 600 ~/.claude/secrets/slack-bot-token`
+3. Write the token to `~/.dev-studio/<project>/secrets/slack-bot-token`: `printf '%s' '<token>' > ~/.dev-studio/<project>/secrets/slack-bot-token && chmod 600 ~/.dev-studio/<project>/secrets/slack-bot-token`
 4. Verify: read back the file and confirm it starts with `xoxb-`.
-5. Report: "Slack bot token saved to ~/.claude/secrets/slack-bot-token (chmod 600). Run `/chanakya sync-slack --configure` to set up project list constants."
+5. Report: "Slack bot token saved to ~/.dev-studio/<project>/secrets/slack-bot-token (chmod 600). Run `/chanakya sync-slack --configure` to set up project list constants."
 
 ## `--configure` mode
 

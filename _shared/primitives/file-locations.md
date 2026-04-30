@@ -27,7 +27,7 @@ All agents read and write under exactly two roots — both inside `~/.dev-studio
 
 **Split invariant.** Anything that belongs to a single project's workflow goes under `<project>/` — including each project's fleet of Achilles workers (one Chanakya + one worker pool per project). Only resources physically shared by every project on this machine (simulators, eventually shared device pools, future GPU queues) live under `.runtime/`. When in doubt: per-project.
 
-**Never write outside these two roots.** Specifically: never use `~/.claude/` for runtime state — it's the agent's own config dir, outside the allowlist by design. The only `~/.claude/` paths agents may *read* are `~/.claude/secrets/` (narrow allow) and `~/.claude/projects/<slug>/memory/` (Claude Code's own auto-managed area).
+**Never write outside these two roots.** Specifically: never use `~/.claude/` for runtime state or project secrets — it's the agent's own config dir, outside the allowlist by design. The only `~/.claude/` path agents may *read* is `~/.claude/projects/<slug>/memory/` (Claude Code's own auto-managed area). Project secrets live under `~/.dev-studio/<project>/secrets/`.
 
 When introducing a new artifact type, decide per the split invariant above — default to per-project unless it's a machine-wide physical resource.
 
