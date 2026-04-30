@@ -123,6 +123,7 @@ eval "$(scripts/task-worktree-setup.sh T001 /repo)"     # PROJECT/ORIG_BRANCH/OR
 scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" [zaps-app/Turnip.xcodeproj] # xcodebuild + lock; 6th arg pins -project/-workspace in multi-project repos (#238); exit 4 = duplicate-invocation refused (#209)
 scripts/node-parity.sh                                  # probe + cache toolchain versions across all registered nodes; exit 1 = drift (#126)
 scripts/check-xcode-parity.sh m1mini                    # pre-dispatch guard; exit 1 = MAJOR Xcode drift; STUDIO_IGNORE_XCODE_DRIFT=1 overrides (#136)
+scripts/node-warmup.sh m1mini [project]                 # async-safe pre-dispatch source sync + package cache warm-up (#138)
 scripts/task-write-test-cases.sh T001 '[{...}]'         # twin-write standalone + stdout YAML
 scripts/task-invoke-argus.sh T001 /wt main S            # emits review_requested (Argus invoked via Agent tool)
 scripts/task-merge.sh T001 /wt feature-branch           # merge lock + merge + worktree remove + DerivedData clean
@@ -196,6 +197,7 @@ dispatched_from=user@host
 | `NODE_ARTIFACT_RETRIEVE` | `0` | Set to `1` to pull remote `.xcarchive` / `.xcresult` directories from the node's DerivedData back to the matching local DerivedData after a successful remote Xcode build/test. |
 | `NODE_SOURCE_SYNC_MODE` | `auto` | Remote source sync mode: `auto` does one full rsync per session/path, then git-diff selective rsync; `full` and `selective` force either path. |
 | `NODE_SOURCE_SYNC_SMOKE` | `0` | Set to `1` to dry-run compare selective sync against a full rsync and fall back to full when they diverge. |
+| `NODE_WARMUP_TIMEOUT` | `900` (15m) | Max async node warm-up command stream. The first remote gate invocation per session/node launches warm-up in the background and continues. |
 | `ACHILLES_UNATTENDED` | `0` | Set to `1` to pass `--dangerously-skip-permissions` for fully unattended overnight runs. |
 | `ACHILLES_AUTONOMOUS` | `0` (set to `1` automatically by the worker per task) | Tells the Achilles subagent there is no user to answer clarifying questions; it must pick obvious defaults and document them in the debrief. Exported by `achilles-worker.sh` for every `claude -p` subprocess. Do not set manually unless testing. |
 | `ACHILLES_DISPLAY_NAME` | derived (see below) | Friendly name for panes / logs. Override per-shell, or pre-bake per-project via `~/.dev-studio/<project>/.display_name` (first non-comment line wins). |
