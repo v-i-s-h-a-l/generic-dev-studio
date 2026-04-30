@@ -116,6 +116,7 @@ Read the stuck state by `grep '"stuck": true'` on the marker — don't re-invoke
 | `dual_write_partial` | Push-queue append kind=`drift` + raw line appended to `.runtime/state/drift-log.jsonl`. |
 | `debrief_missing` | Push-queue append kind=`debrief_missing` with `merge_sha` (so `/chanakya status` surfaces "T001 merged at <sha> with no debrief"). |
 | `review_pending` | Push-queue append kind=`review_pending`, making repaired Argus-skip facts visible in `/chanakya status`. |
+| `brief_awaiting_user` | Push-queue append kind=`brief_awaiting_user` so draft briefs with unresolved author decisions surface on the next `/chanakya status`. Text shows the legacy task id + first question; brief uuid is in the event subject. Re-emitted by `write_brief_artifact` is a no-op (idempotent via `<mint-idem>-awaiting`). |
 | `direct_main_ungated_merge` | Push-queue append kind=`ungated_merge` for protected-branch merges without review evidence. |
 | `debrief_concerns` | Push-queue append kind=`debrief_concerns` for `report_state: done_with_concerns`. |
 | `debrief_needs_context` | Push-queue append kind=`debrief_needs_context` for `report_state: needs_context`. |

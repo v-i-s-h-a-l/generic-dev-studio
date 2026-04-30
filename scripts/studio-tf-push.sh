@@ -459,7 +459,7 @@ PLIST
     if grep -q '\*\* EXPORT FAILED \*\*' "$export_log" || grep -E '^error:' "$export_log" >/dev/null; then
       halt_failed upload "export reported failure (log: $export_log)"
     fi
-    grep -q 'Export Succeeded' "$export_log" || halt_failed upload "no 'Export Succeeded' marker (log: $export_log)"
+    grep -qiE 'Export Succeeded|\*\* EXPORT SUCCEEDED \*\*' "$export_log" || halt_failed upload "no 'Export Succeeded' marker (log: $export_log)"
     upload_duration_s=$(( $(date +%s) - upload_started_at ))
   fi
 

@@ -663,11 +663,67 @@ write_brief_artifact() {
   # body_file=<path> lets callers pass large renders without shell-arg bloat.
   _extract_body_and_rest "$@"
 
+  # Mint-intent contract (B-strict). Caller MUST declare exactly one of:
+  #   state=ready              — brief is final at mint; skip draft phase entirely.
+  #                              Fires `brief_state_changed null → ready`.
+  #   awaiting_user=true       — brief is draft AND body contains author-decision
+  #                              section. Fires `brief_awaiting_user` for sweep surface.
+  #   awaiting_user=false      — brief is draft for incremental authoring; will
+  #                              transition to ready before sweep visibility. No surface.
+  # Refusing ambiguous mints is what prevents the T352-class procedural miss
+  # (draft brief filed with author-questions but no surfacing signal).
+  local _explicit_state="" _awaiting_user="" _kv
+  for _kv in "$@"; do
+    case "$_kv" in
+      state=*) _explicit_state="${_kv#state=}" ;;
+      awaiting_user=*) _awaiting_user="${_kv#awaiting_user=}" ;;
+    esac
+  done
+  if [ -z "$_explicit_state" ] && [ -z "$_awaiting_user" ]; then
+    {
+      printf 'write_brief_artifact: caller must declare mint intent — pass exactly one of:\n'
+      printf '  state=ready                  # brief is final at mint, skip draft phase\n'
+      printf '  awaiting_user=true           # brief is draft + body has Open Questions section\n'
+      printf '  awaiting_user=false          # brief is draft for incremental authoring; transition before sweep\n'
+    } >&2
+    return 2
+  fi
+  if [ "$_explicit_state" = "ready" ] && [ -n "$_awaiting_user" ]; then
+    printf 'write_brief_artifact: state=ready cannot combine with awaiting_user=...; pick one\n' >&2
+    return 2
+  fi
+  if [ -n "$_explicit_state" ] && [ "$_explicit_state" != "ready" ] && [ "$_explicit_state" != "draft" ]; then
+    printf 'write_brief_artifact: state=%s invalid (only `ready` or `draft` allowed at mint; further transitions go through transition_brief_state)\n' "$_explicit_state" >&2
+    return 2
+  fi
+  if [ "$_awaiting_user" = "true" ]; then
+    if ! printf '%s' "$_LW_BODY" | grep -qE '^[[:space:]]*##[[:space:]]+(Open questions|Decisions pending|Awaiting decision|Author pass)' 2>/dev/null; then
+      printf 'write_brief_artifact: awaiting_user=true requires body to contain `## Open questions` (or Decisions pending / Awaiting decision / Author pass) section\n' >&2
+      return 2
+    fi
+  fi
+  if [ -n "$_awaiting_user" ] && [ "$_awaiting_user" != "true" ] && [ "$_awaiting_user" != "false" ]; then
+    printf 'write_brief_artifact: awaiting_user=%s invalid (must be true or false)\n' "$_awaiting_user" >&2
+    return 2
+  fi
+
+  # Strip mint-intent kvs from REST_ARGS so they don't leak into the YAML payload.
+  local _new_rest=() _kvf
+  for _kvf in "${_LW_REST_ARGS[@]+"${_LW_REST_ARGS[@]}"}"; do
+    case "$_kvf" in
+      state=*|awaiting_user=*) ;;
+      *) _new_rest+=("$_kvf") ;;
+    esac
+  done
+  _LW_REST_ARGS=("${_new_rest[@]+"${_new_rest[@]}"}")
+
+  local _final_state="draft"
+  [ "$_explicit_state" = "ready" ] && _final_state="ready"
+
   # Resolve legacy_task_id from the parent task YAML when not passed
   # explicitly as a k=v arg (#296). Guarantees every brief carries the
   # field regardless of caller discipline.
   local _has_legacy_tid=0
-  local _kv
   for _kv in "${_LW_REST_ARGS[@]+"${_LW_REST_ARGS[@]}"}"; do
     case "$_kv" in legacy_task_id=*) _has_legacy_tid=1; break ;; esac
   done
@@ -699,7 +755,7 @@ write_brief_artifact() {
     printf 'task_id: %s\n' "$task_uuid"
     printf 'type: %s\n' "$type"
     printf 'size: %s\n' "$size"
-    printf 'state: draft\n'
+    printf 'state: %s\n' "$_final_state"
     printf 'created_at: %s\n' "$ts"
     printf 'updated_at: %s\n' "$ts"
     printf 'figma: null\n'
@@ -719,8 +775,45 @@ write_brief_artifact() {
   fi
 
   local data
-  data=$(printf '{"from":null,"to":"draft","task_id":"%s"}' "$(_json_escape "$task_uuid")")
+  data=$(printf '{"from":null,"to":"%s","task_id":"%s"}' "$_final_state" "$(_json_escape "$task_uuid")")
   emit_event_keyed chanakya brief brief_state_changed "$uuid" "$data" --idem-key "$idem" >/dev/null || return $?
+
+  # brief_awaiting_user — fired only when caller passed `awaiting_user=true`.
+  # The mint contract above already validated that the body contains an
+  # author-decision heading, so the grep here is redundant safety. Surfaces in
+  # inbox-sweep Step 0E. Idempotency via brief idem key + `-awaiting` suffix.
+  if [ "$_awaiting_user" = "true" ]; then
+    local _legacy_tid_for_event="" _q_pair
+    for _q_pair in "${_LW_REST_ARGS[@]+"${_LW_REST_ARGS[@]}"}"; do
+      case "$_q_pair" in legacy_task_id=*) _legacy_tid_for_event="${_q_pair#legacy_task_id=}" ;; esac
+    done
+    local _questions_json
+    _questions_json=$(printf '%s' "$_LW_BODY" | awk '
+      /^[[:space:]]*##[[:space:]]+(Open questions|Decisions pending|Awaiting decision|Author pass)/ { in_s=1; next }
+      in_s && /^[[:space:]]*##[[:space:]]+/ { in_s=0 }
+      in_s && /^[[:space:]]*[0-9]+\./ {
+        line=$0
+        sub(/^[[:space:]]*[0-9]+\.[[:space:]]*/, "", line)
+        gsub(/\\/, "\\\\", line); gsub(/"/, "\\\"", line); gsub(/\t/, " ", line)
+        if (length(line) > 200) line = substr(line,1,200) "…"
+        if (length(line) > 0) qs[++n] = line
+      }
+      END {
+        printf "["
+        for (i=1; i<=n && i<=5; i++) {
+          if (i>1) printf ","
+          printf "\"%s\"", qs[i]
+        }
+        printf "]"
+      }
+    ')
+    local _awaiting_data
+    _awaiting_data=$(printf '{"task_id":"%s","legacy_task_id":"%s","questions":%s}' \
+      "$(_json_escape "$task_uuid")" "$(_json_escape "$_legacy_tid_for_event")" "$_questions_json")
+    emit_event_keyed chanakya brief brief_awaiting_user "$uuid" "$_awaiting_data" \
+      --idem-key "${idem}-awaiting" >/dev/null || true
+  fi
+
   _maybe_rebuild_index
 }
 

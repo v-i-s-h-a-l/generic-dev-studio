@@ -22,7 +22,9 @@ The brief is a separate artifact from the task, with its own lifecycle. Task sta
 ## Transitions
 
 ```
-draft       → ready        : brief passes `brief@>=2` validation.
+null        → draft        : write_brief_artifact awaiting_user=true|false; brief is mid-authoring.
+null        → ready        : write_brief_artifact state=ready; brief is final at mint (urgent-ingest, atomic flows).
+draft       → ready        : brief passes `brief@>=2` validation; lint clean.
 ready       → dispatched   : Chanakya places in inbox / Achilles picks up.
 dispatched  → debriefed    : Achilles writes debrief.
 debriefed   → archived     : compact sweep moves to archive.
@@ -30,6 +32,16 @@ ready       → superseded   : newer brief for the same task lands with `rework_
 dispatched  → superseded   : mid-flight replacement (rare; task usually cancelled + re-briefed).
 draft       → superseded   : abandoned draft.
 ```
+
+## Mint-intent contract
+
+`write_brief_artifact` requires the caller to declare exactly one of:
+
+- `state=ready` — brief is final at mint; skip draft. Suitable for urgent-ingest fast-path and atomic flows where authoring + lint happen pre-mint. Fires `brief_state_changed null → ready`.
+- `awaiting_user=true` — brief is `draft` AND its body contains an `## Open questions` (or `## Decisions pending` / `## Awaiting decision` / `## Author pass`) section. Fires `brief_state_changed null → draft` + `brief_awaiting_user` so a sweep surfaces the unresolved decisions. Refuses if no decision section.
+- `awaiting_user=false` — brief is `draft` for incremental authoring; caller will lint and call `transition_brief_state ready` before any sweep / dispatch. Fires `brief_state_changed null → draft` only.
+
+Calls without one of these arguments are refused with exit 2 to prevent the T352-class procedural miss (draft brief filed with author-questions but no surfacing signal).
 
 ## Events
 
