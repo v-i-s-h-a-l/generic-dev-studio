@@ -37,6 +37,9 @@
 #       NODE_SOURCE_SYNC_MODE=auto|full|selective controls transfer shape.
 #       auto uses full sync for the first dispatch in a session, then
 #       git-diff-informed selective sync for later dispatches.
+#       SOURCE_SYNC_REMOTE_REL may override the remote target only for
+#       `.dev-studio/.runtime/warmups/*` mirrors; live dispatch paths always
+#       use the local path's home-relative form.
 #
 #   sourcesync_mkdir_remote <node-id> <relative-path>
 #       I/O: ensures `<remote $HOME>/<relative-path>` exists on the
@@ -165,7 +168,18 @@ sourcesync_push() {
   user=$(printf '%s' "$entry" | jq -r '.user')
   host=$(printf '%s' "$entry" | jq -r '.host')
 
-  local rel; rel=$(sourcesync_relative_to_home "$local_path") || return 1
+  local rel remote_rel_override
+  rel=$(sourcesync_relative_to_home "$local_path") || return 1
+  remote_rel_override="${SOURCE_SYNC_REMOTE_REL:-}"
+  if [ -n "$remote_rel_override" ]; then
+    case "$remote_rel_override" in
+      .dev-studio/.runtime/warmups/*) rel="$remote_rel_override" ;;
+      *)
+        printf 'sourcesync: refusing unsafe remote override: %s\n' "$remote_rel_override" >&2
+        return 2
+        ;;
+    esac
+  fi
 
   # Ensure the parent of the rsync target exists on the remote. rsync
   # creates the leaf, but a missing intermediate (e.g. the first task
@@ -225,6 +239,7 @@ sourcesync_push() {
     mv "${tmp_list}.existing" "$tmp_list"
     (
       cd "$local_path" || exit 1
+      git diff --name-only --diff-filter=D "$merge_base" HEAD 2>/dev/null
       git status --porcelain 2>/dev/null | awk 'substr($0,1,2) ~ /D/ {line=substr($0,4); sub(/^.* -> /,"",line); print line}'
     ) | sed '/^$/d' | sort -u >"$tmp_delete"
 
