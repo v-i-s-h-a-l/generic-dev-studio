@@ -113,7 +113,7 @@ jq -r '
     task_id,
     (.agent // .producer.agent // ""),
     (.mode // .data.mode // ""),
-    (.data.stage // ""),
+    (.data.stage // .data.phase // ""),
     (.data.attempt // 1),
     (.data.duration_s // ""),
     (.data.wait_duration_s // ""),
@@ -294,6 +294,23 @@ function task_key(task, fallback) {
     if (duration != "" && valid_duration(duration)) sample("pr_review", "", "", "", duration, "duration_s", "")
     else missing("pr_review", "missing_duration_s")
   }
+  if (event == "pr_autopilot_completed") {
+    if (duration != "" && valid_duration(duration)) sample("pr_autopilot", task, "", "", duration, "duration_s", "")
+    else missing("pr_autopilot", "missing_duration_s")
+  }
+  if (event == "pr_merge_finalize_completed") {
+    if (duration != "" && valid_duration(duration)) sample("pr_merge_finalize", task, "", "", duration, "duration_s", "")
+    else missing("pr_merge_finalize", "missing_duration_s")
+  }
+  if (event == "sweep_phase_completed") {
+    sweep_stage = "sweep:" (stage != "" ? stage : "unknown")
+    if (duration != "" && valid_duration(duration)) sample(sweep_stage, task, "", "", duration, "duration_s", "")
+    else missing(sweep_stage, "missing_duration_s")
+  }
+  if (event == "session_start_completed") {
+    if (duration != "" && valid_duration(duration)) sample("session_start", task, "", "", duration, "duration_s", "")
+    else missing("session_start", "missing_duration_s")
+  }
 
   if (event == "agent_session_completed") {
     session_stage = "agent_session:" agent
@@ -384,6 +401,6 @@ cat <<'EOF'
 Minimum new telemetry fields still needed
 - self-review: emit self_review_started/self_review_completed or add duration_s to self_review_iterated.
 - Argus dispatch wait vs review work: stamp dispatch_review_started, reviewer_spawned_at, verdict_observed_at, and duration_s on dispatch-review outcomes.
-- PR autopilot/merge: emit pr_autopilot_started/pr_autopilot_completed and pr_merge_finalize_started/pr_merge_finalize_completed with duration_s.
+- Sweep phases: emit duration_s per major inbox-sweep phase so queue drain, event reconciliation, follow-up detection, and status rendering can be separated.
 - user wait: keep pairing task_awaiting_user with task_awaiting_user_resolved.wait_duration_s; missing pairs stay excluded from totals.
 EOF

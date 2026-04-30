@@ -40,6 +40,9 @@ PROJECT=$(resolve_project 2>/dev/null) || { printf 'sweep-ingest.sh: no project 
 PROJECT_ROOT=$(resolve_project_root_for "$PROJECT")
 TASKS_DIR=$(resolve_tasks_dir_for "$PROJECT")
 RELEASES_DIR=$(resolve_releases_dir_for "$PROJECT")
+# shellcheck source=lib-sweep-timing.sh
+. "$SCRIPT_DIR/lib-sweep-timing.sh"
+sweep_timing_start
 
 # Post-#245 A.4 the inbox is YAML-only; legacy markdown debriefs are archived
 # under plans/.legacy-archive/ and sweep-enumerate-debriefs no longer surfaces
@@ -427,6 +430,9 @@ case "$SUBCMD" in
   release)     ingest_release     "$@" ;;
 esac
 rc=$?
+sweep_status=failed
+[ "$rc" = "0" ] && sweep_status=completed
+sweep_timing_emit "ingest:$SUBCMD" "$sweep_status" 1
 
 # Re-render the projected master-plan markdown from YAML sources after every
 # successful ingest. Idempotent — same inputs produce byte-identical output.

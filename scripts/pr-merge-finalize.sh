@@ -58,6 +58,53 @@ esac
 command -v gh >/dev/null 2>&1 || { printf 'pr-merge-finalize: gh is required\n' >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || { printf 'pr-merge-finalize: jq is required\n' >&2; exit 1; }
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+# shellcheck source=lib-ledger.sh
+. "$SCRIPT_DIR/lib-ledger.sh" 2>/dev/null || true
+
+STARTED_AT=$(date -u +%s)
+number=""
+url=""
+head_sha=""
+cleanup_failed=0
+cleanup_notes=""
+remote_merge_warning=""
+commit_count=""
+base_ref=""
+head_ref=""
+
+emit_pr_merge_event() {
+  local event="$1" status="${2:-}" rc="${3:-0}" duration_s cleanup_json
+  duration_s=$(( $(date -u +%s) - STARTED_AT ))
+  cleanup_json=false
+  [ "$cleanup_failed" = "0" ] || cleanup_json=true
+  data=$(printf '{"pr":"%s","pr_number":"%s","pr_url":"%s","method":"%s","base_ref":"%s","head_ref":"%s","head_sha":"%s","commit_count":"%s","status":"%s","exit_code":%s,"duration_s":%s,"cleanup_failed":%s,"cleanup_notes":"%s","remote_merge_warning":"%s"}' \
+    "$(_json_escape "$PR")" \
+    "$(_json_escape "$number")" \
+    "$(_json_escape "$url")" \
+    "$(_json_escape "$METHOD")" \
+    "$(_json_escape "$base_ref")" \
+    "$(_json_escape "$head_ref")" \
+    "$(_json_escape "$head_sha")" \
+    "$(_json_escape "$commit_count")" \
+    "$(_json_escape "$status")" \
+    "$rc" \
+    "$duration_s" \
+    "$cleanup_json" \
+    "$(_json_escape "$cleanup_notes")" \
+    "$(_json_escape "$remote_merge_warning")")
+  emit_event_keyed studio pr "$event" "$PR" "$data" \
+    --idem-key "pr-merge-finalize:$event:$PR:$head_sha:$STARTED_AT" >/dev/null 2>&1 || true
+}
+
+on_exit() {
+  local rc=$?
+  local status="failed"
+  [ "$rc" -eq 0 ] && status="completed"
+  emit_pr_merge_event pr_merge_finalize_completed "$status" "$rc"
+}
+trap on_exit EXIT
+
 current_worktree_path() {
   git rev-parse --show-toplevel 2>/dev/null || pwd
 }
@@ -99,6 +146,7 @@ url=$(printf '%s' "$json" | jq -r '.url')
 number=$(printf '%s' "$json" | jq -r '.number')
 head_sha=$(printf '%s' "$json" | jq -r '.headRefOid')
 commit_count=$(printf '%s' "$json" | jq -r '.commits | length')
+emit_pr_merge_event pr_merge_finalize_started started 0
 [ -z "$EXPECTED_HEAD_SHA" ] || [ "$head_sha" = "$EXPECTED_HEAD_SHA" ] || {
   printf 'pr-merge-finalize: refusing merge for PR #%s; reviewed HEAD_SHA=%s but current HEAD_SHA=%s\n' "$number" "$EXPECTED_HEAD_SHA" "$head_sha" >&2
   exit 1
@@ -181,8 +229,6 @@ if ! "${merge_cmd[@]}"; then
   remote_merge_warning="gh_merge_returned_nonzero_after_remote_merge"
 fi
 
-cleanup_failed=0
-cleanup_notes=""
 current_path=$(current_worktree_path)
 control_path=""
 if ! git fetch --prune origin; then
