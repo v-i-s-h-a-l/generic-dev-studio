@@ -321,6 +321,8 @@ Add to `~/.claude/settings.json` under `permissions.allow`:
 
 `~/.dev-studio/` sits outside `~/.claude/` on purpose — agents read/write their artifacts unattended without tripping the self-mod guard.
 
+Optional node monitoring installs `~/Library/LaunchAgents/dev.studio.node-monitor.plist` via `scripts/monitor-install.sh install`. That path is outside `~/.dev-studio/**` by design because launchd only loads user agents from `~/Library/LaunchAgents`.
+
 ### Codex Permissions
 
 Codex needs the same runtime root in its workspace-write sandbox. Launch with an explicit writable root:
