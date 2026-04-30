@@ -164,14 +164,14 @@ A skill declares which hosts it runs on via `portability.yaml`:
 
 ```yaml
 schema_version: 1
-hosts: [claude-code, codex]         # required; non-empty
+hosts: [claude-code, codex]         # required; non-empty; use [all] for every registered host
 incompatible:                       # optional; rationale per host explicitly excluded
   gemini: "uses Claude-Agent-tool spawn primitive"
 ```
 
 Default for unmigrated skills (no `portability.yaml`): `hosts: [claude-code]`. New-host fan-out won't silently include a skill that hasn't been verified portable.
 
-`portability.yaml` validates against `_shared/standards/portability.json`. Hosts must match `hosts/registry.yaml` rows.
+`portability.yaml` validates against `_shared/standards/portability.json`. Hosts must match `hosts/registry.yaml` rows, except the literal `all` wildcard that targets every registered host.
 
 ---
 

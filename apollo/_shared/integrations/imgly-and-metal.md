@@ -7,15 +7,15 @@ schema_version: 1
 
 # Imgly / Metal touchpoint + delegation contract
 
-Apollo is metric-first and project-agnostic. When a thermal / battery / memory recommendation lands inside an Imgly (CE.SDK) or raw Metal pipeline, Apollo does not propose the in-tree change — it hands off to the project-resident `imgly-engine-expert` skill. This file is the contract that makes that handoff structured rather than free-text.
+Apollo is metric-first and project-agnostic. When a thermal / battery / memory recommendation lands inside an Imgly (CE.SDK) or raw Metal pipeline, Apollo does not propose the in-tree change — it hands off to the host-resolved `imgly-engine-expert` skill. This file is the contract that makes that handoff structured rather than free-text.
 
 The boundary is load-bearing: Apollo retains measurement and verification authority; Imgly internals stay in the receiving skill. Without this contract Apollo would either (a) refuse every Metal-rooted regression, or (b) leak Imgly-specific knowledge into mode packs and re-grow into the project. Both are failure modes; this file prevents both.
 
 ## Receiving skill
 
-`imgly-engine-expert` ships in the user's project at `.claude/skills/imgly-engine-expert/`. It owns the CE.SDK API surface, block-management patterns, scope system, and the project's Imgly playbook. Apollo never reads its internals — only its name (for the `delegate:` line on a recommendation) and its handoff envelope (defined below).
+`imgly-engine-expert` ships through studio global skill sync into each host's global skill directory, with project-local `.claude/skills/imgly-engine-expert/` accepted as a legacy fallback. It owns the CE.SDK API surface, block-management patterns, scope system, and the project's Imgly playbook. Apollo never reads its internals — only its name (for the `delegate:` line on a recommendation) and its handoff envelope (defined below).
 
-If the project does not vendor the skill, Apollo cannot delegate; the recommendation refuses with the standard refusal block (`apollo/_shared/primitives/evidence-gate.md` § Refusal protocol) and names "no Imgly delegation surface available" as the unblock.
+If the current host cannot resolve the skill from global or project-local skill directories, Apollo cannot delegate; the recommendation refuses with the standard refusal block (`apollo/_shared/primitives/evidence-gate.md` § Refusal protocol) and names "no Imgly delegation surface available" as the unblock.
 
 ## Detection — when does Apollo decide a project uses Imgly / Metal?
 
@@ -23,10 +23,10 @@ Apollo's decision is **conservative**: confirm presence, never infer absence. Th
 
 | Signal | Source | Strength |
 |---|---|---|
-| `imgly-engine-expert` skill present at `.claude/skills/imgly-engine-expert/SKILL.md` | filesystem (project root) | strong — confirms the receiving surface exists |
+| `imgly-engine-expert` skill present in the host global skill directory or at project-local `.claude/skills/imgly-engine-expert/SKILL.md` | filesystem (host + project roots) | strong — confirms the receiving surface exists |
 | Cited stack contains `IMGLYEngine`, `IMGLY*`, `Engine.block.*`, or symbols matching the EngineManipulator file map | `.trace` cpu-profile / call-stack / `MXCallStackTree` | strong — confirms Imgly is on the hot path |
 | Cited stack contains `MTKView.draw`, `CADisplayLink`, `MTLCommandBuffer`, `MTLRenderCommandEncoder` frames | `.trace` cpu-profile / Metal System Trace command-buffer rows | medium — confirms raw Metal, may or may not be Imgly-owned |
-| Diff target file path matches `**/CollageCreationContainer*`, `**/IMGLYEngineManipulator*`, or any path where the receiving skill's file map (read on demand) claims ownership | git diff path | strong — confirms the change site is in Imgly territory |
+| Diff target file path matches editor engine wrapper, scene graph, render pipeline, or any path where private project guidance claims IMGLY ownership | git diff path | strong — confirms the change site is in Imgly territory |
 
 Single-signal matches are sufficient — these are independent evidence channels, not a quorum. Apollo does not "guess" Imgly involvement from feel: a Metal System Trace with no Imgly symbols and a non-Imgly diff path is plain Metal, not Imgly, and the delegation envelope still applies (the receiving skill is the right consumer for raw Metal in projects that vendor it).
 
@@ -113,7 +113,7 @@ The accepted recommendation flows downstream as a normal Apollo recommendation a
 | Decision: is there a regression? (`regression-detection.md`) | ✓ | — |
 | Decision: which Imgly / Metal change addresses it | — | ✓ |
 | CE.SDK API surface, block-management, scope system | — | ✓ |
-| Project-specific playbook (Turnip's collage editor file map, etc.) | — | ✓ |
+| Project-specific playbook (private file maps, local architecture notes, project-local overrides, etc.) | — | ✓ |
 | Verification-plan acceptance (must hit strict-9) | ✓ | — |
 | Post-fix capture under matched scenario / cohort | ✓ | — |
 | Final accept / refuse on the recommendation | ✓ | — |
@@ -122,7 +122,7 @@ Two invariants make this stable: (1) Apollo is the only authority that touches t
 
 ## Project-specific Imgly playbook
 
-The receiving skill in the user's project may carry a project-specific archetype catalogue (the Turnip iOS skill at `.claude/skills/imgly-engine-expert/SKILL.md` does — block-management patterns, scope toggling, undo/redo array sync). That catalogue is **explicitly out of scope for Apollo**. Apollo does not read it, does not link to it from any mode pack, and does not reproduce any of it here. The whole point of this contract is that Apollo can be transplanted to a project whose Imgly skill has a different catalogue, and the contract still works.
+A private project-local override may carry a project-specific archetype catalogue. That catalogue is **explicitly out of scope for Apollo**. Apollo does not read it, does not link to it from any mode pack, and does not reproduce any of it here. The whole point of this contract is that Apollo can be transplanted to a project whose Imgly skill has a different catalogue, and the contract still works.
 
 ## Why
 

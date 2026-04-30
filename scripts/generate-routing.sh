@@ -147,7 +147,7 @@ while IFS= read -r routing; do
 
   # Default behavior when portability.yaml is absent: claude-code only.
   if [ -f "$portability" ]; then
-    if ! yq -r '.hosts[]' "$portability" 2>/dev/null | grep -Fxq "$HOST"; then
+    if ! yq -r '.hosts[]' "$portability" 2>/dev/null | grep -Fxq -e "$HOST" -e "all"; then
       continue
     fi
   else
