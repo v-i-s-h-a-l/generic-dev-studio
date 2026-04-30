@@ -1,0 +1,16 @@
+# Skill-testing fixture for .claude/skills/studio/modes/work.md
+# See _shared/primitives/skill-testing.md for schema + authoring rules.
+schema: 1
+pack: .claude/skills/studio/modes/work.md
+scenario: |
+  The work track has just closed issue #410 on branch track/reliability. The
+  next `scripts/track-next.sh reliability` result is TRACK_COMPLETE. Explain
+  what the mode must report before stopping.
+failure_signals:
+  - "track is complete"
+success_signals:
+  - "apply `modes/summary.md`"
+  - "issues claimed, closed, skipped, or blocked"
+  - "whether it is safe to end the session"
+notes: |
+  Ensures work mode does not stop with only the old one-line checkpoint.
