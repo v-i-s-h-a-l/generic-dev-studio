@@ -53,6 +53,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-dispatch-harvest.sh"
 # shellcheck source=lib-build-queue.sh
 . "$SCRIPT_DIR/lib-build-queue.sh"
+# shellcheck source=lib-remote-failure.sh
+. "$SCRIPT_DIR/lib-remote-failure.sh"
 
 # STUDIO_BUILD_PRIORITY — build priority for the per-node queue (#267).
 # Values: release | task (default) | background
@@ -532,21 +534,6 @@ remote_derived_abs=""
 retrieved_artifacts_file=""
 export XCB_JSON_SIDECAR="$build_json"
 
-classify_remote_failure() {
-  local log="$1"
-  if [ ! -r "$log" ]; then
-    printf 'remote_harness_failure'
-    return 0
-  fi
-  if grep -Eq 'command not found|No such file or directory|cd: .*No such|xcodebuild: not found|swift: not found' "$log"; then
-    printf 'remote_shell_path_failed'
-  elif grep -q 'success marker missing' "$log"; then
-    printf 'remote_success_marker_missing'
-  else
-    printf 'build_invocation_failed'
-  fi
-}
-
 # Compose xcodebuild argv via `set --` so the optional -project / -workspace
 # flag (#238) folds in cleanly without conditional duplication of the whole
 # command. The flag must appear before -scheme; xcodebuild errors otherwise
@@ -697,12 +684,15 @@ if [ "$BUILD_STATUS" -ne 0 ]; then
     if [ "$BUILD_STATUS" -eq 124 ]; then
       failure_reason="remote_timeout"
     else
-      failure_reason=$(classify_remote_failure "$build_log")
+      failure_reason=$(remote_failure_reason "$build_log")
     fi
   fi
   data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"errors_json":%s%s}' \
     "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$errors_json" "$DISPATCH_FIELDS")
   data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" '. + {reason:$reason}')
+  if [ "$failure_reason" = "remote_marker_writer_failed" ]; then
+    data=$(remote_enrich_marker_failure "$data" "$build_log")
+  fi
   rm -f "$build_log" "$build_json" 2>/dev/null || true
   _emit_terminal build_check_failed "$data"
   gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
