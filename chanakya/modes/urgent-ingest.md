@@ -38,7 +38,7 @@ Mint UUIDs, allocate the legacy `T<nnn>`, write the task with `labels: [urgent]`
 source scripts/lib-paths.sh
 source scripts/lib-ledger.sh
 
-LEGACY_ID=$(scripts/next-task-id.sh)        # e.g. "T349"
+LEGACY_ID=$(scripts/next-task-id.sh)        # default block; --block=<name> to override (see _shared/rules/task-id-blocks.md)
 TASK_UUID=$(mint_uuidv7)
 BRIEF_UUID=$(mint_uuidv7)
 
@@ -74,6 +74,7 @@ BODY_FILE="$PROJECT_ROOT/.runtime/tmp/brief-body-$LEGACY_ID.md"
 # Use Write tool to author $BODY_FILE with the three sections above.
 
 write_brief_artifact "$BRIEF_UUID" "$TASK_UUID" impl s \
+  state=ready \
   legacy_task_id="$LEGACY_ID" \
   slug="urgent-$(slugify "<title>")" \
   body_file="$BODY_FILE"
