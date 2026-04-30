@@ -800,7 +800,9 @@ cd generic-dev-studio
   </table>
 
   <h3>Model Recommendations</h3>
-  <p>Per-agent model defaults &mdash; tune for cost/quality without losing capability where it matters.</p>
+  <p>Per-agent defaults remain the fallback, while brief authors can now generate task-level recommendations from size, kind, file spread, and novelty.</p>
+  <pre><code>scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
+scripts/recommend-model.sh --size xs --kind docs --cross-file-count 1 --novelty-score 0 --preference fast_turnaround</code></pre>
   <table class="decision-table">
     <thead><tr><th>Agent</th><th>Default</th><th>When to upgrade / downgrade</th></tr></thead>
     <tbody>

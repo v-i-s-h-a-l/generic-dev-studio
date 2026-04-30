@@ -55,6 +55,10 @@ These remain eligible during the Forge reliability freeze because they prevent s
 
 Issue [#318](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/318) defines the current Forge PR path.
 
+- Related issues MAY share one feature or reliability branch when they touch one workflow surface, one user-facing capability, or one safety-floor path. This is the default for coherent slices; it is not a bypass.
+- Use single-issue PRs for urgent bugs, risky isolated changes, unrelated ownership, or branches that are becoming hard to review.
+- Grouped PR descriptions MUST list every included issue and close each one individually (`Closes #A`, `Closes #B`). `FORGE-RELIABILITY.md` rows keep issue-level status even when implementation lands through a grouped PR.
+- Split a grouped branch when the diff crosses unrelated agents, lacks shared tests, exceeds one meaningful reviewer pass, or mixes release urgency with non-urgent cleanup.
 - Default routine studio PRs to merge after one headless reviewer gate unless the reviewer reports a critical blocker.
 - Critical blockers are narrow: data loss, broken routing, unsafe runtime behavior, permission/auth changes, base-branch bypass, failing required checks, merge conflicts, or repo-rule violations.
 - Reviewer sessions MAY auto-fix narrow non-critical findings on the PR branch and MUST summarize those fixes on the PR.
@@ -66,6 +70,15 @@ Issue [#318](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/318) defin
 - `--method auto` uses rebase for PRs with fewer than 4 commits, including PRs targeting `main`; larger `main` PRs use merge commits, while non-`main` PRs continue to rebase.
 - Bypass is not interactive and is not implicit: `pr-merge-finalize.sh` refuses ungated PRs unless passed `--bypass-review --user-approved-bypass <github-url>`, and records that bypass on the PR.
 
+### Group vs Split Heuristics
+
+| Group when | Split when |
+|---|---|
+| Issues share the same scripts, mode packs, docs, or tests. | Issues touch unrelated agents or ownership surfaces. |
+| One review can understand the safety argument end-to-end. | The branch needs multiple independent safety arguments. |
+| The branch reduces repeated PR/review latency without weakening gates. | An urgent bug should ship ahead of lower-priority cleanup. |
+| Each issue remains traceable in commits, PR body, and status tables. | Issue closure would become ambiguous or buried. |
+
 ## Capability-Next Queue
 
 Important agent-capability improvements. Do not start these ahead of open safety-floor bugs unless the user explicitly waives the freeze for a named issue.
@@ -76,7 +89,7 @@ Important agent-capability improvements. Do not start these ahead of open safety
 | [#213](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/213) Achilles SourceKit-LSP symbol localization | Open | Achilles | Improves bug localization from file-level grep to symbol-level Swift resolution. |
 | [#257](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/257) Argus change-classifier for selective rule loading | Open | Argus | Reduces review latency and token use by loading only relevant review rules for a diff. |
 | [#256](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/256) Achilles brief-summary primitive | Open | Achilles / Chanakya | Adds compact brief slices for cheap reads and dispatch/status decisions. |
-| [#65](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/65) Task-level model recommendation system | Open | Cross-agent | Moves model choice from static agent defaults to task-aware recommendations. |
+| [#65](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/65) Task-level model recommendation system | Closed | Cross-agent | Moves model choice from static agent defaults to task-aware recommendations. |
 
 ## Role-Clarity Queue
 

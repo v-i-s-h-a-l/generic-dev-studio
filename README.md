@@ -130,6 +130,7 @@ scripts/backfill-orphan-debriefs.sh [--apply] [--quiet]     # recover tasks that
 scripts/forge-latency-report.sh --days 14                   # stage-level Forge task latency from event logs
 scripts/pre-commit-review.sh                                # manual no-secret reviewer gate for risky staged diffs
 scripts/pr-headless-review.sh <pr>                          # run no-secret reviewer gate, then merge if non-blocked
+scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
 ```
 
 **Minimal-intervention by default.** Chanakya runs end-to-end without stopping for confirmation. The only points where it pauses are: Slack publish, first-time config writes (`--configure-token`, `--configure`), merge conflicts, and `--wait` mode feedback windows.
@@ -273,6 +274,10 @@ git config core.hooksPath .githooks
 ```
 
 The hook regenerates `docs-surface.json`, runs the architecture/privacy gates, and emits `precommit_hook_completed` with `duration_s`. It does not spawn an LLM reviewer by default. Run `scripts/pre-commit-review.sh` manually before committing risky local diffs; its bypass remains explicit (`STUDIO_BYPASS_REVIEW=1` or `--bypass-review`) and audited through `precommit_review_bypassed`. PR integration still goes through `scripts/pr-headless-review.sh`, which records `pr_review_completed` timing before autopilot merge finalization. Error codes and fix recipes live in `_shared/rules/enforcement-contract.md`. Emergency lint bypass: `ARCH_LINT=0 git commit ...` (hotfixes only).
+
+### Feature branches and grouped PRs
+
+Use one feature or reliability branch for related issues when they share a workflow surface, safety-floor path, test fixture set, or user-facing capability. Keep issue closure explicit in the PR body (`Closes #353`, `Closes #355`, ...), and split once the branch needs unrelated reviewers, mixes urgent and non-urgent work, or becomes hard to review in one pass. Direct pushes to `main` remain forbidden; grouped work still merges through the PR review gate.
 
 ### One-time directories (per project)
 

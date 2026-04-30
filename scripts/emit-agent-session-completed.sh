@@ -10,7 +10,8 @@
 #   scripts/emit-agent-session-completed.sh <agent> <mode> <task> <duration_s> \
 #       [--verdict <v>] [--files-read <n>] [--files-written <n>] \
 #       [--tokens-input <n>] [--tokens-output <n>] \
-#       [--tokens-cache-read <n>] [--tokens-cache-write <n>]
+#       [--tokens-cache-read <n>] [--tokens-cache-write <n>] \
+#       [--model-selected <id>] [--model-fallback-reason <reason>]
 #
 # `<duration_s>` accepts either:
 #   - a non-negative integer (legacy caller-measured form), or
@@ -123,6 +124,8 @@ T_IN=""
 T_OUT=""
 T_CR=""
 T_CW=""
+MODEL_SELECTED=""
+MODEL_FALLBACK_REASON=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -133,6 +136,8 @@ while [ $# -gt 0 ]; do
     --tokens-output)      T_OUT="${2:?}";         shift 2 ;;
     --tokens-cache-read)  T_CR="${2:?}";          shift 2 ;;
     --tokens-cache-write) T_CW="${2:?}";          shift 2 ;;
+    --model-selected)     MODEL_SELECTED="${2:?}"; shift 2 ;;
+    --model-fallback-reason) MODEL_FALLBACK_REASON="${2:?}"; shift 2 ;;
     *) printf 'error: unknown flag %s\n' "$1" >&2; exit 2 ;;
   esac
 done
@@ -152,6 +157,8 @@ fi
 [ -n "$VERDICT" ]       && data+=',"verdict":"'"$VERDICT"'"'
 [ -n "$FILES_READ" ]    && data+=',"files_read":'"$FILES_READ"
 [ -n "$FILES_WRITTEN" ] && data+=',"files_written":'"$FILES_WRITTEN"
+[ -n "$MODEL_SELECTED" ] && data+=',"model_selected":"'"$MODEL_SELECTED"'"'
+[ -n "$MODEL_FALLBACK_REASON" ] && data+=',"model_fallback_reason":"'"$MODEL_FALLBACK_REASON"'"'
 
 # Tokens sub-object appears only when at least one token field was supplied.
 # Individual missing fields within the sub-object become `0` (safer for

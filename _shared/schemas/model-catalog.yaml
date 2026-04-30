@@ -1,0 +1,28 @@
+schema_version:
+  name: model-catalog
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+updated_at: 2026-04-30T00:00:00Z
+models:
+  opus:
+    id: claude-opus-default
+    tier: opus
+    released_at: null
+    variant_1m: false
+    supports_fast: false
+    knowledge_cutoff: null
+  sonnet:
+    id: claude-sonnet-default
+    tier: sonnet
+    released_at: null
+    variant_1m: false
+    supports_fast: true
+    knowledge_cutoff: null
+  haiku:
+    id: claude-haiku-default
+    tier: haiku
+    released_at: null
+    variant_1m: false
+    supports_fast: true
+    knowledge_cutoff: null
