@@ -16,7 +16,7 @@
         "type": "string",
         "pattern": "^[a-z0-9][a-z0-9._-]*$"
       },
-      "description": "Host slugs from hosts/registry.yaml that this skill runs on."
+      "description": "Host slugs from hosts/registry.yaml that this skill runs on, or the literal all wildcard for every registered host."
     },
     "scope": {
       "enum": ["global", "project"],

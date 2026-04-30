@@ -13,3 +13,4 @@ When writing or reviewing **Swift concurrency** (async/await, actors, Sendable) 
 When writing or reviewing **Swift Testing** (`@Test`, `#expect`, test plans) → use the `swift-testing-pro` skill
 When designing or reviewing **Swift APIs** (protocols, naming, argument labels) → use the `swift-api-design-guidelines-skill` skill
 When planning module or package architecture → use the `swift-architecture-skill` skill
+When reading, writing, reviewing, or debugging **IMGLY / CE.SDK engine** code (blocks, scenes, events, scopes, undo/redo, export, collage editor) → use the `imgly-engine-expert` skill

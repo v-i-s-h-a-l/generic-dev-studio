@@ -499,6 +499,7 @@ lint_portability_yaml() {
     known=$(yq -r 'keys | .[]' "$registry" 2>/dev/null || true)
     while IFS= read -r h; do
       [ -z "$h" ] && continue
+      [ "$h" = "all" ] && continue
       if ! printf '%s\n' "$known" | grep -Fxq "$h"; then
         emit_error "E_INVALID_PORTABILITY:$rel:host \"$h\" not declared in hosts/registry.yaml"
       fi
