@@ -44,6 +44,22 @@ yaml_field() {
     | tr -d '"'"'"
 }
 
+print_reviewer_failure() {
+  local stdout_file="$1" stderr_file="$2"
+  printf 'pre-commit-review: reviewer host failed: %s\n' "$REVIEW_HOST" >&2
+  if [ -s "$stderr_file" ]; then
+    printf 'pre-commit-review: reviewer stderr (first 80 lines):\n' >&2
+    sed -n '1,80p' "$stderr_file" >&2 || true
+  fi
+  if [ -s "$stdout_file" ]; then
+    printf 'pre-commit-review: reviewer stdout (first 80 lines):\n' >&2
+    sed -n '1,80p' "$stdout_file" >&2 || true
+  fi
+  if [ ! -s "$stderr_file" ] && [ ! -s "$stdout_file" ]; then
+    printf 'pre-commit-review: reviewer produced no stdout/stderr before exit\n' >&2
+  fi
+}
+
 emit_gate_event() {
   command -v emit_event_keyed >/dev/null 2>&1 || return 0
   local event="$1" verdict="$2" host="$3" patch_id="$4" bypass_source="${5:-}"
@@ -184,8 +200,7 @@ if ! ( cd "$REPO_ROOT" && env -i \
     REVIEW_PAYLOAD="$payload" \
     STAGED_PATCH_ID="$patch_id" \
     "${spawn_argv[@]}" "$review_prompt" > "$summary" 2>"$summary.err" ); then
-  printf 'pre-commit-review: reviewer host failed: %s\n' "$REVIEW_HOST" >&2
-  sed -n '1,80p' "$summary.err" >&2 || true
+  print_reviewer_failure "$summary" "$summary.err"
   exit 1
 fi
 
