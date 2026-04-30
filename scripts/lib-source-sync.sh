@@ -34,6 +34,9 @@
 #       and prints the home-relative path on stdout. Creates the parent
 #       directory on the remote first so rsync doesn't error on a missing
 #       prefix. Returns 0 on success.
+#       NODE_SOURCE_SYNC_MODE=auto|full|selective controls transfer shape.
+#       auto uses full sync for the first dispatch in a session, then
+#       git-diff-informed selective sync for later dispatches.
 #
 #   sourcesync_mkdir_remote <node-id> <relative-path>
 #       I/O: ensures `<remote $HOME>/<relative-path>` exists on the
@@ -84,6 +87,19 @@ if ! command -v resolve_runtime_global >/dev/null 2>&1; then
   # shellcheck source=lib-paths.sh
   . "$_LSS_DIR/lib-paths.sh"
 fi
+
+_sourcesync_now_ms() {
+  python3 -c 'import time; print(int(time.time() * 1000))' 2>/dev/null || {
+    local s; s=$(date -u +%s 2>/dev/null || printf '0')
+    printf '%s000\n' "$s"
+  }
+}
+
+_sourcesync_state_file() {
+  local node_id="${1:?node-id required}" rel="${2:?relative path required}" key
+  key=$(printf '%s' "$rel" | cksum | awk '{print $1}')
+  printf '%s/source-sync/%s/%s.%s.full\n' "$(resolve_project_root)/.runtime/state" "$node_id" "${STUDIO_SESSION_ID:-${PPID:-$$}}" "$key"
+}
 
 # sourcesync_relative_to_home <local-path>
 sourcesync_relative_to_home() {
@@ -137,19 +153,105 @@ sourcesync_push() {
       "$user@$host" "mkdir -p \"\$HOME/$parent_rel\"" >/dev/null 2>&1 \
     || { printf 'sourcesync: ssh mkdir parent failed on %s\n' "$node_id" >&2; return 1; }
 
-  # rsync. -a archives perms+mtime, -q quiet, --delete makes the remote
-  # an exact mirror. Trailing slash on source means "contents of dir,
-  # not the dir itself" — pairs with the leaf directory created on the
-  # remote by the explicit mkdir.
   ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
       "$user@$host" "mkdir -p \"\$HOME/$rel\"" >/dev/null 2>&1 \
     || { printf 'sourcesync: ssh mkdir target failed on %s\n' "$node_id" >&2; return 1; }
-  if ! rsync -aq --delete \
-        -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
-        "$local_path/" "$user@$host:\$HOME/$rel/" 2>/dev/null; then
-    printf 'sourcesync: rsync to %s failed\n' "$node_id" >&2
-    return 1
+
+  local mode state_file start_ms end_ms duration_ms
+  mode="${NODE_SOURCE_SYNC_MODE:-auto}"
+  state_file=$(_sourcesync_state_file "$node_id" "$rel" 2>/dev/null || printf '')
+  case "$mode" in
+    auto)
+      if [ -n "$state_file" ] && [ -f "$state_file" ]; then
+        mode=selective
+      else
+        mode=full
+      fi
+      ;;
+    full|selective) ;;
+    *) mode=auto ;;
+  esac
+
+  start_ms=$(_sourcesync_now_ms)
+  if [ "$mode" = "selective" ] && git -C "$local_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    local tmp_list tmp_delete base merge_base
+    tmp_list=$(mktemp 2>/dev/null || printf '/tmp/source-sync-list-%s' "$$")
+    tmp_delete=$(mktemp 2>/dev/null || printf '/tmp/source-sync-delete-%s' "$$")
+    (
+      cd "$local_path" || exit 1
+      base=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+      [ -z "$base" ] && base=main
+      merge_base=$(git merge-base HEAD "origin/$base" 2>/dev/null || git rev-parse HEAD~1 2>/dev/null || echo HEAD)
+      git diff --name-only "$merge_base" HEAD 2>/dev/null
+      git status --porcelain 2>/dev/null | sed -E 's/^...//; s/^.* -> //'
+      for p in Package.swift Package.resolved Podfile Podfile.lock; do
+        [ -e "$p" ] && printf '%s\n' "$p"
+      done
+      find . -maxdepth 1 \( -name '*.xcodeproj' -o -name '*.xcworkspace' -o -name 'Pods' \) -print 2>/dev/null | sed 's|^\./||'
+    ) | sed '/^$/d' | sort -u >"$tmp_list"
+    (
+      cd "$local_path" || exit 1
+      while IFS= read -r f; do
+        if [ -d "$f" ]; then
+          find "$f" -print
+        elif [ -e "$f" ]; then
+          printf '%s\n' "$f"
+        fi
+      done <"$tmp_list"
+    ) >"${tmp_list}.existing"
+    mv "${tmp_list}.existing" "$tmp_list"
+    (
+      cd "$local_path" || exit 1
+      git status --porcelain 2>/dev/null | awk 'substr($0,1,2) ~ /D/ {line=substr($0,4); sub(/^.* -> /,"",line); print line}'
+    ) | sed '/^$/d' | sort -u >"$tmp_delete"
+
+    if [ -s "$tmp_delete" ]; then
+      while IFS= read -r deleted; do
+        [ -z "$deleted" ] && continue
+        if ! ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+          "$user@$host" "rm -rf \"\$HOME/$rel/$deleted\"" >/dev/null 2>&1; then
+          printf 'sourcesync: remote delete failed on %s; falling back to full\n' "$node_id" >&2
+          mode=full
+          break
+        fi
+      done <"$tmp_delete"
+    fi
+
+    if [ "$mode" = "selective" ] && [ -s "$tmp_list" ]; then
+      if ! rsync -aqR --files-from="$tmp_list" \
+            -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
+            "$local_path/" "$user@$host:\$HOME/$rel/" 2>/dev/null; then
+        printf 'sourcesync: selective rsync to %s failed; falling back to full\n' "$node_id" >&2
+        mode=full
+      elif [ "${NODE_SOURCE_SYNC_SMOKE:-0}" = "1" ]; then
+        if rsync -aqn --delete --itemize-changes \
+            -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
+            "$local_path/" "$user@$host:\$HOME/$rel/" 2>/dev/null | sed '/^$/d' | grep . >/dev/null 2>&1; then
+          printf 'sourcesync: selective/full divergence on %s; falling back to full\n' "$node_id" >&2
+          mode=full
+        fi
+      fi
+    fi
+    rm -f "$tmp_list" "$tmp_delete" 2>/dev/null || true
   fi
+
+  if [ "$mode" != "selective" ] || ! git -C "$local_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    mode=full
+    if ! rsync -aq --delete \
+          -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
+          "$local_path/" "$user@$host:\$HOME/$rel/" 2>/dev/null; then
+      printf 'sourcesync: rsync to %s failed\n' "$node_id" >&2
+      return 1
+    fi
+    if [ -n "$state_file" ]; then
+      mkdir -p "$(dirname "$state_file")" 2>/dev/null || true
+      printf '%s\n' "$(_sourcesync_now_ms)" >"$state_file" 2>/dev/null || true
+    fi
+  fi
+  end_ms=$(_sourcesync_now_ms)
+  duration_ms=$((end_ms - start_ms))
+  [ "$duration_ms" -lt 0 ] && duration_ms=0
+  printf 'sourcesync: mode=%s sync_duration_ms=%s node=%s\n' "$mode" "$duration_ms" "$node_id" >&2
   printf '%s\n' "$rel"
 }
 
