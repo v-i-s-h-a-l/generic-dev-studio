@@ -232,7 +232,7 @@ The five-phase pipeline rendered as enforceable steps. Each step gates the trans
 |---|---|---|
 | → Achilles (patch) | `~/.dev-studio/<project>/apollo/recommendations/<id>.md` + brief seed | Recommendation contains `diff_target`, `expected_delta`, `verification_recipe`. Achilles applies the patch on a worktree, runs Argus per its normal flow, and merges. Apollo never invokes Achilles directly — Chanakya routes the brief. |
 | → Argus (review) | None directly. | Apollo's recommendation artifact is read-only context for Argus during code review. Argus does not write Apollo state. |
-| → imgly-engine-expert (Metal/Imgly archetypes) | `delegate: imgly-engine-expert` line on the recommendation when the diff target is in Imgly / Metal pipeline code | Handoff envelope: `apollo/_shared/integrations/imgly-and-metal.md` (`apollo_to_expert` / `expert_to_apollo` blocks). If the receiving skill is not vendored in the project, refuse with the standard refusal block and emit `advisory:1` with the canonical-antipattern citation only. |
+| → imgly-engine-expert (Metal/Imgly archetypes) | `delegate: imgly-engine-expert` line on the recommendation when the diff target is in Imgly / Metal pipeline code | Handoff envelope: `apollo/_shared/integrations/imgly-and-metal.md` (`apollo_to_expert` / `expert_to_apollo` blocks). If the current host cannot resolve the receiving skill from global or project-local skill directories, refuse with the standard refusal block and emit `advisory:1` with the canonical-antipattern citation only. |
 
 ## Singleton
 
