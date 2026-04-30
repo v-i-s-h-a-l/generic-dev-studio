@@ -211,9 +211,10 @@ sourcesync_push() {
 
   start_ms=$(_sourcesync_now_ms)
   if [ "$mode" = "selective" ] && git -C "$local_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    local tmp_list tmp_delete base merge_base
+    local tmp_list tmp_delete tmp_delete_remote base merge_base
     tmp_list=$(mktemp 2>/dev/null || printf '/tmp/source-sync-list-%s' "$$")
     tmp_delete=$(mktemp 2>/dev/null || printf '/tmp/source-sync-delete-%s' "$$")
+    tmp_delete_remote=$(mktemp 2>/dev/null || printf '/tmp/source-sync-delete-remote-%s' "$$")
     (
       cd "$local_path" || exit 1
       base=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
@@ -246,13 +247,13 @@ sourcesync_push() {
     if [ -s "$tmp_delete" ]; then
       while IFS= read -r deleted; do
         [ -z "$deleted" ] && continue
-        if ! ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
-          "$user@$host" "rm -rf \"\$HOME/$rel/$deleted\"" >/dev/null 2>&1; then
-          printf 'sourcesync: remote delete failed on %s; falling back to full\n' "$node_id" >&2
-          mode=full
-          break
-        fi
-      done <"$tmp_delete"
+        printf '%s/%s\0' "$rel" "$deleted"
+      done <"$tmp_delete" >"$tmp_delete_remote"
+      if ! ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+          "$user@$host" 'cd "$HOME" && xargs -0 rm -rf --' <"$tmp_delete_remote" >/dev/null 2>&1; then
+        printf 'sourcesync: remote delete failed on %s; falling back to full\n' "$node_id" >&2
+        mode=full
+      fi
     fi
 
     if [ "$mode" = "selective" ] && [ -s "$tmp_list" ]; then
@@ -270,7 +271,7 @@ sourcesync_push() {
         fi
       fi
     fi
-    rm -f "$tmp_list" "$tmp_delete" 2>/dev/null || true
+    rm -f "$tmp_list" "$tmp_delete" "$tmp_delete_remote" 2>/dev/null || true
   fi
 
   if [ "$mode" != "selective" ] || ! git -C "$local_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
