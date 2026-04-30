@@ -25,6 +25,7 @@ Fleet management from inside Claude. Onboarding a *new* machine still goes throu
 | `enable <id>` / `disable <id>` | `configure.sh worker enable\|disable <id>` | Toggle dispatch eligibility |
 | `scopes <id> <a,b>` | `configure.sh worker scopes <id> <csv>` | Set credential scopes (e.g. `asc,slack`); empty CSV clears. Consumed by `node-pick --requires-secret-scope`. |
 | `health [<id>]` | `node-health.sh [<id>]` | Probe one or all (status + load1) |
+| `diagnose [<id>] [--role <role>]` | `node-diagnose.sh [<id>] [--role <role>]` | Walk the full troubleshooting checklist; surface fix commands inline |
 | `sync [<id>\|--all] [--dry-run]` | `sync-worker.sh <id>` or `sync-workers-all.sh` | Push manifest deltas |
 | `schedule on\|off\|status` | `configure.sh schedule …` | Manage the launchd auto-sync agent |
 | `recheck` | `configure.sh recheck` | Re-run role validation on this machine; surface diff vs last bootstrap (e.g. Xcode now installed, SSH key now valid) |
@@ -68,7 +69,15 @@ scripts/node-health.sh [<id>]
 
 Output is parseable: `<id>\t<status>\t<load1>\t<host>` per line. Render as a table. Exit code: 0 = at least one healthy; 1 = none healthy. Surface both. Status values: `healthy`, `moved` (reachable but registry's `machine_id` differs from the remote's — `node_machine_id_drift` event fired; re-register via `configure.sh worker add` to clear), `unreachable`, `disabled`. `moved` is dispatchable — node-pick treats it the same as `healthy`.
 
-## Step 4 — Sync
+## Step 4 — Diagnose
+
+```bash
+scripts/node-diagnose.sh [<id>] [--role <role>]
+```
+
+Pass through to the script and surface its output verbatim. With no id, the script sweeps all enabled nodes. Use this when a worker is reachable enough to register but dispatch is failing — the script already walks the setup.html troubleshooting checks and prints fix commands inline.
+
+## Step 5 — Sync
 
 ```bash
 # one worker
@@ -81,7 +90,7 @@ The scripts emit `worker_sync_*` events on their own; do not re-emit. Surface dr
 
 If the user invokes `sync` with no id and no `--all`, ask them to pick: "one worker (`sync <id>`) or all workers (`sync --all`)?" Prefer explicit over implicit.
 
-## Step 5 — Recheck
+## Step 6 — Recheck
 
 ```bash
 scripts/configure.sh recheck
@@ -91,7 +100,7 @@ Re-runs `validate()` for every step the current role recorded during `bootstrap.
 
 Local-only today. Remote recheck (re-validate a registered worker over SSH) is a follow-up.
 
-## Step 6 — Schedule
+## Step 7 — Schedule
 
 ```bash
 scripts/configure.sh schedule on    # install launchd agent
@@ -110,6 +119,7 @@ Studio router dispatches here for:
 - "show the fleet", "list workers", "are the workers up?", "fleet status"
 - "register a worker", "add the mini", "add a node"
 - "sync the workers", "push the manifest", "is the mini in sync"
+- "diagnose a worker", "why is dispatch failing?", "why is the mini failing dispatch?"
 - "is the scheduled sync running", "turn off auto-sync"
 - "I just installed Xcode — re-check the worker", "recheck", "did anything change?"
 

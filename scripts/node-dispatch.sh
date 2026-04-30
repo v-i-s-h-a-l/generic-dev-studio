@@ -8,10 +8,9 @@
 # missing registry) silently falls back to local execution — this is a
 # hard requirement: no manual intervention when a remote node drops.
 #
-# The 10-second bound lives on the health check, not on the command
-# itself. A 40-minute xcodebuild on a reachable node must not get killed
-# because the caller set a short timeout; the only cost the caller pays
-# for remote dispatch is the reachability probe.
+# The 10-second health probe only confirms reachability. The remote command
+# stream is separately bounded by NODE_BUILD_TIMEOUT so a hung worker-side
+# build cannot pin the dispatcher forever.
 #
 # Usage:
 #   scripts/node-dispatch.sh <node-id> <command> [args...]
@@ -23,6 +22,7 @@
 #
 # Env:
 #   NODE_DISPATCH_DEBUG=1   log the route decision (remote vs fallback) to stderr
+#   NODE_BUILD_TIMEOUT=1800 cap the remote command stream in seconds
 
 set -u
 umask 022
@@ -172,27 +172,58 @@ fi
 # a remote worker that does not source lib-paths.sh; the path mirrors
 # `resolve_runtime_global()` on the remote — keep them in sync if either
 # side moves.
-REMOTE_WRAPPER=$(cat <<'REMOTE_EOF'
-set -u
+IFS= read -r -d '' REMOTE_WRAPPER <<'REMOTE_EOF' || true
+set +u
 UUID="$1"
 CMD="$2"
+TIMEOUT_S="$3"
 LOG_DIR="$HOME/.dev-studio/.runtime/logs"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/$UUID.log"
 EXIT_FILE="$LOG_DIR/$UUID.exit"
+RUNNER_SCRIPT="$LOG_DIR/$UUID.runner.sh"
+case "$TIMEOUT_S" in
+  ''|*[!0-9]*|0) TIMEOUT_S=1800 ;;
+esac
 
 # Atomic exit-file write via mv so a reader (#147-C) never sees a partial
 # file. CMD already arrives printf-%q-quoted; bash -c reconstructs argv.
-nohup bash -c '
-  bash -c "$1"
-  rc=$?
-  printf "%s\n" "$rc" > "$2.tmp" && mv "$2.tmp" "$2"
+cat >"$RUNNER_SCRIPT" <<'RUNNER_EOF'
+  set +u
+  set -m
+  cmd="$1"
+  exit_file="$2"
+  timeout_s="$3"
+  runner_script="$4"
+  bash -c "$cmd" &
+  child=$!
+  started=$(date -u +%s)
+  rc=""
+  while kill -0 "$child" 2>/dev/null; do
+    now=$(date -u +%s)
+    if [ $(( now - started )) -ge "$timeout_s" ]; then
+      kill -TERM "-$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null || true
+      sleep 5
+      kill -KILL "-$child" 2>/dev/null || kill -KILL "$child" 2>/dev/null || true
+      wait "$child" 2>/dev/null || true
+      rc=124
+      break
+    fi
+    sleep 1
+  done
+  if [ -z "$rc" ]; then
+    wait "$child"
+    rc=$?
+  fi
+  printf "%s\n" "$rc" > "$exit_file.tmp" && mv "$exit_file.tmp" "$exit_file"
+  rm -f "$runner_script" 2>/dev/null || true
   exit $rc
-' _ "$CMD" "$EXIT_FILE" >"$LOG" 2>&1 </dev/null &
+RUNNER_EOF
+nohup bash "$RUNNER_SCRIPT" "$CMD" "$EXIT_FILE" "$TIMEOUT_S" "$RUNNER_SCRIPT" >"$LOG" 2>&1 </dev/null &
 RUNNER=$!
 disown 2>/dev/null || true
 
-tail -n +1 -F "$LOG" 2>/dev/null &
+tail -n +1 -F "$LOG" 2>/dev/null </dev/null &
 TAIL=$!
 
 # Poll runner liveness: bash `wait` would return immediately on a disowned
@@ -208,7 +239,28 @@ fi
 printf 'node-dispatch: success marker missing for %s\n' "$UUID" >&2
 exit 1
 REMOTE_EOF
-)
 
-exec ssh "${SSH_OPTS[@]}" "${USER_}@${HOST}" -- bash -s -- \
-  "$DISPATCH_UUID" "$REMOTE_CMD" <<<"$REMOTE_WRAPPER"
+NODE_BUILD_TIMEOUT="${NODE_BUILD_TIMEOUT:-1800}"
+case "$NODE_BUILD_TIMEOUT" in
+  ''|*[!0-9]*|0) NODE_BUILD_TIMEOUT=1800 ;;
+esac
+
+LOCAL_SSH_TIMEOUT=$(( NODE_BUILD_TIMEOUT + 30 ))
+REMOTE_TIMEOUT_CMD=()
+if command -v gtimeout >/dev/null 2>&1; then
+  REMOTE_TIMEOUT_CMD=(gtimeout "$LOCAL_SSH_TIMEOUT")
+elif command -v timeout >/dev/null 2>&1; then
+  REMOTE_TIMEOUT_CMD=(timeout "$LOCAL_SSH_TIMEOUT")
+else
+  printf 'warn: neither gtimeout nor timeout is installed; ssh stream has no local guard, remote runner still enforces NODE_BUILD_TIMEOUT\n' >&2
+fi
+
+if [ "${#REMOTE_TIMEOUT_CMD[@]}" -gt 0 ]; then
+  exec "${REMOTE_TIMEOUT_CMD[@]}" ssh "${SSH_OPTS[@]}" "${USER_}@${HOST}" -- \
+    bash -c 'tmp="${TMPDIR:-/tmp}/node-dispatch-wrapper-$$.sh"; cat >"$tmp"; bash "$tmp" "$@"; rc=$?; rm -f "$tmp"; exit "$rc"' \
+    _ "$DISPATCH_UUID" "$REMOTE_CMD" "$NODE_BUILD_TIMEOUT" <<<"$REMOTE_WRAPPER"
+fi
+
+exec ssh "${SSH_OPTS[@]}" "${USER_}@${HOST}" -- \
+  bash -c 'tmp="${TMPDIR:-/tmp}/node-dispatch-wrapper-$$.sh"; cat >"$tmp"; bash "$tmp" "$@"; rc=$?; rm -f "$tmp"; exit "$rc"' \
+  _ "$DISPATCH_UUID" "$REMOTE_CMD" "$NODE_BUILD_TIMEOUT" <<<"$REMOTE_WRAPPER"

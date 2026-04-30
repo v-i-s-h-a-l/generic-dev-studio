@@ -34,6 +34,12 @@
 #       and prints the home-relative path on stdout. Creates the parent
 #       directory on the remote first so rsync doesn't error on a missing
 #       prefix. Returns 0 on success.
+#       NODE_SOURCE_SYNC_MODE=auto|full|selective controls transfer shape.
+#       auto uses full sync for the first dispatch in a session, then
+#       git-diff-informed selective sync for later dispatches.
+#       SOURCE_SYNC_REMOTE_REL may override the remote target only for
+#       `.dev-studio/.runtime/warmups/*` mirrors; live dispatch paths always
+#       use the local path's home-relative form.
 #
 #   sourcesync_mkdir_remote <node-id> <relative-path>
 #       I/O: ensures `<remote $HOME>/<relative-path>` exists on the
@@ -51,6 +57,17 @@
 #       <local-dir>/. Does NOT use --delete — accumulates rather than
 #       mirrors. Creates the local directory if missing. Returns rsync's
 #       exit code. Non-fatal by design.
+#
+#   sourcesync_remote_abs <node-id> <remote-rel>
+#       I/O: prints the node's absolute path for a home-relative path.
+#
+#   sourcesync_pull_xcode_artifacts <node-id> <remote-root-rel> <local-root>
+#       I/O: finds `.xcarchive` / `.xcresult` directories under the remote
+#       root and rsyncs only those directories back to the matching local
+#       root. Prints retrieved local paths, one per line.
+#
+#   sourcesync_start_warmup_once <node-id> <project> <worktree> [scheme] [destination] [project-relpath]
+#       I/O: launches node-warmup.sh in the background once per session/node.
 #
 # Design notes:
 #   - rsync uses --delete on PUSH so the remote tree is an exact mirror
@@ -76,6 +93,39 @@ if ! command -v resolve_runtime_global >/dev/null 2>&1; then
   # shellcheck source=lib-paths.sh
   . "$_LSS_DIR/lib-paths.sh"
 fi
+
+_sourcesync_now_ms() {
+  python3 -c 'import time; print(int(time.time() * 1000))' 2>/dev/null || {
+    local s; s=$(date -u +%s 2>/dev/null || printf '0')
+    printf '%s000\n' "$s"
+  }
+}
+
+_sourcesync_state_file() {
+  local node_id="${1:?node-id required}" rel="${2:?relative path required}" key session_id
+  key=$(printf '%s' "$rel" | cksum | awk '{print $1}')
+  session_id="${SOURCE_SYNC_SESSION_ID:-${STUDIO_SESSION_ID:-${PPID:-$$}}}"
+  printf '%s/source-sync/%s/%s.%s.full\n' "$(resolve_project_root)/.runtime/state" "$node_id" "$session_id" "$key"
+}
+
+sourcesync_start_warmup_once() {
+  local node_id="${1:?node-id required}" project="${2:?project required}" worktree="${3:?worktree required}"
+  local scheme="${4:-}" destination="${5:-}" project_relpath="${6:-}" session_id marker_dir marker script_dir
+  node_is_self "$node_id" && return 0
+  session_id="${SOURCE_SYNC_SESSION_ID:-${STUDIO_SESSION_ID:-${PPID:-$$}}}"
+  marker_dir="$(resolve_project_root_for "$project")/.runtime/state/sessions"
+  marker="$marker_dir/source-warmup-${session_id}-${node_id}"
+  mkdir -p "$marker_dir" 2>/dev/null || return 0
+  mkdir "$marker" 2>/dev/null || return 0
+  script_dir=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+  SOURCE_SYNC_SESSION_ID="$session_id" \
+    NODE_WARMUP_WORKTREE="$worktree" \
+    NODE_WARMUP_SCHEME="$scheme" \
+    NODE_WARMUP_DESTINATION="$destination" \
+    NODE_WARMUP_PROJECT_RELPATH="$project_relpath" \
+    nohup "$script_dir/node-warmup.sh" "$node_id" "$project" >/dev/null 2>&1 &
+  printf '%s\n' "$!" >"$marker/pid" 2>/dev/null || true
+}
 
 # sourcesync_relative_to_home <local-path>
 sourcesync_relative_to_home() {
@@ -118,7 +168,18 @@ sourcesync_push() {
   user=$(printf '%s' "$entry" | jq -r '.user')
   host=$(printf '%s' "$entry" | jq -r '.host')
 
-  local rel; rel=$(sourcesync_relative_to_home "$local_path") || return 1
+  local rel remote_rel_override
+  rel=$(sourcesync_relative_to_home "$local_path") || return 1
+  remote_rel_override="${SOURCE_SYNC_REMOTE_REL:-}"
+  if [ -n "$remote_rel_override" ]; then
+    case "$remote_rel_override" in
+      .dev-studio/.runtime/warmups/*) rel="$remote_rel_override" ;;
+      *)
+        printf 'sourcesync: refusing unsafe remote override: %s\n' "$remote_rel_override" >&2
+        return 2
+        ;;
+    esac
+  fi
 
   # Ensure the parent of the rsync target exists on the remote. rsync
   # creates the leaf, but a missing intermediate (e.g. the first task
@@ -129,19 +190,107 @@ sourcesync_push() {
       "$user@$host" "mkdir -p \"\$HOME/$parent_rel\"" >/dev/null 2>&1 \
     || { printf 'sourcesync: ssh mkdir parent failed on %s\n' "$node_id" >&2; return 1; }
 
-  # rsync. -a archives perms+mtime, -q quiet, --delete makes the remote
-  # an exact mirror. Trailing slash on source means "contents of dir,
-  # not the dir itself" — pairs with the leaf directory created on the
-  # remote by the explicit mkdir.
   ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
       "$user@$host" "mkdir -p \"\$HOME/$rel\"" >/dev/null 2>&1 \
     || { printf 'sourcesync: ssh mkdir target failed on %s\n' "$node_id" >&2; return 1; }
-  if ! rsync -aq --delete \
-        -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
-        "$local_path/" "$user@$host:\$HOME/$rel/" 2>/dev/null; then
-    printf 'sourcesync: rsync to %s failed\n' "$node_id" >&2
-    return 1
+
+  local mode state_file start_ms end_ms duration_ms
+  mode="${NODE_SOURCE_SYNC_MODE:-auto}"
+  state_file=$(_sourcesync_state_file "$node_id" "$rel" 2>/dev/null || printf '')
+  case "$mode" in
+    auto)
+      if [ -n "$state_file" ] && [ -f "$state_file" ]; then
+        mode=selective
+      else
+        mode=full
+      fi
+      ;;
+    full|selective) ;;
+    *) mode=auto ;;
+  esac
+
+  start_ms=$(_sourcesync_now_ms)
+  if [ "$mode" = "selective" ] && git -C "$local_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    local tmp_list tmp_delete tmp_delete_remote base merge_base
+    tmp_list=$(mktemp 2>/dev/null || printf '/tmp/source-sync-list-%s' "$$")
+    tmp_delete=$(mktemp 2>/dev/null || printf '/tmp/source-sync-delete-%s' "$$")
+    tmp_delete_remote=$(mktemp 2>/dev/null || printf '/tmp/source-sync-delete-remote-%s' "$$")
+    (
+      cd "$local_path" || exit 1
+      base=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+      [ -z "$base" ] && base=main
+      merge_base=$(git merge-base HEAD "origin/$base" 2>/dev/null || git rev-parse HEAD~1 2>/dev/null || echo HEAD)
+      git diff --name-only "$merge_base" HEAD 2>/dev/null
+      git status --porcelain 2>/dev/null | sed -E 's/^...//; s/^.* -> //'
+      for p in Package.swift Package.resolved Podfile Podfile.lock; do
+        [ -e "$p" ] && printf '%s\n' "$p"
+      done
+      find . -maxdepth 1 \( -name '*.xcodeproj' -o -name '*.xcworkspace' -o -name 'Pods' \) -print 2>/dev/null | sed 's|^\./||'
+    ) | sed '/^$/d' | sort -u >"$tmp_list"
+    (
+      cd "$local_path" || exit 1
+      while IFS= read -r f; do
+        if [ -d "$f" ]; then
+          find "$f" -print
+        elif [ -e "$f" ]; then
+          printf '%s\n' "$f"
+        fi
+      done <"$tmp_list"
+    ) >"${tmp_list}.existing"
+    mv "${tmp_list}.existing" "$tmp_list"
+    (
+      cd "$local_path" || exit 1
+      git diff --name-only --diff-filter=D "$merge_base" HEAD 2>/dev/null
+      git status --porcelain 2>/dev/null | awk 'substr($0,1,2) ~ /D/ {line=substr($0,4); sub(/^.* -> /,"",line); print line}'
+    ) | sed '/^$/d' | sort -u >"$tmp_delete"
+
+    if [ -s "$tmp_delete" ]; then
+      while IFS= read -r deleted; do
+        [ -z "$deleted" ] && continue
+        printf '%s/%s\0' "$rel" "$deleted"
+      done <"$tmp_delete" >"$tmp_delete_remote"
+      if ! ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+          "$user@$host" 'cd "$HOME" && xargs -0 rm -rf --' <"$tmp_delete_remote" >/dev/null 2>&1; then
+        printf 'sourcesync: remote delete failed on %s; falling back to full\n' "$node_id" >&2
+        mode=full
+      fi
+    fi
+
+    if [ "$mode" = "selective" ] && [ -s "$tmp_list" ]; then
+      if ! rsync -aqR --files-from="$tmp_list" \
+            -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
+            "$local_path/" "$user@$host:\$HOME/$rel/" 2>/dev/null; then
+        printf 'sourcesync: selective rsync to %s failed; falling back to full\n' "$node_id" >&2
+        mode=full
+      elif [ "${NODE_SOURCE_SYNC_SMOKE:-0}" = "1" ]; then
+        if rsync -aqn --delete --itemize-changes \
+            -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
+            "$local_path/" "$user@$host:\$HOME/$rel/" 2>/dev/null | sed '/^$/d' | grep . >/dev/null 2>&1; then
+          printf 'sourcesync: selective/full divergence on %s; falling back to full\n' "$node_id" >&2
+          mode=full
+        fi
+      fi
+    fi
+    rm -f "$tmp_list" "$tmp_delete" "$tmp_delete_remote" 2>/dev/null || true
   fi
+
+  if [ "$mode" != "selective" ] || ! git -C "$local_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    mode=full
+    if ! rsync -aq --delete \
+          -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
+          "$local_path/" "$user@$host:\$HOME/$rel/" 2>/dev/null; then
+      printf 'sourcesync: rsync to %s failed\n' "$node_id" >&2
+      return 1
+    fi
+    if [ -n "$state_file" ]; then
+      mkdir -p "$(dirname "$state_file")" 2>/dev/null || true
+      printf '%s\n' "$(_sourcesync_now_ms)" >"$state_file" 2>/dev/null || true
+    fi
+  fi
+  end_ms=$(_sourcesync_now_ms)
+  duration_ms=$((end_ms - start_ms))
+  [ "$duration_ms" -lt 0 ] && duration_ms=0
+  printf 'sourcesync: mode=%s sync_duration_ms=%s node=%s\n' "$mode" "$duration_ms" "$node_id" >&2
   printf '%s\n' "$rel"
 }
 
@@ -194,4 +343,50 @@ sourcesync_pull_dir() {
   rsync -aq \
     -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
     "$user@$host:\$HOME/$remote_rel/" "$local_dir/" 2>/dev/null
+}
+
+# sourcesync_remote_abs <node-id> <remote-rel>
+sourcesync_remote_abs() {
+  local node_id="${1:?node-id required}" remote_rel="${2:?remote-relative path required}"
+  command -v jq >/dev/null 2>&1 || { printf 'sourcesync: jq required\n' >&2; return 2; }
+  local registry; registry="$(resolve_runtime_global)/nodes.json"
+  [ -r "$registry" ] || { printf 'sourcesync: node registry not readable: %s\n' "$registry" >&2; return 2; }
+  local entry user host
+  entry=$(jq -e --arg id "$node_id" '.nodes[]? | select(.id == $id) | select(.enabled != false)' "$registry") \
+    || { printf 'sourcesync: unknown or disabled node: %s\n' "$node_id" >&2; return 2; }
+  user=$(printf '%s' "$entry" | jq -r '.user')
+  host=$(printf '%s' "$entry" | jq -r '.host')
+  ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+      "$user@$host" "printf '%s\n' \"\$HOME/$remote_rel\"" 2>/dev/null
+}
+
+# sourcesync_pull_xcode_artifacts <node-id> <remote-root-rel> <local-root>
+sourcesync_pull_xcode_artifacts() {
+  local node_id="${1:?node-id required}" remote_root_rel="${2:?remote root required}" local_root="${3:?local root required}"
+  command -v jq >/dev/null 2>&1 || { printf 'sourcesync: jq required\n' >&2; return 2; }
+  command -v rsync >/dev/null 2>&1 || { printf 'sourcesync: rsync required\n' >&2; return 2; }
+  local registry; registry="$(resolve_runtime_global)/nodes.json"
+  [ -r "$registry" ] || { printf 'sourcesync: node registry not readable: %s\n' "$registry" >&2; return 2; }
+  local entry user host
+  entry=$(jq -e --arg id "$node_id" '.nodes[]? | select(.id == $id) | select(.enabled != false)' "$registry") \
+    || { printf 'sourcesync: unknown or disabled node: %s\n' "$node_id" >&2; return 2; }
+  user=$(printf '%s' "$entry" | jq -r '.user')
+  host=$(printf '%s' "$entry" | jq -r '.host')
+
+  local artifacts
+  artifacts=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+      "$user@$host" "cd \"\$HOME/$remote_root_rel\" 2>/dev/null && find . -type d \( -name '*.xcarchive' -o -name '*.xcresult' \) -print" 2>/dev/null) || return 1
+  [ -n "$artifacts" ] || return 0
+
+  local artifact rel local_dir
+  while IFS= read -r artifact; do
+    [ -z "$artifact" ] && continue
+    rel="${artifact#./}"
+    [ -z "$rel" ] && continue
+    local_dir="$local_root/$rel"
+    sourcesync_pull_dir "$node_id" "$remote_root_rel/$rel" "$local_dir" 2>/dev/null || continue
+    printf '%s\n' "$local_dir"
+  done <<EOF
+$artifacts
+EOF
 }

@@ -384,6 +384,7 @@ scripts/configure.sh schedule run    # one-shot sync now</code></pre>
         <tr><td>Worker registry</td><td><code>~/.dev-studio/.runtime/nodes.json</code></td></tr>
         <tr><td>Per-project worker manifest</td><td><code>~/.dev-studio/&lt;project&gt;/worker-manifest.yaml</code></td></tr>
         <tr><td>Scheduled worker-sync agent</td><td><code>~/Library/LaunchAgents/dev.studio.worker-sync.plist</code></td></tr>
+        <tr><td>Optional node-monitor agent</td><td><code>~/Library/LaunchAgents/dev.studio.node-monitor.plist</code></td></tr>
         <tr><td>Bootstrap run logs</td><td><code>~/.dev-studio/.runtime/logs/bootstrap-&lt;ts&gt;.log</code></td></tr>
       </tbody>
     </table>
@@ -953,14 +954,15 @@ sudo tailscale up --ssh</code></pre>
     <h2>Planned follow-ups</h2>
     <p>The bootstrap wizard is shipped. Remaining automation to close the offload loop — tracking issues in <a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues">the repo</a>:</p>
     <ul>
-      <li><strong><code>scripts/node-parity.sh</code></strong> ✓ shipped in #126 — run on the laptop, SSHes each registered node, reports tool-version deltas (Xcode, Swift, simulators, packages). Cache feeds the dispatch-time Xcode-version guard (#136).</li>
+      <li><strong><code>scripts/node-parity.sh</code></strong> ✓ shipped in #126/#131 — run on the laptop, SSHes each registered node, reports tool-version deltas (Xcode, Swift, simulators, packages), and <code>--fix</code> installs missing brew packages while printing manual Xcode/runtime actions. Cache feeds the dispatch-time Xcode-version guard (#136).</li>
       <li><strong><code>scripts/node-diagnose.sh</code></strong> ✓ shipped in #139 — runtime troubleshooter. Walks every check above for one node (registry, enabled, ping, ssh, uptime, roles, pubkey, jq/rsync, Xcode delta) and prints the exact fix command on failure. Run it the moment dispatch surprises you.</li>
+      <li><strong><code>scripts/monitor-install.sh</code></strong> ✓ shipped in #132 — opt-in hourly laptop LaunchAgent around <code>node-monitor.sh</code>. Alerts when an enabled node stays unreachable past the threshold and cools down before re-alerting.</li>
       <li><strong>Auto-rsync in <code>task-build-gate.sh</code> + <code>swift-test-gate.sh</code></strong> — before the remote invocation, sync the worktree to the node. Closes the <a class="inline" href="#source-sync">source-sync gap</a> for pre-Commit-H use.</li>
       <li><strong>Runaway-build guard</strong> — configurable timeout on remote dispatch so a hung <code>xcodebuild</code> doesn't pin the dispatcher forever.</li>
       <li><strong>Remote-node teardown</strong> — extend Achilles Step 9 cleanup to wipe <code>DerivedData</code> + worktree on nodes where dispatch ran.</li>
       <li><strong>Machine-aware gate decisions</strong> — let Achilles Step 6 factor in available nodes, not just task size.</li>
       <li><strong>Dispatch telemetry</strong> — log tags on every routing decision so the system can analyse where offload wins vs loses and propose tuning.</li>
-      <li>… plus warm-up / selective-rsync / Xcode-version-guard / janitor / monitoring / signing-Stage-3 / artifact-retrieval / parity-auto-fix.</li>
+      <li>… plus warm-up / selective-rsync / Xcode-version-guard / janitor / signing-Stage-3 / artifact-retrieval.</li>
     </ul>
   </div>
 </section>
