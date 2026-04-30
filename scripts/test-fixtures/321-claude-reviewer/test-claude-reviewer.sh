@@ -42,7 +42,14 @@ case " $* " in
   *) printf 'claude reviewer inherited MCP config\n' >&2; exit 8 ;;
 esac
 case " $* " in
-  *" --tools Read,Grep,Glob "*) ;;
+  *" --mcp-config .claude-reviewer/mcp-empty.json "*) ;;
+  *) printf 'claude reviewer did not use isolated MCP config file\n' >&2; exit 13 ;;
+esac
+[ -f ".claude-reviewer/mcp-empty.json" ] || { printf 'claude reviewer launched outside repo root\n' >&2; exit 14; }
+grep -q '"mcpServers"[[:space:]]*:[[:space:]]*{}' ".claude-reviewer/mcp-empty.json" \
+  || { printf 'claude reviewer MCP config is not empty\n' >&2; exit 15; }
+case " $* " in
+  *" --tools=Read,Grep,Glob "*) ;;
   *) printf 'claude reviewer did not use read-only tools\n' >&2; exit 9 ;;
 esac
 
@@ -146,7 +153,7 @@ bad-claude-reviewer:
 YAML
 cat > "$MINI_REPO/.bad-claude-reviewer/capabilities.yaml" <<'YAML'
 supports_hooks: false
-spawn_command: "claude -p --permission-mode dontAsk --setting-sources project --disable-slash-commands --no-session-persistence --strict-mcp-config --mcp-config {} --tools Read,Grep,Glob,Bash"
+spawn_command: "claude -p --permission-mode dontAsk --setting-sources project --disable-slash-commands --no-session-persistence --strict-mcp-config --mcp-config .claude-reviewer/mcp-empty.json --tools=Read,Grep,Glob,Bash"
 block_for_event_strategy: tail
 tool_dialect: claude
 sandbox_profile: read-only
