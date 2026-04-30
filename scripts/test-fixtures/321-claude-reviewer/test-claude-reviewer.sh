@@ -16,6 +16,9 @@ cat > "$BIN/claude" <<'SH'
 case " $* " in
   *" --help "*) printf 'claude fixture help\n'; exit 0 ;;
 esac
+case " $* " in
+  *"stdout-fail"*) printf 'fixture startup stdout\n'; exit 17 ;;
+esac
 
 case " $* " in
   *" -p "*|*" --print "*) ;;
@@ -73,6 +76,7 @@ case "$1 $2" in
   "pr view")
     case " $* " in
       *" --jq .number "*|*" --jq "*) printf '123\n' ;;
+      *" stdout-fail "*) printf '{"number":124,"title":"Fixture PR","url":"https://github.com/owner/repo/pull/stdout-fail","baseRefName":"main","headRefName":"feature","headRefOid":"abc124","author":{"login":"author"},"commits":[{"oid":"abc124"}]}\n' ;;
       *) printf '{"number":123,"title":"Fixture PR","url":"https://github.com/owner/repo/pull/123","baseRefName":"main","headRefName":"feature","headRefOid":"abc123","author":{"login":"author"},"commits":[{"oid":"abc123"}]}\n' ;;
     esac
     ;;
@@ -177,6 +181,15 @@ assert "headless claude review exits zero" "[ '$rc' -eq 0 ]"
 assert "review host reported" "grep -q 'PR_REVIEW_HOST=claude-reviewer' '$out'"
 assert "verdict parsed" "grep -q 'PR_REVIEW_VERDICT=approved' '$out'"
 assert "autopilot receives review host" "grep -q -- '--review-host claude-reviewer' '$AUTOPILOT_LOG'"
+
+fail_out="$TMPROOT/fail-out.txt"
+if bash "$ROOT/scripts/pr-headless-review.sh" stdout-fail --review-host claude-reviewer --method auto >"$fail_out" 2>"$fail_out.err"; then
+  printf 'not ok - claude reviewer stdout failure unexpectedly succeeded\n' >&2
+  failures=$((failures + 1))
+else
+  assert "startup stdout failure labels stdout" "grep -q 'reviewer stdout' '$fail_out.err'"
+  assert "startup stdout failure includes detail" "grep -q 'fixture startup stdout' '$fail_out.err'"
+fi
 
 if [ "$failures" -ne 0 ]; then
   printf 'FAIL: %s assertion(s)\n' "$failures" >&2
