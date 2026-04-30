@@ -15,6 +15,9 @@ cat > "$BIN/yq" <<'SH'
 #!/usr/bin/env bash
 expr="$2"
 case "$expr" in
+  *provider_family*) printf 'openai\n' ;;
+  *provider_preferences*) printf 'gpt-5.5\n' ;;
+  *reasoning_effort*) printf 'high\n' ;;
   *detect_binary*) printf 'codex\n' ;;
   *capabilities_path*) printf '.codex-reviewer/capabilities.yaml\n' ;;
   *) printf 'unexpected yq expression: %s\n' "$expr" >&2; exit 2 ;;

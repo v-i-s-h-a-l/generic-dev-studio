@@ -6,7 +6,7 @@
 # reviewer sessions must be no-prompt, read-only, and receive no inherited
 # GitHub/API token environment from the parent studio session.
 supports_hooks: false
-spawn_command: "claude -p --permission-mode dontAsk --setting-sources project --disable-slash-commands --no-session-persistence --strict-mcp-config --mcp-config {} --tools Read,Grep,Glob"
+spawn_command: "claude -p --permission-mode dontAsk --setting-sources project --disable-slash-commands --no-session-persistence --strict-mcp-config --mcp-config .claude-reviewer/mcp-empty.json --tools Read,Grep,Glob"
 block_for_event_strategy: tail
 tool_dialect: claude
 sandbox_profile: read-only

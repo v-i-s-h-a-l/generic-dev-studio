@@ -135,8 +135,8 @@ scripts/ingest-feedback.sh                              # idempotent; silent no-
 # Studio PR autopilot primitives (#318):
 scripts/pr-reviewer-eligibility.sh codex-reviewer       # no-prompt/no-secret reviewer host preflight
 scripts/pr-reviewer-eligibility.sh claude-reviewer      # same reviewer floor for Claude Code
-scripts/pre-commit-review.sh                            # run eligible reviewer against staged diff; accepts approved/approved_with_fixes only
-scripts/pr-headless-review.sh <pr>                      # run eligible reviewer, post gate, merge if non-blocked
+scripts/pre-commit-review.sh                            # resolve reviewer model policy, review staged diff, accept approved/approved_with_fixes only
+scripts/pr-headless-review.sh <pr>                      # resolve independent reviewer model policy, post gate, merge if non-blocked
 scripts/pr-autopilot.sh <pr> --verdict approved         # post reviewer gate, then merge if non-blocked
 scripts/pr-merge-finalize.sh <pr> --method auto         # <4 commits=rebase, larger main=merge commit, then fetch/prune
 

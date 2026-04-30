@@ -168,8 +168,26 @@ rc=$?
 
 assert "headless claude review exits zero" "[ '$rc' -eq 0 ]"
 assert "review host reported" "grep -q 'PR_REVIEW_HOST=claude-reviewer' '$out'"
+assert "review model reported" "grep -q 'PR_REVIEW_MODEL=claude-opus-4-6' '$out'"
+assert "review effort reported" "grep -q 'PR_REVIEW_REASONING_EFFORT=high' '$out'"
 assert "verdict parsed" "grep -q 'PR_REVIEW_VERDICT=approved' '$out'"
 assert "autopilot receives review host" "grep -q -- '--review-host claude-reviewer' '$AUTOPILOT_LOG'"
+
+policy_out="$TMPROOT/policy-default.out"
+STUDIO_IMPLEMENTATION_HOST=codex bash "$ROOT/scripts/pr-headless-review.sh" 123 --method auto >"$policy_out" 2>"$policy_out.err"
+policy_rc=$?
+assert "policy default exits zero" "[ '$policy_rc' -eq 0 ]"
+assert "policy excludes implementation provider family" "grep -q 'PR_REVIEW_HOST=claude-reviewer' '$policy_out'"
+assert "policy reports anthropic provider family" "grep -q 'PR_REVIEW_PROVIDER_FAMILY=anthropic' '$policy_out'"
+
+same_family_err="$TMPROOT/same-family.err"
+if STUDIO_IMPLEMENTATION_HOST=claude-code bash "$ROOT/scripts/pr-headless-review.sh" 123 --review-host claude-reviewer --method auto \
+    >"$TMPROOT/same-family.out" 2>"$same_family_err"; then
+  printf 'not ok - explicit same-family reviewer unexpectedly allowed\n' >&2
+  failures=$((failures + 1))
+else
+  assert "explicit same-family reviewer blocks without bypass" "grep -q 'reviewer host family must differ' '$same_family_err'"
+fi
 
 if [ "$failures" -ne 0 ]; then
   printf 'FAIL: %s assertion(s)\n' "$failures" >&2

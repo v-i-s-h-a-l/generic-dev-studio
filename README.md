@@ -128,8 +128,8 @@ scripts/waive-start.sh argus "<reason>" "<sunset_trigger>"  # open a structured 
 scripts/waive-lift.sh argus                                 # lift the pause; reports merges-skipped count
 scripts/backfill-orphan-debriefs.sh [--apply] [--quiet]     # recover tasks that finished but slipped the master plan
 scripts/forge-latency-report.sh --days 14                   # stage-level Forge task latency from event logs
-scripts/pre-commit-review.sh                                # no-secret reviewer gate over staged diff; blocks commit on `blocked`
-scripts/pr-headless-review.sh <pr>                          # run no-secret reviewer gate, then merge if non-blocked
+scripts/pre-commit-review.sh                                # policy-resolved no-secret reviewer gate; blocks commit on `blocked`
+scripts/pr-headless-review.sh <pr>                          # policy-resolved reviewer gate, then merge if non-blocked
 ```
 
 **Minimal-intervention by default.** Chanakya runs end-to-end without stopping for confirmation. The only points where it pauses are: Slack publish, first-time config writes (`--configure-token`, `--configure`), merge conflicts, and `--wait` mode feedback windows.

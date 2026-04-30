@@ -9,8 +9,13 @@
 # Schema versioned via _shared/standards/host-registry.json (validated by
 # scripts/lint-skill-prose.sh when present).
 #
-# Required fields: display_name, global_skill_dir, detect_binary.
+# Required fields: display_name, provider_family, global_skill_dir, detect_binary.
 # Optional fields marked below. Empty required values reject at lint time.
+#
+# provider_family: stable company/model-family key used by reviewer policy.
+# Dedicated profiles from the same provider (for example codex and
+# codex-reviewer) share one family so review gates can enforce independent
+# reviewer selection.
 #
 # detect_binary: checked by `sync-host-skills.sh --all` to skip hosts whose
 # CLI is not installed on this machine. Value is a binary name resolved via
@@ -23,6 +28,7 @@
 
 claude-code:
   display_name: "Claude Code"
+  provider_family: anthropic
   detect_binary: claude
   global_skill_dir: "~/.claude/skills"
   project_skill_dir: ".claude/skills"
@@ -35,6 +41,7 @@ claude-code:
 
 claude-reviewer:
   display_name: "Claude Code Reviewer"
+  provider_family: anthropic
   detect_binary: claude
   global_skill_dir: "~/.claude-reviewer/skills"
   project_skill_dir: ".claude-reviewer/skills"
@@ -47,6 +54,7 @@ claude-reviewer:
 
 codex:
   display_name: "OpenAI Codex CLI"
+  provider_family: openai
   detect_binary: codex
   global_skill_dir: "~/.codex/skills"
   project_skill_dir: ".codex/skills"
@@ -59,6 +67,7 @@ codex:
 
 codex-reviewer:
   display_name: "OpenAI Codex CLI Reviewer"
+  provider_family: openai
   detect_binary: codex
   global_skill_dir: "~/.codex/skills"
   project_skill_dir: ".codex/skills"
@@ -71,6 +80,7 @@ codex-reviewer:
 
 gemini-cli:
   display_name: "Gemini CLI"
+  provider_family: google
   detect_binary: gemini
   global_skill_dir: "~/.gemini/skills"
   project_skill_dir: ".gemini/skills"
@@ -82,6 +92,7 @@ gemini-cli:
 
 cursor:
   display_name: "Cursor"
+  provider_family: anthropic
   detect_binary: cursor
   global_skill_dir: "~/.cursor/skills"
   project_skill_dir: ".cursor/skills"
@@ -92,6 +103,7 @@ cursor:
 
 windsurf:
   display_name: "Windsurf"
+  provider_family: anthropic
   detect_binary: windsurf
   global_skill_dir: "~/.windsurf/skills"
   project_skill_dir: ".windsurf/skills"

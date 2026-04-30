@@ -57,33 +57,88 @@ yaml_field() {
     | tr -d '"'"'"
 }
 
-eligible_hosts() {
-  local registry="$REPO_ROOT/hosts/registry.yaml" host manifest reviewer_profile
-  [ -f "$registry" ] || return 1
+host_family() {
+  local host="$1" registry="$REPO_ROOT/hosts/registry.yaml" family
+  family=$(yq -r ".\"$host\".provider_family // \"\"" "$registry" 2>/dev/null || true)
+  [ -n "$family" ] && [ "$family" != "null" ] && { printf '%s\n' "$family"; return 0; }
+  yq -r ".adapters.\"$host\".provider_family // \"\"" "$REPO_ROOT/_shared/schemas/model-catalog.yaml" 2>/dev/null || true
+}
+
+policy_model_for() {
+  local role="$1" family="$2" policy="$REPO_ROOT/_shared/rules/model-policy.yaml" model
+  model=$(yq -r ".roles.\"$role\".provider_preferences[] | select(.provider_family == \"$family\") | .model_id" "$policy" 2>/dev/null | head -1)
+  [ -n "$model" ] && [ "$model" != "null" ] && { printf '%s\n' "$model"; return 0; }
+  yq -r ".adapters.\"$REVIEW_HOST\".default_model_id // \"\"" "$REPO_ROOT/_shared/schemas/model-catalog.yaml" 2>/dev/null || true
+}
+
+policy_effort_for() {
+  local role="$1" policy="$REPO_ROOT/_shared/rules/model-policy.yaml"
+  yq -r ".roles.\"$role\".reasoning_effort // \"\"" "$policy" 2>/dev/null || true
+}
+
+resolve_policy_reviewer() {
+  local role="reviewer.heavyweight" policy="$REPO_ROOT/_shared/rules/model-policy.yaml"
+  local implementation_host="${STUDIO_IMPLEMENTATION_HOST:-${STUDIO_IMPLEMENTER_HOST:-${STUDIO_HOST:-}}}"
+  local excluded_family="" host family require_independent allow_same
+
+  [ -f "$policy" ] || return 1
+  if [ -n "$implementation_host" ]; then
+    excluded_family=$(host_family "$implementation_host")
+  fi
+  require_independent=$(yq -r ".roles.\"$role\".require_independent_provider_family // false" "$policy")
+  allow_same="${STUDIO_REVIEW_ALLOW_SAME_FAMILY:-0}"
+
   while IFS= read -r host; do
-    [ -n "$host" ] || continue
-    manifest=$(resolve_capabilities_manifest "$host" "$REPO_ROOT" 2>/dev/null || true)
-    [ -n "$manifest" ] && [ -f "$manifest" ] || continue
-    reviewer_profile=$(yaml_field "$manifest" reviewer_profile)
-    [ "$reviewer_profile" = "true" ] || continue
+    [ -n "$host" ] && [ "$host" != "null" ] || continue
+    family=$(host_family "$host")
+    if [ "$require_independent" = "true" ] && [ "$allow_same" != "1" ] && [ -n "$excluded_family" ] && [ "$family" = "$excluded_family" ]; then
+      continue
+    fi
     if "$SCRIPT_DIR/pr-reviewer-eligibility.sh" "$host" >/dev/null 2>&1; then
       printf '%s\n' "$host"
+      return 0
     fi
-  done < <(yq -r 'keys | .[]' "$registry" 2>/dev/null)
+  done < <(yq -r ".roles.\"$role\".candidate_adapters[]" "$policy" 2>/dev/null)
+
+  return 1
+}
+
+append_policy_model_args() {
+  local host="$1" model="$2" effort="$3"
+  [ -n "$model" ] && [ "$model" != "null" ] || return 0
+  case "$host" in
+    claude*|*claude*)
+      spawn_argv+=(--model "$model")
+      [ -n "$effort" ] && [ "$effort" != "null" ] && spawn_argv+=(--effort "$effort")
+      ;;
+    codex*|*codex*)
+      spawn_argv+=(--model "$model")
+      [ -n "$effort" ] && [ "$effort" != "null" ] && spawn_argv+=(-c "model_reasoning_effort=$effort")
+      ;;
+  esac
+}
+
+enforce_independent_reviewer_family() {
+  local implementation_host="${STUDIO_IMPLEMENTATION_HOST:-${STUDIO_IMPLEMENTER_HOST:-${STUDIO_HOST:-}}}"
+  local implementation_family=""
+  [ -n "$implementation_host" ] || return 0
+  implementation_family=$(host_family "$implementation_host")
+  [ -n "$implementation_family" ] && [ "$implementation_family" != "null" ] || return 0
+  if [ "${STUDIO_REVIEW_ALLOW_SAME_FAMILY:-0}" != "1" ] && [ "$REVIEW_FAMILY" = "$implementation_family" ]; then
+    printf 'pr-headless-review: reviewer host family must differ from implementation host family (implementation_host=%s, implementation_family=%s, review_host=%s)\n' \
+      "$implementation_host" "$implementation_family" "$REVIEW_HOST" >&2
+    printf 'pr-headless-review: explicit user-approved bypass requires STUDIO_REVIEW_ALLOW_SAME_FAMILY=1\n' >&2
+    exit 1
+  fi
 }
 
 if [ -z "$REVIEW_HOST" ]; then
-  hosts=()
-  while IFS= read -r host; do
-    [ -n "$host" ] && hosts+=("$host")
-  done < <(eligible_hosts)
-  [ "${#hosts[@]}" -gt 0 ] || {
+  REVIEW_HOST=$(resolve_policy_reviewer) || {
     printf 'pr-headless-review: no eligible reviewer hosts found\n' >&2
+    impl="${STUDIO_IMPLEMENTATION_HOST:-${STUDIO_IMPLEMENTER_HOST:-${STUDIO_HOST:-unknown}}}"
+    printf 'pr-headless-review: implementation host family excluded by policy (implementation_host=%s); explicit bypass requires STUDIO_REVIEW_ALLOW_SAME_FAMILY=1\n' "$impl" >&2
     exit 1
   }
-  pr_num=$(gh pr view "$PR" --json number --jq '.number') \
-    || { printf 'pr-headless-review: failed to read PR %s\n' "$PR" >&2; exit 1; }
-  REVIEW_HOST="${hosts[$(( pr_num % ${#hosts[@]} ))]}"
 fi
 
 eligibility=$("$SCRIPT_DIR/pr-reviewer-eligibility.sh" "$REVIEW_HOST") || {
@@ -94,6 +149,11 @@ eligibility=$("$SCRIPT_DIR/pr-reviewer-eligibility.sh" "$REVIEW_HOST") || {
 manifest=$(printf '%s\n' "$eligibility" | sed -n 's/^MANIFEST=//p' | head -1)
 spawn_command=$(printf '%s\n' "$eligibility" | sed -n 's/^SPAWN_COMMAND=//p' | head -1)
 [ -n "$spawn_command" ] || { printf 'pr-headless-review: missing spawn command for %s\n' "$REVIEW_HOST" >&2; exit 1; }
+REVIEW_FAMILY=$(host_family "$REVIEW_HOST")
+enforce_independent_reviewer_family
+REVIEW_ROLE="reviewer.heavyweight"
+REVIEW_MODEL_ID=$(policy_model_for "$REVIEW_ROLE" "$REVIEW_FAMILY")
+REVIEW_REASONING_EFFORT=$(policy_effort_for "$REVIEW_ROLE")
 
 pr_json=$(gh pr view "$PR" --json number,title,url,baseRefName,headRefName,headRefOid,author,commits) \
   || { printf 'pr-headless-review: failed to read PR %s\n' "$PR" >&2; exit 1; }
@@ -143,6 +203,7 @@ PROMPT
 
 # shellcheck disable=SC2206
 spawn_argv=( $spawn_command )
+append_policy_model_args "$REVIEW_HOST" "$REVIEW_MODEL_ID" "$REVIEW_REASONING_EFFORT"
 review_prompt="Read $payload, review PR $pr_url at HEAD $head_sha, and print STUDIO_REVIEW_VERDICT=<approved|approved_with_fixes|blocked>."
 
 if ! env -i \
@@ -179,6 +240,9 @@ esac
 
 printf 'PR_REVIEW_HOST=%s\n' "$REVIEW_HOST"
 printf 'PR_REVIEW_MANIFEST=%s\n' "$manifest"
+printf 'PR_REVIEW_PROVIDER_FAMILY=%s\n' "$REVIEW_FAMILY"
+printf 'PR_REVIEW_MODEL=%s\n' "$REVIEW_MODEL_ID"
+printf 'PR_REVIEW_REASONING_EFFORT=%s\n' "$REVIEW_REASONING_EFFORT"
 printf 'PR_REVIEW_VERDICT=%s\n' "$verdict"
 
 "$AUTOPILOT" "$PR" \

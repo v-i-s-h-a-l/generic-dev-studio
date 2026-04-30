@@ -1,0 +1,43 @@
+schema_version: 1
+catalog: "../schemas/model-catalog.yaml"
+last_verified_at: "2026-04-30"
+
+roles:
+  implementer.heavyweight:
+    description: "Non-trivial implementation, schema migration, cross-module change, or crash/root-cause work."
+    candidate_adapters: [claude-code, codex]
+    reasoning_effort: high
+    provider_preferences:
+      - provider_family: anthropic
+        model_id: claude-opus-4-6
+      - provider_family: openai
+        model_id: gpt-5.5
+
+  reviewer.heavyweight:
+    description: "Forge PR review, Argus-style regression review, and any non-trivial code-quality gate."
+    candidate_adapters: [claude-reviewer, codex-reviewer]
+    require_independent_provider_family: true
+    reasoning_effort: high
+    fallback_role: reviewer.fallback
+    provider_preferences:
+      - provider_family: anthropic
+        model_id: claude-opus-4-6
+      - provider_family: openai
+        model_id: gpt-5.5
+
+  reviewer.fallback:
+    description: "Reviewer fallback when heavyweight model/profile is unavailable; still must preserve provider-family independence unless explicitly bypassed."
+    candidate_adapters: [claude-reviewer, codex-reviewer]
+    require_independent_provider_family: true
+    reasoning_effort: medium
+    provider_preferences:
+      - provider_family: anthropic
+        model_id: claude-sonnet-4-6
+      - provider_family: openai
+        model_id: gpt-5.4
+
+bypass:
+  same_provider_family:
+    env: STUDIO_REVIEW_ALLOW_SAME_FAMILY
+    allowed_value: "1"
+    requirement: "Explicit user-approved bypass only. Normal review and merge paths block when no independent reviewer family is eligible."

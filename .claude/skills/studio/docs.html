@@ -352,9 +352,9 @@
       <li>No writes outside <code>~/.dev-studio/&lt;project&gt;/audit/</code> (audit reports in <code>--report</code> mode). Everything else is read-only chat output + file edits you approve.</li>
     </ul>
     <h3>PR autopilot</h3>
-    <p>Routine studio PRs run <code>scripts/pr-headless-review.sh &lt;pr&gt;</code>. The script selects an eligible no-secret reviewer host, captures <code>STUDIO_REVIEW_VERDICT</code>, posts the <code>studio:pr-review-gate</code> comment, and merges only when the verdict is not <code>blocked</code>. Merge cleanup deletes the remote branch and refreshes refs with <code>git fetch --prune</code>.</p>
+    <p>Routine studio PRs run <code>scripts/pr-headless-review.sh &lt;pr&gt;</code>. The script resolves <code>_shared/rules/model-policy.yaml</code> against <code>_shared/schemas/model-catalog.yaml</code>, selects an eligible no-secret reviewer host from a different provider family than the implementation host when known, captures <code>STUDIO_REVIEW_VERDICT</code>, posts the <code>studio:pr-review-gate</code> comment, and merges only when the verdict is not <code>blocked</code>. Merge cleanup deletes the remote branch and refreshes refs with <code>git fetch --prune</code>.</p>
     <h3>Commit gate</h3>
-    <p>The repo hook runs <code>scripts/pre-commit-review.sh</code> on the staged diff after local architecture and privacy gates. Only <code>approved</code> and <code>approved_with_fixes</code> allow the commit. User bypass is explicit with <code>STUDIO_BYPASS_REVIEW=1 git commit ...</code> and emits <code>precommit_review_bypassed</code>.</p>
+    <p>The repo hook runs <code>scripts/pre-commit-review.sh</code> on the staged diff after local architecture and privacy gates. The same checked-in model policy controls reviewer host, model, and reasoning effort. Only <code>approved</code> and <code>approved_with_fixes</code> allow the commit. User bypass is explicit with <code>STUDIO_BYPASS_REVIEW=1 git commit ...</code> and emits <code>precommit_review_bypassed</code>.</p>
   </div>
 </section>
 

@@ -1,0 +1,89 @@
+schema_version: 1
+last_verified_at: "2026-04-30"
+refresh:
+  cadence: "every 3-4 weeks, plus manual refresh on explicit user request or provider/model failure"
+  checklist:
+    - "Verify OpenAI model IDs against https://platform.openai.com/docs/models and https://platform.openai.com/docs/guides/latest-model."
+    - "Verify Anthropic model IDs and aliases against https://docs.anthropic.com/en/docs/about-claude/models."
+    - "Update last_verified_at and source_url fields in the same change as any default-model change."
+    - "Run the PR reviewer fixtures after changing adapter defaults or role policy."
+
+provider_families:
+  openai:
+    display_name: "OpenAI"
+    source_url: "https://platform.openai.com/docs/models"
+  anthropic:
+    display_name: "Anthropic"
+    source_url: "https://docs.anthropic.com/en/docs/about-claude/models"
+
+models:
+  gpt-5.5:
+    provider_family: openai
+    display_name: "GPT-5.5"
+    role_suitability: [implementer.heavyweight, reviewer.heavyweight]
+    reasoning_effort_supported: [none, low, medium, high, xhigh]
+    default_reasoning_effort: high
+    stable_aliases: []
+    snapshot_ids: []
+    source_url: "https://platform.openai.com/docs/guides/latest-model"
+    last_verified_at: "2026-04-30"
+    verification_evidence: "OpenAI model table lists Model ID gpt-5.5."
+    notes: "OpenAI docs list gpt-5.5 as the flagship model for complex reasoning and coding."
+  gpt-5.4:
+    provider_family: openai
+    display_name: "GPT-5.4"
+    role_suitability: [implementer.heavyweight, reviewer.fallback]
+    reasoning_effort_supported: [none, low, medium, high, xhigh]
+    default_reasoning_effort: high
+    stable_aliases: []
+    snapshot_ids: []
+    source_url: "https://platform.openai.com/docs/models"
+    last_verified_at: "2026-04-30"
+    verification_evidence: "OpenAI model table lists Model ID gpt-5.4."
+    notes: "Fallback OpenAI reasoning model for coding and professional work when GPT-5.5 is unavailable."
+  claude-opus-4-6:
+    provider_family: anthropic
+    display_name: "Claude Opus 4.6"
+    role_suitability: [implementer.heavyweight, reviewer.heavyweight]
+    reasoning_effort_supported: [medium, high]
+    default_reasoning_effort: high
+    stable_aliases: [claude-opus-4-6]
+    snapshot_ids: []
+    source_url: "https://docs.anthropic.com/en/docs/about-claude/models"
+    last_verified_at: "2026-04-30"
+    verification_evidence: "Pre-commit reviewer verified the official Claude table lists claude-opus-4-6."
+    notes: "Initial Opus-tier reviewer default; bump through the sparse catalog refresh path when the installed reviewer CLI and official docs agree on a newer Opus slug."
+  claude-sonnet-4-6:
+    provider_family: anthropic
+    display_name: "Claude Sonnet 4.6"
+    role_suitability: [implementer.heavyweight, reviewer.fallback]
+    reasoning_effort_supported: [medium, high]
+    default_reasoning_effort: high
+    stable_aliases: [claude-sonnet-4-6]
+    snapshot_ids: []
+    source_url: "https://docs.anthropic.com/en/docs/about-claude/models"
+    last_verified_at: "2026-04-30"
+    verification_evidence: "Anthropic latest comparison lists Claude API ID claude-sonnet-4-6."
+    notes: "Fallback high-capability Claude model when Opus-tier review is unavailable."
+
+adapters:
+  claude-code:
+    provider_family: anthropic
+    default_model_id: claude-opus-4-6
+    model_flag: "--model"
+    effort_flag: "--effort"
+  claude-reviewer:
+    provider_family: anthropic
+    default_model_id: claude-opus-4-6
+    model_flag: "--model"
+    effort_flag: "--effort"
+  codex:
+    provider_family: openai
+    default_model_id: gpt-5.5
+    model_flag: "--model"
+    effort_config_key: model_reasoning_effort
+  codex-reviewer:
+    provider_family: openai
+    default_model_id: gpt-5.5
+    model_flag: "--model"
+    effort_config_key: model_reasoning_effort
