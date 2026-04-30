@@ -53,16 +53,19 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-build-queue.sh
 . "$SCRIPT_DIR/lib-build-queue.sh"
 
-# Project config (from _shared/primitives/turnip-project-config.md).
-PROJECT_ROOT="/Users/vishalsingh/Documents/Turnip.gg/turnip-ios"
-PBXPROJ="$PROJECT_ROOT/zaps-app/Turnip.xcodeproj/project.pbxproj"
-PROJECT_RELPATH="zaps-app/Turnip.xcodeproj"
-ASC_KEY_ID="WJQ6D76K8R"
-ASC_ISSUER_ID="1fa9f26b-7b13-459a-9225-1ca8d9c51fca"
-ASC_KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8"
-APP_ID="6502945736"
-GSIP_PATH="$PROJECT_ROOT/zaps-app/Zaps/Firebase/Prod/GoogleService-Info.plist"
-XCPRETTY="/Users/vishalsingh/.gem/ruby/2.6.0/bin/xcpretty"
+# Project config (from _shared/primitives/turnip-project-config.md). The
+# STUDIO_TF_* overrides keep synthetic fixtures out of the real iOS checkout.
+PROJECT_ROOT="${STUDIO_TF_PROJECT_ROOT:-/Users/vishalsingh/Documents/Turnip.gg/turnip-ios}"
+PBXPROJ="${STUDIO_TF_PBXPROJ:-$PROJECT_ROOT/zaps-app/Turnip.xcodeproj/project.pbxproj}"
+PROJECT_RELPATH="${STUDIO_TF_PROJECT_RELPATH:-zaps-app/Turnip.xcodeproj}"
+ASC_KEY_ID="${STUDIO_TF_ASC_KEY_ID:-WJQ6D76K8R}"
+ASC_ISSUER_ID="${STUDIO_TF_ASC_ISSUER_ID:-1fa9f26b-7b13-459a-9225-1ca8d9c51fca}"
+ASC_KEY_PATH="${STUDIO_TF_ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8}"
+APP_ID="${STUDIO_TF_APP_ID:-6502945736}"
+GSIP_PATH="${STUDIO_TF_GSIP_PATH:-$PROJECT_ROOT/zaps-app/Zaps/Firebase/Prod/GoogleService-Info.plist}"
+XCPRETTY="${STUDIO_TF_XCPRETTY:-/Users/vishalsingh/.gem/ruby/2.6.0/bin/xcpretty}"
+ASC_TIMEOUT="${STUDIO_TF_ASC_TIMEOUT:-20}"
+SLACK_TOKEN_FILE="${STUDIO_SLACK_TOKEN_FILE:-$HOME/.claude/secrets/slack-bot-token}"
 
 _json_obj() {
   local out='{}'
@@ -92,6 +95,84 @@ halt_failed() {
   emit_release release_failed "$data"
   printf 'studio-tf-push: halted at %s — %s\n' "$stage" "$reason" >&2
   exit 1
+}
+
+require_cmd() {
+  local name="$1"
+  command -v "$name" >/dev/null 2>&1 || halt_failed prereq "$name required before release mutation"
+}
+
+preflight_push_release() {
+  local branch="$1"
+
+  require_cmd git
+  require_cmd jq
+  require_cmd curl
+  require_cmd python3
+
+  [ -d "$PROJECT_ROOT/.git" ] || halt_failed prereq "project git checkout missing at $PROJECT_ROOT; no mutation occurred"
+  [ -r "$PBXPROJ" ] || halt_failed prereq "pbxproj unreadable at $PBXPROJ; no mutation occurred"
+  case "$branch" in
+    main|master|trunk|develop|release/*)
+      halt_failed prereq "active branch '$branch' is a base branch — no mutation occurred; switch to a feature branch"
+      ;;
+    ""|unknown|HEAD)
+      halt_failed prereq "could not resolve a feature branch for release push; no mutation occurred"
+      ;;
+  esac
+
+  local push_probe
+  if ! push_probe=$(GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never \
+      git -C "$PROJECT_ROOT" push --dry-run --porcelain -u origin HEAD 2>&1); then
+    halt_failed prereq "GitHub push auth/preflight failed before mutation; no build-number commit created. Run: gh auth status && git -C '$PROJECT_ROOT' push --dry-run -u origin HEAD. Details: $push_probe"
+  fi
+
+  [ -r "$ASC_KEY_PATH" ] || halt_failed prereq "ASC key unreadable at $ASC_KEY_PATH; no mutation occurred"
+  if ! python3 - <<'PY' >/dev/null 2>&1
+import jwt
+PY
+  then
+    halt_failed prereq "Python jwt dependency missing before mutation; install PyJWT in the release environment"
+  fi
+  if [ "${STUDIO_TF_SLACK_DEFERRED:-0}" != "1" ]; then
+    [ -r "$SLACK_TOKEN_FILE" ] || halt_failed prereq "Slack token unreadable at $SLACK_TOKEN_FILE; no mutation occurred. Set STUDIO_TF_SLACK_DEFERRED=1 only for an intentionally upload-only run."
+    [ -s "$SLACK_TOKEN_FILE" ] || halt_failed prereq "Slack token file is empty at $SLACK_TOKEN_FILE; no mutation occurred. Set STUDIO_TF_SLACK_DEFERRED=1 only for an intentionally upload-only run."
+  fi
+}
+
+asc_get() {
+  local url="$1" fixture_file="${2:-}"
+  if [ -n "$fixture_file" ]; then
+    cat "$fixture_file"
+    return 0
+  fi
+  curl -sgS --max-time "$ASC_TIMEOUT" "$url" \
+    -H "Authorization: Bearer $TOKEN"
+}
+
+warn_live_version_unresolved() {
+  local reason="$1"
+  halt_failed prereq "WARNING: Could not determine live App Store version; no mutation occurred. $reason"
+}
+
+extract_latest_build_number() {
+  local resp="$1" build
+  if printf '%s' "$resp" | jq -e '.errors? | length > 0' >/dev/null 2>&1; then
+    halt_failed prereq "could not determine latest TF build from ASC response: $(printf '%s' "$resp" | jq -c '.errors')"
+  fi
+  build=$(printf '%s' "$resp" | jq -r '.data[0].attributes.version // empty')
+  [ -n "$build" ] || halt_failed prereq "could not parse latest TF build from ASC response"
+  printf '%s\n' "$build"
+}
+
+extract_live_version() {
+  local resp="$1" version
+  if printf '%s' "$resp" | jq -e '.errors? | length > 0' >/dev/null 2>&1; then
+    warn_live_version_unresolved "ASC returned errors: $(printf '%s' "$resp" | jq -c '.errors')"
+  fi
+  version=$(printf '%s' "$resp" | jq -r '.data[0].attributes.versionString // empty')
+  [ -n "$version" ] || warn_live_version_unresolved "ASC returned no READY_FOR_SALE appStoreVersions for app_id=$APP_ID."
+  printf '%s\n' "$version"
 }
 
 mint_jwt() {
@@ -154,15 +235,18 @@ cmd_push() {
     Zaps-Internal) CONFIGURATION="Internal" ;;
   esac
 
+  RELEASE_TAG="${STUDIO_RELEASE_TAG:-release-pending-$(date -u +%Y%m%d-%H%M%S)}"
   local LIVE="${STUDIO_TF_PUSH_LIVE:-0}"
   if [ "$DRY_RUN_FLAG" != "1" ] && [ "$LIVE" != "1" ]; then
-    RELEASE_TAG="${STUDIO_RELEASE_TAG:-release-pending-$(date -u +%Y%m%d-%H%M%S)}"
     halt_failed prereq "STUDIO_TF_PUSH_LIVE=1 required for non-dry-run; refusing real archive/upload (R14)"
   fi
 
   route_to_release_node
   local BRANCH
   BRANCH=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+  if [ "$DRY_RUN_FLAG" != "1" ]; then
+    preflight_push_release "$BRANCH"
+  fi
 
   # Phase 1 — ASC state + version decision (Steps 1–2).
   local LATEST_BUILD_NUMBER=0 LIVE_VERSION="0.0.0" CURRENT_VERSION="0.0.0"
@@ -174,14 +258,16 @@ cmd_push() {
     [ -n "$TOKEN" ] || halt_failed prereq "ASC JWT mint failed (check $ASC_KEY_PATH)"
 
     local builds_resp versions_resp
-    builds_resp=$(curl -sg "https://api.appstoreconnect.apple.com/v1/builds?sort=-uploadedDate&limit=1&fields[builds]=version" \
-      -H "Authorization: Bearer $TOKEN")
-    versions_resp=$(curl -sg "https://api.appstoreconnect.apple.com/v1/appStoreVersions?filter[appStoreState]=READY_FOR_SALE&fields[appStoreVersions]=versionString" \
-      -H "Authorization: Bearer $TOKEN")
-    LATEST_BUILD_NUMBER=$(printf '%s' "$builds_resp" | jq -r '.data[0].attributes.version // empty')
-    LIVE_VERSION=$(printf '%s' "$versions_resp" | jq -r '.data[0].attributes.versionString // empty')
-    [ -n "$LATEST_BUILD_NUMBER" ] || halt_failed prereq "could not parse latest TF build from ASC response"
-    [ -n "$LIVE_VERSION" ] || halt_failed prereq "could not parse live App Store version from ASC response"
+    builds_resp=$(asc_get \
+      "https://api.appstoreconnect.apple.com/v1/builds?sort=-uploadedDate&limit=1&fields[builds]=version" \
+      "${STUDIO_TF_BUILDS_RESPONSE_FILE:-}") \
+      || halt_failed prereq "could not reach ASC builds endpoint before mutation"
+    versions_resp=$(asc_get \
+      "https://api.appstoreconnect.apple.com/v1/apps/${APP_ID}/appStoreVersions?filter[appStoreState]=READY_FOR_SALE&fields[appStoreVersions]=versionString" \
+      "${STUDIO_TF_VERSIONS_RESPONSE_FILE:-}") \
+      || warn_live_version_unresolved "ASC request failed or timed out."
+    LATEST_BUILD_NUMBER=$(extract_latest_build_number "$builds_resp") || exit 1
+    LIVE_VERSION=$(extract_live_version "$versions_resp") || exit 1
     CURRENT_VERSION=$(grep -m1 "MARKETING_VERSION" "$PBXPROJ" | sed -E 's/.*= ([^;]+);.*/\1/' | tr -d ' ')
     [ -n "$CURRENT_VERSION" ] || halt_failed prereq "could not parse MARKETING_VERSION from pbxproj"
   fi
@@ -217,33 +303,38 @@ cmd_push() {
     printf 'studio-tf-push: [dry-run] would bump pbxproj to build=%s version=%s and push branch=%s\n' \
       "$NEW_BUILD_NUMBER" "$VERSION" "$BRANCH" >&2
   else
-    case "$BRANCH" in
-      main|master|trunk|develop) halt_failed prereq "active branch '$BRANCH' is a base branch — R11 forbids studio-initiated push" ;;
-    esac
     if ! sed -i '' \
         -e "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = ${NEW_BUILD_NUMBER};/g" \
         -e "s/MARKETING_VERSION = [^;]*;/MARKETING_VERSION = ${VERSION};/g" \
         "$PBXPROJ"; then
       halt_failed prereq "pbxproj sed bump failed"
     fi
-    (
-      cd "$PROJECT_ROOT" || halt_failed prereq "cd $PROJECT_ROOT failed"
-      local lock
-      lock="$(git rev-parse --git-dir)/index.lock"
-      if [ -e "$lock" ] && ! pgrep -f "git .* $PROJECT_ROOT" >/dev/null; then
-        rm -f "$lock"
-      fi
-      git add zaps-app/Turnip.xcodeproj/project.pbxproj
-      git commit -m "$(cat <<EOF
+    local oldpwd bump_commit
+    oldpwd=$PWD
+    cd "$PROJECT_ROOT" || halt_failed prereq "cd $PROJECT_ROOT failed"
+    local lock
+    lock="$(git rev-parse --git-dir)/index.lock"
+    if [ -e "$lock" ] && ! pgrep -f "git .* $PROJECT_ROOT" >/dev/null; then
+      rm -f "$lock"
+    fi
+    git add zaps-app/Turnip.xcodeproj/project.pbxproj
+    if ! git commit -m "$(cat <<EOF
 Bump build number to ${NEW_BUILD_NUMBER}
 
 Preparing TestFlight build ${NEW_BUILD_NUMBER} (v${VERSION}) from branch ${BRANCH}.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
-)" || exit 1
-      git push -u origin HEAD || exit 1
-    ) || halt_failed prereq "version-bump commit/push failed"
+)"; then
+      cd "$oldpwd" || true
+      halt_failed prereq "version-bump commit failed"
+    fi
+    bump_commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+    if ! git push -u origin HEAD; then
+      cd "$oldpwd" || true
+      halt_failed prereq "STRANDED_RELEASE_STATE: build-number commit $bump_commit exists locally but push failed after mutation. Next safe command: git -C '$PROJECT_ROOT' push -u origin HEAD"
+    fi
+    cd "$oldpwd" || halt_failed prereq "return to studio repo failed after version bump"
   fi
 
   # Phase 2 — Archive (Step 4).
@@ -430,7 +521,7 @@ cmd_appstore() {
   local appstore_branch
   appstore_branch=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
   case "$appstore_branch" in
-    main|master|trunk|develop) halt_failed prereq "active branch '$appstore_branch' is a base branch — R11 forbids studio-initiated push" ;;
+    main|master|trunk|develop|release/*) halt_failed prereq "active branch '$appstore_branch' is a base branch — R11 forbids studio-initiated push" ;;
   esac
   (
     cd "$PROJECT_ROOT" || exit 1

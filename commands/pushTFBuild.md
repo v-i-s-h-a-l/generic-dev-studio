@@ -35,6 +35,8 @@ PREV_BUILD=$(echo "$CTX" | jq -r .prev_build)
 
 The script emits `release_started`, `archive_completed`, `upload_completed`, `dsym_uploaded` along the way. If it exits non-zero it has already emitted `release_failed` with the stage that broke — surface stderr to the user and stop. Do NOT continue to Slack steps.
 
+The script preflights non-interactive GitHub push auth, ASC key/JWT prerequisites, Slack token readability, and the app-scoped live-version lookup before it mutates the pbxproj. If it prints `WARNING: Could not determine live App Store version`, stop and resolve ASC/API access first; do not infer that there is no version conflict. For an intentionally upload-only run with Slack deferred, set `STUDIO_TF_SLACK_DEFERRED=1`.
+
 ## Step 3: Compose the Slack message
 
 Compose from the user's commits since the last shared TF build, per `_shared/contracts/build-message-format.md`.
