@@ -18,6 +18,7 @@ usage() {
 REVIEW_HOST="${STUDIO_REVIEW_HOST:-}"
 BYPASS_REVIEW=0
 CALLER_HOME="${HOME:-}"
+REVIEW_STARTED_AT=$(date +%s)
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -46,7 +47,9 @@ yaml_field() {
 emit_gate_event() {
   command -v emit_event_keyed >/dev/null 2>&1 || return 0
   local event="$1" verdict="$2" host="$3" patch_id="$4" bypass_source="${5:-}"
-  local data
+  local data duration_s
+  duration_s=$(( $(date +%s) - REVIEW_STARTED_AT ))
+  [ "$duration_s" -ge 0 ] && [ "$duration_s" -le 86400 ] || duration_s=""
   if command -v jq >/dev/null 2>&1; then
     data=$(jq -cn \
       --arg verdict "$verdict" \
@@ -55,9 +58,13 @@ emit_gate_event() {
       --arg head "$(git rev-parse --short HEAD 2>/dev/null || true)" \
       --arg patch_id "$patch_id" \
       --arg bypass_source "$bypass_source" \
-      '{verdict:$verdict,review_host:$host,branch:$branch,head:$head,patch_id:$patch_id,bypass_source:$bypass_source}')
+      --arg duration_s "$duration_s" \
+      '{verdict:$verdict,review_host:$host,branch:$branch,head:$head,patch_id:$patch_id,bypass_source:$bypass_source}
+       + (if $duration_s == "" then {} else {duration_s:($duration_s|tonumber)} end)')
   else
-    data="{\"verdict\":\"$verdict\",\"review_host\":\"$host\",\"patch_id\":\"$patch_id\",\"bypass_source\":\"$bypass_source\"}"
+    data="{\"verdict\":\"$verdict\",\"review_host\":\"$host\",\"patch_id\":\"$patch_id\",\"bypass_source\":\"$bypass_source\""
+    [ -n "$duration_s" ] && data="$data,\"duration_s\":$duration_s"
+    data="$data}"
   fi
   emit_event_keyed studio commit "$event" "" "$data" --idem-key "precommit:$event:$patch_id" >/dev/null 2>&1 || true
 }

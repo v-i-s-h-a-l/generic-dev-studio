@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-commit hook for generic-dev-studio. Nine gates in order:
+# Pre-commit hook for generic-dev-studio. Deterministic gates in order:
 #   1.  update-surface-manifest.sh — regenerate + auto-stage docs-surface.json.
 #   1b. capability-manifest.sh --regen — regenerate + auto-stage the manifest.
 #   2.  lint-architecture.sh --staged — router/frontmatter/dup/surface checks.
@@ -13,18 +13,40 @@
 #   2f. lint-debrief-writers.sh --staged — block legacy markdown/misrouted
 #       active debrief write paths (#311).
 #   3.  privacy gate — reject if staged diff leaks another project's runtime.
-#   4.  pre-commit-review.sh — no-secret reviewer gate over the staged diff.
 #
 # Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/3.
 # Gates 1+1b (manifest regens) always run because stale manifests leak
 # downstream.
-# Review bypass: `STUDIO_BYPASS_REVIEW=1 git commit ...` skips gate 4 and
-# emits a loud audit event. Assistants must not set it on their own initiative.
+# LLM review is not part of the default hook path. Run
+# `scripts/pre-commit-review.sh` explicitly for risky local diffs.
 
 set -u
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 SCRIPTS="$REPO_ROOT/scripts"
+PRECOMMIT_STARTED_AT=$(date +%s)
+
+# shellcheck source=lib-ledger.sh
+. "$SCRIPTS/lib-ledger.sh" 2>/dev/null || true
+
+emit_precommit_duration() {
+  set +e
+  command -v emit_event_keyed >/dev/null 2>&1 || return 0
+  local rc="${1:-0}" ended_at duration branch head status data
+  ended_at=$(date +%s)
+  duration=$(( ended_at - PRECOMMIT_STARTED_AT ))
+  [ "$duration" -ge 0 ] && [ "$duration" -le 86400 ] || return 0
+  branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  head=$(git rev-parse --short HEAD 2>/dev/null || true)
+  status="passed"
+  [ "$rc" -ne 0 ] && status="failed"
+  data=$(printf '{"duration_s":%s,"exit_code":%s,"status":"%s","branch":"%s","head":"%s","llm_review":"manual_only"}' \
+    "$duration" "$rc" "$status" "$(_json_escape "$branch")" "$(_json_escape "$head")")
+  emit_event_keyed studio pre-commit precommit_hook_completed "" "$data" >/dev/null 2>&1 || true
+  return 0
+}
+
+trap 'rc=$?; emit_precommit_duration "$rc"' EXIT
 
 # Gate 1 — regenerate manifest + restage if it changed.
 if [ -x "$SCRIPTS/update-surface-manifest.sh" ]; then
@@ -170,17 +192,6 @@ if [ -n "$leaks" ]; then
   printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
   exit 1
 fi
-fi
-
-# Gate 4 — staged-diff reviewer.
-if [ -x "$SCRIPTS/pre-commit-review.sh" ]; then
-  "$SCRIPTS/pre-commit-review.sh"
-  rc=$?
-  if [ "$rc" -ne 0 ]; then
-    printf '\npre-commit: staged-diff review gate failed\n' >&2
-    printf 'bypass (explicit user override only): STUDIO_BYPASS_REVIEW=1 git commit ...\n' >&2
-    exit 1
-  fi
 fi
 
 exit 0

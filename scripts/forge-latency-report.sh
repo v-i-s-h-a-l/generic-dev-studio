@@ -97,7 +97,7 @@ if [ -n "$CUTOVER" ]; then
 else
   cutover_epoch=$(jq -sr '
     [.[]
-     | select(.event == "precommit_review_passed" or .event == "precommit_review_blocked" or .event == "precommit_review_bypassed")
+     | select(.event == "precommit_hook_completed" or .event == "precommit_review_passed" or .event == "precommit_review_blocked" or .event == "precommit_review_bypassed")
      | try (.ts | fromdateiso8601 | floor) catch empty
     ] | min // empty
   ' "$events_file")
@@ -129,7 +129,7 @@ if [ -n "$cutover_epoch" ]; then
   cutover_label=$(date -u -r "$cutover_epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$cutover_epoch" +%Y-%m-%dT%H:%M:%SZ)
   printf 'Comparison cutover: %s\n' "$cutover_label"
 else
-  printf 'Comparison cutover: unavailable (no precommit review-gate events in window; pass --cutover)\n'
+  printf 'Comparison cutover: unavailable (no precommit hook/review events in window; pass --cutover)\n'
 fi
 printf '\n'
 
@@ -286,6 +286,14 @@ function task_key(task, fallback) {
     if (duration != "" && valid_duration(duration)) sample("pre-commit_review", patch_id, "", "", duration, "duration_s", "")
     else missing("pre-commit_review", "missing_duration_or_start_end")
   }
+  if (event == "precommit_hook_completed") {
+    if (duration != "" && valid_duration(duration)) sample("pre-commit_hook", "", "", "", duration, "duration_s", "")
+    else missing("pre-commit_hook", "missing_duration_s")
+  }
+  if (event == "pr_review_completed") {
+    if (duration != "" && valid_duration(duration)) sample("pr_review", "", "", "", duration, "duration_s", "")
+    else missing("pr_review", "missing_duration_s")
+  }
 
   if (event == "agent_session_completed") {
     session_stage = "agent_session:" agent
@@ -376,7 +384,6 @@ cat <<'EOF'
 Minimum new telemetry fields still needed
 - self-review: emit self_review_started/self_review_completed or add duration_s to self_review_iterated.
 - Argus dispatch wait vs review work: stamp dispatch_review_started, reviewer_spawned_at, verdict_observed_at, and duration_s on dispatch-review outcomes.
-- pre-commit review: add review_started_at/review_completed_at or duration_s to precommit_review_* events.
-- PR autopilot/merge: emit pr_review_started/pr_review_completed, pr_autopilot_started/pr_autopilot_completed, and pr_merge_finalize_started/pr_merge_finalize_completed with duration_s.
+- PR autopilot/merge: emit pr_autopilot_started/pr_autopilot_completed and pr_merge_finalize_started/pr_merge_finalize_completed with duration_s.
 - user wait: keep pairing task_awaiting_user with task_awaiting_user_resolved.wait_duration_s; missing pairs stay excluded from totals.
 EOF
