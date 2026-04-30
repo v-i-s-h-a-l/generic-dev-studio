@@ -1,8 +1,0 @@
-schema_version: 1
-hosts:
-  - all
-scope: global
-notes: |
-  Host-neutral IMGLY CE.SDK guidance. Optional imgly_docs MCP functions improve
-  SDK lookups, but the skill remains usable from local code and explicit
-  uncertainty on hosts that do not expose those functions.
