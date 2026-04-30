@@ -139,6 +139,7 @@ scripts/pre-commit-review.sh                            # manual reviewer gate f
 scripts/pr-headless-review.sh <pr>                      # run eligible reviewer, post gate, merge if non-blocked
 scripts/pr-autopilot.sh <pr> --verdict approved         # post reviewer gate, then merge if non-blocked
 scripts/pr-merge-finalize.sh <pr> --method auto         # <4 commits=rebase, larger main=merge commit, then fetch/prune
+scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
 
 # Chanakya sweep-time detections (Step 0E3, auto-invoked by Chanakya):
 scripts/detect-edits.sh --quiet                         # emits brief_edited + debrief_edited

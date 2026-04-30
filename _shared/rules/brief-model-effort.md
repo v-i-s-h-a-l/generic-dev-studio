@@ -24,7 +24,7 @@ The first two govern **thinking cost**. The third governs **diff cost**. They ar
 
 ## Model defaults by task shape
 
-Pick one when you author the brief. Override with rationale.
+Pick one when you author the brief, or run `scripts/recommend-model.sh` for the structured `recommended_models` payload. Override with rationale.
 
 | Task shape | Default model | Why |
 |---|---|---|
@@ -78,6 +78,9 @@ Today only Chanakya authors briefs. When Lu Ban (the planned architect agent —
 
 ## See also
 
+- `_shared/rules/model-recommendation.md` — deterministic structured recommendation rule.
+- `_shared/schemas/model-catalog.yaml` — hand-maintained tier-to-model catalog.
+- `_shared/rules/model-policy.yaml` — default preference for consumers.
 - `_shared/contracts/brief-formats/*.md` — the templates that surface these fields.
 - `chanakya/modes/brief.md` — the mode pack that emits briefs; Step 6 enforces.
 - `chanakya/modes/brief-review.md` — the checklist that validates.
