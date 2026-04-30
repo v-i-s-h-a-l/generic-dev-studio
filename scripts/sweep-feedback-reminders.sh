@@ -21,39 +21,36 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
+# shellcheck source=lib-sweep-timing.sh
+. "$SCRIPT_DIR/lib-sweep-timing.sh"
 
 PROJECT=$(resolve_project 2>/dev/null) || exit 0
 PROJECT_ROOT=$(resolve_project_root_for "$PROJECT")
 ACTIVE="$PROJECT_ROOT/feedback/active.md"
+sweep_timing_start
 
-[ -f "$ACTIVE" ] || exit 0
+if [ ! -f "$ACTIVE" ]; then
+  sweep_timing_emit feedback-reminders noop 0
+  exit 0
+fi
 
-now_s=$(date -u +%s)
+now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # Scan for rows under `## Reminders`. Parse due_at from column 1, route the
 # rest of the row as the reminder body. Two-pass because we need to both
 # emit events AND rewrite the file in place.
 fired_tmp=$(mktemp 2>/dev/null) || exit 0
 
-awk -v now_s="$now_s" -v fired_out="$fired_tmp" '
-  function parse_due(s,   y, mo, da, h, mi, se, dt, epoch) {
+awk -v now_iso="$now_iso" -v fired_out="$fired_tmp" '
+  function parse_due(s) {
     # Strip surrounding whitespace; skip separator / header rows.
     gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
-    if (s ~ /^-+$/) return -1
-    if (s == "" || s ~ /^<!-/) return -1
+    if (s ~ /^-+$/) return ""
+    if (s == "" || s ~ /^<!-/) return ""
     # YYYY-MM-DDTHH:MM:SSZ — portable parse via substr (BSD awk lacks the
     # 3-arg match() array form). Fixed-width spec is reliable here.
-    if (s !~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z/) return -1
-    y  = substr(s, 1, 4) + 0
-    mo = substr(s, 6, 2) + 0
-    da = substr(s, 9, 2) + 0
-    h  = substr(s, 12, 2) + 0
-    mi = substr(s, 15, 2) + 0
-    se = substr(s, 18, 2) + 0
-    if (y < 1970) return -1
-    dt = sprintf("%d %d %d %d %d %d UTC", y, mo, da, h, mi, se)
-    epoch = mktime(dt)
-    return epoch
+    if (s !~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z/) return ""
+    return substr(s, 1, 20)
   }
   BEGIN { in_rem = 0 }
   /^## Reminders/ { in_rem = 1; print; next }
@@ -64,8 +61,8 @@ awk -v now_s="$now_s" -v fired_out="$fired_tmp" '
     # Split on pipes. Field 2 is due_at after leading-empty field 1.
     n = split($0, f, "|")
     due = f[2]
-    epoch = parse_due(due)
-    if (epoch > 0 && epoch <= now_s) {
+    due_iso = parse_due(due)
+    if (due_iso != "" && due_iso <= now_iso) {
       # Emit the raw line to the side channel; drop from file output.
       print $0 > fired_out
       next
@@ -80,8 +77,10 @@ awk -v now_s="$now_s" -v fired_out="$fired_tmp" '
 
 # Emit one event per fired row. Ingest-mode-hint is the second table column
 # (reminder type, e.g. `ingest-reminder`); reminder_body is everything else.
+fired_count=0
 while IFS= read -r row; do
   [ -z "$row" ] && continue
+  fired_count=$((fired_count + 1))
   # Extract columns: strip leading/trailing `|`, split.
   row_clean=$(printf '%s' "$row" | sed -E 's/^\| *//; s/ *\|$//')
   IFS='|' read -r due_at hint args desc _rest <<EOF
@@ -110,4 +109,5 @@ else
 fi
 rm -f "$fired_tmp"
 
+sweep_timing_emit feedback-reminders completed "$fired_count"
 exit 0
