@@ -25,6 +25,7 @@ Task-level work on the user's iOS project (`/chanakya`, `/achilles`, `/argus` ow
 | `release` / "draft release notes" / "what's new" / "should we tag?" | `modes/release.md` |
 | `ingest` / "ingest this" / studio-flavored capture (single input) | `modes/ingest.md` |
 | `analyze [<project>]` / "analyze logs and feedback" / "sweep the studio-feedback inbox" / "what patterns are showing up?" | `modes/analyze.md` |
+| `summary` / "safe to end session" / "what changed?" / "wrap this up" | `modes/summary.md` |
 | `help` / `/studio-help` / "show me the docs" / "how does this work?" | `modes/help.md` |
 | `audit` / "audit the arc" / "check plan drift" / auto-invoked by SessionStart | `modes/audit.md` |
 | `guard <keywords>` / "has this been done?" / "are we repeating work?" | `modes/guard.md` |
@@ -35,6 +36,8 @@ Task-level work on the user's iOS project (`/chanakya`, `/achilles`, `/argus` ow
 | `tf-push [--dry-run]` / "push a TestFlight build via studio" | `modes/tf-push.md` |
 
 | `work <track>` / `STUDIO_TRACK=<track>` auto-start | `modes/work.md` |
+
+Mode composition convention: `/studio <mode> ... + summary` means run the selected mode, then finish with `modes/summary.md`'s completion report. This is a reporting composition only; it does not change the mode's writes or gates.
 
 Tier 2 modes (not shipped today; spawn on demand): `backlog` (gh issue triage), `scaffold` (new mode pack / primitive scaffold).
 

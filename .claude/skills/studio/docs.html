@@ -325,6 +325,7 @@
 /studio release           # draft release notes per RELEASES.md
 /studio audit             # plan ↔ memory ↔ commits drift check
 /studio analyze [proj]    # sweep studio-feedback inbox + event logs for &lt;proj&gt;
+/studio summary           # end-of-task/session report: done, changed, verified, next command
 /studio guard "topic"     # has this work been done before?
 /studio janitor [--yes]   # cross-project sweep of stale artifacts (dry-run by default)
 /studio nodes             # day-2 fleet management — status, add, sync, health, schedule, recheck
@@ -355,6 +356,8 @@
     <p>Routine studio PRs run <code>scripts/pr-headless-review.sh &lt;pr&gt;</code>. The script selects an eligible no-secret reviewer host, captures <code>STUDIO_REVIEW_VERDICT</code>, posts the <code>studio:pr-review-gate</code> comment, and merges only when the verdict is not <code>blocked</code>. Merge cleanup deletes the remote branch and refreshes refs with <code>git fetch --prune</code>.</p>
     <h3>Commit gate</h3>
     <p>The repo hook runs <code>scripts/pre-commit-review.sh</code> on the staged diff after local architecture and privacy gates. Only <code>approved</code> and <code>approved_with_fixes</code> allow the commit. User bypass is explicit with <code>STUDIO_BYPASS_REVIEW=1 git commit ...</code> and emits <code>precommit_review_bypassed</code>.</p>
+    <h3>Mode composition</h3>
+    <p>Use <code>/studio &lt;mode&gt; ... + summary</code> when a mode should finish with the standard completion report. This is a reporting composition only; it does not change that mode's writes, gates, or ownership rules.</p>
   </div>
 </section>
 
@@ -397,6 +400,11 @@
         <code>/studio analyze [&lt;project&gt;]</code>
         <div class="triggers">"analyze logs and feedback", "sweep the studio-feedback inbox", "what patterns are showing up?"</div>
         <div class="what">Sweeps the studio-feedback inbox at <code>~/.dev-studio/generic-dev-studio/feedback-inbox/&lt;source&gt;/</code> + the project's event-log shards (<code>events/*.jsonl</code>, ≥ 2026-04-17). Distinct from <code>ingest</code> (single-input classify); analyze is a queue/log sweep. Detailed citations land in a private report at <code>~/.dev-studio/&lt;project&gt;/analysis/&lt;today&gt;.md</code> (never committed); scrubbed abstract patterns become GH issues; trivial rule tweaks auto-apply per CLAUDE.md. Surfaces skipped/malformed records explicitly. Strictly studio-only — never falls through to chanakya project queues.</div>
+      </div>
+      <div class="mode-card">
+        <code>/studio summary</code>
+        <div class="triggers">"safe to end session", "what changed?", "wrap this up"</div>
+        <div class="what">Reusable end-of-task/session report. Checks available evidence, separates automated work from user-pending actions, and reports <strong>Done</strong>, <strong>Changed</strong>, <strong>Verified</strong>, <strong>Not Done</strong>, <strong>Next</strong>, and <strong>Safe To End</strong>. Other modes can compose it with <code>+ summary</code>.</div>
       </div>
       <div class="mode-card">
         <code>/studio guard "&lt;topic&gt;"</code>
