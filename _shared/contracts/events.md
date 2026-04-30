@@ -90,9 +90,11 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 
 | Event | Emitted when | Typical `data` keys |
 |---|---|---|
-| `precommit_review_passed` | `scripts/pre-commit-review.sh` received `approved` or `approved_with_fixes` for the staged diff. | `verdict`, `review_host`, `branch`, `head`, `patch_id` |
-| `precommit_review_blocked` | `scripts/pre-commit-review.sh` received `blocked` for the staged diff and rejected the commit. | `verdict`, `review_host`, `branch`, `head`, `patch_id` |
-| `precommit_review_bypassed` | User explicitly skipped the staged-diff review gate with `STUDIO_BYPASS_REVIEW=1` or `--bypass-review`. Assistants must not set this bypass on their own initiative. | `verdict` (`bypassed`), `review_host`, `branch`, `head`, `patch_id`, `bypass_source` (`env`\|`flag`) |
+| `precommit_review_passed` | `scripts/pre-commit-review.sh` received `approved` or `approved_with_fixes` for the staged diff. | `verdict`, `review_host`, `branch`, `head`, `patch_id`, `duration_s` |
+| `precommit_review_blocked` | `scripts/pre-commit-review.sh` received `blocked` for the staged diff and rejected the commit. | `verdict`, `review_host`, `branch`, `head`, `patch_id`, `duration_s` |
+| `precommit_review_bypassed` | User explicitly skipped the staged-diff review gate with `STUDIO_BYPASS_REVIEW=1` or `--bypass-review`. Assistants must not set this bypass on their own initiative. | `verdict` (`bypassed`), `review_host`, `branch`, `head`, `patch_id`, `bypass_source` (`env`\|`flag`), `duration_s` |
+| `precommit_hook_completed` | `.githooks/pre-commit` completed its deterministic local gates. The default hook path does not spawn an LLM reviewer; run `scripts/pre-commit-review.sh` explicitly for risky local diffs. | `duration_s`, `exit_code`, `status` (`passed`\|`failed`), `branch`, `head`, `llm_review` (`manual_only`) |
+| `pr_review_completed` | `scripts/pr-headless-review.sh` completed the PR-level no-secret reviewer gate and delegated to autopilot when eligible. | `duration_s`, `exit_code`, `status` (`passed`\|`blocked`\|`failed`), `pr`, `pr_url`, `head`, `review_host`, `verdict`, `method` |
 
 ### Argus events
 
