@@ -109,6 +109,19 @@ halt_failed() {
   exit 1
 }
 
+failure_excerpt() {
+  local log="$1"
+  if [ ! -r "$log" ]; then
+    printf 'no readable log'
+    return 0
+  fi
+  grep -Ei '(^|: )(error|fatal):|ARCHIVE FAILED|BUILD FAILED|CodeSign|Provisioning|No profiles|Signing' "$log" \
+    | tail -20 \
+    | sed 's/"/'\''/g' \
+    | tr '\n' ' ' \
+    | cut -c 1-1200
+}
+
 require_cmd() {
   local name="$1"
   command -v "$name" >/dev/null 2>&1 || halt_failed prereq "$name required before release mutation"
@@ -376,6 +389,7 @@ EOF
     printf 'studio-tf-push: [dry-run] would archive scheme=%s build=%s → %s\n' \
       "$SCHEME" "$NEW_BUILD_NUMBER" "$ARCHIVE_PATH" >&2
   else
+    local archive_log="/tmp/${SCHEME}-${NEW_BUILD_NUMBER}-archive.log"
     (
       cd "$PROJECT_ROOT" || exit 1
       xcodebuild archive \
@@ -388,9 +402,14 @@ EOF
         -authenticationKeyID "$ASC_KEY_ID" \
         -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
         CODE_SIGN_STYLE=Automatic \
-        2>&1 | { [ -x "$XCPRETTY" ] && "$XCPRETTY" || cat; }
+        2>&1 | tee "$archive_log" | { [ -x "$XCPRETTY" ] && "$XCPRETTY" || cat; }
+      exit "${PIPESTATUS[0]}"
     )
-    [ -d "$ARCHIVE_PATH" ] || halt_failed archive "xcarchive missing at $ARCHIVE_PATH"
+    archive_rc=$?
+    if [ "$archive_rc" -ne 0 ]; then
+      halt_failed archive "archive command failed with exit $archive_rc (log: $archive_log; excerpt: $(failure_excerpt "$archive_log"))"
+    fi
+    [ -d "$ARCHIVE_PATH" ] || halt_failed archive "archive command succeeded but xcarchive missing at $ARCHIVE_PATH (log: $archive_log; expected artifact path may be wrong)"
     archive_duration_s=$(( $(date +%s) - archive_started_at ))
   fi
   # Release queue slot as soon as archive completes — don't hold it through upload.

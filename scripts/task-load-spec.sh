@@ -15,6 +15,7 @@
 #   TYPE=<feature|bugfix|...>  (feature is the safe default when legacy brief
 #                               omits an explicit Type: line)
 #   ACCEPTANCE_JSON='<json-array>'
+#   BASE_BRANCH=<branch>        (optional explicit dispatch base from brief)
 #
 # Usage:
 #   eval "$(scripts/task-load-spec.sh <task-id-or-empty>)"
@@ -25,6 +26,8 @@
 #   5  task is in a terminal state (#263) — refusing re-dispatch. Override
 #      with ACHILLES_REOPEN=1 (writes a follow-up debrief) or run
 #      `/chanakya reopen <task-id>` for a formal state-machine reopen.
+#   6  brief exists but is not ready for dispatch. Override with
+#      ACHILLES_ALLOW_NON_READY_BRIEF=1 only for intentional recovery.
 
 set -u
 umask 022
@@ -37,13 +40,19 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 
 TASK_ID="${1:-}"
 
+emit_assign() {
+  local key="${1:?}" value="${2:-}"
+  printf '%s=%q\n' "$key" "$value"
+}
+
 # Direct mode short-circuit — no brief, no resolution.
 if [ -z "$TASK_ID" ]; then
-  printf 'TASK_MODE=direct\n'
-  printf 'BRIEF_PATH=\n'
-  printf 'BRIEF_UUID=\n'
-  printf 'SIZE=\n'
-  printf 'TYPE=\n'
+  emit_assign TASK_MODE direct
+  emit_assign BRIEF_PATH ""
+  emit_assign BRIEF_UUID ""
+  emit_assign SIZE ""
+  emit_assign TYPE ""
+  emit_assign BASE_BRANCH ""
   printf "ACCEPTANCE_JSON='[]'\n"
   exit 0
 fi
@@ -55,14 +64,29 @@ BRIEF_UUID=""
 SIZE=""
 TYPE=""
 ACCEPTANCE_JSON='[]'
+BASE_BRANCH=""
+NON_READY_STATE=""
 
 # _try_brief_candidate — test one brief YAML for dispatchable state, populate
 # globals on match. Returns 0 if matched, 1 otherwise.
 _try_brief_candidate() {
   local candidate="$1"
+  local strict="${2:-0}"
   [ -r "$candidate" ] || return 1
   local state
   state=$(yq -r '.state // "null"' "$candidate" 2>/dev/null || echo null)
+  if [ "$state" != "ready" ] && [ "${ACHILLES_ALLOW_NON_READY_BRIEF:-0}" != "1" ]; then
+    NON_READY_STATE="$state"
+    if [ "$strict" = "1" ]; then
+      cat >&2 <<EOF
+error: brief for task-id '$TASK_ID' is state '$state', not ready — refusing dispatch.
+  Run \`/chanakya brief $TASK_ID\` or the relevant authoring step to mark it
+  ready. Set ACHILLES_ALLOW_NON_READY_BRIEF=1 only for intentional recovery.
+EOF
+      exit 6
+    fi
+    return 1
+  fi
   case "$state" in
     ready|dispatched|draft) ;;
     *) return 1 ;;
@@ -72,6 +96,7 @@ _try_brief_candidate() {
   SIZE=$(yq -r '.size // ""' "$candidate" 2>/dev/null || echo "")
   TYPE=$(yq -r '.type // ""' "$candidate" 2>/dev/null || echo "")
   ACCEPTANCE_JSON=$(yq -o=json -I=0 '.acceptance // []' "$candidate" 2>/dev/null || echo '[]')
+  BASE_BRANCH=$(yq -r '.base_branch // .dispatch.base_branch // ""' "$candidate" 2>/dev/null || echo "")
   return 0
 }
 
@@ -87,7 +112,7 @@ if command -v yq >/dev/null 2>&1; then
       brief_uuid_link=$(yq -r '.links.brief // ""' "$task_yaml" 2>/dev/null || echo "")
       [ -z "$brief_uuid_link" ] && continue
       candidate="$briefs_dir/${brief_uuid_link}.yaml"
-      _try_brief_candidate "$candidate" && break
+      _try_brief_candidate "$candidate" 1 && break
     done < <(grep -l "^legacy_task_id: \"$TASK_ID\"$" "$tasks_dir"/*.yaml 2>/dev/null)
   fi
 fi
@@ -99,7 +124,7 @@ if [ -z "$BRIEF_PATH" ] && command -v yq >/dev/null 2>&1; then
   if [ -d "$briefs_dir" ]; then
     while IFS= read -r candidate; do
       [ -z "$candidate" ] && continue
-      _try_brief_candidate "$candidate" && break
+      _try_brief_candidate "$candidate" 0 && break
     done < <(grep -l "^legacy_task_id: \"$TASK_ID\"$" "$briefs_dir"/*.yaml 2>/dev/null)
   fi
 fi
@@ -136,6 +161,14 @@ if [ -z "$BRIEF_PATH" ]; then
 fi
 
 if [ -z "$BRIEF_PATH" ]; then
+  if [ -n "$NON_READY_STATE" ]; then
+    cat >&2 <<EOF
+error: brief for task-id '$TASK_ID' is state '$NON_READY_STATE', not ready — refusing dispatch.
+  Run \`/chanakya brief $TASK_ID\` or the relevant authoring step to mark it
+  ready. Set ACHILLES_ALLOW_NON_READY_BRIEF=1 only for intentional recovery.
+EOF
+    exit 6
+  fi
   cat >&2 <<EOF
 error: no brief found for task-id '$TASK_ID'.
   Run \`/chanakya brief $TASK_ID\` to author one, or invoke \`/achilles\` (no
@@ -188,11 +221,12 @@ fi
 [ -z "$SIZE" ] && SIZE=m
 [ -z "$TYPE" ] && TYPE=feature
 
-printf 'TASK_MODE=brief\n'
-printf 'BRIEF_PATH=%s\n' "$BRIEF_PATH"
-printf 'BRIEF_UUID=%s\n' "$BRIEF_UUID"
-printf 'SIZE=%s\n' "$SIZE"
-printf 'TYPE=%s\n' "$TYPE"
+emit_assign TASK_MODE brief
+emit_assign BRIEF_PATH "$BRIEF_PATH"
+emit_assign BRIEF_UUID "$BRIEF_UUID"
+emit_assign SIZE "$SIZE"
+emit_assign TYPE "$TYPE"
+emit_assign BASE_BRANCH "$BASE_BRANCH"
 # Single-quote the JSON to survive eval without re-escaping internal quotes.
 # ACCEPTANCE_JSON is producer-controlled (yq output); no single quotes possible.
 printf "ACCEPTANCE_JSON='%s'\n" "$ACCEPTANCE_JSON"

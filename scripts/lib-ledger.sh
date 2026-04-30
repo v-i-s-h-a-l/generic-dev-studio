@@ -379,6 +379,73 @@ transition_release_state() { _transition_artifact releases "$1" "$2" "$3" "${4:-
 transition_review_state()  { _transition_artifact reviews  "$1" "$2" "$3" "${4:-}"; }
 transition_round_state()   { _transition_artifact rounds   "$1" "$2" "$3" "${4:-}"; }
 
+set_release_asc_poll() {
+  local uuid="${1:?set_release_asc_poll <release-uuid> <asc-state> <last-poll> <next-check> <failures> <stuck>}"
+  local asc_state="${2:?}" last_poll="${3:?}" next_check="${4:?}" failures="${5:-0}" stuck="${6:-false}"
+  local f
+  f=$(_artifact_path releases "$uuid") || return 2
+  [ -f "$f" ] || { printf 'set_release_asc_poll: no release at %s\n' "$f" >&2; return 2; }
+
+  if [ "${DRY_RUN:-0}" = "1" ]; then
+    _dry_write_log "$f" "asc_metadata.app_store_state=$asc_state" "$(idem_key chanakya release "$uuid" "asc-poll:$asc_state:$last_poll")"
+  else
+    yq -i \
+      ".last_state_checked_at = \"$last_poll\" |
+       .asc_metadata.app_store_state = \"$asc_state\" |
+       .asc_metadata.last_poll_at = \"$last_poll\" |
+       .asc_metadata.next_check_at = \"$next_check\" |
+       .asc_metadata.consecutive_failures = $failures |
+       .asc_metadata.stuck = $stuck" \
+      "$f" 2>/dev/null || return 2
+  fi
+  _maybe_rebuild_index
+}
+
+set_release_asc_failure() {
+  local uuid="${1:?set_release_asc_failure <release-uuid> <reason> <last-poll> <next-check> <failures> <stuck>}"
+  local reason="${2:?}" last_poll="${3:?}" next_check="${4:?}" failures="${5:-1}" stuck="${6:-false}"
+  local f
+  f=$(_artifact_path releases "$uuid") || return 2
+  [ -f "$f" ] || { printf 'set_release_asc_failure: no release at %s\n' "$f" >&2; return 2; }
+
+  if [ "${DRY_RUN:-0}" = "1" ]; then
+    _dry_write_log "$f" "asc_metadata.failure=$reason" "$(idem_key chanakya release "$uuid" "asc-failure:$reason:$last_poll")"
+  else
+    yq -i \
+      ".last_state_checked_at = \"$last_poll\" |
+       .asc_metadata.last_poll_at = \"$last_poll\" |
+       .asc_metadata.next_check_at = \"$next_check\" |
+       .asc_metadata.consecutive_failures = $failures |
+       .asc_metadata.stuck = $stuck |
+       .asc_metadata.last_error = \"$reason\"" \
+      "$f" 2>/dev/null || return 2
+  fi
+  _maybe_rebuild_index
+}
+
+set_release_finalize_progress() {
+  local uuid="${1:?set_release_finalize_progress <release-uuid> <field> <value>}"
+  local field="${2:?}" value="${3:?}"
+  case "$field" in
+    finalize_draft_published|finalize_slack_posted|finalize_slack_skipped_reason) ;;
+    *) printf 'set_release_finalize_progress: unsupported field %s\n' "$field" >&2; return 2 ;;
+  esac
+  local f
+  f=$(_artifact_path releases "$uuid") || return 2
+  [ -f "$f" ] || { printf 'set_release_finalize_progress: no release at %s\n' "$f" >&2; return 2; }
+
+  if [ "${DRY_RUN:-0}" = "1" ]; then
+    _dry_write_log "$f" "asc_metadata.$field=$value" "$(idem_key chanakya release "$uuid" "finalize:$field:$value")"
+  else
+    if [ "$value" = "true" ] || [ "$value" = "false" ]; then
+      yq -i ".asc_metadata.$field = $value" "$f" 2>/dev/null || return 2
+    else
+      yq -i ".asc_metadata.$field = \"$value\"" "$f" 2>/dev/null || return 2
+    fi
+  fi
+  _maybe_rebuild_index
+}
+
 # Post-2.6 state → legacy master-plan Status column. Inverse of the
 # transform_tasks mapping in migrate-ledger.sh.
 _state_to_legacy_status() {

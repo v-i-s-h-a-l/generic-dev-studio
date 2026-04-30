@@ -525,6 +525,21 @@ build_log=$(mktemp 2>/dev/null || printf '/tmp/xcb-%s.log' "$$")
 build_json="${build_log}.json"
 export XCB_JSON_SIDECAR="$build_json"
 
+classify_remote_failure() {
+  local log="$1"
+  if [ ! -r "$log" ]; then
+    printf 'remote_harness_failure'
+    return 0
+  fi
+  if grep -Eq 'command not found|No such file or directory|cd: .*No such|xcodebuild: not found|swift: not found' "$log"; then
+    printf 'remote_shell_path_failed'
+  elif grep -q 'success marker missing' "$log"; then
+    printf 'remote_success_marker_missing'
+  else
+    printf 'build_invocation_failed'
+  fi
+}
+
 # Compose xcodebuild argv via `set --` so the optional -project / -workspace
 # flag (#238) folds in cleanly without conditional duplication of the whole
 # command. The flag must appear before -scheme; xcodebuild errors otherwise
@@ -546,6 +561,9 @@ else
   . "$SCRIPT_DIR/lib-source-sync.sh"
   REL_WORKTREE=$(sourcesync_push "$NODE_ID" "$WORKTREE") || {
     printf 'task-build-gate: source sync to %s failed\n' "$NODE_ID" >&2
+    data=$(printf '{"mode":"full-green","node":"%s","reason":"source_sync_failed","scheme":"%s","attempt":%s%s}' \
+      "$NODE_ID" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    _emit_terminal build_check_failed "$data"
     exit 2
   }
   REL_DERIVED=$(sourcesync_relative_to_home "$DERIVED") || {
@@ -554,6 +572,9 @@ else
   }
   sourcesync_mkdir_remote "$NODE_ID" "$REL_DERIVED" || {
     printf 'task-build-gate: failed to mkdir DerivedData on %s\n' "$NODE_ID" >&2
+    data=$(printf '{"mode":"full-green","node":"%s","reason":"remote_shell_path_failed","scheme":"%s","attempt":%s%s}' \
+      "$NODE_ID" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    _emit_terminal build_check_failed "$data"
     exit 2
   }
   Q_WORKTREE=$(sourcesync_remote_quoted "$REL_WORKTREE")
@@ -653,14 +674,18 @@ if [ "$errors_json" = "null" ] && [ -s "$build_log" ]; then
   fi
 fi
 
-rm -f "$build_log" "$build_json" 2>/dev/null || true
-
 GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
 [ "$GATE_DUR_S" -lt 0 ] && GATE_DUR_S=0
 
 if [ "$BUILD_STATUS" -ne 0 ]; then
+  failure_reason="build_invocation_failed"
+  if [ "$IS_LOCAL" != "1" ]; then
+    failure_reason=$(classify_remote_failure "$build_log")
+  fi
   data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"errors_json":%s%s}' \
     "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$errors_json" "$DISPATCH_FIELDS")
+  data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" '. + {reason:$reason}')
+  rm -f "$build_log" "$build_json" 2>/dev/null || true
   _emit_terminal build_check_failed "$data"
   gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
   exit 2
@@ -669,11 +694,13 @@ fi
 if [ "$success_marker_present" -eq 0 ]; then
   data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"success_marker_absent","errors_json":%s%s}' \
     "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$errors_json" "$DISPATCH_FIELDS")
+  rm -f "$build_log" "$build_json" 2>/dev/null || true
   _emit_terminal build_check_failed "$data"
   gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
   exit 2
 fi
 
+rm -f "$build_log" "$build_json" 2>/dev/null || true
 data=$(printf '{"mode":"full-green","node":"%s","warnings":%s,"scheme":"%s","attempt":%s%s}' "$NODE_ID" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
 _emit_terminal build_check_passed "$data"
 gate_announce_done build "$NODE_ID" "$TASK_ID" passed "$GATE_DUR_S"

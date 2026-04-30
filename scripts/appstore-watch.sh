@@ -31,19 +31,66 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=lib-release-config.sh
 . "$SCRIPT_DIR/lib-release-config.sh"
+# shellcheck source=lib-ledger.sh
+. "$SCRIPT_DIR/lib-ledger.sh"
 
 PROJECT=$(resolve_project 2>/dev/null) || exit 0
 STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-$PROJECT}"
 load_release_config || exit 0
 ROOT=$(resolve_project_root_for "$PROJECT")
 MARKER="$ROOT/.runtime/state/pending-appstore-review.json"
-[ -f "$MARKER" ] || exit 0
+MARKER_SOURCE=json
+ACTIVE_RELEASE_FILE=""
+if [ ! -f "$MARKER" ]; then
+  releases_dir="$ROOT/plans/releases"
+  if [ ! -d "$releases_dir" ]; then
+    exit 0
+  fi
+  active_count=$(yq -r 'select(.channel == "appstore" and (.state == "submitted" or .state == "in-review" or .state == "pending-developer-release")) | .id' "$releases_dir"/*.yaml 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$active_count" = "0" ]; then
+    exit 0
+  fi
+  if [ "$active_count" != "1" ]; then
+    append_event chanakya appstore_watch_stuck "" \
+      "{\"reason\":\"ambiguous_active_appstore_releases\",\"count\":$active_count}" 2>/dev/null || true
+    echo "[appstore-watch] multiple active App Store releases; refusing to pick one" >&2
+    exit 1
+  fi
+  ACTIVE_RELEASE_FILE=$(grep -lE '^channel: appstore$' "$releases_dir"/*.yaml 2>/dev/null | while IFS= read -r f; do
+    state=$(yq -r '.state // ""' "$f" 2>/dev/null)
+    if [ "$state" = "submitted" ] || [ "$state" = "in-review" ] || [ "$state" = "pending-developer-release" ]; then
+      printf '%s\n' "$f"
+    fi
+  done | head -1)
+  [ -n "$ACTIVE_RELEASE_FILE" ] || exit 0
+  MARKER_SOURCE=yaml
+fi
 
 NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 py() { python3 -c "$1" "$@"; }
 
 read_field() {
+  if [ "$MARKER_SOURCE" = "yaml" ]; then
+    case "$1" in
+      project) printf '%s\n' "$PROJECT" ;;
+      next_check_at) yq -r '.asc_metadata.next_check_at // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      tag) yq -r '.tag // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      version) yq -r '.version // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      asc_app_id) yq -r '.asc_metadata.asc_app_id // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      repo) yq -r '.repo // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      slack_channel) yq -r '.slack.posted_to // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      slack_parent_ts) yq -r '.slack.message_ts // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      github_release_url) yq -r '.github_release_url // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      asc_key_path) printf '%s\n' "${STUDIO_TF_ASC_KEY_PATH:-}" ;;
+      asc_issuer_id) printf '%s\n' "${STUDIO_TF_ASC_ISSUER_ID:-}" ;;
+      asc_key_id) printf '%s\n' "${STUDIO_TF_ASC_KEY_ID:-}" ;;
+      finalize_draft_published) yq -r '.asc_metadata.finalize_draft_published // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      finalize_slack_posted) yq -r '.asc_metadata.finalize_slack_posted // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      *) printf '\n' ;;
+    esac
+    return 0
+  fi
   python3 - "$MARKER" "$1" <<'PY'
 import json, sys
 try:
@@ -77,6 +124,8 @@ ISSUER_ID=$(read_field asc_issuer_id)
 KEY_ID=$(read_field asc_key_id)
 
 APP_ID="${APP_ID:-${STUDIO_TF_APP_ID:-}}"
+REPO="${REPO:-${STUDIO_TF_GH_REPO:-turnip-ios/turnip-zaps}}"
+URL="${URL:-https://github.com/${REPO}/releases/tag/${TAG}}"
 KEY_ID="${KEY_ID:-${STUDIO_TF_ASC_KEY_ID:-}}"
 ISSUER_ID="${ISSUER_ID:-${STUDIO_TF_ASC_ISSUER_ID:-}}"
 if [ -z "$KEY_PATH" ]; then
@@ -99,6 +148,23 @@ fi
 # all error paths. Args: <reason> [<partial-state>]
 mark_failure() {
   local reason="$1" partial="${2:-}"
+  if [ "$MARKER_SOURCE" = "yaml" ] && [ -n "$ACTIVE_RELEASE_FILE" ]; then
+    local release_uuid failures next_iso stuck
+    release_uuid=$(yq -r '.id // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null)
+    failures=$(yq -r '.asc_metadata.consecutive_failures // 0' "$ACTIVE_RELEASE_FILE" 2>/dev/null)
+    case "$failures" in ''|*[!0-9]*) failures=0 ;; esac
+    failures=$((failures + 1))
+    next_iso=$(python3 - <<'PY'
+import datetime
+print((datetime.datetime.utcnow() + datetime.timedelta(minutes=30)).strftime('%Y-%m-%dT%H:%M:%SZ'))
+PY
+)
+    stuck=false
+    [ "$failures" -ge 3 ] && stuck=true
+    [ -n "$release_uuid" ] && set_release_asc_failure "$release_uuid" "$reason" "$NOW_ISO" "$next_iso" "$failures" "$stuck" || true
+    printf '%s\n' "$failures"
+    return 0
+  fi
   python3 - "$MARKER" "$reason" "$partial" "$NOW_ISO" <<'PY'
 import json, sys, datetime
 p = sys.argv[1]
@@ -155,6 +221,25 @@ fi
 
 echo "[appstore-watch] $TAG → $STATE"
 
+release_uuid=""
+release_state=""
+if [ "$MARKER_SOURCE" = "yaml" ] && [ -n "$ACTIVE_RELEASE_FILE" ]; then
+  release_uuid=$(yq -r '.id // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null)
+  release_state=$(yq -r '.state // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null)
+fi
+target_release_state=""
+case "$STATE" in
+  WAITING_FOR_REVIEW|IN_REVIEW) target_release_state="in-review" ;;
+  PENDING_DEVELOPER_RELEASE) target_release_state="pending-developer-release" ;;
+esac
+if [ -n "$release_uuid" ]; then
+  case "$target_release_state" in
+    in-review|pending-developer-release|released)
+      [ "$release_state" = "$target_release_state" ] || transition_release_state "$release_uuid" "$target_release_state" chanakya "ASC state $STATE" || true
+      ;;
+  esac
+fi
+
 case "$STATE" in
   PENDING_DEVELOPER_RELEASE|READY_FOR_SALE)
     # Idempotent finalize driven by marker.finalize_progress.
@@ -163,11 +248,15 @@ case "$STATE" in
 
     if [ "$DRAFT_DONE" != "True" ] && [ "$DRAFT_DONE" != "true" ]; then
       if gh release edit "$TAG" --repo "$REPO" --draft=false >/dev/null 2>&1; then
-        python3 - "$MARKER" <<'PY'
+        if [ "$MARKER_SOURCE" = "json" ]; then
+          python3 - "$MARKER" <<'PY'
 import json, sys
 p = sys.argv[1]; m = json.load(open(p)); m['finalize_draft_published'] = True
 json.dump(m, open(p, 'w'), indent=2)
 PY
+        else
+          [ -n "$release_uuid" ] && set_release_finalize_progress "$release_uuid" finalize_draft_published true || true
+        fi
       else
         fails=$(mark_failure gh_release_edit_failed "$STATE")
         [ "$fails" -ge 3 ] && append_event chanakya appstore_watch_stuck "$TAG" \
@@ -190,11 +279,15 @@ PY
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$BODY" >/dev/null 2>&1; then
-          python3 - "$MARKER" <<'PY'
+          if [ "$MARKER_SOURCE" = "json" ]; then
+            python3 - "$MARKER" <<'PY'
 import json, sys
 p = sys.argv[1]; m = json.load(open(p)); m['finalize_slack_posted'] = True
 json.dump(m, open(p, 'w'), indent=2)
 PY
+          else
+            [ -n "$release_uuid" ] && set_release_finalize_progress "$release_uuid" finalize_slack_posted true || true
+          fi
         else
           fails=$(mark_failure slack_post_failed "$STATE")
           [ "$fails" -ge 3 ] && append_event chanakya appstore_watch_stuck "$TAG" \
@@ -203,35 +296,56 @@ PY
         fi
       else
         # No Slack config — mark as posted so we don't loop.
-        python3 - "$MARKER" <<'PY'
+        if [ "$MARKER_SOURCE" = "json" ]; then
+          python3 - "$MARKER" <<'PY'
 import json, sys
 p = sys.argv[1]; m = json.load(open(p)); m['finalize_slack_posted'] = True
 m['finalize_slack_skipped_reason'] = 'no_token_or_ts'
 json.dump(m, open(p, 'w'), indent=2)
 PY
+        else
+          if [ -n "$release_uuid" ]; then
+            set_release_finalize_progress "$release_uuid" finalize_slack_posted true || true
+            set_release_finalize_progress "$release_uuid" finalize_slack_skipped_reason no_token_or_ts || true
+          fi
+        fi
       fi
     fi
 
-    rm -f "$MARKER"
+    [ "$MARKER_SOURCE" = "json" ] && rm -f "$MARKER"
+    if [ -n "$release_uuid" ]; then
+      release_state=$(yq -r '.state // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null)
+      [ "$release_state" = "released" ] || transition_release_state "$release_uuid" released chanakya "ASC state $STATE finalized" || true
+    fi
+    [ -n "$release_uuid" ] && set_release_asc_poll "$release_uuid" "$STATE" "$NOW_ISO" "$NOW_ISO" 0 false || true
     append_event chanakya appstore_released "$TAG" \
       "{\"final_state\":\"$STATE\",\"tag\":\"$TAG\"}" 2>/dev/null || true
-    echo "[appstore-watch] finalized $TAG — marker deleted"
+    echo "[appstore-watch] finalized $TAG — marker reconciled"
     ;;
   *)
     JITTER=$(( (RANDOM % 1801) + 1800 ))
-    python3 - "$MARKER" "$STATE" "$NOW_ISO" "$JITTER" <<'PY'
+    NEXT_ISO=$(python3 - "$JITTER" <<'PY'
+import sys, datetime
+jitter = int(sys.argv[1])
+nxt = datetime.datetime.utcnow() + datetime.timedelta(seconds=jitter)
+print(nxt.strftime('%Y-%m-%dT%H:%M:%SZ'))
+PY
+)
+    if [ "$MARKER_SOURCE" = "json" ]; then
+      python3 - "$MARKER" "$STATE" "$NOW_ISO" "$NEXT_ISO" <<'PY'
 import json, sys, datetime
-p, state, now, jitter = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
+p, state, now, nxt = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 m = json.load(open(p))
 m['last_state'] = state
 m['last_check_at'] = now
 m['failures'] = 0
 m.pop('stuck', None)
 m.pop('last_error', None)
-nxt = datetime.datetime.utcnow() + datetime.timedelta(seconds=jitter)
-m['next_check_at'] = nxt.strftime('%Y-%m-%dT%H:%M:%SZ')
+m['next_check_at'] = nxt
 json.dump(m, open(p, 'w'), indent=2)
 PY
+    fi
+    [ -n "$release_uuid" ] && set_release_asc_poll "$release_uuid" "$STATE" "$NOW_ISO" "$NEXT_ISO" 0 false || true
     append_event chanakya appstore_state_checked "$TAG" \
       "{\"state\":\"$STATE\"}" 2>/dev/null || true
     ;;
