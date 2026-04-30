@@ -356,7 +356,11 @@ fi
 
 failure_reason="build_invocation_failed"
 if [ "$IS_LOCAL" != "1" ]; then
-  failure_reason=$(classify_remote_failure "$test_log")
+  if [ "$TEST_STATUS" -eq 124 ]; then
+    failure_reason="remote_timeout"
+  else
+    failure_reason=$(classify_remote_failure "$test_log")
+  fi
 fi
 rm -f "$test_log" 2>/dev/null || true
 data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"attempt":%s,"exit_code":%s%s}' \
