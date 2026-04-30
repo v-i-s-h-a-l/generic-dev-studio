@@ -95,14 +95,17 @@ rounds_status() {
 
 releases_status() {
   local releases_dir="$PROJECT_ROOT/plans/releases"
-  local latest_tf latest_as
+  local latest_tf latest_as active_as active_as_count
 
   if [ -d "$releases_dir" ]; then
     # Most-recent per channel by build_number (numeric desc).
-    latest_tf=$(yq -r 'select(.channel == "testflight") | "\(.build_number) \(.version) \(.released_at // .submitted_at // "—")"' \
+    latest_tf=$(yq -r 'select(.channel == "testflight") | [.build_number, .version, (.released_at // .submitted_at // "-")] | @tsv' \
       "$releases_dir"/*.yaml 2>/dev/null | sort -rn | head -1)
-    latest_as=$(yq -r 'select(.channel == "appstore") | "\(.build_number) \(.version) \(.released_at // .submitted_at // "—")"' \
+    latest_as=$(yq -r 'select(.channel == "appstore") | [.build_number, .version, (.released_at // .submitted_at // "-")] | @tsv' \
       "$releases_dir"/*.yaml 2>/dev/null | sort -rn | head -1)
+    active_as=$(yq -r 'select(.channel == "appstore" and (.state == "submitted" or .state == "in-review" or .state == "pending-developer-release")) | [.build_number, .version, .state, (.asc_metadata.app_store_state // "-")] | @tsv' \
+      "$releases_dir"/*.yaml 2>/dev/null | sort -rn)
+    active_as_count=$(printf '%s\n' "$active_as" | sed '/^$/d' | wc -l | tr -d ' ')
   fi
 
   local msg=""
@@ -115,6 +118,13 @@ releases_status() {
     local as_build as_version as_date
     read -r as_build as_version as_date <<<"$latest_as"
     msg="${msg:+$msg }Latest App Store: build $as_build (v$as_version, $as_date)."
+  fi
+  if [ "${active_as_count:-0}" -gt 1 ]; then
+    msg="${msg:+$msg }App Store pending-review drift: $active_as_count active submissions; reconcile before relying on status."
+  elif [ "${active_as_count:-0}" = "1" ]; then
+    local active_build active_version active_state active_asc_state
+    read -r active_build active_version active_state active_asc_state <<<"$active_as"
+    msg="${msg:+$msg }Pending App Store: build $active_build (v$active_version, $active_state/$active_asc_state)."
   fi
 
   # Tasks merged since the last TestFlight — count YAML tasks in state merged

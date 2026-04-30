@@ -236,6 +236,21 @@ fi
 test_log=$(mktemp 2>/dev/null || printf '/tmp/xcb-test-%s.log' "$$")
 RUN_START_S=$(date -u +%s)
 
+classify_remote_failure() {
+  local log="$1"
+  if [ ! -r "$log" ]; then
+    printf 'remote_harness_failure'
+    return 0
+  fi
+  if grep -Eq 'command not found|No such file or directory|cd: .*No such|xcodebuild: not found' "$log"; then
+    printf 'remote_shell_path_failed'
+  elif grep -q 'success marker missing' "$log"; then
+    printf 'remote_success_marker_missing'
+  else
+    printf 'build_invocation_failed'
+  fi
+}
+
 # `set --` builds the argv so an empty TEST_TARGET means "no -only-testing"
 # rather than "-only-testing:" (which xcodebuild would reject). Keeps the
 # wrapper usable for both targeted and full-suite runs. The optional
@@ -269,7 +284,11 @@ else
     printf 'task-test-gate: DerivedData path %s outside $HOME — refusing remote dispatch\n' "$DERIVED" >&2
     exit 2
   }
-  sourcesync_mkdir_remote "$NODE_ID" "$REL_DERIVED" || exit 2
+  sourcesync_mkdir_remote "$NODE_ID" "$REL_DERIVED" || {
+    data=$(printf '{"node":"%s","reason":"remote_shell_path_failed","attempt":%s%s}' "$NODE_ID" "$ATTEMPT" "$DISPATCH_FIELDS")
+    emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+    exit 2
+  }
   Q_WORKTREE=$(sourcesync_remote_quoted "$REL_WORKTREE")
   Q_DERIVED=$(sourcesync_remote_quoted "$REL_DERIVED")
   Q_MCP_MODE=$(printf '%q' "${STUDIO_XCODEBUILDMCP:-auto}")
@@ -307,9 +326,8 @@ TEST_COUNT=$(grep -Eo 'Test Suite .* passed|Executed [0-9]+ tests' "$test_log" 2
   | grep -Eo '[0-9]+' | head -1)
 TEST_COUNT="${TEST_COUNT:-0}"
 
-rm -f "$test_log" 2>/dev/null || true
-
 if [ "$TEST_STATUS" -eq 0 ]; then
+  rm -f "$test_log" 2>/dev/null || true
   data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"test_count":%s,"attempt":%s%s}' \
     "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$TEST_COUNT" "$ATTEMPT" "$DISPATCH_FIELDS")
   emit_event_keyed achilles task test_run_passed "$TASK_ID" "$data" >/dev/null 2>&1 || true
@@ -318,8 +336,14 @@ if [ "$TEST_STATUS" -eq 0 ]; then
   exit 0
 fi
 
+failure_reason="build_invocation_failed"
+if [ "$IS_LOCAL" != "1" ]; then
+  failure_reason=$(classify_remote_failure "$test_log")
+fi
+rm -f "$test_log" 2>/dev/null || true
 data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"attempt":%s,"exit_code":%s%s}' \
   "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$ATTEMPT" "$TEST_STATUS" "$DISPATCH_FIELDS")
+data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" '. + {reason:$reason}')
 emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
 [ -n "$DISPATCH_UUID" ] && dispatch_registry_mark "$DISPATCH_UUID" failed 2>/dev/null || true
 gate_announce_done test "$NODE_ID" "$TASK_ID" failed "$DURATION_S"

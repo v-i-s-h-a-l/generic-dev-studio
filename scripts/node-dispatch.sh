@@ -205,6 +205,7 @@ wait "$TAIL" 2>/dev/null || true
 if [ -r "$EXIT_FILE" ]; then
   exit "$(cat "$EXIT_FILE")"
 fi
+printf 'node-dispatch: success marker missing for %s\n' "$UUID" >&2
 exit 1
 REMOTE_EOF
 )
