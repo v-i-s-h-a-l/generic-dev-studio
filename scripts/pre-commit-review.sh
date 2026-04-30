@@ -174,7 +174,7 @@ PROMPT
 spawn_argv=( $spawn_command )
 review_prompt="Read $payload, review the staged studio diff, and print STUDIO_REVIEW_VERDICT=<approved|approved_with_fixes|blocked>."
 
-if ! env -i \
+if ! ( cd "$REPO_ROOT" && env -i \
     PATH="$PATH" \
     HOME="$reviewer_home" \
     LANG="${LANG:-C.UTF-8}" \
@@ -183,7 +183,7 @@ if ! env -i \
     STUDIO_HOST="$REVIEW_HOST" \
     REVIEW_PAYLOAD="$payload" \
     STAGED_PATCH_ID="$patch_id" \
-    "${spawn_argv[@]}" "$review_prompt" > "$summary" 2>"$summary.err"; then
+    "${spawn_argv[@]}" "$review_prompt" > "$summary" 2>"$summary.err" ); then
   printf 'pre-commit-review: reviewer host failed: %s\n' "$REVIEW_HOST" >&2
   sed -n '1,80p' "$summary.err" >&2 || true
   exit 1
