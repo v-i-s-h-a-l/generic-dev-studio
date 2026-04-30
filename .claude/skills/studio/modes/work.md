@@ -7,11 +7,14 @@ budget_tokens: 600
 reads:
   - TRACKS.md
   - scripts/track-next.sh output
+  - chain manifest YAML for `/studio work chain <manifest>`
   - .claude/skills/studio/modes/summary.md
 writes:
   - track branch commits
   - GH issue state (assign + close)
   - track PR
+  - chain feature branches
+  - per-issue branches/worktrees under /tmp
 ---
 
 # Mode: Work
@@ -22,9 +25,51 @@ Autonomous worker for a named parallel track. Runs a pick → shape → implemen
 
 Triggered by:
 - `/studio work <track>` — explicit invocation
+- `/studio work chain <manifest.yaml>` — execute one or more chains from a manifest
 - `STUDIO_TRACK=<track>` env var at session start (SessionStart hook injects the first directive automatically; subsequent issues loop via this mode)
 
 Without the `work` sub-command, start the host session with `STUDIO_TRACK=<track>` from inside `generic-dev-studio`; the session-start directive enters this mode automatically.
+
+## Chain entry
+
+Use chain mode when the user wants a multi-chain sequence where each chain starts from latest `main`, each issue gets its own branch/worktree/fresh host session, and the chain lands as one reviewed PR before the next chain starts.
+
+Run:
+
+```bash
+scripts/studio-chain-runner.sh <manifest.yaml> [--only <chain>] [--host codex|claude-code] [--dry-run]
+```
+
+Manifest:
+
+```yaml
+schema_version: 1
+chains:
+  - name: field-telemetry-mvp
+    base: main
+    branch: feature/field-telemetry-mvp
+    host: auto
+    issues: [388, 25, 367]
+```
+
+Chain behavior:
+
+1. Fetch latest `origin/<base>`.
+2. Create one chain feature branch/worktree from latest base.
+3. For each issue in order, create `<chain-branch>-issue-<N>` in a separate `/tmp/studio-chain-runner/...` worktree.
+4. Spawn a fresh host session (`codex exec` by default for `host: auto`, or the manifest/flag host) with a scoped prompt to implement exactly that issue and commit on the issue branch.
+5. Fast-forward the issue branch into the chain branch.
+6. Keep the issue open while the chain branch is still only a feature branch.
+7. After the last issue, rebase the chain branch on latest base, open a PR, and run `scripts/pr-headless-review.sh <pr> --method auto`.
+8. If the reviewer blocks, STOP with the PR and worktree intact for repair. If non-blocked, the normal autopilot merge path runs.
+9. Close/comment the chain issues after the PR path succeeds.
+10. Fetch/prune locally and remove the chain/issue worktrees after merge.
+
+Use `--dry-run` before a new manifest shape or a risky chain. Dry-run prints branch, worktree, spawn, PR, review, and cleanup commands without mutating git or GitHub.
+
+Chain mode is for studio-repo issue chains. It does not run user-project task work; that remains `/chanakya` / `/achilles`.
+
+Chain branch names are safety-checked before any fetch/push. The runner refuses invalid Git branch names, a branch equal to the base, and protected direct-integration names such as `main`, `master`, `trunk`, `develop`, or `production`.
 
 ## Step 1 — Identify track
 
