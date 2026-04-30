@@ -25,14 +25,15 @@ scenario: |
     7. `scripts/node-health.sh mini`
 
   Also answer:
-    - Does the health-check timeout (10s) bound the command runtime too?
-    - What happens to a 40-minute remote xcodebuild if the network is
-      slow but not down?
+    - Does the health-check timeout (10s) bound the command runtime too,
+      or does NODE_BUILD_TIMEOUT own that bound?
+    - What happens to a 40-minute remote xcodebuild when NODE_BUILD_TIMEOUT
+      is left at its 30-minute default?
     - Which of the three scripts needs jq; which is it safe to call
       without a registry file present?
 failure_signals:
   - "(?i)(error|fail|abort|exit ?1)\\b.*\\b(unreachable|offline|disabled)"
-  - "(?i)timeout.*(command|xcodebuild|remote exec)"
+  - "(?i)health.*timeout.*(command|xcodebuild|remote exec)"
   - "(?i)node-pick.*error.*(no.*(node|candidate|role))"
   - "(?i)(prompt|ask).*(user|approve).*(fallback|remote)"
 success_signals:
@@ -40,6 +41,8 @@ success_signals:
   - "(?i)node-pick.*(prints|outputs).*local"
   - "(?i)unknown.*(node|id).*(exit|rc)\\s*2"
   - "(?i)health.*10.?s(ec)?.*(probe|check).*(not).*(command|exec)"
+  - "(?i)NODE_BUILD_TIMEOUT.*(1800|30.?min|remote command|remote exec)"
+  - "(?i)(timeout|timed out).*exit.*124"
   - "(?i)jq.*required"
 notes: |
   The single most common failure mode for a fresh agent reasoning about this

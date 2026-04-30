@@ -8,10 +8,9 @@
 # missing registry) silently falls back to local execution — this is a
 # hard requirement: no manual intervention when a remote node drops.
 #
-# The 10-second bound lives on the health check, not on the command
-# itself. A 40-minute xcodebuild on a reachable node must not get killed
-# because the caller set a short timeout; the only cost the caller pays
-# for remote dispatch is the reachability probe.
+# The 10-second health probe only confirms reachability. The remote command
+# stream is separately bounded by NODE_BUILD_TIMEOUT so a hung worker-side
+# build cannot pin the dispatcher forever.
 #
 # Usage:
 #   scripts/node-dispatch.sh <node-id> <command> [args...]
@@ -23,6 +22,7 @@
 #
 # Env:
 #   NODE_DISPATCH_DEBUG=1   log the route decision (remote vs fallback) to stderr
+#   NODE_BUILD_TIMEOUT=1800 cap the remote command stream in seconds
 
 set -u
 umask 022
@@ -209,6 +209,25 @@ printf 'node-dispatch: success marker missing for %s\n' "$UUID" >&2
 exit 1
 REMOTE_EOF
 )
+
+NODE_BUILD_TIMEOUT="${NODE_BUILD_TIMEOUT:-1800}"
+case "$NODE_BUILD_TIMEOUT" in
+  ''|*[!0-9]*|0) NODE_BUILD_TIMEOUT=1800 ;;
+esac
+
+REMOTE_TIMEOUT_CMD=()
+if command -v gtimeout >/dev/null 2>&1; then
+  REMOTE_TIMEOUT_CMD=(gtimeout "$NODE_BUILD_TIMEOUT")
+elif command -v timeout >/dev/null 2>&1; then
+  REMOTE_TIMEOUT_CMD=(timeout "$NODE_BUILD_TIMEOUT")
+else
+  printf 'warn: NODE_BUILD_TIMEOUT requested but neither gtimeout nor timeout is installed; remote command is unbounded\n' >&2
+fi
+
+if [ "${#REMOTE_TIMEOUT_CMD[@]}" -gt 0 ]; then
+  exec "${REMOTE_TIMEOUT_CMD[@]}" ssh "${SSH_OPTS[@]}" "${USER_}@${HOST}" -- bash -s -- \
+    "$DISPATCH_UUID" "$REMOTE_CMD" <<<"$REMOTE_WRAPPER"
+fi
 
 exec ssh "${SSH_OPTS[@]}" "${USER_}@${HOST}" -- bash -s -- \
   "$DISPATCH_UUID" "$REMOTE_CMD" <<<"$REMOTE_WRAPPER"

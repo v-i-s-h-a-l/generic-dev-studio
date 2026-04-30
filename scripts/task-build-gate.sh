@@ -357,8 +357,13 @@ if [ "$HARVESTED" = "1" ]; then
   GATE_DUR_S=0
   gate_announce_start build "$NODE_ID" "$TASK_ID" full-green
   if [ "$BUILD_STATUS" -ne 0 ]; then
-    data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"harvested":true%s}' \
-      "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    if [ "$BUILD_STATUS" -eq 124 ]; then
+      data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"remote_timeout","harvested":true%s}' \
+        "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    else
+      data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"harvested":true%s}' \
+        "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    fi
     _emit_terminal build_check_failed "$data"
     gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
     exit 2
@@ -680,7 +685,11 @@ GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
 if [ "$BUILD_STATUS" -ne 0 ]; then
   failure_reason="build_invocation_failed"
   if [ "$IS_LOCAL" != "1" ]; then
-    failure_reason=$(classify_remote_failure "$build_log")
+    if [ "$BUILD_STATUS" -eq 124 ]; then
+      failure_reason="remote_timeout"
+    else
+      failure_reason=$(classify_remote_failure "$build_log")
+    fi
   fi
   data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"errors_json":%s%s}' \
     "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$errors_json" "$DISPATCH_FIELDS")
