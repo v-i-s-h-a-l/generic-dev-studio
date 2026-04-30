@@ -95,6 +95,22 @@ yaml_field() {
     | tr -d '"'"'"
 }
 
+print_reviewer_failure() {
+  local stdout_file="$1" stderr_file="$2"
+  printf 'pr-headless-review: reviewer host failed: %s\n' "$REVIEW_HOST" >&2
+  if [ -s "$stderr_file" ]; then
+    printf 'pr-headless-review: reviewer stderr (first 80 lines):\n' >&2
+    sed -n '1,80p' "$stderr_file" >&2 || true
+  fi
+  if [ -s "$stdout_file" ]; then
+    printf 'pr-headless-review: reviewer stdout (first 80 lines):\n' >&2
+    sed -n '1,80p' "$stdout_file" >&2 || true
+  fi
+  if [ ! -s "$stderr_file" ] && [ ! -s "$stdout_file" ]; then
+    printf 'pr-headless-review: reviewer produced no stdout/stderr before exit\n' >&2
+  fi
+}
+
 eligible_hosts() {
   local registry="$REPO_ROOT/hosts/registry.yaml" host manifest reviewer_profile
   [ -f "$registry" ] || return 1
@@ -201,8 +217,7 @@ if ! ( cd "$REPO_ROOT" && env -i \
     PR_URL="$pr_url" \
     PR_HEAD_SHA="$head_sha" \
     "${spawn_argv[@]}" "$review_prompt" > "$summary" 2>"$summary.err" ); then
-  printf 'pr-headless-review: reviewer host failed: %s\n' "$REVIEW_HOST" >&2
-  sed -n '1,80p' "$summary.err" >&2 || true
+  print_reviewer_failure "$summary" "$summary.err"
   exit 1
 fi
 
