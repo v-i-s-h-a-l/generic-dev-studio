@@ -59,6 +59,7 @@ EOF
 
 ```bash
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
+export STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-<project>}"
 export STUDIO_RELEASE_TAG="release-${CURRENT_BUILD_NUMBER}-$(date -u +%Y%m%d-%H%M%S)"
 STUDIO_TF_PUSH_LIVE=1 ./scripts/studio-tf-push.sh appstore \
   --build "$CURRENT_BUILD_NUMBER" \
@@ -81,6 +82,7 @@ Post the unified A body via:
 
 ```bash
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
+export STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-<project>}"
 ./scripts/slack-post.sh --channel <release-channel-id> --text "$RELEASE_BODY"
 ```
 

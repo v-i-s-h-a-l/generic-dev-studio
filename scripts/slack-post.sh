@@ -24,8 +24,8 @@
 #
 # Token:
 #   Read from $STUDIO_SLACK_TOKEN_FILE if set (for fixtures + smoke tests), else
-#   from ~/.claude/secrets/slack-bot-token. Missing-or-unreadable → fail loud
-#   per R14: exit 2, no network call, no silent skip.
+#   from ~/.dev-studio/<project>/secrets/slack-bot-token. Missing-or-unreadable
+#   → fail loud per R14: exit 2, no network call, no silent skip.
 #
 # Output:
 #   Live mode: prints the Slack API JSON response on stdout. Exit 0 if the
@@ -42,6 +42,8 @@ set -u
 umask 022
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+# shellcheck source=lib-release-config.sh
+. "$SCRIPT_DIR/lib-release-config.sh"
 
 CHANNEL=""
 TEXT=""
@@ -98,7 +100,11 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-TOKEN_FILE="${STUDIO_SLACK_TOKEN_FILE:-$HOME/.claude/secrets/slack-bot-token}"
+load_release_config || {
+  printf 'slack-post: could not resolve release config project\n' >&2
+  exit 2
+}
+TOKEN_FILE=$(release_slack_token_file)
 if [ ! -r "$TOKEN_FILE" ]; then
   printf 'slack-post: token file %s not readable — refuse to post (R14)\n' "$TOKEN_FILE" >&2
   exit 2

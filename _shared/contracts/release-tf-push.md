@@ -30,9 +30,12 @@ Before Step 1:
 
 - Repo at `_shared/primitives/turnip-project-config.md::project_root` is checked out and clean (`git status` shows no unstaged or staged paths). The version-bump commit in Step 5 must be the only delta this run introduces.
 - The active branch is the branch the user wants on TestFlight. The driver does not switch branches.
-- ASC private key is readable at `_shared/primitives/turnip-project-config.md::asc_key_path`.
-- Slack bot token is readable per `_shared/primitives/slack-post.md` (`~/.claude/secrets/slack-bot-token`, chmod 600).
+- Project release config is readable at `~/.dev-studio/<project>/config/release.env`.
+- ASC private key is readable at `~/.dev-studio/<project>/secrets/appstoreconnect/AuthKey_<key-id>.p8` or the `STUDIO_TF_ASC_KEY_PATH` configured in `release.env`.
+- Slack bot token is readable per `_shared/primitives/slack-post.md` (`~/.dev-studio/<project>/secrets/slack-bot-token`, chmod 600).
 - `python3` resolves and the `pyjwt` package is importable (used to mint the ASC JWT — see `_shared/primitives/appstore-connect-jwt.md`).
+- Non-interactive GitHub push works for the active branch: `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never git push --dry-run --porcelain -u origin HEAD` succeeds. This preflight runs before any build-number or version mutation; auth failures must not open a credential prompt or create a stranded release commit.
+- Slack notification credentials are verified before mutation unless `STUDIO_TF_SLACK_DEFERRED=1` explicitly marks the run as upload-only/deferred-notification.
 
 Halt with `release_started` not emitted if any prerequisite fails. Stage C's wrapper surfaces the missing piece to the user.
 
@@ -45,11 +48,19 @@ The 14 logical steps below collapse into 6 substantive phases. Each phase names 
 Mint a JWT per `_shared/primitives/appstore-connect-jwt.md`. Call:
 
 - `GET /v1/builds?sort=-uploadedDate&limit=1&fields[builds]=version` — extract `LATEST_BUILD_NUMBER` (integer).
-- `GET /v1/appStoreVersions?filter[appStoreState]=READY_FOR_SALE&fields[appStoreVersions]=versionString` — extract `LIVE_VERSION` (string).
+- `GET /v1/apps/{app_id}/appStoreVersions?filter[appStoreState]=READY_FOR_SALE&fields[appStoreVersions]=versionString` — extract `LIVE_VERSION` (string). `{app_id}` comes from `_shared/primitives/turnip-project-config.md::app_id` (currently `6502945736`); the top-level `appStoreVersions` collection is not readable for this check.
 
 Read `CURRENT_VERSION` from the project's pbxproj (`MARKETING_VERSION`).
 
 Emit `release_started` with `data: { build_from: LATEST_BUILD_NUMBER, live_version: LIVE_VERSION, current_version: CURRENT_VERSION, branch }`. This event opens the span; every later event in the run carries the same `task` field (the release tag — see §Idempotency).
+
+If the live-version request fails, times out, returns an `errors` array, or returns `{"data":[]}`, halt before Step 3 with:
+
+```
+WARNING: Could not determine live App Store version
+```
+
+The driver must not treat an empty or failed live-version response as "no conflict".
 
 ### Step 2 — Decide new build number and version
 
@@ -79,6 +90,8 @@ Co-Authored-By: Claude Opus 4.X (1M context) <noreply@anthropic.com>
 ```
 
 Push the branch with `git push -u origin HEAD`. R11 (no studio-initiated pushes to base branches) applies — the driver halts if the active branch is `main` / `master` / `release/*`.
+
+If a future push failure still occurs after the local bump commit, emit a stranded-release-state warning naming the local commit and the next safe `git push -u origin HEAD` recovery command. Do not write release artifacts or debriefs unless upload later succeeds.
 
 No event emitted at the commit boundary; the next event closes the archive phase.
 
