@@ -119,7 +119,10 @@ jq -r '
     (.data.wait_duration_s // ""),
     (.data.patch_id // ""),
     (.data.review_host // ""),
-    (.data.reason // .data.block_reason // "")
+    (.data.reason // .data.block_reason // ""),
+    (.data.tokens.input // .data.input_tokens // ""),
+    (.data.tokens.output // .data.output_tokens // ""),
+    (.data.tokens.cache_read // .data.cache_read_tokens // .data.cached_input_tokens // "")
   ] | @tsv
 ' "$events_file" > "$norm_file"
 
@@ -216,8 +219,11 @@ function bucket_for_task(task) {
 function task_key(task, fallback) {
   return task != "" ? task : fallback
 }
+function valid_tokens(v) {
+  return (v ~ /^[0-9]+$/ && v >= 0)
+}
 {
-  epoch=$1; event=$3; task=$4; agent=$5; mode=$6; stage=$7; attempt=$8; duration=$9; wait_duration=$10; patch_id=$11
+  epoch=$1; event=$3; task=$4; agent=$5; mode=$6; stage=$7; attempt=$8; duration=$9; wait_duration=$10; patch_id=$11; review_host=$12; reason=$13; token_input=$14; token_output=$15; token_cache_read=$16
   if (epoch == "" || event == "") next
   fallback = "event:" NR
   key_task = task_key(task, fallback)
@@ -293,6 +299,21 @@ function task_key(task, fallback) {
   if (event == "pr_review_completed") {
     if (duration != "" && valid_duration(duration)) sample("pr_review", "", "", "", duration, "duration_s", "")
     else missing("pr_review", "missing_duration_s")
+    if (valid_tokens(token_input) && valid_tokens(token_output) && valid_tokens(token_cache_read)) {
+      pr_review_token_samples++
+      pr_review_input_total += token_input + 0
+      pr_review_output_total += token_output + 0
+      pr_review_cache_read_total += token_cache_read + 0
+      if (!(review_host in pr_review_host_seen)) {
+        pr_review_host_seen[review_host] = 1
+        pr_review_host_order[++pr_review_host_n] = review_host
+      }
+      pr_review_host_samples[review_host]++
+      pr_review_host_input[review_host] += token_input + 0
+      pr_review_host_output[review_host] += token_output + 0
+    } else {
+      missing("pr_review_tokens", "missing_tokens")
+    }
   }
   if (event == "pr_autopilot_completed") {
     if (duration != "" && valid_duration(duration)) sample("pr_autopilot", task, "", "", duration, "duration_s", "")
@@ -358,6 +379,22 @@ END {
     stage = r[2]
     if (count[stage] == "" && missing_count[stage] == "") continue
     printf "%-36s %7d %10d %10s %10s %10d\n", stage, count[stage] + 0, total[stage] + 0, percentile(stage, 0.50), percentile(stage, 0.90), missing_count[stage] + 0
+  }
+
+  print ""
+  print "PR review token usage"
+  if (pr_review_token_samples + 0 < 1) {
+    print "  unavailable: no pr_review_completed token telemetry in window"
+  } else {
+    printf "  samples=%d input_tokens=%d output_tokens=%d cache_read_tokens=%d total_tokens=%d\n", \
+      pr_review_token_samples, pr_review_input_total, pr_review_output_total, pr_review_cache_read_total, pr_review_input_total + pr_review_output_total
+    if (pr_review_host_n > 0) {
+      print "  by host:"
+      for (i = 1; i <= pr_review_host_n; i++) {
+        host = pr_review_host_order[i]
+        printf "    %-20s samples=%d input_tokens=%d output_tokens=%d\n", host, pr_review_host_samples[host] + 0, pr_review_host_input[host] + 0, pr_review_host_output[host] + 0
+      }
+    }
   }
 
   print ""
