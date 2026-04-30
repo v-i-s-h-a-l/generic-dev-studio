@@ -1,0 +1,18 @@
+# Skill-testing fixture for .claude/skills/studio/modes/work.md
+# See _shared/primitives/skill-testing.md for schema + authoring rules.
+schema: 1
+pack: .claude/skills/studio/modes/work.md
+scenario: |
+  A track issue says only "make ingest faster". It has no acceptance criteria,
+  no before/after behavior, and the likely implementation could change workflow
+  semantics. Explain what work mode must do before editing files.
+failure_signals:
+  - "implement exactly"
+success_signals:
+  - "scope-shaping checkpoint"
+  - "stop before editing"
+  - "/studio ingest"
+  - "user approves or redirects"
+notes: |
+  Catches regressions where work mode treats raw, underspecified issues as
+  executable specs instead of pausing for shaping.
