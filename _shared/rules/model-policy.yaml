@@ -1,0 +1,12 @@
+schema_version:
+  name: model-policy
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+default_preference: best_result
+allow_inline_override: true
+recommendation_fields:
+  - task.size
+  - task.kind
+  - task.cross_file_count
+  - task.novelty_score

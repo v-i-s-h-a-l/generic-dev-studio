@@ -162,6 +162,11 @@ esac
   printf 'Metadata:\n\n```json\n%s\n```\n\n' "$(printf '%s' "$pr_json" | jq -c '.')"
   cat <<'PROMPT'
 Review this studio PR against REVIEW.md and the repository-specific rules.
+Grouped feature/reliability PRs are normal when the included issues share a
+workflow surface, safety-floor path, test fixture set, or user-facing
+capability. Do not block solely because a PR closes multiple issues; block only
+when grouping hides traceability, mixes unrelated ownership, or makes the
+safety argument unreviewable.
 
 Return a concise report with exactly one machine-readable verdict line:
 

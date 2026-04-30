@@ -123,4 +123,21 @@ if "$REPO_SCRIPTS/emit-agent-session-completed.sh" achilles task T-PROSE '~1800'
 fi
 assertions=$((assertions + 1))
 
+# ---- 8. Model telemetry fields are optional but preserved when supplied ----
+"$REPO_SCRIPTS/emit-agent-session-completed.sh" achilles task T-MODEL 12 \
+  --model-selected claude-sonnet-default \
+  --model-fallback-reason fast_turnaround_preference >/dev/null
+model_selected=$(python3 -c '
+import json, sys, pathlib
+lines = [l for l in pathlib.Path(sys.argv[1]).read_text().splitlines() if l.strip()]
+print(json.loads(lines[-1]).get("data", {}).get("model_selected", "ABSENT"))
+' "$LOG")
+model_reason=$(python3 -c '
+import json, sys, pathlib
+lines = [l for l in pathlib.Path(sys.argv[1]).read_text().splitlines() if l.strip()]
+print(json.loads(lines[-1]).get("data", {}).get("model_fallback_reason", "ABSENT"))
+' "$LOG")
+assert "model_selected is preserved" "[ '$model_selected' = 'claude-sonnet-default' ]"
+assert "model_fallback_reason is preserved" "[ '$model_reason' = 'fast_turnaround_preference' ]"
+
 printf 'PASS (%d assertions)\n' "$assertions"
