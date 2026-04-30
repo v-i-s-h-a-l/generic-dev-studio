@@ -53,6 +53,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-dispatch-registry.sh"
 # shellcheck source=lib-dispatch-harvest.sh
 . "$SCRIPT_DIR/lib-dispatch-harvest.sh"
+# shellcheck source=lib-remote-failure.sh
+. "$SCRIPT_DIR/lib-remote-failure.sh"
 
 # #270 — populated by the remote-dispatch branch via STUDIO_DISPATCH_UUID_FILE
 # sidecar. Empty for self-node and dry-run paths.
@@ -240,21 +242,6 @@ remote_derived_abs=""
 retrieved_artifacts_file=""
 RUN_START_S=$(date -u +%s)
 
-classify_remote_failure() {
-  local log="$1"
-  if [ ! -r "$log" ]; then
-    printf 'remote_harness_failure'
-    return 0
-  fi
-  if grep -Eq 'command not found|No such file or directory|cd: .*No such|xcodebuild: not found' "$log"; then
-    printf 'remote_shell_path_failed'
-  elif grep -q 'success marker missing' "$log"; then
-    printf 'remote_success_marker_missing'
-  else
-    printf 'build_invocation_failed'
-  fi
-}
-
 # `set --` builds the argv so an empty TEST_TARGET means "no -only-testing"
 # rather than "-only-testing:" (which xcodebuild would reject). Keeps the
 # wrapper usable for both targeted and full-suite runs. The optional
@@ -359,13 +346,16 @@ if [ "$IS_LOCAL" != "1" ]; then
   if [ "$TEST_STATUS" -eq 124 ]; then
     failure_reason="remote_timeout"
   else
-    failure_reason=$(classify_remote_failure "$test_log")
+    failure_reason=$(remote_failure_reason "$test_log")
   fi
 fi
-rm -f "$test_log" 2>/dev/null || true
 data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"attempt":%s,"exit_code":%s%s}' \
   "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$ATTEMPT" "$TEST_STATUS" "$DISPATCH_FIELDS")
 data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" '. + {reason:$reason}')
+if [ "$failure_reason" = "remote_marker_writer_failed" ]; then
+  data=$(remote_enrich_marker_failure "$data" "$test_log")
+fi
+rm -f "$test_log" 2>/dev/null || true
 emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
 [ -n "$DISPATCH_UUID" ] && dispatch_registry_mark "$DISPATCH_UUID" failed 2>/dev/null || true
 gate_announce_done test "$NODE_ID" "$TASK_ID" failed "$DURATION_S"

@@ -46,6 +46,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-dispatch-registry.sh"
 # shellcheck source=lib-dispatch-harvest.sh
 . "$SCRIPT_DIR/lib-dispatch-harvest.sh"
+# shellcheck source=lib-remote-failure.sh
+. "$SCRIPT_DIR/lib-remote-failure.sh"
 
 TASK_ID="${1:?usage: swift-test-gate.sh <task-id> <worktree> [<changed-files>]}"
 WORKTREE="${2:?worktree required}"
@@ -208,21 +210,6 @@ _emit_terminal() {
   rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
 }
 
-classify_remote_failure() {
-  local log="$1"
-  if [ ! -r "$log" ]; then
-    printf 'remote_harness_failure'
-    return 0
-  fi
-  if grep -Eq 'command not found|No such file or directory|cd: .*No such|swift: not found|xcodebuild: not found' "$log"; then
-    printf 'remote_shell_path_failed'
-  elif grep -q 'success marker missing' "$log"; then
-    printf 'remote_success_marker_missing'
-  else
-    printf 'build_invocation_failed'
-  fi
-}
-
 file_count=$(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ')
 start_data=$(printf '{"mode":"swift-test","worktree":"%s","package":"%s","files":%s,"attempt":%s%s}' \
   "$WORKTREE" "$PKG_ROOT" "$file_count" "$ATTEMPT" "$DISPATCH_FIELDS")
@@ -293,12 +280,15 @@ if [ "$HARVESTED" = "1" ]; then
     if [ "$TEST_STATUS" -eq 124 ]; then
       failure_reason="remote_timeout"
     else
-      failure_reason=$(classify_remote_failure "$test_log")
+      failure_reason=$(remote_failure_reason "$test_log")
     fi
-    rm -f "$test_log" 2>/dev/null || true
     data=$(printf '{"mode":"swift-test","node":"%s","errors":%s,"warnings":%s,"package":"%s","attempt":%s,"harvested":true%s}' \
       "$NODE_ID" "$err_count" "$warn_count" "$PKG_ROOT" "$ATTEMPT" "$DISPATCH_FIELDS")
     data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" '. + {reason:$reason}')
+    if [ "$failure_reason" = "remote_marker_writer_failed" ]; then
+      data=$(remote_enrich_marker_failure "$data" "$test_log")
+    fi
+    rm -f "$test_log" 2>/dev/null || true
     _emit_terminal build_check_failed "$data"
     gate_announce_done swift-test "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
     exit 2
@@ -404,13 +394,16 @@ if [ "$TEST_STATUS" -ne 0 ]; then
     if [ "$TEST_STATUS" -eq 124 ]; then
       failure_reason="remote_timeout"
     else
-      failure_reason=$(classify_remote_failure "$test_log")
+      failure_reason=$(remote_failure_reason "$test_log")
     fi
   fi
-  rm -f "$test_log" 2>/dev/null || true
   data=$(printf '{"mode":"swift-test","node":"%s","errors":%s,"warnings":%s,"package":"%s","attempt":%s%s}' \
     "$NODE_ID" "$err_count" "$warn_count" "$PKG_ROOT" "$ATTEMPT" "$DISPATCH_FIELDS")
   data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" '. + {reason:$reason}')
+  if [ "$failure_reason" = "remote_marker_writer_failed" ]; then
+    data=$(remote_enrich_marker_failure "$data" "$test_log")
+  fi
+  rm -f "$test_log" 2>/dev/null || true
   _emit_terminal build_check_failed "$data"
   gate_announce_done swift-test "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
   exit 2

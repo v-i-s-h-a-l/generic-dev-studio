@@ -177,6 +177,7 @@ set +u
 UUID="$1"
 CMD="$2"
 TIMEOUT_S="$3"
+TAIL_LINES="${4:-40}"
 LOG_DIR="$HOME/.dev-studio/.runtime/logs"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/$UUID.log"
@@ -184,6 +185,9 @@ EXIT_FILE="$LOG_DIR/$UUID.exit"
 RUNNER_SCRIPT="$LOG_DIR/$UUID.runner.sh"
 case "$TIMEOUT_S" in
   ''|*[!0-9]*|0) TIMEOUT_S=1800 ;;
+esac
+case "$TAIL_LINES" in
+  ''|*[!0-9]*|0) TAIL_LINES=40 ;;
 esac
 
 # Atomic exit-file write via mv so a reader (#147-C) never sees a partial
@@ -215,6 +219,7 @@ cat >"$RUNNER_SCRIPT" <<'RUNNER_EOF'
     wait "$child"
     rc=$?
   fi
+  printf "node-dispatch: remote command exit code: %s\n" "$rc"
   printf "%s\n" "$rc" > "$exit_file.tmp" && mv "$exit_file.tmp" "$exit_file"
   rm -f "$runner_script" 2>/dev/null || true
   exit $rc
@@ -236,13 +241,19 @@ wait "$TAIL" 2>/dev/null || true
 if [ -r "$EXIT_FILE" ]; then
   exit "$(cat "$EXIT_FILE")"
 fi
-printf 'node-dispatch: success marker missing for %s\n' "$UUID" >&2
-exit 1
+printf 'node-dispatch: exit marker missing for %s\n' "$UUID" >&2
+printf 'node-dispatch: remote log tail for %s follows\n' "$UUID" >&2
+tail -n "$TAIL_LINES" "$LOG" >&2 2>/dev/null || true
+exit 125
 REMOTE_EOF
 
 NODE_BUILD_TIMEOUT="${NODE_BUILD_TIMEOUT:-1800}"
 case "$NODE_BUILD_TIMEOUT" in
   ''|*[!0-9]*|0) NODE_BUILD_TIMEOUT=1800 ;;
+esac
+NODE_DISPATCH_TAIL_LINES="${NODE_DISPATCH_TAIL_LINES:-40}"
+case "$NODE_DISPATCH_TAIL_LINES" in
+  ''|*[!0-9]*|0) NODE_DISPATCH_TAIL_LINES=40 ;;
 esac
 
 LOCAL_SSH_TIMEOUT=$(( NODE_BUILD_TIMEOUT + 30 ))
@@ -258,9 +269,9 @@ fi
 if [ "${#REMOTE_TIMEOUT_CMD[@]}" -gt 0 ]; then
   exec "${REMOTE_TIMEOUT_CMD[@]}" ssh "${SSH_OPTS[@]}" "${USER_}@${HOST}" -- \
     bash -c 'tmp="${TMPDIR:-/tmp}/node-dispatch-wrapper-$$.sh"; cat >"$tmp"; bash "$tmp" "$@"; rc=$?; rm -f "$tmp"; exit "$rc"' \
-    _ "$DISPATCH_UUID" "$REMOTE_CMD" "$NODE_BUILD_TIMEOUT" <<<"$REMOTE_WRAPPER"
+    _ "$DISPATCH_UUID" "$REMOTE_CMD" "$NODE_BUILD_TIMEOUT" "$NODE_DISPATCH_TAIL_LINES" <<<"$REMOTE_WRAPPER"
 fi
 
 exec ssh "${SSH_OPTS[@]}" "${USER_}@${HOST}" -- \
   bash -c 'tmp="${TMPDIR:-/tmp}/node-dispatch-wrapper-$$.sh"; cat >"$tmp"; bash "$tmp" "$@"; rc=$?; rm -f "$tmp"; exit "$rc"' \
-  _ "$DISPATCH_UUID" "$REMOTE_CMD" "$NODE_BUILD_TIMEOUT" <<<"$REMOTE_WRAPPER"
+  _ "$DISPATCH_UUID" "$REMOTE_CMD" "$NODE_BUILD_TIMEOUT" "$NODE_DISPATCH_TAIL_LINES" <<<"$REMOTE_WRAPPER"
