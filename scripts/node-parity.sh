@@ -12,6 +12,8 @@
 # Usage:
 #   scripts/node-parity.sh                      # probe all enabled nodes
 #   scripts/node-parity.sh <node-id>            # probe one
+#   scripts/node-parity.sh --fix                # install missing brew packages; print manual Xcode/simulator fixes
+#   scripts/node-parity.sh --dry-run            # show what --fix would do
 #   scripts/node-parity.sh --no-cache-write     # don't update the cache
 #   scripts/node-parity.sh --cache-only         # print cache, don't probe
 #
@@ -32,9 +34,13 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 
 CACHE_WRITE=1
 CACHE_ONLY=0
+FIX=0
+DRY_RUN=0
 TARGET_ID=""
 for arg in "$@"; do
   case "$arg" in
+    --fix) FIX=1 ;;
+    --dry-run) FIX=1; DRY_RUN=1 ;;
     --no-cache-write) CACHE_WRITE=0 ;;
     --cache-only) CACHE_ONLY=1 ;;
     --help|-h)
@@ -140,6 +146,15 @@ probe_host() {
   fi
 }
 
+run_on_node() {
+  local id="$1" user_="$2" host="$3" cmd="$4"
+  if node_is_self "$id"; then
+    bash -lc "$cmd"
+  else
+    $TIMEOUT_BIN ssh "${SSH_OPTS[@]}" "${user_}@${host}" "bash -lc $(printf '%q' "$cmd")"
+  fi
+}
+
 # Parse KEY=VALUE probe output into a JSON object for one node. brew_*
 # entries collapse into a `brew` sub-object; the `xcb_*` pair into
 # `xcodebuild`; runtimes split on comma into an array.
@@ -201,9 +216,12 @@ probe_to_json() {
 # Iterate registry rows, build a JSON object keyed by node id.
 NODES_JSON="{}"
 NODE_IDS=()
+NODE_META="{}"
 while IFS=$'\t' read -r id host user_; do
   [ -z "$id" ] && continue
   NODE_IDS+=("$id")
+  NODE_META=$(jq -c --arg id "$id" --arg host "$host" --arg user "$user_" \
+    '. + {($id): {host:$host, user:$user}}' <<<"$NODE_META")
   printf '... probing %s\n' "$id" >&2
   probe_out=$(probe_host "$id" "$user_" "$host")
   node_json=$(probe_to_json "$probe_out")
@@ -322,6 +340,78 @@ fi
 
 if [ "$CACHE_WRITE" = "1" ]; then
   printf '\ncache: %s\n' "$CACHE"
+fi
+
+if [ "$FIX" = "1" ]; then
+  printf '\nfix plan:\n'
+  baseline_id=""
+  for id in "${NODE_IDS[@]}"; do
+    reach=$(jq -r --arg id "$id" '.nodes[$id].reachable // false' <<<"$CACHE_DOC")
+    if [ "$reach" = "true" ] && node_is_self "$id"; then
+      baseline_id="$id"
+      break
+    fi
+  done
+  if [ -z "$baseline_id" ]; then
+    for id in "${NODE_IDS[@]}"; do
+      reach=$(jq -r --arg id "$id" '.nodes[$id].reachable // false' <<<"$CACHE_DOC")
+      if [ "$reach" = "true" ]; then
+        baseline_id="$id"
+        break
+      fi
+    done
+  fi
+
+  if [ -z "$baseline_id" ]; then
+    printf '  no reachable baseline node; nothing fixable\n'
+  else
+    printf '  baseline: %s\n' "$baseline_id"
+    for id in "${NODE_IDS[@]}"; do
+      reach=$(jq -r --arg id "$id" '.nodes[$id].reachable // false' <<<"$CACHE_DOC")
+      [ "$reach" = "true" ] || continue
+      host=$(jq -r --arg id "$id" '.[$id].host' <<<"$NODE_META")
+      user_=$(jq -r --arg id "$id" '.[$id].user' <<<"$NODE_META")
+
+      for pkg in jq rsync coreutils fswatch; do
+        base_pkg=$(jq -r --arg id "$baseline_id" --arg pkg "$pkg" '.nodes[$id].brew[$pkg] // ""' <<<"$CACHE_DOC")
+        node_pkg=$(jq -r --arg id "$id" --arg pkg "$pkg" '.nodes[$id].brew[$pkg] // ""' <<<"$CACHE_DOC")
+        if [ -n "$base_pkg" ] && [ -z "$node_pkg" ]; then
+          cmd='[ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null; [ -x /usr/local/bin/brew ] && eval "$(/usr/local/bin/brew shellenv)" 2>/dev/null; brew install '"$(printf '%q' "$pkg")"
+          if [ "$DRY_RUN" = "1" ]; then
+            if node_is_self "$id"; then
+              printf '  would run on %s: %s\n' "$id" "$cmd"
+            else
+              printf '  would run on %s: ssh %s@%s %s\n' "$id" "$user_" "$host" "$(printf '%q' "$cmd")"
+            fi
+          else
+            printf '  installing %s on %s...\n' "$pkg" "$id"
+            if ! run_on_node "$id" "$user_" "$host" "$cmd"; then
+              printf '  warn: brew install %s failed on %s\n' "$pkg" "$id" >&2
+              ANY_DRIFT=1
+            fi
+          fi
+        fi
+      done
+
+      base_xcode=$(jq -r --arg id "$baseline_id" '.nodes[$id].xcodebuild.version // ""' <<<"$CACHE_DOC")
+      node_xcode=$(jq -r --arg id "$id" '.nodes[$id].xcodebuild.version // ""' <<<"$CACHE_DOC")
+      if [ -n "$base_xcode" ] && [ -n "$node_xcode" ] && [ "$base_xcode" != "$node_xcode" ]; then
+        printf '  manual: %s Xcode is %s; install Xcode %s from https://developer.apple.com/download/all/?q=Xcode%%20%s\n' \
+          "$id" "$node_xcode" "$base_xcode" "$base_xcode"
+      fi
+
+      base_runtimes=$(jq -r --arg id "$baseline_id" '.nodes[$id].simctl_ios_runtimes // [] | join(",")' <<<"$CACHE_DOC")
+      node_runtimes=$(jq -r --arg id "$id" '.nodes[$id].simctl_ios_runtimes // [] | join(",")' <<<"$CACHE_DOC")
+      if [ -n "$base_runtimes" ] && [ "$base_runtimes" != "$node_runtimes" ]; then
+        if node_is_self "$id"; then
+          printf '  manual: run on %s: xcodebuild -downloadPlatform iOS\n' "$id"
+        else
+          printf '  manual: run on %s: ssh %s@%s %s\n' "$id" "$user_" "$host" "'xcodebuild -downloadPlatform iOS'"
+        fi
+      fi
+    done
+  fi
+  [ "$DRY_RUN" = "1" ] && printf '  dry-run: no changes applied\n'
 fi
 
 [ "$ANY_DRIFT" = "1" ] && exit 1

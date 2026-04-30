@@ -32,7 +32,7 @@ Task-level work on the user's iOS project (`/chanakya`, `/achilles`, `/argus` ow
 | `add <url>` / "add this skill" / "install this skill" / "vendor this" | `modes/add.md` |
 | `sync` / "sync skills" / "fan out skills" / "refresh host skills" | `modes/sync.md` |
 | `janitor [--yes]` / "clean up the studio" / "what's reclaimable across projects?" / "sweep all projects" | `modes/janitor.md` |
-| `nodes` / `nodes status` / `nodes add\|remove\|enable\|disable` / `nodes health` / `nodes sync` / `nodes schedule` / "show the fleet" / "list workers" / "are the workers up?" / "register a worker" / "sync the workers" | `modes/nodes.md` |
+| `nodes` / `nodes status` / `nodes add\|remove\|enable\|disable` / `nodes health` / `nodes diagnose` / `nodes sync` / `nodes schedule` / "show the fleet" / "list workers" / "are the workers up?" / "register a worker" / "diagnose a worker" / "why is dispatch failing?" / "sync the workers" | `modes/nodes.md` |
 | `tf-push [--dry-run]` / "push a TestFlight build via studio" | `modes/tf-push.md` |
 
 | `work <track>` / `STUDIO_TRACK=<track>` auto-start | `modes/work.md` |

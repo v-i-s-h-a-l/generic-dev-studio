@@ -121,7 +121,7 @@ scripts/task-build-debt-gate.sh [--override]            # exit 2 if blocked; emi
 scripts/task-claim.sh <task-uuid> <brief-uuid> <size>   # task + brief state transitions
 eval "$(scripts/task-worktree-setup.sh T001 /repo)"     # PROJECT/ORIG_BRANCH/ORIG_HEAD/WORKTREE
 scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" [zaps-app/Turnip.xcodeproj] # xcodebuild + lock; 6th arg pins -project/-workspace in multi-project repos (#238); exit 4 = duplicate-invocation refused (#209)
-scripts/node-parity.sh                                  # probe + cache toolchain versions across all registered nodes; exit 1 = drift (#126)
+scripts/node-parity.sh [--fix|--dry-run]                # probe + cache toolchain versions; optionally install missing brew packages and print manual Xcode/runtime fixes (#126/#131)
 scripts/check-xcode-parity.sh m1mini                    # pre-dispatch guard; exit 1 = MAJOR Xcode drift; STUDIO_IGNORE_XCODE_DRIFT=1 overrides (#136)
 scripts/node-warmup.sh m1mini [project]                 # async-safe pre-dispatch source sync + package cache warm-up (#138)
 scripts/task-write-test-cases.sh T001 '[{...}]'         # twin-write standalone + stdout YAML
@@ -129,6 +129,8 @@ scripts/task-invoke-argus.sh T001 /wt main S            # emits review_requested
 scripts/task-merge.sh T001 /wt feature-branch           # merge lock + merge + worktree remove + DerivedData clean
 scripts/node-janitor.sh [--days N] [--dry-run]          # periodic node-side sweep of stale derived-data + worktrees + dispatch logs/registry (#129, #272); LaunchAgent-driven
 scripts/install-node-janitor-launchagent.sh             # render + load every-6h LaunchAgent on the local node (auto-run by bootstrap --worker)
+scripts/monitor-install.sh install                      # opt-in laptop LaunchAgent; hourly node-health monitor + notifications for >6h unreachable nodes (#132)
+scripts/node-monitor.sh                                 # one-shot monitor check; tracks streak/cooldown state and emits node_unreachable alerts (#132)
 scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # YAML debrief + state flips
 
 # Studio-feedback ingestion (auto-fires via SessionStart hook + Chanakya Step 0F):
