@@ -109,6 +109,26 @@ Iterating on extraction is harder than adding inline; default to inline until pa
 
 **Explicitly not adopted.** LiteLLM-style universal model routers (hosts own inference). MCP as the worker tool transport (file I/O + shell already works). Framework adoption (AutoGen / LangGraph / CrewAI) — we steal patterns, not dependencies. Marketplace publishing per host (we're not shipping to marketplaces; conformance testing replaces it).
 
+### Host-agnostic Chanakya v2 plan (#141)
+
+**Decision.** Chanakya v2 is not a straight "make the whole singleton portable" rewrite. The target shape is a smaller, session-bound coordinator with extracted helpers for repeatable jobs. The remaining Chanakya load-bearing paths must still meet the host-agnostic contract: file I/O, shell, one model session, explicit schemas, and conformance coverage. This keeps the human-facing planning loop live while preventing Chanakya from becoming the long-term home for every cross-cutting responsibility.
+
+**Mode inventory by responsibility.**
+
+| Responsibility | Current surface | v2 direction |
+|---|---|---|
+| Brief creation and intake | `brief.md`, `intake.md`, `urgent-ingest.md`, `ingest.md`, `dispatch-ready.md` | Keep the user-facing coordinator in Chanakya; extract brief-writing and validation helpers when they become repeatable jobs. |
+| Orchestration and handoff | `brief-review.md`, `review.md`, `verify.md`, `ship.md`, `reopen.md`, `blocked-by.md`, `update.md` | Keep policy decisions in Chanakya; route mechanical handoffs through scripts/contracts so mixed-host workers are not Claude-shaped. |
+| Status and lifecycle | `status.md`, `touchpoint.md`, `stale.md`, `janitor.md`, `compact.md` | Keep compact status synthesis in Chanakya; extract session closing and compaction when the same steps are run unattended. |
+| Inbox, feedback, and sweeps | `inbox-sweep.md`, `feedback.md`, `feedback-reports.md`, `sweep.md`, `sweep-debt.md`, `sync-slack.md` | Extract feedback ingestion and analysis runners first; Chanakya consumes their artifacts instead of owning long scans. |
+| Knowledge and reporting | `digest.md`, `tests.md`, `train.md` plus planned `knowledge.md` | Implement knowledge as a shared primitive; Chanakya owns summaries, not the storage/indexing substrate. |
+
+**Extraction candidates.** The first candidates are `session-closer`, `compactor`, `analysis-runner`, `feedback-ingester`, `brief-writer`, `knowledge-synthesizer`, and a host-aware dispatch adapter. Each extraction needs a written contract before code moves: input artifact, output artifact, idempotency key, event emitted, and failure behavior.
+
+**Conformance gate.** Before Chanakya v2 is implemented, add tests for the behavior that remains load-bearing in the singleton: brief dispatch across mixed-host workers, session close/resume recovery, inbox sweep ingestion, status synthesis from artifacts, and telemetry roll-up from `gen_ai.*` plus `studio.*` event fields. These tests belong beside `scripts/test-host.sh` or a Chanakya-specific conformance harness and must run without Claude-only hooks or subagent primitives.
+
+**Freeze boundary.** This is captured planning context, not permission to start the arc. Forge reliability and the known-bug queue still gate Host-agnostic Chanakya v2 unless the user explicitly waives that freeze for a named issue.
+
 ### Forge / Field terminology
 
 **Forge** is the studio's control plane: this repository, its studio skill, scripts, rules, issue triage, planning doctrine, host diagnostics, telemetry, and release process. Forge work is about improving the orchestration system itself. Today, Forge primarily ingests user conversation and explicit web research; Slack, PRDs, Figma, and design docs are Field inputs unless a future Forge mode explicitly adopts them.
@@ -200,7 +220,7 @@ Design every session invocation to maximize Anthropic-API cache hits:
 - **Cacheable middle:** project state snapshot (changes slowly).
 - **Variable tail:** current user message + mode-specific context.
 
-Target: 80 ache hit rate across sessions. Token savings cumulative; latency follows.
+Target: 80% cache hit rate across sessions. Token savings cumulative; latency follows.
 
 ### Schedule-driven automation (Phase 3)
 
