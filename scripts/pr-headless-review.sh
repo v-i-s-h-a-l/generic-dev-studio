@@ -190,7 +190,7 @@ PROMPT
 spawn_argv=( $spawn_command )
 review_prompt="Read $payload, review PR $pr_url at HEAD $head_sha, and print STUDIO_REVIEW_VERDICT=<approved|approved_with_fixes|blocked>."
 
-if ! env -i \
+if ! ( cd "$REPO_ROOT" && env -i \
     PATH="$PATH" \
     HOME="$reviewer_home" \
     LANG="${LANG:-C.UTF-8}" \
@@ -200,7 +200,7 @@ if ! env -i \
     REVIEW_PAYLOAD="$payload" \
     PR_URL="$pr_url" \
     PR_HEAD_SHA="$head_sha" \
-    "${spawn_argv[@]}" "$review_prompt" > "$summary" 2>"$summary.err"; then
+    "${spawn_argv[@]}" "$review_prompt" > "$summary" 2>"$summary.err" ); then
   printf 'pr-headless-review: reviewer host failed: %s\n' "$REVIEW_HOST" >&2
   sed -n '1,80p' "$summary.err" >&2 || true
   exit 1
