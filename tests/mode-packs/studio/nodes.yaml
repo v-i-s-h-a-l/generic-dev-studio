@@ -26,17 +26,20 @@ scenario: |
     6. `/studio nodes disable mini`
     7. `/studio nodes health`
     8. `/studio nodes health mini`
-    9. `/studio nodes sync` (no id, no --all)
-    10. `/studio nodes sync --all`
-    11. `/studio nodes sync mini --dry-run`
-    12. `/studio nodes schedule on`
-    13. `/studio nodes schedule status`
-    14. `/studio nodes bootstrap` (user wants to re-bootstrap a worker)
-    15. `/studio nodes manifest` (user wants to edit the manifest YAML)
-    16. State has zero registered workers; user runs `/studio nodes`.
-    17. "I just installed Xcode — recheck"
-    18. `/studio nodes recheck`
-    19. `/studio nodes recheck m1mini` (user wants to re-check the mini, not this manager)
+    9. `/studio nodes diagnose`
+    10. `/studio nodes diagnose mini --role xcodebuild`
+    11. "why is the mini failing dispatch?"
+    12. `/studio nodes sync` (no id, no --all)
+    13. `/studio nodes sync --all`
+    14. `/studio nodes sync mini --dry-run`
+    15. `/studio nodes schedule on`
+    16. `/studio nodes schedule status`
+    17. `/studio nodes bootstrap` (user wants to re-bootstrap a worker)
+    18. `/studio nodes manifest` (user wants to edit the manifest YAML)
+    19. State has zero registered workers; user runs `/studio nodes`.
+    20. "I just installed Xcode — recheck"
+    21. `/studio nodes recheck`
+    22. `/studio nodes recheck m1mini` (user wants to re-check the mini, not this manager)
 
   Also confirm:
     - Does this mode ever invoke `scripts/bootstrap.sh`?
@@ -52,6 +55,7 @@ failure_signals:
 success_signals:
   - "(?i)scripts/configure\\.sh status"
   - "(?i)scripts/node-health\\.sh"
+  - "(?i)scripts/node-diagnose\\.sh"
   - "(?i)scripts/worker-status\\.sh"
   - "(?i)scripts/configure\\.sh worker (add|remove|enable|disable)"
   - "(?i)scripts/sync-worker\\.sh"

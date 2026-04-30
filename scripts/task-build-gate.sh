@@ -357,8 +357,13 @@ if [ "$HARVESTED" = "1" ]; then
   GATE_DUR_S=0
   gate_announce_start build "$NODE_ID" "$TASK_ID" full-green
   if [ "$BUILD_STATUS" -ne 0 ]; then
-    data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"harvested":true%s}' \
-      "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    if [ "$BUILD_STATUS" -eq 124 ]; then
+      data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"remote_timeout","harvested":true%s}' \
+        "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    else
+      data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"harvested":true%s}' \
+        "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    fi
     _emit_terminal build_check_failed "$data"
     gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
     exit 2
@@ -523,6 +528,8 @@ fi
 # (#178) runs the shim on the worker and pulls the sidecar back.
 build_log=$(mktemp 2>/dev/null || printf '/tmp/xcb-%s.log' "$$")
 build_json="${build_log}.json"
+remote_derived_abs=""
+retrieved_artifacts_file=""
 export XCB_JSON_SIDECAR="$build_json"
 
 classify_remote_failure() {
@@ -559,6 +566,7 @@ else
   # routing, and sidecar pull-back for structured error enrichment.
   # shellcheck source=lib-source-sync.sh
   . "$SCRIPT_DIR/lib-source-sync.sh"
+  sourcesync_start_warmup_once "$NODE_ID" "$PROJECT" "$WORKTREE" "$SCHEME" "$DESTINATION" "$PROJECT_RELPATH"
   REL_WORKTREE=$(sourcesync_push "$NODE_ID" "$WORKTREE") || {
     printf 'task-build-gate: source sync to %s failed\n' "$NODE_ID" >&2
     data=$(printf '{"mode":"full-green","node":"%s","reason":"source_sync_failed","scheme":"%s","attempt":%s%s}' \
@@ -570,6 +578,7 @@ else
     printf 'task-build-gate: DerivedData path %s is outside $HOME — refusing remote dispatch\n' "$DERIVED" >&2
     exit 2
   }
+  remote_derived_abs=$(sourcesync_remote_abs "$NODE_ID" "$REL_DERIVED" 2>/dev/null || printf '')
   sourcesync_mkdir_remote "$NODE_ID" "$REL_DERIVED" || {
     printf 'task-build-gate: failed to mkdir DerivedData on %s\n' "$NODE_ID" >&2
     data=$(printf '{"mode":"full-green","node":"%s","reason":"remote_shell_path_failed","scheme":"%s","attempt":%s%s}' \
@@ -631,6 +640,11 @@ else
   REMOTE_EVIDENCE_REL=".dev-studio/$PROJECT/.runtime/ui-evidence/$TASK_ID"
   LOCAL_EVIDENCE="$HOME/$REMOTE_EVIDENCE_REL"
   sourcesync_pull_dir "$NODE_ID" "$REMOTE_EVIDENCE_REL" "$LOCAL_EVIDENCE" 2>/dev/null || true
+
+  if [ "$BUILD_STATUS" -eq 0 ] && [ "${NODE_ARTIFACT_RETRIEVE:-0}" = "1" ]; then
+    retrieved_artifacts_file=$(mktemp 2>/dev/null || printf '/tmp/node-artifacts-%s' "$$")
+    sourcesync_pull_xcode_artifacts "$NODE_ID" "$REL_DERIVED" "$DERIVED" >"$retrieved_artifacts_file" 2>/dev/null || true
+  fi
 fi
 
 # Parse error + warning counts. Cheap and well-defined — xcodebuild's error
@@ -680,7 +694,11 @@ GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
 if [ "$BUILD_STATUS" -ne 0 ]; then
   failure_reason="build_invocation_failed"
   if [ "$IS_LOCAL" != "1" ]; then
-    failure_reason=$(classify_remote_failure "$build_log")
+    if [ "$BUILD_STATUS" -eq 124 ]; then
+      failure_reason="remote_timeout"
+    else
+      failure_reason=$(classify_remote_failure "$build_log")
+    fi
   fi
   data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"errors_json":%s%s}' \
     "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$errors_json" "$DISPATCH_FIELDS")
@@ -700,8 +718,15 @@ if [ "$success_marker_present" -eq 0 ]; then
   exit 2
 fi
 
-rm -f "$build_log" "$build_json" 2>/dev/null || true
 data=$(printf '{"mode":"full-green","node":"%s","warnings":%s,"scheme":"%s","attempt":%s%s}' "$NODE_ID" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+if [ -n "$remote_derived_abs" ] && command -v jq >/dev/null 2>&1; then
+  data=$(printf '%s' "$data" | jq -c --arg path "$remote_derived_abs" '. + {remote_derived_data_path:$path}')
+fi
+if [ -n "$retrieved_artifacts_file" ] && command -v jq >/dev/null 2>&1; then
+  artifacts_json=$(jq -Rsc 'split("\n")[:-1]' "$retrieved_artifacts_file" 2>/dev/null || printf '[]')
+  data=$(printf '%s' "$data" | jq -c --argjson artifacts "$artifacts_json" '. + {retrieved_artifacts:$artifacts}')
+fi
+rm -f "$build_log" "$build_json" "$retrieved_artifacts_file" 2>/dev/null || true
 _emit_terminal build_check_passed "$data"
 gate_announce_done build "$NODE_ID" "$TASK_ID" passed "$GATE_DUR_S"
 exit 0

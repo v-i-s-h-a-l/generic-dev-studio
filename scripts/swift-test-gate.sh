@@ -290,7 +290,11 @@ if [ "$HARVESTED" = "1" ]; then
   GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
   [ "$GATE_DUR_S" -lt 0 ] && GATE_DUR_S=0
   if [ "$TEST_STATUS" -ne 0 ]; then
-    failure_reason=$(classify_remote_failure "$test_log")
+    if [ "$TEST_STATUS" -eq 124 ]; then
+      failure_reason="remote_timeout"
+    else
+      failure_reason=$(classify_remote_failure "$test_log")
+    fi
     rm -f "$test_log" 2>/dev/null || true
     data=$(printf '{"mode":"swift-test","node":"%s","errors":%s,"warnings":%s,"package":"%s","attempt":%s,"harvested":true%s}' \
       "$NODE_ID" "$err_count" "$warn_count" "$PKG_ROOT" "$ATTEMPT" "$DISPATCH_FIELDS")
@@ -322,6 +326,7 @@ else
   # explicitly so `--package-path` resolves on the remote.
   # shellcheck source=lib-source-sync.sh
   . "$SCRIPT_DIR/lib-source-sync.sh"
+  sourcesync_start_warmup_once "$NODE_ID" "$PROJECT" "$WORKTREE" "" "" ""
   REL_WORKTREE=$(sourcesync_push "$NODE_ID" "$WORKTREE") || {
     printf 'swift-test-gate: source sync to %s failed\n' "$NODE_ID" >&2
     data=$(printf '{"mode":"swift-test","reason":"source_sync_failed","node":"%s","attempt":%s%s}' "$NODE_ID" "$ATTEMPT" "$DISPATCH_FIELDS")
@@ -396,7 +401,11 @@ GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
 if [ "$TEST_STATUS" -ne 0 ]; then
   failure_reason="build_invocation_failed"
   if ! node_is_self "$NODE_ID"; then
-    failure_reason=$(classify_remote_failure "$test_log")
+    if [ "$TEST_STATUS" -eq 124 ]; then
+      failure_reason="remote_timeout"
+    else
+      failure_reason=$(classify_remote_failure "$test_log")
+    fi
   fi
   rm -f "$test_log" 2>/dev/null || true
   data=$(printf '{"mode":"swift-test","node":"%s","errors":%s,"warnings":%s,"package":"%s","attempt":%s%s}' \

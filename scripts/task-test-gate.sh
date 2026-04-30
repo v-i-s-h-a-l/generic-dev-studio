@@ -75,6 +75,8 @@ case "$PROJECT_RELPATH" in
     ;;
 esac
 
+PROJECT=$(resolve_project 2>/dev/null || echo unknown)
+
 # Pick a swift-test-tagged node — same role as swift-test-gate.sh asks for.
 # The build gate uses `xcodebuild`; the test gate uses `swift-test`. Both
 # resolve to the same machines today, but the role split keeps future
@@ -234,6 +236,8 @@ if [ "$IS_LOCAL" = "1" ]; then
 fi
 
 test_log=$(mktemp 2>/dev/null || printf '/tmp/xcb-test-%s.log' "$$")
+remote_derived_abs=""
+retrieved_artifacts_file=""
 RUN_START_S=$(date -u +%s)
 
 classify_remote_failure() {
@@ -274,6 +278,7 @@ else
   # extracted to avoid premature factoring.
   # shellcheck source=lib-source-sync.sh
   . "$SCRIPT_DIR/lib-source-sync.sh"
+  sourcesync_start_warmup_once "$NODE_ID" "$PROJECT" "$WORKTREE" "$SCHEME" "$DESTINATION" "$PROJECT_RELPATH"
   REL_WORKTREE=$(sourcesync_push "$NODE_ID" "$WORKTREE") || {
     printf 'task-test-gate: source sync to %s failed\n' "$NODE_ID" >&2
     data=$(printf '{"node":"%s","reason":"source_sync_failed","attempt":%s%s}' "$NODE_ID" "$ATTEMPT" "$DISPATCH_FIELDS")
@@ -284,6 +289,7 @@ else
     printf 'task-test-gate: DerivedData path %s outside $HOME — refusing remote dispatch\n' "$DERIVED" >&2
     exit 2
   }
+  remote_derived_abs=$(sourcesync_remote_abs "$NODE_ID" "$REL_DERIVED" 2>/dev/null || printf '')
   sourcesync_mkdir_remote "$NODE_ID" "$REL_DERIVED" || {
     data=$(printf '{"node":"%s","reason":"remote_shell_path_failed","attempt":%s%s}' "$NODE_ID" "$ATTEMPT" "$DISPATCH_FIELDS")
     emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
@@ -315,6 +321,11 @@ else
   TEST_STATUS=$?
   DISPATCH_UUID=$(tr -d '[:space:]' < "$UUID_SIDECAR" 2>/dev/null)
   rm -f "$UUID_SIDECAR" 2>/dev/null || true
+
+  if [ "$TEST_STATUS" -eq 0 ] && [ "${NODE_ARTIFACT_RETRIEVE:-0}" = "1" ]; then
+    retrieved_artifacts_file=$(mktemp 2>/dev/null || printf '/tmp/node-artifacts-%s' "$$")
+    sourcesync_pull_xcode_artifacts "$NODE_ID" "$REL_DERIVED" "$DERIVED" >"$retrieved_artifacts_file" 2>/dev/null || true
+  fi
 fi
 
 RUN_END_S=$(date -u +%s)
@@ -327,9 +338,16 @@ TEST_COUNT=$(grep -Eo 'Test Suite .* passed|Executed [0-9]+ tests' "$test_log" 2
 TEST_COUNT="${TEST_COUNT:-0}"
 
 if [ "$TEST_STATUS" -eq 0 ]; then
-  rm -f "$test_log" 2>/dev/null || true
   data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"test_count":%s,"attempt":%s%s}' \
     "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$TEST_COUNT" "$ATTEMPT" "$DISPATCH_FIELDS")
+  if [ -n "$remote_derived_abs" ] && command -v jq >/dev/null 2>&1; then
+    data=$(printf '%s' "$data" | jq -c --arg path "$remote_derived_abs" '. + {remote_derived_data_path:$path}')
+  fi
+  if [ -n "$retrieved_artifacts_file" ] && command -v jq >/dev/null 2>&1; then
+    artifacts_json=$(jq -Rsc 'split("\n")[:-1]' "$retrieved_artifacts_file" 2>/dev/null || printf '[]')
+    data=$(printf '%s' "$data" | jq -c --argjson artifacts "$artifacts_json" '. + {retrieved_artifacts:$artifacts}')
+  fi
+  rm -f "$test_log" "$retrieved_artifacts_file" 2>/dev/null || true
   emit_event_keyed achilles task test_run_passed "$TASK_ID" "$data" >/dev/null 2>&1 || true
   [ -n "$DISPATCH_UUID" ] && dispatch_registry_mark "$DISPATCH_UUID" passed 2>/dev/null || true
   gate_announce_done test "$NODE_ID" "$TASK_ID" passed "$DURATION_S"
@@ -338,7 +356,11 @@ fi
 
 failure_reason="build_invocation_failed"
 if [ "$IS_LOCAL" != "1" ]; then
-  failure_reason=$(classify_remote_failure "$test_log")
+  if [ "$TEST_STATUS" -eq 124 ]; then
+    failure_reason="remote_timeout"
+  else
+    failure_reason=$(classify_remote_failure "$test_log")
+  fi
 fi
 rm -f "$test_log" 2>/dev/null || true
 data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"attempt":%s,"exit_code":%s%s}' \
