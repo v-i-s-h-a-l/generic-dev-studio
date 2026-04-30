@@ -14,12 +14,20 @@ Authoritative composition rules: `_shared/contracts/build-message-format.md` in 
 ## Step 1: Get the latest build number from TestFlight
 
 ```bash
-TOKEN=$(python3 -c "
+cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
+export STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-<project>}"
+. ./scripts/lib-release-config.sh
+load_release_config
+ASC_KEY_PATH=$(release_asc_key_path "$STUDIO_TF_ASC_KEY_ID")
+TOKEN=$(python3 - "$ASC_KEY_PATH" "$STUDIO_TF_ASC_ISSUER_ID" "$STUDIO_TF_ASC_KEY_ID" <<'PY'
 import jwt, time
-key = open('$(echo ~/.appstoreconnect/private_keys/AuthKey_WJQ6D76K8R.p8)').read()
-payload = {'iss': '1fa9f26b-7b13-459a-9225-1ca8d9c51fca', 'iat': int(time.time()), 'exp': int(time.time()) + 1200, 'aud': 'appstoreconnect-v1'}
-print(jwt.encode(payload, key, algorithm='ES256', headers={'kid': 'WJQ6D76K8R'}))
-")
+import sys
+key_path, issuer, kid = sys.argv[1], sys.argv[2], sys.argv[3]
+key = open(key_path).read()
+payload = {'iss': issuer, 'iat': int(time.time()), 'exp': int(time.time()) + 1200, 'aud': 'appstoreconnect-v1'}
+print(jwt.encode(payload, key, algorithm='ES256', headers={'kid': kid}))
+PY
+)
 BUILD_NUMBER=$(curl -sg "https://api.appstoreconnect.apple.com/v1/builds?sort=-uploadedDate&limit=1&fields[builds]=version" \
   -H "Authorization: Bearer $TOKEN" | jq -r '.data[0].attributes.version')
 ```
@@ -41,6 +49,7 @@ fi
 
 ```bash
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
+export STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-<project>}"
 ./scripts/slack-fetch.sh history --channel C016BNCGDM2 --limit 3
 # For messages with replies:
 ./scripts/slack-fetch.sh replies --channel C016BNCGDM2 --ts <MESSAGE_TS>
@@ -67,6 +76,7 @@ Strip parenthesised names, then:
 
 ```bash
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
+export STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-<project>}"
 ./scripts/slack-post.sh --channel C016BNCGDM2 --text "$FINAL_BODY"
 ```
 

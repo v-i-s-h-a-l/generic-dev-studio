@@ -88,4 +88,131 @@ fi
 echo "PASS: halted at prereq gate"
 
 echo
+echo "=== Test 6: failed push preflight leaves pbxproj untouched ==="
+REAL_GIT=$(command -v git)
+PROJECT="$TMPHOME/project"
+PBX="$PROJECT/zaps-app/Turnip.xcodeproj/project.pbxproj"
+mkdir -p "$(dirname "$PBX")" "$TMPHOME/bin"
+cat > "$PBX" <<'PBX'
+CURRENT_PROJECT_VERSION = 1;
+MARKETING_VERSION = 1.0.0;
+PBX
+(
+  cd "$PROJECT"
+  "$REAL_GIT" init -q
+  "$REAL_GIT" config user.email fixture@example.com
+  "$REAL_GIT" config user.name Fixture
+  "$REAL_GIT" add zaps-app/Turnip.xcodeproj/project.pbxproj
+  "$REAL_GIT" commit -q -m "Initial fixture"
+  "$REAL_GIT" checkout -q -b feature/testflight
+  "$REAL_GIT" remote add origin https://github.com/example/private-fixture.git
+)
+cat > "$TMPHOME/bin/git" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = "-C" ] && [ "\$3" = "push" ] && [ "\$4" = "--dry-run" ]; then
+  echo "fatal: could not read Username for 'https://github.com': terminal prompts disabled" >&2
+  exit 128
+fi
+exec "$REAL_GIT" "\$@"
+SH
+chmod +x "$TMPHOME/bin/git"
+printf 'fixture-key\n' > "$TMPHOME/AuthKey_preflight_fixture.p8"
+if PATH="$TMPHOME/bin:$PATH" \
+    STUDIO_TF_PUSH_LIVE=1 \
+    STUDIO_TF_PUSH_SKIP_NODE_PICK=1 \
+    STUDIO_TF_SLACK_DEFERRED=1 \
+    STUDIO_RELEASE_TAG="release-fixture-362" \
+    STUDIO_TF_PROJECT_ROOT="$PROJECT" \
+    STUDIO_TF_PBXPROJ="$PBX" \
+    STUDIO_TF_APP_ID="fixture-app" \
+    STUDIO_TF_ASC_KEY_ID="fixture-key" \
+    STUDIO_TF_ASC_ISSUER_ID="fixture-issuer" \
+    STUDIO_TF_ASC_KEY_PATH="$TMPHOME/AuthKey_preflight_fixture.p8" \
+    "$REPO/scripts/studio-tf-push.sh" push >"$TMPHOME/preflight.out" 2>&1; then
+  echo "FAIL: failed push preflight should halt"; exit 1
+fi
+grep -q "GitHub push auth/preflight failed before mutation" "$TMPHOME/preflight.out" \
+  || { echo "FAIL: missing GitHub auth preflight message"; cat "$TMPHOME/preflight.out"; exit 1; }
+grep -q "CURRENT_PROJECT_VERSION = 1;" "$PBX" || { echo "FAIL: build number mutated"; exit 1; }
+grep -q "MARKETING_VERSION = 1.0.0;" "$PBX" || { echo "FAIL: marketing version mutated"; exit 1; }
+if "$REAL_GIT" -C "$PROJECT" log --oneline --grep="Bump build number" | grep -q .; then
+  echo "FAIL: build-number commit was created"; exit 1
+fi
+echo "PASS: push auth failure halted before mutation or commit"
+
+echo
+echo "=== Test 7: live-version lookup is app-scoped ==="
+grep -q "/v1/apps/\${APP_ID}/appStoreVersions?filter\\[appStoreState\\]=READY_FOR_SALE" \
+  "$REPO/scripts/studio-tf-push.sh" || { echo "FAIL: missing app-scoped live-version endpoint"; exit 1; }
+if grep -q "/v1/appStoreVersions?filter\\[appStoreState\\]=READY_FOR_SALE" \
+    "$REPO/scripts/studio-tf-push.sh"; then
+  echo "FAIL: found forbidden top-level live-version endpoint"; exit 1
+fi
+grep -q "app_id.*6502945736" "$REPO/_shared/contracts/release-tf-push.md" \
+  || { echo "FAIL: contract does not name app_id config value"; exit 1; }
+echo "PASS: live-version endpoint is app-scoped and documented"
+
+echo
+echo "=== Test 8: empty live-version response halts before mutation ==="
+cat > "$TMPHOME/bin/git" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = "-C" ] && [ "\$3" = "push" ] && [ "\$4" = "--dry-run" ]; then
+  exit 0
+fi
+exec "$REAL_GIT" "\$@"
+SH
+chmod +x "$TMPHOME/bin/git"
+cat > "$TMPHOME/bin/python3" <<'PY'
+#!/usr/bin/env bash
+cat >/dev/null
+echo fixture-token
+PY
+chmod +x "$TMPHOME/bin/python3"
+ASC_KEY="$TMPHOME/AuthKey_fixture.p8"
+BUILDS_JSON="$TMPHOME/builds.json"
+VERSIONS_JSON="$TMPHOME/versions-empty.json"
+printf 'fixture-key\n' > "$ASC_KEY"
+printf '{"data":[{"attributes":{"version":"41"}}]}\n' > "$BUILDS_JSON"
+printf '{"data":[]}\n' > "$VERSIONS_JSON"
+if PATH="$TMPHOME/bin:$PATH" \
+    STUDIO_TF_PUSH_LIVE=1 \
+    STUDIO_TF_PUSH_SKIP_NODE_PICK=1 \
+    STUDIO_TF_SLACK_DEFERRED=1 \
+    STUDIO_RELEASE_TAG="release-fixture-97" \
+    STUDIO_TF_PROJECT_ROOT="$PROJECT" \
+    STUDIO_TF_PBXPROJ="$PBX" \
+    STUDIO_TF_APP_ID="fixture-app" \
+    STUDIO_TF_ASC_KEY_ID="fixture-key" \
+    STUDIO_TF_ASC_ISSUER_ID="fixture-issuer" \
+    STUDIO_TF_ASC_KEY_PATH="$ASC_KEY" \
+    STUDIO_TF_BUILDS_RESPONSE_FILE="$BUILDS_JSON" \
+    STUDIO_TF_VERSIONS_RESPONSE_FILE="$VERSIONS_JSON" \
+    "$REPO/scripts/studio-tf-push.sh" push >"$TMPHOME/empty-version.out" 2>&1; then
+  echo "FAIL: empty live-version response should halt"; exit 1
+fi
+grep -q "WARNING: Could not determine live App Store version" "$TMPHOME/empty-version.out" \
+  || { echo "FAIL: missing live-version warning"; cat "$TMPHOME/empty-version.out"; exit 1; }
+grep -q "CURRENT_PROJECT_VERSION = 1;" "$PBX" || { echo "FAIL: build number mutated after empty live version"; exit 1; }
+if "$REAL_GIT" -C "$PROJECT" log --oneline --grep="Bump build number" | grep -q .; then
+  echo "FAIL: build-number commit was created after empty live version"; exit 1
+fi
+echo "PASS: empty live-version response is not treated as no conflict"
+
+echo
+echo "=== Test 9: release config resolves under per-project dev-studio root ==="
+CONFIG_ROOT="$TMPHOME/.dev-studio/fixture-ios"
+mkdir -p "$CONFIG_ROOT/config" "$CONFIG_ROOT/secrets/appstoreconnect"
+cat > "$CONFIG_ROOT/config/release.env" <<'ENV'
+STUDIO_TF_APP_ID="fixture-app-from-config"
+STUDIO_TF_ASC_KEY_ID="fixture-key-from-config"
+STUDIO_TF_ASC_ISSUER_ID="fixture-issuer-from-config"
+ENV
+CONFIG_OUT=$(HOME="$TMPHOME" STUDIO_RELEASE_PROJECT=fixture-ios bash -c \
+  '. "$0/scripts/lib-release-config.sh"; load_release_config; printf "%s|%s|%s\n" "$RELEASE_PROJECT" "$STUDIO_TF_APP_ID" "$(release_asc_key_path "$STUDIO_TF_ASC_KEY_ID")"' "$REPO")
+EXPECTED_PATH="$TMPHOME/.dev-studio/fixture-ios/secrets/appstoreconnect/AuthKey_fixture-key-from-config.p8"
+[ "$CONFIG_OUT" = "fixture-ios|fixture-app-from-config|$EXPECTED_PATH" ] \
+  || { echo "FAIL: unexpected release config output: $CONFIG_OUT"; exit 1; }
+echo "PASS: release config and default ASC key path are project-scoped"
+
+echo
 echo "All checks passed."
