@@ -52,6 +52,14 @@
 #       mirrors. Creates the local directory if missing. Returns rsync's
 #       exit code. Non-fatal by design.
 #
+#   sourcesync_remote_abs <node-id> <remote-rel>
+#       I/O: prints the node's absolute path for a home-relative path.
+#
+#   sourcesync_pull_xcode_artifacts <node-id> <remote-root-rel> <local-root>
+#       I/O: finds `.xcarchive` / `.xcresult` directories under the remote
+#       root and rsyncs only those directories back to the matching local
+#       root. Prints retrieved local paths, one per line.
+#
 # Design notes:
 #   - rsync uses --delete on PUSH so the remote tree is an exact mirror
 #     of the local source. PULL functions never --delete — they
@@ -194,4 +202,50 @@ sourcesync_pull_dir() {
   rsync -aq \
     -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
     "$user@$host:\$HOME/$remote_rel/" "$local_dir/" 2>/dev/null
+}
+
+# sourcesync_remote_abs <node-id> <remote-rel>
+sourcesync_remote_abs() {
+  local node_id="${1:?node-id required}" remote_rel="${2:?remote-relative path required}"
+  command -v jq >/dev/null 2>&1 || { printf 'sourcesync: jq required\n' >&2; return 2; }
+  local registry; registry="$(resolve_runtime_global)/nodes.json"
+  [ -r "$registry" ] || { printf 'sourcesync: node registry not readable: %s\n' "$registry" >&2; return 2; }
+  local entry user host
+  entry=$(jq -e --arg id "$node_id" '.nodes[]? | select(.id == $id) | select(.enabled != false)' "$registry") \
+    || { printf 'sourcesync: unknown or disabled node: %s\n' "$node_id" >&2; return 2; }
+  user=$(printf '%s' "$entry" | jq -r '.user')
+  host=$(printf '%s' "$entry" | jq -r '.host')
+  ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+      "$user@$host" "printf '%s\n' \"\$HOME/$remote_rel\"" 2>/dev/null
+}
+
+# sourcesync_pull_xcode_artifacts <node-id> <remote-root-rel> <local-root>
+sourcesync_pull_xcode_artifacts() {
+  local node_id="${1:?node-id required}" remote_root_rel="${2:?remote root required}" local_root="${3:?local root required}"
+  command -v jq >/dev/null 2>&1 || { printf 'sourcesync: jq required\n' >&2; return 2; }
+  command -v rsync >/dev/null 2>&1 || { printf 'sourcesync: rsync required\n' >&2; return 2; }
+  local registry; registry="$(resolve_runtime_global)/nodes.json"
+  [ -r "$registry" ] || { printf 'sourcesync: node registry not readable: %s\n' "$registry" >&2; return 2; }
+  local entry user host
+  entry=$(jq -e --arg id "$node_id" '.nodes[]? | select(.id == $id) | select(.enabled != false)' "$registry") \
+    || { printf 'sourcesync: unknown or disabled node: %s\n' "$node_id" >&2; return 2; }
+  user=$(printf '%s' "$entry" | jq -r '.user')
+  host=$(printf '%s' "$entry" | jq -r '.host')
+
+  local artifacts
+  artifacts=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+      "$user@$host" "cd \"\$HOME/$remote_root_rel\" 2>/dev/null && find . -type d \( -name '*.xcarchive' -o -name '*.xcresult' \) -print" 2>/dev/null) || return 1
+  [ -n "$artifacts" ] || return 0
+
+  local artifact rel local_dir
+  while IFS= read -r artifact; do
+    [ -z "$artifact" ] && continue
+    rel="${artifact#./}"
+    [ -z "$rel" ] && continue
+    local_dir="$local_root/$rel"
+    sourcesync_pull_dir "$node_id" "$remote_root_rel/$rel" "$local_dir" 2>/dev/null || continue
+    printf '%s\n' "$local_dir"
+  done <<EOF
+$artifacts
+EOF
 }
