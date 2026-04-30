@@ -17,11 +17,14 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
+# shellcheck source=lib-sweep-timing.sh
+. "$SCRIPT_DIR/lib-sweep-timing.sh"
 
 PROJECT=$(resolve_project 2>/dev/null) || exit 0
 PROJECT_ROOT=$(resolve_project_root_for "$PROJECT")
 STATE_DIR="$PROJECT_ROOT/.runtime/state"
 OFFSET_FILE="$STATE_DIR/events_offset"
+sweep_timing_start
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -54,13 +57,16 @@ fi
 current_size=$(stat -f %z "$EVENT_LOG" 2>/dev/null || stat -c %s "$EVENT_LOG" 2>/dev/null || echo 0)
 if [ "$offset" -ge "$current_size" ]; then
   # Nothing new; rewrite the offset so the timestamp ladder records activity.
+  sweep_timing_emit process-events noop 0
+  final_size=$(stat -f %z "$EVENT_LOG" 2>/dev/null || stat -c %s "$EVENT_LOG" 2>/dev/null || echo 0)
   tmp="$OFFSET_FILE.tmp.$$"
-  printf '%s.jsonl:%s\n' "$TODAY" "$current_size" > "$tmp" && mv "$tmp" "$OFFSET_FILE" || rm -f "$tmp"
+  printf '%s.jsonl:%s\n' "$TODAY" "$final_size" > "$tmp" && mv "$tmp" "$OFFSET_FILE" || rm -f "$tmp"
   exit 0
 fi
 
 # Read from the stored byte offset to EOF. `tail -c +N` counts from 1.
 new_events=$(tail -c "+$(( offset + 1 ))" "$EVENT_LOG" 2>/dev/null)
+new_event_count=$(printf '%s\n' "$new_events" | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')
 
 # Dispatch table per event name. Multiple events fall through to the same
 # action (`achilles-queue drain`) because any one of them frees a worker
@@ -237,6 +243,8 @@ printf '%s\n' "$new_events" | while IFS= read -r line; do
       ;;
   esac
 done
+
+sweep_timing_emit process-events completed "$new_event_count"
 
 # Update offset atomically. New size is the current filesize, not the one we
 # cached upfront — a writer may have appended mid-run. O_APPEND semantics

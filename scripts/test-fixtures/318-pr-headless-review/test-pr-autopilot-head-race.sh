@@ -40,6 +40,9 @@ SH
 chmod +x "$BIN/gh"
 
 export PATH="$BIN:$PATH"
+export HOME="$TMPROOT/home"
+export ACHILLES_PROJECT="pr-autopilot-head-race"
+EVENT_LOG="$HOME/.dev-studio/$ACHILLES_PROJECT/events/$(date -u +%Y-%m-%d).jsonl"
 
 summary="$TMPROOT/summary.md"
 printf 'STUDIO_REVIEW_VERDICT=approved\n' > "$summary"
@@ -57,6 +60,12 @@ fi
 if ! grep -q 'reviewed HEAD_SHA=old123 but current HEAD_SHA=new456' "$TMPROOT/err"; then
   printf 'FAIL: stale-head error did not explain the mismatch\n' >&2
   sed -n '1,80p' "$TMPROOT/err" >&2 || true
+  exit 1
+fi
+
+if ! jq -e 'select(.event=="pr_autopilot_completed" and .data.status=="failed" and .data.duration_s >= 0)' "$EVENT_LOG" >/dev/null; then
+  printf 'FAIL: pr_autopilot_completed failure telemetry missing\n' >&2
+  [ -f "$EVENT_LOG" ] && cat "$EVENT_LOG" >&2
   exit 1
 fi
 

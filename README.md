@@ -273,7 +273,7 @@ After cloning this repo to contribute back, enable the deterministic architectur
 git config core.hooksPath .githooks
 ```
 
-The hook regenerates `docs-surface.json`, runs the architecture/privacy gates, and emits `precommit_hook_completed` with `duration_s`. It does not spawn an LLM reviewer by default. Run `scripts/pre-commit-review.sh` manually before committing risky local diffs; its bypass remains explicit (`STUDIO_BYPASS_REVIEW=1` or `--bypass-review`) and audited through `precommit_review_bypassed`. PR integration still goes through `scripts/pr-headless-review.sh`, which records `pr_review_completed` timing before autopilot merge finalization. Error codes and fix recipes live in `_shared/rules/enforcement-contract.md`. Emergency lint bypass: `ARCH_LINT=0 git commit ...` (hotfixes only).
+The hook regenerates `docs-surface.json`, runs the architecture/privacy gates, and emits `precommit_hook_completed` with `duration_s`. SessionStart emits `session_start_completed` against a 5s warning budget and stays quiet unless that budget is exceeded. It does not spawn an LLM reviewer by default. Run `scripts/pre-commit-review.sh` manually before committing risky local diffs; its bypass remains explicit (`STUDIO_BYPASS_REVIEW=1` or `--bypass-review`) and audited through `precommit_review_bypassed`. PR integration still goes through `scripts/pr-headless-review.sh`, with timing split across reviewer, autopilot, and merge-finalize events. Error codes and fix recipes live in `_shared/rules/enforcement-contract.md`. Emergency lint bypass: `ARCH_LINT=0 git commit ...` (hotfixes only).
 
 ### Feature branches and grouped PRs
 
