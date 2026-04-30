@@ -185,6 +185,20 @@ printf '%s\n' "$new_events" | while IFS= read -r line; do
       fi
       push_append review_pending "$task" "merged without Argus${merge_sha:+ at $merge_sha}"
       ;;
+    brief_awaiting_user)
+      # Brief minted in `state: draft` with explicit author-decision section
+      # in body. The brief uuid lives in the `task` column (since the event
+      # subject is the brief uuid); push-queue text shows the legacy_task_id
+      # + first question for at-a-glance triage.
+      legacy_tid="" first_q=""
+      if command -v jq >/dev/null 2>&1; then
+        legacy_tid=$(printf '%s' "$line" | jq -r '.data.legacy_task_id // ""' 2>/dev/null)
+        first_q=$(printf '%s' "$line" | jq -r '.data.questions[0] // ""' 2>/dev/null)
+      fi
+      label="${legacy_tid:-<no-legacy-id>}"
+      [ -n "$first_q" ] && label="$label — $first_q"
+      push_append brief_awaiting_user "$task" "draft brief needs author decisions: $label"
+      ;;
     direct_main_ungated_merge)
       merged_into=""
       if command -v jq >/dev/null 2>&1; then

@@ -145,7 +145,18 @@ source scripts/lib-ledger.sh
 
 # Allocate the human-readable T-number. Scans YAML + event log; the only
 # authoritative source — never guess from in-context samples.
-LEGACY_ID=$(scripts/next-task-id.sh)   # e.g. "T268"
+#
+# Block-aware: when `<plans-dir>/task-id-allocation.yaml` exists, the script
+# returns the next free T-number INSIDE the block matching --block (or the
+# registry's default_block if --block is omitted). It refuses to allocate
+# inside any block whose state is `sealed` or `sealed-gap`. Pass --block
+# explicitly when the new task fits a non-default theme; if no block fits,
+# allocate a new one first via `scripts/next-task-id.sh --allocate-block
+# <name> <start>-<end> --description="..." [--default]` (uses 100-task
+# topic blocks at century boundaries). Run `scripts/next-task-id.sh
+# --list-blocks` to see the registry. See `_shared/rules/task-id-blocks.md`.
+LEGACY_ID=$(scripts/next-task-id.sh)             # default block
+# LEGACY_ID=$(scripts/next-task-id.sh --block=<name>)   # explicit block
 
 TASK_UUID=$(mint_uuidv7)
 write_task_artifact "$TASK_UUID" proposed "<title>" \
