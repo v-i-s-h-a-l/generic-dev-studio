@@ -13,7 +13,7 @@ The boundary is load-bearing: Apollo retains measurement and verification author
 
 ## Receiving skill
 
-`imgly-engine-expert` ships through studio global skill sync into each host's global skill directory, with project-local `.claude/skills/imgly-engine-expert/` accepted as a legacy fallback. It owns the CE.SDK API surface, block-management patterns, scope system, and the project's Imgly playbook. Apollo never reads its internals — only its name (for the `delegate:` line on a recommendation) and its handoff envelope (defined below).
+`imgly-engine-expert` is a machine-local or project-local skill resolved from the current host's skill directories; it is not shipped as a studio-owned repo skill. It owns the CE.SDK API surface, block-management patterns, scope system, and the project's Imgly playbook. Apollo never reads its internals — only its name (for the `delegate:` line on a recommendation) and its handoff envelope (defined below).
 
 If the current host cannot resolve the skill from global or project-local skill directories, Apollo cannot delegate; the recommendation refuses with the standard refusal block (`apollo/_shared/primitives/evidence-gate.md` § Refusal protocol) and names "no Imgly delegation surface available" as the unblock.
 
