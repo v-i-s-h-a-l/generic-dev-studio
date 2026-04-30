@@ -16,6 +16,12 @@ cat > "$BIN/codex" <<'SH'
 case " $* " in
   *" --help "*) printf 'codex fixture help\n'; exit 0 ;;
 esac
+session_dir="$CODEX_HOME/sessions/2026/04/30"
+mkdir -p "$session_dir"
+cat > "$session_dir/review-fixture.jsonl" <<EOF
+{"timestamp":"2026-04-30T15:00:00Z","type":"session_meta","payload":{"id":"fixture-session","timestamp":"2026-04-30T15:00:00Z","cwd":"$(pwd)","originator":"codex-tui","cli_version":"fixture"}}
+{"timestamp":"2026-04-30T15:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1234,"cached_input_tokens":432,"output_tokens":567,"reasoning_output_tokens":0,"total_tokens":1801},"last_token_usage":{"input_tokens":1234,"cached_input_tokens":432,"output_tokens":567,"reasoning_output_tokens":0,"total_tokens":1801}}}}
+EOF
 printf 'review summary\n'
 printf 'STUDIO_REVIEW_VERDICT=approved_with_fixes\n'
 [ -n "${REVIEW_PAYLOAD:-}" ] && [ -f "$REVIEW_PAYLOAD" ] || exit 3
@@ -89,6 +95,7 @@ assert() {
 out="$TMPROOT/out.txt"
 bash "$ROOT/scripts/pr-headless-review.sh" 123 --review-host codex-reviewer --method auto > "$out" 2>"$out.err"
 rc=$?
+EVENT_LOG=$(find "$HOME/.dev-studio" -type f -name '2026-04-30.jsonl' | head -1)
 
 assert "headless review exits zero" "[ '$rc' -eq 0 ]"
 assert "review host reported" "grep -q 'PR_REVIEW_HOST=codex-reviewer' '$out'"
@@ -97,6 +104,7 @@ assert "autopilot receives verdict" "grep -q -- '--verdict approved_with_fixes' 
 assert "autopilot receives review host" "grep -q -- '--review-host codex-reviewer' '$AUTOPILOT_LOG'"
 assert "autopilot receives reviewed head" "grep -q -- '--expected-head-sha abc123' '$AUTOPILOT_LOG'"
 assert "autopilot receives method" "grep -q -- '--method auto' '$AUTOPILOT_LOG'"
+assert "review event carries tokens" "[ -n \"$EVENT_LOG\" ] && jq -e 'select(.event==\"pr_review_completed\" and .data.tokens.input == 1234 and .data.tokens.output == 567 and .data.tokens.cache_read == 432)' \"$EVENT_LOG\" >/dev/null"
 
 if [ "$failures" -ne 0 ]; then
   printf 'FAIL: %s assertion(s)\n' "$failures" >&2

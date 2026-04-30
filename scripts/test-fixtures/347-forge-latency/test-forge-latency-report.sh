@@ -36,6 +36,8 @@ cat > "$events_dir/2026-04-29.jsonl" <<'JSONL'
 {"ts":"2026-04-29T13:05:00Z","agent":"achilles","event":"review_requested","task":"T003","data":{"stage":"quality"}}
 {"ts":"2026-04-29T13:17:00Z","agent":"argus","event":"review_flagged","task":"T003","data":{"stage":"quality"}}
 {"ts":"2026-04-29T13:30:00Z","agent":"achilles","event":"task_completed","task":"T003","data":{}}
+{"ts":"2026-04-29T13:32:00Z","agent":"studio","event":"pr_review_completed","task":"361","data":{"duration_s":135,"status":"passed","tokens":{"input":1234,"output":567,"cache_read":432,"cache_write":0}}}
+{"ts":"2026-04-29T13:33:00Z","agent":"studio","event":"pr_review_completed","task":"361","data":{"duration_s":94,"status":"passed","tokens":{"input":222,"output":111,"cache_read":0,"cache_write":0}}}
 {"ts":"2026-04-29T14:00:00Z","agent":"chanakya","event":"task_dispatched","task":"T004","data":{}}
 {"ts":"2026-04-29T14:03:00Z","agent":"achilles","event":"task_started","task":"T004","data":{}}
 {"ts":"2026-04-29T15:10:00Z","agent":"achilles","event":"task_completed","task":"T004","data":{}}
@@ -81,6 +83,16 @@ grep -q 'post   samples=2' "$out" || {
 }
 grep -q 'pre-commit_review: 1 gap(s)' "$out" || {
   printf 'precommit telemetry gap missing\n' >&2
+  cat "$out" >&2
+  exit 1
+}
+grep -q 'PR review token usage' "$out" || {
+  printf 'pr review token summary missing\n' >&2
+  cat "$out" >&2
+  exit 1
+}
+grep -Eq '^  samples=2 input_tokens=1456 output_tokens=678 cache_read_tokens=432 total_tokens=2134$' "$out" || {
+  printf 'pr review token totals mismatch\n' >&2
   cat "$out" >&2
   exit 1
 }

@@ -25,7 +25,9 @@ PR_REVIEW_STARTED_AT=$(date +%s)
 PR_URL_FOR_EVENT=""
 PR_HEAD_SHA_FOR_EVENT=""
 PR_REVIEW_VERDICT_FOR_EVENT=""
+PR_REVIEW_TOKENS_JSON="null"
 TMPDIR_TO_CLEAN=""
+REVIEW_SESSION_SCAN_STARTED_AT=$(date +%s)
 
 REVIEW_HOST="${STUDIO_REVIEW_HOST:-}"
 METHOD="auto"
@@ -73,7 +75,9 @@ emit_pr_review_duration() {
       --arg status "$status" \
       --argjson duration_s "$duration_s" \
       --argjson exit_code "$rc" \
-      '{pr:$pr,pr_url:$pr_url,head:$head,review_host:$host,verdict:$verdict,method:$method,status:$status,duration_s:$duration_s,exit_code:$exit_code}')
+      --argjson tokens "$PR_REVIEW_TOKENS_JSON" \
+      '{pr:$pr,pr_url:$pr_url,head:$head,review_host:$host,verdict:$verdict,method:$method,status:$status,duration_s:$duration_s,exit_code:$exit_code}
+       + (if $tokens == null then {} else {tokens:$tokens} end)')
   else
     data=$(printf '{"pr":"%s","review_host":"%s","verdict":"%s","method":"%s","status":"%s","duration_s":%s,"exit_code":%s}' \
       "$PR" "$REVIEW_HOST" "$PR_REVIEW_VERDICT_FOR_EVENT" "$METHOD" "$status" "$duration_s" "$rc")
@@ -109,6 +113,43 @@ print_reviewer_failure() {
   if [ ! -s "$stderr_file" ] && [ ! -s "$stdout_file" ]; then
     printf 'pr-headless-review: reviewer produced no stdout/stderr before exit\n' >&2
   fi
+}
+
+collect_codex_review_tokens() {
+  [ -n "$reviewer_codex_home" ] || return 0
+  local session_dir="$reviewer_codex_home/sessions"
+  [ -d "$session_dir" ] || return 0
+
+  local best_file="" best_mtime=0 candidate mtime
+  while IFS= read -r -d '' candidate; do
+    mtime=$(stat -f %m "$candidate" 2>/dev/null || printf '')
+    case "$mtime" in
+      ''|*[!0-9]*) continue ;;
+    esac
+    [ "$mtime" -ge "$REVIEW_SESSION_SCAN_STARTED_AT" ] || continue
+    if jq -e --arg cwd "$REPO_ROOT" 'select(.type == "session_meta" and .payload.cwd == $cwd)' "$candidate" >/dev/null 2>&1; then
+      if [ -z "$best_file" ] || [ "$mtime" -ge "$best_mtime" ]; then
+        best_file="$candidate"
+        best_mtime="$mtime"
+      fi
+    fi
+  done < <(find "$session_dir" -type f -name '*.jsonl' -print0 2>/dev/null)
+
+  [ -n "$best_file" ] || return 0
+
+  jq -rs '
+    [ .[]
+      | select(.type == "event_msg" and .payload.type == "token_count" and (.payload.info.total_token_usage // null) != null)
+      | (.payload.info.total_token_usage // .payload.info.last_token_usage)
+    ]
+    | last
+    | if . == null then empty else {
+        input: (.input_tokens // 0),
+        output: (.output_tokens // 0),
+        cache_read: (.cached_input_tokens // 0),
+        cache_write: 0
+      } end
+  ' "$best_file"
 }
 
 eligible_hosts() {
@@ -237,6 +278,8 @@ case "$verdict" in
     ;;
 esac
 PR_REVIEW_VERDICT_FOR_EVENT="$verdict"
+PR_REVIEW_TOKENS_JSON=$(collect_codex_review_tokens 2>/dev/null || true)
+[ -n "$PR_REVIEW_TOKENS_JSON" ] || PR_REVIEW_TOKENS_JSON="null"
 
 printf 'PR_REVIEW_HOST=%s\n' "$REVIEW_HOST"
 printf 'PR_REVIEW_MANIFEST=%s\n' "$manifest"
