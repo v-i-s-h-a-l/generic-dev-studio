@@ -24,7 +24,10 @@ WORKTREE="${NODE_WARMUP_WORKTREE:-$(git rev-parse --show-toplevel 2>/dev/null ||
 LOG_DIR="$(resolve_project_root_for "$PROJECT")/.runtime/logs"
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 
-REL_WORKTREE=$(NODE_SOURCE_SYNC_MODE=full sourcesync_push "$NODE_ID" "$WORKTREE") || {
+WARMUP_KEY=$(printf '%s' "$WORKTREE" | cksum | awk '{print $1}')
+WARMUP_REL=".dev-studio/.runtime/warmups/$PROJECT/$NODE_ID/$WARMUP_KEY"
+
+REL_WORKTREE=$(NODE_SOURCE_SYNC_MODE=full SOURCE_SYNC_REMOTE_REL="$WARMUP_REL" sourcesync_push "$NODE_ID" "$WORKTREE") || {
   printf 'node-warmup: source sync failed for %s\n' "$NODE_ID" >&2
   exit 1
 }
