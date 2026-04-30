@@ -12,7 +12,7 @@ reads:
   - feedback/active.md                             # F-id dedupe surface
   - feedback/archive/**/*.md                       # F-id dedupe surface
   - .runtime/state/chanakya-snapshots/*.json       # snapshot cache
-  - ~/.claude/secrets/slack-bot-token              # bot token for Slack API (read-only)
+  - ~/.dev-studio/<project>/secrets/slack-bot-token # bot token for Slack API (read-only)
 writes:
   - plans/feedback/<feedback-id>.yaml              # canonical (schema: _shared/schemas/feedback.md, feedback@1.0.0)
   - plans/feedback-attachments/<feedback-id>/*     # per-feedback asset bundle
@@ -28,7 +28,7 @@ Full spec: `project_feedback_lifecycle.md`. This mode pack owns three sub-comman
 
 Snapshots: `snapshots/feedback-inbox.json` is consulted for dedupe hints (5-min freshness; if null/stale, fall back to reading `feedback/active.md` + walking `feedback/archive/**` directly — the authoritative dedupe source is always those files).
 
-**Preconditions (all sub-commands).** Bot token at `~/.claude/secrets/slack-bot-token`. `feedback/active.md` below 100 rows (else refuse — block banner from Step 0D of review mode).
+**Preconditions (all sub-commands).** Bot token at `~/.dev-studio/<project>/secrets/slack-bot-token`. `feedback/active.md` below 100 rows (else refuse — block banner from Step 0D of review mode).
 
 # Mode: Ingest-Thread (`/chanakya ingest-thread <channel> <thread-ts> [--build N] [--dry-run]`)
 

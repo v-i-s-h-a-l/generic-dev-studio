@@ -5,3 +5,7 @@
 studio-consolidation/
 
 .DS_Store
+
+# Real release config belongs under ~/.dev-studio/<project>/config/. Keep only
+# config/release.env.example in the repo.
+config/release.env
