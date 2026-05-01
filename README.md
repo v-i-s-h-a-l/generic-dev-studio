@@ -68,7 +68,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /studio help                     # open the studio docs page in your browser
 /studio-help                     # slash-command shortcut for /studio help
 /studio work <track>             # claim track issues, then final reviewed PR + cleanup + summary
-/studio work chain workflow-measurement-improvements  # run issue chains: fresh sessions, reviewed PRs, cleanup
+/studio work chain workflow-measurement-improvements  # run issue chains: fresh sessions, UUID telemetry, reviewed PRs, cleanup
 STUDIO_TRACK=<track>             # session-start shortcut for /studio work <track>
 /studio nodes                    # day-2 fleet management — status, add, remove, health, sync, schedule
 /studio-setup                    # onboard THIS machine — auto-pilot, prompts for role only
@@ -207,7 +207,7 @@ scripts/                # multi-worker fleet (BETA)
   forge-latency-report.sh  # stage-level task latency + review-gate comparison from event logs
   field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
-  studio-chain-runner.sh   # execute studio issue chains from a YAML manifest with fresh host sessions
+  studio-chain-runner.sh   # execute studio issue chains with fresh host sessions, UUID telemetry, and private run reports
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   appstore-watch.sh     # polls ASC for pending submission; finalizes draft release + Slack on release
