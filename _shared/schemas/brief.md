@@ -70,7 +70,7 @@ recommended_models:
     reasoning_effort: low
   rationale: "Small low-novelty implementation against established patterns."
 base_branch: main                                  # optional; explicit dispatch base when not current checkout
-perf_mode: null                                  # null | memory | thermal | battery. Required when dispatch_agent: apollo.
+perf_mode: null                                  # null | memory | thermal | battery | cpu. Required when dispatch_agent: apollo.
 evidence:                                        # Required when dispatch_agent: apollo. Null otherwise.
   artifacts:                                     # Pre-captured evidence paths (relative to project root or absolute).
     - "~/.dev-studio/<project>/perf/baseline-2026-04-27.trace"

@@ -15,7 +15,7 @@ The loop is the load-bearing answer to "what gates a perf-mode merge?" Argus is 
 
 A brief written with `dispatch_agent: apollo` carries:
 
-- `perf_mode: memory | thermal | battery` — selects the mode pack.
+- `perf_mode: memory | thermal | battery | cpu` — selects the mode pack.
 - `evidence.artifacts[]` — the captured baseline (`.trace`, `MXMetricPayload`, `.xcresult`, etc.).
 - `evidence.baseline_ref` — the git ref the baseline was captured against.
 - `evidence.capture_plan` — only when `artifacts` is empty; declares the auto-capture Apollo will run before the loop.
@@ -26,7 +26,7 @@ If both `artifacts` and `capture_plan` are missing, refuse at dispatch (strict-9
 
 ```
 ┌──────────────────────────────────────────────┐
-│ 1. ENTER mode pack (memory|thermal|battery)  │
+│ 1. ENTER mode pack (memory|thermal|battery|cpu)  │
 │    — read brief, load evidence artifacts     │
 │    — pick candidate fix per mode pack        │
 └──────────────────────────────────────────────┘

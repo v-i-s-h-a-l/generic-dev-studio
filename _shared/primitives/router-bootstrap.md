@@ -10,7 +10,7 @@ type: primitive
 
 **Before architectural work:** read `ROADMAP.md` §Phase sequence and `ARCHITECTURE.md` §Design Vision. For review work, read `REVIEW.md`. For releases, `RELEASES.md`. For perf work, read `apollo/_shared/primitives/evidence-gate.md`.
 
-**Mode pack index.** `chanakya/modes/*.md` (15 packs), `achilles/modes/*.md` (10), `argus/modes/{spec-compliance,code-quality}.md`, `apollo/modes/*.md` (memory/thermal/battery — Stage 2 deliverables). Routers live at each agent's `SKILL.md` — ≤100 lines, dispatch only.
+**Mode pack index.** `chanakya/modes/*.md` (15 packs), `achilles/modes/*.md` (10), `argus/modes/{spec-compliance,code-quality}.md`, `apollo/modes/*.md` (memory/thermal/battery/cpu plus measure). Routers live at each agent's `SKILL.md` — ≤100 lines, dispatch only.
 
 **Iron laws.**
 1. Runtime writes → `~/.dev-studio/**` (never `~/.claude`, `/tmp`, `$HOME`).

@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-05-01T22:23:16Z",
+  "generated_at": "2026-05-01T22:33:17Z",
   "agents": [
     {
       "name": "studio",
@@ -303,8 +303,8 @@
     {
       "name": "apollo",
       "router": "apollo/SKILL.md",
-      "description": "iOS performance agent. Per-metric mode packs (memory/thermal/battery) under a strict-9 evidence gate. Refuses recommendations without hard evidence; auto-captures via the execution surface.",
-      "reads": ["~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/<project>/apollo/captures/**", "~/.dev-studio/<project>/apollo/deferred/*.yaml", "~/.dev-studio/<project>/events/**.jsonl"],
+      "description": "iOS performance agent. Per-metric mode packs (memory/thermal/battery/cpu) under a strict-9 evidence gate. Refuses recommendations without hard evidence; auto-captures via the execution surface.",
+      "reads": ["apollo/_shared/integrations/imgly-and-metal.md", "apollo/_shared/primitives/evidence-gate.md", "apollo/_shared/primitives/instruments-index.md", "apollo/_shared/primitives/metrickit.md", "apollo/_shared/primitives/signposts.md", "apollo/_shared/primitives/source-map.md", "apollo/_shared/primitives/xctest-baselines.md", "~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/<project>/apollo/captures/**", "~/.dev-studio/<project>/apollo/deferred/*.yaml", "~/.dev-studio/<project>/events/**.jsonl"],
       "writes": ["~/.dev-studio/.runtime/locks/apollo/*", "~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/apollo/recommendations/<id>.md", "~/.dev-studio/<project>/events/<today>.jsonl"],
       "modes": [
         {
@@ -319,10 +319,21 @@
           "budget_tokens": 6000
         },
         {
+          "name": "cpu",
+          "path": "apollo/modes/cpu.md",
+          "type": "mode-pack",
+          "description": "Diagnose -> measure -> attribute -> recommend -> verify protocol for CPU regressions under strict-9 evidence gating. Covers hot paths, main-thread saturation, off-CPU waits, and field CPU diagnostics.",
+          "reads": ["apollo/_shared/primitives/source-map.md", "apollo/_shared/primitives/evidence-gate.md", "apollo/_shared/primitives/instruments-index.md", "apollo/_shared/primitives/metrickit.md", "apollo/_shared/primitives/signposts.md", "apollo/_shared/primitives/xctest-baselines.md", "apollo/_shared/integrations/imgly-and-metal.md", "~/.dev-studio/.runtime/host-capabilities.yaml"],
+          "writes": ["~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/recommendations/<id>.md", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/events/<today>.jsonl"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 7000
+        },
+        {
           "name": "measure",
           "path": "apollo/modes/measure.md",
           "type": "mode-pack",
-          "description": "Capture-only — produce a hard-evidence artifact (.trace, MXMetricPayload, .xcresult, signpost log, energy log, ASC perf row) without recommending a fix. Pre-flight tool for Chanakya brief authoring when dispatch_agent: apollo is set but evidence.artifacts is empty.",
+          "description": "Capture-only mode for hard-evidence artifacts without recommending a fix. Pre-flight tool for Apollo perf briefs with empty evidence artifacts.",
           "reads": ["~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/.runtime/host-capabilities.yaml"],
           "writes": ["~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/events/<today>.jsonl", "~/.dev-studio/.runtime/locks/apollo/*"],
           "snapshots": [],

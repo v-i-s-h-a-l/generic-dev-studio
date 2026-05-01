@@ -26,6 +26,7 @@ Performance work is orthogonal to feature work. Bolting it onto Argus would bloa
 | `memory` | leak detection, OOM diagnosis, peak / sustained footprint | Allocations / VM Tracker `.trace`, `MXMemoryMetric`, `XCTMemoryMetric` baseline, `MXCrashDiagnostic` OOM payload |
 | `thermal` | thermal throttling, sustained CPU, GPU heat | `MXMetaData.thermalState` distribution, CPU Counters / Time Profiler `.trace`, Metal System Trace, Energy Log |
 | `battery` | foreground energy, cumulative CPU per hour, drain regressions | `MXAppRunTimeMetric`, ASC Performance Metrics power row, Energy Log, `MXCPUMetric` |
+| `cpu` | foreground CPU spikes, hot paths, main-thread saturation, CPU diagnostics | CPU Profiler / Time Profiler `.trace`, CPU Counters, Processor Trace, System Trace, `MXCPUMetric`, `MXCPUExceptionDiagnostic`, `XCTCPUMetric` |
 
 Phase 2 modes (launch-time, scroll-perf, binary-size, network-efficiency) are deferred. Each mode is a single mode pack at `apollo/modes/<name>.md`; the dispatch table in `apollo/SKILL.md` is the single source of truth for triggers.
 
@@ -114,7 +115,7 @@ The full stage map lives on issue [#236 (epic)](https://github.com/v-i-s-h-a-l/g
 | A specific metric regressed between releases | `/apollo <metric>` with the regression cited |
 | TestFlight build is shipping `MXCrashDiagnostic` payloads | `/apollo memory` (OOM) or `/apollo thermal` (heat) |
 | Reviewer suspects a perf hit but has no artifact | `/apollo <metric>` — auto-capture pathway runs |
-| Generic "the app feels slow" complaint | Apollo refuses without a metric chosen; pick `memory`, `thermal`, or `battery` first |
+| Generic "the app feels slow" complaint | Apollo refuses without a metric chosen; pick `memory`, `thermal`, `battery`, or `cpu` first |
 
 Apollo refuses cross-metric guesses on purpose. The evidence catalogue diverges per mode; "the app feels slow" without a metric chosen has no decidable artifact target.
 
@@ -132,6 +133,7 @@ apollo/
     memory.md                # #230
     thermal.md               # #231
     battery.md               # #232
+    cpu.md                   # #406
   _shared/primitives/        # cross-cutting primitives
     evidence-gate.md         # strict-9 contract
     execution-surface.md     # capability matrix

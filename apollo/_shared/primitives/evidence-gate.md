@@ -27,6 +27,7 @@ A fix recommendation that lacks both hard evidence and a curated advisory citati
 | memory | Allocations / VM Tracker `.trace`; `MXMemoryMetric.peakMemoryUsage`; `MXMetaData` foreground-bytes; XCTest `XCTMemoryMetric` baseline; `MXCrashDiagnostic` OOM (`0xc00010ff`) payload |
 | thermal | `MXMetaData.thermalState` distribution; `ProcessInfo.thermalState` log; CPU Counters / Time Profiler `.trace`; Metal System Trace `.trace`; Energy Log instrument |
 | battery | `MXAppRunTimeMetric.cumulativeForegroundEnergy`; ASC Performance Metrics power row; Energy Log `.trace`; `MXCPUMetric.cumulativeCPUTime` per foreground hour |
+| cpu | CPU Profiler / Time Profiler `.trace`; CPU Counters `.trace`; Processor Trace `.trace`; System Trace `.trace`; Hangs `.trace`; `MXCPUMetric`; `MXCPUExceptionDiagnostic`; `MXSignpostIntervalData.cumulativeCPUTime`; XCTest `XCTCPUMetric` baseline diff |
 
 Mode packs cite this table when stating their entry conditions. A citation MUST name the artifact, the workload (scenario or payload window), and the cohort (device class + OS) — vague citations like "MetricKit shows it's bad" fail the gate.
 
