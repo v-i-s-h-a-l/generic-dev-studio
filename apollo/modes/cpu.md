@@ -39,6 +39,8 @@ CPU is a first-class Apollo mode. It is not a thermal subcase: the user may care
 
 Source-map rows: `apollo/_shared/primitives/source-map.md` §Mode row index -> cpu. CPU mode cites source-map row IDs for Apple / WWDC authority, then cites local primitives for operational gates.
 
+Scenario input: this mode accepts `--scenario <id-or-path>` per `apollo/_shared/primitives/scenarios.md`; scenario fields replace inline workload/cohort/signpost/thread-scope prose when present.
+
 ## Signal classes
 
 | Class | What it looks like | Authoritative source | Apollo template |
@@ -194,6 +196,7 @@ Regression thresholds use `apollo/_shared/primitives/regression-detection.md`: C
 
 - `apollo/_shared/primitives/source-map.md` - Apple / WWDC source rows for CPU (`SRC-CPU-*`, `SRC-XCT-CPU-DOC`, `SRC-HANGS-WWDC22-10082`, `SRC-METRICKIT-WWDC20-10081`)
 - `apollo/_shared/primitives/evidence-gate.md` - strict-9 contract + refusal protocol
+- `apollo/_shared/primitives/scenarios.md` - reusable user-flow contract for repeatable captures
 - `apollo/_shared/primitives/instruments-index.md` - CPU Profiler / Time Profiler / CPU Counters / Processor Trace / System Trace details
 - `apollo/_shared/primitives/metrickit.md` - `MXCPUMetric`, `MXCPUExceptionDiagnostic`, `MXSignpostIntervalData` schemas
 - `apollo/_shared/primitives/signposts.md` - scenario anchors that make CPU traces re-runnable

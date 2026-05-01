@@ -15,6 +15,7 @@ emits:
   - apollo_capture_deferred
 reads:
   - ~/.dev-studio/<project>/apollo/baselines/*.json
+  - ~/.dev-studio/<project>/apollo/scenarios/*.yaml
   - ~/.dev-studio/.runtime/host-capabilities.yaml
 writes:
   - ~/.dev-studio/<project>/apollo/captures/<id>/**
@@ -41,6 +42,7 @@ Not for: open-ended "what's slow?" investigation. Use the diagnostic mode packs 
 /apollo measure thermal --cohort iPhone-16-Pro-iOS-19 --workload export-1080p
 /apollo measure battery --capture-only       # explicit capture-only flag (alias)
 /apollo measure cpu --workload scroll-feed
+/apollo measure cpu --scenario feed-scroll-cpu
 /apollo memory --capture-only                # equivalent: enter memory mode, exit after capture
 ```
 
@@ -56,7 +58,7 @@ Not for: open-ended "what's slow?" investigation. Use the diagnostic mode packs 
 
 ### Step 1 — Resolve metric + cohort + workload
 
-Parse the invocation. Resolve metric to one of `memory | thermal | battery | cpu`. Resolve cohort either from `--cohort` or from `<project>/apollo/baselines/<baseline_ref>.json`. Resolve workload either from `--workload` or from the metric's mode-pack default.
+Parse the invocation. Resolve metric to one of `memory | thermal | battery | cpu`. If `--scenario <id-or-path>` is present, validate it with `scripts/validate-contract.sh apollo-scenario <scenario.yaml>` and resolve cohort, workload, signposts, duration, dwell, expected artifacts, and compare axes from `apollo/_shared/primitives/scenarios.md`. Otherwise resolve cohort from `--cohort` or `<project>/apollo/baselines/<baseline_ref>.json`, and workload from `--workload` or the metric's mode-pack default.
 
 If any of the three are unresolved, refuse with `missing-input` and list which fields are unset. Do not guess.
 
@@ -102,6 +104,11 @@ captured_with:
   host: claude-code
   session_id: "session-42"
 baseline_ref: null                            # populated when --baseline-for <ref> is set
+scenario:
+  path: null                                  # populated when --scenario is used
+  id: null
+  version: null
+  compare_axes: []
 ```
 
 The `measure` / `value` / `unit` triple is the canonical summary the brief's `evidence.artifacts` references. Apollo's diagnostic mode packs read these fields directly when computing baseline-vs-observed deltas.
@@ -142,6 +149,7 @@ All refusals emit `apollo_refused` with the reason code. Capture-mode refusals n
 
 - `apollo/_shared/primitives/evidence-gate.md` — the strict-9 contract this mode produces evidence for.
 - `apollo/_shared/primitives/execution-surface.md` — per-metric capture recipes.
+- `apollo/_shared/primitives/scenarios.md` — reusable scenario artifact and sidecar link.
 - `apollo/_shared/primitives/perf-merge-loop.md` — what consumes the captured artifact downstream.
 - `_shared/schemas/brief.md` — `evidence.artifacts[]` field this mode populates.
 - `apollo/modes/{memory,thermal,battery,cpu}.md` — diagnostic mode packs that capture-then-recommend.

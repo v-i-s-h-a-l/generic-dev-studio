@@ -1,0 +1,66 @@
+schema_version:
+  name: apollo-scenario
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+scenario_id: feed-scroll-cpu
+scenario_version: 1
+name: Feed scroll CPU pass
+intent: Measure CPU and frame-adjacent work while scrolling the home feed.
+app:
+  bundle_id: gg.turnip.app
+  scheme: Turnip
+  install_source: xcode
+  build_configuration: Release
+  build_identifier: null
+cohort:
+  device: iPhone 16 Pro
+  os: iOS 19.0
+  target_kind: real-device
+  udid: null
+preconditions:
+  login_state: test account signed in
+  network: wifi
+  charging_state: unplugged
+  thermal_state: nominal
+  screen_brightness_percent: 50
+  low_power_mode: false
+  notes: null
+flow:
+  - step: 1
+    action: Launch app from Xcode and wait for feed loaded.
+    expected_screen: Home feed
+    human_note: null
+  - step: 2
+    action: Scroll the feed for one minute at natural speed.
+    expected_screen: Home feed
+    human_note: Keep the device in hand; do not attach debugger-only gauges unless requested.
+signposts:
+  - name: FeedScroll
+    kind: interval
+    required: true
+    public_payload_keys:
+      - item_count
+metric_targets:
+  - cpu
+capture:
+  mode: human-run
+  duration_s: 60
+  dwell_s: 0
+  tools:
+    - xcode
+    - instruments
+  instructions: Start CPU Profiler, perform the flow, stop after the signpost interval ends.
+expected_artifacts:
+  - kind: trace
+    template: CPU Profiler
+    required: true
+compare_axes:
+  - scenario_id
+  - scenario_version
+  - cohort
+  - build_configuration
+  - signpost
+  - duration_s
+  - template
+created_at: 2026-05-02T00:00:00Z

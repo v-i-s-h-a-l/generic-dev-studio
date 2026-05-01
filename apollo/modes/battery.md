@@ -39,6 +39,8 @@ The mode treats four energy signal classes as distinct — diagnostic question, 
 
 Source-map rows: `apollo/_shared/primitives/source-map.md` §Mode row index → battery. This mode cites source-map row IDs for Apple / WWDC authority, then cites local primitives for operational gates.
 
+Scenario input: this mode accepts `--scenario <id-or-path>` per `apollo/_shared/primitives/scenarios.md`; scenario fields replace inline workload/cohort/signpost/dwell prose when present.
+
 ## Reproducible vs non-reproducible (WWDC25 226 split)
 
 | Track | When the signal lives there | Authoritative artifacts | What auto-capture can do |
@@ -326,6 +328,7 @@ The Imgly carve-out matches thermal mode. Imgly knowledge lives in the dedicated
 - `apollo/_shared/primitives/source-map.md` — Apple / WWDC source rows for battery (`SRC-BATT-*`, `SRC-NET-WWDC21-10212`, `SRC-METRICKIT-WWDC20-10081`, `SRC-ORG-WWDC21-10087`, `SRC-XCT-PERF`)
 - `apollo/_shared/primitives/mode-pack-scaffold.md` — five-phase pipeline framing, Phase 4 handoff contract, Phase 5 outcome state machine, procedure steps 5–8 boilerplate
 - `apollo/_shared/primitives/evidence-gate.md` — strict-9 contract + refusal protocol the phase gates feed into
+- `apollo/_shared/primitives/scenarios.md` — reusable user-flow contract for repeatable captures
 - `apollo/_shared/primitives/metrickit.md` — `MXAppRunTimeMetric`, `MXCPUMetric`, `MXGPUMetric`, `MXDisplayMetric`, `MXNetworkTransferMetric`, `MXDiskIOMetric`, `MXAnimationMetric`, `MXCPUExceptionDiagnostic`, `MXDiskWriteExceptionDiagnostic` schemas
 - `apollo/_shared/primitives/signposts.md` — `OSSignposter` shape + privacy default the signal table enforces
 - `apollo/_shared/primitives/instruments-index.md` — Power Profiler / Energy Log / Network / Location / Display details + capture commands
