@@ -1025,6 +1025,13 @@ scripts/backfill-orphan-debriefs.sh --apply --quiet  # machine-readable count (u
 scripts/forge-latency-report.sh --project turnip-ios --since 2026-04-01 --cutover 2026-04-28</code></pre>
   <p>Measured stages use explicit <code>duration_s</code> fields or paired start/end events such as <code>task_dispatched → task_completed</code>, <code>build_check_started → build_check_passed</code>, and <code>review_requested → review_approved</code>. Missing or impossible durations are reported, not counted as zero.</p>
 
+  <h3 style="margin-top: 32px;">Studio PR baseline report</h3>
+  <p>Measure merged studio PRs from GitHub metadata and public diff names: implementation-to-PR time, PR-open-to-merge time, line/file churn, generated-file churn, issue count, and available review/check signals. Local-only spans such as cleanup completion and hook duration are listed as telemetry gaps unless a future event source fills them.</p>
+  <pre><code>scripts/studio-pr-baseline-report.sh 366
+scripts/studio-pr-baseline-report.sh --recent 10
+scripts/studio-pr-baseline-report.sh 366 --json</code></pre>
+  <p>Use the trend summary during retrospectives to identify which workflow phase is growing by PR class. Treat the numbers as process baselines, not individual productivity scoring.</p>
+
   <h3 style="margin-top: 32px;">Field workflow report</h3>
   <p>Measure the full Field loop from canonical events and brief YAML: stage timing, token usage, build/test pass rates, review coverage, telemetry gaps, and aggregate improvement candidates. The report is private-analysis safe by default and prints only abstract failure classes and workflow patterns.</p>
   <pre><code>scripts/field-workflow-report.sh --project turnip-ios --days 14
