@@ -2,7 +2,7 @@
 # studio-chain-runner.sh - execute issue chains with fresh host sessions.
 #
 # Usage:
-#   scripts/studio-chain-runner.sh chains.yaml [--only <chain>] [--host <host>] [--dry-run]
+#   scripts/studio-chain-runner.sh <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run]
 #
 # Manifest shape:
 #   schema_version: 1
@@ -58,7 +58,6 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$MANIFEST" ] || usage
-[ -f "$MANIFEST" ] || { printf 'studio-chain-runner: manifest not found: %s\n' "$MANIFEST" >&2; exit 2; }
 
 command -v yq >/dev/null 2>&1 || { printf 'studio-chain-runner: yq required\n' >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || { printf 'studio-chain-runner: jq required\n' >&2; exit 2; }
@@ -75,6 +74,30 @@ log() {
 
 slugify() {
   printf '%s' "$1" | tr '/[:space:]' '--' | tr -cd '[:alnum:]_.-'
+}
+
+resolve_manifest() {
+  local input="$1" candidate
+  if [ -f "$input" ]; then
+    printf '%s\n' "$input"
+    return 0
+  fi
+
+  candidate="$REPO_ROOT/chains/$input.yaml"
+  if [ -f "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  candidate="$REPO_ROOT/chains/$input.yml"
+  if [ -f "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  printf 'studio-chain-runner: manifest not found: %s\n' "$input" >&2
+  printf 'studio-chain-runner: tried %s and %s\n' "$REPO_ROOT/chains/$input.yaml" "$REPO_ROOT/chains/$input.yml" >&2
+  exit 2
 }
 
 run() {
@@ -130,6 +153,8 @@ host_spawn_command() {
   }
   printf '%s\n' "$spawn"
 }
+
+MANIFEST=$(resolve_manifest "$MANIFEST")
 
 chain_count=$(yq -r '.chains | length' "$MANIFEST")
 case "$chain_count" in

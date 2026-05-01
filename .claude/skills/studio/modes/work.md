@@ -7,7 +7,7 @@ budget_tokens: 600
 reads:
   - TRACKS.md
   - scripts/track-next.sh output
-  - chain manifest YAML for `/studio work chain <manifest>`
+  - chain manifest YAML for `/studio work chain <manifest-or-name>`
   - .claude/skills/studio/modes/summary.md
 writes:
   - track branch commits
@@ -25,7 +25,7 @@ Autonomous worker for a named parallel track. Runs a pick → shape → implemen
 
 Triggered by:
 - `/studio work <track>` — explicit invocation
-- `/studio work chain <manifest.yaml>` — execute one or more chains from a manifest
+- `/studio work chain <manifest-or-name>` — execute one or more chains from a manifest
 - `STUDIO_TRACK=<track>` env var at session start (SessionStart hook injects the first directive automatically; subsequent issues loop via this mode)
 
 Without the `work` sub-command, start the host session with `STUDIO_TRACK=<track>` from inside `generic-dev-studio`; the session-start directive enters this mode automatically.
@@ -37,7 +37,7 @@ Use chain mode when the user wants a multi-chain sequence where each chain start
 Run:
 
 ```bash
-scripts/studio-chain-runner.sh <manifest.yaml> [--only <chain>] [--host codex|claude-code] [--dry-run]
+scripts/studio-chain-runner.sh <manifest-or-name> [--only <chain>] [--host codex|claude-code] [--dry-run]
 ```
 
 Manifest:
@@ -51,6 +51,8 @@ chains:
     host: auto
     issues: [388, 25, 367]
 ```
+
+The manifest argument may be a file path, or a bare name resolved as `chains/<name>.yaml` and then `chains/<name>.yml`. For example, `/studio work chain workflow-measurement-improvements` resolves to `chains/workflow-measurement-improvements.yaml`.
 
 Chain behavior:
 
