@@ -268,13 +268,13 @@ generate_run_report() {
 
   {
     printf '# Studio Chain Run Report\n\n'
-    printf '- Run UUID: `%s`\n' "$RUN_ID"
-    printf '- Manifest: `%s`\n' "$MANIFEST"
-    printf '- Status: `%s`\n' "$status"
-    printf '- Started: `%s`\n' "$RUN_STARTED_TS"
-    printf '- Ended: `%s`\n' "$ended_ts"
-    printf '- Duration: `%ss`\n' "$duration_s"
-    [ -n "$failure_reason" ] && printf '- Failure reason: `%s`\n' "$failure_reason"
+    printf -- '- Run UUID: `%s`\n' "$RUN_ID"
+    printf -- '- Manifest: `%s`\n' "$MANIFEST"
+    printf -- '- Status: `%s`\n' "$status"
+    printf -- '- Started: `%s`\n' "$RUN_STARTED_TS"
+    printf -- '- Ended: `%s`\n' "$ended_ts"
+    printf -- '- Duration: `%ss`\n' "$duration_s"
+    [ -n "$failure_reason" ] && printf -- '- Failure reason: `%s`\n' "$failure_reason"
     printf '\n## Chains And Issues\n\n'
     if [ "$summary_count" -gt 0 ]; then
       jq -r -s '
@@ -287,9 +287,9 @@ generate_run_report() {
     fi
     printf '\n## PRs And Review\n\n'
     if [ -n "$FINAL_PR_URL" ]; then
-      printf '- PR URL: %s\n' "$FINAL_PR_URL"
+      printf -- '- PR URL: %s\n' "$FINAL_PR_URL"
     else
-      printf '- PR URL: not opened\n'
+      printf -- '- PR URL: not opened\n'
     fi
     printf '\n## Telemetry Gaps\n\n'
     if [ "$summary_count" -gt 0 ]; then
@@ -300,7 +300,7 @@ generate_run_report() {
         end
       ' "$SUMMARY_ROOT"/*.json
     else
-      printf '- worker_summary_missing: all issues\n'
+      printf -- '- worker_summary_missing: all issues\n'
     fi
     printf '\n## Improvement Candidates\n\n'
     if [ "$summary_count" -gt 0 ]; then
