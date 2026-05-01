@@ -16,7 +16,7 @@ cat > "$BIN/codex" <<'SH'
 case " $* " in
   *" --help "*) printf 'codex fixture help\n'; exit 0 ;;
 esac
-session_dir="$CODEX_HOME/sessions/2026/04/30"
+session_dir="$CODEX_HOME/sessions/$(date +%Y/%m/%d)"
 mkdir -p "$session_dir"
 cat > "$session_dir/review-fixture.jsonl" <<EOF
 {"timestamp":"2026-04-30T15:00:00Z","type":"session_meta","payload":{"id":"fixture-session","timestamp":"2026-04-30T15:00:00Z","cwd":"$(pwd)","originator":"codex-tui","cli_version":"fixture"}}
@@ -95,7 +95,7 @@ assert() {
 out="$TMPROOT/out.txt"
 bash "$ROOT/scripts/pr-headless-review.sh" 123 --review-host codex-reviewer --method auto > "$out" 2>"$out.err"
 rc=$?
-EVENT_LOG=$(find "$HOME/.dev-studio" -type f -path '*/events/2026-04-30.jsonl' | head -1)
+EVENT_LOG=$(find "$HOME/.dev-studio" -type f -path "*/events/$(date +%F).jsonl" | head -1)
 
 assert "headless review exits zero" "[ '$rc' -eq 0 ]"
 assert "review host reported" "grep -q 'PR_REVIEW_HOST=codex-reviewer' '$out'"
