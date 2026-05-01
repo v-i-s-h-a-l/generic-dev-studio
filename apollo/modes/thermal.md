@@ -39,6 +39,8 @@ The mode treats four thermal signal classes as distinct — diagnostic question,
 
 Source-map rows: `apollo/_shared/primitives/source-map.md` §Mode row index → thermal. This mode cites source-map row IDs for Apple / WWDC authority, then cites local primitives for operational gates.
 
+Scenario input: this mode accepts `--scenario <id-or-path>` per `apollo/_shared/primitives/scenarios.md`; scenario fields replace inline workload/cohort/signpost/dwell prose when present.
+
 ## Signal classes (thermal taxonomy)
 
 | Class | What it looks like | Authoritative source | Apollo template |
@@ -288,6 +290,7 @@ The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives
 - `apollo/_shared/primitives/source-map.md` — Apple / WWDC source rows for thermal (`SRC-THERM-API`, `SRC-CPU-*`, `SRC-HANGS-WWDC22-10082`, `SRC-ORG-WWDC21-10087`, `SRC-METRICKIT-WWDC20-10081`). Historical `WWDC22 110340` is tracked there as stale and MUST NOT be cited for hangs.
 - `apollo/_shared/primitives/mode-pack-scaffold.md` — five-phase pipeline framing, Phase 4 handoff contract, Phase 5 outcome state machine, procedure steps 5–8 boilerplate
 - `apollo/_shared/primitives/evidence-gate.md` — strict-9 contract + refusal protocol the phase gates feed into
+- `apollo/_shared/primitives/scenarios.md` — reusable user-flow contract for repeatable captures
 - `apollo/_shared/primitives/metrickit.md` — `MXMetaData.thermalState`, `MXCPUMetric`, `MXCPUExceptionDiagnostic`, `MXHangDiagnostic`, `MXGPUMetric` schemas
 - `apollo/_shared/primitives/signposts.md` — `OSSignposter` shape + privacy default the signal table enforces
 - `apollo/_shared/primitives/instruments-index.md` — Time Profiler / CPU Counters / Processor Trace / Metal System Trace details + capture commands

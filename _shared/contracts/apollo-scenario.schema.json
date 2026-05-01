@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "apollo-scenario.schema.json",
+  "schema": 1,
+  "title": "Apollo Scenario",
+  "description": "Reusable performance scenario artifact consumed by Apollo mode packs. Captures user flow, cohort, preconditions, signposts, metric targets, expected artifacts, and compare axes.",
+  "type": "object",
+  "required": ["schema_version", "scenario_id", "scenario_version", "name", "intent", "app", "cohort", "preconditions", "flow", "signposts", "metric_targets", "capture", "expected_artifacts", "compare_axes"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "$ref": "debrief.schema.json#/$defs/schemaVersion" },
+    "scenario_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,80}$" },
+    "scenario_version": { "type": "integer", "minimum": 1 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "intent": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "app": {
+      "type": "object",
+      "required": ["bundle_id", "build_configuration"],
+      "additionalProperties": false,
+      "properties": {
+        "bundle_id": { "type": "string", "minLength": 1 },
+        "scheme": { "type": ["string", "null"] },
+        "install_source": { "enum": ["xcode", "testflight", "app-store", "local-build", "unknown"] },
+        "build_configuration": { "enum": ["Debug", "Release", "Profiling", "TestFlight", "AppStore"] },
+        "build_identifier": { "type": ["string", "null"] }
+      }
+    },
+    "cohort": {
+      "type": "object",
+      "required": ["device", "os", "target_kind"],
+      "additionalProperties": false,
+      "properties": {
+        "device": { "type": "string", "minLength": 1 },
+        "os": { "type": "string", "minLength": 1 },
+        "target_kind": { "enum": ["real-device", "simulator", "field"] },
+        "udid": { "type": ["string", "null"] }
+      }
+    },
+    "preconditions": {
+      "type": "object",
+      "required": ["login_state", "network", "charging_state", "thermal_state", "screen_brightness_percent", "low_power_mode"],
+      "additionalProperties": false,
+      "properties": {
+        "login_state": { "type": "string", "minLength": 1 },
+        "network": { "enum": ["wifi", "cellular", "offline", "any"] },
+        "charging_state": { "enum": ["plugged-in", "unplugged", "any"] },
+        "thermal_state": { "enum": ["nominal", "fair", "serious", "critical", "any"] },
+        "screen_brightness_percent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "low_power_mode": { "type": "boolean" },
+        "notes": { "type": ["string", "null"], "maxLength": 1000 }
+      }
+    },
+    "flow": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["step", "action"],
+        "additionalProperties": false,
+        "properties": {
+          "step": { "type": "integer", "minimum": 1 },
+          "action": { "type": "string", "minLength": 1 },
+          "expected_screen": { "type": ["string", "null"] },
+          "human_note": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "signposts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "kind", "required"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["interval", "event"] },
+          "required": { "type": "boolean" },
+          "public_payload_keys": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "metric_targets": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["memory", "cpu", "thermal", "battery"] }
+    },
+    "capture": {
+      "type": "object",
+      "required": ["mode", "duration_s", "dwell_s", "tools"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["human-run", "automated", "hybrid"] },
+        "duration_s": { "type": "integer", "minimum": 1 },
+        "dwell_s": { "type": "integer", "minimum": 0 },
+        "tools": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["xcode", "xctrace", "instruments", "xctest", "metrickit", "asc", "axe", "manual"] }
+        },
+        "instructions": { "type": ["string", "null"], "maxLength": 2000 }
+      }
+    },
+    "expected_artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["kind", "required"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": { "enum": ["trace", "mxmetric", "mxdiagnostic", "xcresult", "signpost", "energy-log", "asc-perf", "logarchive"] },
+          "template": { "type": ["string", "null"] },
+          "required": { "type": "boolean" }
+        }
+      }
+    },
+    "compare_axes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["scenario_id", "scenario_version", "cohort", "build_configuration", "signpost", "duration_s", "dwell_s", "template", "field_window"] }
+    },
+    "created_at": { "$ref": "debrief.schema.json#/$defs/rfc3339" }
+  }
+}

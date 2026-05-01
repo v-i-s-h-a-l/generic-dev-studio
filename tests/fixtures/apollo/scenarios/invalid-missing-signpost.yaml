@@ -1,0 +1,38 @@
+schema_version:
+  name: apollo-scenario
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+scenario_id: invalid-missing-signpost
+scenario_version: 1
+name: Invalid scenario
+intent: Missing signposts should fail validation.
+app:
+  bundle_id: gg.turnip.app
+  build_configuration: Release
+cohort:
+  device: iPhone 16 Pro
+  os: iOS 19.0
+  target_kind: real-device
+preconditions:
+  login_state: test account signed in
+  network: wifi
+  charging_state: unplugged
+  thermal_state: nominal
+  screen_brightness_percent: 50
+  low_power_mode: false
+flow:
+  - step: 1
+    action: Launch app.
+signposts: []
+metric_targets: [cpu]
+capture:
+  mode: human-run
+  duration_s: 60
+  dwell_s: 0
+  tools: [xcode]
+expected_artifacts:
+  - kind: trace
+    template: CPU Profiler
+    required: true
+compare_axes: [scenario_id, scenario_version, cohort]
