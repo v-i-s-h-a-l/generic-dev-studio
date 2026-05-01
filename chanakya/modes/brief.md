@@ -118,7 +118,7 @@ Before writing an implementation brief, decide whether the task is executable or
 
 Every executable brief must include: concise objective, explicit non-goals / out-of-scope, measurable acceptance criteria, verification/evidence guidance, structured model recommendations, and dependencies/handoff notes only when they affect execution. Long background belongs in linked design/context docs or in the ≤500-token `summary`, not in the worker body.
 
-For audit-shaped tasks ("survey every module for X"), reference the optional parallel `Explore` recipe in `_shared/contracts/brief-formats/impl-brief.md`; do not make it mandatory.
+For audit-shaped tasks ("survey every module for X"), reference the optional audit-shaped recipe in `_shared/contracts/brief-formats/impl-brief.md`; do not make it mandatory.
 
 ## Step 6 — Write the brief (type-aware)
 

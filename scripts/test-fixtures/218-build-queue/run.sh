@@ -66,7 +66,24 @@ granted_priority=$(jq -r 'select(.event=="build_queue_granted") | .data.priority
 echo "PASS: promoted + granted telemetry"
 
 echo
-echo "=== Test 4: slot window admits only the configured head entries ==="
+echo "=== Test 4: release callers can emit studio release queue telemetry ==="
+bq_release "$rel"
+bq_release "$bg"
+bq_release "$task"
+bg=$(bq_enqueue "$Q" "BG-002" background xcodebuild none)
+sleep 1
+rel=$(bq_enqueue "$Q" "release-43" release xcodebuild asc,slack)
+bq_wait "$Q" "$rel" 1 1 "release-fixture-43" "fixture-laptop" studio release || fail "studio release entry should be granted"
+granted_agent=$(jq -r 'select(.event=="build_queue_granted") | .agent' "$EVENT_LOG" | tail -1)
+granted_kind=$(jq -r 'select(.event=="build_queue_granted") | .kind' "$EVENT_LOG" | tail -1)
+granted_task=$(jq -r 'select(.event=="build_queue_granted") | .task' "$EVENT_LOG" | tail -1)
+[ "$granted_agent" = "studio" ] || fail "grant agent should be studio"
+[ "$granted_kind" = "release" ] || fail "grant kind should be release"
+[ "$granted_task" = "release-fixture-43" ] || fail "grant task should be release tag"
+echo "PASS: studio release telemetry context"
+
+echo
+echo "=== Test 5: slot window admits only the configured head entries ==="
 bq_release "$rel"
 bq_release "$bg"
 bq_release "$task"
@@ -81,7 +98,7 @@ fi
 echo "PASS: parallel slot window enforced"
 
 echo
-echo "=== Test 5: queue grant still waits for a physical xcodebuild slot ==="
+echo "=== Test 6: queue grant still waits for a physical xcodebuild slot ==="
 LOCK_BASE="$HOME/.dev-studio/.runtime/xcodebuild-lock/fixture-laptop"
 mkdir -p "$LOCK_BASE/slot-1" "$LOCK_BASE/slot-2"
 if bq_acquire_slot_lock "$LOCK_BASE" 2 0 >/dev/null 2>/dev/null; then

@@ -22,7 +22,7 @@
 #   bq_node_slots <node>        → prints configured parallel slot count
 #   bq_enqueue <dir> <id> <priority> [role] [secret_scope]
 #                               → writes entry, prints path
-#   bq_wait <dir> <entry> <slots> <timeout_s> <task> <node>
+#   bq_wait <dir> <entry> <slots> <timeout_s> <task> <node> [agent] [kind]
 #                               → waits in priority order; returns 0 or 3
 #   bq_acquire_slot_lock <lock_base> <slots> <timeout_s>
 #                               → acquires slot-<n> lock; prints path
@@ -99,7 +99,7 @@ bq_enqueue() {
   printf '%s\n' "$entry"
 }
 
-# bq_wait <queue_dir> <entry_path> <slots> <timeout_s> <task_id> <node_id>
+# bq_wait <queue_dir> <entry_path> <slots> <timeout_s> <task_id> <node_id> [agent] [kind]
 # Blocks until <entry_path> is in the first <slots> positions (by sort order).
 # Emits build_queue_granted + build_queue_promoted (if applicable) on success.
 # Returns 0 on success, 3 on timeout. Emits build_check_failed on timeout if
@@ -107,6 +107,7 @@ bq_enqueue() {
 bq_wait() {
   local qdir="${1:?}" entry="${2:?}" slots="${3:-1}" timeout_s="${4:-1800}"
   local task_id="${5:-unknown}" node_id="${6:-local}"
+  local event_agent="${7:-achilles}" event_kind="${8:-task}"
   local wait_s=0 backoff=10
 
   # GC stale entries (>45 min) before entering the wait.
@@ -144,11 +145,11 @@ bq_wait() {
     local granted_data
     granted_data=$(printf '{"node":"%s","task":"%s","priority":"%s","waited_s":%s}' \
       "$node_id" "$task_id" "$pri" "$wait_s")
-    emit_event_keyed achilles task build_queue_granted "$task_id" "$granted_data" >/dev/null 2>&1 || true
+    emit_event_keyed "$event_agent" "$event_kind" build_queue_granted "$task_id" "$granted_data" >/dev/null 2>&1 || true
   fi
 
   # Emit build_queue_promoted if we jumped ahead of any older lower-priority entries.
-  _bq_emit_promoted "$qdir" "$entry" "$pri" "$task_id" "$node_id" "$wait_s"
+  _bq_emit_promoted "$qdir" "$entry" "$pri" "$task_id" "$node_id" "$wait_s" "$event_agent" "$event_kind"
 }
 
 # _bq_emit_promoted — internal: emit build_queue_promoted if we jumped ahead.
@@ -156,6 +157,7 @@ bq_wait() {
 # one other entry in the queue has a higher rank but was enqueued before us.
 _bq_emit_promoted() {
   local qdir="$1" entry="$2" our_pri="$3" task="$4" node="$5" waited="$6"
+  local event_agent="${7:-achilles}" event_kind="${8:-task}"
   command -v emit_event_keyed >/dev/null 2>&1 || return 0
   local our_rank our_ts basename
   basename=$(basename "$entry")
@@ -193,7 +195,7 @@ _bq_emit_promoted() {
   local data
   data=$(printf '{"node":"%s","promoted_task":"%s","promoted_priority":"%s","skipped_count":%s,"skipped_tasks":[%s],"waited_s":%s}' \
     "$node" "$task" "$our_pri" "$skipped" "$skipped_tasks" "$waited")
-  emit_event_keyed achilles task build_queue_promoted "$task" "$data" >/dev/null 2>&1 || true
+  emit_event_keyed "$event_agent" "$event_kind" build_queue_promoted "$task" "$data" >/dev/null 2>&1 || true
 }
 
 bq_acquire_slot_lock() {

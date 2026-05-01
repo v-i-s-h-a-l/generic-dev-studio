@@ -505,7 +505,7 @@ EOF
       "$NODE" "$_bq_position" "$_bq_depth" "$_bq_slots")
     emit_event_keyed studio release build_queue_position "$RELEASE_TAG" "$_bq_queue_data" >/dev/null 2>&1 || true
     trap 'bq_release_slot_lock "${_bq_lock:-}"; bq_release "${_bq_entry:-}"' EXIT INT TERM
-    bq_wait "$_bq_dir" "$_bq_entry" "$_bq_slots" 1800 "release-${NEW_BUILD_NUMBER}" "$NODE" \
+    bq_wait "$_bq_dir" "$_bq_entry" "$_bq_slots" 1800 "$RELEASE_TAG" "$NODE" studio release \
       || halt_failed prereq "build-queue wait timed out"
     _bq_lock=$(bq_acquire_slot_lock "$(resolve_runtime_global)/xcodebuild-lock/$NODE" "$_bq_slots" 1800) \
       || halt_failed prereq "xcodebuild slot lock wait timed out"
