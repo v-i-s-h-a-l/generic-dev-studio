@@ -210,6 +210,17 @@ _emit_terminal() {
   rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
 }
 
+_swift_test_failure_reason() {
+  local log="${1:?}"
+  if grep -Eiq \
+    "invalid manifest|package manifest|manifest parse|error:.*Package\.swift|could not find Package\.swift|the package at .* cannot be accessed|package .* is required using a stable-version|unknown package|unknown package dependency|unknown target|target .* has overlapping sources|source files for target .* should be located under|invalid custom path|resource .* not found|doesn't contain a package manifest" \
+    "$log" 2>/dev/null; then
+    printf 'focused_verification_structurally_blocked\n'
+    return 0
+  fi
+  printf 'build_invocation_failed\n'
+}
+
 file_count=$(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ')
 start_data=$(printf '{"mode":"swift-test","worktree":"%s","package":"%s","files":%s,"attempt":%s%s}' \
   "$WORKTREE" "$PKG_ROOT" "$file_count" "$ATTEMPT" "$DISPATCH_FIELDS")
@@ -281,10 +292,16 @@ if [ "$HARVESTED" = "1" ]; then
       failure_reason="remote_timeout"
     else
       failure_reason=$(remote_failure_reason "$test_log")
+      if [ "$failure_reason" = "remote_command_failed" ] || [ "$failure_reason" = "remote_harness_failure" ] || [ "$failure_reason" = "build_invocation_failed" ]; then
+        failure_reason=$(_swift_test_failure_reason "$test_log")
+      fi
     fi
     data=$(printf '{"mode":"swift-test","node":"%s","errors":%s,"warnings":%s,"package":"%s","attempt":%s,"harvested":true%s}' \
       "$NODE_ID" "$err_count" "$warn_count" "$PKG_ROOT" "$ATTEMPT" "$DISPATCH_FIELDS")
     data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" '. + {reason:$reason}')
+    if [ "$failure_reason" = "focused_verification_structurally_blocked" ]; then
+      data=$(printf '%s' "$data" | jq -c '. + {verification_blocked:true, verdict_note:"focused verification structurally blocked"}')
+    fi
     if [ "$failure_reason" = "remote_marker_writer_failed" ]; then
       data=$(remote_enrich_marker_failure "$data" "$test_log")
     fi
@@ -389,17 +406,23 @@ GATE_DUR_S=$(( $(date -u +%s) - GATE_START_S ))
 [ "$GATE_DUR_S" -lt 0 ] && GATE_DUR_S=0
 
 if [ "$TEST_STATUS" -ne 0 ]; then
-  failure_reason="build_invocation_failed"
+  failure_reason=$(_swift_test_failure_reason "$test_log")
   if ! node_is_self "$NODE_ID"; then
     if [ "$TEST_STATUS" -eq 124 ]; then
       failure_reason="remote_timeout"
     else
       failure_reason=$(remote_failure_reason "$test_log")
+      if [ "$failure_reason" = "remote_command_failed" ] || [ "$failure_reason" = "remote_harness_failure" ] || [ "$failure_reason" = "build_invocation_failed" ]; then
+        failure_reason=$(_swift_test_failure_reason "$test_log")
+      fi
     fi
   fi
   data=$(printf '{"mode":"swift-test","node":"%s","errors":%s,"warnings":%s,"package":"%s","attempt":%s%s}' \
     "$NODE_ID" "$err_count" "$warn_count" "$PKG_ROOT" "$ATTEMPT" "$DISPATCH_FIELDS")
   data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" '. + {reason:$reason}')
+  if [ "$failure_reason" = "focused_verification_structurally_blocked" ]; then
+    data=$(printf '%s' "$data" | jq -c '. + {verification_blocked:true, verdict_note:"focused verification structurally blocked"}')
+  fi
   if [ "$failure_reason" = "remote_marker_writer_failed" ]; then
     data=$(remote_enrich_marker_failure "$data" "$test_log")
   fi
