@@ -27,6 +27,7 @@ Performance work is orthogonal to feature work. Bolting it onto Argus would bloa
 | `thermal` | thermal throttling, sustained CPU, GPU heat | `MXMetaData.thermalState` distribution, CPU Counters / Time Profiler `.trace`, Metal System Trace, Energy Log |
 | `battery` | foreground energy, cumulative CPU per hour, drain regressions | `MXAppRunTimeMetric`, ASC Performance Metrics power row, Energy Log, `MXCPUMetric` |
 | `cpu` | foreground CPU spikes, hot paths, main-thread saturation, CPU diagnostics | CPU Profiler / Time Profiler `.trace`, CPU Counters, Processor Trace, System Trace, `MXCPUMetric`, `MXCPUExceptionDiagnostic`, `XCTCPUMetric` |
+| `profile` | guided real-device profiling session; orchestrates scenario, signposts, capture, attribution, and verification | Delegates evidence to memory / CPU / thermal / battery modes |
 
 Phase 2 modes (launch-time, scroll-perf, binary-size, network-efficiency) are deferred. Each mode is a single mode pack at `apollo/modes/<name>.md`; the dispatch table in `apollo/SKILL.md` is the single source of truth for triggers.
 
@@ -134,6 +135,7 @@ apollo/
     thermal.md               # #231
     battery.md               # #232
     cpu.md                   # #406
+    profile.md               # #410
   _shared/primitives/        # cross-cutting primitives
     evidence-gate.md         # strict-9 contract
     execution-surface.md     # capability matrix

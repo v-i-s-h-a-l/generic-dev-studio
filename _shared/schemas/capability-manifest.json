@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-05-01T23:02:17Z",
+  "generated_at": "2026-05-01T23:14:22Z",
   "agents": [
     {
       "name": "studio",
@@ -304,8 +304,8 @@
       "name": "apollo",
       "router": "apollo/SKILL.md",
       "description": "iOS performance agent. Per-metric mode packs (memory/thermal/battery/cpu) under a strict-9 evidence gate. Refuses recommendations without hard evidence; auto-captures via the execution surface.",
-      "reads": ["apollo/_shared/integrations/imgly-and-metal.md", "apollo/_shared/primitives/evidence-gate.md", "apollo/_shared/primitives/instruments-index.md", "apollo/_shared/primitives/metrickit.md", "apollo/_shared/primitives/signposts.md", "apollo/_shared/primitives/source-map.md", "apollo/_shared/primitives/xctest-baselines.md", "~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/<project>/apollo/captures/**", "~/.dev-studio/<project>/apollo/deferred/*.yaml", "~/.dev-studio/<project>/apollo/scenarios/*.yaml", "~/.dev-studio/<project>/events/**.jsonl"],
-      "writes": ["~/.dev-studio/.runtime/locks/apollo/*", "~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/apollo/recommendations/<id>.md", "~/.dev-studio/<project>/events/<today>.jsonl"],
+      "reads": ["apollo/_shared/integrations/imgly-and-metal.md", "apollo/_shared/primitives/code-attribution.md", "apollo/_shared/primitives/evidence-gate.md", "apollo/_shared/primitives/execution-surface.md", "apollo/_shared/primitives/instruments-index.md", "apollo/_shared/primitives/metrickit.md", "apollo/_shared/primitives/scenarios.md", "apollo/_shared/primitives/signpost-assistant.md", "apollo/_shared/primitives/signposts.md", "apollo/_shared/primitives/source-map.md", "apollo/_shared/primitives/xctest-baselines.md", "~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/<project>/apollo/captures/**", "~/.dev-studio/<project>/apollo/deferred/*.yaml", "~/.dev-studio/<project>/apollo/scenarios/*.yaml", "~/.dev-studio/<project>/events/**.jsonl"],
+      "writes": ["~/.dev-studio/.runtime/locks/apollo/*", "~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/apollo/recommendations/<id>.md", "~/.dev-studio/<project>/apollo/scenarios/<scenario-id>.yaml", "~/.dev-studio/<project>/apollo/signpost-plans/<plan-id>.yaml", "~/.dev-studio/<project>/events/<today>.jsonl"],
       "modes": [
         {
           "name": "battery",
@@ -350,6 +350,17 @@
           "snapshots": [],
           "dry_run": false,
           "budget_tokens": 6000
+        },
+        {
+          "name": "profile",
+          "path": "apollo/modes/profile.md",
+          "type": "mode-pack",
+          "description": "Guided on-device profiling conductor. Turns intake, scenario, signpost plan, capture, artifact export, attribution, recommendation, and post-fix verification into a strict-9 session workflow.",
+          "reads": ["apollo/_shared/primitives/source-map.md", "apollo/_shared/primitives/scenarios.md", "apollo/_shared/primitives/signpost-assistant.md", "apollo/_shared/primitives/code-attribution.md", "apollo/_shared/primitives/evidence-gate.md", "apollo/_shared/primitives/execution-surface.md", "~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/apollo/scenarios/*.yaml"],
+          "writes": ["~/.dev-studio/<project>/apollo/scenarios/<scenario-id>.yaml", "~/.dev-studio/<project>/apollo/signpost-plans/<plan-id>.yaml", "~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/events/<today>.jsonl"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 5000
         },
         {
           "name": "thermal",
