@@ -182,7 +182,7 @@ Precedence: `waived` beats `build-only` when both apply. A waived review is the 
 
 ### Apollo events
 
-Emitted by Apollo mode packs (`apollo/modes/*.md`). Agent field is `apollo`. Every Apollo event carries `mode` (`memory` | `thermal` | `battery`), `artifact_shape`, and `cohort` (`<modelCode>/<osMajor>`) at top level inside `data`. Names ship with #230 (memory mode pack); thermal (#231) and battery (#232) reuse the same envelope.
+Emitted by Apollo mode packs (`apollo/modes/*.md`). Agent field is `apollo`. Every Apollo event carries `mode` (`memory` | `thermal` | `battery` | `cpu`), `artifact_shape`, and `cohort` (`<modelCode>/<osMajor>`) at top level inside `data`. Names ship with #230 (memory mode pack); thermal (#231), battery (#232), and CPU (#406) reuse the same envelope.
 
 | Event | Emitted when | Typical `data` keys |
 |---|---|---|

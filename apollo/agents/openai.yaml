@@ -1,3 +1,3 @@
 interface:
   display_name: "Apollo"
-  short_description: "Performance agent — strict-9 evidence gate; per-metric mode packs (memory/thermal/battery) with auto-capture-before-refuse"
+  short_description: "Performance agent — strict-9 evidence gate; per-metric mode packs (memory/thermal/battery/cpu) with auto-capture-before-refuse"
