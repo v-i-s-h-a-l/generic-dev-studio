@@ -120,7 +120,7 @@ Every executable brief must include: concise objective, explicit non-goals / out
 
 ## Step 6 — Write the brief (type-aware)
 
-Render the type-specific narrative from the template corresponding to the task type (see §6A-D below) into a tempfile, then call `write_brief_artifact` — it writes the YAML canonical form (schema `_shared/schemas/brief.md`, `brief@3.8.0`), emits `brief_state_changed null → draft`, and regenerates `plans/index.yaml`.
+Render the type-specific narrative from the template corresponding to the task type (see §6A-D below) into a tempfile, then call `write_brief_artifact` with `schema_version=3.8.0` — it writes the YAML canonical form (schema `_shared/schemas/brief.md`, `brief@3.8.0`), emits `brief_state_changed null → draft`, and regenerates `plans/index.yaml`.
 
 `brief@3.8.0` turns the quality bar into a pre-ready lint gate via `scripts/validate-brief.sh`. See `_shared/schemas/brief.md` §Executable Brief Quality Contract for the exact checked fields.
 
@@ -176,6 +176,7 @@ BRIEF_UUID=$(mint_uuidv7)
 # pass `state=ready` to skip draft entirely when the brief is final at mint.
 write_brief_artifact "$BRIEF_UUID" "<parent-task-uuid>" "<type>" "<size>" \
   awaiting_user=false \
+  schema_version=3.8.0 \
   legacy_task_id=<T-number> \
   slug=<short-kebab-slug> \
   summary="<one-sentence change>. <one-sentence why>. <one-sentence key constraint>." \
