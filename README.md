@@ -135,6 +135,7 @@ scripts/waive-start.sh argus "<reason>" "<sunset_trigger>"  # open a structured 
 scripts/waive-lift.sh argus                                 # lift the pause; reports merges-skipped count
 scripts/backfill-orphan-debriefs.sh [--apply] [--quiet]     # recover tasks that finished but slipped the master plan
 scripts/forge-latency-report.sh --days 14                   # stage-level Forge task latency from event logs
+scripts/field-workflow-report.sh --days 14                  # Field loop timing, tokens, gate pass rates, review coverage, improvement candidates
 scripts/pre-commit-review.sh                                # manual no-secret reviewer gate for risky staged diffs
 scripts/pr-headless-review.sh <pr>                          # run no-secret reviewer gate, then merge if non-blocked
 scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
@@ -203,6 +204,7 @@ scripts/                # multi-worker fleet (BETA)
   achilles-queue.sh     # work-stealing dispatch queue — enqueue/drain/list/depth/clear
   analyze-collect.sh    # mechanical stats for usage-analysis passes (see ANALYSIS.md)
   forge-latency-report.sh  # stage-level task latency + review-gate comparison from event logs
+  field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
   studio-chain-runner.sh   # execute studio issue chains from a YAML manifest with fresh host sessions
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
