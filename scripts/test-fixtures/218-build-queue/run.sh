@@ -79,3 +79,17 @@ if bq_wait "$Q" "$three" 2 0 "T012" "fixture-laptop" 2>/dev/null; then
   fail "third entry should wait behind two occupied queue slots"
 fi
 echo "PASS: parallel slot window enforced"
+
+echo
+echo "=== Test 5: queue grant still waits for a physical xcodebuild slot ==="
+LOCK_BASE="$HOME/.dev-studio/.runtime/xcodebuild-lock/fixture-laptop"
+mkdir -p "$LOCK_BASE/slot-1" "$LOCK_BASE/slot-2"
+if bq_acquire_slot_lock "$LOCK_BASE" 2 0 >/dev/null 2>/dev/null; then
+  fail "slot lock should not be granted while all physical slots are occupied"
+fi
+rm -rf "$LOCK_BASE/slot-2"
+lock=$(bq_acquire_slot_lock "$LOCK_BASE" 2 0) || fail "free physical slot should be acquired"
+[ "$(basename "$lock")" = "slot-2" ] || fail "expected slot-2, got $lock"
+bq_release_slot_lock "$lock"
+rm -rf "$LOCK_BASE/slot-1"
+echo "PASS: physical slot lock enforced"

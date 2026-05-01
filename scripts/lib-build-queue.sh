@@ -24,6 +24,10 @@
 #                               → writes entry, prints path
 #   bq_wait <dir> <entry> <slots> <timeout_s> <task> <node>
 #                               → waits in priority order; returns 0 or 3
+#   bq_acquire_slot_lock <lock_base> <slots> <timeout_s>
+#                               → acquires slot-<n> lock; prints path
+#   bq_release_slot_lock <lock_path>
+#                               → releases acquired slot lock
 #   bq_release <entry>          → removes entry (idempotent)
 
 # bq_rank — convert priority string to sort rank digit
@@ -190,6 +194,51 @@ _bq_emit_promoted() {
   data=$(printf '{"node":"%s","promoted_task":"%s","promoted_priority":"%s","skipped_count":%s,"skipped_tasks":[%s],"waited_s":%s}' \
     "$node" "$task" "$our_pri" "$skipped" "$skipped_tasks" "$waited")
   emit_event_keyed achilles task build_queue_promoted "$task" "$data" >/dev/null 2>&1 || true
+}
+
+bq_acquire_slot_lock() {
+  local lock_base="${1:?bq_acquire_slot_lock: lock_base required}"
+  local slots="${2:-1}" timeout_s="${3:-1800}"
+  local lock="" wait_s=0 backoff=10 candidate s
+  mkdir -p "$lock_base" 2>/dev/null || {
+    printf 'bq_acquire_slot_lock: mkdir %s failed\n' "$lock_base" >&2
+    return 2
+  }
+  case "$slots" in ''|*[!0-9]*) slots=1 ;; esac
+  [ "$slots" -lt 1 ] && slots=1
+
+  while [ -z "$lock" ]; do
+    for s in $(seq 1 "$slots"); do
+      candidate="$lock_base/slot-$s"
+      if mkdir "$candidate" 2>/dev/null; then
+        lock="$candidate"
+        printf '%s\n' "$$" > "$lock/pid" 2>/dev/null || true
+        break
+      fi
+      if [ -n "$(find "$candidate" -maxdepth 0 -mmin +45 2>/dev/null)" ]; then
+        printf 'warn: stale xcodebuild lock (>45m, slot %s), reclaiming\n' "$s" >&2
+        rm -rf "$candidate"
+        if mkdir "$candidate" 2>/dev/null; then
+          lock="$candidate"
+          printf '%s\n' "$$" > "$lock/pid" 2>/dev/null || true
+          break
+        fi
+      fi
+    done
+    [ -n "$lock" ] && break
+    if [ "$wait_s" -ge "$timeout_s" ]; then
+      printf 'bq_acquire_slot_lock: wait exceeded %ss (slots=%s)\n' "$timeout_s" "$slots" >&2
+      return 3
+    fi
+    sleep "$backoff"
+    wait_s=$((wait_s + backoff))
+  done
+
+  printf '%s\n' "$lock"
+}
+
+bq_release_slot_lock() {
+  rm -rf "${1:-}" 2>/dev/null || true
 }
 
 # bq_release <entry_path> — remove queue entry (idempotent, safe to call in trap).

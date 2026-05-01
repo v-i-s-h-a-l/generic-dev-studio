@@ -487,7 +487,7 @@ EOF
   local archive_started_at archive_duration_s=0
   archive_started_at=$(date +%s)
 
-  local _bq_dir _bq_entry="" _bq_slots=1
+  local _bq_dir _bq_entry="" _bq_lock="" _bq_slots=1
   _bq_dir="$(resolve_runtime_global)/build-queue/$NODE"
   if [ "$DRY_RUN_FLAG" != "1" ] && [ "${STUDIO_TF_PUSH_SKIP_NODE_PICK:-0}" != "1" ]; then
     _bq_slots=$(bq_node_slots "$NODE")
@@ -504,9 +504,11 @@ EOF
     _bq_queue_data=$(printf '{"mode":"archive","node":"%s","position":%s,"depth":%s,"slots":%s,"priority":"release","secret_scope":"asc,slack"}' \
       "$NODE" "$_bq_position" "$_bq_depth" "$_bq_slots")
     emit_event_keyed studio release build_queue_position "$RELEASE_TAG" "$_bq_queue_data" >/dev/null 2>&1 || true
-    trap 'bq_release "${_bq_entry:-}"' EXIT INT TERM
+    trap 'bq_release_slot_lock "${_bq_lock:-}"; bq_release "${_bq_entry:-}"' EXIT INT TERM
     bq_wait "$_bq_dir" "$_bq_entry" "$_bq_slots" 1800 "release-${NEW_BUILD_NUMBER}" "$NODE" \
       || halt_failed prereq "build-queue wait timed out"
+    _bq_lock=$(bq_acquire_slot_lock "$(resolve_runtime_global)/xcodebuild-lock/$NODE" "$_bq_slots" 1800) \
+      || halt_failed prereq "xcodebuild slot lock wait timed out"
   fi
 
   if [ "$DRY_RUN_FLAG" = "1" ]; then
@@ -536,8 +538,11 @@ EOF
     [ -d "$ARCHIVE_PATH" ] || halt_failed archive "archive command succeeded but xcarchive missing at $ARCHIVE_PATH (log: $archive_log; expected artifact path may be wrong)"
     archive_duration_s=$(( $(date +%s) - archive_started_at ))
   fi
-  # Release queue slot as soon as archive completes — don't hold it through upload.
+  # Release the physical build slot as soon as archive completes; upload does not use xcodebuild.
+  bq_release_slot_lock "${_bq_lock:-}"
+  _bq_lock=""
   bq_release "${_bq_entry:-}"
+  _bq_entry=""
 
   emit_release archive_completed "$(_json_obj \
     "build=$NEW_BUILD_NUMBER" \
