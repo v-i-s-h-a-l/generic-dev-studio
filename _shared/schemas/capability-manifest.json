@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-05-01T01:25:22Z",
+  "generated_at": "2026-05-01T01:39:01Z",
   "agents": [
     {
       "name": "studio",
@@ -357,16 +357,16 @@
       "name": "argus",
       "router": "argus/SKILL.md",
       "description": "Reviewer agent for the Turnip iOS codebase. Two-stage review (spec-compliance then code-quality) between Achilles self-review and merge. See routing.yaml for the slash-command surface.",
-      "reads": ["events/<date>.jsonl                            # prior review events for this task", "plans/briefs/<brief-id>.yaml                   # context only; spec matching is Stage 1's job", "plans/briefs/<brief-id>.yaml                   # what the task was supposed to do", "plans/tasks/<task-id>.yaml", "plans/tasks/<task-id>.yaml                     # size + type context"],
-      "writes": ["events/<date>.jsonl                            # review_requested (stage: quality), review_{approved,flagged,blocked} (stage: quality)", "events/<date>.jsonl                            # review_requested (stage: spec), review_{approved,flagged,blocked} (stage: spec)", "plans/reviews/<review-id>.yaml                 # review artifact (schema: review@1.1.0)", "plans/tasks/<task-id>.yaml                     # back-ref: links.reviews append"],
+      "reads": ["argus/rules/*.md                               # selective rule-pack applicability metadata", "events/<date>.jsonl                            # prior review events for this task", "plans/briefs/<brief-id>.yaml                   # context only; spec matching is Stage 1's job", "plans/briefs/<brief-id>.yaml                   # what the task was supposed to do", "plans/tasks/<task-id>.yaml", "plans/tasks/<task-id>.yaml                     # size + type context"],
+      "writes": ["events/<date>.jsonl                            # review_requested (stage: spec), review_{approved,flagged,blocked} (stage: spec)", "events/<date>.jsonl                            # review_requested, argus_rules_skipped, review verdict events", "plans/reviews/<review-id>.yaml                 # review artifact (schema: review@1.1.0)", "plans/tasks/<task-id>.yaml                     # back-ref: links.reviews append"],
       "modes": [
         {
           "name": "code-quality",
           "path": "argus/modes/code-quality.md",
           "type": "mode-pack",
           "description": "Stage 2 of two-stage Argus review. Cross-file regressions, edge cases, diff anomalies, secrets, base-branch staleness, M/L test run, TDD red→green. Runs iff Stage 1 returned approved or flagged. Previously the sole Argus pass; split 2026-04-23.",
-          "reads": ["plans/tasks/<task-id>.yaml", "plans/briefs/<brief-id>.yaml                   # context only; spec matching is Stage 1's job", "events/<date>.jsonl                            # prior review events for this task"],
-          "writes": ["plans/reviews/<review-id>.yaml                 # review artifact (schema: review@1.1.0)", "plans/tasks/<task-id>.yaml                     # back-ref: links.reviews append", "events/<date>.jsonl                            # review_requested (stage: quality), review_{approved,flagged,blocked} (stage: quality)"],
+          "reads": ["plans/tasks/<task-id>.yaml", "plans/briefs/<brief-id>.yaml                   # context only; spec matching is Stage 1's job", "events/<date>.jsonl                            # prior review events for this task", "argus/rules/*.md                               # selective rule-pack applicability metadata"],
+          "writes": ["plans/reviews/<review-id>.yaml                 # review artifact (schema: review@1.1.0)", "plans/tasks/<task-id>.yaml                     # back-ref: links.reviews append", "events/<date>.jsonl                            # review_requested, argus_rules_skipped, review verdict events"],
           "snapshots": [],
           "dry_run": false,
           "budget_tokens": 2000
