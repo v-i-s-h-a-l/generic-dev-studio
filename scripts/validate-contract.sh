@@ -7,7 +7,7 @@
 # Usage:
 #   scripts/validate-contract.sh <schema-name> <file>
 #
-# <schema-name>: worker-report | debrief | review-verdict | handoff
+# <schema-name>: worker-report | debrief | review-verdict | handoff | apollo-scenario
 # <file>:        path to artifact (JSON or YAML — check-jsonschema handles both)
 #
 # Exit 0  — payload is valid against the named schema.
@@ -36,8 +36,9 @@ case "$SCHEMA_NAME" in
   debrief)         SCHEMA_FILE="$REPO_ROOT/_shared/contracts/debrief.schema.json" ;;
   review-verdict)  SCHEMA_FILE="$REPO_ROOT/_shared/contracts/review-verdict.schema.json" ;;
   handoff)         SCHEMA_FILE="$REPO_ROOT/_shared/contracts/handoff.schema.json" ;;
+  apollo-scenario) SCHEMA_FILE="$REPO_ROOT/_shared/contracts/apollo-scenario.schema.json" ;;
   *)
-    printf 'validate-contract: unknown schema %s (want worker-report|debrief|review-verdict|handoff)\n' \
+    printf 'validate-contract: unknown schema %s (want worker-report|debrief|review-verdict|handoff|apollo-scenario)\n' \
       "$SCHEMA_NAME" >&2
     exit 2
     ;;

@@ -105,9 +105,10 @@ Per-project Apollo state lives under `~/.dev-studio/<project>/apollo/` (resolved
 | `apollo/baselines/<metric>.json` | XCTest performance baselines per metric | mode pack |
 | `apollo/deferred/<id>.yaml` | Deferred-capture rows; drained by scheduled sweep | mode pack |
 | `apollo/recommendations/<id>.md` | Recommendation artifact (cited evidence + proposed fix) | mode pack |
+| `apollo/scenarios/<scenario-id>.yaml` | Reusable user-flow contract for repeatable captures | user, Chanakya, or mode pack |
 
 Machine-global resources (simulator semaphores, GPU queues) stay at `~/.dev-studio/.runtime/`. R4 split applies — workflow state per-project, physical-resource locks machine-global.
 
 ## Cross-refs
 
-Per-metric primitives and capture contracts: `apollo/_shared/primitives/` (evidence-gate, execution-surface, metrickit, signposts, xctest-baselines, instruments-index, organizer-asc, regression-detection). Imgly delegation: `apollo/_shared/integrations/imgly-and-metal.md`. Boot event: `_shared/contracts/agent-boot.md`. Completion claims: REVIEW.md R10.
+Per-metric primitives and capture contracts: `apollo/_shared/primitives/` (evidence-gate, execution-surface, metrickit, signposts, scenarios, xctest-baselines, instruments-index, organizer-asc, regression-detection). Imgly delegation: `apollo/_shared/integrations/imgly-and-metal.md`. Boot event: `_shared/contracts/agent-boot.md`. Completion claims: REVIEW.md R10.
