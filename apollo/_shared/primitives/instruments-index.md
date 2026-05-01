@@ -1,6 +1,6 @@
 ---
 name: Instruments routing index
-description: Diagnostic-question → Instruments template routing table covering P0 modes (memory, thermal, battery) and Phase-2 modes (launch, scroll, network, hangs), plus xctrace capture recipes.
+description: Diagnostic-question → Instruments template routing table covering P0 modes (memory, thermal, battery, cpu) and Phase-2 modes (launch, scroll, network, hangs), plus xctrace capture recipes.
 type: reference
 schema_version: 1
 ---

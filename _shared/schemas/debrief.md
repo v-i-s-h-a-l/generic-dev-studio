@@ -84,7 +84,7 @@ report_state: done                                # done | done_with_concerns | 
 metrics: null                                     # 2.2.0; Apollo perf-mode only. Null for Achilles task / direct-debrief.
 # Example of a populated Apollo metrics block (memory regression):
 # metrics:
-#   perf_mode: memory                             # memory | thermal | battery — mirrors brief.perf_mode
+#   perf_mode: memory                             # memory | thermal | battery | cpu — mirrors brief.perf_mode
 #   evidence_tier: 9                              # 9 (hard) | 1 (advisory; canonical anti-pattern only)
 #   verdict: approved                             # approved | refused | advisory
 #   cohort:

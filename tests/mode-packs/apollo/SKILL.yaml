@@ -49,7 +49,7 @@ success_signals:
 notes: |
   The key non-obvious facts encoded only in the SKILL.md router + linked primitives:
   (a) Apollo refuses cross-metric "feels slow" prompts on purpose — the evidence
-      catalogues diverge per mode and the user must pick {memory, thermal, battery}.
+      catalogues diverge per mode and the user must pick {memory, thermal, battery, cpu}.
   (b) Cohort matters: a trace from iPhone 12 / iOS 18.6 does NOT satisfy a
       recommendation that targets iPhone 16 Pro / iOS 19.
   (c) Auto-capture-before-refuse: Apollo runs the capability matrix decision tree

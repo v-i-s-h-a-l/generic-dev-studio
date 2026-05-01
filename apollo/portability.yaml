@@ -4,7 +4,7 @@ hosts:
   - codex
 scope: global
 notes: |
-  Apollo Stage 5 (#235) complete. Memory, thermal, battery, and measure
+  Apollo Stage 5 (#235) complete. Memory, thermal, battery, CPU, and measure
   mode packs shipped. Codex host runs in degraded mode (analysis-only —
   no capture tools available); see apollo/SKILL.md §Degraded mode and
   apollo/_shared/primitives/execution-surface.md §Codex host (#294).

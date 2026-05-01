@@ -46,7 +46,7 @@ final class CheckoutPerfTests: XCTestCase {
 | Metric | Captures | Apollo mode |
 |---|---|---|
 | `XCTClockMetric` | wall-clock duration | all P0 |
-| `XCTCPUMetric` | CPU time, instructions retired, cycles | thermal, battery |
+| `XCTCPUMetric` | CPU time, instructions retired, cycles | thermal, battery, cpu |
 | `XCTMemoryMetric` | physical memory delta, peak | memory |
 | `XCTStorageMetric` | logical writes, persistent allocations | battery |
 | `XCTApplicationLaunchMetric` | launch interval (warm or cold via option) | launch (Phase 2) |

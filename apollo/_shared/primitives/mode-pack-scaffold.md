@@ -7,7 +7,7 @@ schema_version: 1
 
 # Apollo P0 mode-pack scaffold
 
-Every Apollo P0 mode pack (memory, thermal, battery, future P0 / P1 modes) follows the same five-phase pipeline under the strict-9 evidence gate (`apollo/_shared/primitives/evidence-gate.md`):
+Every Apollo P0 mode pack (memory, thermal, battery, cpu, future P0 / P1 modes) follows the same five-phase pipeline under the strict-9 evidence gate (`apollo/_shared/primitives/evidence-gate.md`):
 
 ```
 Phase 1 — Diagnose       classify the signal
@@ -123,6 +123,6 @@ Graduating the shared scaffolding to this primitive resolves three problems:
 - `apollo/_shared/primitives/regression-detection.md` — Phase 5 decision rule + cohort normalization
 - `apollo/_shared/primitives/execution-surface.md` — auto-capture-before-refuse decision tree feeding step 3
 - `apollo/_shared/integrations/imgly-and-metal.md` — Metal/Imgly delegation contract referenced in step 5
-- `apollo/modes/memory.md` / `apollo/modes/thermal.md` / `apollo/modes/battery.md` — first three P0 mode packs implementing this scaffold
+- `apollo/modes/memory.md` / `apollo/modes/thermal.md` / `apollo/modes/battery.md` / `apollo/modes/cpu.md` — P0 mode packs implementing this scaffold
 - `_shared/contracts/events.md` — `apollo_capture_*` and `apollo_recommendation` event schemas
 - `REVIEW.md` R10 / R17 — sister rules referenced in the verification and handoff contracts

@@ -53,7 +53,7 @@ A delegated recommendation is a structured handoff, not a free-text ask. Apollo 
 ```yaml
 apollo_to_expert:
   recommendation_id: <ulid>             # links to apollo/recommendations/<id>.md
-  metric: <memory | thermal | battery>  # which mode authored the handoff
+  metric: <memory | thermal | battery | cpu>  # which mode authored the handoff
   scenario: <scenario-name>             # the scripted workload bracketed by signposts
   signpost_window:
     name: <OSSignposter interval name>

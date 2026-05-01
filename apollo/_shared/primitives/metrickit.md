@@ -24,7 +24,7 @@ All properties optional (nil if not collected for the window):
 
 | Category | Type | Apollo mode |
 |---|---|---|
-| `cpuMetrics` | `MXCPUMetric` (cumulativeCPUTime, cumulativeCPUInstructions iOS 14+) | thermal, battery |
+| `cpuMetrics` | `MXCPUMetric` (cumulativeCPUTime, cumulativeCPUInstructions iOS 14+) | thermal, battery, cpu |
 | `memoryMetrics` | `MXMemoryMetric` (peakMemoryUsage, averageSuspendedMemory) | memory |
 | `gpuMetrics` | `MXGPUMetric` (cumulativeGPUTime) | thermal, battery |
 | `displayMetrics` | `MXDisplayMetric` (averagePixelLuminance) | battery |
@@ -47,7 +47,7 @@ All properties optional (nil if not collected for the window):
 |---|---|---|
 | `crashDiagnostics` | `[MXCrashDiagnostic]` (callStackTree, exceptionType, terminationReason — incl. watchdog `0x8badf00d`, OOM `0xc00010ff`, runtime `0xdead10cc`) | memory, thermal |
 | `hangDiagnostics` | `[MXHangDiagnostic]` (callStackTree, hangDuration) | responsiveness (Phase 2); thermal correlation |
-| `cpuExceptionDiagnostics` | `[MXCPUExceptionDiagnostic]` (callStackTree, totalCPUTime, totalSampledTime) | thermal, battery |
+| `cpuExceptionDiagnostics` | `[MXCPUExceptionDiagnostic]` (callStackTree, totalCPUTime, totalSampledTime) | thermal, battery, cpu |
 | `diskWriteExceptionDiagnostics` | `[MXDiskWriteExceptionDiagnostic]` (callStackTree, totalWritesCaused) | battery |
 | `appLaunchDiagnostics` | `[MXAppLaunchDiagnostic]` (callStackTree, launchDuration, iOS 16+) | launch (Phase 2) |
 
