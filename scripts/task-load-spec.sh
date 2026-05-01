@@ -16,6 +16,8 @@
 #                               omits an explicit Type: line)
 #   ACCEPTANCE_JSON='<json-array>'
 #   BASE_BRANCH=<branch>        (optional explicit dispatch base from brief)
+#   BRIEF_SUMMARY=<string>      (only when BRIEF_SLICE=summary)
+#   BRIEF_SUMMARY_TOKENS=<n>    (only when BRIEF_SLICE=summary)
 #
 # Usage:
 #   eval "$(scripts/task-load-spec.sh <task-id-or-empty>)"
@@ -28,6 +30,7 @@
 #      `/chanakya reopen <task-id>` for a formal state-machine reopen.
 #   6  brief exists but is not ready for dispatch. Override with
 #      ACHILLES_ALLOW_NON_READY_BRIEF=1 only for intentional recovery.
+#   7  BRIEF_SLICE=summary requested but no summary slice exists.
 
 set -u
 umask 022
@@ -53,6 +56,8 @@ if [ -z "$TASK_ID" ]; then
   emit_assign SIZE ""
   emit_assign TYPE ""
   emit_assign BASE_BRANCH ""
+  emit_assign BRIEF_SUMMARY ""
+  emit_assign BRIEF_SUMMARY_TOKENS ""
   printf "ACCEPTANCE_JSON='[]'\n"
   exit 0
 fi
@@ -65,6 +70,8 @@ SIZE=""
 TYPE=""
 ACCEPTANCE_JSON='[]'
 BASE_BRANCH=""
+BRIEF_SUMMARY=""
+BRIEF_SUMMARY_TOKENS=""
 NON_READY_STATE=""
 
 # _try_brief_candidate — test one brief YAML for dispatchable state, populate
@@ -221,12 +228,52 @@ fi
 [ -z "$SIZE" ] && SIZE=m
 [ -z "$TYPE" ] && TYPE=feature
 
+estimate_summary_tokens() {
+  local summary="$1" words
+  words=$(printf '%s' "$summary" | wc -w | tr -d ' ')
+  printf '%d' "$(( (words * 13) / 10 ))"
+}
+
+if [ "${BRIEF_SLICE:-}" = "summary" ]; then
+  if [ "${BRIEF_PATH##*.}" != "yaml" ]; then
+    cat >&2 <<EOF
+error: BRIEF_SLICE=summary requested for task '$TASK_ID', but resolved brief is a legacy artifact with no summary field.
+  Re-author or backfill the YAML brief summary before using the compact slice.
+EOF
+    exit 7
+  fi
+  if ! command -v yq >/dev/null 2>&1; then
+    printf 'error: BRIEF_SLICE=summary requires yq to read %s\n' "$BRIEF_PATH" >&2
+    exit 7
+  fi
+  BRIEF_SUMMARY=$(yq -r '.summary // ""' "$BRIEF_PATH" 2>/dev/null || echo "")
+  if [ -z "$BRIEF_SUMMARY" ]; then
+    cat >&2 <<EOF
+error: BRIEF_SLICE=summary requested for task '$TASK_ID', but brief '$BRIEF_UUID' has no summary.
+  Load the full brief in an interactive context, or backfill summary before using cheap-read mode.
+EOF
+    exit 7
+  fi
+  BRIEF_SUMMARY_TOKENS=$(estimate_summary_tokens "$BRIEF_SUMMARY")
+  summary_event_data=$(jq -nc \
+    --arg brief_uuid "$BRIEF_UUID" \
+    --arg reason "caller_request" \
+    --argjson summary_tokens_est "$BRIEF_SUMMARY_TOKENS" \
+    '{brief_uuid:$brief_uuid, summary_tokens_est:$summary_tokens_est, reason:$reason}' 2>/dev/null \
+    || printf '{"brief_uuid":"%s","summary_tokens_est":%s,"reason":"caller_request"}' "$BRIEF_UUID" "$BRIEF_SUMMARY_TOKENS")
+  emit_event_keyed achilles task brief_summary_used "$TASK_ID" "$summary_event_data" \
+    --idem-key "$(idem_key achilles brief_summary_used "$BRIEF_UUID" "task=$TASK_ID;tokens=$BRIEF_SUMMARY_TOKENS")" \
+    >/dev/null 2>&1 || true
+fi
+
 emit_assign TASK_MODE brief
 emit_assign BRIEF_PATH "$BRIEF_PATH"
 emit_assign BRIEF_UUID "$BRIEF_UUID"
 emit_assign SIZE "$SIZE"
 emit_assign TYPE "$TYPE"
 emit_assign BASE_BRANCH "$BASE_BRANCH"
+emit_assign BRIEF_SUMMARY "$BRIEF_SUMMARY"
+emit_assign BRIEF_SUMMARY_TOKENS "$BRIEF_SUMMARY_TOKENS"
 # Single-quote the JSON to survive eval without re-escaping internal quotes.
 # ACCEPTANCE_JSON is producer-controlled (yq output); no single quotes possible.
 printf "ACCEPTANCE_JSON='%s'\n" "$ACCEPTANCE_JSON"
