@@ -102,6 +102,8 @@ Run `xcodebuild archive` against the project, scheme, and configuration declared
 
 When running in background mode, write `prepared-context.json` after Step 2 and before this archive starts. The file carries `release_tag`, `build`, `version`, `scheme`, `branch`, `archive_path`, and `prev_build`, allowing the wrapper to draft the Slack message while archive/upload continue. The wrapper must still wait for final `status.json` to reach `state=="succeeded"` before sending Slack.
 
+Before invoking `xcodebuild archive`, enqueue the archive with `priority: "release"` in `~/.dev-studio/.runtime/build-queue/<node-id>/`. The queue grants up to the node's `parallel_build_slots` and moves release entries ahead of queued task/background work without stopping any in-flight holder.
+
 Authentication is JWT-based via `-authenticationKeyPath` / `-authenticationKeyID` / `-authenticationKeyIssuerID`. `CODE_SIGN_STYLE=Automatic`. Pipe through `xcpretty` for human-readable progress; raw output is preserved on a failure path.
 
 Verify the `.xcarchive` directory exists at the expected path. If absent, halt — do not export, do not upload, do not draft Slack.

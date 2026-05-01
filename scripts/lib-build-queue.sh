@@ -19,7 +19,9 @@
 #
 # Provided functions:
 #   bq_rank <priority>          → prints rank digit (0/1/2)
-#   bq_enqueue <dir> <task> <priority>  → writes entry, prints path
+#   bq_node_slots <node>        → prints configured parallel slot count
+#   bq_enqueue <dir> <id> <priority> [role] [secret_scope]
+#                               → writes entry, prints path
 #   bq_wait <dir> <entry> <slots> <timeout_s> <task> <node>
 #                               → waits in priority order; returns 0 or 3
 #   bq_release <entry>          → removes entry (idempotent)
@@ -34,19 +36,61 @@ bq_rank() {
   esac
 }
 
-# bq_enqueue <queue_dir> <task_id> <priority>
+# bq_node_slots <node_id>
+# Reads the per-node parallel slot count from nodes.json. Synthetic `local`
+# remains single-slot because it has no registry entry; malformed values
+# collapse to 1 so a bad registry cannot over-admit builds.
+bq_node_slots() {
+  local node="${1:-local}" n registry
+  if [ "$node" = "local" ]; then
+    printf '1\n'
+    return 0
+  fi
+  if command -v resolve_runtime_global >/dev/null 2>&1; then
+    registry="$(resolve_runtime_global)/nodes.json"
+  else
+    registry="$HOME/.dev-studio/.runtime/nodes.json"
+  fi
+  n=1
+  if [ -r "$registry" ] && command -v jq >/dev/null 2>&1; then
+    n=$(jq -r --arg id "$node" '.nodes[]? | select(.id == $id) | .parallel_build_slots // 1' "$registry" 2>/dev/null)
+  fi
+  case "$n" in ''|*[!0-9]*) n=1 ;; esac
+  [ "$n" -lt 1 ] && n=1
+  printf '%s\n' "$n"
+}
+
+_bq_json_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+_bq_entry_field() {
+  local field="$1" entry="$2" value=""
+  if [ -r "$entry" ] && command -v jq >/dev/null 2>&1; then
+    value=$(jq -r --arg f "$field" '.[$f] // empty' "$entry" 2>/dev/null || printf '')
+  fi
+  if [ -z "$value" ] && [ -r "$entry" ]; then
+    value=$(grep -o "\"$field\":\"[^\"]*\"" "$entry" 2>/dev/null | sed "s/\"$field\":\"//;s/\"//" || printf '')
+  fi
+  printf '%s\n' "$value"
+}
+
+# bq_enqueue <queue_dir> <id> <priority> [role] [secret_scope]
 # Writes queue entry; prints entry path on stdout.
 bq_enqueue() {
   local qdir="${1:?bq_enqueue: queue_dir required}"
   local task="${2:?bq_enqueue: task_id required}"
   local pri="${3:-task}"
+  local role="${4:-xcodebuild}"
+  local secret_scope="${5:-none}"
   local rank ts entry
   rank=$(bq_rank "$pri")
   ts=$(date -u +%s)
   mkdir -p "$qdir" 2>/dev/null || { printf 'bq_enqueue: mkdir %s failed\n' "$qdir" >&2; return 2; }
   entry="$qdir/$(printf '%s-%010d-%d-%s.json' "$rank" "$ts" "$$" "$task")"
-  printf '{"id":"%s","enqueued_at":%s,"pid":%s,"role":"xcodebuild","priority":"%s"}\n' \
-    "$task" "$ts" "$$" "$pri" > "$entry" \
+  printf '{"id":"%s","priority":"%s","enqueued_at":%s,"pid":%s,"role":"%s","secret_scope":"%s"}\n' \
+    "$(_bq_json_escape "$task")" "$(_bq_json_escape "$pri")" "$ts" "$$" \
+    "$(_bq_json_escape "$role")" "$(_bq_json_escape "$secret_scope")" > "$entry" \
     || { printf 'bq_enqueue: write %s failed\n' "$entry" >&2; return 2; }
   printf '%s\n' "$entry"
 }
@@ -90,7 +134,8 @@ bq_wait() {
 
   # Emit build_queue_granted with wait time + priority metadata.
   local pri
-  pri=$(grep -o '"priority":"[^"]*"' "$entry" 2>/dev/null | sed 's/"priority":"//;s/"//' || echo "task")
+  pri=$(_bq_entry_field priority "$entry")
+  [ -z "$pri" ] && pri=task
   if command -v emit_event_keyed >/dev/null 2>&1; then
     local granted_data
     granted_data=$(printf '{"node":"%s","task":"%s","priority":"%s","waited_s":%s}' \
@@ -129,11 +174,12 @@ _bq_emit_promoted() {
     if [ "$f_rank" -gt "$our_rank" ] 2>/dev/null && [ "$f_ts" -lt "$our_ts" ] 2>/dev/null; then
       skipped=$((skipped + 1))
       local f_task
-      f_task=$(grep -o '"id":"[^"]*"' "$f" 2>/dev/null | sed 's/"id":"//;s/"//' || echo "unknown")
+      f_task=$(_bq_entry_field id "$f")
+      [ -z "$f_task" ] && f_task=unknown
       if [ -z "$skipped_tasks" ]; then
-        skipped_tasks="\"$f_task\""
+        skipped_tasks="\"$(_bq_json_escape "$f_task")\""
       else
-        skipped_tasks="$skipped_tasks,\"$f_task\""
+        skipped_tasks="$skipped_tasks,\"$(_bq_json_escape "$f_task")\""
       fi
     fi
   done < <(find "$qdir" -maxdepth 1 -type f -name '*.json' 2>/dev/null)

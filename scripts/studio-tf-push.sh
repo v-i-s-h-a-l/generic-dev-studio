@@ -487,14 +487,25 @@ EOF
   local archive_started_at archive_duration_s=0
   archive_started_at=$(date +%s)
 
-  local _bq_dir _bq_entry=""
+  local _bq_dir _bq_entry="" _bq_slots=1
   _bq_dir="$(resolve_runtime_global)/build-queue/$NODE"
   if [ "$DRY_RUN_FLAG" != "1" ] && [ "${STUDIO_TF_PUSH_SKIP_NODE_PICK:-0}" != "1" ]; then
+    _bq_slots=$(bq_node_slots "$NODE")
     _bq_entry=$(STUDIO_BUILD_PRIORITY=release bq_enqueue "$_bq_dir" \
-      "release-${NEW_BUILD_NUMBER}" release) \
+      "release-${NEW_BUILD_NUMBER}" release xcodebuild asc,slack) \
       || halt_failed prereq "build-queue enqueue failed"
+    local _bq_depth _bq_position _bq_queue_data
+    _bq_depth=$(find "$_bq_dir" -maxdepth 1 -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+    case "$_bq_depth" in ''|*[!0-9]*) _bq_depth=1 ;; esac
+    [ "$_bq_depth" -lt 1 ] && _bq_depth=1
+    _bq_position=$(find "$_bq_dir" -maxdepth 1 -type f -name '*.json' 2>/dev/null \
+      | sort | awk -v me="$_bq_entry" '{ if ($0 == me) { print NR; exit } }')
+    case "$_bq_position" in ''|*[!0-9]*) _bq_position="$_bq_depth" ;; esac
+    _bq_queue_data=$(printf '{"mode":"archive","node":"%s","position":%s,"depth":%s,"slots":%s,"priority":"release","secret_scope":"asc,slack"}' \
+      "$NODE" "$_bq_position" "$_bq_depth" "$_bq_slots")
+    emit_event_keyed studio release build_queue_position "$RELEASE_TAG" "$_bq_queue_data" >/dev/null 2>&1 || true
     trap 'bq_release "${_bq_entry:-}"' EXIT INT TERM
-    bq_wait "$_bq_dir" "$_bq_entry" 1 1800 "release-${NEW_BUILD_NUMBER}" "$NODE" \
+    bq_wait "$_bq_dir" "$_bq_entry" "$_bq_slots" 1800 "release-${NEW_BUILD_NUMBER}" "$NODE" \
       || halt_failed prereq "build-queue wait timed out"
   fi
 

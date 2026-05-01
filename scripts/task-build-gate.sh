@@ -400,16 +400,7 @@ mkdir -p "$LOCK_BASE" 2>/dev/null || { printf 'error: mkdir %s failed\n' "$LOCK_
 # Per-node parallel build slots (#218 Stage C / #268). Default 1 keeps the
 # pre-#268 single-holder model. Synthetic `local` is always 1 — it's the
 # not-registered fallback, no nodes.json entry to read.
-PARALLEL_SLOTS=1
-if [ "$NODE_ID" != "local" ]; then
-  REGISTRY="$(resolve_runtime_global)/nodes.json"
-  if [ -r "$REGISTRY" ] && command -v jq >/dev/null 2>&1; then
-    n=$(jq -r --arg id "$NODE_ID" '.nodes[]? | select(.id == $id) | .parallel_build_slots // 1' "$REGISTRY" 2>/dev/null)
-    case "$n" in ''|*[!0-9]*) n=1 ;; esac
-    [ "$n" -lt 1 ] && n=1
-    PARALLEL_SLOTS=$n
-  fi
-fi
+PARALLEL_SLOTS=$(bq_node_slots "$NODE_ID")
 
 # ---------- queue substrate (#266 / #218 Stage A+B) ----------
 #
@@ -420,7 +411,7 @@ fi
 # Release entries sort ahead of task entries regardless of arrival time.
 # 45-min stale-entry GC is handled inside bq_wait.
 QUEUE_DIR="$(resolve_runtime_global)/build-queue/$NODE_ID"
-QUEUE_ENTRY=$(bq_enqueue "$QUEUE_DIR" "$TASK_ID" "$BUILD_PRIORITY") \
+QUEUE_ENTRY=$(bq_enqueue "$QUEUE_DIR" "$TASK_ID" "$BUILD_PRIORITY" xcodebuild none) \
   || { printf 'error: bq_enqueue failed\n' >&2; exit 2; }
 
 _release_queue_entry() { bq_release "$QUEUE_ENTRY"; }
