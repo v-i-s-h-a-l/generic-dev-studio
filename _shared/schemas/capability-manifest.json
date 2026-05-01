@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-05-01T01:50:45Z",
+  "generated_at": "2026-05-01T01:53:47Z",
   "agents": [
     {
       "name": "studio",
@@ -422,7 +422,7 @@
           "writes": ["plans/briefs/<brief-id>.yaml                   # canonical (schema: _shared/schemas/brief.md, brief@3.1.0)", "plans/tasks/<task-id>.yaml                     # back-ref update: links.brief + state bump", "plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes", "events/<date>.jsonl                            # via scripts/write-event.sh"],
           "snapshots": ["briefs.json", "debt.json"],
           "dry_run": false,
-          "budget_tokens": 5200
+          "budget_tokens": 5350
         },
         {
           "name": "compact",

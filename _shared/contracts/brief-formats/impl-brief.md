@@ -102,6 +102,12 @@ Before starting, load these skills for guidance:
 ### Architectural Constraints
 - <Inlined from project memory — e.g., "uses @Observable not ObservableObject", "image loading via Kingfisher">
 
+### Audit-Shaped Task Recipe
+<!-- Optional. Include when the task asks the worker to survey every module, file family, or logical unit for one property. -->
+- Fan out `Explore` subagents in one message, scoped one per module or logical unit.
+- Inline the acceptance criteria / PRD excerpt into each `Explore` prompt so subagents do not re-derive context.
+- Ask each subagent for the same structured report shape, then aggregate those returns into the final deliverable.
+
 ## Testability Requirements
 
 ### Architecture & SOLID

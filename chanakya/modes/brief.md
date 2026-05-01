@@ -5,7 +5,7 @@ type: mode-pack
 schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
 snapshots: [briefs.json, debt.json]
-budget_tokens: 5200
+budget_tokens: 5350
 reads:
   - plans/index.yaml                               # post-migration task index
   - plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)
@@ -117,6 +117,8 @@ Before writing an implementation brief, decide whether the task is executable or
 - **Waived L implementation:** allowed only with an explicit `## L-size reason`, `## Size waiver`, `## Split rationale`, or `## Why not split` section in the body. The reason must explain why one worker context is safer than splitting.
 
 Every executable brief must include: concise objective, explicit non-goals / out-of-scope, measurable acceptance criteria, verification/evidence guidance, structured model recommendations, and dependencies/handoff notes only when they affect execution. Long background belongs in linked design/context docs or in the ≤500-token `summary`, not in the worker body.
+
+For audit-shaped tasks ("survey every module for X"), reference the optional parallel `Explore` recipe in `_shared/contracts/brief-formats/impl-brief.md`; do not make it mandatory.
 
 ## Step 6 — Write the brief (type-aware)
 
