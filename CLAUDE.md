@@ -127,6 +127,7 @@ When the user proposes or asks for work:
 - Suggest improvements when a clearer scope, better acceptance criteria, safer rollout, or simpler implementation path is visible.
 - Redirect the request when it belongs in a different layer, agent, mode, issue, or workflow; explain the routing briefly.
 - Surface meaningful edge cases and adjacent use cases before work starts when they could change the implementation, tests, rollout, or user-facing behavior.
+- For workflow steps that save tokens, reduce context, add isolation, or add review passes, surface the economics before design is locked: expected token/context benefit, wall-clock cost, frequency, retry cost, and whether the step blocks the human. Token optimization is default only when the wall-clock delta is nominal; >20% latency in common loops is ask-tier, and 2x+ latency requires explicit user approval unless the check is safety-critical and moved to the least frequent safe boundary or made async.
 - For issues and briefs, include the refined shape: goal, impact, before/after behavior, acceptance criteria, edge cases, and non-goals when useful.
 - Apply the same habit to changes to these instructions: improve the prompt itself, not just transcribe it.
 
