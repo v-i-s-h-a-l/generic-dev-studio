@@ -276,6 +276,9 @@ cmd_push_background() {
       --argjson pid "$bg_child_pid" \
       '{release_tag:$release_tag,state:$state,started_at:$started_at,log_path:$log_path,context_path:$context_path,prepared_context_path:$prepared_context_path,pid:$pid,exit_code:null}' \
       >"$status_path"
+    if [ -n "${STUDIO_TF_PUSH_BACKGROUND_CHILD_DELAY_S:-}" ]; then
+      sleep "$STUDIO_TF_PUSH_BACKGROUND_CHILD_DELAY_S"
+    fi
     if STUDIO_RELEASE_TAG="$release_tag" \
         STUDIO_TF_PUSH_PREPARED_CONTEXT_PATH="$prepared_context_path" \
         "$SCRIPT_DIR/studio-tf-push.sh" "${child_args[@]}" >"$context_path.tmp" 2>"$log_path"; then
@@ -308,7 +311,7 @@ cmd_push_background() {
         >"$status_path"
       exit "$rc"
     fi
-  ) &
+  ) </dev/null >>"$log_path" 2>&1 &
   local pid=$!
 
   jq -nc \

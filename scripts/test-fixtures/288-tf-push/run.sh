@@ -63,8 +63,12 @@ echo "PASS: 4 events + context (release_tag=$RT)"
 
 echo
 echo "=== Test 2b: background push returns handle and early context ==="
+bg_start=$(date +%s)
 BG=$(STUDIO_RELEASE_TAG="release-bg-288" STUDIO_TF_PUSH_FIXTURE_NODE=fixture-laptop \
+  STUDIO_TF_PUSH_BACKGROUND_CHILD_DELAY_S=3 \
   "$REPO/scripts/studio-tf-push.sh" push --dry-run --background 2>&1)
+bg_elapsed=$(( $(date +%s) - bg_start ))
+[ "$bg_elapsed" -lt 2 ] || { echo "FAIL: background handle waited ${bg_elapsed}s for child stdout to close"; exit 1; }
 BG_RT=$(echo "$BG" | jq -r .release_tag)
 BG_PID=$(echo "$BG" | jq -r .pid)
 BG_STATUS=$(echo "$BG" | jq -r .status_path)
