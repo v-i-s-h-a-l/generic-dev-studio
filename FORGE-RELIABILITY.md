@@ -109,6 +109,7 @@ Important agent-capability improvements. Do not start these ahead of open safety
 | [#213](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/213) Achilles SourceKit-LSP symbol localization | Open | Achilles | Improves bug localization from file-level grep to symbol-level Swift resolution. |
 | [#257](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/257) Argus change-classifier for selective rule loading | Open | Argus | Reduces review latency and token use by loading only relevant review rules for a diff. |
 | [#256](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/256) Achilles brief-summary primitive | Open | Achilles / Chanakya | Adds compact brief slices for cheap reads and dispatch/status decisions. |
+| [#418](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/418) Host-agnostic Chanakya v2 implementation | Open | Chanakya | Makes orchestrator dispatch and status paths portable without Claude-Code-only load-bearing primitives. |
 | [#65](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/65) Task-level model recommendation system | Closed | Cross-agent | Moves model choice from static agent defaults to task-aware recommendations. |
 
 ## Role-Clarity Queue
