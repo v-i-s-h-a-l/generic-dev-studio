@@ -259,6 +259,24 @@ The lint (MP5) is the machine gate — it blocks at pre-commit on any mode pack 
 2. Add ERE to the `<!-- lint:patterns:start -->` block.
 3. Run `scripts/lint-mode-pack.sh` — fix all `E_MP5_RETIRED_PATTERN` hits.
 
+### R22 — Workflow economics before mandatory gates (tier: **ask** for >20% common-loop latency; **block** for 2x+ common-loop latency without explicit user approval)
+
+Token/context savings are default only when the wall-clock delta is nominal. Any change that introduces or makes mandatory a workflow step for token savings, context reduction, isolation, review depth, or extra pass coverage must include an economics check before it lands:
+
+- Expected token/context benefit.
+- Expected wall-clock cost.
+- Frequency of the step: per edit, per commit, per PR, per release, or scheduled.
+- Failure/retry cost.
+- Whether the step blocks the human or runs asynchronously.
+
+**Ask tier:** changes expected to add more than 20% latency to common loops (edit, commit, review, dispatch, merge) require the tradeoff to be surfaced before merge, even when the token savings are real.
+
+**Block tier:** changes expected to double or more than double wall-clock time in a common loop require explicit user approval before they become mandatory. Without that approval, move the work to the least frequent safe boundary, make it asynchronous, or keep it opt-in.
+
+**Telemetry requirement:** new gates must emit or record timing telemetry before they become mandatory. At minimum, record start/end duration, the loop boundary where the gate ran, whether it blocked the human, and retry count or failure reason. Use measured baseline data when available; otherwise land the gate as opt-in or warn-only until baseline timing exists.
+
+**Non-goal:** safety-critical checks are not rejected solely because they are slow. Preserve the safety property, but shift it to the least frequent safe boundary or run it asynchronously when possible.
+
 ## Deferred / known gaps
 
 Not rules yet — track here so we remember:
