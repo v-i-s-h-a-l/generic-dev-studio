@@ -58,15 +58,16 @@ Chain behavior:
 
 1. Fetch latest `origin/<base>`.
 2. Create one chain feature branch/worktree from latest base.
-3. For each issue in order, create `<chain-branch>-issue-<N>` in a separate `/tmp/studio-chain-runner/...` worktree.
-4. Spawn a fresh host session (`codex exec` by default for `host: auto`, or the manifest/flag host) with a scoped prompt to implement exactly that issue and commit on the issue branch. The prompt includes `run_id`, `chain_run_id`, `issue_run_id`, and the required `.studio/chain-worker-summary.json` path.
-5. Validate and ingest the worker summary. If it is missing, emit a telemetry gap rather than treating absent model/token/build data as zero.
-6. Fast-forward the issue branch into the chain branch.
-7. Keep the issue open while the chain branch is still only a feature branch.
-8. After the last issue, rebase the chain branch on latest base, open a PR, and run `scripts/pr-headless-review.sh <pr> --method auto`.
-9. If the reviewer blocks, STOP with the PR and worktree intact for repair. If non-blocked, the normal autopilot merge path runs.
-10. Close/comment the chain issues after the PR path succeeds.
-11. Write a final private report under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/report.md`, then fetch/prune locally and remove the chain/issue worktrees after merge.
+3. Size the fresh-session pool from healthy registered `xcodebuild` offload nodes: local-only stays at 1; N healthy offload nodes yields N+1 sessions, capped by available RAM. Override only for emergencies with `STUDIO_CHAIN_WORKER_POOL`, or clamp with `STUDIO_CHAIN_MAX_WORKERS`.
+4. For each issue, create `<chain-branch>-issue-<N>` in a separate `/tmp/studio-chain-runner/...` worktree and run up to the sized pool in parallel.
+5. Spawn a fresh host session (`codex exec` by default for `host: auto`, or the manifest/flag host) with a scoped prompt to implement exactly that issue and commit on the issue branch. The prompt includes `run_id`, `chain_run_id`, `issue_run_id`, and the required `.studio/chain-worker-summary.json` path.
+6. Validate and ingest each worker summary. If it is missing, emit a telemetry gap rather than treating absent model/token/build data as zero.
+7. Rebase completed issue branches onto the chain branch and fast-forward them into the chain branch in manifest order.
+8. Keep the issue open while the chain branch is still only a feature branch.
+9. After the last issue, rebase the chain branch on latest base, open a PR, and run `scripts/pr-headless-review.sh <pr> --method auto`.
+10. If the reviewer blocks, STOP with the PR and worktree intact for repair. If non-blocked, the normal autopilot merge path runs.
+11. Close/comment the chain issues after the PR path succeeds.
+12. Write a final private report under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/report.md`, then fetch/prune locally and remove the chain/issue worktrees after merge.
 
 Telemetry:
 

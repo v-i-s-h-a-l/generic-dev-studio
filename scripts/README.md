@@ -63,8 +63,14 @@ scripts/analyze-collect.sh --project turnip-ios         # stats dump for a usage
 scripts/analyze-collect.sh --project turnip-ios --since 2026-04-01
 scripts/forge-latency-report.sh --project turnip-ios --days 14   # stage-level task latency + review-gate comparison
 scripts/field-workflow-report.sh --project turnip-ios --days 14   # Field loop timing, tokens, gates, review coverage, improvement candidates
-scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # plan chain branches, fresh sessions, PR review/merge
-scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex # execute chains with UUID telemetry + private run report
+scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # plan chain branches, capacity-scaled fresh sessions, PR review/merge
+scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex # execute chains with node/RAM-sized session pool + private report
+
+# Chain runner pool sizing:
+# default = 1 local session + one per healthy xcodebuild offload node, RAM-capped at 6 GiB/session
+# STUDIO_CHAIN_WORKER_POOL=N      explicit emergency override
+# STUDIO_CHAIN_MAX_WORKERS=N      clamp auto-detected pool
+# STUDIO_CHAIN_WORKER_RAM_GIB=N   adjust RAM heuristic
 
 # Event log reader (dedupes on producer.agent + idempotency_key; see _shared/contracts/event-emission.md):
 scripts/read-events.sh                                  # current project, deduped
