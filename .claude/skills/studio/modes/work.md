@@ -59,13 +59,20 @@ Chain behavior:
 1. Fetch latest `origin/<base>`.
 2. Create one chain feature branch/worktree from latest base.
 3. For each issue in order, create `<chain-branch>-issue-<N>` in a separate `/tmp/studio-chain-runner/...` worktree.
-4. Spawn a fresh host session (`codex exec` by default for `host: auto`, or the manifest/flag host) with a scoped prompt to implement exactly that issue and commit on the issue branch.
-5. Fast-forward the issue branch into the chain branch.
-6. Keep the issue open while the chain branch is still only a feature branch.
-7. After the last issue, rebase the chain branch on latest base, open a PR, and run `scripts/pr-headless-review.sh <pr> --method auto`.
-8. If the reviewer blocks, STOP with the PR and worktree intact for repair. If non-blocked, the normal autopilot merge path runs.
-9. Close/comment the chain issues after the PR path succeeds.
-10. Fetch/prune locally and remove the chain/issue worktrees after merge.
+4. Spawn a fresh host session (`codex exec` by default for `host: auto`, or the manifest/flag host) with a scoped prompt to implement exactly that issue and commit on the issue branch. The prompt includes `run_id`, `chain_run_id`, `issue_run_id`, and the required `.studio/chain-worker-summary.json` path.
+5. Validate and ingest the worker summary. If it is missing, emit a telemetry gap rather than treating absent model/token/build data as zero.
+6. Fast-forward the issue branch into the chain branch.
+7. Keep the issue open while the chain branch is still only a feature branch.
+8. After the last issue, rebase the chain branch on latest base, open a PR, and run `scripts/pr-headless-review.sh <pr> --method auto`.
+9. If the reviewer blocks, STOP with the PR and worktree intact for repair. If non-blocked, the normal autopilot merge path runs.
+10. Close/comment the chain issues after the PR path succeeds.
+11. Write a final private report under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/report.md`, then fetch/prune locally and remove the chain/issue worktrees after merge.
+
+Telemetry:
+
+- Runner-owned lifecycle events: `chain_run_started`, `chain_started`, `chain_issue_started`, `chain_issue_completed`, `chain_pr_opened`, `chain_review_completed`, `chain_completed`, `chain_run_completed`.
+- Join keys are `run_id`, `chain_run_id`, and `issue_run_id`; the same keys appear in events, prompts, PR comments, issue comments, worker summaries, and private reports.
+- Worker summaries capture model/token/test data when available and list missing fields in `telemetry_gaps`.
 
 Use `--dry-run` before a new manifest shape or a risky chain. Dry-run prints branch, worktree, spawn, PR, review, and cleanup commands without mutating git or GitHub.
 

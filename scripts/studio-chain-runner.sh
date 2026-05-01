@@ -19,8 +19,8 @@ umask 022
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
-# shellcheck source=lib-paths.sh
-. "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-ledger.sh
+. "$SCRIPT_DIR/lib-ledger.sh"
 
 usage() {
   sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' >&2
@@ -67,9 +67,278 @@ REPO_SLUG="v-i-s-h-a-l/generic-dev-studio"
 RUN_ROOT="${TMPDIR:-/tmp}/studio-chain-runner"
 mkdir -p "$RUN_ROOT"
 FINAL_PR_URL=""
+RUN_ID=$(mint_uuidv7)
+RUN_STARTED_AT=$(date -u +%s)
+RUN_STARTED_TS=$(iso_ts_now)
+RUN_STATUS="completed"
+RUN_FAILURE_REASON=""
+STUDIO_PROJECT_ROOT=$(resolve_project_root_for generic-dev-studio)
+CHAIN_RUN_ROOT="$STUDIO_PROJECT_ROOT/chain-runs/$RUN_ID"
+SUMMARY_ROOT="$CHAIN_RUN_ROOT/worker-summaries"
+EVENTS_JSONL="$CHAIN_RUN_ROOT/events.jsonl"
+RUN_STATE_JSON="$CHAIN_RUN_ROOT/state.json"
+RUN_REPORT="$CHAIN_RUN_ROOT/report.md"
+if [ "$DRY_RUN" -eq 0 ]; then
+  mkdir -p "$SUMMARY_ROOT"
+else
+  EVENTS_JSONL="/dev/null"
+fi
 
 log() {
   printf 'studio-chain-runner: %s\n' "$*" >&2
+}
+
+now_epoch() {
+  date -u +%s
+}
+
+duration_since() {
+  local started="$1" ended="${2:-}"
+  [ -z "$ended" ] && ended=$(now_epoch)
+  printf '%s\n' "$(( ended - started ))"
+}
+
+event_data() {
+  local event="$1" run_id="$2" chain_run_id="$3" issue_run_id="$4" status="$5" duration_s="${6:-null}" extra="${7:-}"
+  [ -n "$extra" ] || extra='{}'
+  jq -cn \
+    --arg run_id "$run_id" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg manifest "$MANIFEST" \
+    --arg status "$status" \
+    --argjson duration_s "$duration_s" \
+    --argjson extra "$extra" \
+    '{
+      run_id: $run_id,
+      chain_run_id: (if $chain_run_id == "" then null else $chain_run_id end),
+      issue_run_id: (if $issue_run_id == "" then null else $issue_run_id end),
+      manifest: $manifest,
+      status: $status,
+      duration_s: $duration_s
+    } + $extra'
+}
+
+emit_chain_event() {
+  local event="$1" task="$2" run_id="$3" chain_run_id="$4" issue_run_id="$5" status="$6" duration_s="${7:-null}" extra="${8:-}"
+  [ -n "$extra" ] || extra='{}'
+  local data
+  data=$(event_data "$event" "$run_id" "$chain_run_id" "$issue_run_id" "$status" "$duration_s" "$extra")
+  emit_event_keyed studio chain "$event" "$task" "$data" \
+    --instance-id "$run_id" \
+    --idem-key "studio-chain:$run_id:$event:${chain_run_id:-none}:${issue_run_id:-none}:$task" \
+    >/dev/null 2>&1 || true
+  printf '{"event":"%s","task":"%s","data":%s}\n' "$event" "$task" "$data" >> "$EVENTS_JSONL"
+}
+
+write_run_state() {
+  local status="$1" failure_reason="${2:-}"
+  jq -n \
+    --arg run_id "$RUN_ID" \
+    --arg manifest "$MANIFEST" \
+    --arg status "$status" \
+    --arg started_at "$RUN_STARTED_TS" \
+    --arg report "$RUN_REPORT" \
+    --arg failure_reason "$failure_reason" \
+    '{
+      schema_version: 1,
+      run_id: $run_id,
+      manifest: $manifest,
+      status: $status,
+      started_at: $started_at,
+      report: $report,
+      failure_reason: (if $failure_reason == "" then null else $failure_reason end)
+    }' > "$RUN_STATE_JSON"
+}
+
+generated_file_count_between() {
+  local worktree="$1" before="$2" after="$3"
+  git -C "$worktree" diff --name-only "$before" "$after" 2>/dev/null \
+    | awk '
+      /(^|\/)(docs-surface[.]json|.*manifest.*[.](json|ya?ml))$/ { count += 1; next }
+      /(^|\/)chanakya\/snapshots\// { count += 1; next }
+      /(^|\/)_shared\/schemas\/capability-manifest[.]json$/ { count += 1; next }
+      END { print count + 0 }
+    '
+}
+
+diff_stats_json() {
+  local worktree="$1" before="$2" after="$3"
+  local stats
+  stats=$(git -C "$worktree" diff --numstat "$before" "$after" 2>/dev/null \
+    | awk '
+      BEGIN { files=0; add=0; del=0 }
+      { files += 1; if ($1 ~ /^[0-9]+$/) add += $1; if ($2 ~ /^[0-9]+$/) del += $2 }
+      END { printf "{\"files_changed\":%d,\"additions\":%d,\"deletions\":%d}", files, add, del }
+    ')
+  jq -cn --argjson stats "$stats" --argjson generated "$(generated_file_count_between "$worktree" "$before" "$after")" \
+    '$stats + {generated_file_count: $generated}'
+}
+
+ingest_worker_summary() {
+  local chain_name="$1" issue="$2" host="$3" worktree="$4" before="$5" after="$6" exit_code="$7" started_at="$8" chain_run_id="$9" issue_run_id="${10}"
+  local summary_path="$worktree/.studio/chain-worker-summary.json"
+  local dest="$SUMMARY_ROOT/${chain_name}-issue-${issue}-${issue_run_id}.json"
+  local ended_at duration_s stats
+  ended_at=$(now_epoch)
+  duration_s=$(duration_since "$started_at" "$ended_at")
+  stats=$(diff_stats_json "$worktree" "$before" "$after")
+
+  if [ -f "$summary_path" ] && jq -e . "$summary_path" >/dev/null 2>&1; then
+    jq -c \
+      --arg run_id "$RUN_ID" \
+      --arg chain_run_id "$chain_run_id" \
+      --arg issue_run_id "$issue_run_id" \
+      --arg host "$host" \
+      --argjson exit_code "$exit_code" \
+      --arg before "$before" \
+      --arg after "$after" \
+      --argjson duration_s "$duration_s" \
+      --argjson stats "$stats" \
+      '. + {
+        schema_version: (.schema_version // 1),
+        run_id: (.run_id // $run_id),
+        chain_run_id: (.chain_run_id // $chain_run_id),
+        issue_run_id: (.issue_run_id // $issue_run_id),
+        host: (.host // $host),
+        exit_code: (.exit_code // $exit_code),
+        duration_s: (.duration_s // $duration_s),
+        commit_before: (.commit_before // $before),
+        commit_after: (.commit_after // $after),
+        files_changed: (.files_changed // $stats.files_changed),
+        additions: (.additions // $stats.additions),
+        deletions: (.deletions // $stats.deletions),
+        generated_file_count: (.generated_file_count // $stats.generated_file_count),
+        telemetry_gaps: (.telemetry_gaps // [])
+      }' "$summary_path" > "$dest"
+  else
+    jq -n \
+      --arg run_id "$RUN_ID" \
+      --arg chain_run_id "$chain_run_id" \
+      --arg issue_run_id "$issue_run_id" \
+      --arg chain "$chain_name" \
+      --argjson issue "$issue" \
+      --arg host "$host" \
+      --argjson exit_code "$exit_code" \
+      --arg before "$before" \
+      --arg after "$after" \
+      --argjson duration_s "$duration_s" \
+      --argjson stats "$stats" \
+      '{
+        schema_version: 1,
+        run_id: $run_id,
+        chain_run_id: $chain_run_id,
+        issue_run_id: $issue_run_id,
+        chain: $chain,
+        issue_number: $issue,
+        host: $host,
+        exit_code: $exit_code,
+        duration_s: $duration_s,
+        commit_before: $before,
+        commit_after: $after,
+        files_changed: $stats.files_changed,
+        additions: $stats.additions,
+        deletions: $stats.deletions,
+        generated_file_count: $stats.generated_file_count,
+        tests: [],
+        lints: [],
+        builds: [],
+        tokens: null,
+        model: null,
+        model_recommendation: null,
+        telemetry_gaps: ["worker_summary_missing", "model", "tokens", "tests_lints_builds"]
+      }' > "$dest"
+  fi
+
+  printf '%s\n' "$dest"
+}
+
+worker_summary_tracked() {
+  local worktree="$1"
+  git -C "$worktree" ls-tree -r --name-only HEAD -- .studio/chain-worker-summary.json 2>/dev/null | grep -q .
+}
+
+generate_run_report() {
+  local status="$1" failure_reason="${2:-}" ended_ts ended_epoch duration_s summary_count
+  ended_ts=$(iso_ts_now)
+  ended_epoch=$(now_epoch)
+  duration_s=$(duration_since "$RUN_STARTED_AT" "$ended_epoch")
+  summary_count=$(find "$SUMMARY_ROOT" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+
+  {
+    printf '# Studio Chain Run Report\n\n'
+    printf '- Run UUID: `%s`\n' "$RUN_ID"
+    printf '- Manifest: `%s`\n' "$MANIFEST"
+    printf '- Status: `%s`\n' "$status"
+    printf '- Started: `%s`\n' "$RUN_STARTED_TS"
+    printf '- Ended: `%s`\n' "$ended_ts"
+    printf '- Duration: `%ss`\n' "$duration_s"
+    [ -n "$failure_reason" ] && printf '- Failure reason: `%s`\n' "$failure_reason"
+    printf '\n## Chains And Issues\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        ["| Chain | Issue | Host | Exit | Duration | Files | LOC | Generated | Model | Token Data | Gaps |",
+         "|---|---:|---|---:|---:|---:|---:|---:|---|---|---|"],
+        (.[] | "| \(.chain // "unknown") | #\(.issue_number // "unknown") | \(.host // "unknown") | \(.exit_code // "unknown") | \(.duration_s // "unknown")s | \(.files_changed // 0) | +\(.additions // 0)/-\(.deletions // 0) | \(.generated_file_count // 0) | \(.model // .model_name // "missing") | \(if (.tokens // null) == null then "missing" else "present" end) | \((.telemetry_gaps // []) | join(", ")) |")
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf 'No worker summaries were ingested.\n'
+    fi
+    printf '\n## PRs And Review\n\n'
+    if [ -n "$FINAL_PR_URL" ]; then
+      printf '- PR URL: %s\n' "$FINAL_PR_URL"
+    else
+      printf '- PR URL: not opened\n'
+    fi
+    printf '\n## Telemetry Gaps\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        [.[].telemetry_gaps[]?] | group_by(.) | map({gap: .[0], count: length}) | sort_by(-.count) |
+        if length == 0 then "No worker-declared gaps."
+        else .[] | "- \(.gap): \(.count)"
+        end
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf '- worker_summary_missing: all issues\n'
+    fi
+    printf '\n## Improvement Candidates\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        def gap_count($g): [.[].telemetry_gaps[]? | select(. == $g)] | length;
+        [
+          (if gap_count("worker_summary_missing") > 0 then "- Require worker hosts to write `.studio/chain-worker-summary.json` before exit." else empty end),
+          (if gap_count("tokens") > 0 or gap_count("token_usage") > 0 then "- Add host-specific token extraction to worker summaries." else empty end),
+          (if gap_count("tests_lints_builds") > 0 then "- Standardize test/lint/build outcome capture in worker summaries." else empty end)
+        ] | if length == 0 then "No threshold-based candidates from this run." else .[] end
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf -- '- Add worker summary enforcement before relying on chain metrics.\n'
+    fi
+    printf '\n## Privacy\n\n'
+    printf 'This report is private local telemetry under `~/.dev-studio/generic-dev-studio/chain-runs/`. Public PR and issue comments should include run IDs, PR URLs, issue numbers, and abstract gap names only, not private project file paths or velocity details.\n'
+  } > "$RUN_REPORT"
+}
+
+finish_run() {
+  local status="${1:-$RUN_STATUS}" reason="${2:-$RUN_FAILURE_REASON}" duration_s
+  RUN_STATUS="$status"
+  RUN_FAILURE_REASON="$reason"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "dry-run complete; no chain-run report written"
+    return 0
+  fi
+  write_run_state "$status" "$reason"
+  generate_run_report "$status" "$reason"
+  duration_s=$(duration_since "$RUN_STARTED_AT")
+  emit_chain_event chain_run_completed "" "$RUN_ID" "" "" "$status" "$duration_s" \
+    "$(jq -cn --arg report "$RUN_REPORT" --arg reason "$reason" '{report:$report, failure_reason:(if $reason == "" then null else $reason end)}')"
+  log "report written to $RUN_REPORT"
+}
+
+abort_run() {
+  local reason="${1:-failed}"
+  finish_run failed "$reason"
+  exit 1
 }
 
 slugify() {
@@ -155,6 +424,11 @@ host_spawn_command() {
 }
 
 MANIFEST=$(resolve_manifest "$MANIFEST")
+if [ "$DRY_RUN" -eq 0 ]; then
+  write_run_state running ""
+fi
+emit_chain_event chain_run_started "" "$RUN_ID" "" "" running 0 \
+  "$(jq -cn --arg manifest_arg "$MANIFEST" --arg only_chain "$ONLY_CHAIN" --arg host_override "$HOST_OVERRIDE" '{manifest_arg:$manifest_arg, only_chain:(if $only_chain == "" then null else $only_chain end), host_override:(if $host_override == "" then null else $host_override end)}')"
 
 chain_count=$(yq -r '.chains | length' "$MANIFEST")
 case "$chain_count" in
@@ -170,13 +444,14 @@ if [ "$chain_count" -eq 0 ]; then
 fi
 
 execute_issue_session() {
-  local chain_name="$1" chain_branch="$2" issue="$3" host="$4" worktree="$5"
-  local issue_json issue_title issue_body spawn prompt
+  local chain_name="$1" chain_branch="$2" issue="$3" host="$4" worktree="$5" chain_run_id="$6" issue_run_id="$7" before="$8"
+  local issue_json issue_title issue_body spawn prompt summary_path
   local -a spawn_argv
 
   issue_json=$(gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,body,url,state)
   issue_title=$(printf '%s' "$issue_json" | jq -r '.title')
   issue_body=$(printf '%s' "$issue_json" | jq -r '.body // ""')
+  summary_path="$worktree/.studio/chain-worker-summary.json"
 
   spawn=$(host_spawn_command "$host")
   # shellcheck disable=SC2206
@@ -188,10 +463,14 @@ Implement this studio issue in a fresh chain-runner session.
 You are executing one issue inside an automated chain runner.
 
 Repo: $REPO_SLUG
+Run UUID: $RUN_ID
+Chain-run UUID: $chain_run_id
+Issue-run UUID: $issue_run_id
 Chain: $chain_name
 Chain branch: $chain_branch
 Issue: #$issue - $issue_title
 Working directory: $worktree
+Required summary artifact: $summary_path
 
 Rules:
 - Work only in this working directory.
@@ -199,10 +478,32 @@ Rules:
 - Keep changes scoped to this issue.
 - Commit the result on the current branch.
 - Include "Closes #$issue" in the commit message.
+- Before exit, write $summary_path as valid JSON.
+- Do not add or commit $summary_path; it is a private parent-runner artifact.
 - Do not open a PR.
 - Do not merge to main.
 - Do not close the issue; the chain runner owns issue closure after integration.
 - If blocked, exit non-zero after writing a concise reason.
+
+Summary JSON fields:
+- schema_version: 1
+- run_id: "$RUN_ID"
+- chain_run_id: "$chain_run_id"
+- issue_run_id: "$issue_run_id"
+- chain: "$chain_name"
+- issue_number: $issue
+- issue_title: "$issue_title"
+- host: "$host"
+- model/model_version/effort when known, otherwise null
+- started_at/ended_at/duration_s
+- exit_code
+- commit_before: "$before"
+- commit_after
+- files_changed/additions/deletions/generated_file_count
+- tests/lints/builds arrays with command/outcome when run
+- tokens object when available, otherwise null
+- telemetry_gaps array listing missing fields such as "tokens" or "model"
+- blocked_reason when nonzero
 
 Issue body:
 $issue_body
@@ -220,8 +521,8 @@ EOF
 }
 
 finalize_chain_pr() {
-  local chain_name="$1" chain_branch="$2" chain_worktree="$3" base="$4"
-  local pr_url pr_number
+  local chain_name="$1" chain_branch="$2" chain_worktree="$3" base="$4" chain_run_id="$5"
+  local pr_url pr_number review_started_at review_rc review_duration
 
   log "rebasing $chain_branch on origin/$base"
   run git -C "$chain_worktree" fetch origin --prune
@@ -244,11 +545,38 @@ finalize_chain_pr() {
 
 Run by \`scripts/studio-chain-runner.sh\`.
 
+Chain run: \`$RUN_ID\`
+Chain-run UUID: \`$chain_run_id\`
+Private report: local only; resolve by run ID on the machine that ran the chain.
+
 Review gate: \`scripts/pr-headless-review.sh <pr> --method auto\`.")
   pr_number=$(printf '%s' "$pr_url" | sed -E 's#.*/pull/([0-9]+).*#\1#')
   FINAL_PR_URL="$pr_url"
   log "opened PR $pr_url"
+  emit_chain_event chain_pr_opened "$pr_number" "$RUN_ID" "$chain_run_id" "" completed 0 \
+    "$(jq -cn --arg pr_url "$pr_url" --arg pr_number "$pr_number" --arg branch "$chain_branch" '{pr_url:$pr_url, pr_number:$pr_number, branch:$branch}')"
+  if ! gh pr comment "$pr_number" --repo "$REPO_SLUG" --body "Chain run: \`$RUN_ID\`
+
+Private telemetry report: local only; resolve by run ID on the machine that ran the chain.
+
+Public-safe telemetry: run/chain UUIDs and abstract gap names only."; then
+    abort_run "PR telemetry comment failed for $pr_url"
+  fi
+
+  review_started_at=$(now_epoch)
+  set +e
   "$SCRIPT_DIR/pr-headless-review.sh" "$pr_number" --method auto
+  review_rc=$?
+  set -e
+  review_duration=$(duration_since "$review_started_at")
+  if [ "$review_rc" -eq 0 ]; then
+    emit_chain_event chain_review_completed "$pr_number" "$RUN_ID" "$chain_run_id" "" completed "$review_duration" \
+      "$(jq -cn --arg pr_url "$pr_url" --argjson exit_code "$review_rc" '{pr_url:$pr_url, exit_code:$exit_code}')"
+  else
+    emit_chain_event chain_review_completed "$pr_number" "$RUN_ID" "$chain_run_id" "" failed "$review_duration" \
+      "$(jq -cn --arg pr_url "$pr_url" --argjson exit_code "$review_rc" '{pr_url:$pr_url, exit_code:$exit_code}')"
+    abort_run "PR review failed for $pr_url"
+  fi
 }
 
 for ((idx = 0; idx < chain_count; idx++)); do
@@ -257,6 +585,8 @@ for ((idx = 0; idx < chain_count; idx++)); do
   branch=$(yq -r ".chains[$idx].branch // (\"feature/\" + .chains[$idx].name)" "$MANIFEST")
   host=$(yq -r ".chains[$idx].host // \"auto\"" "$MANIFEST")
   issue_count=$(yq -r ".chains[$idx].issues | length" "$MANIFEST")
+  chain_run_id=$(mint_uuidv7)
+  chain_started_at=$(now_epoch)
 
   [ -n "$ONLY_CHAIN" ] && [ "$name" != "$ONLY_CHAIN" ] && { log "skip chain $name (--only $ONLY_CHAIN)"; continue; }
   validate_chain_branch "$branch" "$base"
@@ -274,6 +604,8 @@ for ((idx = 0; idx < chain_count; idx++)); do
   chain_worktree="$RUN_ROOT/$chain_slug-feature"
 
   log "starting chain $name on $branch from latest $base using host=$host"
+  emit_chain_event chain_started "" "$RUN_ID" "$chain_run_id" "" running 0 \
+    "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --argjson issue_count "$issue_count" '{chain:$name, branch:$branch, base:$base, host:$host, issue_count:$issue_count}')"
   run git -C "$REPO_ROOT" fetch origin --prune
   if [ "$DRY_RUN" -eq 0 ]; then
     if [ ! -d "$chain_worktree/.git" ]; then
@@ -290,6 +622,8 @@ for ((idx = 0; idx < chain_count; idx++)); do
     issue_slug=$(slugify "$issue")
     issue_branch="$branch-issue-$issue_slug"
     issue_worktree="$RUN_ROOT/$chain_slug-issue-$issue_slug"
+    issue_run_id=$(mint_uuidv7)
+    issue_started_at=$(now_epoch)
 
     log "issue #$issue -> $issue_branch"
     if [ "$DRY_RUN" -eq 0 ]; then
@@ -301,14 +635,37 @@ for ((idx = 0; idx < chain_count; idx++)); do
       before="dry-run-before"
     fi
 
-    execute_issue_session "$name" "$branch" "$issue" "$host" "$issue_worktree"
+    emit_chain_event chain_issue_started "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" running 0 \
+      "$(jq -cn --arg chain "$name" --arg branch "$issue_branch" --arg host "$host" --arg before "$before" '{chain:$chain, issue_branch:$branch, host:$host, commit_before:$before}')"
+
+    set +e
+    execute_issue_session "$name" "$branch" "$issue" "$host" "$issue_worktree" "$chain_run_id" "$issue_run_id" "$before"
+    worker_rc=$?
+    set -e
 
     if [ "$DRY_RUN" -eq 0 ]; then
       after=$(git -C "$issue_worktree" rev-parse HEAD)
-      if [ "$after" = "$before" ]; then
-        printf 'studio-chain-runner: issue #%s produced no commit; leaving worktree at %s\n' "$issue" "$issue_worktree" >&2
-        exit 1
+      summary_file=$(ingest_worker_summary "$name" "$issue" "$host" "$issue_worktree" "$before" "$after" "$worker_rc" "$issue_started_at" "$chain_run_id" "$issue_run_id")
+      issue_duration=$(duration_since "$issue_started_at")
+      summary_payload=$(jq -c --arg summary "$summary_file" --arg after "$after" --argjson exit_code "$worker_rc" --argjson duration_s "$issue_duration" \
+        '{summary:$summary, commit_after:$after, exit_code:$exit_code, worker_duration_s:$duration_s}' "$summary_file")
+      if worker_summary_tracked "$issue_worktree"; then
+        emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" \
+          "$(jq -cn --arg summary "$summary_file" --arg reason "worker_summary_committed" '{summary:$summary, failure_reason:$reason}')"
+        abort_run "issue #$issue committed private worker summary"
       fi
+      rm -rf "$issue_worktree/.studio"
+      if [ "$worker_rc" -ne 0 ]; then
+        emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" "$summary_payload"
+        abort_run "issue #$issue worker exited $worker_rc"
+      fi
+      if [ "$after" = "$before" ]; then
+        emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" \
+          "$(jq -cn --arg summary "$summary_file" --arg reason "no_commit" '{summary:$summary, failure_reason:$reason}')"
+        printf 'studio-chain-runner: issue #%s produced no commit; leaving worktree at %s\n' "$issue" "$issue_worktree" >&2
+        abort_run "issue #$issue produced no commit"
+      fi
+      emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed "$issue_duration" "$summary_payload"
       git -C "$chain_worktree" checkout "$branch"
       git -C "$chain_worktree" merge --ff-only "$issue_branch"
       git -C "$REPO_ROOT" worktree remove "$issue_worktree"
@@ -321,13 +678,20 @@ for ((idx = 0; idx < chain_count; idx++)); do
     fi
   done
 
-  finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base"
+  finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id"
+  chain_duration=$(duration_since "$chain_started_at")
+  emit_chain_event chain_completed "" "$RUN_ID" "$chain_run_id" "" completed "$chain_duration" \
+    "$(jq -cn --arg name "$name" --arg pr_url "$FINAL_PR_URL" '{chain:$name, pr_url:(if $pr_url == "" then null else $pr_url end)}')"
 
   for ((i = 0; i < issue_count; i++)); do
     issue=$(yq -r ".chains[$idx].issues[$i]" "$MANIFEST")
     if [ "$DRY_RUN" -eq 0 ]; then
-      gh issue close "$issue" --repo "$REPO_SLUG" --comment "Merged through chain PR: ${FINAL_PR_URL:-$branch}" \
-        || gh issue comment "$issue" --repo "$REPO_SLUG" --body "Merged through chain PR: ${FINAL_PR_URL:-$branch}"
+      gh issue close "$issue" --repo "$REPO_SLUG" --comment "Merged through chain PR: ${FINAL_PR_URL:-$branch}
+
+Chain run: $RUN_ID" \
+        || gh issue comment "$issue" --repo "$REPO_SLUG" --body "Merged through chain PR: ${FINAL_PR_URL:-$branch}
+
+Chain run: $RUN_ID"
     else
       printf 'DRY-RUN gh issue close %q --repo %q --comment %q\n' "$issue" "$REPO_SLUG" "Merged through chain PR: ${FINAL_PR_URL:-<pr-url>}"
     fi
@@ -344,4 +708,5 @@ for ((idx = 0; idx < chain_count; idx++)); do
   fi
 done
 
+finish_run completed ""
 log "all requested chains processed"
