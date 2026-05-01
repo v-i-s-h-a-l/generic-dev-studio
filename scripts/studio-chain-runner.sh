@@ -72,6 +72,7 @@ RUN_STARTED_AT=$(date -u +%s)
 RUN_STARTED_TS=$(iso_ts_now)
 RUN_STATUS="completed"
 RUN_FAILURE_REASON=""
+RUN_FINISHED=0
 STUDIO_PROJECT_ROOT=$(resolve_project_root_for generic-dev-studio)
 CHAIN_RUN_ROOT="$STUDIO_PROJECT_ROOT/chain-runs/$RUN_ID"
 SUMMARY_ROOT="$CHAIN_RUN_ROOT/worker-summaries"
@@ -321,6 +322,7 @@ generate_run_report() {
 
 finish_run() {
   local status="${1:-$RUN_STATUS}" reason="${2:-$RUN_FAILURE_REASON}" duration_s
+  RUN_FINISHED=1
   RUN_STATUS="$status"
   RUN_FAILURE_REASON="$reason"
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -339,6 +341,13 @@ abort_run() {
   local reason="${1:-failed}"
   finish_run failed "$reason"
   exit 1
+}
+
+finish_unexpected_exit() {
+  local rc=$?
+  if [ "$rc" -ne 0 ] && [ "${RUN_FINISHED:-0}" != "1" ] && [ "${DRY_RUN:-0}" -eq 0 ]; then
+    finish_run failed "unexpected_exit_$rc"
+  fi
 }
 
 slugify() {
@@ -429,6 +438,7 @@ if [ "$DRY_RUN" -eq 0 ]; then
 fi
 emit_chain_event chain_run_started "" "$RUN_ID" "" "" running 0 \
   "$(jq -cn --arg manifest_arg "$MANIFEST" --arg only_chain "$ONLY_CHAIN" --arg host_override "$HOST_OVERRIDE" '{manifest_arg:$manifest_arg, only_chain:(if $only_chain == "" then null else $only_chain end), host_override:(if $host_override == "" then null else $host_override end)}')"
+trap finish_unexpected_exit EXIT
 
 chain_count=$(yq -r '.chains | length' "$MANIFEST")
 case "$chain_count" in
@@ -648,7 +658,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
       summary_file=$(ingest_worker_summary "$name" "$issue" "$host" "$issue_worktree" "$before" "$after" "$worker_rc" "$issue_started_at" "$chain_run_id" "$issue_run_id")
       issue_duration=$(duration_since "$issue_started_at")
       summary_payload=$(jq -c --arg summary "$summary_file" --arg after "$after" --argjson exit_code "$worker_rc" --argjson duration_s "$issue_duration" \
-        '{summary:$summary, commit_after:$after, exit_code:$exit_code, worker_duration_s:$duration_s}' "$summary_file")
+        '{summary:$summary, commit_after:$after, exit_code:$exit_code, worker_duration_s:$duration_s, telemetry_gaps:(.telemetry_gaps // [])}' "$summary_file")
       if worker_summary_tracked "$issue_worktree"; then
         emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" \
           "$(jq -cn --arg summary "$summary_file" --arg reason "worker_summary_committed" '{summary:$summary, failure_reason:$reason}')"
