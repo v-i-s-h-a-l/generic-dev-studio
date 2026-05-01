@@ -3,11 +3,11 @@
 #
 # Accepts a briefs snapshot payload (or fallback-equivalent). Prints a markdown
 # table of active tasks with Priority / Status / Complexity / Branch columns.
-# `done` rows are prefixed with an asterisk so the caller can annotate
-# "awaiting verification" in prose.
+# Briefed / in-progress rows with a populated `summary` field get a continuation
+# line carrying the compact brief slice.
 #
 # Input shape (minimum fields on each task): id, title, priority, status,
-# complexity, branch. Extra fields are ignored.
+# complexity, branch. Optional: summary. Extra fields are ignored.
 
 set -u
 umask 022
@@ -28,5 +28,17 @@ printf '| ID   | Title                                    | Priority | Status   
 printf '|------|------------------------------------------|----------|-------------|------------|-----------------|\n'
 printf '%s' "$payload" | jq -r '
   .tasks[] |
-  "| \(.id // "—") | \(.title // "—" | .[0:40]) | \(.priority // "—") | \(.status // "—") | \(.complexity // "—") | \(.branch // "—") |"
+  def clean_summary:
+    (.summary // "")
+    | gsub("[\r\n\t]+"; " ")
+    | gsub("  +"; " ")
+    | sub("^ +"; "")
+    | sub(" +$"; "");
+  (
+    "| \(.id // "—") | \(.title // "—" | .[0:40]) | \(.priority // "—") | \(.status // "—") | \(.complexity // "—") | \(.branch // "—") |"
+  ),
+  (
+    select((.status == "briefed" or .status == "in-progress") and (clean_summary != ""))
+    | "  └─ \(clean_summary)"
+  )
 '
