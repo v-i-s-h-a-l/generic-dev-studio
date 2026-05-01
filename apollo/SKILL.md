@@ -111,4 +111,4 @@ Machine-global resources (simulator semaphores, GPU queues) stay at `~/.dev-stud
 
 ## Cross-refs
 
-Per-metric primitives and capture contracts: `apollo/_shared/primitives/` (evidence-gate, execution-surface, metrickit, signposts, scenarios, xctest-baselines, instruments-index, organizer-asc, regression-detection). Imgly delegation: `apollo/_shared/integrations/imgly-and-metal.md`. Boot event: `_shared/contracts/agent-boot.md`. Completion claims: REVIEW.md R10.
+Per-metric primitives and capture contracts: `apollo/_shared/primitives/` (evidence-gate, execution-surface, metrickit, signposts, scenarios, code-attribution, xctest-baselines, instruments-index, organizer-asc, regression-detection). Imgly delegation: `apollo/_shared/integrations/imgly-and-metal.md`. Boot event: `_shared/contracts/agent-boot.md`. Completion claims: REVIEW.md R10.

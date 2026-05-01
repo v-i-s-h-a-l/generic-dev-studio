@@ -1,0 +1,26 @@
+schema_version:
+  name: apollo-code-area
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+attribution_id: code-area-imgly-metal
+mode: thermal
+evidence:
+  artifact_path: ~/.dev-studio/app/apollo/captures/5/metal.trace
+  interval: CanvasRender
+  cohort: iPhone16,2/iOS19
+  scenario_id: canvas-render-thermal
+symbolication_status: symbolicated
+responsible_frames:
+  - symbol: IMGLYEngine.render()
+    module: IMGLYEngine
+    weight: 58.1
+    thread: render
+candidates:
+  - kind: imgly-metal
+    target: IMGLYEngine.render
+    file: null
+    rationale: CE.SDK engine and Metal render stack dominate the selected interval.
+confidence: likely
+suggested_owner: imgly-engine-expert
+verification_recipe: Re-run Metal System Trace and Apollo thermal verification after the domain fix.

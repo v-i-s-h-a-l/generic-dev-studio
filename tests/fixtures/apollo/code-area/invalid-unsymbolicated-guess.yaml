@@ -1,0 +1,26 @@
+schema_version:
+  name: apollo-code-area
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+attribution_id: code-area-bad-guess
+mode: cpu
+evidence:
+  artifact_path: ~/.dev-studio/app/apollo/captures/6/cpu.trace
+  interval: FeedScroll
+  cohort: iPhone16,2/iOS19
+  scenario_id: feed-scroll-cpu
+symbolication_status: unsymbolicated
+responsible_frames:
+  - symbol: FeedCell.body.getter
+    module: Turnip
+    weight: 42.7
+    thread: main
+candidates:
+  - kind: app-source
+    target: FeedCell.body
+    file: Turnip/Feed/FeedCell.swift
+    rationale: This is an invalid guess from an unsymbolicated trace.
+confidence: likely
+suggested_owner: achilles
+verification_recipe: This should fail schema validation.

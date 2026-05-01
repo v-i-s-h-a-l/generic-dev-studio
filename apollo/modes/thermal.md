@@ -170,6 +170,7 @@ RECOMMEND (thermal:<class>): <one-line summary>
   evidence: <artifact-path> <citation-form from primitives>
   scenario: <name>, signpost <name>, cohort <modelCode>/<osMajor>, build <version>, dwell <seconds>s
   diff_target: <file:line | symbol> (from Time Profiler / CPU Counters / Metal System Trace)
+  code_area: <validated apollo-code-area block; unresolved symbols are blocked>
   expected_delta: <metric> p<percentile> -<X>% on cohort <modelCode>/<osMajor>
   verification_recipe: <xctrace command> | <XCTest target.method>
   patch_owner: achilles  # always — Apollo never patches in-process
@@ -291,6 +292,7 @@ The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives
 - `apollo/_shared/primitives/mode-pack-scaffold.md` — five-phase pipeline framing, Phase 4 handoff contract, Phase 5 outcome state machine, procedure steps 5–8 boilerplate
 - `apollo/_shared/primitives/evidence-gate.md` — strict-9 contract + refusal protocol the phase gates feed into
 - `apollo/_shared/primitives/scenarios.md` — reusable user-flow contract for repeatable captures
+- `apollo/_shared/primitives/code-attribution.md` — structured `code_area` block for source/owner attribution
 - `apollo/_shared/primitives/metrickit.md` — `MXMetaData.thermalState`, `MXCPUMetric`, `MXCPUExceptionDiagnostic`, `MXHangDiagnostic`, `MXGPUMetric` schemas
 - `apollo/_shared/primitives/signposts.md` — `OSSignposter` shape + privacy default the signal table enforces
 - `apollo/_shared/primitives/instruments-index.md` — Time Profiler / CPU Counters / Processor Trace / Metal System Trace details + capture commands

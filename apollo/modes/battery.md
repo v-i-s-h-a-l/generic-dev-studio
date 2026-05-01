@@ -180,6 +180,7 @@ RECOMMEND (battery:<class>): <one-line summary>
   track: <reproducible | non-reproducible | both>
   scenario: <name>, signpost <name>, cohort <modelCode>/<osMajor>, build <version>, dwell <seconds>s | field-window <days>d
   diff_target: <file:line | symbol> (from Power Profiler / Time Profiler / Network instrument)
+  code_area: <validated apollo-code-area block; unresolved symbols are blocked>
   expected_delta: <metric> p<percentile> -<X>% on cohort <modelCode>/<osMajor>
   verification_recipe: <xctrace command> | <XCTest target.method> | <MetricKit field-window resumption>
   patch_owner: achilles  # always — Apollo never patches in-process
@@ -329,6 +330,7 @@ The Imgly carve-out matches thermal mode. Imgly knowledge lives in the dedicated
 - `apollo/_shared/primitives/mode-pack-scaffold.md` — five-phase pipeline framing, Phase 4 handoff contract, Phase 5 outcome state machine, procedure steps 5–8 boilerplate
 - `apollo/_shared/primitives/evidence-gate.md` — strict-9 contract + refusal protocol the phase gates feed into
 - `apollo/_shared/primitives/scenarios.md` — reusable user-flow contract for repeatable captures
+- `apollo/_shared/primitives/code-attribution.md` — structured `code_area` block for source/owner attribution
 - `apollo/_shared/primitives/metrickit.md` — `MXAppRunTimeMetric`, `MXCPUMetric`, `MXGPUMetric`, `MXDisplayMetric`, `MXNetworkTransferMetric`, `MXDiskIOMetric`, `MXAnimationMetric`, `MXCPUExceptionDiagnostic`, `MXDiskWriteExceptionDiagnostic` schemas
 - `apollo/_shared/primitives/signposts.md` — `OSSignposter` shape + privacy default the signal table enforces
 - `apollo/_shared/primitives/instruments-index.md` — Power Profiler / Energy Log / Network / Location / Display details + capture commands

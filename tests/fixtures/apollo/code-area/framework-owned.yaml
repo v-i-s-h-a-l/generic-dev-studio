@@ -1,0 +1,26 @@
+schema_version:
+  name: apollo-code-area
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+attribution_id: code-area-framework-owned
+mode: battery
+evidence:
+  artifact_path: ~/.dev-studio/app/apollo/captures/3/power.trace
+  interval: FeedScroll
+  cohort: iPhone16,2/iOS19
+  scenario_id: feed-scroll-cpu
+symbolication_status: symbolicated
+responsible_frames:
+  - symbol: "-[UICollectionView _updateVisibleCellsNow:]"
+    module: UIKitCore
+    weight: 31.0
+    thread: main
+candidates:
+  - kind: apple-framework
+    target: UIKitCore UICollectionView update
+    file: null
+    rationale: Apple framework dominates and no app caller is resolved in the selected interval.
+confidence: likely
+suggested_owner: human-investigation
+verification_recipe: Re-run with full call tree and app frames visible before assigning source work.
