@@ -1,6 +1,6 @@
 ---
 name: Chanakya Brief-Review
-description: Checklist-driven quality pass over an authored brief before dispatch. Warn-tier, not block — ships even with findings. Catches brief defects that cascade into rework. Runs standalone via `/chanakya brief-review <task-id>`; not auto-invoked.
+description: Checklist-driven quality pass over an authored brief before dispatch. Warn-tier, not block. Catches brief defects before worker rework.
 type: mode-pack
 schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
@@ -15,7 +15,7 @@ writes:
 
 # Mode: Brief-Review (`/chanakya brief-review <task-id>`)
 
-Walk the checklist below against the brief for `<task-id>`. Emit one `brief_review_flagged` event at the end with the finding count. **Warn-tier, not block** — a brief with findings is still dispatchable. This mode exists because a single anti-pattern in a root brief propagates to every inherited impl brief; catching it pre-dispatch is an order of magnitude cheaper than backporting fixes across a mid-flight task track (see issue #104 for the cascade that motivated this).
+Walk the checklist below against the brief for `<task-id>`. Emit one `brief_review_flagged` event at the end with the finding count. **Warn-tier, not block** — a brief with findings is still dispatchable. The hard pre-ready gate lives in `scripts/validate-brief.sh`; this mode is the human-readable review pass that catches quality defects, weak scope, and bad model recommendations before they cascade into worker rework.
 
 ## Step 1 — Load
 
@@ -75,6 +75,12 @@ Two flag conditions:
    - Rationale missing or generic ("seems right" / "default") — the rule requires a one-line rationale specific to THIS task.
 
 Surface as a finding; don't auto-correct. The author owns the recommendation.
+
+### C12 — Executable task sizing and verification evidence
+
+For direct-to-Achilles implementation briefs, is the task sized as `XS`, `S`, or `M` by default? If `Size: L`, confirm it is either a parent planning/design container that will not dispatch directly, or the body carries a clear L-size waiver / split rationale. Flag vague waivers like "too big to split".
+
+Also confirm the brief has a verification/evidence section that can become test guidance: unit test names, UI journey, manual observation, expected command, screenshot, or debrief evidence. "Verify it works" is not evidence.
 
 ## Step 3 — Emit event + report
 

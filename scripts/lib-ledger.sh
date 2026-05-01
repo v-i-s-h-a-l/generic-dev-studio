@@ -750,7 +750,7 @@ write_brief_artifact() {
 
   local payload
   payload=$({
-    printf 'schema_version: {name: brief, version: 3.5.0, min_reader: 3.0.0, deprecated_at: null}\n'
+    printf 'schema_version: {name: brief, version: 3.8.0, min_reader: 3.0.0, deprecated_at: null}\n'
     printf 'id: %s\n' "$uuid"
     printf 'task_id: %s\n' "$task_uuid"
     printf 'type: %s\n' "$type"
