@@ -12,7 +12,8 @@
 #
 # Filters compose with AND. Default output is TSV:
 #   <id>\t<state>\t<train|->\t<title>\t<updated_at>
-# --format=json emits a JSON array.
+# --format=json emits a JSON array including `brief_summary` when the task's
+# linked brief carries the compact summary slice.
 #
 # --dispatch-ready implies --state=briefed and additionally requires every
 # predecessor in {merged, verified, archived}.
@@ -70,6 +71,7 @@ if [ ! -d "$TASKS_DIR" ]; then
   printf 'error: tasks dir not found: %s\n' "$TASKS_DIR" >&2
   exit 2
 fi
+BRIEFS_DIR=$(resolve_briefs_dir_for "$PROJECT")
 
 # Project each task file into a small JSON record. Missing 1.1.0 fields
 # (train, predecessors) default so jq predicates do not choke on
@@ -77,16 +79,23 @@ fi
 ALL=$(
   for f in "$TASKS_DIR"/*.yaml; do
     [ -f "$f" ] || continue
+    brief_id=$(yq -r '.links.brief // ""' "$f" 2>/dev/null || echo "")
+    brief_summary='null'
+    if [ -n "$brief_id" ] && [ -f "$BRIEFS_DIR/${brief_id}.yaml" ]; then
+      brief_summary=$(yq -o=json '.summary // null' "$BRIEFS_DIR/${brief_id}.yaml" 2>/dev/null || echo 'null')
+      printf '%s' "$brief_summary" | jq empty >/dev/null 2>&1 || brief_summary='null'
+    fi
     yq -o=json '.' "$f" 2>/dev/null \
-      | jq '{
+      | jq --argjson brief_summary "$brief_summary" '. as $task | {
           id, title, state,
           train: (.train // null),
           predecessors: (.predecessors // []),
           priority: (.priority // "p2"),
           effort_minutes: (.effort_minutes // null),
           recommended_model: (.recommended_model // null),
+          brief_summary: $brief_summary,
           updated_at,
-          history_at: ((.history // []) | (last.at // .updated_at))
+          history_at: ((($task.history // []) | last.at) // $task.updated_at)
         }'
   done | jq -s '.'
 )

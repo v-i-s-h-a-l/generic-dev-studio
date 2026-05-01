@@ -87,15 +87,29 @@ produce_briefs() {
     return $?
   fi
 
+  local briefs_dir="$PROJECT_ROOT/plans/briefs"
   local entries
-  entries=$(yq -o=json '{
-    "id": (.legacy_task_id // .id),
-    "title": (.title // ""),
-    "raw_state": (.state // "unknown"),
-    "priority": (.legacy_priority // ""),
-    "complexity": (.legacy_complexity // ((.size // "") | upcase)),
-    "updated_at": (.updated_at // "")
-  }' "$tasks_dir"/*.yaml 2>/dev/null | jq -s '.')
+  entries=$(
+    for task_yaml in "$tasks_dir"/*.yaml; do
+      [ -f "$task_yaml" ] || continue
+      local brief_id summary_json task_json
+      brief_id=$(yq -r '.links.brief // ""' "$task_yaml" 2>/dev/null || echo "")
+      summary_json='null'
+      if [ -n "$brief_id" ] && [ -f "$briefs_dir/${brief_id}.yaml" ]; then
+        summary_json=$(yq -o=json '.summary // null' "$briefs_dir/${brief_id}.yaml" 2>/dev/null || echo 'null')
+        printf '%s' "$summary_json" | jq empty >/dev/null 2>&1 || summary_json='null'
+      fi
+      task_json=$(yq -o=json '{
+        "id": (.legacy_task_id // .id),
+        "title": (.title // ""),
+        "raw_state": (.state // "unknown"),
+        "priority": (.legacy_priority // ""),
+        "complexity": (.legacy_complexity // ((.size // "") | upcase)),
+        "updated_at": (.updated_at // "")
+      }' "$task_yaml" 2>/dev/null || echo '{}')
+      printf '%s' "$task_json" | jq --argjson summary "$summary_json" '. + {summary: $summary}'
+    done | jq -s '.'
+  )
 
   if [ -z "$entries" ] || ! printf '%s' "$entries" | jq empty 2>/dev/null; then
     emit_snap_event snapshot_failed '{"domain":"briefs","error":"yq_failed"}'
@@ -119,7 +133,7 @@ produce_briefs() {
     | map(select(.raw_state as $rs | ["merged","verified","archived","cancelled","superseded"] | index($rs) | not))
     | sort_by(.updated_at) | reverse
     | .[0:30]
-    | map({id, title: title50(.title), status, priority, complexity})
+    | map({id, title: title50(.title), status, priority, complexity, summary})
     | {tasks: ., shown: length, by_status: $by_status, total: $total_all}
   ')
 
