@@ -122,6 +122,10 @@ Mode packs cite signposts in two evidence shapes:
 
 Apollo refuses citations that name a signpost without naming the trace file or payload window — see the "vague citation" failure mode in `apollo/_shared/primitives/evidence-gate.md`.
 
+## Assistant plans
+
+Before capture, Apollo can produce a signpost plan from a scenario using `apollo/_shared/primitives/signpost-assistant.md`. Plans are patch-ready instrumentation briefs: they name interval/event placement, public metadata keys, and missing-signpost policy. The schema is `_shared/contracts/apollo-signpost-plan.schema.json`.
+
 ## Why
 
 Signposts are the only mechanism that produces evidence equally usable in development (Instruments traces) and production (MetricKit aggregates). XCTest baselines cover the dev-loop regression bar; MetricKit covers fleet drift; signposts are the named-workload anchor that links them. Without them, dev-loop and fleet measure different things at different layers and Apollo's regression-detection math (`apollo/_shared/primitives/regression-detection.md`, Stage 1b) cannot compare across sources.
@@ -131,6 +135,7 @@ The privacy default (`.private`) is what makes the "tag measurement-grade numeri
 ## See also
 
 - `apollo/_shared/primitives/evidence-gate.md`
+- `apollo/_shared/primitives/signpost-assistant.md` — scenario-driven signpost plans
 - `apollo/_shared/primitives/metrickit.md` — `MXSignpostMetric` consumer side
 - `apollo/_shared/primitives/xctest-baselines.md` (Stage 1b) — `XCTOSSignpostMetric`
 - WWDC18 405 — Measuring Performance Using Logging

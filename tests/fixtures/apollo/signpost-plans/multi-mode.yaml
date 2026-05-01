@@ -1,0 +1,30 @@
+schema_version:
+  name: apollo-signpost-plan
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+plan_id: signpost-plan-export-multi
+scenario:
+  id: export-1080p
+  version: 2
+mode_targets: [memory, cpu, thermal, battery]
+signposts:
+  - name: Export1080p
+    kind: interval
+    placement: Wrap export start through file write completion.
+    privacy: public-metadata
+    public_payload_keys: [pixel_width, pixel_height, frame_count]
+    required_for_recommendation: true
+  - name: ThermalShed
+    kind: event
+    placement: Emit when the app reduces work because thermal state changed.
+    privacy: public-metadata
+    public_payload_keys: [thermal_state, fps_cap]
+    required_for_recommendation: true
+brief_seed:
+  owner: achilles
+  summary: Add Apollo signposts for export-1080p.
+  acceptance:
+    - Export1080p brackets the full export flow.
+    - ThermalShed event is emitted when load shedding runs.
+missing_signpost_policy: retry-once

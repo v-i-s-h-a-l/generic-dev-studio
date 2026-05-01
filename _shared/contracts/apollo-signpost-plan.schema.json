@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "apollo-signpost-plan.schema.json",
+  "schema": 1,
+  "title": "Apollo Signpost Plan",
+  "description": "Patch-ready signpost plan derived from an Apollo scenario before capture.",
+  "type": "object",
+  "required": ["schema_version", "plan_id", "scenario", "mode_targets", "signposts", "brief_seed", "missing_signpost_policy"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "$ref": "debrief.schema.json#/$defs/schemaVersion" },
+    "plan_id": { "type": "string", "pattern": "^signpost-plan-[a-z0-9-]{6,80}$" },
+    "scenario": {
+      "type": "object",
+      "required": ["id", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "mode_targets": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["memory", "cpu", "thermal", "battery"] }
+    },
+    "signposts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "kind", "placement", "privacy", "required_for_recommendation"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["interval", "event"] },
+          "placement": { "type": "string", "minLength": 1 },
+          "privacy": { "enum": ["public-metadata", "private-metadata", "no-metadata"] },
+          "public_payload_keys": { "type": "array", "items": { "type": "string" } },
+          "required_for_recommendation": { "type": "boolean" }
+        }
+      }
+    },
+    "brief_seed": {
+      "type": "object",
+      "required": ["owner", "summary", "acceptance"],
+      "additionalProperties": false,
+      "properties": {
+        "owner": { "enum": ["achilles", "human"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "acceptance": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+      }
+    },
+    "missing_signpost_policy": { "enum": ["block-before-capture", "retry-once", "advisory-only"] }
+  }
+}

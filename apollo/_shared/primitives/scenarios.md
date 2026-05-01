@@ -68,6 +68,7 @@ Human-run scenarios are first-class. Apollo may guide the user through Xcode and
 
 - `_shared/contracts/apollo-scenario.schema.json`
 - `apollo/_shared/primitives/signposts.md`
+- `apollo/_shared/primitives/signpost-assistant.md`
 - `apollo/_shared/primitives/regression-detection.md`
 - `apollo/_shared/primitives/evidence-gate.md`
 - `apollo/modes/measure.md`
