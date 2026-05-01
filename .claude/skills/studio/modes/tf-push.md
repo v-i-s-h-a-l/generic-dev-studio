@@ -24,8 +24,11 @@ The driver lives at `scripts/studio-tf-push.sh`. This mode pack is the dispatch 
 |---|---|
 | Rehearsal / smoke / CI | `scripts/studio-tf-push.sh --dry-run` |
 | Real release (Stage E only) | `STUDIO_TF_PUSH_LIVE=1 scripts/studio-tf-push.sh` |
+| Real release while drafting Slack in-session | `STUDIO_TF_PUSH_LIVE=1 scripts/studio-tf-push.sh push --background` |
 
 The script refuses non-dry-run work without `STUDIO_TF_PUSH_LIVE=1` (R14). Until Stage E lands, only the dry-run path is exercised.
+
+With `--background`, the script returns a JSON handle immediately and writes `prepared-context.json`, `status.json`, `context.json`, and `push.log` under `~/.dev-studio/<project>/state/release-runs/<release-tag>/`. Use the prepared context to draft Slack while archive/upload continue; require final status `succeeded` before emitting `slack_sent`.
 
 ## Step 2 — Routing
 

@@ -25,7 +25,7 @@
 #              event taxonomy without exposing `lib-ledger.sh` directly.
 #
 # Usage:
-#   scripts/studio-tf-push.sh [push] [--scheme <name>] [--dry-run]
+#   scripts/studio-tf-push.sh [push] [--scheme <name>] [--dry-run] [--background]
 #   scripts/studio-tf-push.sh appstore --build <n> --version <v> \
 #                              --release-notes-file <path> --whatsnew-file <path> \
 #                              [--dry-run]
@@ -45,6 +45,11 @@
 #                                 share one idempotency key.
 #   STUDIO_TF_PUSH_FIXTURE_NODE   override the resolved node id (smoke tests).
 #   STUDIO_TF_PUSH_SKIP_NODE_PICK=1   skip the node-pick gate (fixtures only).
+#   STUDIO_RELEASE_TAG            reused by --background so parent, child, and
+#                                 later Slack emit calls share one release span.
+#   STUDIO_TF_PUSH_PREPARED_CONTEXT_PATH
+#                                 optional path where `push` writes build/version
+#                                 context before the long archive phase.
 
 set -u
 umask 022
@@ -228,6 +233,94 @@ route_to_release_node() {
   fi
 }
 
+cmd_push_background() {
+  local scheme="$1" dry_run_flag="$2"
+
+  require_cmd jq
+
+  local release_tag="${STUDIO_RELEASE_TAG:-release-pending-$(date -u +%Y%m%d-%H%M%S)}"
+  local run_dir="$RELEASE_PROJECT_ROOT/state/release-runs/$release_tag"
+  local log_path="$run_dir/push.log"
+  local status_path="$run_dir/status.json"
+  local context_path="$run_dir/context.json"
+  local prepared_context_path="$run_dir/prepared-context.json"
+  mkdir -p "$run_dir" || {
+    printf 'push: could not create release run dir %s\n' "$run_dir" >&2
+    exit 2
+  }
+
+  jq -nc \
+    --arg release_tag "$release_tag" \
+    --arg state "starting" \
+    --arg log_path "$log_path" \
+    --arg context_path "$context_path" \
+    --arg prepared_context_path "$prepared_context_path" \
+    '{release_tag:$release_tag,state:$state,log_path:$log_path,context_path:$context_path,prepared_context_path:$prepared_context_path,started_at:null,pid:null,exit_code:null}' \
+    >"$status_path"
+
+  local -a child_args
+  child_args=(push --scheme "$scheme")
+  [ "$dry_run_flag" = "1" ] && child_args+=(--dry-run)
+
+  (
+    local started_at rc bg_child_pid
+    bg_child_pid="${BASHPID:-$$}"
+    started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    jq -nc \
+      --arg release_tag "$release_tag" \
+      --arg state "running" \
+      --arg started_at "$started_at" \
+      --arg log_path "$log_path" \
+      --arg context_path "$context_path" \
+      --arg prepared_context_path "$prepared_context_path" \
+      --argjson pid "$bg_child_pid" \
+      '{release_tag:$release_tag,state:$state,started_at:$started_at,log_path:$log_path,context_path:$context_path,prepared_context_path:$prepared_context_path,pid:$pid,exit_code:null}' \
+      >"$status_path"
+    if STUDIO_RELEASE_TAG="$release_tag" \
+        STUDIO_TF_PUSH_PREPARED_CONTEXT_PATH="$prepared_context_path" \
+        "$SCRIPT_DIR/studio-tf-push.sh" "${child_args[@]}" >"$context_path.tmp" 2>"$log_path"; then
+      mv "$context_path.tmp" "$context_path"
+      jq -nc \
+        --arg release_tag "$release_tag" \
+        --arg state "succeeded" \
+        --arg started_at "$started_at" \
+        --arg ended_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --arg log_path "$log_path" \
+        --arg context_path "$context_path" \
+        --arg prepared_context_path "$prepared_context_path" \
+        --argjson pid "$bg_child_pid" \
+        '{release_tag:$release_tag,state:$state,started_at:$started_at,ended_at:$ended_at,log_path:$log_path,context_path:$context_path,prepared_context_path:$prepared_context_path,pid:$pid,exit_code:0}' \
+        >"$status_path"
+    else
+      rc=$?
+      rm -f "$context_path.tmp"
+      jq -nc \
+        --arg release_tag "$release_tag" \
+        --arg state "failed" \
+        --arg started_at "$started_at" \
+        --arg ended_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --arg log_path "$log_path" \
+        --arg context_path "$context_path" \
+        --arg prepared_context_path "$prepared_context_path" \
+        --argjson pid "$bg_child_pid" \
+        --argjson rc "$rc" \
+        '{release_tag:$release_tag,state:$state,started_at:$started_at,ended_at:$ended_at,log_path:$log_path,context_path:$context_path,prepared_context_path:$prepared_context_path,pid:$pid,exit_code:$rc}' \
+        >"$status_path"
+      exit "$rc"
+    fi
+  ) &
+  local pid=$!
+
+  jq -nc \
+    --arg release_tag "$release_tag" \
+    --argjson pid "$pid" \
+    --arg log_path "$log_path" \
+    --arg status_path "$status_path" \
+    --arg context_path "$context_path" \
+    --arg prepared_context_path "$prepared_context_path" \
+    '{release_tag:$release_tag, background:true, pid:$pid, log_path:$log_path, status_path:$status_path, context_path:$context_path, prepared_context_path:$prepared_context_path}'
+}
+
 cmd_emit() {
   local event="${1:-}"; shift || true
   case "$event" in
@@ -249,14 +342,21 @@ cmd_emit() {
 
 cmd_push() {
   DRY_RUN_FLAG=0
+  local BACKGROUND_FLAG=0
   local SCHEME="Zaps"
   while [ $# -gt 0 ]; do
     case "$1" in
       --dry-run) DRY_RUN_FLAG=1; shift ;;
+      --background) BACKGROUND_FLAG=1; shift ;;
       --scheme) SCHEME="${2:?}"; shift 2 ;;
       *) printf 'push: unknown arg %s\n' "$1" >&2; exit 2 ;;
     esac
   done
+
+  if [ "$BACKGROUND_FLAG" = "1" ]; then
+    cmd_push_background "$SCHEME" "$DRY_RUN_FLAG"
+    return
+  fi
 
   local CONFIGURATION="Release"
   case "$SCHEME" in
@@ -371,6 +471,19 @@ EOF
   # jump ahead of queued Achilles task builds without preempting in-flight
   # ones (#267). Priority=release → rank 0 → sorts before task (rank 1).
   local ARCHIVE_PATH="/tmp/${SCHEME}-${NEW_BUILD_NUMBER}.xcarchive"
+  if [ -n "${STUDIO_TF_PUSH_PREPARED_CONTEXT_PATH:-}" ]; then
+    mkdir -p "$(dirname "$STUDIO_TF_PUSH_PREPARED_CONTEXT_PATH")" 2>/dev/null || true
+    jq -nc \
+      --arg release_tag "$RELEASE_TAG" \
+      --argjson build "$NEW_BUILD_NUMBER" \
+      --arg version "$VERSION" \
+      --arg scheme "$SCHEME" \
+      --arg branch "$BRANCH" \
+      --arg archive_path "$ARCHIVE_PATH" \
+      --argjson prev_build "$LATEST_BUILD_NUMBER" \
+      '{release_tag:$release_tag, build:$build, version:$version, scheme:$scheme, branch:$branch, archive_path:$archive_path, prev_build:$prev_build, prepared:true}' \
+      >"$STUDIO_TF_PUSH_PREPARED_CONTEXT_PATH"
+  fi
   local archive_started_at archive_duration_s=0
   archive_started_at=$(date +%s)
 
@@ -641,7 +754,7 @@ cmd_appstore() {
 }
 
 case "${1:-}" in
-  push|""|--dry-run|--scheme)
+  push|""|--dry-run|--scheme|--background)
     [ "${1:-}" = "push" ] && shift
     cmd_push "$@" ;;
   appstore) shift; cmd_appstore "$@" ;;

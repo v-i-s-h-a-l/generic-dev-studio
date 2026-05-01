@@ -36,6 +36,7 @@ Before Step 1:
 - `python3` resolves and the `pyjwt` package is importable (used to mint the ASC JWT — see `_shared/primitives/appstore-connect-jwt.md`).
 - Non-interactive GitHub push works for the active branch: `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never git push --dry-run --porcelain -u origin HEAD` succeeds. This preflight runs before any build-number or version mutation; auth failures must not open a credential prompt or create a stranded release commit.
 - Slack notification credentials are verified before mutation unless `STUDIO_TF_SLACK_DEFERRED=1` explicitly marks the run as upload-only/deferred-notification.
+- Long-running push work can be started with `scripts/studio-tf-push.sh push --background`. The parent returns a JSON handle immediately and the child writes status/log/context artifacts under `~/.dev-studio/<project>/state/release-runs/<release-tag>/`.
 
 Halt with `release_started` not emitted if any prerequisite fails. Stage C's wrapper surfaces the missing piece to the user.
 
@@ -98,6 +99,8 @@ No event emitted at the commit boundary; the next event closes the archive phase
 ### Step 4 — Archive
 
 Run `xcodebuild archive` against the project, scheme, and configuration declared in `turnip-project-config.md`. The archive lands at `/tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive`.
+
+When running in background mode, write `prepared-context.json` after Step 2 and before this archive starts. The file carries `release_tag`, `build`, `version`, `scheme`, `branch`, `archive_path`, and `prev_build`, allowing the wrapper to draft the Slack message while archive/upload continue. The wrapper must still wait for final `status.json` to reach `state=="succeeded"` before sending Slack.
 
 Authentication is JWT-based via `-authenticationKeyPath` / `-authenticationKeyID` / `-authenticationKeyIssuerID`. `CODE_SIGN_STYLE=Automatic`. Pipe through `xcpretty` for human-readable progress; raw output is preserved on a failure path.
 

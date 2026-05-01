@@ -62,6 +62,32 @@ RT=$(echo "$CTX" | jq -r .release_tag)
 echo "PASS: 4 events + context (release_tag=$RT)"
 
 echo
+echo "=== Test 2b: background push returns handle and early context ==="
+BG=$(STUDIO_RELEASE_TAG="release-bg-288" STUDIO_TF_PUSH_FIXTURE_NODE=fixture-laptop \
+  "$REPO/scripts/studio-tf-push.sh" push --dry-run --background 2>&1)
+BG_RT=$(echo "$BG" | jq -r .release_tag)
+BG_PID=$(echo "$BG" | jq -r .pid)
+BG_STATUS=$(echo "$BG" | jq -r .status_path)
+BG_PREPARED=$(echo "$BG" | jq -r .prepared_context_path)
+BG_CONTEXT=$(echo "$BG" | jq -r .context_path)
+[ "$BG_RT" = "release-bg-288" ] || { echo "FAIL: background release_tag mismatch ($BG_RT)"; exit 1; }
+[ "$BG_PID" != "null" ] && [ -n "$BG_PID" ] || { echo "FAIL: background pid missing"; exit 1; }
+for _ in $(seq 1 20); do
+  [ -s "$BG_PREPARED" ] && [ -s "$BG_STATUS" ] && break
+  sleep 0.2
+done
+[ -s "$BG_PREPARED" ] || { echo "FAIL: prepared context missing"; echo "$BG"; exit 1; }
+PREPARED_BUILD=$(jq -r .build "$BG_PREPARED")
+[ "$PREPARED_BUILD" = "1" ] || { echo "FAIL: prepared build mismatch ($PREPARED_BUILD)"; exit 1; }
+for _ in $(seq 1 20); do
+  [ "$(jq -r .state "$BG_STATUS" 2>/dev/null)" = "succeeded" ] && break
+  sleep 0.2
+done
+[ "$(jq -r .state "$BG_STATUS")" = "succeeded" ] || { echo "FAIL: background push did not succeed"; cat "$BG_STATUS"; exit 1; }
+[ -s "$BG_CONTEXT" ] || { echo "FAIL: final context missing"; exit 1; }
+echo "PASS: background handle + prepared/final context"
+
+echo
 echo "=== Test 3: emit subcommand reuses release-tag ==="
 "$REPO/scripts/studio-tf-push.sh" emit slack_drafted --release-tag "$RT" \
   --data '{"build":1,"channel":"#testing","bullet_count":0,"cc_count":0}' >/dev/null
