@@ -64,7 +64,7 @@ scripts/analyze-collect.sh --project turnip-ios --since 2026-04-01
 scripts/forge-latency-report.sh --project turnip-ios --days 14   # stage-level task latency + review-gate comparison
 scripts/field-workflow-report.sh --project turnip-ios --days 14   # Field loop timing, tokens, gates, review coverage, improvement candidates
 scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # plan chain branches, fresh sessions, PR review/merge
-scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex # execute chains with fresh Codex sessions per issue
+scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex # execute chains with UUID telemetry + private run report
 
 # Event log reader (dedupes on producer.agent + idempotency_key; see _shared/contracts/event-emission.md):
 scripts/read-events.sh                                  # current project, deduped

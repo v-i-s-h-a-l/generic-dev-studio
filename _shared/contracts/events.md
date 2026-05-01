@@ -231,6 +231,21 @@ Emitted by `scripts/node-pick.sh` and `scripts/node-health.sh`. Agent field is `
 
 Side channel: gates set `STUDIO_DISPATCH_REASON_FILE` to a temp path before invoking `node-pick.sh`; node-pick writes one line (the reason value) to that file, gates read it, fold it into the payload, then unlink. Stdout of `node-pick.sh` remains the picked node id only — preserves the long-standing caller contract.
 
+### Studio chain events
+
+Emitted by `scripts/studio-chain-runner.sh`. Agent field is `studio`, mode field is `chain`. Every event carries UUID join keys in `data`: `run_id` for the whole invocation, `chain_run_id` for one manifest chain, and `issue_run_id` for one worker subprocess when applicable. Private run reports live under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/`.
+
+| Event | Emitted when | Typical `data` keys |
+|---|---|---|
+| `chain_run_started` | A chain-runner invocation starts after manifest resolution. | `run_id`, `manifest`, `only_chain`, `host_override`, `status` |
+| `chain_started` | One manifest chain starts. | `run_id`, `chain_run_id`, `chain`, `branch`, `base`, `host`, `issue_count` |
+| `chain_issue_started` | One issue worktree is prepared and the worker subprocess is about to run. | `run_id`, `chain_run_id`, `issue_run_id`, `issue_branch`, `host`, `commit_before` |
+| `chain_issue_completed` | The worker subprocess exits and the parent validates or gap-fills `.studio/chain-worker-summary.json`. | `run_id`, `chain_run_id`, `issue_run_id`, `summary`, `commit_after`, `exit_code`, `worker_duration_s`, `telemetry_gaps` |
+| `chain_pr_opened` | The final chain PR is opened. | `run_id`, `chain_run_id`, `pr_number`, `pr_url`, `branch` |
+| `chain_review_completed` | `scripts/pr-headless-review.sh <pr> --method auto` exits. | `run_id`, `chain_run_id`, `pr_url`, `exit_code`, `status`, `duration_s` |
+| `chain_completed` | One manifest chain finishes its PR path. | `run_id`, `chain_run_id`, `chain`, `pr_url`, `duration_s` |
+| `chain_run_completed` | The invocation writes its final private report or abort report. | `run_id`, `report`, `status`, `failure_reason`, `duration_s` |
+
 ### Cross-agent events (every agent emits)
 
 | Event | Emitted when | Typical `data` keys |

@@ -328,7 +328,7 @@
 /studio summary           # end-of-task/session report: done, changed, verified, next command
 /studio guard "topic"     # has this work been done before?
 /studio work &lt;track&gt;      # run a parallel track, then final reviewed PR + cleanup + summary
-/studio work chain workflow-measurement-improvements  # run issue chains with fresh sessions, reviewed PRs, cleanup
+/studio work chain workflow-measurement-improvements  # run issue chains with fresh sessions, UUID telemetry, reviewed PRs, cleanup
 /studio janitor [--yes]   # cross-project sweep of stale artifacts (dry-run by default)
 /studio nodes             # day-2 fleet management — status, add, sync, health, diagnose, schedule, recheck
 /studio tf-push [--dry-run]  # studio-owned TestFlight / App Store Connect push (live work gated on STUDIO_TF_PUSH_LIVE=1)
@@ -416,7 +416,7 @@
       <div class="mode-card">
         <code>/studio work chain &lt;manifest-or-name&gt;</code>
         <div class="triggers">"run these chains end to end", "fresh session per chain"</div>
-        <div class="what">Script-backed chain runner for studio issue work. Each chain starts from latest <code>main</code> into a feature branch; each issue gets its own branch, <code>/tmp</code> worktree, and fresh host session (<code>codex exec</code> by default, configurable per chain). Completed issue branches fast-forward into the chain branch; the final chain PR runs <code>scripts/pr-headless-review.sh &lt;pr&gt; --method auto</code>, merges only through autopilot, then prunes refs and removes worktrees. The manifest argument can be a path or a bare name under <code>chains/</code>, so <code>workflow-measurement-improvements</code> resolves to <code>chains/workflow-measurement-improvements.yaml</code>. Dry-run first with <code>scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run</code>.</div>
+        <div class="what">Script-backed chain runner for studio issue work. Each chain starts from latest <code>main</code> into a feature branch; each issue gets its own branch, <code>/tmp</code> worktree, fresh host session, issue-run UUID, and required <code>.studio/chain-worker-summary.json</code>. Completed issue branches fast-forward into the chain branch; the final chain PR runs <code>scripts/pr-headless-review.sh &lt;pr&gt; --method auto</code>, merges only through autopilot, then prunes refs and removes worktrees. Runner telemetry emits chain lifecycle events and writes private reports under <code>~/.dev-studio/generic-dev-studio/chain-runs/&lt;run_id&gt;/</code>. Dry-run first with <code>scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run</code>.</div>
       </div>
       <div class="mode-card">
         <code>/studio guard "&lt;topic&gt;"</code>
