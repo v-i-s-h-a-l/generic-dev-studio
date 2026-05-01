@@ -707,15 +707,26 @@ write_brief_artifact() {
     return 2
   fi
 
-  # Strip mint-intent kvs from REST_ARGS so they don't leak into the YAML payload.
+  local _schema_version="3.7.0"
+
+  # Strip writer-control kvs from REST_ARGS so they don't leak into the YAML payload.
   local _new_rest=() _kvf
   for _kvf in "${_LW_REST_ARGS[@]+"${_LW_REST_ARGS[@]}"}"; do
     case "$_kvf" in
       state=*|awaiting_user=*) ;;
+      schema_version=*) _schema_version="${_kvf#schema_version=}" ;;
       *) _new_rest+=("$_kvf") ;;
     esac
   done
   _LW_REST_ARGS=("${_new_rest[@]+"${_new_rest[@]}"}")
+
+  case "$_schema_version" in
+    3.7.0|3.8.0) ;;
+    *)
+      printf 'write_brief_artifact: schema_version=%s invalid (supported: 3.7.0, 3.8.0)\n' "$_schema_version" >&2
+      return 2
+      ;;
+  esac
 
   local _final_state="draft"
   [ "$_explicit_state" = "ready" ] && _final_state="ready"
@@ -750,7 +761,7 @@ write_brief_artifact() {
 
   local payload
   payload=$({
-    printf 'schema_version: {name: brief, version: 3.8.0, min_reader: 3.0.0, deprecated_at: null}\n'
+    printf 'schema_version: {name: brief, version: %s, min_reader: 3.0.0, deprecated_at: null}\n' "$_schema_version"
     printf 'id: %s\n' "$uuid"
     printf 'task_id: %s\n' "$task_uuid"
     printf 'type: %s\n' "$type"

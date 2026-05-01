@@ -8,7 +8,7 @@ type: reference
 
 Per-brief artifact written to `~/.dev-studio/<project>/plans/briefs/<brief-id>.yaml`. Replaces the markdown briefs that previously lived at `plans/chanakya-tasks/<task-id>-<type>.md`. One file per brief; a task may have many briefs across rework cycles (each with a distinct `id`, same `task_id`).
 
-Version 3.8.0 makes the executable brief quality contract lintable. New direct-to-Achilles implementation briefs must be XS/S/M by default, carry explicit objective / non-goals / measurable acceptance / verification evidence, and include structured model recommendations. L-sized Achilles implementation briefs require an explicit waiver or split rationale. Legacy briefs below 3.8.0 are not retroactively blocked.
+Version 3.8.0 makes the executable brief quality contract lintable. New direct-to-Achilles implementation briefs must be XS/S/M by default, carry explicit objective / non-goals / measurable acceptance / verification evidence, and include structured model recommendations. L-sized Achilles implementation briefs require an explicit waiver or split rationale. Legacy briefs below 3.8.0 are not retroactively blocked. `write_brief_artifact` callers opt into this gate with `schema_version=3.8.0`; legacy migration/backfill paths stay below 3.8.0 unless they can satisfy the full contract.
 
 Version 3.6.0 adds `recommended_models`, a task-level best-result and fast-turnaround recommendation pair resolved from `_shared/rules/model-recommendation.md` and `_shared/schemas/model-catalog.yaml`. Additive over 3.5.0; readers on 3.0.0+ ignore unknown fields.
 
