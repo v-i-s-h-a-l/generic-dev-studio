@@ -204,11 +204,24 @@ summary="$tmpdir/reviewer-summary.md"
 reviewer_home="$tmpdir/reviewer-home"
 mkdir -p "$reviewer_home"
 reviewer_codex_home=""
+reviewer_claude_config_dir=""
 case "$REVIEW_HOST" in
   codex*|*codex*)
     reviewer_codex_home="${CODEX_REVIEWER_HOME:-${CODEX_HOME:-${CALLER_HOME:+$CALLER_HOME/.codex}}}"
     [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] || {
       printf 'pr-headless-review: codex reviewer auth home not found; set CODEX_REVIEWER_HOME or CODEX_HOME\n' >&2
+      exit 1
+    }
+    ;;
+  claude*|*claude*)
+    reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-${CALLER_HOME:+$CALLER_HOME/.claude-reviewer}}"
+    [ -n "$reviewer_claude_config_dir" ] || {
+      printf 'pr-headless-review: claude reviewer config dir not found; set CLAUDE_REVIEWER_CONFIG_DIR or HOME\n' >&2
+      exit 1
+    }
+    mkdir -p "$reviewer_claude_config_dir"
+    [ -d "$reviewer_claude_config_dir" ] || {
+      printf 'pr-headless-review: failed to create claude reviewer config dir: %s\n' "$reviewer_claude_config_dir" >&2
       exit 1
     }
     ;;
@@ -253,6 +266,7 @@ if ! ( cd "$REPO_ROOT" && env -i \
     LANG="${LANG:-C.UTF-8}" \
     USER="${USER:-}" \
     ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
+    ${reviewer_claude_config_dir:+CLAUDE_CONFIG_DIR="$reviewer_claude_config_dir"} \
     STUDIO_HOST="$REVIEW_HOST" \
     REVIEW_PAYLOAD="$payload" \
     PR_URL="$pr_url" \

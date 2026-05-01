@@ -80,6 +80,10 @@ normal worker/reference adapters. A reviewer profile must declare
 `secret_scope: none`, force no-prompt headless execution, and keep the session
 read-only unless a narrow auto-fix path is explicitly designed later.
 
+Claude-based reviewer profiles should also get a dedicated `CLAUDE_CONFIG_DIR`
+instead of inheriting the caller's home directory. Codex-based reviewers keep
+using `CODEX_HOME`.
+
 Do not make a normal worker profile eligible by relaxing the gate. Add a
 dedicated `<host>-reviewer` adapter with its own manifest and enforcement.
 
