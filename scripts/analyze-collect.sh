@@ -101,17 +101,23 @@ is_day_partition() {
   esac
 }
 
+stream_window_events() {
+  local f d
+  [ -d "$EVENT_DIR" ] || return 1
+  for f in "$EVENT_DIR"/*.jsonl; do
+    [ -f "$f" ] || continue
+    d=$(basename "$f" .jsonl)
+    is_day_partition "$d" || continue
+    [ "$d" \< "$SINCE" ] && continue
+    cat "$f"
+  done
+}
+
 echo "## Event counts (by type)"
 if [ -d "$EVENT_DIR" ]; then
   # JSONL filenames are YYYY-MM-DD.jsonl — lexicographic compare == date compare.
   out=$(
-    for f in "$EVENT_DIR"/*.jsonl; do
-      [ -f "$f" ] || continue
-      d=$(basename "$f" .jsonl)
-      is_day_partition "$d" || continue
-      [ "$d" \< "$SINCE" ] && continue
-      cat "$f"
-    done | sed -n 's/.*"event":"\([^"]*\)".*/\1/p' | sort | uniq -c | sort -rn
+    stream_window_events | sed -n 's/.*"event":"\([^"]*\)".*/\1/p' | sort | uniq -c | sort -rn
   )
   if [ -n "$out" ]; then
     printf '%s\n' "$out"
@@ -120,6 +126,97 @@ if [ -d "$EVENT_DIR" ]; then
   fi
 else
   echo "(no event dir at $EVENT_DIR)"
+fi
+echo
+
+echo "## Brief → dispatch latency"
+if [ ! -d "$EVENT_DIR" ]; then
+  echo "(no event dir at $EVENT_DIR)"
+elif ! command -v jq >/dev/null 2>&1; then
+  echo "unavailable: jq required to join brief and dispatch events"
+else
+  rows=$(
+    stream_window_events | jq -r '
+      def epoch: try (.ts | fromdateiso8601 | floor) catch "";
+      def task_id: (.data.task_id // .data.legacy_task_id // .task // "");
+      def to_state: (.data.to // .data.to_state // "");
+      select(
+        .event == "brief_written"
+        or (.event == "brief_state_changed" and (to_state == "draft" or to_state == "ready"))
+        or .event == "task_dispatched"
+      )
+      | [epoch, (.event // ""), task_id] | @tsv
+    ' 2>/dev/null
+  )
+  if [ -z "$rows" ]; then
+    echo "(no brief_written/brief_state_changed or task_dispatched events in window)"
+  else
+    printf '%s\n' "$rows" | awk -F'\t' -v now="$(date -u +%s)" '
+      function valid_epoch(v) { return (v ~ /^[0-9]+$/ && v > 0) }
+      function remember_task(t) {
+        if (!(t in seen_task)) {
+          seen_task[t] = 1
+          task_order[++task_n] = t
+        }
+      }
+      function add_latency(v,    n) {
+        n = ++latency_n
+        latency[n] = v
+        latency_total += v
+        if (v > latency_max) latency_max = v
+      }
+      function percentile(pct,    i,j,idx,tmp) {
+        if (latency_n < 1) return "n/a"
+        for (i = 1; i <= latency_n; i++) sorted[i] = latency[i]
+        for (i = 1; i <= latency_n; i++) {
+          for (j = i + 1; j <= latency_n; j++) {
+            if (sorted[i] > sorted[j]) {
+              tmp = sorted[i]; sorted[i] = sorted[j]; sorted[j] = tmp
+            }
+          }
+        }
+        idx = int(latency_n * pct + 0.999)
+        if (idx < 1) idx = 1
+        if (idx > latency_n) idx = latency_n
+        return sorted[idx]
+      }
+      {
+        epoch=$1; event=$2; task=$3
+        if (!valid_epoch(epoch) || task == "") next
+        if (event == "brief_written" || event == "brief_state_changed") {
+          remember_task(task)
+          if (write_at[task] == "" || epoch < write_at[task]) write_at[task] = epoch
+        } else if (event == "task_dispatched") {
+          if (dispatch_at[task] == "" || epoch < dispatch_at[task]) dispatch_at[task] = epoch
+        }
+      }
+      END {
+        for (i = 1; i <= task_n; i++) {
+          task = task_order[i]
+          written++
+          if (dispatch_at[task] != "" && dispatch_at[task] >= write_at[task]) {
+            dispatched++
+            add_latency(dispatch_at[task] - write_at[task])
+          } else if (dispatch_at[task] != "" && dispatch_at[task] < write_at[task]) {
+            dispatch_before_write++
+          } else {
+            pending++
+            age = now - write_at[task]
+            if (age > oldest_pending_age) oldest_pending_age = age
+            if (age >= 86400) pending_24h++
+          }
+        }
+        avg = latency_n > 0 ? int(latency_total / latency_n) : "n/a"
+        print "source: brief_written/brief_state_changed → task_dispatched (joined by task_id)"
+        printf "written: %d\n", written + 0
+        printf "dispatched: %d\n", dispatched + 0
+        printf "pending: %d\n", pending + 0
+        printf "dispatch_before_write: %d\n", dispatch_before_write + 0
+        printf "latency_s: samples=%d avg=%s p50=%s p90=%s max=%s\n", latency_n + 0, avg, percentile(0.50), percentile(0.90), (latency_n > 0 ? latency_max : "n/a")
+        printf "pending_age_s: oldest=%s over_24h=%d\n", (pending > 0 ? oldest_pending_age : "n/a"), pending_24h + 0
+      }
+    '
+  fi
 fi
 echo
 
