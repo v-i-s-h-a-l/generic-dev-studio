@@ -62,6 +62,7 @@ scripts/achilles-queue.sh clear                # wipe queue (abort scenarios onl
 scripts/analyze-collect.sh --project turnip-ios         # stats dump for a usage-analysis pass
 scripts/analyze-collect.sh --project turnip-ios --since 2026-04-01
 scripts/forge-latency-report.sh --project turnip-ios --days 14   # stage-level task latency + review-gate comparison
+scripts/field-workflow-report.sh --project turnip-ios --days 14   # Field loop timing, tokens, gates, review coverage, improvement candidates
 scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # plan chain branches, fresh sessions, PR review/merge
 scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex # execute chains with fresh Codex sessions per issue
 
