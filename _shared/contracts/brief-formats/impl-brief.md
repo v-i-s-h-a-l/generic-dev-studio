@@ -1,6 +1,8 @@
 # Shared: Implementation Brief Format
 
-Write to `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md`:
+Write the `body:` for `~/.dev-studio/<project>/plans/briefs/<brief-id>.yaml`.
+
+Implementation briefs are executable worker instructions. Default to XS/S/M slices. Use L only for parent planning containers, or add an explicit L-size waiver when the whole implementation truly must dispatch as one Achilles task.
 
 ```markdown
 # Task Brief: <task-id> — <Title>
@@ -12,7 +14,7 @@ Write to `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md`:
 
 ## Objective
 
-<Clear description of what to build/fix and why>
+<One concise description of the behavior/output to build/fix and why. Prefer "after this, X happens when Y" over broad intent.>
 
 ## Priority & Complexity
 
@@ -29,6 +31,11 @@ Write to `~/.dev-studio/<project>/plans/chanakya-tasks/<task-id>-<slug>.md`:
   <!-- thinking-budget tier; orthogonal to Size. A crash-fix can be S-size and warrant `high`
        because diagnosis is the cost driver, not diff size. -->
   Rationale: <one line — what about THIS task drove the effort tier>
+
+<!-- Required only when Size is L and dispatch_agent is Achilles. Omit for XS/S/M. -->
+## Split Rationale
+
+<Why this could not be split into XS/S/M executable briefs, or why this L item is a parent planning/design container rather than a direct Achilles implementation brief.>
 
 ## Churn Layer
 
@@ -127,13 +134,18 @@ Before starting, load these skills for guidance:
 
 ## Acceptance Criteria
 
-1. <Specific, testable criterion>
-2. <Another criterion>
+1. <Specific, binary criterion tied to changed behavior/output>
+2. <Another criterion that is unit-testable, UI-testable, quantifiable, or manually verifiable>
 3. Accessibility identifiers defined for all interactive elements
 4. Dependencies injected via protocols where specified in Test Seams
 5. All user-visible strings use `"keyName".localized` — no hardcoded literals, new keys in all three `.lproj` files
 
-## Out of Scope
+## Verification / Evidence
+
+- <Exact unit/UI/manual verification Achilles should run or produce>
+- <Expected evidence in the debrief: command output, screenshot, test name, or manual observation>
+
+## Non-goals / Out of Scope
 
 - <Explicit boundaries>
 - Writing tests (handled by sub-tasks <task-id-a>, <task-id-b>, <task-id-c>)

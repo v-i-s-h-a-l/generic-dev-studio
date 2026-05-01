@@ -20,7 +20,7 @@ writes:
 
 # Mode: Brief Generation (`/chanakya brief <task-id>`)
 
-This is the most critical mode. The brief must be **completely self-contained** — a worker reads ONLY this file.
+This is the most critical mode. The brief must be **completely self-contained** — a worker reads ONLY this file. It must also be compact enough to execute: author executable Achilles briefs as XS/S/M slices by default, with measurable acceptance and verification evidence that Argus can evaluate without guessing intent.
 
 Snapshots: `snapshots/briefs.json` (tolerates 5-minute freshness — regenerate via `scripts/chanakya-snap.sh briefs` if older; fallback is `scripts/query-plans.sh --kind=task,brief`). `snapshots/debt.json` is checked on entry to refuse under block state (fallback: `scripts/query-plans.sh --kind=debt`).
 
@@ -108,9 +108,21 @@ Skip when `affinity.touchpoints` is already non-empty, or the task has no "Files
 - Dependent task: note the base branch
 - Include exact git commands to create the worktree (Achilles handles the actual worktree add; the brief only names conventions)
 
+## Step 5B — Shape executable scope
+
+Before writing an implementation brief, decide whether the task is executable or a parent planning container:
+
+- **Executable worker task:** direct Achilles or Apollo work. Default `size` to `xs`, `s`, or `m`. If the loaded task is `size: l`, split it into smaller child tasks before dispatch unless the user has explicitly waived splitting.
+- **Parent planning task:** design container, epic, release bucket, or broad workstream. It can remain `size: l`, but do not dispatch it directly to Achilles; author child executable briefs instead.
+- **Waived L implementation:** allowed only with an explicit `## L-size reason`, `## Size waiver`, `## Split rationale`, or `## Why not split` section in the body. The reason must explain why one worker context is safer than splitting.
+
+Every executable brief must include: concise objective, explicit non-goals / out-of-scope, measurable acceptance criteria, verification/evidence guidance, structured model recommendations, and dependencies/handoff notes only when they affect execution. Long background belongs in linked design/context docs or in the ≤500-token `summary`, not in the worker body.
+
 ## Step 6 — Write the brief (type-aware)
 
-Render the type-specific narrative from the template corresponding to the task type (see §6A-D below) into a tempfile, then call `write_brief_artifact` — it writes the YAML canonical form (schema `_shared/schemas/brief.md`, `brief@3.3.0`), emits `brief_state_changed null → draft`, and regenerates `plans/index.yaml`.
+Render the type-specific narrative from the template corresponding to the task type (see §6A-D below) into a tempfile, then call `write_brief_artifact` — it writes the YAML canonical form (schema `_shared/schemas/brief.md`, `brief@3.8.0`), emits `brief_state_changed null → draft`, and regenerates `plans/index.yaml`.
+
+`brief@3.8.0` turns the quality bar into a pre-ready lint gate via `scripts/validate-brief.sh`. See `_shared/schemas/brief.md` §Executable Brief Quality Contract for the exact checked fields.
 
 ### Summary (`brief@3.2.0`, required for new briefs)
 
@@ -167,6 +179,7 @@ write_brief_artifact "$BRIEF_UUID" "<parent-task-uuid>" "<type>" "<size>" \
   legacy_task_id=<T-number> \
   slug=<short-kebab-slug> \
   summary="<one-sentence change>. <one-sentence why>. <one-sentence key constraint>." \
+  recommended_models='{"best_result":{"tier":"sonnet","model_id":"claude-sonnet-default","reasoning_effort":"medium"},"fast_turnaround":{"tier":"haiku","model_id":"claude-haiku-default","reasoning_effort":"low"},"rationale":"Small implementation against established patterns."}' \
   body_file="$BODY_FILE"
 
 # Self-review before flipping to ready: lints the summary slice and (if any

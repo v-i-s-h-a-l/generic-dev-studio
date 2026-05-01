@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-01T00:54:18Z",
+  "generated_at": "2026-05-01T01:08:09Z",
   "schema": 1,
   "commands": [
     {"name": "chanakya-help", "source": "commands/chanakya-help.md", "description": "", "agent": null, "scope": "global"},
@@ -31,7 +31,7 @@
     {"name": "argus.code-quality", "source": "argus/modes/code-quality.md", "agent": "argus", "mode": "code-quality", "description": "Stage 2 of two-stage Argus review. Cross-file regressions, edge cases, diff anomalies, secrets, base-branch staleness, M/L test run, TDD red→green. Runs iff Stage 1 returned approved or flagged. Previously the sole Argus pass; split 2026-04-23."},
     {"name": "argus.spec-compliance", "source": "argus/modes/spec-compliance.md", "agent": "argus", "mode": "spec-compliance", "description": "Stage 1 of the two-stage Argus review. Narrow check — does the diff match the brief? Nothing extra, nothing missed. Runs before code-quality. Drawn from obra/superpowers/subagent-driven-development."},
     {"name": "chanakya.blocked-by", "source": "chanakya/modes/blocked-by.md", "agent": "chanakya", "mode": "blocked-by", "description": "Reverse predecessors lookup. Given a task id, list every task whose predecessors[] contains it — i.e. every task whose dispatch is blocked on this one shipping."},
-    {"name": "chanakya.brief-review", "source": "chanakya/modes/brief-review.md", "agent": "chanakya", "mode": "brief-review", "description": "Checklist-driven quality pass over an authored brief before dispatch. Warn-tier, not block — ships even with findings. Catches brief defects that cascade into rework. Runs standalone via `/chanakya brief-review <task-id>`; not auto-invoked."},
+    {"name": "chanakya.brief-review", "source": "chanakya/modes/brief-review.md", "agent": "chanakya", "mode": "brief-review", "description": "Checklist-driven quality pass over an authored brief before dispatch. Warn-tier, not block. Catches brief defects before worker rework."},
     {"name": "chanakya.brief", "source": "chanakya/modes/brief.md", "agent": "chanakya", "mode": "brief", "description": "Brief Generation + Brief-All composite. Writes self-contained Achilles briefs with Figma + codebase context. Runs a similarity probe before authoring (populates `similar_to`, offers duplicate-fold)."},
     {"name": "chanakya.compact", "source": "chanakya/modes/compact.md", "agent": "chanakya", "mode": "compact", "description": "Archive verified tasks, regenerate Dashboard + Module Index + Blocked list, trim changelog, optionally sweep artifacts. Includes implicit feedback-archive + index regeneration."},
     {"name": "chanakya.digest", "source": "chanakya/modes/digest.md", "agent": "chanakya", "mode": "digest", "description": "State-change rollup over a time window (day/week/month). Groups task_state_changed events by destination state, with per-train breakdowns. Default window is day."},

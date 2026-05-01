@@ -73,10 +73,13 @@ The heuristic is deliberately simple (Jaccard over title tokens + touchpoint glo
 ## Step 3 — Tier tasks
 
 Classify each task:
-- **Plan-worthy** (features, refactors, multi-module work) → gets a brief
+- **Plan-worthy executable** (features, refactors, multi-module work that can be completed by one worker) → gets an Achilles/Apollo brief
+- **Parent planning container** (epic, broad rewrite, design/planning arc, release bucket) → stays as a parent task; split into child executable tasks before dispatch
 - **Direct** (bug fixes, small tweaks, single-file changes) → logged as `direct` type, no brief needed
 
 Tell the user: "T001 and T002 need briefs (multi-file features). T003 is a simple bug fix — send it directly to Achilles when ready."
+
+Default executable task size is `xs`, `s`, or `m`. Avoid `l` for direct Achilles implementation tasks; if a candidate remains `l`, either split it now or mark it as a parent planning container and create child tasks. A direct L implementation brief requires an explicit waiver later in `/chanakya brief`.
 
 ## Step 4 — Expand into task groups
 
@@ -161,7 +164,7 @@ LEGACY_ID=$(scripts/next-task-id.sh)             # default block
 TASK_UUID=$(mint_uuidv7)
 write_task_artifact "$TASK_UUID" proposed "<title>" \
   legacy_task_id="$LEGACY_ID" \
-  size=<s|m|l> \
+  size=<xs|s|m|l> \
   type=<feature|bugfix|refactor|test-unit|test-integration|test-ui|direct>
 ```
 
@@ -170,6 +173,8 @@ The helper initializes `links.{brief,debrief,reviews,release,feedback}` to their
 For sub-tasks (T268a/b/c under T268), call `write_task_artifact` once per sub-task with `legacy_task_id=T268a` etc. The parent/child relationship lives in the human-readable title prefix and in the `plans/index.yaml` rollup (the index generator clusters on title prefix). `task@1.0.0` does not encode a `group` field — keeping the schema narrow is deliberate.
 
 **XS tasks.** `size=xs` is introduced separately for trivial direct tasks. Emit `type=direct` together with `size=xs` for those.
+
+**L tasks.** Use `size=l` for parent planning containers or explicitly waived implementation tasks only. If the work is executable, prefer multiple `xs`/`s`/`m` children with measurable acceptance criteria over one broad L worker brief.
 
 ## Step 7 — Propose parallelization
 

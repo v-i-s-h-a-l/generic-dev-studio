@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-05-01T00:54:19Z",
+  "generated_at": "2026-05-01T01:07:43Z",
   "agents": [
     {
       "name": "studio",
@@ -406,7 +406,7 @@
           "name": "brief-review",
           "path": "chanakya/modes/brief-review.md",
           "type": "mode-pack",
-          "description": "Checklist-driven quality pass over an authored brief before dispatch. Warn-tier, not block — ships even with findings. Catches brief defects that cascade into rework. Runs standalone via `/chanakya brief-review <task-id>`; not auto-invoked.",
+          "description": "Checklist-driven quality pass over an authored brief before dispatch. Warn-tier, not block. Catches brief defects before worker rework.",
           "reads": ["plans/briefs/*.yaml                            # canonical brief", "plans/tasks/<task-id>.yaml                     # parent task for context (type, size, links)"],
           "writes": ["events/<date>.jsonl                            # brief_review_flagged event per run with findings"],
           "snapshots": [],

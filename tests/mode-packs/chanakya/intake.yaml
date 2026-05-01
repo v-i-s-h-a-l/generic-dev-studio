@@ -1,0 +1,24 @@
+# Skill-testing fixture for chanakya/modes/intake.md
+# Proves: parent planning containers are separated from executable tasks.
+schema: 1
+pack: chanakya/modes/intake.md
+scenario: |
+  During intake, the user describes one broad arc: "rewrite onboarding,
+  account creation, notification permission, and analytics handoff." Walk
+  through how Chanakya should tier and size this before task artifacts are
+  written. Explain when to create a parent planning container, what sizes
+  executable child tasks should default to, and when a direct task can be XS.
+failure_signals:
+  - "(?i)one.*(large|L).*task"
+  - "(?i)brief.*whole.*arc"
+  - "(?i)(ask|need).*(more detail|clarification).*before.*classify"
+success_signals:
+  - "(?i)parent planning container"
+  - "XS"
+  - "S"
+  - "M"
+  - "(?i)child.*executable"
+notes: |
+  The fixture catches the failure mode where intake treats L as the normal
+  implementation size instead of splitting broad work into reviewer-ready
+  executable slices.

@@ -1,0 +1,25 @@
+# Skill-testing fixture for chanakya/modes/brief.md
+# Proves: executable-scope shaping + pre-ready brief quality gate.
+schema: 1
+pack: chanakya/modes/brief.md
+scenario: |
+  A user asks Chanakya to brief a broad implementation task marked Size L:
+  "modernize the whole settings sync flow." Explain what Chanakya must do
+  before handing work to Achilles. Name the scope-shaping decision, the
+  required sections/evidence for an executable brief, and the lint script
+  that blocks weak brief@3.8.0 artifacts before they become ready.
+failure_signals:
+  - "(?i)send.*(entire|whole).*to achilles"
+  - "(?i)L.*(fine|okay|normal).*(implementation|worker)"
+  - "(?i)(ask|need).*(more context|which files)"
+success_signals:
+  - "XS/S/M"
+  - "(?i)(split|child).*task"
+  - "validate-brief.sh"
+  - "brief@3.8.0"
+  - "(?i)(verification|evidence)"
+notes: |
+  The mode pack is load-bearing because a generic planner may preserve the
+  user's broad L task as one implementation brief. The pack tells Chanakya
+  to distinguish parent planning containers from executable worker tasks and
+  to rely on the versioned quality gate before ready-dispatch.
