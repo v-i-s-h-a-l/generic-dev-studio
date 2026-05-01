@@ -9,10 +9,11 @@ reads:
   - plans/tasks/<task-id>.yaml
   - plans/briefs/<brief-id>.yaml                   # context only; spec matching is Stage 1's job
   - events/<date>.jsonl                            # prior review events for this task
+  - argus/rules/*.md                               # selective rule-pack applicability metadata
 writes:
   - plans/reviews/<review-id>.yaml                 # review artifact (schema: review@1.1.0)
   - plans/tasks/<task-id>.yaml                     # back-ref: links.reviews append
-  - events/<date>.jsonl                            # review_requested (stage: quality), review_{approved,flagged,blocked} (stage: quality)
+  - events/<date>.jsonl                            # review_requested, argus_rules_skipped, review verdict events
 ---
 
 # Mode: Code-Quality (Argus Stage 2)
@@ -79,14 +80,25 @@ TASK_ID="$TASK_ID" eval "$(scripts/argus-diff-extract.sh "$WORKTREE" "$BASE_BRAN
 
 Exports `BASE_SHA`, `CHANGED_FILES`, `DIFF_LINES`, `DIFF_PATH` (a tmp file under `/tmp/argus-<task-id>-diff.txt`). Applies the 500-line / 10-file caps and emits `review_scoped` per cap hit.
 
+### Step 2.5 — Diff classification and rule selection
+
+```bash
+ARGUS_DIFF_CLASSIFICATION=$(scripts/argus-classify-diff.sh "$DIFF_PATH")
+ARGUS_RULE_SELECTION=$(scripts/argus-select-rules.sh "$ARGUS_DIFF_CLASSIFICATION" argus/rules)
+scripts/write-event.sh --agent argus --mode review --event argus_rules_skipped --task "$TASK_ID" \
+  --data "$(printf '%s' "$ARGUS_RULE_SELECTION" | jq -c '{skipped: .skipped, classifier: .classifier}')"
+```
+
+Load only the rule packs named in `ARGUS_RULE_SELECTION.load`; skip every pack named in `ARGUS_RULE_SELECTION.skipped`. Rule-pack frontmatter is an optimization boundary, not a quality downgrade: a pack can skip only when its `applies_when` predicate proves the diff lacks that signal. Always keep the classifier JSON with the review notes so coverage questions can be reproduced.
+
 ### Step 3 — Run diff checks 1–6
 
-Run checks 1–6 from `_shared/rules/review-rules.md` against the diff at `$DIFF_PATH`. Collect findings into two lists:
+Run only the loaded rule packs against the diff at `$DIFF_PATH`. Each pack points to its source procedure in `_shared/rules/review-rules.md` or `_shared/rules/swift-skill-routing.md`. Collect findings into two lists:
 
 - `BLOCKS` — hard checks (compile/test failure, secrets, base staleness) or promoted checks
 - `FLAGS` — everything else in week 1
 
-Reference the review rules file for per-check procedures. An erroring check is logged as a flag, never a block (Behavior Rule 6).
+Reference the loaded pack's source rule for per-check procedures. An erroring check is logged as a flag, never a block (Behavior Rule 6).
 
 **Scope check is NOT here** — that's Stage 1 (spec-compliance). If spec-compliance already passed, assume scope is fine and focus on quality.
 

@@ -91,6 +91,8 @@ scripts/status-domain.sh releases                       # one-line release summa
 # Argus review pipeline — mechanical extractions from argus/SKILL.md (Phase 2.6.5):
 eval "$(scripts/argus-setup.sh T001 S /path/to/worktree)"           # marker + review_requested + trap line
 TASK_ID=T001 eval "$(scripts/argus-diff-extract.sh /path main)"     # BASE_SHA + DIFF_PATH + scope-cap events
+scripts/argus-classify-diff.sh /tmp/argus-T001-diff.txt             # JSON diff signals for selective rule loading
+scripts/argus-select-rules.sh '{"touches_swiftui":true}' argus/rules # JSON load/skipped rule-pack lists
 scripts/argus-run-tests.sh T001 MyScheme MyTests                    # xcodebuild + test-slot mgmt; exit 0 green, 3 red
 scripts/argus-verify-tdd.sh T001 /path main MyScheme MyTests        # red→green verify; exit 0 ok, 2 flag, 3 block
 scripts/argus-emit-verdict.sh T001 approved '[]' --task-uuid <uuid> # YAML verdict + back-ref + event + stdout line
