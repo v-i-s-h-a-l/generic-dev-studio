@@ -234,7 +234,7 @@ Select the gate from the brief's `Size:` field (or infer for direct mode). The j
 
 `--force-build` → force `full-green`. `--ignore-build-debt` → keeps default gate (the override bypasses the debt block, not the gate).
 
-**Package-only fast path (#110).** Before the size-driven gate, try `swift-test-gate.sh`. When the diff lives entirely under a single SPM package directory it runs `swift test --package-path <pkg>` (no simulator, no xcodebuild lock) and the verdict stands; otherwise it exits 1 and the size-driven gate runs as the fallback. Skipped under `--force-build` since the user is opting in to xcodebuild explicitly.
+**Package-only fast path (#110).** Before the size-driven gate, try `swift-test-gate.sh`. When the diff lives entirely under a single SPM package directory it runs `swift test --package-path <pkg>` (no simulator, no xcodebuild lock) and the verdict stands; otherwise it exits 1 and the size-driven gate runs as the fallback. If `swift-test-gate.sh` exits 2 with `reason: focused_verification_structurally_blocked`, stop and report the structural blocker directly; do not run `task-build-gate.sh` unless the user explicitly authorizes the broader run. Skipped under `--force-build` since the user is opting in to xcodebuild explicitly.
 
 **Snapshot reference sync (#113).** If the diff touches snapshot tests, pull the canonical reference images down first so the assertion compares against the canonical bytes rather than whatever is stale on this machine. Detection is name-based (`__Snapshots__/` directory or a path matching `*Snapshot*`), framework-agnostic. `snapshot-sync.sh` is a silent no-op when no canonical node is registered or reachable — infrastructure prep that will become load-bearing once the project adopts a snapshot framework.
 
@@ -250,7 +250,7 @@ if [ "${FORCE_BUILD:-0}" = "0" ]; then
   case $rc in
     0) GATE=swift-test ;;
     1) scripts/task-build-gate.sh "$GATE" "$TASK_ID" "$WORKTREE" "$SCHEME" "$DESTINATION" "$PROJECT_RELPATH" ;;
-    *) exit $rc ;;
+    *) exit $rc ;;  # Includes focused_verification_structurally_blocked: no automatic heavy-runner fallback.
   esac
 else
   scripts/task-build-gate.sh "$GATE" "$TASK_ID" "$WORKTREE" "$SCHEME" "$DESTINATION" "$PROJECT_RELPATH"
