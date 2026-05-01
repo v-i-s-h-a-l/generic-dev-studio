@@ -68,7 +68,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /studio help                     # open the studio docs page in your browser
 /studio-help                     # slash-command shortcut for /studio help
 /studio work <track>             # claim track issues, then final reviewed PR + cleanup + summary
-/studio work chain chains.yaml   # run issue chains: fresh sessions, reviewed PRs, cleanup
+/studio work chain workflow-measurement-improvements  # run issue chains: fresh sessions, reviewed PRs, cleanup
 STUDIO_TRACK=<track>             # session-start shortcut for /studio work <track>
 /studio nodes                    # day-2 fleet management — status, add, remove, health, sync, schedule
 /studio-setup                    # onboard THIS machine — auto-pilot, prompts for role only

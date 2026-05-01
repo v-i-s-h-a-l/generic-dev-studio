@@ -62,8 +62,8 @@ scripts/achilles-queue.sh clear                # wipe queue (abort scenarios onl
 scripts/analyze-collect.sh --project turnip-ios         # stats dump for a usage-analysis pass
 scripts/analyze-collect.sh --project turnip-ios --since 2026-04-01
 scripts/forge-latency-report.sh --project turnip-ios --days 14   # stage-level task latency + review-gate comparison
-scripts/studio-chain-runner.sh chains.yaml --dry-run              # plan chain issue branches, fresh sessions, PR review/merge
-scripts/studio-chain-runner.sh chains.yaml --host codex           # execute chains with fresh Codex sessions per issue
+scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # plan chain branches, fresh sessions, PR review/merge
+scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex # execute chains with fresh Codex sessions per issue
 
 # Event log reader (dedupes on producer.agent + idempotency_key; see _shared/contracts/event-emission.md):
 scripts/read-events.sh                                  # current project, deduped
