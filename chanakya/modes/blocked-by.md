@@ -19,7 +19,7 @@ Inverse of the `predecessors` edge: lists every task that names `<task-id>` in i
 The id can be either a UUIDv7 or a legacy `T<nnn>`. Resolve via `query-relations.sh` when the user passes a legacy id; otherwise pass through.
 
 ```bash
-scripts/query-tasks.sh --predecessor-of="$TASK_ID"
+scripts/query-plans.sh --blocked-by="$TASK_ID"
 ```
 
 ## Render

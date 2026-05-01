@@ -101,10 +101,13 @@ produce_briefs() {
       fi
       task_json=$(yq -o=json '{
         "id": (.legacy_task_id // .id),
+        "uuid": (.id // ""),
         "title": (.title // ""),
         "raw_state": (.state // "unknown"),
         "priority": (.legacy_priority // ""),
         "complexity": (.legacy_complexity // ((.size // "") | upcase)),
+        "predecessors": (.predecessors // []),
+        "duplicate_of": (.duplicate_of // null),
         "updated_at": (.updated_at // "")
       }' "$task_yaml" 2>/dev/null || echo '{}')
       printf '%s' "$task_json" | jq --argjson summary "$summary_json" '. + {summary: $summary}'
@@ -127,13 +130,34 @@ produce_briefs() {
         "reopened":"pending", "deferred":"deferred"
       }[s]) // s;
     def title50(s): if (s|length) > 50 then ((s[0:49]) + "…") else s end;
-    map(.status = to_legacy(.raw_state))
+    . as $all
+    | def by_uuid($id): ($all[] | select(.uuid == $id)) // null;
+      def resolved($id):
+        (by_uuid($id)) as $p
+        | if $p == null then false
+          else (($p.raw_state | IN("merged","verified","archived")) or ($p.duplicate_of != null))
+          end;
+      def blocked_ancestor($id; $seen):
+        if ($seen | index($id)) then false
+        else (by_uuid($id)) as $p
+          | if $p == null then false
+            elif ($p.raw_state | IN("blocked","reopened")) then true
+            else any(($p.predecessors // [])[]; blocked_ancestor(.; ($seen + [$id])))
+            end
+        end;
+    map(.status = to_legacy(.raw_state)
+        | .blocked_by_predecessor = ([.predecessors[]? | select(resolved(.) | not)])
+        | .cascading_block = (any(.predecessors[]?; blocked_ancestor(.; [])))
+        | .status_annotations = (
+            ([select((.blocked_by_predecessor | length) > 0) | "blocked_by_predecessor"]
+             + [select(.cascading_block == true) | "cascading_block"])
+          ))
     | (reduce .[] as $t ({}; .[$t.status] = ((.[$t.status] // 0) + 1))) as $by_status
     | length as $total_all
     | map(select(.raw_state as $rs | ["merged","verified","archived","cancelled","superseded"] | index($rs) | not))
     | sort_by(.updated_at) | reverse
     | .[0:30]
-    | map({id, title: title50(.title), status, priority, complexity, summary})
+    | map({id, title: title50(.title), status, priority, complexity, summary, blocked_by_predecessor, cascading_block, status_annotations})
     | {tasks: ., shown: length, by_status: $by_status, total: $total_all}
   ')
 

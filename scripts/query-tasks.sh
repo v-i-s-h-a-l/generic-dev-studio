@@ -16,7 +16,7 @@
 # linked brief carries the compact summary slice.
 #
 # --dispatch-ready implies --state=briefed and additionally requires every
-# predecessor in {merged, verified, archived}.
+# predecessor in {merged, verified, archived} or marked duplicate_of.
 #
 # Requires `yq` (v4) and `jq`. Read-only.
 
@@ -90,6 +90,7 @@ ALL=$(
           id, title, state,
           train: (.train // null),
           predecessors: (.predecessors // []),
+          duplicate_of: (.duplicate_of // null),
           priority: (.priority // "p2"),
           effort_minutes: (.effort_minutes // null),
           recommended_model: (.recommended_model // null),
@@ -100,8 +101,10 @@ ALL=$(
   done | jq -s '.'
 )
 
-# id→state map for the dispatch-ready predecessor join.
-STATE_MAP=$(printf '%s' "$ALL" | jq 'map({(.id): .state}) | add // {}')
+# id→resolution map for the dispatch-ready predecessor join.
+RESOLUTION_MAP=$(printf '%s' "$ALL" | jq '
+  map({(.id): ((.state | IN("merged","verified","archived")) or (.duplicate_of != null))}) | add // {}
+')
 
 FILTER='.[]'
 [ -n "$TRAIN" ]          && FILTER="$FILTER | select(.train == \"$TRAIN\")"
@@ -111,15 +114,15 @@ if [ -n "$STATE_AGE_GT" ]; then
   FILTER="$FILTER | select(((now - (.history_at | fromdateiso8601)) / 86400) > $STATE_AGE_GT)"
 fi
 if [ "$DISPATCH_READY" -eq 1 ]; then
-  FILTER="$FILTER"' | select(.predecessors | all(. as $p | ($map[$p] // "missing") | IN("merged","verified","archived")))'
+  FILTER="$FILTER"' | select(.predecessors | all(. as $p | ($map[$p] // false)))'
 fi
 
 case "$FORMAT" in
   json)
-    printf '%s' "$ALL" | jq --argjson map "$STATE_MAP" "[$FILTER]"
+    printf '%s' "$ALL" | jq --argjson map "$RESOLUTION_MAP" "[$FILTER]"
     ;;
   tsv)
-    printf '%s' "$ALL" | jq -r --argjson map "$STATE_MAP" \
+    printf '%s' "$ALL" | jq -r --argjson map "$RESOLUTION_MAP" \
       "$FILTER | [.id, .state, (.train // \"-\"), .title, .updated_at] | @tsv"
     ;;
 esac

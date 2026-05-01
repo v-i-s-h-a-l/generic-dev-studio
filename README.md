@@ -103,7 +103,7 @@ STUDIO_TRACK=<track>             # session-start shortcut for /studio work <trac
 /chanakya train burn-down <name> # state-count summary for a train
 /chanakya stale [--days=N]       # tasks stuck in their state > N days (default 7)
 /chanakya blocked-by <task-id>   # reverse predecessors lookup — what does shipping this unblock
-/chanakya dispatch-ready         # briefed tasks where every predecessor is merged/verified/archived
+/chanakya dispatch-ready         # briefed tasks whose predecessors are merged/verified/archived or duplicates
 /chanakya urgent <free-text>     # hotfix fast-path — minimal brief tagged urgent + immediate Achilles dispatch (skips brief-review)
 /chanakya test-manifest          # per-task checklist → user-testing.md
 /chanakya test-flow              # journey-ordered walkthrough → round files
