@@ -1025,6 +1025,12 @@ scripts/backfill-orphan-debriefs.sh --apply --quiet  # machine-readable count (u
 scripts/forge-latency-report.sh --project turnip-ios --since 2026-04-01 --cutover 2026-04-28</code></pre>
   <p>Measured stages use explicit <code>duration_s</code> fields or paired start/end events such as <code>task_dispatched → task_completed</code>, <code>build_check_started → build_check_passed</code>, and <code>review_requested → review_approved</code>. Missing or impossible durations are reported, not counted as zero.</p>
 
+  <h3 style="margin-top: 32px;">Field workflow report</h3>
+  <p>Measure the full Field loop from canonical events and brief YAML: stage timing, token usage, build/test pass rates, review coverage, telemetry gaps, and aggregate improvement candidates. The report is private-analysis safe by default and prints only abstract failure classes and workflow patterns.</p>
+  <pre><code>scripts/field-workflow-report.sh --project turnip-ios --days 14
+scripts/field-workflow-report.sh --project turnip-ios --since 2026-04-01 --by stage|agent|node|task-size</code></pre>
+  <p>Public issue text may use abstract rates, failure classes, and missing telemetry fields. Keep task IDs, file paths, feature names, build numbers, release versions, exact private timings, and verbatim debrief/review text in private analysis only.</p>
+
   <h3 style="margin-top: 32px;">Achilles base-branch auto-refresh</h3>
   <p>Before handing off to Argus (Step 8.5), Achilles fetches and merges the base branch if the worktree has fallen behind by more than a configurable threshold (default: 2 commits). Prevents stale-merge false blocks from Argus — previously required a manual re-run.</p>
   <pre><code># Invoked automatically by Achilles Step 8.4 — not usually run directly.
