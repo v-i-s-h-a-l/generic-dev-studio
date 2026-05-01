@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "apollo-code-area.schema.json",
+  "schema": 1,
+  "title": "Apollo Code Area",
+  "description": "Structured attribution block mapping performance evidence to likely code ownership without guessing from unsymbolicated data.",
+  "type": "object",
+  "required": ["schema_version", "attribution_id", "mode", "evidence", "symbolication_status", "responsible_frames", "candidates", "confidence", "suggested_owner", "verification_recipe"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "$ref": "debrief.schema.json#/$defs/schemaVersion" },
+    "attribution_id": { "type": "string", "pattern": "^code-area-[a-z0-9-]{6,80}$" },
+    "mode": { "enum": ["memory", "cpu", "thermal", "battery"] },
+    "evidence": {
+      "type": "object",
+      "required": ["artifact_path", "interval", "cohort"],
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": { "type": "string", "minLength": 1 },
+        "interval": { "type": "string", "minLength": 1 },
+        "cohort": { "type": "string", "minLength": 1 },
+        "scenario_id": { "type": ["string", "null"] }
+      }
+    },
+    "symbolication_status": { "enum": ["symbolicated", "partial", "unsymbolicated"] },
+    "responsible_frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["symbol", "module", "weight"],
+        "additionalProperties": false,
+        "properties": {
+          "symbol": { "type": ["string", "null"] },
+          "module": { "type": ["string", "null"] },
+          "weight": { "type": ["number", "null"], "minimum": 0 },
+          "thread": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "target", "rationale"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": { "enum": ["app-source", "apple-framework", "third-party-framework", "swiftui", "imgly-metal", "unresolved"] },
+          "target": { "type": ["string", "null"] },
+          "file": { "type": ["string", "null"] },
+          "rationale": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "confidence": { "enum": ["confirmed", "likely", "advisory", "blocked"] },
+    "suggested_owner": { "enum": ["achilles", "swiftui-performance-audit", "imgly-engine-expert", "human-investigation", "apollo-refusal"] },
+    "verification_recipe": { "type": "string", "minLength": 1 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "symbolication_status": { "const": "unsymbolicated" } }, "required": ["symbolication_status"] },
+      "then": {
+        "properties": {
+          "confidence": { "const": "blocked" },
+          "suggested_owner": { "const": "apollo-refusal" },
+          "responsible_frames": { "maxItems": 0 },
+          "candidates": {
+            "items": {
+              "type": "object",
+              "required": ["kind", "target", "file", "rationale"],
+              "properties": {
+                "kind": { "const": "unresolved" },
+                "target": { "type": "null" },
+                "file": { "type": "null" }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
