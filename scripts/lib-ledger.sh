@@ -575,6 +575,78 @@ _append_kv_lines() {
   done
 }
 
+_kv_value_for_key() {
+  local needle="$1" pair key
+  shift
+  for pair in "$@"; do
+    key="${pair%%=*}"
+    [ "$key" = "$needle" ] || continue
+    printf '%s' "${pair#*=}"
+    return 0
+  done
+}
+
+_inline_yaml_list_values() {
+  local raw="${1:-}"
+  case "$raw" in
+    ""|null|\[\]) return 0 ;;
+  esac
+  raw="${raw#[}"
+  raw="${raw%]}"
+  printf '%s' "$raw" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//' | awk 'NF'
+}
+
+_task_predecessors_from_file() {
+  local file="$1"
+  command -v yq >/dev/null 2>&1 || return 2
+  yq -r '.predecessors[]?' "$file" 2>/dev/null
+}
+
+_task_predecessor_cycle_check() {
+  local uuid="$1" predecessors_raw="${2:-}"
+  [ -z "$predecessors_raw" ] && return 0
+  [ "$predecessors_raw" = "[]" ] && return 0
+  command -v yq >/dev/null 2>&1 || {
+    printf 'write_task_artifact: yq required to validate predecessors\n' >&2
+    return 2
+  }
+
+  local project root tasks_dir preds
+  project=$(resolve_project 2>/dev/null) || return 0
+  root=$(resolve_project_root_for "$project") || return 0
+  tasks_dir="$root/plans/tasks"
+  [ -d "$tasks_dir" ] || return 0
+
+  preds=$(_inline_yaml_list_values "$predecessors_raw")
+  [ -z "$preds" ] && return 0
+  if printf '%s\n' "$preds" | awk -v id="$uuid" '$0 == id { found=1 } END { exit found ? 0 : 1 }'; then
+    printf 'write_task_artifact: predecessor cycle detected: %s lists itself in predecessors\n' "$uuid" >&2
+    return 2
+  fi
+
+  local queue seen current f nexts
+  queue="$preds"
+  seen=""
+  while [ -n "$queue" ]; do
+    current=$(printf '%s\n' "$queue" | awk 'NF {print; exit}')
+    queue=$(printf '%s\n' "$queue" | awk 'NR>1 && NF')
+    [ -z "$current" ] && continue
+    if printf '%s\n' "$seen" | awk -v id="$current" '$0 == id { found=1 } END { exit found ? 0 : 1 }'; then
+      continue
+    fi
+    seen="$seen$current"$'\n'
+    if [ "$current" = "$uuid" ]; then
+      printf 'write_task_artifact: predecessor cycle detected involving %s\n' "$uuid" >&2
+      return 2
+    fi
+    f="$tasks_dir/$current.yaml"
+    [ -f "$f" ] || continue
+    nexts=$(_task_predecessors_from_file "$f") || return 2
+    [ -n "$nexts" ] && queue="$queue"$'\n'"$nexts"
+  done
+  return 0
+}
+
 # Separates `body=<inline>` / `body_file=<path>` pairs from the rest of the
 # args. Sets globals (arrays are painful across bash function boundaries):
 #   _LW_BODY       — resolved inline body content (empty if neither given)
@@ -623,6 +695,9 @@ write_task_artifact() {
   event_id=$(mint_uuidv7)
   local idem
   idem=$(idem_key chanakya task "$uuid" "state=$state;title=$title")
+  local predecessors_raw
+  predecessors_raw=$(_kv_value_for_key predecessors "$@")
+  _task_predecessor_cycle_check "$uuid" "$predecessors_raw" || return 2
 
   local payload
   payload=$({

@@ -33,6 +33,11 @@ FLAGS="${*:-}"
 ROOT=$(resolve_inbox_root) || exit 1
 HEARTBEAT_MAX=180
 
+if ! command -v yq >/dev/null 2>&1; then
+  echo "error: yq required for dispatch gating" >&2
+  exit 2
+fi
+
 is_alive() {
   local d="$1"
   [ -f "$d/alive" ] || return 1
@@ -80,6 +85,32 @@ _find_task_yaml() {
     uid=$(yq -r '.id // ""' "$f" 2>/dev/null) || continue
     case "$uid" in "$id"*) echo "$f"; return 0 ;; esac
   done
+}
+
+_task_dispatch_unmet_predecessors() {
+  local task_yaml="$1"
+  local preds
+  preds=$(yq -r '.predecessors[]?' "$task_yaml" 2>/dev/null) || return 0
+  [ -n "$preds" ] || return 0
+  local pr
+  pr=$(resolve_project_root 2>/dev/null) || return 0
+  local tasks_dir="$pr/plans/tasks"
+  local pred pred_file pred_state pred_duplicate
+  while IFS= read -r pred; do
+    [ -n "$pred" ] || continue
+    pred_file="$tasks_dir/$pred.yaml"
+    if [ ! -f "$pred_file" ]; then
+      printf '%s:missing\n' "$pred"
+      continue
+    fi
+    pred_state=$(yq -r '.state // ""' "$pred_file" 2>/dev/null || echo "")
+    pred_duplicate=$(yq -r '.duplicate_of // ""' "$pred_file" 2>/dev/null || echo "")
+    case "$pred_state" in
+      merged|verified|archived) continue ;;
+    esac
+    [ -n "$pred_duplicate" ] && continue
+    printf '%s:%s\n' "$pred" "${pred_state:-unknown}"
+  done <<< "$preds"
 }
 
 # Warn to stderr when active dispatched tasks share touchpoints with TASK_YAML.
@@ -133,7 +164,12 @@ fi
 DISPATCH_REASON="round_robin"
 TASK_YAML=$(_find_task_yaml "$TASK_ID") || true
 
-if [ -n "$TASK_YAML" ] && command -v yq >/dev/null 2>&1; then
+if [ -n "$TASK_YAML" ]; then
+  UNMET_PREDECESSORS=$(_task_dispatch_unmet_predecessors "$TASK_YAML")
+  if [ -n "$UNMET_PREDECESSORS" ]; then
+    printf 'dispatch blocked: %s has unresolved predecessors:\n%s\n' "$TASK_ID" "$UNMET_PREDECESSORS" >&2
+    exit 2
+  fi
   PREFERRED_NODE=$(yq -r '.affinity.prefers_node // ""' "$TASK_YAML" 2>/dev/null) || PREFERRED_NODE=""
   if [ -n "$PREFERRED_NODE" ] && [ "$TARGET" = "any" ]; then
     PREFERRED_N="${PREFERRED_NODE#worker-}"

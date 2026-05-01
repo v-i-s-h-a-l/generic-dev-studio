@@ -102,6 +102,12 @@ Before starting, load these skills for guidance:
 ### Architectural Constraints
 - <Inlined from project memory — e.g., "uses @Observable not ObservableObject", "image loading via Kingfisher">
 
+### Audit-Shaped Task Recipe
+<!-- Optional. Include when the task asks the worker to survey every module, file family, or logical unit for one property. -->
+- Enumerate the target modules or logical units with repo-local shell commands before editing.
+- Inspect each unit against the same acceptance criteria and record findings in one structured report shape.
+- Keep the execution in one worker session; if the scope is too large, split the work into child executable tasks before dispatch.
+
 ## Testability Requirements
 
 ### Architecture & SOLID

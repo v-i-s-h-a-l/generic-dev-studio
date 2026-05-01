@@ -19,9 +19,15 @@
 #
 # Provided functions:
 #   bq_rank <priority>          → prints rank digit (0/1/2)
-#   bq_enqueue <dir> <task> <priority>  → writes entry, prints path
-#   bq_wait <dir> <entry> <slots> <timeout_s> <task> <node>
+#   bq_node_slots <node>        → prints configured parallel slot count
+#   bq_enqueue <dir> <id> <priority> [role] [secret_scope]
+#                               → writes entry, prints path
+#   bq_wait <dir> <entry> <slots> <timeout_s> <task> <node> [agent] [kind]
 #                               → waits in priority order; returns 0 or 3
+#   bq_acquire_slot_lock <lock_base> <slots> <timeout_s>
+#                               → acquires slot-<n> lock; prints path
+#   bq_release_slot_lock <lock_path>
+#                               → releases acquired slot lock
 #   bq_release <entry>          → removes entry (idempotent)
 
 # bq_rank — convert priority string to sort rank digit
@@ -34,24 +40,66 @@ bq_rank() {
   esac
 }
 
-# bq_enqueue <queue_dir> <task_id> <priority>
+# bq_node_slots <node_id>
+# Reads the per-node parallel slot count from nodes.json. Synthetic `local`
+# remains single-slot because it has no registry entry; malformed values
+# collapse to 1 so a bad registry cannot over-admit builds.
+bq_node_slots() {
+  local node="${1:-local}" n registry
+  if [ "$node" = "local" ]; then
+    printf '1\n'
+    return 0
+  fi
+  if command -v resolve_runtime_global >/dev/null 2>&1; then
+    registry="$(resolve_runtime_global)/nodes.json"
+  else
+    registry="$HOME/.dev-studio/.runtime/nodes.json"
+  fi
+  n=1
+  if [ -r "$registry" ] && command -v jq >/dev/null 2>&1; then
+    n=$(jq -r --arg id "$node" '.nodes[]? | select(.id == $id) | .parallel_build_slots // 1' "$registry" 2>/dev/null)
+  fi
+  case "$n" in ''|*[!0-9]*) n=1 ;; esac
+  [ "$n" -lt 1 ] && n=1
+  printf '%s\n' "$n"
+}
+
+_bq_json_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+_bq_entry_field() {
+  local field="$1" entry="$2" value=""
+  if [ -r "$entry" ] && command -v jq >/dev/null 2>&1; then
+    value=$(jq -r --arg f "$field" '.[$f] // empty' "$entry" 2>/dev/null || printf '')
+  fi
+  if [ -z "$value" ] && [ -r "$entry" ]; then
+    value=$(grep -o "\"$field\":\"[^\"]*\"" "$entry" 2>/dev/null | sed "s/\"$field\":\"//;s/\"//" || printf '')
+  fi
+  printf '%s\n' "$value"
+}
+
+# bq_enqueue <queue_dir> <id> <priority> [role] [secret_scope]
 # Writes queue entry; prints entry path on stdout.
 bq_enqueue() {
   local qdir="${1:?bq_enqueue: queue_dir required}"
   local task="${2:?bq_enqueue: task_id required}"
   local pri="${3:-task}"
+  local role="${4:-xcodebuild}"
+  local secret_scope="${5:-none}"
   local rank ts entry
   rank=$(bq_rank "$pri")
   ts=$(date -u +%s)
   mkdir -p "$qdir" 2>/dev/null || { printf 'bq_enqueue: mkdir %s failed\n' "$qdir" >&2; return 2; }
   entry="$qdir/$(printf '%s-%010d-%d-%s.json' "$rank" "$ts" "$$" "$task")"
-  printf '{"id":"%s","enqueued_at":%s,"pid":%s,"role":"xcodebuild","priority":"%s"}\n' \
-    "$task" "$ts" "$$" "$pri" > "$entry" \
+  printf '{"id":"%s","priority":"%s","enqueued_at":%s,"pid":%s,"role":"%s","secret_scope":"%s"}\n' \
+    "$(_bq_json_escape "$task")" "$(_bq_json_escape "$pri")" "$ts" "$$" \
+    "$(_bq_json_escape "$role")" "$(_bq_json_escape "$secret_scope")" > "$entry" \
     || { printf 'bq_enqueue: write %s failed\n' "$entry" >&2; return 2; }
   printf '%s\n' "$entry"
 }
 
-# bq_wait <queue_dir> <entry_path> <slots> <timeout_s> <task_id> <node_id>
+# bq_wait <queue_dir> <entry_path> <slots> <timeout_s> <task_id> <node_id> [agent] [kind]
 # Blocks until <entry_path> is in the first <slots> positions (by sort order).
 # Emits build_queue_granted + build_queue_promoted (if applicable) on success.
 # Returns 0 on success, 3 on timeout. Emits build_check_failed on timeout if
@@ -59,6 +107,7 @@ bq_enqueue() {
 bq_wait() {
   local qdir="${1:?}" entry="${2:?}" slots="${3:-1}" timeout_s="${4:-1800}"
   local task_id="${5:-unknown}" node_id="${6:-local}"
+  local event_agent="${7:-achilles}" event_kind="${8:-task}"
   local wait_s=0 backoff=10
 
   # GC stale entries (>45 min) before entering the wait.
@@ -90,16 +139,17 @@ bq_wait() {
 
   # Emit build_queue_granted with wait time + priority metadata.
   local pri
-  pri=$(grep -o '"priority":"[^"]*"' "$entry" 2>/dev/null | sed 's/"priority":"//;s/"//' || echo "task")
+  pri=$(_bq_entry_field priority "$entry")
+  [ -z "$pri" ] && pri=task
   if command -v emit_event_keyed >/dev/null 2>&1; then
     local granted_data
     granted_data=$(printf '{"node":"%s","task":"%s","priority":"%s","waited_s":%s}' \
       "$node_id" "$task_id" "$pri" "$wait_s")
-    emit_event_keyed achilles task build_queue_granted "$task_id" "$granted_data" >/dev/null 2>&1 || true
+    emit_event_keyed "$event_agent" "$event_kind" build_queue_granted "$task_id" "$granted_data" >/dev/null 2>&1 || true
   fi
 
   # Emit build_queue_promoted if we jumped ahead of any older lower-priority entries.
-  _bq_emit_promoted "$qdir" "$entry" "$pri" "$task_id" "$node_id" "$wait_s"
+  _bq_emit_promoted "$qdir" "$entry" "$pri" "$task_id" "$node_id" "$wait_s" "$event_agent" "$event_kind"
 }
 
 # _bq_emit_promoted — internal: emit build_queue_promoted if we jumped ahead.
@@ -107,6 +157,7 @@ bq_wait() {
 # one other entry in the queue has a higher rank but was enqueued before us.
 _bq_emit_promoted() {
   local qdir="$1" entry="$2" our_pri="$3" task="$4" node="$5" waited="$6"
+  local event_agent="${7:-achilles}" event_kind="${8:-task}"
   command -v emit_event_keyed >/dev/null 2>&1 || return 0
   local our_rank our_ts basename
   basename=$(basename "$entry")
@@ -129,11 +180,12 @@ _bq_emit_promoted() {
     if [ "$f_rank" -gt "$our_rank" ] 2>/dev/null && [ "$f_ts" -lt "$our_ts" ] 2>/dev/null; then
       skipped=$((skipped + 1))
       local f_task
-      f_task=$(grep -o '"id":"[^"]*"' "$f" 2>/dev/null | sed 's/"id":"//;s/"//' || echo "unknown")
+      f_task=$(_bq_entry_field id "$f")
+      [ -z "$f_task" ] && f_task=unknown
       if [ -z "$skipped_tasks" ]; then
-        skipped_tasks="\"$f_task\""
+        skipped_tasks="\"$(_bq_json_escape "$f_task")\""
       else
-        skipped_tasks="$skipped_tasks,\"$f_task\""
+        skipped_tasks="$skipped_tasks,\"$(_bq_json_escape "$f_task")\""
       fi
     fi
   done < <(find "$qdir" -maxdepth 1 -type f -name '*.json' 2>/dev/null)
@@ -143,7 +195,52 @@ _bq_emit_promoted() {
   local data
   data=$(printf '{"node":"%s","promoted_task":"%s","promoted_priority":"%s","skipped_count":%s,"skipped_tasks":[%s],"waited_s":%s}' \
     "$node" "$task" "$our_pri" "$skipped" "$skipped_tasks" "$waited")
-  emit_event_keyed achilles task build_queue_promoted "$task" "$data" >/dev/null 2>&1 || true
+  emit_event_keyed "$event_agent" "$event_kind" build_queue_promoted "$task" "$data" >/dev/null 2>&1 || true
+}
+
+bq_acquire_slot_lock() {
+  local lock_base="${1:?bq_acquire_slot_lock: lock_base required}"
+  local slots="${2:-1}" timeout_s="${3:-1800}"
+  local lock="" wait_s=0 backoff=10 candidate s
+  mkdir -p "$lock_base" 2>/dev/null || {
+    printf 'bq_acquire_slot_lock: mkdir %s failed\n' "$lock_base" >&2
+    return 2
+  }
+  case "$slots" in ''|*[!0-9]*) slots=1 ;; esac
+  [ "$slots" -lt 1 ] && slots=1
+
+  while [ -z "$lock" ]; do
+    for s in $(seq 1 "$slots"); do
+      candidate="$lock_base/slot-$s"
+      if mkdir "$candidate" 2>/dev/null; then
+        lock="$candidate"
+        printf '%s\n' "$$" > "$lock/pid" 2>/dev/null || true
+        break
+      fi
+      if [ -n "$(find "$candidate" -maxdepth 0 -mmin +45 2>/dev/null)" ]; then
+        printf 'warn: stale xcodebuild lock (>45m, slot %s), reclaiming\n' "$s" >&2
+        rm -rf "$candidate"
+        if mkdir "$candidate" 2>/dev/null; then
+          lock="$candidate"
+          printf '%s\n' "$$" > "$lock/pid" 2>/dev/null || true
+          break
+        fi
+      fi
+    done
+    [ -n "$lock" ] && break
+    if [ "$wait_s" -ge "$timeout_s" ]; then
+      printf 'bq_acquire_slot_lock: wait exceeded %ss (slots=%s)\n' "$timeout_s" "$slots" >&2
+      return 3
+    fi
+    sleep "$backoff"
+    wait_s=$((wait_s + backoff))
+  done
+
+  printf '%s\n' "$lock"
+}
+
+bq_release_slot_lock() {
+  rm -rf "${1:-}" 2>/dev/null || true
 }
 
 # bq_release <entry_path> — remove queue entry (idempotent, safe to call in trap).

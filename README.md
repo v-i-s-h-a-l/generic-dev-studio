@@ -71,6 +71,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /studio work chain workflow-measurement-improvements  # run issue chains: fresh sessions, UUID telemetry, reviewed PRs, cleanup
 STUDIO_TRACK=<track>             # session-start shortcut for /studio work <track>
 /studio nodes                    # day-2 fleet management — status, add, remove, health, sync, schedule
+/studio tf-push --background     # start TF archive/upload and keep session free for Slack drafting
 /studio-setup                    # onboard THIS machine — auto-pilot, prompts for role only
 /studio-setup --manager          # zero-prompt manager onboarding
 /studio-setup --worker           # zero-prompt worker (id = hostname; --id X to override)
@@ -102,7 +103,7 @@ STUDIO_TRACK=<track>             # session-start shortcut for /studio work <trac
 /chanakya train burn-down <name> # state-count summary for a train
 /chanakya stale [--days=N]       # tasks stuck in their state > N days (default 7)
 /chanakya blocked-by <task-id>   # reverse predecessors lookup — what does shipping this unblock
-/chanakya dispatch-ready         # briefed tasks where every predecessor is merged/verified/archived
+/chanakya dispatch-ready         # briefed tasks whose predecessors are merged/verified/archived or duplicates
 /chanakya urgent <free-text>     # hotfix fast-path — minimal brief tagged urgent + immediate Achilles dispatch (skips brief-review)
 /chanakya test-manifest          # per-task checklist → user-testing.md
 /chanakya test-flow              # journey-ordered walkthrough → round files
@@ -196,7 +197,7 @@ apollo/
 
 commands/               # globally-installed slash commands (see scripts/install.sh)
   chanakya-help.md      # /chanakya-help — opens chanakya docs.html in browser
-  pushTFBuild.md        # /pushTFBuild — archive + upload to TestFlight
+  pushTFBuild.md        # /pushTFBuild — archive + upload to TestFlight; --background keeps Slack drafting live
   fullSendToAppStore.md # /fullSendToAppStore — submit build to App Store review
 
 scripts/                # multi-worker fleet (BETA)
@@ -207,7 +208,7 @@ scripts/                # multi-worker fleet (BETA)
   forge-latency-report.sh  # stage-level task latency + review-gate comparison from event logs
   field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
-  studio-chain-runner.sh   # execute studio issue chains with fresh host sessions, UUID telemetry, and private run reports
+  studio-chain-runner.sh   # execute studio issue chains with capacity-scaled fresh sessions, UUID telemetry, and private run reports
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   appstore-watch.sh     # polls ASC for pending submission; finalizes draft release + Slack on release
