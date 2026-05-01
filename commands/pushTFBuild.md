@@ -12,6 +12,7 @@ Authoritative procedure: `_shared/contracts/release-tf-push.md`. Project knobs (
 ## Arguments
 
 - `--scheme <name>` *(optional, default `Zaps`)* — pass-through to `studio-tf-push.sh push --scheme`. Use `Zaps-Internal` for the HUD-enabled internal-tester build.
+- `--background` *(optional)* — start the mechanical push in the background and keep this session available for Slack drafting while archive/upload runs.
 
 ## Step 1: Pre-mint the release tag (idempotency key)
 
@@ -37,6 +38,36 @@ PREV_BUILD=$(echo "$CTX" | jq -r .prev_build)
 The script emits `release_started`, `archive_completed`, `upload_completed`, `dsym_uploaded` along the way. If it exits non-zero it has already emitted `release_failed` with the stage that broke — surface stderr to the user and stop. Do NOT continue to Slack steps.
 
 The script reads release config from `~/.dev-studio/${STUDIO_RELEASE_PROJECT}/config/release.env` and secrets from `~/.dev-studio/${STUDIO_RELEASE_PROJECT}/secrets/`. It preflights non-interactive GitHub push auth, ASC key/JWT prerequisites, Slack token readability, and the app-scoped live-version lookup before it mutates the pbxproj. If it prints `WARNING: Could not determine live App Store version`, stop and resolve ASC/API access first; do not infer that there is no version conflict. For an intentionally upload-only run with Slack deferred, set `STUDIO_TF_SLACK_DEFERRED=1`.
+
+### Background option
+
+When `--background` is present, start the push and immediately return to the conversation:
+
+```bash
+BG=$(STUDIO_TF_PUSH_LIVE=1 ./scripts/studio-tf-push.sh push --background ${SCHEME:+--scheme "$SCHEME"})
+RELEASE_TAG=$(echo "$BG" | jq -r .release_tag)
+STATUS_PATH=$(echo "$BG" | jq -r .status_path)
+PREPARED_CONTEXT_PATH=$(echo "$BG" | jq -r .prepared_context_path)
+CONTEXT_PATH=$(echo "$BG" | jq -r .context_path)
+LOG_PATH=$(echo "$BG" | jq -r .log_path)
+```
+
+Poll `PREPARED_CONTEXT_PATH` for up to 90 seconds. It is written after ASC state, version decision, and build-number commit, before the long archive/upload phase:
+
+```bash
+for _ in $(seq 1 18); do
+  [ -s "$PREPARED_CONTEXT_PATH" ] && break
+  sleep 5
+done
+[ -s "$PREPARED_CONTEXT_PATH" ] || { echo "release context not ready; inspect $LOG_PATH"; exit 1; }
+CTX=$(cat "$PREPARED_CONTEXT_PATH")
+NEW_BUILD_NUMBER=$(echo "$CTX" | jq -r .build)
+VERSION=$(echo "$CTX" | jq -r .version)
+BRANCH=$(echo "$CTX" | jq -r .branch)
+PREV_BUILD=$(echo "$CTX" | jq -r .prev_build)
+```
+
+Proceed to Slack drafting while the background run continues. Before sending Slack, require `STATUS_PATH` to show `state=="succeeded"` and load final `CTX` from `CONTEXT_PATH`; if it shows `failed`, surface `LOG_PATH` and stop.
 
 ## Step 3: Compose the Slack message
 

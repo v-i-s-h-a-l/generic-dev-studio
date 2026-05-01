@@ -19,7 +19,7 @@ Delegates execution to the task-mode pipeline; this mode is only the picker + di
 
 ## Steps
 
-1. **Find briefed tasks.** `scripts/query-plans.sh --kind=task --state=briefed`. Sort by:
+1. **Find dispatch-ready tasks.** `scripts/query-tasks.sh --dispatch-ready --format=json`. This excludes briefed tasks whose predecessors have not reached `merged` / `verified` / `archived` and treats duplicate predecessors as resolved. Sort by:
    - Priority (P0 first)
    - Type preference: TBUILD/TUNIT/TUI tasks first (debt reduction), then test sub-tasks whose parent is `done`, then implementation tasks
    - Task ID (lower first, as tiebreaker)

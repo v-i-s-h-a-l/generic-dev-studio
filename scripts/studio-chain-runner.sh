@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# studio-chain-runner.sh - execute issue chains with fresh host sessions.
+# studio-chain-runner.sh - execute issue chains with capacity-scaled fresh host sessions.
 #
 # Usage:
 #   scripts/studio-chain-runner.sh <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run]
@@ -432,6 +432,86 @@ host_spawn_command() {
   printf '%s\n' "$spawn"
 }
 
+available_ram_gib() {
+  if [ -n "${STUDIO_CHAIN_AVAILABLE_RAM_GIB:-}" ]; then
+    printf '%s\n' "$STUDIO_CHAIN_AVAILABLE_RAM_GIB"
+    return 0
+  fi
+
+  if command -v vm_stat >/dev/null 2>&1; then
+    vm_stat 2>/dev/null | awk '
+      /page size of/ { gsub(/\./, "", $8); page=$8 }
+      /Pages free:/ { gsub(/\./, "", $3); free=$3 }
+      /Pages inactive:/ { gsub(/\./, "", $3); inactive=$3 }
+      /Pages speculative:/ { gsub(/\./, "", $3); speculative=$3 }
+      END {
+        if (page <= 0) page = 4096
+        gib = ((free + inactive + speculative) * page) / 1073741824
+        if (gib < 0) gib = 0
+        printf "%d\n", gib
+      }'
+    return 0
+  fi
+
+  if [ -r /proc/meminfo ]; then
+    awk '/^MemAvailable:/ { printf "%d\n", ($2 * 1024) / 1073741824; found=1 } END { if (!found) print 0 }' /proc/meminfo
+    return 0
+  fi
+
+  printf '4\n'
+}
+
+healthy_xcodebuild_offload_count() {
+  local registry ids id row status health_cmd count=0
+  registry="$(resolve_runtime_global)/nodes.json"
+  [ -r "$registry" ] || { printf '0\n'; return 0; }
+  command -v jq >/dev/null 2>&1 || { printf '0\n'; return 0; }
+  health_cmd="${STUDIO_CHAIN_NODE_HEALTH_CMD:-$SCRIPT_DIR/node-health.sh}"
+
+  ids=$(jq -r '.nodes[]? | select(.enabled != false) | select(.roles? // [] | index("xcodebuild")) | .id' "$registry" 2>/dev/null) || ids=""
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    node_is_self "$id" && continue
+    row=$("$health_cmd" "$id" 2>/dev/null | head -n 1)
+    status=$(printf '%s' "$row" | awk -F'\t' '{print $2}')
+    case "$status" in
+      healthy|moved) count=$((count + 1)) ;;
+    esac
+  done <<EOF
+$ids
+EOF
+  printf '%s\n' "$count"
+}
+
+chain_worker_pool_size() {
+  if [ -n "${STUDIO_CHAIN_WORKER_POOL:-}" ]; then
+    case "$STUDIO_CHAIN_WORKER_POOL" in
+      ''|*[!0-9]*|0) printf 'studio-chain-runner: invalid STUDIO_CHAIN_WORKER_POOL=%s\n' "$STUDIO_CHAIN_WORKER_POOL" >&2; exit 2 ;;
+      *) printf '%s\n' "$STUDIO_CHAIN_WORKER_POOL"; return 0 ;;
+    esac
+  fi
+
+  local offload_count desired ram_gib per_worker_gib ram_cap max_workers
+  offload_count=$(healthy_xcodebuild_offload_count)
+  desired=$((offload_count + 1))
+
+  ram_gib=$(available_ram_gib)
+  case "$ram_gib" in ''|*[!0-9]*) ram_gib=0 ;; esac
+  per_worker_gib="${STUDIO_CHAIN_WORKER_RAM_GIB:-6}"
+  case "$per_worker_gib" in ''|*[!0-9]*|0) per_worker_gib=6 ;; esac
+  ram_cap=$((ram_gib / per_worker_gib))
+  [ "$ram_cap" -lt 1 ] && ram_cap=1
+
+  max_workers="${STUDIO_CHAIN_MAX_WORKERS:-}"
+  if [ -n "$max_workers" ]; then
+    case "$max_workers" in ''|*[!0-9]*|0) max_workers=1 ;; esac
+    [ "$desired" -gt "$max_workers" ] && desired="$max_workers"
+  fi
+  [ "$desired" -gt "$ram_cap" ] && desired="$ram_cap"
+  [ "$desired" -lt 1 ] && desired=1
+  printf '%s\n' "$desired"
+}
+
 MANIFEST=$(resolve_manifest "$MANIFEST")
 if [ "$DRY_RUN" -eq 0 ]; then
   write_run_state running ""
@@ -589,6 +669,114 @@ Public-safe telemetry: run/chain UUIDs and abstract gap names only."; then
   fi
 }
 
+run_issue_job() {
+  local name="$1" branch="$2" issue="$3" host="$4" issue_worktree="$5" issue_branch="$6" chain_run_id="$7" issue_run_id="$8" result_file="$9"
+  local before after worker_rc summary_file issue_duration summary_payload issue_started_at
+  issue_started_at=$(now_epoch)
+
+  log "issue #$issue -> $issue_branch"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    git -C "$REPO_ROOT" worktree remove --force "$issue_worktree" 2>/dev/null || rm -rf "$issue_worktree"
+    git -C "$REPO_ROOT" worktree add -B "$issue_branch" "$issue_worktree" "$branch"
+    before=$(git -C "$issue_worktree" rev-parse HEAD)
+  else
+    printf 'DRY-RUN git worktree add -B %q %q %q\n' "$issue_branch" "$issue_worktree" "$branch"
+    before="dry-run-before"
+  fi
+
+  emit_chain_event chain_issue_started "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" running 0 \
+    "$(jq -cn --arg chain "$name" --arg branch "$issue_branch" --arg host "$host" --arg before "$before" '{chain:$chain, issue_branch:$branch, host:$host, commit_before:$before}')"
+
+  set +e
+  execute_issue_session "$name" "$branch" "$issue" "$host" "$issue_worktree" "$chain_run_id" "$issue_run_id" "$before"
+  worker_rc=$?
+  set -e
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    jq -n \
+      --arg issue "$issue" \
+      --arg branch "$issue_branch" \
+      --arg worktree "$issue_worktree" \
+      '{status:"completed", issue:($issue|tonumber), issue_branch:$branch, issue_worktree:$worktree}' > "$result_file"
+    return 0
+  fi
+
+  after=$(git -C "$issue_worktree" rev-parse HEAD)
+  summary_file=$(ingest_worker_summary "$name" "$issue" "$host" "$issue_worktree" "$before" "$after" "$worker_rc" "$issue_started_at" "$chain_run_id" "$issue_run_id")
+  issue_duration=$(duration_since "$issue_started_at")
+  summary_payload=$(jq -c --arg summary "$summary_file" --arg after "$after" --argjson exit_code "$worker_rc" --argjson duration_s "$issue_duration" \
+    '{summary:$summary, commit_after:$after, exit_code:$exit_code, worker_duration_s:$duration_s, telemetry_gaps:(.telemetry_gaps // [])}' "$summary_file")
+
+  if worker_summary_tracked "$issue_worktree"; then
+    emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" \
+      "$(jq -cn --arg summary "$summary_file" --arg reason "worker_summary_committed" '{summary:$summary, failure_reason:$reason}')"
+    jq -n --arg issue "$issue" --arg reason "issue #$issue committed private worker summary" \
+      '{status:"failed", issue:($issue|tonumber), reason:$reason}' > "$result_file"
+    return 0
+  fi
+
+  rm -rf "$issue_worktree/.studio"
+  if [ "$worker_rc" -ne 0 ]; then
+    emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" "$summary_payload"
+    jq -n --arg issue "$issue" --argjson rc "$worker_rc" --arg reason "issue #$issue worker exited $worker_rc" \
+      '{status:"failed", issue:($issue|tonumber), exit_code:$rc, reason:$reason}' > "$result_file"
+    return 0
+  fi
+
+  if [ "$after" = "$before" ]; then
+    emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" \
+      "$(jq -cn --arg summary "$summary_file" --arg reason "no_commit" '{summary:$summary, failure_reason:$reason}')"
+    printf 'studio-chain-runner: issue #%s produced no commit; leaving worktree at %s\n' "$issue" "$issue_worktree" >&2
+    jq -n --arg issue "$issue" --arg reason "issue #$issue produced no commit" \
+      '{status:"failed", issue:($issue|tonumber), reason:$reason}' > "$result_file"
+    return 0
+  fi
+
+  emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed "$issue_duration" "$summary_payload"
+  jq -n \
+    --arg issue "$issue" \
+    --arg branch "$issue_branch" \
+    --arg worktree "$issue_worktree" \
+    --arg before "$before" \
+    --arg after "$after" \
+    '{status:"completed", issue:($issue|tonumber), issue_branch:$branch, issue_worktree:$worktree, commit_before:$before, commit_after:$after}' > "$result_file"
+}
+
+wait_for_issue_slot() {
+  local blocking="${1:-0}" running pid
+  local -a next_pids
+  while :; do
+    running=0
+    next_pids=()
+    for pid in "${ISSUE_PIDS[@]:-}"; do
+      [ -n "$pid" ] || continue
+      if kill -0 "$pid" 2>/dev/null; then
+        next_pids+=("$pid")
+        running=$((running + 1))
+      else
+        wait "$pid" 2>/dev/null || true
+      fi
+    done
+    if [ "${#next_pids[@]}" -gt 0 ]; then
+      ISSUE_PIDS=("${next_pids[@]}")
+    else
+      ISSUE_PIDS=()
+    fi
+    [ "$running" -lt "$CHAIN_WORKER_POOL" ] && return 0
+    [ "$blocking" = "1" ] || return 0
+    sleep 2
+  done
+}
+
+wait_for_all_issue_jobs() {
+  local pid
+  for pid in "${ISSUE_PIDS[@]:-}"; do
+    [ -n "$pid" ] || continue
+    wait "$pid" 2>/dev/null || true
+  done
+  ISSUE_PIDS=()
+}
+
 for ((idx = 0; idx < chain_count; idx++)); do
   name=$(yq -r ".chains[$idx].name" "$MANIFEST")
   base=$(yq -r ".chains[$idx].base // \"main\"" "$MANIFEST")
@@ -612,76 +800,67 @@ for ((idx = 0; idx < chain_count; idx++)); do
 
   chain_slug=$(slugify "$name")
   chain_worktree="$RUN_ROOT/$chain_slug-feature"
+  chain_results_dir="$RUN_ROOT/$chain_slug-results-$chain_run_id"
+  CHAIN_WORKER_POOL=$(chain_worker_pool_size)
 
-  log "starting chain $name on $branch from latest $base using host=$host"
+  log "starting chain $name on $branch from latest $base using host=$host worker_pool=$CHAIN_WORKER_POOL"
   emit_chain_event chain_started "" "$RUN_ID" "$chain_run_id" "" running 0 \
-    "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --argjson issue_count "$issue_count" '{chain:$name, branch:$branch, base:$base, host:$host, issue_count:$issue_count}')"
+    "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, host:$host, issue_count:$issue_count, worker_pool:$worker_pool}')"
   run git -C "$REPO_ROOT" fetch origin --prune
   if [ "$DRY_RUN" -eq 0 ]; then
+    mkdir -p "$chain_results_dir"
     if [ ! -d "$chain_worktree/.git" ]; then
       git -C "$REPO_ROOT" worktree add -B "$branch" "$chain_worktree" "origin/$base"
     fi
     git -C "$chain_worktree" checkout "$branch"
     git -C "$chain_worktree" reset --hard "origin/$base"
   else
+    mkdir -p "$chain_results_dir"
     printf 'DRY-RUN git worktree add -B %q %q origin/%q\n' "$branch" "$chain_worktree" "$base"
   fi
 
+  ISSUE_PIDS=()
   for ((i = 0; i < issue_count; i++)); do
     issue=$(yq -r ".chains[$idx].issues[$i]" "$MANIFEST")
     issue_slug=$(slugify "$issue")
     issue_branch="$branch-issue-$issue_slug"
     issue_worktree="$RUN_ROOT/$chain_slug-issue-$issue_slug"
     issue_run_id=$(mint_uuidv7)
-    issue_started_at=$(now_epoch)
+    result_file="$chain_results_dir/issue-$issue-$issue_run_id.json"
 
-    log "issue #$issue -> $issue_branch"
-    if [ "$DRY_RUN" -eq 0 ]; then
-      git -C "$REPO_ROOT" worktree remove --force "$issue_worktree" 2>/dev/null || rm -rf "$issue_worktree"
-      git -C "$REPO_ROOT" worktree add -B "$issue_branch" "$issue_worktree" "$branch"
-      before=$(git -C "$issue_worktree" rev-parse HEAD)
+    if [ "$DRY_RUN" -eq 1 ]; then
+      run_issue_job "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file"
     else
-      printf 'DRY-RUN git worktree add -B %q %q %q\n' "$issue_branch" "$issue_worktree" "$branch"
-      before="dry-run-before"
+      wait_for_issue_slot 1
+      run_issue_job "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file" &
+      ISSUE_PIDS+=("$!")
     fi
+  done
 
-    emit_chain_event chain_issue_started "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" running 0 \
-      "$(jq -cn --arg chain "$name" --arg branch "$issue_branch" --arg host "$host" --arg before "$before" '{chain:$chain, issue_branch:$branch, host:$host, commit_before:$before}')"
+  wait_for_all_issue_jobs
 
-    set +e
-    execute_issue_session "$name" "$branch" "$issue" "$host" "$issue_worktree" "$chain_run_id" "$issue_run_id" "$before"
-    worker_rc=$?
-    set -e
-
+  for ((i = 0; i < issue_count; i++)); do
+    issue=$(yq -r ".chains[$idx].issues[$i]" "$MANIFEST")
+    result_file=$(find "$chain_results_dir" -maxdepth 1 -name "issue-$issue-*.json" -print -quit 2>/dev/null || true)
+    if [ -z "$result_file" ] || [ ! -r "$result_file" ]; then
+      abort_run "issue #$issue produced no runner result"
+    fi
+    result_status=$(jq -r '.status // "failed"' "$result_file")
+    if [ "$result_status" != "completed" ]; then
+      result_reason=$(jq -r '.reason // "issue failed"' "$result_file")
+      abort_run "$result_reason"
+    fi
+    issue_branch=$(jq -r '.issue_branch' "$result_file")
+    issue_worktree=$(jq -r '.issue_worktree' "$result_file")
     if [ "$DRY_RUN" -eq 0 ]; then
-      after=$(git -C "$issue_worktree" rev-parse HEAD)
-      summary_file=$(ingest_worker_summary "$name" "$issue" "$host" "$issue_worktree" "$before" "$after" "$worker_rc" "$issue_started_at" "$chain_run_id" "$issue_run_id")
-      issue_duration=$(duration_since "$issue_started_at")
-      summary_payload=$(jq -c --arg summary "$summary_file" --arg after "$after" --argjson exit_code "$worker_rc" --argjson duration_s "$issue_duration" \
-        '{summary:$summary, commit_after:$after, exit_code:$exit_code, worker_duration_s:$duration_s, telemetry_gaps:(.telemetry_gaps // [])}' "$summary_file")
-      if worker_summary_tracked "$issue_worktree"; then
-        emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" \
-          "$(jq -cn --arg summary "$summary_file" --arg reason "worker_summary_committed" '{summary:$summary, failure_reason:$reason}')"
-        abort_run "issue #$issue committed private worker summary"
-      fi
-      rm -rf "$issue_worktree/.studio"
-      if [ "$worker_rc" -ne 0 ]; then
-        emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" "$summary_payload"
-        abort_run "issue #$issue worker exited $worker_rc"
-      fi
-      if [ "$after" = "$before" ]; then
-        emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" \
-          "$(jq -cn --arg summary "$summary_file" --arg reason "no_commit" '{summary:$summary, failure_reason:$reason}')"
-        printf 'studio-chain-runner: issue #%s produced no commit; leaving worktree at %s\n' "$issue" "$issue_worktree" >&2
-        abort_run "issue #$issue produced no commit"
-      fi
-      emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed "$issue_duration" "$summary_payload"
       git -C "$chain_worktree" checkout "$branch"
+      git -C "$issue_worktree" rebase "$branch"
       git -C "$chain_worktree" merge --ff-only "$issue_branch"
       git -C "$REPO_ROOT" worktree remove "$issue_worktree"
       git -C "$REPO_ROOT" branch -D "$issue_branch"
     else
       printf 'DRY-RUN git -C %q checkout %q\n' "$chain_worktree" "$branch"
+      printf 'DRY-RUN git -C %q rebase %q\n' "$issue_worktree" "$branch"
       printf 'DRY-RUN git -C %q merge --ff-only %q\n' "$chain_worktree" "$issue_branch"
       printf 'DRY-RUN git -C %q worktree remove %q\n' "$REPO_ROOT" "$issue_worktree"
       printf 'DRY-RUN git -C %q branch -D %q\n' "$REPO_ROOT" "$issue_branch"

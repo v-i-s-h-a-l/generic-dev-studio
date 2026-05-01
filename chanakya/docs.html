@@ -696,7 +696,7 @@ cd generic-dev-studio
     </div>
     <div class="cmd-card">
       <code>/chanakya dispatch-ready</code>
-      <span>Briefed tasks where every predecessor is in <code>{merged, verified, archived}</code>. Grouped by train, sorted by priority then age. Renders <code>id / priority / effort_minutes / recommended_model / title</code>. The fleet-wide "what's safe to dispatch right now?" answer.</span>
+      <span>Briefed tasks where every predecessor is in <code>{merged, verified, archived}</code> or marked as a duplicate. Grouped by train, sorted by priority then age. Renders <code>id / priority / effort_minutes / recommended_model / title</code>. The fleet-wide "what's safe to dispatch right now?" answer.</span>
     </div>
     <div class="cmd-card">
       <code>/chanakya urgent &lt;free-text&gt;</code>
@@ -740,7 +740,7 @@ cd generic-dev-studio
     </div>
     <div class="cmd-card achilles">
       <code>/achilles push-tf</code>
-      <span>Wraps <code>/pushTFBuild</code> &mdash; archives, uploads to TestFlight, then debriefs Chanakya with task-to-build mapping</span>
+      <span>Wraps <code>/pushTFBuild</code> &mdash; archives, uploads to TestFlight, then debriefs Chanakya with task-to-build mapping. The underlying push supports <code>--background</code> so Slack drafting can continue while archive/upload runs.</span>
     </div>
     <div class="cmd-card achilles">
       <code>/achilles app-store</code>
@@ -1438,7 +1438,7 @@ scripts/achilles-refresh-base.sh &lt;worktree&gt; [--dry-run]</code></pre>
   </div>
 
   <div class="callout blue">
-    <strong>Existing skills are untouched.</strong> <code>/pushTFBuild</code> and <code>/fullSendToAppStore</code> run exactly as before. Achilles only adds pre-flight task collection and post-flight debrief. Use <code>--skip-debrief</code> to bypass the debrief if needed.
+    <strong>Existing skills remain the entry point.</strong> <code>/pushTFBuild --background</code> starts the long archive/upload work in the background and returns a run handle for Slack drafting; <code>/fullSendToAppStore</code> runs the App Store path. Achilles only adds pre-flight task collection and post-flight debrief. Use <code>--skip-debrief</code> to bypass the debrief if needed.
   </div>
 </section>
 

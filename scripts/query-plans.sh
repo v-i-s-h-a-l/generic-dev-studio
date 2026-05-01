@@ -8,6 +8,7 @@
 #   scripts/query-plans.sh --kind=review --subject-kind=task --subject-id=<uuidv7>
 #   scripts/query-plans.sh --kind=release --channel=testflight --state=released
 #   scripts/query-plans.sh --kind=feedback --source=slack-thread
+#   scripts/query-plans.sh --blocked-by=<task-uuid>
 #   scripts/query-plans.sh --format=json   # emit JSON instead of YAML-inline
 #
 # Emits one line per matching artifact. Without --format=json, each line is
@@ -30,6 +31,7 @@ PROJECT=""
 KIND=""
 FORMAT="yaml"
 TOUCHES_GLOB=""
+BLOCKED_BY=""
 declare -a FILTERS=()
 
 while [ $# -gt 0 ]; do
@@ -41,6 +43,8 @@ while [ $# -gt 0 ]; do
     --format)     FORMAT="${2:?--format requires value}"; shift 2 ;;
     --touches=*)  TOUCHES_GLOB="${1#--touches=}"; shift ;;
     --touches)    TOUCHES_GLOB="${2:?--touches requires a glob}"; shift 2 ;;
+    --blocked-by=*) BLOCKED_BY="${1#--blocked-by=}"; shift ;;
+    --blocked-by)   BLOCKED_BY="${2:?--blocked-by requires a task id}"; shift 2 ;;
     --*=*)        FILTERS+=("$1"); shift ;;
     -h|--help)
       sed -n '3,/^$/p' "$0" | sed 's/^# \{0,1\}//'
@@ -48,6 +52,39 @@ while [ $# -gt 0 ]; do
     *) printf 'unknown arg: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
+
+# --blocked-by: reverse-index query over predecessors.
+# Scans per-task YAMLs directly (index doesn't store predecessors).
+if [ -n "$BLOCKED_BY" ]; then
+  if [ -z "$PROJECT" ]; then
+    PROJECT=$(resolve_project 2>/dev/null) || {
+      printf 'error: no project resolved. Pass --project <slug>.\n' >&2
+      exit 2
+    }
+  fi
+  if [ -n "${ACHILLES_PROJECT_ROOT:-}" ]; then
+    _BB_ROOT="$ACHILLES_PROJECT_ROOT"
+  else
+    _BB_ROOT=$(resolve_project_root_for "$PROJECT")
+  fi
+  _BB_DIR="$_BB_ROOT/plans/tasks"
+  command -v yq >/dev/null 2>&1 || { printf 'error: --blocked-by requires yq (v4+)\n' >&2; exit 2; }
+  [ -d "$_BB_DIR" ] || { printf 'no tasks dir: %s\n' "$_BB_DIR" >&2; exit 0; }
+  _found=0
+  for _f in "$_BB_DIR"/*.yaml; do
+    [ -f "$_f" ] || continue
+    if yq -e ".predecessors[]? | select(. == \"$BLOCKED_BY\")" "$_f" >/dev/null 2>&1; then
+      case "$FORMAT" in
+        yaml) yq eval '.' "$_f" ;;
+        json) yq eval -o=json '.' "$_f" ;;
+        *) printf 'error: --format must be yaml or json\n' >&2; exit 2 ;;
+      esac
+      _found=$(( _found + 1 ))
+    fi
+  done
+  [ "$_found" -gt 0 ] || printf 'no tasks blocked by: %s\n' "$BLOCKED_BY" >&2
+  exit 0
+fi
 
 # --touches: reverse-index query over affinity.touchpoints.
 # Scans per-task YAMLs directly (index doesn't store touchpoints).

@@ -7,7 +7,8 @@
 # line carrying the compact brief slice.
 #
 # Input shape (minimum fields on each task): id, title, priority, status,
-# complexity, branch. Optional: summary. Extra fields are ignored.
+# complexity, branch. Optional: summary, blocked_by_predecessor,
+# cascading_block. Extra fields are ignored.
 
 set -u
 umask 022
@@ -34,11 +35,20 @@ printf '%s' "$payload" | jq -r '
     | gsub("  +"; " ")
     | sub("^ +"; "")
     | sub(" +$"; "");
+  def dag_annotation:
+    ([select(((.blocked_by_predecessor // []) | length) > 0)
+      | "blocked_by_predecessor=" + ((.blocked_by_predecessor // []) | join(","))]
+     + [select(.cascading_block == true) | "cascading_block=true"])
+    | join(" ");
   (
     "| \(.id // "—") | \(.title // "—" | .[0:40]) | \(.priority // "—") | \(.status // "—") | \(.complexity // "—") | \(.branch // "—") |"
   ),
   (
     select((.status == "briefed" or .status == "in-progress") and (clean_summary != ""))
     | "  └─ \(clean_summary)"
+  ),
+  (
+    select(dag_annotation != "")
+    | "  └─ \(dag_annotation)"
   )
 '
