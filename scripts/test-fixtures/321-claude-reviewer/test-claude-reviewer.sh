@@ -56,6 +56,14 @@ case " $* " in
   *) printf 'claude reviewer did not use read-only tools\n' >&2; exit 9 ;;
 esac
 
+[ -n "${CLAUDE_CONFIG_DIR:-}" ] || { printf 'claude reviewer did not receive the dedicated config dir\n' >&2; exit 16; }
+case "${CLAUDE_CONFIG_DIR:-}" in
+  */.claude-reviewer) ;;
+  *) printf 'claude reviewer config dir has wrong shape: %s\n' "${CLAUDE_CONFIG_DIR:-}" >&2; exit 17 ;;
+esac
+[ "${CLAUDE_CONFIG_DIR:-}" != "$HOME" ] || { printf 'claude reviewer config dir reused the temp HOME\n' >&2; exit 18; }
+[ -d "${CLAUDE_CONFIG_DIR:-}" ] || { printf 'claude reviewer config dir missing\n' >&2; exit 19; }
+
 [ -n "${REVIEW_PAYLOAD:-}" ] && [ -f "$REVIEW_PAYLOAD" ] || exit 10
 [ ! -f "$HOME/.config/gh/hosts.yml" ] || { printf 'reviewer inherited caller HOME\n' >&2; exit 11; }
 case "${GH_TOKEN:-}${GITHUB_TOKEN:-}${OPENAI_API_KEY:-}${ANTHROPIC_API_KEY:-}" in
