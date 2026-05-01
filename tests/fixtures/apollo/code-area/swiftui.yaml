@@ -1,0 +1,26 @@
+schema_version:
+  name: apollo-code-area
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+attribution_id: code-area-swiftui
+mode: cpu
+evidence:
+  artifact_path: ~/.dev-studio/app/apollo/captures/4/cpu.trace
+  interval: FeedScroll
+  cohort: iPhone16,2/iOS19
+  scenario_id: feed-scroll-cpu
+symbolication_status: symbolicated
+responsible_frames:
+  - symbol: specialized ViewGraph.updateOutputs()
+    module: SwiftUI
+    weight: 36.5
+    thread: main
+candidates:
+  - kind: swiftui
+    target: FeedCell.body
+    file: Turnip/Feed/FeedCell.swift
+    rationale: SwiftUI update work dominates with app view body visible in caller frames.
+confidence: likely
+suggested_owner: swiftui-performance-audit
+verification_recipe: Re-run CPU Profiler and SwiftUI update audit on the same scenario.

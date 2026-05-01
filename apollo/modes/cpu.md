@@ -105,10 +105,7 @@ evidence:
     cohort: <device>/<os>/<build>
     signpost: <interval-or-event>
     metric: <self_time|cycles|instructions|ipc|cpu_time|hang_duration>
-likely_code_area:
-  symbol: <symbol-or-stack-root>
-  file: <path-or-null>
-  rationale: <artifact-backed reason>
+code_area: <validated apollo-code-area block; unresolved symbols are blocked>
 fix_archetype: <algorithm|main_thread|qos|wait|vectorize|cache_layout|polling|domain_handoff>
 expected_delta: <metric + threshold Apollo will verify>
 verification: <post-fix capture recipe>
@@ -116,7 +113,7 @@ verification: <post-fix capture recipe>
 
 ## Phase 4 - Recommend / patch handoff
 
-Patch handoff follows `apollo/_shared/primitives/mode-pack-scaffold.md` §Phase 4. CPU's mode-specific brief seed adds `likely_code_area`, `thread`, and `cpu_class`. Apollo does not write source files.
+Patch handoff follows `apollo/_shared/primitives/mode-pack-scaffold.md` §Phase 4. CPU's mode-specific brief seed adds `code_area`, `thread`, and `cpu_class`. Apollo does not write source files.
 
 | Fix archetype | Evidence required | Notes |
 |---|---|---|
@@ -197,6 +194,7 @@ Regression thresholds use `apollo/_shared/primitives/regression-detection.md`: C
 - `apollo/_shared/primitives/source-map.md` - Apple / WWDC source rows for CPU (`SRC-CPU-*`, `SRC-XCT-CPU-DOC`, `SRC-HANGS-WWDC22-10082`, `SRC-METRICKIT-WWDC20-10081`)
 - `apollo/_shared/primitives/evidence-gate.md` - strict-9 contract + refusal protocol
 - `apollo/_shared/primitives/scenarios.md` - reusable user-flow contract for repeatable captures
+- `apollo/_shared/primitives/code-attribution.md` - structured `code_area` block for source/owner attribution
 - `apollo/_shared/primitives/instruments-index.md` - CPU Profiler / Time Profiler / CPU Counters / Processor Trace / System Trace details
 - `apollo/_shared/primitives/metrickit.md` - `MXCPUMetric`, `MXCPUExceptionDiagnostic`, `MXSignpostIntervalData` schemas
 - `apollo/_shared/primitives/signposts.md` - scenario anchors that make CPU traces re-runnable

@@ -1,0 +1,22 @@
+schema_version:
+  name: apollo-code-area
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+attribution_id: code-area-unsymbolicated
+mode: cpu
+evidence:
+  artifact_path: ~/.dev-studio/app/apollo/captures/2/cpu.trace
+  interval: FeedScroll
+  cohort: iPhone16,2/iOS19
+  scenario_id: feed-scroll-cpu
+symbolication_status: unsymbolicated
+responsible_frames: []
+candidates:
+  - kind: unresolved
+    target: null
+    file: null
+    rationale: Trace contains addresses only; dSYM lookup is required before source attribution.
+confidence: blocked
+suggested_owner: apollo-refusal
+verification_recipe: Fetch matching dSYMs, re-export symbolicated trace, then re-run attribution.

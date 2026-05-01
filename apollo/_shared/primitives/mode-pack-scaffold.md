@@ -37,6 +37,7 @@ recommendation_id: <ulid>
 patch_owner: achilles
 brief_kind: impl
 diff_target: <file:line | symbol>
+code_area: <validated apollo-code-area block or path>
 expected_delta: <metric> p<percentile> -<X>% cohort <modelCode>/<osMajor>
 verification_recipe: <command>
 evidence:
@@ -46,7 +47,7 @@ evidence:
   - build: <version>
 ```
 
-Modes extend the `evidence:` list with mode-specific axes (e.g. thermal adds `dwell_seconds`; battery adds `track` plus `dwell_seconds` or `field_window_days`). The base fields are mandatory across every mode.
+Modes extend the `evidence:` list with mode-specific axes (e.g. thermal adds `dwell_seconds`; battery adds `track` plus `dwell_seconds` or `field_window_days`). The base fields are mandatory across every mode. `code_area` follows `apollo/_shared/primitives/code-attribution.md`; unresolved symbols must be represented as `confidence: blocked`, never guessed.
 
 R17 ownership is the load-bearing invariant: Apollo writes only under `~/.dev-studio/<project>/apollo/`. The mode pack never reaches `briefs/`, `debriefs/`, the worktree, or task YAML. Achilles owns the patch on a worktree per its standard flow; Argus reviews per its standard flow; Chanakya routes the brief seed. Apollo never invokes Achilles directly.
 
