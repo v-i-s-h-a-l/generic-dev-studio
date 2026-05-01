@@ -37,6 +37,8 @@ Thermal is the second P0 mode under the strict-9 evidence gate (`apollo/_shared/
 
 The mode treats four thermal signal classes as distinct — diagnostic question, capture template, regression math, and verification artifact differ per class. Mode packs cite the class on every recommendation; cross-class citations fail the gate. Thermal evidence is also the most noise-sensitive in Apollo's catalogue: ambient temperature, charging state, and sustained-dwell time perturb every measurement, and the §Cohort and noise control gates apply with no carve-out.
 
+Source-map rows: `apollo/_shared/primitives/source-map.md` §Mode row index → thermal. This mode cites source-map row IDs for Apple / WWDC authority, then cites local primitives for operational gates.
+
 ## Signal classes (thermal taxonomy)
 
 | Class | What it looks like | Authoritative source | Apollo template |
@@ -283,6 +285,7 @@ The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives
 
 ## See also
 
+- `apollo/_shared/primitives/source-map.md` — Apple / WWDC source rows for thermal (`SRC-THERM-API`, `SRC-CPU-*`, `SRC-HANGS-WWDC22-10082`, `SRC-ORG-WWDC21-10087`, `SRC-METRICKIT-WWDC20-10081`). Historical `WWDC22 110340` is tracked there as stale and MUST NOT be cited for hangs.
 - `apollo/_shared/primitives/mode-pack-scaffold.md` — five-phase pipeline framing, Phase 4 handoff contract, Phase 5 outcome state machine, procedure steps 5–8 boilerplate
 - `apollo/_shared/primitives/evidence-gate.md` — strict-9 contract + refusal protocol the phase gates feed into
 - `apollo/_shared/primitives/metrickit.md` — `MXMetaData.thermalState`, `MXCPUMetric`, `MXCPUExceptionDiagnostic`, `MXHangDiagnostic`, `MXGPUMetric` schemas
@@ -296,11 +299,3 @@ The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives
 - `apollo/_shared/integrations/imgly-and-metal.md` — Imgly / Metal delegation contract (handoff envelope + retained-vs-delegated authority)
 - `_shared/contracts/events.md` — `apollo_capture_*` and `apollo_recommendation` event schemas
 - `REVIEW.md` R10 — sister rule for completion claims; Apollo's verification phase is the thermal-mode counterpart
-- `ProcessInfo.thermalState` and `thermalStateDidChangeNotification` — Apple Developer reference for the observer contract
-- WWDC25 308 — Optimize CPU performance with Instruments (Processor Trace, CPU Counters)
-- WWDC23 10248 — Analyze hangs with Instruments
-- WWDC22 10082 — Track down hangs with Xcode and on-device detection
-- WWDC21 10087 — Diagnose Power and Performance regressions
-- Apple Silicon CPU Optimization Guide v4 — E/P-core scheduling, QoS placement, micro-arch counter routing
-- "Tuning your code's performance for Apple silicon" — Apple Developer guide
-- Tech Talk 110339 — Metal Performance HUD

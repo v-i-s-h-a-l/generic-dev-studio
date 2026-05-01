@@ -37,6 +37,8 @@ Battery is the third P0 mode under the strict-9 evidence gate (`apollo/_shared/p
 
 The mode treats four energy signal classes as distinct — diagnostic question, capture template, regression math, and verification artifact differ per class. Mode packs cite the class on every recommendation; cross-class citations fail the gate. Battery evidence also splits along an orthogonal axis Apollo enforces explicitly: **reproducible** (debugger-attached, Power Profiler / Energy Gauges drive the capture) versus **non-reproducible** (field-only, `MXAppRunTimeMetric` / ASC Power Metrics carry the signal). The split is load-bearing — different artifact catalogues, different cohort models, different refusal recipes — and follows WWDC25 226 *Profile and optimize power usage in your app*.
 
+Source-map rows: `apollo/_shared/primitives/source-map.md` §Mode row index → battery. This mode cites source-map row IDs for Apple / WWDC authority, then cites local primitives for operational gates.
+
 ## Reproducible vs non-reproducible (WWDC25 226 split)
 
 | Track | When the signal lives there | Authoritative artifacts | What auto-capture can do |
@@ -321,6 +323,7 @@ The Imgly carve-out matches thermal mode. Imgly knowledge lives in the dedicated
 
 ## See also
 
+- `apollo/_shared/primitives/source-map.md` — Apple / WWDC source rows for battery (`SRC-BATT-*`, `SRC-NET-WWDC21-10212`, `SRC-METRICKIT-WWDC20-10081`, `SRC-ORG-WWDC21-10087`, `SRC-XCT-PERF`)
 - `apollo/_shared/primitives/mode-pack-scaffold.md` — five-phase pipeline framing, Phase 4 handoff contract, Phase 5 outcome state machine, procedure steps 5–8 boilerplate
 - `apollo/_shared/primitives/evidence-gate.md` — strict-9 contract + refusal protocol the phase gates feed into
 - `apollo/_shared/primitives/metrickit.md` — `MXAppRunTimeMetric`, `MXCPUMetric`, `MXGPUMetric`, `MXDisplayMetric`, `MXNetworkTransferMetric`, `MXDiskIOMetric`, `MXAnimationMetric`, `MXCPUExceptionDiagnostic`, `MXDiskWriteExceptionDiagnostic` schemas
@@ -335,13 +338,3 @@ The Imgly carve-out matches thermal mode. Imgly knowledge lives in the dedicated
 - `apollo/modes/thermal.md` — cross-mode coupling for shared archetypes (thermalState observer, FPS cap, spin-loop yield)
 - `_shared/contracts/events.md` — `apollo_capture_*` and `apollo_recommendation` event schemas
 - `REVIEW.md` R10 — sister rule for completion claims; Apollo's verification phase is the battery-mode counterpart
-- `MXAppRunTimeMetric.cumulativeForegroundEnergy` — Apple Developer reference for the canonical field energy signal
-- `BGTaskScheduler` + `BGAppRefreshTaskRequest` + `BGProcessingTaskRequest` — Apple Developer reference for the background contract
-- WWDC25 226 — Profile and optimize power usage in your app (canonical for the reproducible-vs-non-reproducible split + Power Profiler workflow)
-- WWDC22 10083 — Power down: Improve battery consumption
-- WWDC22 10142 — Efficiency awaits: Background tasks in SwiftUI (BGTaskScheduler debug-trigger SPI)
-- WWDC21 10087 — Diagnose Power and Performance regressions
-- WWDC21 10212 — Analyze HTTP traffic in Instruments (radio tail-energy + connection wake costs)
-- WWDC19 417 — Improving Battery Life and Performance
-- Apple "Measuring your app's power use with Power Profiler" — Apple Developer guide
-- Apple Energy Efficiency Guide for iOS Apps — high-QoS / busy-wait / location accuracy / radio coalescing guidance

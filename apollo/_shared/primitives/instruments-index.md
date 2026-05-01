@@ -124,6 +124,7 @@ Instruments has more diagnostic depth than any other source Apollo touches, but 
 
 ## See also
 
+- `apollo/_shared/primitives/source-map.md` — Apple / WWDC source rows for Instruments templates and planned CPU mode
 - `apollo/_shared/primitives/evidence-gate.md`
 - `apollo/_shared/primitives/signposts.md`
 - `apollo/_shared/primitives/xctest-baselines.md`
@@ -131,4 +132,4 @@ Instruments has more diagnostic depth than any other source Apollo touches, but 
 - `apollo/_shared/primitives/regression-detection.md` — comparing traces across runs
 - WWDC19 411 — Getting Started with Instruments
 - WWDC18 410 — Creating Custom Instruments
-- WWDC22 110340 — Track down hangs with Xcode and on-device detection
+- WWDC22 10082 — Track down hangs with Xcode and on-device detection

@@ -36,6 +36,8 @@ Memory is the first P0 mode under the strict-9 evidence gate (`apollo/_shared/pr
 
 The mode treats four memory signal classes as distinct — diagnostic question, capture template, regression math, and verification artifact differ per class. Mode packs cite the class on every recommendation; cross-class citations fail the gate.
 
+Source-map rows: `apollo/_shared/primitives/source-map.md` §Mode row index → memory. This mode cites source-map row IDs for Apple / WWDC authority, then cites local primitives for operational gates.
+
 ## Signal classes (heap taxonomy)
 
 | Class | What it looks like | Authoritative source | Apollo template |
@@ -248,6 +250,7 @@ The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives
 
 ## See also
 
+- `apollo/_shared/primitives/source-map.md` — Apple / WWDC source rows for memory (`SRC-MEM-*`, `SRC-INST-*`, `SRC-METRICKIT-WWDC20-10081`, `SRC-ORG-WWDC21-10087`, `SRC-XCT-PERF`)
 - `apollo/_shared/primitives/mode-pack-scaffold.md` — five-phase pipeline framing, Phase 4 handoff contract, Phase 5 outcome state machine, procedure steps 5–8 boilerplate
 - `apollo/_shared/primitives/evidence-gate.md` — strict-9 contract + refusal protocol the phase gates feed into
 - `apollo/_shared/primitives/metrickit.md` — `MXMemoryMetric`, `MXAppExitMetric`, `MXCrashDiagnostic` schemas
@@ -261,8 +264,3 @@ The Metal/Imgly carve-out is Apollo's compositional hinge. Imgly knowledge lives
 - `apollo/_shared/integrations/imgly-and-metal.md` — Imgly / Metal delegation contract (handoff envelope + retained-vs-delegated authority)
 - `_shared/contracts/events.md` — `apollo_capture_*` and `apollo_recommendation` event schemas
 - `REVIEW.md` R10 — sister rule for completion claims; Apollo's verification phase is the memory-mode counterpart
-- WWDC24 10173 — Analyze heap memory (canonical for the heap taxonomy)
-- WWDC21 10180 — Detect and diagnose memory issues
-- WWDC18 416 — iOS Memory Deep Dive (canonical for VM page accounting and footprint)
-- WWDC25 312 — Improve memory usage and performance with Swift
-- WWDC22 10106 — Profile and optimize your game's memory
