@@ -1,0 +1,23 @@
+schema_version:
+  name: apollo-signpost-plan
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+plan_id: signpost-plan-invalid-private
+scenario:
+  id: feed-scroll-cpu
+  version: 1
+mode_targets: [cpu]
+signposts:
+  - name: FeedScroll
+    kind: interval
+    placement: Wrap the scroll.
+    privacy: raw-user-data
+    public_payload_keys: [message_text]
+    required_for_recommendation: true
+brief_seed:
+  owner: achilles
+  summary: Invalid signpost plan.
+  acceptance:
+    - This should fail.
+missing_signpost_policy: block-before-capture

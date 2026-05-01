@@ -13,5 +13,6 @@
   "events-index":      {"max_known": "1.0.0", "min_acceptable": "1.0.0"},
   "capability-manifest": {"max_known": "1.0.0", "min_acceptable": "1.0.0"},
   "apollo-scenario":  {"max_known": "1.0.0", "min_acceptable": "1.0.0"},
-  "apollo-code-area": {"max_known": "1.0.0", "min_acceptable": "1.0.0"}
+  "apollo-code-area": {"max_known": "1.0.0", "min_acceptable": "1.0.0"},
+  "apollo-signpost-plan": {"max_known": "1.0.0", "min_acceptable": "1.0.0"}
 }

@@ -1,0 +1,30 @@
+schema_version:
+  name: apollo-signpost-plan
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+plan_id: signpost-plan-feed-scroll-cpu
+scenario:
+  id: feed-scroll-cpu
+  version: 1
+mode_targets: [cpu]
+signposts:
+  - name: FeedScroll
+    kind: interval
+    placement: Wrap the visible feed scroll interaction from first drag event through deceleration end.
+    privacy: public-metadata
+    public_payload_keys: [item_count, visible_count]
+    required_for_recommendation: true
+  - name: FeedPageLoaded
+    kind: event
+    placement: Emit when the next feed page finishes decoding and diffing.
+    privacy: public-metadata
+    public_payload_keys: [item_count]
+    required_for_recommendation: false
+brief_seed:
+  owner: achilles
+  summary: Add OSSignposter points of interest for feed-scroll-cpu.
+  acceptance:
+    - FeedScroll interval appears in a CPU Profiler trace.
+    - Public payload keys include only counts.
+missing_signpost_policy: block-before-capture
