@@ -81,7 +81,7 @@ STUDIO_TRACK=<track>             # session-start shortcut for /studio work <trac
 /argus                           # review current worktree (auto-invoked by Achilles pre-merge)
 /argus T001                      # review a specific task's worktree standalone
 /chanakya                        # describe features → get a master plan
-/chanakya brief T001             # generate a self-contained worker brief
+/chanakya brief T001             # generate a reviewer-ready XS/S/M worker brief
 /chanakya brief-review T001      # checklist pass over an authored brief (warn-tier, pre-dispatch)
 /chanakya ship T001,T002         # brief + dispatch to Achilles in one step
 /chanakya brief-all              # brief every pending task in priority order
@@ -353,7 +353,7 @@ For unattended Achilles workers, combine the writable root with `--ask-for-appro
 ## How It Works (30-second version)
 
 1. **Chanakya** turns your feature description into prioritized tasks with IDs (`T001`, `T002`, …).
-2. **Chanakya** writes a self-contained brief per task (Figma specs, codebase pointers, acceptance criteria).
+2. **Chanakya** writes a compact, self-contained brief per executable task (Figma specs, codebase pointers, measurable acceptance criteria, verification evidence). Broad L-sized work stays as a parent planning task unless explicitly waived.
 3. **Achilles** reads the brief, implements in an isolated worktree, self-reviews, gates on green build, merges back, and drops a debrief.
 4. **Chanakya** sweeps the inbox, marks tasks done, briefs follow-ups, tracks build/test debt.
 5. When tasks accumulate: `/chanakya test-manifest` or `/chanakya test-flow` → tick boxes → `/chanakya review-feedback` → verified.

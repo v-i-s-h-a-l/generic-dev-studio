@@ -22,6 +22,10 @@ The first two govern **thinking cost**. The third governs **diff cost**. They ar
 - A small (`S`) crash fix can warrant `Opus / high` because diagnosis is the cost driver, not the diff.
 - A large (`L`) mechanical refactor (rename across N files) can warrant `Sonnet / low` because the work is well-specified and pattern-matchable.
 
+## Size defaults
+
+Executable Achilles implementation briefs default to `XS`, `S`, or `M`. Use `L` for parent planning containers, design epics, release buckets, or explicitly waived implementation briefs only. A direct Achilles `L` implementation brief must explain why splitting would be less safe or less reviewable.
+
 ## Model defaults by task shape
 
 Pick one when you author the brief, or run `scripts/recommend-model.sh` for the structured `recommended_models` payload. Override with rationale.

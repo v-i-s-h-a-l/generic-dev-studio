@@ -255,9 +255,10 @@ Chanakya: "Got it. One task:
 You:     Yes
 
 Chanakya: [fetches Figma context, scans related files, inlines design specs]
-          "Brief ready at chanakya-tasks/T001-onboarding-flow.md.
+          "Brief ready at plans/briefs/<brief-id>.yaml.
            It includes: screen states from Figma, design tokens, files to
-           modify, patterns to follow, acceptance criteria.
+           modify, patterns to follow, measurable acceptance criteria,
+           non-goals, verification evidence, and model recommendations.
            
            Ready to launch a worker?"
 ```

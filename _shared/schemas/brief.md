@@ -4,9 +4,11 @@ description: YAML shape for Chanakya-authored Achilles briefs under plans/briefs
 type: reference
 ---
 
-# Brief Schema (`brief@3.7.0`)
+# Brief Schema (`brief@3.8.0`)
 
 Per-brief artifact written to `~/.dev-studio/<project>/plans/briefs/<brief-id>.yaml`. Replaces the markdown briefs that previously lived at `plans/chanakya-tasks/<task-id>-<type>.md`. One file per brief; a task may have many briefs across rework cycles (each with a distinct `id`, same `task_id`).
+
+Version 3.8.0 makes the executable brief quality contract lintable. New direct-to-Achilles implementation briefs must be XS/S/M by default, carry explicit objective / non-goals / measurable acceptance / verification evidence, and include structured model recommendations. L-sized Achilles implementation briefs require an explicit waiver or split rationale. Legacy briefs below 3.8.0 are not retroactively blocked.
 
 Version 3.6.0 adds `recommended_models`, a task-level best-result and fast-turnaround recommendation pair resolved from `_shared/rules/model-recommendation.md` and `_shared/schemas/model-catalog.yaml`. Additive over 3.5.0; readers on 3.0.0+ ignore unknown fields.
 
@@ -24,9 +26,9 @@ Version 3.1.0 bumped from the 3.x object-envelope form introduced in Phase 2.5 â
 
 ```yaml
 schema_version:
-  # brief@3.7.0
+  # brief@3.8.0
   name: brief
-  version: 3.7.0
+  version: 3.8.0
   min_reader: 3.0.0
   deprecated_at: null
 id: 0190f52a-6e11-7c01-8a77-11a05a9e2b4c        # UUIDv7
@@ -85,6 +87,22 @@ body: |
   # figma cross-refs, risk notes. Fields above are the machine-readable
   # contract; `body` is the writer's narrative for Achilles.
 ```
+
+## Executable Brief Quality Contract (3.8.0)
+
+New executable briefs are worker instructions, not planning epics. They should be compact enough for worker context and concrete enough for Argus to review without reconstructing intent.
+
+Required for `brief@3.8.0+` before a brief transitions to `ready`:
+
+1. `size` defaults to `xs`, `s`, or `m` for direct Achilles implementation work.
+2. `size: l` is allowed for parent epics, design/planning containers, or an explicitly waived Achilles implementation brief. A waived L implementation brief must include a non-empty `## L-size reason`, `## Size waiver`, `## Split rationale`, or `## Why not split` section in `body`.
+3. `body` includes a non-empty `## Objective` section: one concise changed behavior/output statement.
+4. `body` includes explicit `## Out of Scope`, `## Non-goals`, or `## Non-goals / Out of Scope`.
+5. `acceptance` is non-empty and written as binary, measurable, UI-testable, unit-testable, or manually verifiable criteria.
+6. `body` includes `## Verification`, `## Evidence`, `## Verification / Evidence`, or `## Expected Evidence` with the expected proof Achilles should produce.
+7. `recommended_models` is populated with `best_result`, `fast_turnaround`, and a task-specific rationale.
+
+Long background, raw research, and design discussion belong in linked context docs or the compact `summary`, not in the executable worker brief. The brief can reference files and patterns, but it does not need to prescribe exact coordinates unless they affect the expected behavior.
 
 ## Fields
 
@@ -161,6 +179,7 @@ Unparseable briefs (malformed YAML preamble, missing task-id) land in `archive/2
 
 | Version | Landed | Changes |
 |---|---|---|
+| 3.8.0 | 2026-05-01 | Added lintable executable brief quality contract (#323): XS/S/M default for Achilles implementation briefs, explicit L-size waiver, objective, non-goals, measurable acceptance, verification evidence, and structured model recommendations. |
 | 3.7.0 | 2026-04-30 | Added optional `base_branch` for explicit dispatch bases (#374). Additive; `min_reader: 3.0.0`. |
 | 3.6.0 | 2026-04-30 | Added optional `recommended_models` pair for task-level model selection (#65). Additive; `min_reader: 3.0.0`. |
 | 3.5.0 | 2026-04-28 | Promoted `legacy_task_id` to documented field (#296). Auto-resolved by `write_brief_artifact`; `validate-brief.sh` enforces presence. Fixes Achilles dispatch failure on hand-authored briefs. Additive; `min_reader: 3.0.0`. |
