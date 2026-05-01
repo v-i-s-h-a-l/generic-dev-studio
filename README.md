@@ -136,6 +136,7 @@ scripts/waive-lift.sh argus                                 # lift the pause; re
 scripts/backfill-orphan-debriefs.sh [--apply] [--quiet]     # recover tasks that finished but slipped the master plan
 scripts/forge-latency-report.sh --days 14                   # stage-level Forge task latency from event logs
 scripts/field-workflow-report.sh --days 14                  # Field loop timing, tokens, gate pass rates, review coverage, improvement candidates
+scripts/studio-pr-baseline-report.sh 366                    # PR-level timing, churn, gate, and generated-file baselines
 scripts/pre-commit-review.sh                                # manual no-secret reviewer gate for risky staged diffs
 scripts/pr-headless-review.sh <pr>                          # run no-secret reviewer gate, then merge if non-blocked
 scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
@@ -205,6 +206,7 @@ scripts/                # multi-worker fleet (BETA)
   analyze-collect.sh    # mechanical stats for usage-analysis passes (see ANALYSIS.md)
   forge-latency-report.sh  # stage-level task latency + review-gate comparison from event logs
   field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
+  studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
   studio-chain-runner.sh   # execute studio issue chains from a YAML manifest with fresh host sessions
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
@@ -283,7 +285,7 @@ After cloning this repo to contribute back, enable the deterministic architectur
 git config core.hooksPath .githooks
 ```
 
-The hook regenerates `docs-surface.json`, runs the architecture/privacy gates, and emits `precommit_hook_completed` with `duration_s`. SessionStart emits `session_start_completed` against a 5s warning budget and stays quiet unless that budget is exceeded. It does not spawn an LLM reviewer by default. Run `scripts/pre-commit-review.sh` manually before committing risky local diffs; its bypass remains explicit (`STUDIO_BYPASS_REVIEW=1` or `--bypass-review`) and audited through `precommit_review_bypassed`. PR integration still goes through `scripts/pr-headless-review.sh`, with timing split across reviewer, autopilot, and merge-finalize events. Error codes and fix recipes live in `_shared/rules/enforcement-contract.md`. Emergency lint bypass: `ARCH_LINT=0 git commit ...` (hotfixes only).
+The hook regenerates `docs-surface.json`, runs the architecture/privacy gates, and emits `precommit_hook_completed` with `duration_s`. SessionStart emits `session_start_completed` against a 5s warning budget and stays quiet unless that budget is exceeded. It does not spawn an LLM reviewer by default. Run `scripts/pre-commit-review.sh` manually before committing risky local diffs; its bypass remains explicit (`STUDIO_BYPASS_REVIEW=1` or `--bypass-review`) and audited through `precommit_review_bypassed`. PR integration still goes through `scripts/pr-headless-review.sh`, with timing split across reviewer, autopilot, and merge-finalize events. Use `scripts/studio-pr-baseline-report.sh <pr>` during retrospectives to compare phase timing, churn, and gate gaps across PR classes; use the numbers to tune workflow bottlenecks, not to score individual productivity. Error codes and fix recipes live in `_shared/rules/enforcement-contract.md`. Emergency lint bypass: `ARCH_LINT=0 git commit ...` (hotfixes only).
 
 ### Feature branches and grouped PRs
 
