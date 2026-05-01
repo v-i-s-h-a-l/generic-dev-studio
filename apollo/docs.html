@@ -358,6 +358,11 @@ Resume with `apollo &lt;mode&gt; --evidence &lt;path&gt;`.</code></pre>
         <div class="status shipping-soon">Stage 5 · #235</div>
         <div class="what">Capture-only path. Produces one hard-evidence artifact for a named metric on a named cohort, then exits — no fix, no patch dispatch. Pre-flight tool for Chanakya brief authoring (populates <code>evidence.artifacts[]</code>) and for cohort re-capture after a perf-merge refusal. <code>--capture-only</code> alias on the diagnostic mode packs has the same effect.</div>
       </div>
+      <div class="mode-card">
+        <code>/apollo profile</code>
+        <div class="status shipping-soon">Apollo expansion · #410</div>
+        <div class="what">Guided real-device profiling conductor. Creates or validates a scenario, checks signposts, guides Xcode/Instruments or on-device Performance Trace capture, then hands analysis to the selected metric mode.</div>
+      </div>
     </div>
     <h3>Perf-mode dispatch from Chanakya</h3>
     <p>Briefs declared with <code>dispatch_agent: apollo</code> route to Apollo instead of Achilles, with <code>perf_mode</code> selecting the diagnostic mode pack and <code>evidence</code> pre-flighting the strict-9 gate at brief-write time. Argus skips these merges entirely (<code>argus/SKILL.md</code> §Skip threshold) — Apollo's re-measure delta on the brief's cohort is the merge gate. Loop spec: <code>apollo/_shared/primitives/perf-merge-loop.md</code>.</p>

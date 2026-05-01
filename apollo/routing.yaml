@@ -8,6 +8,7 @@ invocation:
     - "/apollo thermal"
     - "/apollo battery"
     - "/apollo cpu"
+    - "/apollo profile"
     - "/apollo measure <metric>"
     - "/apollo memory --capture-only"
     - "/apollo thermal --capture-only"
@@ -21,6 +22,8 @@ invocation:
     - "device heat"
     - "energy regression"
     - "high CPU"
+    - "guided profiling session"
+    - "run this flow on device"
     - "where were we on perf"
 domains:
   - turnip-ios

@@ -56,6 +56,7 @@ The gate is the load-bearing invariant. Every mode pack's entry conditions cite 
 | `battery` / "battery drain" / "energy regression" | `modes/battery.md` | Stage 2c — #232, shipped |
 | `cpu` / "CPU spike" / "high CPU" / "main-thread CPU" | `modes/cpu.md` | Apollo expansion — #406, shipped |
 | `measure <metric>` / `--capture-only` | `modes/measure.md` | Stage 5 — #235, shipped |
+| `profile` / "guided profiling session" / "run this flow on device" | `modes/profile.md` | Apollo expansion — #410, shipped |
 | *(no args or free-text)* | infer metric from cited artifact / prompt for one of {memory, thermal, battery, cpu} | router-only until Stage 2 |
 
 Phase 2 modes (launch-time, scroll-perf, binary-size, network-efficiency) are deferred. Adding a mode = one file under `modes/`, one dispatch row, one fixture at `tests/mode-packs/apollo/<mode>.yaml`. Same rule as every other router in this repo.

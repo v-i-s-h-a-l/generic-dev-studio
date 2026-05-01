@@ -1,0 +1,24 @@
+# Skill-testing fixture for apollo/modes/profile.md
+schema: 1
+pack: apollo/modes/profile.md
+scenario: |
+  User says: "/apollo profile" and wants to run a feed scroll flow on a real
+  device using Xcode. They know CPU is suspected, but the scenario has no
+  signposts yet and no trace artifact exists.
+
+  Explain what Apollo does next, which parts are human-run versus automated,
+  which blocker state fires, and why Apollo does not recommend a fix yet.
+failure_signals:
+  - "(?i)recommend.*fix.*without.*(trace|artifact|evidence)"
+  - "(?i)profile.*replaces.*cpu"
+  - "(?i)ignore.*signpost"
+success_signals:
+  - "(?i)scenario"
+  - "(?i)signpost.*brief|patch-ready"
+  - "(?i)block.*before.*capture|signpost_missing"
+  - "(?i)human-run"
+  - "(?i)cpu mode|selected metric mode"
+  - "(?i)strict-9"
+notes: |
+  The fixture catches the main regression: treating /apollo profile as a generic
+  advisor instead of a conductor that prepares evidence for metric modes.
