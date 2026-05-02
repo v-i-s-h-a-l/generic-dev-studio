@@ -23,6 +23,8 @@ This is the machine-enforced complement to REVIEW.md R21 (the human gate for par
 | `legacy_[a-zA-Z_]+_helpers` | #245 A.5 (2026-04-27) | helpers now stub-fail (exit 9) | use lib-ledger writers directly |
 | `plans/\.legacy-archive` | #245 A.4 (2026-04-27) | archive dir is read-only — no new writes | use `plans/tasks/*.yaml` via lib-ledger |
 | `project-memory.*reviews.*\.md` | #245 A.5 (2026-04-27) | legacy review markdown retired | write `plans/reviews/<id>.yaml` via argus-emit-verdict.sh |
+| `[Ww]rit(e\|es\|ing\|ten).*<task-id>-tests\.md` | #335 (2026-05-02) | standalone test-case sidecar writer retired | write full case objects to debrief `tests.added` / `tests.modified` |
+| `[Tt]est cases at .*<task-id>-tests\.md` | #335 (2026-05-02) | completion prose must not point users at retired sidecars | point users at `/chanakya test-manifest` or the debrief YAML |
 
 ## Adding an entry
 
@@ -48,4 +50,6 @@ chanakya-tasks/
 legacy_[a-zA-Z_]+_helpers
 plans/\.legacy-archive
 project-memory.*reviews.*\.md
+[Ww]rit(e|es|ing|ten).*<task-id>-tests\.md
+[Tt]est cases at .*<task-id>-tests\.md
 <!-- lint:patterns:end -->
