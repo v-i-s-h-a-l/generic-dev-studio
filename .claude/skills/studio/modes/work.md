@@ -40,6 +40,25 @@ Run:
 scripts/studio-chain-runner.sh <manifest-or-name> [--only <chain>] [--host codex|claude-code] [--dry-run]
 ```
 
+## Manual parallel shell guidance
+
+When a manifest contains independent chains, tell the user they can open one
+shell session per chain and run `--only <chain>` in each. Start with dry-runs
+so branch/worktree/PR/review shape is visible before execution:
+
+```bash
+# Shell 1
+scripts/studio-chain-runner.sh <manifest-or-name> --only <chain-a> --dry-run
+
+# Shell 2
+scripts/studio-chain-runner.sh <manifest-or-name> --only <chain-b> --dry-run
+```
+
+After the user accepts the dry-run shape, provide the matching non-dry-run
+commands. Only suggest this when the chains are dependency-independent and do
+not share an integration branch or phase gate. Each chain runner creates its
+own worktrees and final reviewed PR; keep dependent chains sequential.
+
 Manifest:
 
 ```yaml
