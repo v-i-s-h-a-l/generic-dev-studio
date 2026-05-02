@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-02T13:39:52Z",
+  "generated_at": "2026-05-02T14:29:35Z",
   "schema": 1,
   "commands": [
     {"name": "chanakya-help", "source": "commands/chanakya-help.md", "description": "", "agent": null, "scope": "global"},
@@ -52,7 +52,7 @@
     {"name": "chanakya.sweep-debt", "source": "chanakya/modes/sweep-debt.md", "agent": "chanakya", "mode": "sweep-debt", "description": "Identify and dispatch all pending debt-reduction tasks (test sub-tasks + build checks) in one command."},
     {"name": "chanakya.sweep", "source": "chanakya/modes/sweep.md", "agent": "chanakya", "mode": "sweep", "description": "Inbox-sweep-only invocation. Runs Step 0 (defined in modes/inbox-sweep.md) and exits. No status table, no dashboard, no task list. For smoke-tests, validation passes, and pre-dispatch warm-ups where the full status view is overhead."},
     {"name": "chanakya.sync-slack", "source": "chanakya/modes/sync-slack.md", "agent": "chanakya", "mode": "sync-slack", "description": "Sync a Slack Lists bug tracker with the Chanakya master plan — Status, Dev Notes, Fixed in Build. Token + project bootstrap flags included."},
-    {"name": "chanakya.tests", "source": "chanakya/modes/tests.md", "agent": "chanakya", "mode": "tests", "description": "Test-manifest (per-task checklist) + test-flow (journey-ordered walkthrough, with promote + diff modes). The two test-planning sub-commands are grouped because they are consulted together and share reads against processed debriefs and per-task test artifacts."},
+    {"name": "chanakya.tests", "source": "chanakya/modes/tests.md", "agent": "chanakya", "mode": "tests", "description": "Test-manifest and test-flow generation from canonical debrief YAML, with historical sidecar fallback for old tasks."},
     {"name": "chanakya.touchpoint", "source": "chanakya/modes/touchpoint.md", "agent": "chanakya", "mode": "touchpoint", "description": "Reverse affinity.touchpoints index. Given a file path or glob, list the last N tasks that declared they would touch it. Code archaeology — \"what tasks last touched FilterPreset/**?"},
     {"name": "chanakya.train", "source": "chanakya/modes/train.md", "agent": "chanakya", "mode": "train", "description": "Per-train view of tasks via the lean-schema `train` field. Sub-modes — list (unique trains), show (tasks by state), dispatch-ready (train-scoped), burn-down (state counts)."},
     {"name": "chanakya.update", "source": "chanakya/modes/update.md", "agent": "chanakya", "mode": "update", "description": "Cross-reference git state with the master plan and auto-close tasks whose branches have merged."},
