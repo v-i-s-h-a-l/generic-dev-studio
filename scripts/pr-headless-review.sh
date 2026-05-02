@@ -353,7 +353,7 @@ if [ "$CROSS_HOST_REQUIRED" -eq 1 ] && [ "$EXPLICIT_REVIEW_HOST" -eq 1 ] \
   exit 1
 fi
 
-review_tmp_root="${LOGIN_HOME:-${HOME:-}}/.dev-studio/generic-dev-studio/analysis/pr-headless-review"
+review_tmp_root="$REPO_ROOT/.studio-runtime/pr-headless-review"
 mkdir -p "$review_tmp_root"
 tmpdir=$(mktemp -d "$review_tmp_root/run.XXXXXX")
 TMPDIR_TO_CLEAN="$tmpdir"

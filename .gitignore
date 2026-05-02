@@ -6,6 +6,9 @@ studio-consolidation/
 
 .DS_Store
 
+# Transient local handoff files for smoke-gated reviewer sessions.
+.studio-runtime/
+
 # Real release config belongs under ~/.dev-studio/<project>/config/. Keep only
 # config/release.env.example in the repo.
 config/release.env
