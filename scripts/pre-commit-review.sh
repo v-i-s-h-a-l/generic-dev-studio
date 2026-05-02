@@ -36,6 +36,8 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh" 2>/dev/null || true
 
+LOGIN_HOME=$(resolve_user_login_home 2>/dev/null || true)
+
 yaml_field() {
   local file="$1" key="$2"
   grep -E "^${key}:[[:space:]]" "$file" 2>/dev/null \
@@ -151,14 +153,14 @@ reviewer_codex_home=""
 reviewer_claude_config_dir=""
 case "$REVIEW_HOST" in
   codex*|*codex*)
-    reviewer_codex_home="${CODEX_REVIEWER_HOME:-${CODEX_HOME:-${CALLER_HOME:+$CALLER_HOME/.codex}}}"
+    reviewer_codex_home="${CODEX_REVIEWER_HOME:-${CODEX_HOME:-${LOGIN_HOME:+$LOGIN_HOME/.codex}}}"
     [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] || {
       printf 'pre-commit-review: codex reviewer auth home not found; set CODEX_REVIEWER_HOME or CODEX_HOME\n' >&2
       exit 1
     }
     ;;
   claude*|*claude*)
-    reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-${CALLER_HOME:+$CALLER_HOME/.claude-reviewer}}"
+    reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-${LOGIN_HOME:+$LOGIN_HOME/.claude-reviewer}}"
     [ -n "$reviewer_claude_config_dir" ] || {
       printf 'pre-commit-review: claude reviewer config dir not found; set CLAUDE_REVIEWER_CONFIG_DIR or HOME\n' >&2
       exit 1

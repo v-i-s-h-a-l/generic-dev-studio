@@ -88,6 +88,36 @@ resolve_runtime_global() {
   printf '%s\n' "$HOME/.dev-studio/.runtime"
 }
 
+# Resolve the user's real login home, not the launcher shell's overridden HOME.
+# This lets child host sessions reuse the account's existing Claude/Codex auth
+# even when the parent runner is executing under a synthetic home such as
+# ~/.codex-homes/... or a temporary worktree sandbox.
+resolve_user_login_home() {
+  local user="${1:-$(id -un 2>/dev/null || printf '')}" home_dir
+  [ -n "$user" ] || return 1
+
+  if command -v dscl >/dev/null 2>&1; then
+    home_dir=$(dscl . -read "/Users/$user" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+    if [ -n "$home_dir" ] && [ -d "$home_dir" ]; then
+      printf '%s\n' "$home_dir"
+      return 0
+    fi
+  fi
+
+  home_dir=$(eval "printf '%s\n' ~${user}" 2>/dev/null || true)
+  if [ -n "$home_dir" ] && [ -d "$home_dir" ]; then
+    printf '%s\n' "$home_dir"
+    return 0
+  fi
+
+  if [ -n "${HOME:-}" ] && [ -d "$HOME" ]; then
+    printf '%s\n' "$HOME"
+    return 0
+  fi
+
+  return 1
+}
+
 resolve_push_queue() {
   local project
   project=$(resolve_project) || return 1
