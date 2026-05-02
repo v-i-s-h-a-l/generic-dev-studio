@@ -3,26 +3,100 @@ schema_version:
   version: 1.0.0
   min_reader: 1.0.0
   deprecated_at: null
-updated_at: 2026-04-30T00:00:00Z
+updated_at: 2026-05-02T00:00:00Z
+verified_sources:
+  openai_models:
+    url: https://developers.openai.com/api/docs/models
+    checked_at: 2026-05-02T00:00:00Z
+  anthropic_models:
+    url: https://platform.claude.com/docs/en/about-claude/models/overview
+    checked_at: 2026-05-02T00:00:00Z
 models:
   opus:
-    id: claude-opus-default
-    tier: opus
+    id: claude-opus-4-7
+    provider_family: anthropic
+    adapter_profiles: [claude-code, claude-reviewer]
+    tier: heavyweight
+    role_suitability: [implementer.heavyweight, reviewer.heavyweight]
+    reasoning_effort:
+      supported: true
+      default: high
+      values: [medium, high]
+    source: anthropic_models
     released_at: null
     variant_1m: false
     supports_fast: false
-    knowledge_cutoff: null
+    knowledge_cutoff: 2026-01
   sonnet:
-    id: claude-sonnet-default
-    tier: sonnet
+    id: claude-sonnet-4-6
+    provider_family: anthropic
+    adapter_profiles: [claude-code, claude-reviewer]
+    tier: balanced
+    role_suitability: [implementer.balanced, reviewer.fallback]
+    reasoning_effort:
+      supported: true
+      default: medium
+      values: [low, medium, high]
     released_at: null
     variant_1m: false
     supports_fast: true
-    knowledge_cutoff: null
+    knowledge_cutoff: 2025-08
   haiku:
-    id: claude-haiku-default
-    tier: haiku
+    id: claude-haiku-4-5
+    provider_family: anthropic
+    adapter_profiles: [claude-code, claude-reviewer]
+    tier: fast
+    role_suitability: [implementer.fast]
+    reasoning_effort:
+      supported: false
+      default: low
+      values: []
     released_at: null
     variant_1m: false
     supports_fast: true
-    knowledge_cutoff: null
+    knowledge_cutoff: 2025-02
+  gpt_frontier:
+    id: gpt-5.5
+    provider_family: openai
+    adapter_profiles: [codex, codex-reviewer]
+    tier: heavyweight
+    role_suitability: [implementer.heavyweight, reviewer.heavyweight]
+    reasoning_effort:
+      supported: true
+      default: high
+      values: [none, low, medium, high, xhigh]
+    source: openai_models
+    released_at: null
+    variant_1m: true
+    supports_fast: true
+    knowledge_cutoff: 2025-12-01
+  gpt_balanced:
+    id: gpt-5.4
+    provider_family: openai
+    adapter_profiles: [codex, codex-reviewer]
+    tier: balanced
+    role_suitability: [implementer.balanced, reviewer.fallback]
+    reasoning_effort:
+      supported: true
+      default: medium
+      values: [none, low, medium, high, xhigh]
+    source: openai_models
+    released_at: null
+    variant_1m: true
+    supports_fast: true
+    knowledge_cutoff: 2025-08-31
+  gpt_fast:
+    id: gpt-5.4-mini
+    provider_family: openai
+    adapter_profiles: [codex, codex-reviewer]
+    tier: fast
+    role_suitability: [implementer.fast]
+    reasoning_effort:
+      supported: true
+      default: low
+      values: [none, low, medium, high, xhigh]
+    source: openai_models
+    released_at: null
+    variant_1m: false
+    supports_fast: true
+    knowledge_cutoff: 2025-08-31

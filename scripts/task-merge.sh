@@ -26,7 +26,7 @@
 # block unless `--force` is passed.
 #
 # Usage:
-#   scripts/task-merge.sh <task-id> <worktree> <orig-branch> [--force] [merge-message]
+#   scripts/task-merge.sh <task-id> <worktree> <orig-branch> [--force] [--require-approved] [merge-message]
 #
 # Exit codes:
 #   0  merged cleanly
@@ -48,10 +48,12 @@ WORKTREE="${2:?worktree required}"
 ORIG_BRANCH="${3:?orig-branch required}"
 shift 3
 FORCE_MERGE=0
+REQUIRE_APPROVED=0
 MERGE_MSG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --force) FORCE_MERGE=1; shift ;;
+    --require-approved) REQUIRE_APPROVED=1; shift ;;
     *)
       if [ -z "$MERGE_MSG" ]; then
         MERGE_MSG="$1"
@@ -126,6 +128,23 @@ _task_has_event() {
     | grep -E "\"event\":\"($event_pattern)\"" >/dev/null 2>&1
 }
 
+require_approved_check() {
+  [ "$REQUIRE_APPROVED" -eq 1 ] || return 0
+  if _task_has_event "review_flagged"; then
+    data=$(printf '{"branch":"%s","reason":"review_flagged","require_approved":true}' "$BRANCH")
+    if [ "$FORCE_MERGE" -eq 1 ]; then
+      emit_event_keyed achilles task review_override "$TASK_ID" "$data" >/dev/null 2>&1 || true
+      printf 'warn: merging %s despite flagged review because --force was passed\n' "$TASK_ID" >&2
+      return 0
+    fi
+    emit_event_keyed achilles task merge_deferred_on_flagged "$TASK_ID" "$data" >/dev/null 2>&1 || true
+    printf 'error: merge deferred for %s; Argus returned flagged and --require-approved is active\n' "$TASK_ID" >&2
+    printf '       fix findings or pass --force only after the user approves merging flagged work.\n' >&2
+    return 4
+  fi
+  return 0
+}
+
 merge_safety_check() {
   local missing="" missing_count=0 missing_json
   if ! _task_has_event "build_check_passed"; then
@@ -178,6 +197,7 @@ merge_safety_check() {
 }
 
 merge_safety_check || exit $?
+require_approved_check || exit $?
 
 if [ "${STUDIO_MERGE_SAFETY_ONLY:-0}" = "1" ]; then
   printf 'MERGE_SAFETY_OK=1\n'

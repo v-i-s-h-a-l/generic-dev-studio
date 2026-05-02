@@ -5,6 +5,27 @@ schema_version:
   deprecated_at: null
 default_preference: best_result
 allow_inline_override: true
+reviewer_policy:
+  independent_provider_family_required: true
+  block_when_no_independent_reviewer: true
+  default_role: reviewer.heavyweight
+  fallback_role: reviewer.fallback
+  default_reasoning_effort: high
+  routine_reasoning_effort: medium
+  implementation_host_family_exclusion:
+    claude-code: anthropic
+    claude-reviewer: anthropic
+    codex: openai
+    codex-reviewer: openai
+  reviewer_profiles:
+    - host: claude-reviewer
+      provider_family: anthropic
+      preferred_catalog_key: opus
+      fallback_catalog_key: sonnet
+    - host: codex-reviewer
+      provider_family: openai
+      preferred_catalog_key: gpt_frontier
+      fallback_catalog_key: gpt_balanced
 recommendation_fields:
   - task.size
   - task.kind

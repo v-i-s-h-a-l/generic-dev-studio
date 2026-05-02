@@ -38,7 +38,7 @@ Run `scripts/tests-scan-candidates.sh`. One candidate id per line. Reads the ind
 
 ## Step 3 — Pull test cases
 
-For each candidate id, run `scripts/tests-pull-cases.sh <task-id>`. Yields a YAML `cases:` block (title + preconditions + steps + expected) sourced from the debrief's `tests.added`/`tests.modified`, falling back to `<task-id>-tests.md` or the processed debrief's `## Test Cases` section. Empty output → record the task with a single "No test cases written — please inspect the debrief" placeholder.
+For each candidate id, run `scripts/tests-pull-cases.sh <task-id>`. Yields a YAML `cases:` block (title + preconditions + steps + expected) sourced only from the linked debrief YAML's `tests.added`/`tests.modified`. Empty output → record the task with a single "No test cases written — please inspect the debrief" placeholder.
 
 ## Step 4 — Write the manifest
 

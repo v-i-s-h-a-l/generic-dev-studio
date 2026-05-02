@@ -187,7 +187,7 @@ if ! TASK_LOAD_SPEC_DIAGNOSTIC=1 "$ROOT/scripts/task-load-spec.sh" T338 >"$LEGAC
   exit 1
 fi
 assert "diagnostic legacy path resolves the markdown brief" "grep -q '^BRIEF_PATH=.*/plans/chanakya-tasks/T338-impl.md$' '$LEGACY_OUT'"
-assert "diagnostic legacy path keeps BRIEF_UUID empty" "grep -q '^BRIEF_UUID=$' '$LEGACY_OUT'"
+assert "diagnostic legacy path keeps BRIEF_UUID empty" "grep -q \"^BRIEF_UUID=''$\" '$LEGACY_OUT'"
 assert "diagnostic legacy path parses legacy size" "grep -q '^SIZE=s$' '$LEGACY_OUT'"
 assert "diagnostic legacy path parses legacy type" "grep -q '^TYPE=feature$' '$LEGACY_OUT'"
 EVENT_LOG="$HOME_DIR/.dev-studio/$ACHILLES_PROJECT/events/$(date -u +%F).jsonl"

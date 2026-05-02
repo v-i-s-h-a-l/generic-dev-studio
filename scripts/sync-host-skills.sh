@@ -83,11 +83,14 @@ if [ "$ALL" -eq 0 ] && [ -z "$HOST" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Companion content — sibling dirs that skills reference via relative paths.
-# These are always linked into a host's skill_dir regardless of portability.
-# Keep this list small; it's the boundary between content and code.
+# Companion content — sibling dirs that skills and dispatch scripts reference
+# via relative paths. These are always linked into a host's skill_dir regardless
+# of portability. Keep this list small; it's the boundary between content and
+# code. `hosts/` is load-bearing for dispatched review sessions because
+# scripts/dispatch-review.sh resolves host capabilities from hosts/registry.yaml
+# relative to the deployed skills root.
 # ---------------------------------------------------------------------------
-COMPANIONS=(_shared scripts)
+COMPANIONS=(_shared scripts hosts)
 
 # Canonical skill roots — directories containing a SKILL.md AND optionally a
 # portability.yaml. A root may be a top-level studio agent (achilles, argus,
@@ -277,7 +280,7 @@ remove_stale() {
     skill_rel="${target#"$REPO_ROOT/"}"
     # Companions live in global scope only.
     case "$name" in
-      _shared|scripts)
+      _shared|scripts|hosts)
         if [ "$expected_scope" = "global" ] && [ -d "$target" ]; then continue; fi
         ;;
     esac

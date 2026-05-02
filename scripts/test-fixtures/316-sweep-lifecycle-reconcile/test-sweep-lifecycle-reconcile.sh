@@ -100,6 +100,10 @@ followup_count=$(find "$PROJ/plans/tasks" -name '*.yaml' -print0 \
   | xargs -0 grep -l "source_debrief: \"$DEBRIEF_UUID\"" 2>/dev/null \
   | xargs grep -l 'source_follow_up_index: 0' 2>/dev/null \
   | wc -l | tr -d ' ')
+debt_task_count=$(find "$PROJ/plans/tasks" -name '*.yaml' -print0 \
+  | xargs -0 grep -l "source_debrief: \"$DEBRIEF_UUID\"" 2>/dev/null \
+  | xargs grep -l 'source_debt_field: "test_unit"' 2>/dev/null \
+  | wc -l | tr -d ' ')
 
 assert "debrief_ingested emitted once by producer-side reconciliation key" \
   "[ \"$debrief_ingested_count\" = 1 ]"
@@ -115,6 +119,8 @@ assert "done_with_concerns emits visible concern signal" \
   "jq -e 'select(.event == \"debrief_concerns\" and .data.report_state == \"done_with_concerns\")' \"$LOG\" >/dev/null"
 assert "follow-up task minted exactly once" \
   "[ \"$followup_count\" = 1 ]"
+assert "debt task minted exactly once" \
+  "[ \"$debt_task_count\" = 1 ]"
 
 bash "$ROOT/scripts/sweep-process-events.sh" --offset-file "$PROJ/.runtime/state/events_offset.fixture" >/dev/null
 QUEUE="$PROJ/.runtime/state/push-queue.jsonl"
