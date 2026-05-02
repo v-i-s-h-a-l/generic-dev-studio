@@ -4,18 +4,18 @@ description: YAML shape for Achilles-authored debriefs under plans/debriefs/<deb
 type: reference
 ---
 
-# Debrief Schema (`debrief@2.3.0`)
+# Debrief Schema (`debrief@2.4.0`)
 
 Per-debrief artifact written to `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml`. Replaces the markdown debriefs that previously landed at `plans/chanakya-inbox/<task-id>-debrief.md`. Authored by Achilles in `task` mode (paired with a brief), Achilles in `debrief` mode (direct-debrief, no brief), or Apollo in any perf-mode (`metrics:` block populated, `executed_with.host` reflects Apollo's surface).
 
-Version 2.0.0 was a breaking change from the legacy markdown format (`contracts/debrief-format.md`). Prose narratives are kept as strings inside typed fields so Chanakya's ingest path does not need NLP to locate "Decisions Made" or "Build Verification" — they are structured. Subsequent 2.x bumps (2.0.1, 2.0.2, 2.1.0, 2.2.0, 2.3.0) are non-breaking additive changes; `min_reader: 2.0.0` keeps the entire active fleet compatible.
+Version 2.0.0 was a breaking change from the legacy markdown format (`contracts/debrief-format.md`). Prose narratives are kept as strings inside typed fields so Chanakya's ingest path does not need NLP to locate "Decisions Made" or "Build Verification" — they are structured. Subsequent 2.x bumps (2.0.1, 2.0.2, 2.1.0, 2.2.0, 2.3.0, 2.4.0) are non-breaking additive changes; `min_reader: 2.0.0` keeps the entire active fleet compatible.
 
 ## Shape
 
 ```yaml
 schema_version:
   name: debrief
-  version: 2.3.0
+  version: 2.4.0
   min_reader: 2.0.0
   deprecated_at: null
 id: 0190f52a-79aa-7d02-8b88-33ce5fe65e66        # UUIDv7
@@ -49,8 +49,13 @@ decisions:
     why: "Two later screens need read access without re-deriving from viewmodel."
 tests:
   added:
-    - "FilterPresetRowTests.testRendersThreePresets"
-    - "FilterPresetRowTests.testTappingPresetEmitsAnalytics"
+    - title: "Filter preset row renders three presets"
+      preconditions: "Open the editor with a photo selected."
+      steps:
+        - "Open the filter tray."
+        - "Scroll through the first row of presets."
+      expected: "Three default presets render and remain tappable."
+    - "FilterPresetRowTests.testTappingPresetEmitsAnalytics"  # legacy title-only form still accepted
   modified: []
   skipped_because: null                           # string when tests intentionally skipped, null otherwise
 testability:
@@ -128,7 +133,7 @@ metrics: null                                     # 2.2.0; Apollo perf-mode only
 | `commits` | array | yes | Per-commit `{sha, message}`. Empty array for no-commit direct-debrief sessions. |
 | `diff_summary` | object | yes | `{files, added_lines, removed_lines}`. Integers ≥ 0. |
 | `decisions` | array | yes | `{what, why}` tuples. Captures deviations + WHY notes. |
-| `tests` | object | yes | `{added, modified, skipped_because}`. Arrays of test names; `skipped_because` null unless tests intentionally deferred. |
+| `tests` | object | yes | `{added, modified, skipped_because}`. `added` / `modified` accept legacy title strings or canonical case objects `{title, preconditions?, steps?, expected?}`. New task emits use objects so Chanakya can derive user-facing manifests from YAML only. `skipped_because` is null unless tests are intentionally deferred. |
 | `testability` | object \| null | yes | Null for pure test-type tasks. Otherwise the testability report (SOLID, accessibility IDs, seams). |
 | `build_gate` | enum | yes | `lsp-only` \| `full-green`. Drives Chanakya's build-debt counter per `schemas/build-debt.md`. |
 | `build_debt_override` | boolean | yes | True iff `--ignore-build-debt` was used. |
@@ -184,6 +189,7 @@ The 141 processed debriefs in `chanakya-inbox/processed/` are **copied as-is** t
 
 | Version | Landed | Changes |
 |---|---|---|
+| 2.4.0 | 2026-05-02 | Non-breaking: `tests.added[]` / `tests.modified[]` items may now be `{title, preconditions?, steps?, expected?}` objects. Legacy string form remains accepted; new task-mode emits use objects as the canonical source for test-manifest/test-flow generation (#335). |
 | 2.3.0 | 2026-04-27 | Non-breaking: `known_issues[]` / `follow_ups[]` items may now be `{id, text, category?, severity?}` objects. Legacy string form remains accepted; no migration. Stable ids unblock `scripts/validate-brief-inheritance.sh` (#162 trimmed slice — silent-absorb gate at brief-write time). |
 | 2.2.0 | 2026-04-27 | Non-breaking: add optional `metrics` block (`perf_mode`, `evidence_tier`, `verdict`, `cohort`, `baseline`, `observed`, `delta`, `refusal`) for Apollo perf-mode debriefs. Carries strict-9 evidence so Chanakya can render perf outcomes without re-reading artifacts (#235 Stage 5). Null for non-Apollo debriefs. |
 | 2.1.0 | 2026-04-27 | Non-breaking: add optional `executed_with` block (`model_id`, `host`, `session_id`, `duration_s`) for multi-model accountability and A/B model-routing telemetry. Three fields already emitted by `scripts/emit-agent-boot.sh`; only the schema-side surface lands here (#247 Stage C deliverable 2). |

@@ -170,13 +170,13 @@
         "added": {
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/testCase"
           }
         },
         "modified": {
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/testCase"
           }
         },
         "skipped_because": {
@@ -392,6 +392,31 @@
             "category": { "type": "string" },
             "severity": { "enum": ["low", "medium", "high", "critical"] }
           }
+        }
+      ]
+    },
+    "testCase": {
+      "description": "Debrief test-case entry. String form is legacy/title-only; object form is canonical for new task-mode emits so test manifests can be regenerated from YAML without sidecar markdown.",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "required": ["title"],
+          "properties": {
+            "title": { "type": "string" },
+            "preconditions": { "type": "string" },
+            "steps": {
+              "oneOf": [
+                { "type": "string" },
+                {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              ]
+            },
+            "expected": { "type": "string" }
+          },
+          "additionalProperties": true
         }
       ]
     },
