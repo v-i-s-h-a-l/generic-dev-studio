@@ -331,7 +331,7 @@
 /studio work chain workflow-measurement-improvements  # run issue chains with fresh sessions, UUID telemetry, reviewed PRs, cleanup
 /studio janitor [--yes]   # cross-project sweep of stale artifacts (dry-run by default)
 /studio nodes             # day-2 fleet management — status, add, sync, health, diagnose, schedule, recheck
-/studio tf-push [--dry-run] [--background]  # TestFlight push; background returns a run handle for Slack drafting
+/studio tf-push [--dry-run] [--version X.Y.Z] [--background]  # TestFlight push; explicit version + optional background handle
 /studio-setup             # onboard THIS machine (--manager / --worker / --dual; no args → interactive manager)
 /studio-help              # open this docs page</code></pre>
     <p>Most users type <code>/studio</code> and let intent detection pick the mode. Sub-commands above are also available conversationally — "where were we", "any issues with this diff?", "should we tag?" all route correctly. For unattended track work without the sub-command, start the session with <code>STUDIO_TRACK=&lt;track&gt;</code>.</p>
