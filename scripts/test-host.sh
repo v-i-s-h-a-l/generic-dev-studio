@@ -42,6 +42,8 @@ fm-schema-violation— pinned validator refuses schema_version N+1 (Criterion 7)
 fm-missing-optional— schema_version N parses cleanly when an optional field is missing (Criterion 7).
 fm-security-floor  — lint-host-agnostic blocks a non-reference host with host-native + inherit-env (Criterion 8).
 fm-env-scrub       — dispatch-review.sh strips ANTHROPIC_API_KEY before spawn (Criterion 8).
+fm-github-auth     — host preflight verifies gh auth + git ls-remote credential access before work.
+fm-canonical-swift — swift-test gate uses the canonical root package for nested local-package graphs.
 baseline-diff      — post-v1 reference-host event sequence matches pre-v1 baseline ignoring gen_ai.* / studio.* (Criterion 1).
 EOF
   exit 0
@@ -268,6 +270,22 @@ fm_env_scrub() {
   fi
 }
 
+fm_github_auth() {
+  if bash "$SCRIPT_DIR/test-fixtures/372-host-parity/test-host-preflight.sh" >/dev/null 2>&1; then
+    report_pass "fm-github-auth"
+  else
+    report_fail "fm-github-auth" "host-preflight fixture failed"
+  fi
+}
+
+fm_canonical_swift() {
+  if bash "$SCRIPT_DIR/test-fixtures/372-host-parity/test-swift-canonical-root.sh" >/dev/null 2>&1; then
+    report_pass "fm-canonical-swift"
+  else
+    report_fail "fm-canonical-swift" "swift-test canonical-root fixture failed"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Byte-identical baseline (Criterion 1)
 # ---------------------------------------------------------------------------
@@ -324,6 +342,8 @@ fm_schema_violation
 fm_missing_optional
 fm_security_floor
 fm_env_scrub
+fm_github_auth
+fm_canonical_swift
 baseline_diff
 
 printf '\n%d passed, %d failed.\n' "$PASSES" "$FAILS"
