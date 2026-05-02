@@ -14,7 +14,6 @@
 # Exit codes:
 #   0  ingest ok (or idempotent no-op)
 #   2  parse / resolution error
-#   3  dual-write partial failure propagated from lib-ledger
 
 set -u
 umask 022

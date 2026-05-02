@@ -26,7 +26,6 @@
 # Exit codes:
 #   0  finalized
 #   2  missing args / artifact not found
-#   3  reserved for retired dual-write partials
 
 set -u
 umask 022
@@ -49,7 +48,6 @@ fi
 
 command -v jq >/dev/null 2>&1 || { printf 'error: jq required for fields-json parsing\n' >&2; exit 2; }
 
-DUAL_WRITE_PARTIAL=0
 saved_withhold="${WITHHOLD_INDEX:-0}"
 export WITHHOLD_INDEX=1
 
@@ -68,23 +66,15 @@ fi
 
 transition_task_state "$TASK_UUID" merged achilles "post-merge finalize" || {
   rc=$?
-  if [ "$rc" -eq 3 ]; then
-    DUAL_WRITE_PARTIAL=1
-  else
-    printf 'error: transition_task_state failed rc=%s\n' "$rc" >&2
-    exit "$rc"
-  fi
+  printf 'error: transition_task_state failed rc=%s\n' "$rc" >&2
+  exit "$rc"
 }
 
 if [ -n "$BRIEF_UUID" ]; then
   transition_brief_state "$BRIEF_UUID" debriefed achilles "task complete" || {
     rc=$?
-    if [ "$rc" -eq 3 ]; then
-      DUAL_WRITE_PARTIAL=1
-    else
-      printf 'error: transition_brief_state failed rc=%s\n' "$rc" >&2
-      exit "$rc"
-    fi
+    printf 'error: transition_brief_state failed rc=%s\n' "$rc" >&2
+    exit "$rc"
   }
 fi
 
@@ -131,5 +121,4 @@ emit_event_keyed achilles task brief_completed "$TASK_UUID" "$data" >/dev/null 2
 export WITHHOLD_INDEX="$saved_withhold"
 flush_index 2>/dev/null || true
 
-[ "$DUAL_WRITE_PARTIAL" -eq 1 ] && exit 3
 exit 0
