@@ -54,6 +54,7 @@ export PATH="$BIN:$PATH"
 export PR_HEADLESS_REVIEW_AUTOPILOT="$BIN/autopilot"
 export HOME="$TMPROOT/caller-home"
 export CODEX_HOME="$HOME/.codex"
+export STUDIO_PARENT_HOST="claude-code"
 mkdir -p "$CODEX_HOME"
 
 if bash "$ROOT/scripts/pr-headless-review.sh" 123 --review-host codex-reviewer --method auto \

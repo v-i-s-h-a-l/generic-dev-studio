@@ -1,28 +1,288 @@
 schema_version:
   name: model-catalog
-  version: 1.0.0
+  version: 1.1.0
   min_reader: 1.0.0
   deprecated_at: null
-updated_at: 2026-04-30T00:00:00Z
+updated_at: 2026-05-03T00:00:00Z
+refresh_policy:
+  cadence: before-changing-defaults
+  command: scripts/check-model-catalog.sh --print-refresh-checklist
+  rule: "Model IDs are refreshable policy. Verify official provider docs before changing defaults or role mappings."
+official_sources:
+  openai_models:
+    url: https://platform.openai.com/docs/models
+    last_verified_at: 2026-05-03T00:00:00Z
+  openai_gpt_5_guide:
+    url: https://platform.openai.com/docs/guides/latest-model
+    last_verified_at: 2026-05-03T00:00:00Z
+  openai_gpt_5_5_release:
+    url: https://openai.com/index/introducing-gpt-5-5/
+    last_verified_at: 2026-05-03T00:00:00Z
+  codex_cli_model_catalog:
+    url: codex-cli://debug/models
+    last_verified_at: 2026-05-03T00:00:00Z
+  anthropic_models:
+    url: https://docs.anthropic.com/en/docs/about-claude/models/all-models
+    last_verified_at: 2026-05-02T00:00:00Z
+provider_families:
+  openai:
+    display_name: OpenAI
+    host_family: openai
+    adapters:
+      - codex
+      - codex-reviewer
+  anthropic:
+    display_name: Anthropic
+    host_family: anthropic
+    adapters:
+      - claude-code
+      - claude
+      - claude-reviewer
+adapter_profiles:
+  codex:
+    provider_family: openai
+    adapter_id: codex
+    profile: worker
+  codex-reviewer:
+    provider_family: openai
+    adapter_id: codex-reviewer
+    profile: reviewer
+  claude-code:
+    provider_family: anthropic
+    adapter_id: claude-code
+    profile: worker
+  claude:
+    provider_family: anthropic
+    adapter_id: claude-code
+    profile: worker
+  claude-reviewer:
+    provider_family: anthropic
+    adapter_id: claude-reviewer
+    profile: reviewer
 models:
   opus:
-    id: claude-opus-default
+    id: claude-opus-4-1-20250805
+    display_name: Claude Opus 4.1
+    provider_family: anthropic
+    adapter_profiles:
+      - claude-code
+      - claude
+      - claude-reviewer
     tier: opus
+    capability_tier: heavyweight
+    role_suitability:
+      - implementer
+      - reviewer
+      - architect
+    stable_aliases: []
+    snapshot_ids:
+      - claude-opus-4-1-20250805
+    reasoning_effort:
+      supported: true
+      levels:
+        - medium
+        - high
+      default: high
+      provider_name: extended_thinking
+    released_at: 2025-08-05
+    variant_1m: false
+    supports_fast: false
+    knowledge_cutoff: null
+    source:
+      url: https://docs.anthropic.com/en/docs/about-claude/models/all-models
+      last_verified_at: 2026-05-02T00:00:00Z
+  sonnet:
+    id: claude-sonnet-4-20250514
+    display_name: Claude Sonnet 4
+    provider_family: anthropic
+    adapter_profiles:
+      - claude-code
+      - claude
+      - claude-reviewer
+    tier: sonnet
+    capability_tier: balanced
+    role_suitability:
+      - implementer
+      - reviewer
+      - editor
+      - triage
+    stable_aliases:
+      - claude-sonnet-4-0
+    snapshot_ids:
+      - claude-sonnet-4-20250514
+    reasoning_effort:
+      supported: true
+      levels:
+        - medium
+        - high
+      default: medium
+      provider_name: extended_thinking
+    released_at: 2025-05-14
+    variant_1m: false
+    supports_fast: true
+    knowledge_cutoff: null
+    source:
+      url: https://docs.anthropic.com/en/docs/about-claude/models/all-models
+      last_verified_at: 2026-05-02T00:00:00Z
+  haiku:
+    id: claude-3-5-haiku-20241022
+    display_name: Claude Haiku 3.5
+    provider_family: anthropic
+    adapter_profiles:
+      - claude-code
+      - claude
+    tier: haiku
+    capability_tier: lightweight
+    role_suitability:
+      - triage
+      - editor
+    stable_aliases:
+      - claude-3-5-haiku-latest
+    snapshot_ids:
+      - claude-3-5-haiku-20241022
+    reasoning_effort:
+      supported: false
+      levels: []
+      default: low
+      provider_name: null
+    released_at: 2024-10-22
+    variant_1m: false
+    supports_fast: true
+    knowledge_cutoff: null
+    source:
+      url: https://docs.anthropic.com/en/docs/about-claude/models/all-models
+      last_verified_at: 2026-05-02T00:00:00Z
+  openai_gpt_5_5:
+    id: gpt-5.5
+    display_name: GPT-5.5
+    provider_family: openai
+    adapter_profiles:
+      - codex
+      - codex-reviewer
+    tier: gpt-frontier
+    capability_tier: heavyweight
+    role_suitability:
+      - implementer
+      - reviewer
+      - architect
+    stable_aliases:
+      - gpt-5.5
+    snapshot_ids: []
+    reasoning_effort:
+      supported: true
+      levels:
+        - low
+        - medium
+        - high
+        - xhigh
+      default: medium
+      provider_name: reasoning.effort
+    released_at: 2026-04-23
+    variant_1m: false
+    supports_fast: true
+    knowledge_cutoff: null
+    source:
+      url: https://openai.com/index/introducing-gpt-5-5/
+      evidence_command: codex debug models
+      last_verified_at: 2026-05-03T00:00:00Z
+  openai_gpt_5_3_codex:
+    id: gpt-5.3-codex
+    display_name: GPT-5.3-Codex
+    provider_family: openai
+    adapter_profiles:
+      - codex
+      - codex-reviewer
+    tier: codex-heavyweight
+    capability_tier: heavyweight
+    role_suitability:
+      - implementer
+      - reviewer
+      - architect
+    stable_aliases:
+      - gpt-5.3-codex
+    snapshot_ids: []
+    reasoning_effort:
+      supported: true
+      levels:
+        - low
+        - medium
+        - high
+        - xhigh
+      default: medium
+      provider_name: reasoning.effort
     released_at: null
     variant_1m: false
     supports_fast: false
     knowledge_cutoff: null
-  sonnet:
-    id: claude-sonnet-default
-    tier: sonnet
+    source:
+      url: codex-cli://debug/models
+      evidence_command: codex debug models
+      last_verified_at: 2026-05-03T00:00:00Z
+  openai_gpt_5_2:
+    id: gpt-5.2
+    display_name: GPT-5.2
+    provider_family: openai
+    adapter_profiles:
+      - codex
+      - codex-reviewer
+    tier: gpt-frontier-previous
+    capability_tier: heavyweight
+    role_suitability:
+      - implementer
+      - reviewer
+      - architect
+      - editor
+    stable_aliases:
+      - gpt-5.2
+    snapshot_ids: []
+    reasoning_effort:
+      supported: true
+      levels:
+        - none
+        - low
+        - medium
+        - high
+        - xhigh
+      default: high
+      provider_name: reasoning.effort
     released_at: null
     variant_1m: false
     supports_fast: true
     knowledge_cutoff: null
-  haiku:
-    id: claude-haiku-default
-    tier: haiku
-    released_at: null
+    source:
+      url: codex-cli://debug/models
+      evidence_command: codex debug models
+      last_verified_at: 2026-05-03T00:00:00Z
+  openai_gpt_5:
+    id: gpt-5
+    display_name: GPT-5
+    provider_family: openai
+    adapter_profiles:
+      - codex
+      - codex-reviewer
+    tier: gpt-frontier-previous
+    capability_tier: heavyweight
+    role_suitability:
+      - implementer
+      - reviewer
+      - editor
+    stable_aliases:
+      - gpt-5
+    snapshot_ids:
+      - gpt-5-2025-08-07
+    reasoning_effort:
+      supported: true
+      levels:
+        - minimal
+        - low
+        - medium
+        - high
+      default: high
+      provider_name: reasoning.effort
+    released_at: 2025-08-07
     variant_1m: false
     supports_fast: true
-    knowledge_cutoff: null
+    knowledge_cutoff: 2024-09-30
+    source:
+      url: https://platform.openai.com/docs/models/gpt-5/
+      last_verified_at: 2026-05-02T00:00:00Z
