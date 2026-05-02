@@ -189,10 +189,23 @@ resolve_symlink_target() {
   esac
 }
 
+canonical_path() {
+  # $1 = existing absolute path. Prints the path with a physical parent, so
+  # macOS /var and /private/var spellings compare equal.
+  local path="$1" dir base
+  dir=$(dirname "$path")
+  base=$(basename "$path")
+  ( cd "$dir" && printf '%s/%s\n' "$(pwd -P)" "$base" )
+}
+
 symlink_points_to() {
   # $1 = symlink path, $2 = expected absolute target path.
+  local actual expected
   [ -L "$1" ] || return 1
-  [ "$(resolve_symlink_target "$1" 2>/dev/null || true)" = "$2" ]
+  actual=$(resolve_symlink_target "$1" 2>/dev/null || true)
+  [ -e "$actual" ] && actual=$(canonical_path "$actual" 2>/dev/null || printf '%s\n' "$actual")
+  expected=$(canonical_path "$2" 2>/dev/null || printf '%s\n' "$2")
+  [ "$actual" = "$expected" ]
 }
 
 link_target_for() {

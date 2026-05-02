@@ -218,6 +218,7 @@ scripts/                # multi-worker fleet (BETA)
   achilles-cancel.sh    # remove pending dispatches
   fleet-cleanup.sh      # soft sweep (stale locks, old done/) or --all teardown
   lint-architecture.sh  # staged router/frontmatter checks; --full runs repository-wide audits
+  lint-project-skill-links.sh # blocks missing repo-local project skill discovery links
   test-mode-pack.sh     # skill-testing driver — runs fixtures against mode packs (on-demand, spawns claude -p)
   update-surface-manifest.sh  # regenerates docs-surface.json from command surface
   scaffold-agent.sh     # create new router-pattern-compliant agent skeleton
