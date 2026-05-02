@@ -115,6 +115,27 @@ env -i \
 
 Claude Code (`.claude-plugin/capabilities.yaml`) declares `host-native` + `inherit-env`. This violates the Achilles security floor. The reference host is explicitly exempted because it is the primary development environment where the security constraints are enforced by human oversight rather than mechanical isolation. **Do not use the reference host's values as a template for new adapters.**
 
+## Host preflight
+
+Worker-capable hosts must prove GitHub auth parity before any task work that
+can fetch, resolve commits, push, or verify private-repo changes. The studio
+uses `scripts/host-preflight.sh <host> <repo-root>` as the shared gate. It
+requires both:
+
+- `gh auth status` succeeds in the exact login environment used to launch the
+  host session.
+- `git ls-remote --exit-code <project-origin> HEAD` succeeds, which exercises
+  the Git credential helper, ssh-agent, or keychain path that later
+  commit-resolution and fetch steps depend on.
+
+Adapters must document how the host receives the same credential surface as
+the reference host. Codex chain-runner sessions launch with the user's login
+`HOME`, so `gh`, the Git credential helper, `.ssh`, and keychain-backed SSH
+agents match normal terminal/Claude sessions. Do not inject tokens into the
+repo. The user-controlled emergency bypass is
+`STUDIO_BYPASS_GITHUB_AUTH_PREFLIGHT=1`; bypass use is loud and should be
+reserved for deliberate recovery.
+
 ## Conformance test
 
 Every adapter must pass `scripts/test-host.sh <host-name>` before claiming support. The harness runs four tasks:
@@ -123,6 +144,11 @@ Every adapter must pass `scripts/test-host.sh <host-name>` before claiming suppo
 2. **M multi-file with build gate** — full build gate + Argus dispatch.
 3. **TDD red-green-refactor** — test-first flow + Argus spec-compliance.
 4. **Cross-host handoff** — Achilles on host A, Argus on host B; validates `handoff.schema.json` across hosts.
+
+The failure-mode floor also verifies GitHub auth preflight wiring and canonical
+Swift package test invocation for nested local-package graphs. A host cannot
+claim conformance if a missing credential-helper path or wrong package root
+would only be discovered after work starts.
 
 `test-host.sh` is implemented in H10. Adapters authored before H10 lands should include a `conformance: pending` note in `capabilities.yaml`; after H10 ships, `conformance: pending` is a lint error.
 

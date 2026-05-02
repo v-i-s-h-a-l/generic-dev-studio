@@ -432,6 +432,28 @@ host_spawn_command() {
   printf '%s\n' "$spawn"
 }
 
+host_launch_home() {
+  resolve_user_login_home 2>/dev/null || true
+}
+
+host_preflight() {
+  local host="$1" repo="$2" launch_home
+  launch_home=$(host_launch_home)
+  if [ "$DRY_RUN" -eq 1 ]; then
+    if [ -n "$launch_home" ] && [ -d "$launch_home" ]; then
+      printf 'DRY-RUN HOME=%q scripts/host-preflight.sh %q %q\n' "$launch_home" "$host" "$repo"
+    else
+      printf 'DRY-RUN scripts/host-preflight.sh %q %q\n' "$host" "$repo"
+    fi
+    return 0
+  fi
+  if [ -n "$launch_home" ] && [ -d "$launch_home" ]; then
+    HOME="$launch_home" "$SCRIPT_DIR/host-preflight.sh" "$host" "$repo"
+  else
+    "$SCRIPT_DIR/host-preflight.sh" "$host" "$repo"
+  fi
+}
+
 available_ram_gib() {
   if [ -n "${STUDIO_CHAIN_AVAILABLE_RAM_GIB:-}" ]; then
     printf '%s\n' "$STUDIO_CHAIN_AVAILABLE_RAM_GIB"
@@ -547,7 +569,7 @@ execute_issue_session() {
   spawn=$(host_spawn_command "$host")
   # shellcheck disable=SC2206
   spawn_argv=( $spawn )
-  launch_home=$(resolve_user_login_home 2>/dev/null || true)
+  launch_home=$(host_launch_home)
 
   prompt=$(cat <<EOF
 Implement this studio issue in a fresh chain-runner session.
@@ -812,6 +834,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
   log "starting chain $name on $branch from latest $base using host=$host worker_pool=$CHAIN_WORKER_POOL"
   emit_chain_event chain_started "" "$RUN_ID" "$chain_run_id" "" running 0 \
     "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, host:$host, issue_count:$issue_count, worker_pool:$worker_pool}')"
+  host_preflight "$host" "$REPO_ROOT" || abort_run "host preflight failed for $host"
   run git -C "$REPO_ROOT" fetch origin --prune
   if [ "$DRY_RUN" -eq 0 ]; then
     mkdir -p "$chain_results_dir"

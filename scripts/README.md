@@ -65,6 +65,7 @@ scripts/forge-latency-report.sh --project turnip-ios --days 14   # stage-level t
 scripts/field-workflow-report.sh --project turnip-ios --days 14   # Field loop timing, tokens, gates, review coverage, improvement candidates
 scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # plan chain branches, capacity-scaled fresh sessions, PR review/merge
 scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex # execute chains with node/RAM-sized session pool + private report
+scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
 
 # Chain runner pool sizing:
 # default = 1 local session + one per healthy xcodebuild offload node, RAM-capped at 6 GiB/session
