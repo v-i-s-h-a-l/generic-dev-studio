@@ -135,7 +135,7 @@ scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" [
 scripts/node-parity.sh [--fix|--dry-run]                # probe + cache toolchain versions; optionally install missing brew packages and print manual Xcode/runtime fixes (#126/#131)
 scripts/check-xcode-parity.sh m1mini                    # pre-dispatch guard; exit 1 = MAJOR Xcode drift; STUDIO_IGNORE_XCODE_DRIFT=1 overrides (#136)
 scripts/node-warmup.sh m1mini [project]                 # async-safe pre-dispatch source sync + package cache warm-up (#138)
-scripts/task-write-test-cases.sh T001 '[{...}]'         # twin-write standalone + stdout YAML
+scripts/task-write-test-cases.sh T001 '[{...}]'         # markdown projection + stdout YAML for debrief
 scripts/task-invoke-argus.sh T001 /wt main S            # emits review_requested (Argus invoked via Agent tool)
 scripts/task-merge.sh T001 /wt feature-branch           # merge lock + merge + worktree remove + DerivedData clean
 scripts/node-janitor.sh [--days N] [--dry-run]          # periodic node-side sweep of stale derived-data + worktrees + dispatch logs/registry (#129, #272); LaunchAgent-driven

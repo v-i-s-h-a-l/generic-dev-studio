@@ -522,7 +522,7 @@ scripts/configure.sh schedule run    # one-shot sync now</code></pre>
         <pre><code>cd generic-dev-studio
 ./scripts/install.sh
 ./scripts/verify-install.sh</code></pre>
-        Symlinks <code>chanakya</code>, <code>achilles</code>, <code>argus</code> + <code>_shared</code> + <code>scripts</code> into <code>~/.claude/skills/</code> so they reach you from inside your iOS project. <code>/studio</code> is deliberately <em>not</em> installed globally — it auto-loads only when cwd is inside this repo.</li>
+        Symlinks <code>chanakya</code>, <code>achilles</code>, <code>argus</code> + <code>_shared</code> + <code>scripts</code> + <code>hosts</code> into <code>~/.claude/skills/</code> so they reach you from inside your iOS project. <code>/studio</code> is deliberately <em>not</em> installed globally — it auto-loads only when cwd is inside this repo.</li>
       <li><strong>Homebrew + studio deps</strong> (required for fleet / multi-worker mode, recommended for everyone):
         <pre><code>brew install fswatch coreutils yq jq rsync</code></pre></li>
       <li><strong>Tailscale</strong> — installed, signed into your tailnet. (Optional for same-LAN-only setups; strongly recommended otherwise.)</li>

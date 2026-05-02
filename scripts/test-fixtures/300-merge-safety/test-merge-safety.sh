@@ -112,6 +112,31 @@ set -e
 assert "three signals pass" "[ $rc -eq 0 ]"
 assert "three signals emit no merge_safety event" "! grep -q 'merge_safety_' '$(events_log)'"
 
+# require-approved refuses flagged reviews even when the composite safety gate
+# has all three signals.
+reset_runtime
+stage_debrief
+emit_event_line build_check_passed
+emit_event_line review_flagged
+set +e
+run_safety_only --require-approved
+rc=$?
+set -e
+assert "require-approved defers flagged review" "[ $rc -eq 4 ]"
+assert "require-approved emits merge_deferred_on_flagged" "grep -q 'merge_deferred_on_flagged' '$(events_log)'"
+
+# --force remains the user-controlled emergency lever.
+reset_runtime
+stage_debrief
+emit_event_line build_check_passed
+emit_event_line review_flagged
+set +e
+run_safety_only --require-approved --force
+rc=$?
+set -e
+assert "force bypasses require-approved flagged defer" "[ $rc -eq 0 ]"
+assert "force emits review_override for flagged merge" "grep -q 'review_override' '$(events_log)'"
+
 # --force bypasses a composite block and emits override.
 reset_runtime
 set +e

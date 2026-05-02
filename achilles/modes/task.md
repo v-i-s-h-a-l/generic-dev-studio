@@ -275,7 +275,7 @@ Record `GATE = "lsp-only" | "full-green" | "swift-test"` for the debrief's `## B
 TEST_YAML=$(scripts/task-write-test-cases.sh "$TASK_ID" "$CASES_JSON")
 ```
 
-Twin-writes `plans/tests/<task-id>-tests.md` (Chanakya's `/chanakya test-manifest` reads this) and returns the YAML block for splicing into the debrief's `tests.added:` field. Each case carries preconditions, steps, expected result. Runs regardless of `WAIT_FOR_USER`.
+Writes the human-facing test-case projection path defined in `_shared/primitives/file-locations.md` and returns the YAML block for splicing into the debrief's `tests.added:` field. The debrief YAML is the active reader authority; the markdown projection is not a fallback source for `tests-pull-cases.sh`. Each case carries preconditions, steps, expected result. Runs regardless of `WAIT_FOR_USER`.
 
 ### Step 8 — Optional wait for user feedback
 
@@ -346,7 +346,7 @@ eval "$qual_out"
 Broad question: cross-file regression risk, edge cases, diff anomalies, secrets, base staleness, test run (M/L).
 
 - **`approved`:** proceed to Step 9.
-- **`flagged`:** proceed to Step 9 (stage debrief), then Step 10 (merge). Include a `## Argus Review` block in the debrief referencing both stages' review files + combined finding count.
+- **`flagged`:** proceed to Step 9 (stage debrief). In autonomous mode, Step 10 passes `--require-approved`, so flagged reviews defer merge and surface to the user unless the user explicitly approves a `--force` merge. Interactive mode may still merge flagged work after the user accepts the findings. Include a `## Argus Review` block in the debrief referencing both stages' review files + combined finding count.
 - **`blocked`:** do NOT merge. Surface block reason + review file. Attempt to fix — **base staleness:** rebase, re-run Steps 5–8.5; **compile/test failure Achilles can fix:** fix, re-run Steps 5–6, re-run Step 8.5 (both stages); **secrets in diff:** remove, re-commit, re-run Step 8.5; **cannot address:** surface, do not merge, debrief with `report_state: blocked`.
 
 Two `review_approved` / `review_flagged` / `review_blocked` events land per task (one per stage, distinguished by `stage: spec | quality`). Chanakya's inbox sweep reads both — see `chanakya/modes/inbox-sweep.md` Step 0A.
@@ -382,7 +382,7 @@ Mints a UUIDv7, writes `plans/debriefs/<debrief-id>.yaml` (schema: `_shared/sche
 scripts/task-merge.sh "$TASK_ID" "$WORKTREE" "$ORIG_BRANCH" "Merge <task-id> into $ORIG_BRANCH"
 ```
 
-The script runs the **#300 composite merge safety gate** before acquiring the project-scoped merge lock under `~/.dev-studio/.runtime/merge-lock/<project>` (30-minute staleness reclaim, 30-minute wait envelope). The gate checks three signals: `build_check_passed`, `review_approved` or `review_flagged`, and a staged `state: emitted` debrief for `$TASK_ID`. Two or three absent signals refuse with exit `4` and emit `merge_safety_blocked`; exactly one absent signal emits `merge_safety_warn` and proceeds. Missing debrief also emits `debrief_missing` (`reason: pre_merge_blocked` or `pre_merge_warn`) for existing sweep surfaces. `--force` is emergency-only and emits `merge_safety_override`. After the gate, the script clears a stale `.git/index.lock` per `_shared/primitives/safe-git.md` (emits `stale_index_lock_removed`), checks out `$ORIG_BRANCH`, fetches best-effort, runs `git merge --no-ff achilles/<task-id>`, removes the worktree, cleans DerivedData, emits `task_merged`. Exit codes: `0` merged, `2` conflict (emits `merge_conflict`; worktree + DerivedData retained), `3` locked-out, `4` composite safety block. Prints `MERGE_SHA=<sha>` on success.
+The script runs the **#300 composite merge safety gate** before acquiring the project-scoped merge lock under `~/.dev-studio/.runtime/merge-lock/<project>` (30-minute staleness reclaim, 30-minute wait envelope). The gate checks three signals: `build_check_passed`, `review_approved` or `review_flagged`, and a staged `state: emitted` debrief for `$TASK_ID`. Two or three absent signals refuse with exit `4` and emit `merge_safety_blocked`; exactly one absent signal emits `merge_safety_warn` and proceeds. Missing debrief also emits `debrief_missing` (`reason: pre_merge_blocked` or `pre_merge_warn`) for existing sweep surfaces. In autonomous mode, pass `--require-approved` so any `review_flagged` event emits `merge_deferred_on_flagged` and refuses merge until the user approves an override. `--force` is emergency-only and emits `merge_safety_override` for composite-safety bypasses or `review_override` for flagged-review bypasses. After the gate, the script clears a stale `.git/index.lock` per `_shared/primitives/safe-git.md` (emits `stale_index_lock_removed`), checks out `$ORIG_BRANCH`, fetches best-effort, runs `git merge --no-ff achilles/<task-id>`, removes the worktree, cleans DerivedData, emits `task_merged`. Exit codes: `0` merged, `2` conflict (emits `merge_conflict`; worktree + DerivedData retained), `3` locked-out, `4` composite safety block or flagged-review defer. Prints `MERGE_SHA=<sha>` on success.
 
 On conflict: branch stays alive, DerivedData kept, surface to user. **Do not force-resolve.** On red build (Step 6): don't call this script — the branch + DerivedData stay for the user to inspect.
 

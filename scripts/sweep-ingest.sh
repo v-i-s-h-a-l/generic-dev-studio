@@ -30,6 +30,11 @@ SRC="${2:-}"
 shift 2 2>/dev/null || true
 
 case "$SUBCMD" in
+  task-debrief|direct-debrief) SUBCMD=debrief ;;
+  manual-build-check) SUBCMD=build-check ;;
+esac
+
+case "$SUBCMD" in
   debrief|build-check|release) ;;
   "") printf 'usage: sweep-ingest.sh <debrief|build-check|release> <source-path> [flags]\n' >&2; exit 2 ;;
   *) printf 'unknown subcommand: %s\n' "$SUBCMD" >&2; exit 2 ;;
@@ -122,6 +127,19 @@ task_followup_seen() {
   return 1
 }
 
+task_debt_seen() {
+  local debrief_uuid="${1:?task_debt_seen <debrief-id> <debt-field>}"
+  local field="${2:?}"
+  [ -d "$TASKS_DIR" ] || return 1
+  local f
+  for f in "$TASKS_DIR"/*.yaml; do
+    [ -f "$f" ] || continue
+    grep -F "source_debrief: \"$debrief_uuid\"" "$f" >/dev/null 2>&1 || continue
+    grep -F "source_debt_field: \"$field\"" "$f" >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
+
 argus_infra_reason() {
   case "$1" in
     unknown_host|missing_manifest|missing_spawn_command|secret_scope_floor_unmet|mktemp_failed|validator_unavailable|handoff_schema_violation)
@@ -202,6 +220,8 @@ ingest_debrief() {
   # source_debrief= so the new task can be traced back even without a parent.
   follow_ups_minted=0
   follow_ups_failed=0
+  debt_tasks_minted=0
+  debt_tasks_failed=0
   if [ "${follow_ups_count:-0}" -gt 0 ]; then
     i=0
     while [ "$i" -lt "$follow_ups_count" ]; do
@@ -234,6 +254,51 @@ ingest_debrief() {
     done
   fi
 
+  debt_notes=$(yq -r '.debt.notes // ""' "$SRC" 2>/dev/null || echo "")
+  [ "$debt_notes" = "null" ] && debt_notes=""
+  for debt_field in build test_unit test_ui; do
+    debt_flag=$(yq -r ".debt.$debt_field // false" "$SRC" 2>/dev/null || echo false)
+    [ "$debt_flag" = "true" ] || continue
+    if [ -n "$debrief_uuid" ] && task_debt_seen "$debrief_uuid" "$debt_field"; then
+      continue
+    fi
+    case "$debt_field" in
+      build)
+        debt_title="Resolve build debt from ${legacy_task_id:-$task_uuid}"
+        debt_type="build-check"
+        ;;
+      test_unit)
+        debt_title="Add unit-test coverage from ${legacy_task_id:-$task_uuid}"
+        debt_type="test"
+        ;;
+      test_ui)
+        debt_title="Add UI-test coverage from ${legacy_task_id:-$task_uuid}"
+        debt_type="test"
+        ;;
+      *)
+        debt_title="Resolve debt from ${legacy_task_id:-$task_uuid}"
+        debt_type="test"
+        ;;
+    esac
+    new_uuid=$(mint_uuidv7)
+    if write_task_artifact "$new_uuid" proposed "$debt_title" \
+        "type=$debt_type" \
+        priority=p2 \
+        labels='[auto-followup]' \
+        origin=auto-followup \
+        "source_debrief=$debrief_uuid" \
+        "source_task=${legacy_task_id:-$task_uuid}" \
+        "source_debt_field=$debt_field" \
+        "notes=$debt_notes" >/dev/null 2>&1; then
+      debt_tasks_minted=$(( debt_tasks_minted + 1 ))
+    else
+      debt_tasks_failed=$(( debt_tasks_failed + 1 ))
+      fail_data=$(printf '{"debrief_id":"%s","debt_field":"%s","reason":"write_task_artifact_failed"}' \
+        "$(_json_escape "$debrief_uuid")" "$(_json_escape "$debt_field")")
+      emit_reconcile_event follow_up_mint_failed "$event_task" "$fail_data" "${debrief_uuid:-$SRC}" "debt:$debt_field:failed"
+    fi
+  done
+
   # Flip the debrief's state `emitted → ingested`. lib-ledger has no
   # transition_debrief_state helper today (debriefs have no state-machine
   # doc; the state field was added post-hoc in debrief@2.0.1). Direct yq
@@ -247,8 +312,8 @@ ingest_debrief() {
   # events tail) else the UUID; empty for direct-debriefs per the contract.
   argus_skip_bool="false"
   [ "$argus_status" = "not-invoked" ] && argus_skip_bool="true"
-  data=$(printf '{"follow_ups_minted":%s,"follow_ups_failed":%s,"argus_skip_detected":%s,"mode":"%s","report_state":"%s"}' \
-    "$follow_ups_minted" "$follow_ups_failed" "$argus_skip_bool" "$(_json_escape "$mode")" "$(_json_escape "$report_state")")
+  data=$(printf '{"follow_ups_minted":%s,"follow_ups_failed":%s,"debt_tasks_minted":%s,"debt_tasks_failed":%s,"argus_skip_detected":%s,"mode":"%s","report_state":"%s"}' \
+    "$follow_ups_minted" "$follow_ups_failed" "$debt_tasks_minted" "$debt_tasks_failed" "$argus_skip_bool" "$(_json_escape "$mode")" "$(_json_escape "$report_state")")
   emit_reconcile_event debrief_ingested "$event_task" "$data" "${debrief_uuid:-$SRC}" "state=ingested;report_state=$report_state"
 
   if [ -n "$merge_sha" ]; then
