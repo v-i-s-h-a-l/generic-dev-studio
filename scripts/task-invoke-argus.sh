@@ -2,11 +2,12 @@
 # task-invoke-argus.sh — Step 8.5 of the Achilles task mode.
 #
 # Emits the `review_requested` event that marks the pre-Argus handoff and
-# prints `ACHILLES_REVIEW_REQUESTED_AT=<iso-ts>` so the debrief can correlate
-# the verdict timing. The actual Argus invocation happens in the mode-pack
-# prose via Claude's Agent tool (not reachable from a shell), and the
-# verdict-event emit (`review_approved` / `review_flagged` / `review_blocked`)
-# happens inside `scripts/argus-emit-verdict.sh`, which Argus calls directly.
+# prints `ACHILLES_REVIEW_REQUESTED_AT=<iso-ts>` so the debrief and
+# `dispatch-review.sh` timeout path can correlate verdict timing. The actual
+# Argus invocation happens in the mode-pack prose via Claude's Agent tool (not
+# reachable from a shell), and the verdict-event emit (`review_approved` /
+# `review_flagged` / `review_blocked`) happens inside
+# `scripts/argus-emit-verdict.sh`, which Argus calls directly.
 #
 # Usage:
 #   scripts/task-invoke-argus.sh <task-id> <worktree> <base-branch> <size>

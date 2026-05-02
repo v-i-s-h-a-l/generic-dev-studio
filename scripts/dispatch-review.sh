@@ -25,7 +25,8 @@
 #      arbitrary env. The host CLI re-authenticates from its own keychain.
 #   6. Block by tailing the event log for a review_* event whose envelope
 #      carries the same idempotency_key. Timeout: $DISPATCH_REVIEW_TIMEOUT
-#      seconds (default 600). Per capabilities.block_for_event_strategy=tail.
+#      seconds (default 900). A timeout emits `review_timeout`, kills the
+#      spawned review, and exits non-zero. Per capabilities.block_for_event_strategy=tail.
 #   7. Print `ARGUS_VERDICT=<approved|flagged|blocked>` on stdout. Exit 0
 #      on verdict, non-zero on unrecoverable error.
 #
@@ -72,10 +73,12 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
 
-TIMEOUT="${DISPATCH_REVIEW_TIMEOUT:-600}"
+TIMEOUT="${DISPATCH_REVIEW_TIMEOUT:-900}"
 WORKTREE="${ACHILLES_WORKTREE:-}"
 BASE_BRANCH="${ACHILLES_BASE_BRANCH:-}"
 SIZE="${TASK_SIZE:-}"
+REQUESTED_AT="${ACHILLES_REVIEW_REQUESTED_AT:-}"
+CAPTURE_HANDOFF="${DISPATCH_REVIEW_CAPTURE_HANDOFF:-}"
 
 event_log=$(resolve_event_log) || {
   printf 'dispatch-review: cannot resolve event log path\n' >&2
@@ -126,6 +129,56 @@ try:
 except Exception:
     pass
 '
+}
+prior_findings_summary_json() {
+  python3 - "$event_log" "$TASK_ID" <<'PY'
+import json
+import sys
+
+path, task_id = sys.argv[1:]
+latest = None
+
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        for raw in fh:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                event = json.loads(raw)
+            except Exception:
+                continue
+            if event.get("task") != task_id:
+                continue
+            if event.get("event") not in {"review_approved", "review_flagged", "review_blocked"}:
+                continue
+            data = event.get("data") or {}
+            if data.get("stage") != "spec":
+                continue
+            latest = event
+except FileNotFoundError:
+    pass
+
+if latest is None:
+    sys.exit(1)
+
+data = latest.get("data") or {}
+verdict = (latest.get("event") or "").split("_", 1)[1]
+summary = {
+    "stage": "spec",
+    "verdict": verdict,
+}
+if verdict == "approved":
+    summary["finding_count"] = 0
+elif verdict == "flagged" and data.get("finding_count") is not None:
+    summary["finding_count"] = data.get("finding_count")
+elif verdict == "blocked" and data.get("block_reason"):
+    summary["block_reason"] = data.get("block_reason")
+if data.get("review_file"):
+    summary["review_file"] = data.get("review_file")
+
+print(json.dumps(summary, separators=(",", ":")))
+PY
 }
 find_prior_verdict() {
   [ -f "$event_log" ] || return 1
@@ -191,7 +244,10 @@ if [ "$HOST" != "claude-code" ] && [ "$SECRET_SCOPE" != "none" ]; then
   exit 1
 fi
 
-# ---- Step 4: build + validate handoff payload ------------------------------
+# ---- Step 4: build + validate routed handoff payload -----------------------
+# The envelope stays hub-and-spoke (`chanakya` -> `argus`) and Stage 2 may
+# carry a compact Stage 1 summary so code-quality sees the earlier verdict
+# without re-parsing the full review artifact.
 handoff_path=$(mktemp -t dispatch-review.XXXXXX) || { SKIP_REASON="mktemp_failed"; exit 1; }
 handoff_path="${handoff_path}.json"
 # Compose with _emit_skip_if_open — earlier-installed trap must keep firing.
@@ -202,10 +258,23 @@ if [ -n "$TASK_UUID" ]; then
   task_id_field="\"$TASK_UUID\""
 fi
 
+prior_findings_field=""
+if [ "$STAGE" = "quality" ]; then
+  # Stage 2 inherits a compact Stage 1 summary instead of the whole review.
+  if prior_json=$(prior_findings_summary_json 2>/dev/null); then
+    prior_findings_field=$(printf ',\n    "prior_findings_summary": %s' "$prior_json")
+  fi
+fi
+
 cat > "$handoff_path" <<EOF
 {
-  "schema_version": 1,
-  "from": "achilles",
+  "schema_version": {
+    "name": "handoff",
+    "version": "1.0.0",
+    "min_reader": "1.0.0",
+    "deprecated_at": null
+  },
+  "from": "chanakya",
   "to": "argus",
   "task_id": $task_id_field,
   "reason": "review:$STAGE for $TASK_ID (attempt $ATTEMPT)",
@@ -214,7 +283,7 @@ cat > "$handoff_path" <<EOF
     "stage": "$STAGE",
     "worktree": "$WORKTREE",
     "base_branch": "$BASE_BRANCH",
-    "size": "$SIZE"
+    "size": "$SIZE"$prior_findings_field
   },
   "idempotency_key": "$IDEM_KEY"
 }
@@ -223,7 +292,9 @@ EOF
 validator_err=$(mktemp -t dispatch-review-validate.XXXXXX) || { SKIP_REASON="mktemp_failed"; exit 1; }
 # Replace prior tmpfile-only trap, but keep _emit_skip_if_open running on EXIT.
 trap '_emit_skip_if_open; rm -f "$handoff_path" "$handoff_path.tmp" "$validator_err"' EXIT
-if ! "$SCRIPT_DIR/validate-contract.sh" handoff "$handoff_path" 2>"$validator_err"; then
+if "$SCRIPT_DIR/validate-contract.sh" handoff "$handoff_path" 2>"$validator_err"; then
+  :
+else
   rc=$?
   if [ "$rc" -eq 2 ]; then
     SKIP_REASON="validator_unavailable"
@@ -234,6 +305,11 @@ if ! "$SCRIPT_DIR/validate-contract.sh" handoff "$handoff_path" 2>"$validator_er
   fi
   cat "$validator_err" >&2 2>/dev/null || true
   exit 1
+fi
+
+if [ -n "$CAPTURE_HANDOFF" ]; then
+  mkdir -p "$(dirname "$CAPTURE_HANDOFF")" 2>/dev/null || true
+  cp "$handoff_path" "$CAPTURE_HANDOFF"
 fi
 
 # ---- Step 5: env-scrubbed spawn -------------------------------------------
@@ -294,15 +370,33 @@ EOF
   elapsed=$((elapsed + 1))
 done
 
-# Reap spawn (best-effort; the spawn may have exited cleanly already).
-wait "$spawn_pid" 2>/dev/null || true
-
 if [ -z "$verdict" ]; then
   SKIP_REASON="verdict_timeout_${TIMEOUT}s"
+  timeout_data=$(printf '{"stage":"%s","idem_key":"%s","timeout_s":%s,"elapsed_s":%s,"host":"%s","attempt":%s' \
+    "$STAGE" "$IDEM_KEY" "$TIMEOUT" "$elapsed" "$(_json_escape "$HOST")" "$ATTEMPT")
+  if [ -n "$REQUESTED_AT" ]; then
+    timeout_data="$timeout_data,\"requested_at\":\"$(_json_escape "$REQUESTED_AT")\""
+  fi
+  timeout_data="$timeout_data}"
+  kill "$spawn_pid" >/dev/null 2>&1 || true
+  grace=0
+  while [ "$grace" -lt 5 ]; do
+    if ! kill -0 "$spawn_pid" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+    grace=$((grace + 1))
+  done
+  kill -KILL "$spawn_pid" >/dev/null 2>&1 || true
+  wait "$spawn_pid" 2>/dev/null || true
+  emit_event_keyed argus review review_timeout "$TASK_ID" "$timeout_data" --idem-key "timeout:$IDEM_KEY" >/dev/null 2>&1 || true
   printf 'dispatch-review: timeout (%ds) waiting for review_* event with idempotency_key=%s\n' \
     "$TIMEOUT" "$IDEM_KEY" >&2
   exit 1
 fi
+
+# Reap spawn (best-effort; the spawn may have exited cleanly already).
+wait "$spawn_pid" 2>/dev/null || true
 
 # ---- Step 7: print verdict -------------------------------------------------
 # Spawned argus already emitted review_<verdict> via argus-emit-verdict.sh;
