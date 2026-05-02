@@ -587,11 +587,10 @@ After a typical feature lifecycle, here's what the file tree looks like:
     user-testing-archive/                     # Past manifests after review-feedback
     chanakya-tasks/
       T001-onboarding-flow.md                 # Brief (written by Chanakya)
-      T001-tests.md                           # Test cases (written by Achilles)
       T002-format-selection.md
       ...
     debriefs/
-      0190f52a-...yaml                        # Structured Achilles debriefs
+      0190f52a-...yaml                        # Structured Achilles debriefs, including test cases
       0190f52b-...yaml
   worktrees/                                  # Per-task isolated checkouts
     T001/                                     # branch achilles/T001 — removed on clean merge
