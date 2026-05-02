@@ -146,7 +146,7 @@ require_approved_check() {
   [ "$REQUIRE_APPROVED" -eq 1 ] || return 0
   latest_review=$(_latest_review_event || true)
   if [ "$latest_review" = "review_flagged" ]; then
-    data=$(printf '{"branch":"%s","reason":"review_flagged","require_approved":true}' "$BRANCH")
+    data=$(printf '{"branch":"%s","review_file":"","finding_count":0,"reason":"review_flagged","require_approved":true}' "$BRANCH")
     if [ "$FORCE_MERGE" -eq 1 ]; then
       emit_event_keyed achilles task review_override "$TASK_ID" "$data" >/dev/null 2>&1 || true
       printf 'warn: merging %s despite flagged review because --force was passed\n' "$TASK_ID" >&2
@@ -164,7 +164,7 @@ merge_safety_check() {
   local missing="" missing_count=0 missing_json latest_review
   latest_review=$(_latest_review_event || true)
   if [ "$latest_review" = "review_blocked" ]; then
-    data=$(printf '{"branch":"%s","reason":"review_blocked","latest_review":"review_blocked"}' "$BRANCH")
+    data=$(printf '{"branch":"%s","missing_signals":["review"],"signal_count":1,"reason":"review_blocked","latest_review":"review_blocked"}' "$BRANCH")
     if [ "$FORCE_MERGE" -eq 1 ]; then
       emit_event_keyed achilles task merge_safety_override "$TASK_ID" "$data" >/dev/null 2>&1 || true
       printf 'warn: merge safety override for %s; latest review is blocked\n' "$TASK_ID" >&2

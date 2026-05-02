@@ -40,7 +40,7 @@ legacy_task_id: T335
 state: ingested
 tests:
   added:
-    - title: "YAML case"
+    - title: "YAML case: colon"
       preconditions: "fixture ready"
       steps: "run the flow"
       expected: "passes"
@@ -71,7 +71,7 @@ assert() {
   fi
 }
 
-assert "YAML case emitted" "grep -q 'title: YAML case' '$out'"
+assert "YAML case emitted with quoted title" "grep -q 'title: \"YAML case: colon\"' '$out'"
 assert "standalone markdown ignored" "! grep -q 'Legacy standalone case' '$out'"
 assert "processed markdown ignored" "! grep -q 'Legacy processed case' '$out'"
 
