@@ -21,15 +21,14 @@
 # Pre-merge mode (#249 Phase 2): pass `argus-reviewed` to *stage* the
 # debrief before task-merge.sh runs. The brief→debriefed transition and
 # the `brief_completed` event are deferred to task-finalize-merge.sh on
-# successful merge. Any other state runs the legacy single-shot path
-# (direct-mode and pre-#249 callers).
+# successful merge. Any other state runs the direct single-shot path used by
+# direct-mode and pre-#249 callers.
 #
 # Stdout: the minted debrief UUID.
 #
 # Exit codes:
 #   0  debrief written + state flips applied
 #   2  missing args or artifact not found
-#   3  reserved for retired dual-write partials
 
 set -u
 umask 022
@@ -100,10 +99,8 @@ export WITHHOLD_INDEX=1
 
 write_debrief_artifact "$DEBRIEF_UUID" "$TASK_UUID" "$BRIEF_ARG" task emitted ${KV_ARGS[@]+"${KV_ARGS[@]}"} || {
   rc=$?
-  [ "$rc" -ne 3 ] && { printf 'error: write_debrief_artifact failed rc=%s\n' "$rc" >&2; exit "$rc"; }
-  # rc=3 is retained for older callers that still understand the retired
-  # dual-write partial code. YAML is the only active debrief artifact.
-  DUAL_WRITE_PARTIAL=1
+  printf 'error: write_debrief_artifact failed rc=%s\n' "$rc" >&2
+  exit "$rc"
 }
 
 # Task back-ref — point at the new debrief. Idempotent if the caller retries.
@@ -115,7 +112,8 @@ set_task_link "$TASK_UUID" debrief "$DEBRIEF_UUID" || {
 # pre-Argus debriefs; `blocked` / `cancelled` are the escape hatches.
 transition_task_state "$TASK_UUID" "$TARGET_STATE" achilles "debrief emitted" || {
   rc=$?
-  [ "$rc" -eq 3 ] && DUAL_WRITE_PARTIAL=1 || { printf 'error: transition_task_state failed rc=%s\n' "$rc" >&2; exit "$rc"; }
+  printf 'error: transition_task_state failed rc=%s\n' "$rc" >&2
+  exit "$rc"
 }
 
 # Brief → debriefed only when we have a brief. Direct-mode skips. The
@@ -125,7 +123,8 @@ transition_task_state "$TASK_UUID" "$TARGET_STATE" achilles "debrief emitted" ||
 if [ -n "$BRIEF_UUID" ] && [ "$TARGET_STATE" != "argus-reviewed" ]; then
   transition_brief_state "$BRIEF_UUID" debriefed achilles "task complete" || {
     rc=$?
-    [ "$rc" -eq 3 ] && DUAL_WRITE_PARTIAL=1 || { printf 'error: transition_brief_state failed rc=%s\n' "$rc" >&2; exit "$rc"; }
+    printf 'error: transition_brief_state failed rc=%s\n' "$rc" >&2
+    exit "$rc"
   }
 fi
 
@@ -199,5 +198,4 @@ flush_index 2>/dev/null || true
 
 printf '%s\n' "$DEBRIEF_UUID"
 
-[ "${DUAL_WRITE_PARTIAL:-0}" -eq 1 ] && exit 3
 exit 0

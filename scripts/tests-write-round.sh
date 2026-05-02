@@ -2,9 +2,9 @@
 # tests-write-round.sh — Step 7 round artifact write for /chanakya test-flow.
 #
 # Thin wrapper that mints a UUIDv7 and delegates to lib-ledger's
-# write_round_artifact, which handles the YAML write, legacy markdown
-# dual-write at plans/user-testing-rounds/user-testing-round<N>.md, the
-# round_state_changed event, and index rebuild.
+# write_round_artifact, which handles the YAML write, round_state_changed
+# event, and index rebuild. Legacy round markdown is read-only historical
+# input post-#245 A.4/A.5.
 #
 # Usage:
 #   scripts/tests-write-round.sh <round-number> <scope> <tasks-csv> <body-file>
@@ -15,7 +15,6 @@
 # Exit codes:
 #   0  round written
 #   2  missing args or body-file
-#   3  dual-write partial failure propagated from lib-ledger
 
 set -u
 umask 022
@@ -46,7 +45,7 @@ body=$(cat "$BODY_FILE")
 
 write_round_artifact "$uuid" "$ROUND_NUM" "$SCOPE" "$TASKS_CSV" "$body"
 rc=$?
-if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
+if [ "$rc" -ne 0 ]; then
   printf 'error: write_round_artifact failed rc=%s\n' "$rc" >&2
   exit "$rc"
 fi
