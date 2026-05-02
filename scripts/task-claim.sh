@@ -2,10 +2,8 @@
 # task-claim.sh — Step 2 of the Achilles task mode.
 #
 # Flips the paired task + brief artifacts to the in-flight states and emits
-# `brief_started`. lib-ledger's transition helpers handle the dual-write to
-# legacy master-plan (task side) so the mode-pack no longer carries that
-# prose. Brief state has no legacy counterpart today (Phase 2.6 defers brief
-# Status rows), so the brief transition is YAML-only.
+# `brief_started`. lib-ledger's transition helpers are YAML-only post-#245
+# A.4/A.5; any straggler legacy helper call fails loud inside lib-ledger.
 #
 # Usage:
 #   scripts/task-claim.sh [--steal] <task-uuid> <brief-uuid> <size>
@@ -13,7 +11,6 @@
 # Exit codes:
 #   0  both transitions applied + event emitted
 #   2  missing args / artifact not found
-#   3  dual-write partial (propagated from lib-ledger)
 #   4  duplicate claim refused — a live worktree already holds this brief
 #      (override: --steal flag or ACHILLES_RECLAIM_OK=1)
 
@@ -86,12 +83,11 @@ if [ -n "$BRIEF_UUID" ]; then
   fi
 fi
 
-# Task flip first — the task's legacy dual-write (master-plan Status) lives
-# here, so a crash between the two transitions leaves the post-migration
-# shape biased consistent (dual-write-transition.md rule 2).
+# Task flip first so a crash between the two transitions leaves task state
+# ahead of brief state; the sweep can recover from a claimed task more safely
+# than from a dispatched brief with no task-side evidence.
 transition_task_state "$TASK_UUID" in-progress achilles "Step 2 claim" || {
   rc=$?
-  [ "$rc" -eq 3 ] && exit 3
   printf 'error: transition_task_state failed rc=%s\n' "$rc" >&2
   exit 2
 }
@@ -100,7 +96,6 @@ transition_task_state "$TASK_UUID" in-progress achilles "Step 2 claim" || {
 if [ -n "$BRIEF_UUID" ]; then
   transition_brief_state "$BRIEF_UUID" dispatched achilles "task-started" || {
     rc=$?
-    [ "$rc" -eq 3 ] && exit 3
     printf 'error: transition_brief_state failed rc=%s\n' "$rc" >&2
     exit 2
   }

@@ -19,23 +19,23 @@ Curated next 10 for Forge reliability work. This list is the quick lookup; GitHu
 
 | Rank | Issue | Why Now |
 |---:|---|---|
-| 1 | [#76](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/76) Audit mode-pack dual-write during Phase 2.6 transition | Confirms no remaining writer mutates legacy artifacts without YAML while freeze work depends on the ledger. |
-| 2 | [#336](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/336) Brief resolution must be identical across deployed skills layouts | Needs a short design pass on canonical runtime-root behavior, then closes alternate-HOME brief drift. |
-| 3 | [#313](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/313) Argus dispatch fails when host registry is missing | Needs recovery-policy shaping, then restores deterministic review-gate availability in deployed layouts. |
-| 4 | [#372](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/372) Codex host must match Claude auth and test-context parity | Needs credential/test-root contract shaping before code; important for host parity but easy to overfit. |
-| 5 | [#224](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/224) Argus → merge gate policy + sibling-merge race | Needs explicit policy choice for flagged-review merge friction before changing autonomous merge behavior. |
-| 6 | [#322](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/322) Add provider model catalog and reviewer model policy | Needs sparse-refresh policy and official model verification; supports reviewer independence without blocking earlier fixes. |
-| 7 | [#434](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/434) Build gate success marker can be absent without diagnostics | Restores actionable diagnostics for full-green build-gate failures before more Achilles work depends on it. |
-| 8 | [#435](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/435) TestFlight push can preserve a rejected marketing version | Prevents release tooling from contradicting explicit version intent and uploading a rejected build. |
-| 9 | [#418](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/418) Host-agnostic Chanakya v2 implementation | Makes orchestrator dispatch and status paths portable without Claude-Code-only load-bearing primitives. |
-| 10 | [#203](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/203) Achilles modes/debug.md + bug-fix flow rewrite | Sets up the bug-fix workflow and localization loop that will make future repair work faster and less brittle. |
+| 1 | [#336](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/336) Brief resolution must be identical across deployed skills layouts | Needs a short design pass on canonical runtime-root behavior, then closes alternate-HOME brief drift. |
+| 2 | [#313](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/313) Argus dispatch fails when host registry is missing | Needs recovery-policy shaping, then restores deterministic review-gate availability in deployed layouts. |
+| 3 | [#372](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/372) Codex host must match Claude auth and test-context parity | Needs credential/test-root contract shaping before code; important for host parity but easy to overfit. |
+| 4 | [#224](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/224) Argus → merge gate policy + sibling-merge race | Needs explicit policy choice for flagged-review merge friction before changing autonomous merge behavior. |
+| 5 | [#322](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/322) Add provider model catalog and reviewer model policy | Needs sparse-refresh policy and official model verification; supports reviewer independence without blocking earlier fixes. |
+| 6 | [#434](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/434) Build gate success marker can be absent without diagnostics | Restores actionable diagnostics for full-green build-gate failures before more Achilles work depends on it. |
+| 7 | [#435](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/435) TestFlight push can preserve a rejected marketing version | Prevents release tooling from contradicting explicit version intent and uploading a rejected build. |
+| 8 | [#418](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/418) Host-agnostic Chanakya v2 implementation | Makes orchestrator dispatch and status paths portable without Claude-Code-only load-bearing primitives. |
+| 9 | [#203](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/203) Achilles modes/debug.md + bug-fix flow rewrite | Sets up the bug-fix workflow and localization loop that will make future repair work faster and less brittle. |
+| 10 | [#213](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/213) Achilles SourceKit-LSP symbol localization | Improves bug localization from file-level grep to symbol-level Swift resolution once the safety-floor queue has room for capability work. |
 
 ## Freeze Plan of Record
 
 Stay inside the Forge reliability freeze until this list clears or the user explicitly waives a named issue.
 
 1. Keep the PR review gate truthful after the live reviewer fallback: #432 closed in PR #438.
-2. Land the next low-ambiguity implementation fixes: #76, then #336.
+2. Land the next low-ambiguity implementation fixes: #336, then #313.
 3. Slice the larger ready work instead of bundling it: #313, #372, #224, #322, #418, #203.
 4. Run a short design pass before coding policy-sensitive or environment-sensitive work: #336, #313, #372, #224, #322.
 5. Keep new feature arcs parked. Phase 2.7, Host-agnostic Chanakya v2, Build-opt v2, Lu Ban, dashboard, and new mode packs remain blocked by the freeze.
@@ -106,7 +106,7 @@ These remain eligible during the Forge reliability freeze because they prevent s
 | [#362](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/362) `push-tf` must preflight GitHub auth before mutating build number | Closed | Reliability bug | Release workflows must prove required auth before creating partial external state. |
 | [#391](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/391) Claude reviewer runner lacks a dedicated auth/config root | Closed | Reliability bug | Headless PR review can look eligible but still fail at runtime when `claude-reviewer` inherits an empty session home. |
 | [#97](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/97) App Store live version lookup must use app-scoped endpoint | Closed | Reliability bug | Release/status logic must not depend on a forbidden top-level endpoint. |
-| [#76](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/76) Audit mode-pack dual-write during Phase 2.6 transition | Open | Reliability bug | Ensures no active prose or writer still mutates retired legacy surfaces. |
+| [#76](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/76) Audit mode-pack dual-write during Phase 2.6 transition | Closed | Reliability bug | Ensures no active prose or writer still mutates retired legacy surfaces. |
 | [#318](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/318) PR merge autopilot with headless reviewer gate | Closed | Safety-floor hardening | Makes PR review and merge flow explicit: headless reviewer first, critical blockers stop only that PR, and integration advances only through GitHub PR merge. |
 | [#325](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/325) Harden PR autopilot merge method and local cleanup | Closed | Reliability bug | Prevents a successful remote merge from being reported as failed because local cleanup ran from a detached or stale worktree. |
 
