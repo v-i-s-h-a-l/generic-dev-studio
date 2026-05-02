@@ -60,11 +60,25 @@ For unattended workers, also use the non-interactive approval policy:
 codex --sandbox workspace-write --add-dir ~/.dev-studio --ask-for-approval never
 ```
 
+## GitHub Auth Parity
+
+Codex worker sessions must launch with the same login `HOME`, keychain, ssh-agent, and GitHub credential-helper surface that Claude-backed sessions use. The studio chain runner sets `HOME` to the login home before spawning Codex so `gh` and `git` see the user's normal credentials instead of a scratch home.
+
+Before task work starts, `scripts/host-preflight.sh <host> <repo-root>` runs:
+
+```sh
+gh auth status
+git -C <repo-root> ls-remote --exit-code "$(git -C <repo-root> remote get-url origin)" HEAD
+```
+
+The second check is the credential-helper proof for later fetch and commit-resolution steps. If either check fails, the session stops before edits. Emergency bypass: `STUDIO_BYPASS_GITHUB_AUTH_PREFLIGHT=1`, which is intentionally loud.
+
 ## Verify
 
 ```sh
 scripts/verify-install.sh        # audits all detected hosts including Codex
 scripts/sync-host-skills.sh codex --audit-only   # Codex-only audit
+scripts/host-preflight.sh codex /path/to/private/project
 ```
 
 ## Conformance test

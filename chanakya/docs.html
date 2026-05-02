@@ -569,7 +569,8 @@
   <pre><code>git clone https://github.com/v-i-s-h-a-l/generic-dev-studio.git
 cd generic-dev-studio
 ./scripts/install.sh           # idempotent &mdash; safe to re-run after pulls
-./scripts/verify-install.sh    # reports any drift</code></pre>
+./scripts/verify-install.sh    # reports any drift
+./scripts/host-preflight.sh codex /repo  # prove gh + git remote auth before host task work</code></pre>
   <p>Or, for a one-shot install with all manager defaults plus deps and SSH keys:</p>
   <pre><code>./scripts/bootstrap.sh --yes --role manager   # one-shot
 ./scripts/bootstrap.sh                        # interactive</code></pre>

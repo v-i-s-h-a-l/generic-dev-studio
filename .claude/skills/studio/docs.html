@@ -416,7 +416,7 @@
       <div class="mode-card">
         <code>/studio work chain &lt;manifest-or-name&gt;</code>
         <div class="triggers">"run these chains end to end", "fresh session per chain"</div>
-        <div class="what">Script-backed chain runner for studio issue work. Each chain starts from latest <code>main</code> into a feature branch; each issue gets its own branch, <code>/tmp</code> worktree, fresh host session, issue-run UUID, and required <code>.studio/chain-worker-summary.json</code>. The active session pool scales from healthy registered <code>xcodebuild</code> offload nodes plus local, then clamps by available RAM; completed issue branches rebase and fast-forward into the chain branch in manifest order. The final chain PR runs <code>scripts/pr-headless-review.sh &lt;pr&gt; --method auto</code>, merges only through autopilot, then prunes refs and removes worktrees. Runner telemetry emits chain lifecycle events and writes private reports under <code>~/.dev-studio/generic-dev-studio/chain-runs/&lt;run_id&gt;/</code>. Dry-run first with <code>scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run</code>.</div>
+        <div class="what">Script-backed chain runner for studio issue work. Each chain starts from latest <code>main</code> into a feature branch; each issue gets its own branch, <code>/tmp</code> worktree, fresh host session, issue-run UUID, and required <code>.studio/chain-worker-summary.json</code>. Before fetching or spawning workers, the runner calls <code>scripts/host-preflight.sh</code> to prove <code>gh auth status</code> and <code>git ls-remote</code> credential-helper access for the project remote. The active session pool scales from healthy registered <code>xcodebuild</code> offload nodes plus local, then clamps by available RAM; completed issue branches rebase and fast-forward into the chain branch in manifest order. The final chain PR runs <code>scripts/pr-headless-review.sh &lt;pr&gt; --method auto</code>, merges only through autopilot, then prunes refs and removes worktrees. Runner telemetry emits chain lifecycle events and writes private reports under <code>~/.dev-studio/generic-dev-studio/chain-runs/&lt;run_id&gt;/</code>. Dry-run first with <code>scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run</code>.</div>
       </div>
       <div class="mode-card">
         <code>/studio guard "&lt;topic&gt;"</code>
@@ -477,7 +477,8 @@
     <h3>Installing the rest of the system</h3>
     <p>The agent layer (Chanakya / Achilles / Argus) is <em>global</em> — installed at <code>~/.claude/skills/</code> so <code>/chanakya</code>, <code>/achilles</code>, <code>/argus</code> reach you from any repo. Run the installer once:</p>
     <pre><code>./scripts/install.sh            # idempotent — re-run safely after pulls
-./scripts/verify-install.sh     # reports any drift</code></pre>
+./scripts/verify-install.sh     # reports any drift
+./scripts/host-preflight.sh codex /repo  # prove gh + git remote auth before host task work</code></pre>
     <p>Details in <a class="inline" href="../../../README.md">README.md</a>. Agent docs live at <a class="inline" href="../../../chanakya/docs.html">chanakya/docs.html</a>.</p>
   </div>
 </section>
