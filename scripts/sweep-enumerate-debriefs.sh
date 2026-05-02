@@ -2,14 +2,16 @@
 # sweep-enumerate-debriefs.sh — Step 0 of the inbox sweep.
 #
 # Enumerates unprocessed debrief artifacts under plans/debriefs/*.yaml with
-# state=emitted. Classifies each by kind and prints one tab-separated triple
-# per ingestable line on stdout:
+# state=emitted. Classifies each by ingest subcommand and prints one
+# tab-separated triple per ingestable line on stdout:
 #
-#   <kind>\t<path>\tyaml
+#   <subcommand>\t<path>\tyaml
 #
-#   kind ∈ {task-debrief, manual-build-check, release, direct-debrief}
+#   subcommand ∈ {debrief, build-check, release}
 #
-# (The trailing `yaml` column is retained for caller back-compat.)
+# (The trailing `yaml` column is retained for caller back-compat. Debrief
+# modes such as task vs direct-debrief stay in the YAML; the ingest command is
+# always the canonical sweep-ingest.sh subcommand.)
 #
 # Non-ingestable blind spots are diagnostics, not queue items. They print to
 # stderr so existing stdout consumers keep parsing only ingestable rows:
@@ -101,15 +103,15 @@ if [ -n "$DEBRIEFS_DIR" ] && [ -d "$DEBRIEFS_DIR" ] && command -v yq >/dev/null 
     case "$mode" in
       task)
         if [ -z "$task_id" ] || [ "$task_id" = "null" ]; then
-          printf 'direct-debrief\t%s\tyaml\n' "$yaml"
+          printf 'debrief\t%s\tyaml\n' "$yaml"
           yaml_count=$((yaml_count + 1))
         else
-          printf 'task-debrief\t%s\tyaml\n' "$yaml"
+          printf 'debrief\t%s\tyaml\n' "$yaml"
           yaml_count=$((yaml_count + 1))
         fi
         ;;
       manual-build-check)
-        printf 'manual-build-check\t%s\tyaml\n' "$yaml"
+        printf 'build-check\t%s\tyaml\n' "$yaml"
         yaml_count=$((yaml_count + 1))
         ;;
       release)
@@ -118,12 +120,12 @@ if [ -n "$DEBRIEFS_DIR" ] && [ -d "$DEBRIEFS_DIR" ] && command -v yq >/dev/null 
         ;;
       direct-debrief)
         # Pre-2.0.1 naming; treat as direct-debrief regardless of task_id.
-        printf 'direct-debrief\t%s\tyaml\n' "$yaml"
+        printf 'debrief\t%s\tyaml\n' "$yaml"
         yaml_count=$((yaml_count + 1))
         ;;
       *)
-        # Unknown mode — surface as task-debrief so it's at least visible.
-        printf 'task-debrief\t%s\tyaml\n' "$yaml"
+        # Unknown mode — surface as a normal debrief so it's at least visible.
+        printf 'debrief\t%s\tyaml\n' "$yaml"
         yaml_count=$((yaml_count + 1))
         ;;
     esac

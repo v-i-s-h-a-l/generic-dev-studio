@@ -105,7 +105,7 @@ scripts/argus-emit-verdict.sh T001 approved '[]' --task-uuid <uuid> # YAML verdi
 scripts/emit-agent-session-completed.sh argus review T001 auto:T001 --verdict approved   # shared session-close (any agent); auto: resolves start-ts from emit-agent-boot stamp
 
 # Chanakya inbox sweep — mechanical extractions from modes/inbox-sweep.md (Phase 2.6.5):
-scripts/sweep-enumerate-debriefs.sh                     # stdout: ingestable debrief queue; stderr: blind-spot diagnostics
+scripts/sweep-enumerate-debriefs.sh                     # stdout: canonical ingest queue (debrief/build-check/release); stderr: blind-spot diagnostics
 scripts/sweep-ingest.sh debrief <path> [--argus-exempt] # Step 0A — task + direct-debrief ingest (follow-ups, back-refs, state flip)
 scripts/sweep-ingest.sh build-check <path>              # Step 0B — debt counter reset/hold, TBUILD auto-file on red
 scripts/sweep-ingest.sh release <path>                  # Step 0B2 — release artifact + per-task release back-ref
