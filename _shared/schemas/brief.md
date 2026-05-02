@@ -111,7 +111,7 @@ Long background, raw research, and design discussion belong in linked context do
 | `schema_version` | object | yes | Per `contracts/schema-version.md`. `min_reader: 3.0.0` — readers on brief@2.x or older reject. |
 | `id` | string (UUIDv7) | yes | Stable for the life of this brief. |
 | `task_id` | string (UUIDv7) | yes | Parent task. Must resolve to an existing `task.yaml`. |
-| `legacy_task_id` | string \| null | no | Human-readable task ID (e.g. `T042`) from the parent task. Auto-resolved by `write_brief_artifact` from `tasks/<task_id>.yaml` when not passed explicitly. Required when the parent task carries one; null for UUID-only tasks. Used by `task-load-spec.sh` secondary resolution and `backfill-legacy-yaml.sh` dedup. |
+| `legacy_task_id` | string \| null | no | Human-readable task ID (e.g. `T042`) from the parent task. Auto-resolved by `write_brief_artifact` from `tasks/<task_id>.yaml` when not passed explicitly. Required when the parent task carries one; null for UUID-only tasks. `task-load-spec.sh` validates this against the task YAML before dispatch; `backfill-legacy-yaml.sh` uses it for dedup. |
 | `type` | enum | yes | One of `impl`, `unit-test`, `ui-test`, `integration-test`, `tdd`. Drives brief-template expansion in Chanakya's brief mode. |
 | `size` | enum | yes | `xs` \| `s` \| `m` \| `l`. Must match the parent task's `size`. |
 | `state` | enum | yes | Per `state-machines/brief-lifecycle.md`. |
