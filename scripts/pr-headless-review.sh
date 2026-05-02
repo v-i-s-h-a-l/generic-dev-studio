@@ -353,7 +353,9 @@ if [ "$CROSS_HOST_REQUIRED" -eq 1 ] && [ "$EXPLICIT_REVIEW_HOST" -eq 1 ] \
   exit 1
 fi
 
-tmpdir=$(mktemp -d -t pr-headless-review.XXXXXX)
+review_tmp_root=$(resolve_analysis_root)/pr-headless-review
+mkdir -p "$review_tmp_root"
+tmpdir=$(mktemp -d "$review_tmp_root/run.XXXXXX")
 TMPDIR_TO_CLEAN="$tmpdir"
 payload="$tmpdir/review-payload.md"
 summary="$tmpdir/reviewer-summary.md"
