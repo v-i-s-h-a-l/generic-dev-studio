@@ -122,6 +122,8 @@ Read the stuck state by `grep '"stuck": true'` on the marker — don't re-invoke
 | `debrief_needs_context` | Push-queue append kind=`debrief_needs_context` for `report_state: needs_context`. |
 | `follow_up_mint_failed` | Push-queue append kind=`follow_up_mint_failed`; structured follow-ups never disappear silently. |
 | `review_timeout` | Push-queue append kind=`review_timeout`; dispatch timed out before Argus returned a verdict. |
+| `merge_deferred_on_flagged` | Push-queue append kind=`merge_deferred_on_flagged`; autonomous Achilles stopped before merge because `--require-approved` saw an Argus flagged verdict. User chooses fix-first or explicit merge override. |
+| `base_diverged_post_review` | Push-queue append kind=`base_diverged_post_review`; a sibling merge advanced the base after Argus review. Re-run Achilles from Step 8.4 so review covers the new base. |
 | `argus_gate_skipped` | When `reason ∈ {unknown_host, missing_manifest, missing_spawn_command, secret_scope_floor_unmet}`: idempotently file `bug` + `theme/internal` GitHub issue titled "Argus infra-failure: `<reason>` on `<host>`"; if an open issue with that title already exists, append a comment with the timestamp and `idem_key` instead. Operational reasons (`verdict_timeout_*`, `no_verdict_at_merge`) are no-ops. See `scripts/sweep-process-events.sh`. |
 | `test_run_failed` / `build_debt_incremented` | No direct action; surfaced in status. |
 

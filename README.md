@@ -89,7 +89,7 @@ STUDIO_TRACK=<track>             # session-start shortcut for /studio work <trac
 /chanakya sweep-debt             # brief + dispatch all pending debt tasks
 /chanakya verify                 # guided: test-flow → promote → review-feedback
 /chanakya reopen T347 --reason="qa-rejected: <text>"  # reopen a closed task with recorded provenance
-/achilles T001                   # execute (XS/S: lsp-only, M/L: full build; merges immediately)
+/achilles T001                   # execute (XS/S: lsp-only, M/L: full build; approved merges, flagged waits)
 /achilles T001 --wait            # execute, pause up to 10 min for feedback before merging
 /achilles T001 --force-build     # override size-driven gate; run full xcodebuild
 /achilles T001 --dry-run         # simulate every write + event; reads + LSP run normally
@@ -147,7 +147,7 @@ scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-s
 
 **Minimal-intervention by default.** Chanakya runs end-to-end without stopping for confirmation. The only points where it pauses are: Slack publish, first-time config writes (`--configure-token`, `--configure`), merge conflicts, and `--wait` mode feedback windows.
 
-Achilles merges immediately on green and logs a "manual verification" follow-up. XS/S tasks skip `xcodebuild` (LSP-only) and accumulate **build debt** — warn at 6, block at 12. Run `/achilles build` any time: green resets the counter, red auto-bisects and files a P0 fix.
+Achilles merges approved green work immediately and stages flagged Argus findings for a user decision. XS/S tasks skip `xcodebuild` (LSP-only) and accumulate **build debt** — warn at 6, block at 12. Run `/achilles build` any time: green resets the counter, red auto-bisects and files a P0 fix.
 
 ---
 
@@ -217,6 +217,7 @@ scripts/                # multi-worker fleet (BETA)
   appstore-watch.sh     # polls ASC for pending submission; finalizes draft release + Slack on release
   backfill-orphan-debriefs.sh  # recover tasks that finished without landing in master plan (dry-run default)
   achilles-refresh-base.sh     # auto-invoked by Achilles Step 8.4: fetch + merge base before Argus review
+  task-merge.sh                # serialized merge gate: approved-only option + post-review base re-check
   worker-status.sh      # one-shot fleet status table
   achilles-cancel.sh    # remove pending dispatches
   fleet-cleanup.sh      # soft sweep (stale locks, old done/) or --all teardown

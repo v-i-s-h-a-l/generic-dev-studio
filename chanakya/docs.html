@@ -764,7 +764,7 @@ cd generic-dev-studio
     </div>
   </div>
   <div class="callout" style="margin-top: 20px; border-left-color: var(--purple); background: rgba(188, 140, 255, 0.07);">
-    <strong>Week 1 posture:</strong> only hard checks block (compile/test failure, secrets, staleness). Everything else flags &mdash; merge proceeds and Chanakya auto-files follow-up tasks from flagged findings. Promote checks to blocks after observing real signal.
+    <strong>Week 1 posture:</strong> only hard checks block (compile/test failure, secrets, staleness). Everything else flags; autonomous Achilles defers merge until the user chooses fix-first or explicit merge override, and Chanakya auto-files follow-up tasks from flagged findings.
   </div>
 
   <div class="callout" style="margin-top: 20px; border-left-color: var(--purple); background: rgba(188, 140, 255, 0.07);">
@@ -772,7 +772,7 @@ cd generic-dev-studio
   </div>
 
   <div class="callout" style="margin-top: 20px;">
-    <strong>Default is merge-immediately.</strong> Achilles invokes Argus pre-merge (Step 8.5), then merges on approved/flagged. Chanakya processes findings from the event log on its next sweep. Batch-test with <code>/chanakya test-manifest</code> or <code>/chanakya test-flow</code> when ready.
+    <strong>Default is approved-only merge.</strong> Achilles invokes Argus pre-merge (Step 8.5), merges approved work, and stages flagged work for a user decision. Chanakya processes findings from the event log on its next sweep. Batch-test with <code>/chanakya test-manifest</code> or <code>/chanakya test-flow</code> when ready.
   </div>
 
   <h3>Minimal Intervention</h3>
@@ -1097,7 +1097,7 @@ scripts/achilles-refresh-base.sh &lt;worktree&gt; [--dry-run]</code></pre>
     <div class="flow-row">
       <span class="flow-node" style="border-color: var(--purple); color: var(--purple);">/argus &mdash; cross-file regression, edge cases, test adequacy, diff anomalies, staleness, secrets</span>
     </div>
-    <div class="flow-row"><span class="flow-arrow">&#8595; approved / flagged</span></div>
+    <div class="flow-row"><span class="flow-arrow">&#8595; approved (flagged waits for user)</span></div>
     <div class="flow-row">
       <span class="flow-node achilles-node">merge &mdash; emit brief_completed event &rarr; debrief</span>
     </div>
@@ -1107,7 +1107,7 @@ scripts/achilles-refresh-base.sh &lt;worktree&gt; [--dry-run]</code></pre>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node chanakya-node">Chanakya sweeps inbox + event log &mdash; updates debt counters, auto-files follow-ups from flagged reviews</span>
+      <span class="flow-node chanakya-node">Chanakya sweeps inbox + event log &mdash; updates debt counters, surfaces flagged merge decisions, auto-files follow-ups</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
