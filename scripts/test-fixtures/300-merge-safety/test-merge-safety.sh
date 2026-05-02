@@ -125,6 +125,32 @@ set -e
 assert "require-approved defers flagged review" "[ $rc -eq 4 ]"
 assert "require-approved emits merge_deferred_on_flagged" "grep -q 'merge_deferred_on_flagged' '$(events_log)'"
 
+# A later approved review supersedes earlier flagged history.
+reset_runtime
+stage_debrief
+emit_event_line build_check_passed
+emit_event_line review_flagged
+emit_event_line review_approved
+set +e
+run_safety_only --require-approved
+rc=$?
+set -e
+assert "latest approved review clears prior flagged defer" "[ $rc -eq 0 ]"
+assert "latest approved review emits no flagged defer" "! grep -q 'merge_deferred_on_flagged' '$(events_log)'"
+
+# A later blocked review is a hard stop, not a missing-review warning.
+reset_runtime
+stage_debrief
+emit_event_line build_check_passed
+emit_event_line review_approved
+emit_event_line review_blocked
+set +e
+run_safety_only
+rc=$?
+set -e
+assert "latest blocked review blocks merge safety" "[ $rc -eq 4 ]"
+assert "latest blocked review emits merge_safety_blocked" "grep -q 'review_blocked' '$(events_log)'"
+
 # --force remains the user-controlled emergency lever.
 reset_runtime
 stage_debrief

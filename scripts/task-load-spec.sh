@@ -143,7 +143,7 @@ error: brief for task-id '$TASK_ID' is state '$brief_state', not ready — refus
   Run \`/chanakya brief $TASK_ID\` or the relevant authoring step to mark it
   ready. Set ACHILLES_ALLOW_NON_READY_BRIEF=1 only for intentional recovery.
 EOF
-    return 2
+    return 6
   fi
   case "$brief_state" in
     ready|dispatched|draft) ;;
@@ -174,8 +174,8 @@ if command -v yq >/dev/null 2>&1; then
     if [ "$canonical_rc" -eq 0 ] && [ -n "$task_yaml" ]; then
       _load_canonical_brief_from_task_yaml "$task_yaml" "$briefs_dir" || canonical_rc=$?
     fi
-    if [ "$canonical_rc" -eq 2 ]; then
-      exit 2
+    if [ "$canonical_rc" -eq 2 ] || [ "$canonical_rc" -eq 6 ]; then
+      exit "$canonical_rc"
     fi
   fi
 fi

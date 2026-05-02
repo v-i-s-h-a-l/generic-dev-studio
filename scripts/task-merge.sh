@@ -128,9 +128,24 @@ _task_has_event() {
     | grep -E "\"event\":\"($event_pattern)\"" >/dev/null 2>&1
 }
 
+_latest_review_event() {
+  [ -n "$event_log" ] && [ -f "$event_log" ] || return 1
+  awk -v task="\"task\":\"$TASK_ID\"" '
+    index($0, task) && match($0, /"event":"review_(approved|flagged|blocked)"/) {
+      event = substr($0, RSTART + 9, RLENGTH - 10)
+    }
+    END {
+      if (event != "") print event
+      else exit 1
+    }
+  ' "$event_log" 2>/dev/null
+}
+
 require_approved_check() {
+  local latest_review
   [ "$REQUIRE_APPROVED" -eq 1 ] || return 0
-  if _task_has_event "review_flagged"; then
+  latest_review=$(_latest_review_event || true)
+  if [ "$latest_review" = "review_flagged" ]; then
     data=$(printf '{"branch":"%s","reason":"review_flagged","require_approved":true}' "$BRANCH")
     if [ "$FORCE_MERGE" -eq 1 ]; then
       emit_event_keyed achilles task review_override "$TASK_ID" "$data" >/dev/null 2>&1 || true
@@ -146,15 +161,30 @@ require_approved_check() {
 }
 
 merge_safety_check() {
-  local missing="" missing_count=0 missing_json
+  local missing="" missing_count=0 missing_json latest_review
+  latest_review=$(_latest_review_event || true)
+  if [ "$latest_review" = "review_blocked" ]; then
+    data=$(printf '{"branch":"%s","reason":"review_blocked","latest_review":"review_blocked"}' "$BRANCH")
+    if [ "$FORCE_MERGE" -eq 1 ]; then
+      emit_event_keyed achilles task merge_safety_override "$TASK_ID" "$data" >/dev/null 2>&1 || true
+      printf 'warn: merge safety override for %s; latest review is blocked\n' "$TASK_ID" >&2
+      return 0
+    fi
+    emit_event_keyed achilles task merge_safety_blocked "$TASK_ID" "$data" >/dev/null 2>&1 || true
+    printf 'error: merge safety blocked for %s; latest review is blocked\n' "$TASK_ID" >&2
+    return 4
+  fi
   if ! _task_has_event "build_check_passed"; then
     missing="${missing:+$missing,}build"
     missing_count=$((missing_count + 1))
   fi
-  if ! _task_has_event "review_approved|review_flagged"; then
-    missing="${missing:+$missing,}review"
-    missing_count=$((missing_count + 1))
-  fi
+  case "$latest_review" in
+    review_approved|review_flagged) ;;
+    *)
+      missing="${missing:+$missing,}review"
+      missing_count=$((missing_count + 1))
+      ;;
+  esac
   if [ "$debrief_staged" -eq 0 ]; then
     missing="${missing:+$missing,}debrief"
     missing_count=$((missing_count + 1))
