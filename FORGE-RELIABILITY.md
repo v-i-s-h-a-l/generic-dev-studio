@@ -19,8 +19,8 @@ Curated next 10 for Forge reliability work. This list is the quick lookup; GitHu
 
 | Rank | Issue | Why Now |
 |---:|---|---|
-| 1 | [#432](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/432) Make cross-host PR review real, observable, and smoke-gated | Live PR gate showed Claude reviewer can be eligible on paper while unauthenticated at runtime; review independence must be truthful. |
-| 2 | [#335](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/335) Make test cases come from debrief YAML only | Removes a remaining split-brain artifact path while the YAML/debrief contract is already in focus. |
+| 1 | [#335](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/335) Make test cases come from debrief YAML only | Removes a remaining split-brain artifact path while the YAML/debrief contract is already in focus. |
+| 2 | [#433](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/433) Normalize sweep enumerator kinds before ingest | Prevents debriefs from staying emitted when the enumerator and ingester use different kind names. |
 | 3 | [#240](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/240) Concern→task auto-mint from debrief follow-ups and debt flags | Prevents structured concerns from being absorbed as dashboard noise during the freeze. |
 | 4 | [#223](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/223) Achilles ↔ Argus contract hardening | Tightens review timeouts, base-staleness consistency, and staged handoff payloads before merge-gate changes. |
 | 5 | [#76](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/76) Audit mode-pack dual-write during Phase 2.6 transition | Confirms no remaining writer mutates legacy artifacts without YAML while freeze work depends on the ledger. |
@@ -34,8 +34,8 @@ Curated next 10 for Forge reliability work. This list is the quick lookup; GitHu
 
 Stay inside the Forge reliability freeze until this list clears or the user explicitly waives a named issue.
 
-1. Keep the PR review gate truthful after the live reviewer fallback: #432.
-2. Land low-ambiguity implementation fixes next: #335, #240.
+1. Keep the PR review gate truthful after the live reviewer fallback: #432 is closing in PR #438.
+2. Land low-ambiguity implementation fixes next: #335, #433, #240.
 3. Slice the larger ready work instead of bundling it: #223 first, then #76.
 4. Run a short design pass before coding policy-sensitive or environment-sensitive work: #432, #336, #313, #372, #224, #322.
 5. Keep new feature arcs parked. Phase 2.7, Host-agnostic Chanakya v2, Build-opt v2, Lu Ban, dashboard, and new mode packs remain blocked by the freeze.
@@ -52,7 +52,6 @@ Stay inside the Forge reliability freeze until this list clears or the user expl
 
 | Issue | Decision Needed Before Implementation |
 |---|---|
-| [#432](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/432) | Define reviewer independence policy: smoke eligibility, fallback visibility, cross-host requirement boundaries, and bypass recording. |
 | [#336](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/336) | Define the canonical runtime-root contract (`STUDIO_RUNTIME_ROOT` or equivalent) and alternate-`HOME` diagnostics. |
 | [#313](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/313) | Choose missing-registry recovery behavior: hard fail, auto-file infra failure, structured waive prompt, or a combined path. |
 | [#372](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/372) | Define how Codex sessions prove GitHub credential parity and choose the canonical test invocation root/wrapper. |
@@ -88,7 +87,10 @@ These remain eligible during the Forge reliability freeze because they prevent s
 | [#314](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/314) Canonical event log reconstruction can hide lifecycle windows from sweeps | Closed | Reliability bug | Event-log loss makes sweeps and analytics falsely precise unless gaps are bounded and recoverable. |
 | [#384](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/384) Sweep ingestion should normalize enumerator debrief kinds | Closed | Reliability bug | Sweep must not continue as successful when enumerator and ingester vocabularies diverge. |
 | [#430](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/430) Protect project-scoped host skill links from accidental deletion | Closed | Reliability bug | Project-scoped routers must not silently disappear from a supported host when a local discovery link is deleted. |
-| [#432](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/432) Make cross-host PR review real, observable, and smoke-gated | Open | Reliability bug | Review gates must not claim cross-host or independent coverage when eligible reviewer hosts cannot actually run. |
+| [#432](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/432) Make cross-host PR review real, observable, and smoke-gated | In PR [#438](https://github.com/v-i-s-h-a-l/generic-dev-studio/pull/438) | Reliability bug | Review gates must not claim cross-host or independent coverage when eligible reviewer hosts cannot actually run. |
+| [#433](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/433) Sweep ingest does not accept enumerator debrief kinds | Open | Reliability bug | Enumerator/ingester vocabulary drift can strand emitted debriefs without lifecycle events or visible status. |
+| [#434](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/434) Build gate success marker can be absent without diagnostics | Open | Reliability bug | Full-green tasks can be blocked by opaque harness failure with no actionable build diagnostic. |
+| [#435](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/435) TestFlight push can preserve a rejected marketing version | Open | Reliability bug | Release tooling can contradict explicit version intent and upload a rejected version without a preflight halt. |
 | [#372](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/372) Codex host must match Claude auth and test-context parity | Open | Reliability bug | Host parity claims are false if Codex cannot resolve private commits or run canonical project tests. |
 | [#335](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/335) Make test cases come from debrief YAML only | Open | Safety-floor hardening | Test-case evidence should have one canonical source, not drift between YAML and legacy markdown. |
 | [#336](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/336) Brief resolution must be identical across deployed skills layouts | Open | Reliability bug | Alternate deployed layouts and alternate HOME roots must not resolve different briefs for the same task. |
@@ -120,7 +122,8 @@ Issue [#318](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/318) defin
 - Reviewer sessions MAY auto-fix narrow non-critical findings on the PR branch and MUST summarize those fixes on the PR.
 - Reviewer sessions MUST NOT receive GitHub tokens or arbitrary inherited token-bearing user config; the parent studio session owns `gh` comments, suggestions, merge, branch deletion, and fetch/prune cleanup. Codex reviewers get a temporary `HOME` plus only `CODEX_HOME` for model auth.
 - Codex review uses a dedicated `codex-reviewer` adapter/profile with `secret_scope: none`; do not flip the normal Codex worker adapter unless the spawn path enforces the same no-secret boundary.
-- Routine studio PRs run `scripts/pr-headless-review.sh <pr>`; it selects an eligible no-secret reviewer host, captures the machine-readable verdict, posts the `studio:pr-review-gate` comment, and merges only when non-blocked.
+- Routine studio PRs run `scripts/pr-headless-review.sh <pr>`; it selects a smoke-eligible no-secret reviewer host, captures the machine-readable verdict, posts the `studio:pr-review-gate` comment, and merges only when non-blocked. The gate comment records `PARENT_HOST`, `ELIGIBLE_REVIEW_HOSTS`, `SELECTED_REVIEW_HOST`, `CROSS_HOST`, and any fallback attempts.
+- Forge safety-floor PRs use `scripts/pr-headless-review.sh <pr> --require-cross-host-when-available` with `STUDIO_PARENT_HOST` set to the authoring host/profile. If an alternate smoke-eligible reviewer exists, same-provider review is refused unless the user explicitly approves `--allow-same-host-review --user-approved-bypass <github-url>`, which is recorded on the gate comment and event.
 - Parent studio sessions MUST post a machine-readable `studio:pr-review-gate` PR comment before merge; `blocked` stops that PR, while `approved` and `approved_with_fixes` permit merge.
 - Merge only through GitHub PR flow; after merge, delete the stale remote branch and refresh local refs with `git fetch --prune`.
 - `--method auto` uses rebase for PRs with fewer than 4 commits, including PRs targeting `main`; larger `main` PRs use merge commits, while non-`main` PRs continue to rebase.

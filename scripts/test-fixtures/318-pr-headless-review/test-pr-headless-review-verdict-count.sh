@@ -14,6 +14,7 @@ cat > "$BIN/codex" <<'SH'
 #!/usr/bin/env bash
 case " $* " in
   *" --help "*) printf 'codex fixture help\n'; exit 0 ;;
+  *"smoke test"*) printf 'STUDIO_REVIEW_VERDICT=approved\n'; exit 0 ;;
 esac
 printf 'STUDIO_REVIEW_VERDICT=blocked\n'
 printf 'STUDIO_REVIEW_VERDICT=approved\n'
@@ -52,7 +53,8 @@ chmod +x "$BIN/autopilot"
 export PATH="$BIN:$PATH"
 export PR_HEADLESS_REVIEW_AUTOPILOT="$BIN/autopilot"
 export HOME="$TMPROOT/caller-home"
-mkdir -p "$HOME/.codex"
+export CODEX_HOME="$HOME/.codex"
+mkdir -p "$CODEX_HOME"
 
 if bash "$ROOT/scripts/pr-headless-review.sh" 123 --review-host codex-reviewer --method auto \
     >"$TMPROOT/out" 2>"$TMPROOT/err"; then

@@ -120,6 +120,7 @@ export GITHUB_TOKEN="must-not-leak"
 export OPENAI_API_KEY="must-not-leak"
 export ANTHROPIC_API_KEY="must-not-leak"
 export HOME="$TMPROOT/caller-home"
+export CLAUDE_REVIEWER_CONFIG_DIR="$TMPROOT/.claude-reviewer"
 mkdir -p "$HOME/.config/gh"
 printf 'github.com: token\n' > "$HOME/.config/gh/hosts.yml"
 

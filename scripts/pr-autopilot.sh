@@ -4,6 +4,7 @@
 # Usage:
 #   scripts/pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked \
 #       [--review-host <host>] [--summary-file <path>] [--expected-head-sha <sha>] [--method auto|merge|squash|rebase]
+#       [--parent-host <host>] [--eligible-review-hosts <csv>] [--cross-host true|false]
 #   scripts/pr-autopilot.sh <pr> --bypass-review --user-approved-bypass <url>
 #
 # The reviewer itself runs without GitHub/API tokens. This parent-side wrapper
@@ -14,7 +15,7 @@ set -eu
 umask 022
 
 usage() {
-  printf 'usage: pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked [--review-host <host>] [--summary-file <path>] [--expected-head-sha <sha>] [--method auto|merge|squash|rebase]\n' >&2
+  printf 'usage: pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked [--review-host <host>] [--summary-file <path>] [--expected-head-sha <sha>] [--method auto|merge|squash|rebase] [--parent-host <host>] [--eligible-review-hosts <csv>] [--cross-host true|false]\n' >&2
   printf '   or: pr-autopilot.sh <pr> --bypass-review --user-approved-bypass <url>\n' >&2
   exit 2
 }
@@ -25,6 +26,14 @@ shift
 
 VERDICT=""
 REVIEW_HOST="${STUDIO_REVIEW_HOST:-codex-reviewer}"
+PARENT_HOST="${STUDIO_PARENT_HOST:-${STUDIO_HOST:-unknown}}"
+ELIGIBLE_REVIEW_HOSTS=""
+CROSS_HOST="false"
+CROSS_HOST_REQUIRED="0"
+FALLBACK_FROM=""
+FALLBACK_FAILURES=""
+CROSS_HOST_BYPASS_URL=""
+REVIEWER_SMOKE_PASSED=0
 SUMMARY_FILE=""
 EXPECTED_HEAD_SHA=""
 METHOD="auto"
@@ -35,6 +44,14 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --verdict) VERDICT="${2:?}"; shift 2 ;;
     --review-host) REVIEW_HOST="${2:?}"; shift 2 ;;
+    --parent-host) PARENT_HOST="${2:?}"; shift 2 ;;
+    --eligible-review-hosts) ELIGIBLE_REVIEW_HOSTS="${2:?}"; shift 2 ;;
+    --cross-host) CROSS_HOST="${2:?}"; shift 2 ;;
+    --cross-host-required) CROSS_HOST_REQUIRED="${2:?}"; shift 2 ;;
+    --fallback-from) FALLBACK_FROM="${2:?}"; shift 2 ;;
+    --fallback-failures) FALLBACK_FAILURES="${2:?}"; shift 2 ;;
+    --cross-host-bypass-url) CROSS_HOST_BYPASS_URL="${2:?}"; shift 2 ;;
+    --reviewer-smoke-passed) REVIEWER_SMOKE_PASSED=1; shift ;;
     --summary-file) SUMMARY_FILE="${2:?}"; shift 2 ;;
     --expected-head-sha) EXPECTED_HEAD_SHA="${2:?}"; shift 2 ;;
     --method) METHOD="${2:?}"; shift 2 ;;
@@ -55,15 +72,31 @@ HEAD_SHA=""
 emit_pr_autopilot_event() {
   local event="$1" status="${2:-}" rc="${3:-0}" duration_s
   duration_s=$(( $(date -u +%s) - STARTED_AT ))
-  data=$(printf '{"pr":"%s","pr_url":"%s","method":"%s","verdict":"%s","review_host":"%s","status":"%s","exit_code":%s,"duration_s":%s}' \
-    "$(_json_escape "$PR")" \
-    "$(_json_escape "$PR_URL")" \
-    "$(_json_escape "$METHOD")" \
-    "$(_json_escape "$VERDICT")" \
-    "$(_json_escape "$REVIEW_HOST")" \
-    "$(_json_escape "$status")" \
-    "$rc" \
-    "$duration_s")
+  data=$(jq -cn \
+    --arg pr "$PR" \
+    --arg pr_url "$PR_URL" \
+    --arg method "$METHOD" \
+    --arg verdict "$VERDICT" \
+    --arg review_host "$REVIEW_HOST" \
+    --arg parent_host "$PARENT_HOST" \
+    --arg eligible_hosts "$ELIGIBLE_REVIEW_HOSTS" \
+    --arg cross_host "$CROSS_HOST" \
+    --arg cross_host_required "$CROSS_HOST_REQUIRED" \
+    --arg fallback_from "$FALLBACK_FROM" \
+    --arg fallback_failures "$FALLBACK_FAILURES" \
+    --arg cross_host_bypass_url "$CROSS_HOST_BYPASS_URL" \
+    --arg status "$status" \
+    --argjson exit_code "$rc" \
+    --argjson duration_s "$duration_s" \
+    '{pr:$pr,pr_url:$pr_url,method:$method,verdict:$verdict,review_host:$review_host,selected_review_host:$review_host,
+      parent_host:$parent_host,
+      eligible_review_hosts:($eligible_hosts | split(",") | map(select(length > 0))),
+      cross_host:($cross_host == "true"),
+      cross_host_required:($cross_host_required == "1" or $cross_host_required == "true" or $cross_host_required == "yes"),
+      fallback_from:($fallback_from | split(",") | map(select(length > 0))),
+      status:$status,exit_code:$exit_code,duration_s:$duration_s}
+     + (if $fallback_failures == "" then {} else {fallback_failures:$fallback_failures} end)
+     + (if $cross_host_bypass_url == "" then {} else {cross_host_bypass_url:$cross_host_bypass_url} end)')
   emit_event_keyed studio pr "$event" "$PR" "$data" \
     --idem-key "pr-autopilot:$event:$PR:$HEAD_SHA:$STARTED_AT" >/dev/null 2>&1 || true
 }
@@ -97,8 +130,25 @@ case "$VERDICT" in
   "") printf 'pr-autopilot: --verdict is required unless --bypass-review is used\n' >&2; exit 2 ;;
   *) printf 'pr-autopilot: verdict must be approved|approved_with_fixes|blocked\n' >&2; exit 2 ;;
 esac
+case "$CROSS_HOST" in
+  true|false) ;;
+  *) printf 'pr-autopilot: --cross-host must be true|false\n' >&2; exit 2 ;;
+esac
+case "$CROSS_HOST_REQUIRED" in
+  1|0|true|false|yes|no) ;;
+  *) printf 'pr-autopilot: --cross-host-required must be 0|1|true|false\n' >&2; exit 2 ;;
+esac
+case "$CROSS_HOST_BYPASS_URL" in
+  ""|https://github.com/*/issues/*|https://github.com/*/pull/*|https://github.com/*/discussions/*) ;;
+  *) printf 'pr-autopilot: cross-host bypass must be a GitHub issue, PR, comment, or discussion URL\n' >&2; exit 2 ;;
+esac
 
-if ! "$SCRIPT_DIR/pr-reviewer-eligibility.sh" "$REVIEW_HOST" >/dev/null; then
+if [ "$REVIEWER_SMOKE_PASSED" -eq 1 ]; then
+  if ! STUDIO_INTERNAL_REVIEWER_SKIP_SMOKE=1 "$SCRIPT_DIR/pr-reviewer-eligibility.sh" "$REVIEW_HOST" >/dev/null; then
+    printf 'pr-autopilot: reviewer host is not eligible: %s\n' "$REVIEW_HOST" >&2
+    exit 1
+  fi
+elif ! "$SCRIPT_DIR/pr-reviewer-eligibility.sh" "$REVIEW_HOST" >/dev/null; then
   printf 'pr-autopilot: reviewer host is not eligible: %s\n' "$REVIEW_HOST" >&2
   exit 1
 fi
@@ -123,6 +173,14 @@ gh pr comment "$PR" --body "$(cat <<EOF
 <!-- studio:pr-review-gate v1 -->
 STUDIO_REVIEW_GATE=$VERDICT
 REVIEW_HOST=$REVIEW_HOST
+SELECTED_REVIEW_HOST=$REVIEW_HOST
+PARENT_HOST=$PARENT_HOST
+ELIGIBLE_REVIEW_HOSTS=$ELIGIBLE_REVIEW_HOSTS
+CROSS_HOST=$CROSS_HOST
+CROSS_HOST_REQUIRED=$CROSS_HOST_REQUIRED
+FALLBACK_FROM=$FALLBACK_FROM
+FALLBACK_FAILURES=$FALLBACK_FAILURES
+CROSS_HOST_BYPASS_URL=$CROSS_HOST_BYPASS_URL
 HEAD_SHA=$HEAD_SHA
 PR_URL=$PR_URL
 POSTED_BY=parent-studio-session
