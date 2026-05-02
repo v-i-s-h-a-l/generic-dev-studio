@@ -91,6 +91,17 @@ keep using scratch `HOME` plus `CODEX_HOME`.
 Do not make a normal worker profile eligible by relaxing the gate. Add a
 dedicated `<host>-reviewer` adapter with its own manifest and enforcement.
 
+The reviewer-profile primitive is not PR-only. Any cross-host review used by
+field agents (worker, planner/architect, qa-engineer, flow-tester,
+release-manager, perf) must route through this same smoke-gated profile layer
+or a v2 successor with the same contract, not through hand-written raw host
+commands. The contract is: host auth roots, no-secret env scrubbing, MCP
+isolation, sandbox-readable payload handoff, and startup-failure diagnostics
+are centralized. Emergency/debug-only override is
+`STUDIO_BYPASS_FIELD_REVIEW_WRAPPER=1`; use must be user-controlled and
+recorded in the review artifact. See `CLAUDE.md` §Cross-host phase review for
+the workflow rule that consumes this adapter contract.
+
 ### Env-scrub at Argus dispatch
 
 `scripts/dispatch-review.sh` enforces the Argus floor at spawn time by env-scrubbing the subprocess. Only PATH/HOME/LANG/USER, the host plugin-root, and explicit task-context vars cross the boundary; `ANTHROPIC_API_KEY`, `GH_TOKEN`/`GITHUB_TOKEN`, and arbitrary inherited env are dropped. The host CLI re-authenticates from its own keychain inside the spawned session.
