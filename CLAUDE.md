@@ -125,12 +125,22 @@ For any multi-issue arc (umbrella + sub-issues), substrate redesign, or batch op
 1. **Before kicking off a new phase / step / batch:** the host running the work drafts a plan; the sibling host reviews headlessly; iterate until the review returns clean ("nothing fatal").
 2. **After completing a phase:** the host that ran the work synthesizes the outcome (changes made, artifacts touched, verification evidence); the sibling host reviews the outcome for drift, scope creep, or missed acceptance criteria.
 
-**Headless review commands (symmetric):**
+**Headless review command:**
 
-| Primary host | Reviewer | Command |
-|---|---|---|
-| Claude Code | Codex | `codex exec --sandbox read-only -c model_reasoning_effort=high < prompt.md > review.md` |
-| Codex | Claude Code | `claude -p < prompt.md > review.md` |
+Use the smoke-gated reviewer wrapper; do **not** hand-compose raw `claude -p`
+or `codex exec` commands for phase reviews. Raw commands bypass reviewer auth
+root selection, no-secret env scrubbing, MCP isolation, and failure-detail
+normalization.
+
+```bash
+scripts/phase-review.sh --review-host claude-reviewer --kind plan --input phase-plan.md --output ~/.dev-studio/generic-dev-studio/analysis/<date>-<phase>-plan-review.md
+scripts/phase-review.sh --review-host codex-reviewer --kind outcome --input phase-outcome.md --output ~/.dev-studio/generic-dev-studio/analysis/<date>-<phase>-outcome-review.md
+```
+
+Pick the sibling reviewer explicitly (`claude-reviewer` when primary is Codex,
+`codex-reviewer` when primary is Claude Code). The wrapper runs
+`scripts/pr-reviewer-eligibility.sh` first and stops before the phase if the
+reviewer is not smoke-eligible.
 
 **Required content of phase-plan.md:**
 
