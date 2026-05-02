@@ -129,6 +129,8 @@ Argus runs automatically between Achilles's self-review and the merge step. You 
 /argus T001              # review a specific task's worktree
 ```
 
+Forge PR review uses the same reviewer-independence doctrine: reviewer hosts resolve a heavyweight model through `_shared/rules/model-policy.yaml` and `_shared/schemas/model-catalog.yaml`, excluding the implementation provider family by default. Same-family fallback requires an explicit user-approved bypass URL; model IDs are refreshable policy, not constants in shell scripts.
+
 ### What Argus checks (v1)
 
 | Check | What it does | Week 1 verdict |

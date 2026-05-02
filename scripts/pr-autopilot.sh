@@ -5,6 +5,7 @@
 #   scripts/pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked \
 #       [--review-host <host>] [--summary-file <path>] [--expected-head-sha <sha>] [--method auto|merge|squash|rebase]
 #       [--parent-host <host>] [--eligible-review-hosts <csv>] [--cross-host true|false]
+#       [--review-model-id <id>] [--review-model-provider-family <family>] [--review-reasoning-effort <effort>]
 #   scripts/pr-autopilot.sh <pr> --bypass-review --user-approved-bypass <url>
 #
 # The reviewer itself runs without GitHub/API tokens. This parent-side wrapper
@@ -15,7 +16,7 @@ set -eu
 umask 022
 
 usage() {
-  printf 'usage: pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked [--review-host <host>] [--summary-file <path>] [--expected-head-sha <sha>] [--method auto|merge|squash|rebase] [--parent-host <host>] [--eligible-review-hosts <csv>] [--cross-host true|false]\n' >&2
+  printf 'usage: pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked [--review-host <host>] [--summary-file <path>] [--expected-head-sha <sha>] [--method auto|merge|squash|rebase] [--parent-host <host>] [--eligible-review-hosts <csv>] [--cross-host true|false] [--review-model-id <id>] [--review-model-provider-family <family>] [--review-reasoning-effort <effort>]\n' >&2
   printf '   or: pr-autopilot.sh <pr> --bypass-review --user-approved-bypass <url>\n' >&2
   exit 2
 }
@@ -33,6 +34,9 @@ CROSS_HOST_REQUIRED="0"
 FALLBACK_FROM=""
 FALLBACK_FAILURES=""
 CROSS_HOST_BYPASS_URL=""
+REVIEW_MODEL_ID=""
+REVIEW_MODEL_PROVIDER_FAMILY=""
+REVIEW_REASONING_EFFORT=""
 REVIEWER_SMOKE_PASSED=0
 SUMMARY_FILE=""
 EXPECTED_HEAD_SHA=""
@@ -51,6 +55,9 @@ while [ $# -gt 0 ]; do
     --fallback-from) FALLBACK_FROM="${2:?}"; shift 2 ;;
     --fallback-failures) FALLBACK_FAILURES="${2:?}"; shift 2 ;;
     --cross-host-bypass-url) CROSS_HOST_BYPASS_URL="${2:?}"; shift 2 ;;
+    --review-model-id) REVIEW_MODEL_ID="${2:?}"; shift 2 ;;
+    --review-model-provider-family) REVIEW_MODEL_PROVIDER_FAMILY="${2:?}"; shift 2 ;;
+    --review-reasoning-effort) REVIEW_REASONING_EFFORT="${2:?}"; shift 2 ;;
     --reviewer-smoke-passed) REVIEWER_SMOKE_PASSED=1; shift ;;
     --summary-file) SUMMARY_FILE="${2:?}"; shift 2 ;;
     --expected-head-sha) EXPECTED_HEAD_SHA="${2:?}"; shift 2 ;;
@@ -85,6 +92,9 @@ emit_pr_autopilot_event() {
     --arg fallback_from "$FALLBACK_FROM" \
     --arg fallback_failures "$FALLBACK_FAILURES" \
     --arg cross_host_bypass_url "$CROSS_HOST_BYPASS_URL" \
+    --arg review_model_id "$REVIEW_MODEL_ID" \
+    --arg review_model_provider_family "$REVIEW_MODEL_PROVIDER_FAMILY" \
+    --arg review_reasoning_effort "$REVIEW_REASONING_EFFORT" \
     --arg status "$status" \
     --argjson exit_code "$rc" \
     --argjson duration_s "$duration_s" \
@@ -96,7 +106,8 @@ emit_pr_autopilot_event() {
       fallback_from:($fallback_from | split(",") | map(select(length > 0))),
       status:$status,exit_code:$exit_code,duration_s:$duration_s}
      + (if $fallback_failures == "" then {} else {fallback_failures:$fallback_failures} end)
-     + (if $cross_host_bypass_url == "" then {} else {cross_host_bypass_url:$cross_host_bypass_url} end)')
+     + (if $cross_host_bypass_url == "" then {} else {cross_host_bypass_url:$cross_host_bypass_url} end)
+     + (if $review_model_id == "" then {} else {review_model_id:$review_model_id,review_model_provider_family:$review_model_provider_family,review_reasoning_effort:$review_reasoning_effort} end)')
   emit_event_keyed studio pr "$event" "$PR" "$data" \
     --idem-key "pr-autopilot:$event:$PR:$HEAD_SHA:$STARTED_AT" >/dev/null 2>&1 || true
 }
@@ -181,6 +192,9 @@ CROSS_HOST_REQUIRED=$CROSS_HOST_REQUIRED
 FALLBACK_FROM=$FALLBACK_FROM
 FALLBACK_FAILURES=$FALLBACK_FAILURES
 CROSS_HOST_BYPASS_URL=$CROSS_HOST_BYPASS_URL
+REVIEW_MODEL_ID=$REVIEW_MODEL_ID
+REVIEW_MODEL_PROVIDER_FAMILY=$REVIEW_MODEL_PROVIDER_FAMILY
+REVIEW_REASONING_EFFORT=$REVIEW_REASONING_EFFORT
 HEAD_SHA=$HEAD_SHA
 PR_URL=$PR_URL
 POSTED_BY=parent-studio-session

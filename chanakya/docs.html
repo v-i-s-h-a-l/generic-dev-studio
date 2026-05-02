@@ -801,9 +801,11 @@ cd generic-dev-studio
   </table>
 
   <h3>Model Recommendations</h3>
-  <p>Per-agent defaults remain the fallback, while brief authors can now generate task-level recommendations from size, kind, file spread, and novelty.</p>
+  <p>Per-agent defaults remain the fallback, while brief authors can now generate task-level recommendations from size, kind, file spread, and novelty. Concrete provider model names live in <code>_shared/schemas/model-catalog.yaml</code> and reviewer role policy lives in <code>_shared/rules/model-policy.yaml</code>; update those refreshable policy files after checking official provider docs instead of burying model IDs in scripts or mode prose.</p>
   <pre><code>scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
-scripts/recommend-model.sh --size xs --kind docs --cross-file-count 1 --novelty-score 0 --preference fast_turnaround</code></pre>
+scripts/recommend-model.sh --size xs --kind docs --cross-file-count 1 --novelty-score 0 --preference fast_turnaround
+scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-host claude-code
+scripts/check-model-catalog.sh --print-refresh-checklist</code></pre>
   <table class="decision-table">
     <thead><tr><th>Agent</th><th>Default</th><th>When to upgrade / downgrade</th></tr></thead>
     <tbody>
@@ -819,8 +821,8 @@ scripts/recommend-model.sh --size xs --kind docs --cross-file-count 1 --novelty-
       </tr>
       <tr>
         <td style="color: var(--purple);"><strong>Argus</strong></td>
-        <td>Opus (always)</td>
-        <td>Reasoning-heavy edge-case analysis requires the strongest model. Do not downgrade.</td>
+        <td>Policy-resolved heavyweight reviewer</td>
+        <td>PR review defaults to an independent provider family from the implementation host. Same-family fallback blocks auto-merge unless a user-approved bypass URL is supplied. Do not downgrade reviewer reasoning below high without telemetry-backed policy change.</td>
       </tr>
     </tbody>
   </table>
