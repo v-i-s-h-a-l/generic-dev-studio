@@ -72,6 +72,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 STUDIO_TRACK=<track>             # session-start shortcut for /studio work <track>
 /studio nodes                    # day-2 fleet management — status, add, remove, health, sync, schedule
 /studio tf-push --background     # start TF archive/upload and keep session free for Slack drafting
+/studio tf-push --version 26.5.0 # TestFlight push with explicit MARKETING_VERSION; live work needs STUDIO_TF_PUSH_LIVE=1
 /studio-setup                    # onboard THIS machine — auto-pilot, prompts for role only
 /studio-setup --manager          # zero-prompt manager onboarding
 /studio-setup --worker           # zero-prompt worker (id = hostname; --id X to override)

@@ -57,6 +57,7 @@ echo "$OUT" | grep -q "DRY-RUN event release_started" || { echo "FAIL: missing r
 echo "$OUT" | grep -q "DRY-RUN event archive_completed" || { echo "FAIL: missing archive_completed"; exit 1; }
 echo "$OUT" | grep -q "DRY-RUN event upload_completed" || { echo "FAIL: missing upload_completed"; exit 1; }
 echo "$OUT" | grep -q "DRY-RUN event dsym_uploaded" || { echo "FAIL: missing dsym_uploaded"; exit 1; }
+echo "$OUT" | grep -q "version decision:" || { echo "FAIL: missing version decision"; exit 1; }
 RT=$(echo "$CTX" | jq -r .release_tag)
 [ "$RT" = "release-fixture-288" ] || { echo "FAIL: release_tag mismatch ($RT)"; exit 1; }
 echo "PASS: 4 events + context (release_tag=$RT)"
@@ -110,7 +111,15 @@ fi
 echo "PASS: invalid args rejected"
 
 echo
-echo "=== Test 5: live mode without STUDIO_TF_PUSH_LIVE halts ==="
+echo "=== Test 5: explicit version override is reflected in context ==="
+OUT=$(STUDIO_TF_PUSH_FIXTURE_NODE=fixture-laptop "$REPO/scripts/studio-tf-push.sh" push --dry-run --version 26.5.0 2>&1)
+CTX=$(echo "$OUT" | tail -1)
+[ "$(echo "$CTX" | jq -r .version)" = "26.5.0" ] || { echo "FAIL: context did not use forced version"; exit 1; }
+echo "$OUT" | grep -q "source=override" || { echo "FAIL: missing override decision"; exit 1; }
+echo "PASS: --version overrides resolved version"
+
+echo
+echo "=== Test 6: live mode without STUDIO_TF_PUSH_LIVE halts ==="
 unset DRY_RUN
 if STUDIO_TF_PUSH_FIXTURE_NODE=fixture-laptop "$REPO/scripts/studio-tf-push.sh" push 2>/dev/null; then
   echo "FAIL: should have halted without STUDIO_TF_PUSH_LIVE=1"; exit 1
