@@ -15,7 +15,8 @@
 # Sequence inside the lock:
 #   1. checkout orig-branch
 #   2. fetch origin/<orig-branch> (best-effort)
-#   3. merge --no-ff achilles/<task-id>
+#   3. re-check origin/<orig-branch> against the base SHA reviewed by Argus
+#   4. merge --no-ff achilles/<task-id>
 #
 # On clean merge: remove worktree, clean DerivedData, emit `task_merged`.
 # On conflict: leave worktree + DerivedData intact, emit `merge_conflict`,
@@ -26,7 +27,7 @@
 # block unless `--force` is passed.
 #
 # Usage:
-#   scripts/task-merge.sh <task-id> <worktree> <orig-branch> [--force] [merge-message]
+#   scripts/task-merge.sh <task-id> <worktree> <orig-branch> [--force] [--require-approved] [--steal-flagged] [merge-message]
 #
 # Exit codes:
 #   0  merged cleanly
@@ -48,10 +49,14 @@ WORKTREE="${2:?worktree required}"
 ORIG_BRANCH="${3:?orig-branch required}"
 shift 3
 FORCE_MERGE=0
+REQUIRE_APPROVED=0
+STEAL_FLAGGED=0
 MERGE_MSG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --force) FORCE_MERGE=1; shift ;;
+    --require-approved) REQUIRE_APPROVED=1; shift ;;
+    --steal-flagged) STEAL_FLAGGED=1; shift ;;
     *)
       if [ -z "$MERGE_MSG" ]; then
         MERGE_MSG="$1"
@@ -126,8 +131,59 @@ _task_has_event() {
     | grep -E "\"event\":\"($event_pattern)\"" >/dev/null 2>&1
 }
 
+_review_policy_verdict() {
+  [ -n "$event_log" ] && [ -f "$event_log" ] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    jq -r --arg task "$TASK_ID" '
+      select(.task == $task and (.event | test("^review_(approved|flagged|blocked)$")))
+      | [(.data.stage // "unknown"), (.event | sub("^review_"; ""))]
+      | @tsv
+    ' "$event_log" 2>/dev/null \
+      | awk -F '\t' '
+          { verdict[$1] = $2 }
+          END {
+            approved = 0
+            for (stage in verdict) {
+              if (verdict[stage] == "flagged") flagged = 1
+              if (verdict[stage] == "approved") approved = 1
+            }
+            if (flagged) print "flagged"
+            else if (approved) print "approved"
+          }'
+    return 0
+  fi
+  if _task_has_event "review_flagged"; then
+    printf 'flagged\n'
+    return 0
+  fi
+  if _task_has_event "review_approved"; then
+    printf 'approved\n'
+    return 0
+  fi
+  return 1
+}
+
+_latest_review_base_sha() {
+  local f
+  [ -n "$events_dir" ] && [ -d "$events_dir" ] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  for f in "$events_dir"/*.jsonl; do
+    [ -f "$f" ] || continue
+    printf '%s\n' "$f"
+  done \
+    | sort \
+    | while IFS= read -r f; do cat "$f"; done \
+    | jq -r --arg task "$TASK_ID" --arg base "$ORIG_BRANCH" '
+        select(.task == $task and .event == "review_requested")
+        | select((.data.base_branch // $base) == $base)
+        | .data.base_sha // empty
+      ' 2>/dev/null \
+    | sed '/^[[:space:]]*$/d' \
+    | tail -1
+}
+
 merge_safety_check() {
-  local missing="" missing_count=0 missing_json
+  local missing="" missing_count=0 missing_json review_policy_verdict
   if ! _task_has_event "build_check_passed"; then
     missing="${missing:+$missing,}build"
     missing_count=$((missing_count + 1))
@@ -146,6 +202,16 @@ merge_safety_check() {
     [ "$missing_count" -ge 2 ] && debrief_reason="pre_merge_blocked"
     data=$(printf '{"reason":"%s","branch":"%s"}' "$debrief_reason" "$BRANCH")
     emit_event_keyed achilles task debrief_missing "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  fi
+
+  if [ "$REQUIRE_APPROVED" -eq 1 ] && [ "$STEAL_FLAGGED" -ne 1 ]; then
+    review_policy_verdict=$(_review_policy_verdict || printf '')
+    if [ "$review_policy_verdict" = "flagged" ]; then
+      data=$(printf '{"branch":"%s","reason":"require_approved","override":"--steal-flagged"}' "$BRANCH")
+      emit_event_keyed achilles task merge_deferred_on_flagged "$TASK_ID" "$data" >/dev/null 2>&1 || true
+      printf 'error: Argus flagged %s; merge deferred by --require-approved. Pass --steal-flagged only after user approval.\n' "$TASK_ID" >&2
+      return 4
+    fi
   fi
 
   if [ "$missing_count" -eq 0 ]; then
@@ -230,9 +296,28 @@ git checkout "$ORIG_BRANCH" >/dev/null 2>&1 || {
   printf 'error: git checkout %s failed\n' "$ORIG_BRANCH" >&2
   exit 2
 }
-# Best-effort fetch — network down or not-yet-pushed branches are fine to
-# merge against local tip. Silent on failure.
-git fetch origin "$ORIG_BRANCH" >/dev/null 2>&1 || true
+reviewed_base_sha=$(_latest_review_base_sha || printf '')
+if [ -n "$reviewed_base_sha" ]; then
+  git fetch origin "$ORIG_BRANCH" >/dev/null 2>&1 || {
+    printf 'error: fetch of origin/%s failed after Argus recorded a reviewed base; refusing stale merge for %s.\n' \
+      "$ORIG_BRANCH" "$TASK_ID" >&2
+    exit 4
+  }
+else
+  # Older event logs may not carry review base provenance. Keep the legacy
+  # best-effort fetch behavior for those merges.
+  git fetch origin "$ORIG_BRANCH" >/dev/null 2>&1 || true
+fi
+
+current_base_sha=$(git rev-parse "origin/$ORIG_BRANCH" 2>/dev/null || printf '')
+if [ -n "$reviewed_base_sha" ] && [ -n "$current_base_sha" ] && [ "$reviewed_base_sha" != "$current_base_sha" ]; then
+  data=$(printf '{"base_branch":"%s","reviewed_base_sha":"%s","current_base_sha":"%s","branch":"%s"}' \
+    "$ORIG_BRANCH" "$reviewed_base_sha" "$current_base_sha" "$BRANCH")
+  emit_event_keyed achilles task base_diverged_post_review "$TASK_ID" "$data" >/dev/null 2>&1 || true
+  printf 'error: origin/%s advanced after Argus review for %s; re-run from Step 8.4 before merging.\n' \
+    "$ORIG_BRANCH" "$TASK_ID" >&2
+  exit 4
+fi
 
 if ! git merge --no-ff "$BRANCH" -m "$MERGE_MSG" >/dev/null 2>&1; then
   # Conflict — collect affected files for the event. Leave the repo in its

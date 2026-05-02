@@ -209,6 +209,12 @@ printf '%s\n' "$new_events" | while IFS= read -r line; do
     debrief_concerns)
       push_append debrief_concerns "$task" "completed with concerns recorded in debrief"
       ;;
+    merge_deferred_on_flagged)
+      push_append merge_deferred_on_flagged "$task" "Argus flagged; merge deferred until user approves or fixes findings"
+      ;;
+    base_diverged_post_review)
+      push_append base_diverged_post_review "$task" "base advanced after Argus review; rerun from Step 8.4"
+      ;;
     debrief_needs_context)
       push_append debrief_needs_context "$task" "needs context before redispatch"
       ;;
