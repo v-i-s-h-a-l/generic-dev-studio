@@ -74,6 +74,32 @@ jq -e 'select(.event == "argus_gate_skipped" and .data.reason == "verdict_timeou
 jq -e '.from == "chanakya" and .to == "argus" and .payload_ref.prior_findings_summary.verdict == "flagged" and .payload_ref.prior_findings_summary.finding_count == 2' \
   "$HANDOFF_CAPTURE" >/dev/null
 
+BROKEN_REPO="$TMPROOT/broken-repo"
+mkdir -p "$BROKEN_REPO"
+ln -s "$ROOT/scripts" "$BROKEN_REPO/scripts"
+ln -s "$ROOT/_shared" "$BROKEN_REPO/_shared"
+
+set +e
+STUDIO_HOST="slow-reviewer" "$BROKEN_REPO/scripts/dispatch-review.sh" "$TASK_ID" spec \
+  --idempotency-key "$TASK_ID:spec:missing-registry" >/dev/null 2>"$TMPROOT/missing-registry-stderr"
+missing_registry_rc=$?
+set -e
+
+if [ "$missing_registry_rc" -eq 0 ]; then
+  printf 'FAIL: dispatch-review accepted layout without hosts/registry.yaml\n' >&2
+  exit 1
+fi
+grep -q 'host registry missing' "$TMPROOT/missing-registry-stderr" || {
+  printf 'FAIL: dispatch-review did not name missing host registry\n' >&2
+  cat "$TMPROOT/missing-registry-stderr" >&2
+  exit 1
+}
+grep -q 'sync-host-skills.sh slow-reviewer' "$TMPROOT/missing-registry-stderr" || {
+  printf 'FAIL: dispatch-review missing repair command for absent registry\n' >&2
+  cat "$TMPROOT/missing-registry-stderr" >&2
+  exit 1
+}
+
 offset_file="$TMPROOT/events_offset.fixture"
 mkdir -p "$(dirname "$offset_file")"
 printf '%s.jsonl:0\n' "$(basename "$LOG" .jsonl)" > "$offset_file"

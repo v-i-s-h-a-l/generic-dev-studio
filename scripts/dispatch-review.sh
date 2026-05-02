@@ -201,6 +201,14 @@ fi
 
 # ---- Step 2: resolve STUDIO_HOST + capability manifest ----------------------
 HOST="${STUDIO_HOST:-claude-code}"
+REGISTRY="$REPO_ROOT/hosts/registry.yaml"
+[ -f "$REGISTRY" ] || {
+  SKIP_REASON="missing_host_registry"
+  _emit_preflight_failed "$SKIP_REASON" "$HOST" "missing $REGISTRY; run ./scripts/install.sh or ./scripts/sync-host-skills.sh $HOST from generic-dev-studio, then rerun ./scripts/verify-install.sh"
+  printf 'dispatch-review: host registry missing: %s\n' "$REGISTRY" >&2
+  printf 'dispatch-review: repair by running ./scripts/install.sh or ./scripts/sync-host-skills.sh %s from generic-dev-studio, then ./scripts/verify-install.sh.\n' "$HOST" >&2
+  exit 1
+}
 manifest=$(resolve_capabilities_manifest "$HOST" "$REPO_ROOT") || {
   SKIP_REASON="unknown_host"
   _emit_preflight_failed "$SKIP_REASON" "$HOST" "host not found in hosts/registry.yaml or missing capabilities_path"

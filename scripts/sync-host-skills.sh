@@ -4,8 +4,9 @@
 # For each skill that declares this host in its portability.yaml, create or
 # verify a symlink at the host's global skill_dir (per hosts/registry.yaml).
 # Stale symlinks (skills that no longer declare this host, or canonical roots
-# that no longer exist) are removed. Companion content (_shared, scripts) is
-# always linked alongside skills so SKILL.md prose like `_shared/...` resolves.
+# that no longer exist) are removed. Companion content (_shared, scripts, hosts)
+# is always linked alongside skills so SKILL.md prose like `_shared/...` and
+# dispatch paths like `hosts/registry.yaml` resolve.
 #
 # After linking, injects skill-routing instructions from _shared/skill-routing.md
 # into each host's global instructions file (global_instructions_path in
@@ -87,7 +88,7 @@ fi
 # These are always linked into a host's skill_dir regardless of portability.
 # Keep this list small; it's the boundary between content and code.
 # ---------------------------------------------------------------------------
-COMPANIONS=(_shared scripts)
+COMPANIONS=(_shared scripts hosts)
 
 # Canonical skill roots — directories containing a SKILL.md AND optionally a
 # portability.yaml. A root may be a top-level studio agent (achilles, argus,
@@ -290,7 +291,7 @@ remove_stale() {
     skill_rel="${target#"$REPO_ROOT/"}"
     # Companions live in global scope only.
     case "$name" in
-      _shared|scripts)
+      _shared|scripts|hosts)
         if [ "$expected_scope" = "global" ] && [ -d "$target" ]; then continue; fi
         ;;
     esac
@@ -454,7 +455,8 @@ sync_one_host() {
 
   if [ "$AUDIT_ONLY" -eq 0 ]; then
     ensure_dir "$skill_dir"
-    # Companions first — skills reference _shared/ and scripts/ in their prose.
+    # Companions first — skills reference _shared/ and scripts/ in their prose,
+    # and host-dispatched scripts resolve hosts/registry.yaml from this layout.
     # Companions are always global-scoped.
     for c in "${COMPANIONS[@]}"; do
       ensure_link "$REPO_ROOT/$c" "$skill_dir/$c" || true
