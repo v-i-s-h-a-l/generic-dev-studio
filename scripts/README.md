@@ -120,7 +120,7 @@ scripts/push-queue.sh append --kind review_blocked --task T001 --text "..."   # 
 # Chanakya test-manifest + test-flow — extractions from modes/tests.md (Phase 2.6.5):
 scripts/tests-dirty-state-check.sh <path>               # exit 2 if user-testing.md has checked boxes or Notes
 scripts/tests-scan-candidates.sh                        # enumerate merged + user-verifying tasks
-scripts/tests-pull-cases.sh <task-id>                   # YAML `cases:` block from debrief
+scripts/tests-pull-cases.sh <task-id>                   # YAML `cases:` block from debrief YAML; historical sidecar import fallback
 scripts/tests-write-manifest.sh [--force]               # stdin YAML → plans/user-testing.md
 scripts/tests-write-round.sh <N> <scope> <tasks-csv> <body-file>   # round artifact via lib-ledger write_round_artifact
 scripts/tests-promote-round.sh <N>                      # gate-check + pre-checked manifest; exit 3 on gate fail
@@ -135,7 +135,7 @@ scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" [
 scripts/node-parity.sh [--fix|--dry-run]                # probe + cache toolchain versions; optionally install missing brew packages and print manual Xcode/runtime fixes (#126/#131)
 scripts/check-xcode-parity.sh m1mini                    # pre-dispatch guard; exit 1 = MAJOR Xcode drift; STUDIO_IGNORE_XCODE_DRIFT=1 overrides (#136)
 scripts/node-warmup.sh m1mini [project]                 # async-safe pre-dispatch source sync + package cache warm-up (#138)
-scripts/task-write-test-cases.sh T001 '[{...}]'         # twin-write standalone + stdout YAML
+scripts/task-write-test-cases.sh T001 '[{...}]'         # stdout debrief `tests.added` payload; no standalone sidecar write
 scripts/task-invoke-argus.sh T001 /wt main S            # emits review_requested (Argus invoked via Agent tool)
 scripts/task-merge.sh T001 /wt feature-branch           # merge lock + merge + worktree remove + DerivedData clean
 scripts/node-janitor.sh [--days N] [--dry-run]          # periodic node-side sweep of stale derived-data + worktrees + dispatch logs/registry (#129, #272); LaunchAgent-driven

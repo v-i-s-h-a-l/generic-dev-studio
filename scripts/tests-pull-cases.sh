@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
 # tests-pull-cases.sh — Step 3 extraction for one candidate task.
 #
-# Resolves test cases for a task from (in priority order):
-#   1. Post-migration: the task's linked debrief YAML (tests.added + tests.modified
-#      arrays).
-#   2. Legacy: plans/chanakya-inbox/<task>-tests.md (standalone test artifact).
-#   3. Legacy: `## Test Cases` block inside the processed debrief at
-#      plans/chanakya-inbox/processed/<task>-debrief.md.
+# Resolves test cases for a task from canonical debrief YAML
+# (tests.added + tests.modified arrays). Historical markdown surfaces are
+# import-only fallback for pre-#335 tasks that have no YAML test cases.
 #
 # Usage:
 #   scripts/tests-pull-cases.sh <task-id>
 #
 # Stdout: YAML block listing cases (each with title, preconditions, steps,
 # expected). Empty stdout when no cases are found (exit 0) — callers render a
-# placeholder. Emits `legacy_artifact_read` once on fallback.
+# placeholder. Emits `legacy_artifact_read` once on historical fallback.
 
 set -u
 umask 022
@@ -59,6 +56,7 @@ resolve_task_yaml() {
 # YAML path — emit cases from the task's linked debrief.
 emit_from_yaml() {
   command -v yq >/dev/null 2>&1 || return 1
+  command -v jq >/dev/null 2>&1 || return 1
   local task_yaml debrief_uuid debrief_yaml
   task_yaml=$(resolve_task_yaml "$TASK_ID") || return 1
   [ -n "$task_yaml" ] && [ -f "$task_yaml" ] || return 1
@@ -76,26 +74,24 @@ emit_from_yaml() {
 
   {
     printf 'cases:\n'
-    # Each case entry may be a scalar (string title) or a map. yq's `tag`
-    # distinguishes; we handle both.
-    yq -r '
-      (.tests.added // []) + (.tests.modified // []) |
-      .[] |
-      if (. | type) == "!!str" then
-        "  - title: " + . + "\n    preconditions: \"\"\n    steps: \"\"\n    expected: \"\""
-      else
-        "  - title: " + (.title // .name // "untitled") + "\n" +
-        "    preconditions: " + (.preconditions // "" | tojson) + "\n" +
-        "    steps: " + (.steps // "" | tojson) + "\n" +
-        "    expected: " + (.expected // "" | tojson)
-      end
-    ' "$debrief_yaml" 2>/dev/null
+    yq -o=json '(.tests.added // []) + (.tests.modified // [])' "$debrief_yaml" 2>/dev/null |
+      jq -r '
+        .[] |
+        if type == "string" then
+          "  - title: " + (. | @json) + "\n    preconditions: \"\"\n    steps: []\n    expected: \"\""
+        else
+          "  - title: " + ((.title // .name // "untitled") | @json) + "\n" +
+          "    preconditions: " + ((.preconditions // "") | @json) + "\n" +
+          "    steps: " + ((.steps // []) | @json) + "\n" +
+          "    expected: " + ((.expected // "") | @json)
+        end
+      '
   }
   return 0
 }
 
-# Legacy path 1 — standalone <task>-tests.md. Converts the markdown
-# bullets into a YAML cases block.
+# Historical import path 1 — standalone <task>-tests.md. Converts markdown
+# bullets into a YAML cases block only when YAML has no cases.
 emit_from_tests_md() {
   local f="$INBOX/$TASK_ID-tests.md"
   [ -f "$f" ] || return 1
@@ -123,7 +119,7 @@ emit_from_tests_md() {
   '
 }
 
-# Legacy path 2 — `## Test Cases` block inside processed debrief.
+# Historical import path 2 — `## Test Cases` block inside processed debrief.
 emit_from_processed_debrief() {
   local f="$INBOX/processed/$TASK_ID-debrief.md"
   [ -f "$f" ] || return 1

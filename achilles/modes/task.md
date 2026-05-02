@@ -14,11 +14,10 @@ reads:
   - plans/reviews/<review-id>.yaml                 # argus verdict resolution (schema: _shared/schemas/review.md)
   - events/<date>.jsonl                            # via scripts/read-events.sh
 writes:
-  - plans/debriefs/<debrief-id>.yaml               # canonical (schema: _shared/schemas/debrief.md, debrief@2.0.1, mode: task)
+  - plans/debriefs/<debrief-id>.yaml               # canonical (schema: _shared/schemas/debrief.md, debrief@2.4.0, mode: task)
   - plans/tasks/<task-id>.yaml                     # back-ref update: links.debrief + state transitions per _shared/state-machines/task-lifecycle.md
   - plans/briefs/<brief-id>.yaml                   # brief state transition dispatched → debriefed per _shared/state-machines/brief-lifecycle.md
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
-  - plans/tests/<task-id>-tests.md                 # test-case artifact (read-write surface for test-manifest)
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
@@ -275,13 +274,13 @@ Record `GATE = "lsp-only" | "full-green" | "swift-test"` for the debrief's `## B
 TEST_YAML=$(scripts/task-write-test-cases.sh "$TASK_ID" "$CASES_JSON")
 ```
 
-Twin-writes `plans/tests/<task-id>-tests.md` (Chanakya's `/chanakya test-manifest` reads this) and returns the YAML block for splicing into the debrief's `tests.added:` field. Each case carries preconditions, steps, expected result. Runs regardless of `WAIT_FOR_USER`.
+Returns the YAML-compatible JSON block for splicing into the debrief's `tests.added:` field. Each case carries title, preconditions, steps, and expected result. Chanakya derives `user-testing.md` and test-flow rounds from the debrief YAML; Achilles does not write a standalone test-case sidecar. Runs regardless of `WAIT_FOR_USER`.
 
 ### Step 8 — Optional wait for user feedback
 
 **`WAIT_FOR_USER=no` (default):** append `## Follow-up Tasks` — "Manual verification of <task-id> — user will test later." Proceed to Step 9.
 
-**`WAIT_FOR_USER=yes` (from `--wait`):** prompt — "T001 implementation is done and the build is green. Test cases are at `<task-id>-tests.md`. Reply within 10 min with feedback, or I'll auto-merge." — then call `ScheduleWakeup` with `delaySeconds: 600` resuming Step 8 in timeout-merge mode. End the turn. Three resumptions:
+**`WAIT_FOR_USER=yes` (from `--wait`):** prompt — "T001 implementation is done and the build is green. Test cases are recorded in the debrief and will appear in `/chanakya test-manifest`. Reply within 10 min with feedback, or I'll auto-merge." — then call `ScheduleWakeup` with `delaySeconds: 600` resuming Step 8 in timeout-merge mode. End the turn. Three resumptions:
 - **User replies before wake:** iterate. Re-run Steps 5–6 if non-trivial. Loop back to Step 8. Cancel the pending wake; ignore it if it fires.
 - **User approves before wake:** proceed to Step 9.
 - **Wake fires with no reply:** append `## Follow-up Tasks` ("no reply within 10-min window"), proceed to Step 9.
@@ -398,7 +397,7 @@ Stamps `branch.merge_sha` into the staged debrief, transitions the task `argus-r
 
 Print a short message to the user:
 
-> "**T001 done.** Branched from `<ORIG_BRANCH>`@`<short-hash>`, implemented, self-reviewed, build green, Argus approved/flagged, merged back. Test cases at `<task-id>-tests.md`. Debrief dropped for Chanakya."
+> "**T001 done.** Branched from `<ORIG_BRANCH>`@`<short-hash>`, implemented, self-reviewed, build green, Argus approved/flagged, merged back. Test cases recorded in the debrief. Debrief dropped for Chanakya."
 
 ### Step 11 — Signal completion; sit idle
 
