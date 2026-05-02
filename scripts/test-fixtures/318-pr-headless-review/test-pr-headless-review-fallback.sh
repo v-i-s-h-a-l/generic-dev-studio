@@ -62,6 +62,7 @@ export AUTOPILOT_LOG="$TMPROOT/autopilot.log"
 export HOME="$TMPROOT/home"
 export CODEX_HOME="$HOME/.codex"
 export CLAUDE_REVIEWER_CONFIG_DIR="$TMPROOT/.claude-reviewer"
+export STUDIO_REQUIRE_CROSS_HOST_REVIEW=0
 mkdir -p "$CODEX_HOME"
 
 out="$TMPROOT/out"

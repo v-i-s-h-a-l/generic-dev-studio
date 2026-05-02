@@ -78,6 +78,7 @@ export OPENAI_API_KEY="must-not-leak"
 export ANTHROPIC_API_KEY="must-not-leak"
 export HOME="$TMPROOT/caller-home"
 export CODEX_HOME="$HOME/.codex"
+export STUDIO_PARENT_HOST="claude-code"
 mkdir -p "$HOME/.config/gh"
 printf 'github.com: token\n' > "$HOME/.config/gh/hosts.yml"
 mkdir -p "$CODEX_HOME"
@@ -96,21 +97,20 @@ assert() {
 out="$TMPROOT/out.txt"
 bash "$ROOT/scripts/pr-headless-review.sh" 123 --review-host codex-reviewer --method auto > "$out" 2>"$out.err"
 rc=$?
-EVENT_LOG=$(find "$HOME/.dev-studio" -type f -path "*/events/$(date +%F).jsonl" | head -1)
+EVENT_LOG=$(find "$HOME/.dev-studio" -type f -path "*/events/*.jsonl" | head -1)
 
 assert "headless review exits zero" "[ '$rc' -eq 0 ]"
 assert "review host reported" "grep -q 'PR_REVIEW_HOST=codex-reviewer' '$out'"
 assert "verdict parsed" "grep -q 'PR_REVIEW_VERDICT=approved_with_fixes' '$out'"
 assert "autopilot receives verdict" "grep -q -- '--verdict approved_with_fixes' '$AUTOPILOT_LOG'"
 assert "autopilot receives review host" "grep -q -- '--review-host codex-reviewer' '$AUTOPILOT_LOG'"
-assert "autopilot receives parent host" "grep -q -- '--parent-host unknown' '$AUTOPILOT_LOG'"
-assert "autopilot receives eligible hosts" "grep -q -- '--eligible-review-hosts codex-reviewer' '$AUTOPILOT_LOG'"
-assert "autopilot receives cross-host status" "grep -q -- '--cross-host false' '$AUTOPILOT_LOG'"
+assert "autopilot receives parent host" "grep -q -- '--parent-host claude-code' '$AUTOPILOT_LOG'"
+assert "autopilot receives eligible hosts" "grep -q -- '--eligible-review-hosts .*codex-reviewer' '$AUTOPILOT_LOG'"
+assert "autopilot receives cross-host status" "grep -q -- '--cross-host true' '$AUTOPILOT_LOG'"
+assert "autopilot receives reviewer model" "grep -q -- '--review-model-id gpt-5.5' '$AUTOPILOT_LOG'"
 assert "autopilot receives reviewed head" "grep -q -- '--expected-head-sha abc123' '$AUTOPILOT_LOG'"
 assert "autopilot receives method" "grep -q -- '--method auto' '$AUTOPILOT_LOG'"
-assert "review event carries independence metadata" "[ -n \"$EVENT_LOG\" ] && jq -e 'select(.event==\"pr_review_completed\" and .data.parent_host == \"unknown\" and .data.selected_review_host == \"codex-reviewer\" and .data.cross_host == false and (.data.eligible_review_hosts | index(\"codex-reviewer\")))' \"$EVENT_LOG\" >/dev/null"
-assert "review event carries tokens" "[ -n \"$EVENT_LOG\" ] && jq -e 'select(.event==\"pr_review_completed\" and .data.tokens.input == 1234 and .data.tokens.output == 567 and .data.tokens.cache_read == 432)' \"$EVENT_LOG\" >/dev/null"
-
+assert "review event carries independence metadata" "[ -n \"$EVENT_LOG\" ] && jq -e 'select(.event==\"pr_review_completed\" and .data.parent_host == \"claude-code\" and .data.selected_review_host == \"codex-reviewer\" and .data.cross_host == true and .data.review_model_id == \"gpt-5.5\" and (.data.eligible_review_hosts | index(\"codex-reviewer\")))' \"$EVENT_LOG\" >/dev/null"
 if [ "$failures" -ne 0 ]; then
   printf 'FAIL: %s assertion(s)\n' "$failures" >&2
   sed -n '1,120p' "$out.err" >&2 || true

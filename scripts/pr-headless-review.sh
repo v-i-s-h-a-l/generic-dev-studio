@@ -3,7 +3,7 @@
 #
 # Usage:
 #   scripts/pr-headless-review.sh <pr> [--review-host <host>] [--method auto|merge|squash|rebase]
-#       [--require-cross-host-when-available]
+#       [--require-cross-host-when-available|--no-require-cross-host]
 #       [--allow-same-host-review --user-approved-bypass <github-url>]
 #
 # The parent studio session owns GitHub access. This script materializes the
@@ -15,7 +15,7 @@ set -eu
 umask 022
 
 usage() {
-  printf 'usage: pr-headless-review.sh <pr> [--review-host <host>] [--method auto|merge|squash|rebase] [--require-cross-host-when-available] [--allow-same-host-review --user-approved-bypass <github-url>]\n' >&2
+  printf 'usage: pr-headless-review.sh <pr> [--review-host <host>] [--method auto|merge|squash|rebase] [--require-cross-host-when-available|--no-require-cross-host] [--allow-same-host-review --user-approved-bypass <github-url>]\n' >&2
   exit 2
 }
 
@@ -35,8 +35,12 @@ ELIGIBLE_REVIEW_HOSTS_CSV=""
 CROSS_HOST_FOR_EVENT="false"
 FALLBACK_FROM_CSV=""
 FALLBACK_FAILURES_TEXT=""
-CROSS_HOST_REQUIRED="${STUDIO_REQUIRE_CROSS_HOST_REVIEW:-0}"
+CROSS_HOST_REQUIRED="${STUDIO_REQUIRE_CROSS_HOST_REVIEW:-1}"
 CROSS_HOST_BYPASS_URL=""
+REVIEW_MODEL_KEY_FOR_EVENT=""
+REVIEW_MODEL_ID_FOR_EVENT=""
+REVIEW_MODEL_PROVIDER_FAMILY_FOR_EVENT=""
+REVIEW_MODEL_REASONING_EFFORT_FOR_EVENT=""
 
 REVIEW_HOST="${STUDIO_REVIEW_HOST:-}"
 METHOD="auto"
@@ -48,6 +52,7 @@ while [ $# -gt 0 ]; do
     --review-host) REVIEW_HOST="${2:?--review-host requires a value}"; EXPLICIT_REVIEW_HOST=1; shift 2 ;;
     --method) METHOD="${2:?--method requires a value}"; shift 2 ;;
     --require-cross-host-when-available) CROSS_HOST_REQUIRED=1; shift ;;
+    --no-require-cross-host) CROSS_HOST_REQUIRED=0; shift ;;
     --allow-same-host-review) ALLOW_SAME_HOST_REVIEW=1; shift ;;
     --user-approved-bypass) CROSS_HOST_BYPASS_URL="${2:?--user-approved-bypass requires a value}"; shift 2 ;;
     *) printf 'pr-headless-review: unknown flag %s\n' "$1" >&2; usage ;;
@@ -111,6 +116,10 @@ emit_pr_review_duration() {
       --arg fallback_failures "$FALLBACK_FAILURES_TEXT" \
       --arg cross_host_required "$CROSS_HOST_REQUIRED" \
       --arg cross_host_bypass_url "$CROSS_HOST_BYPASS_URL" \
+      --arg review_model_key "$REVIEW_MODEL_KEY_FOR_EVENT" \
+      --arg review_model_id "$REVIEW_MODEL_ID_FOR_EVENT" \
+      --arg review_model_provider_family "$REVIEW_MODEL_PROVIDER_FAMILY_FOR_EVENT" \
+      --arg review_model_reasoning_effort "$REVIEW_MODEL_REASONING_EFFORT_FOR_EVENT" \
       --argjson duration_s "$duration_s" \
       --argjson exit_code "$rc" \
       --argjson tokens "$PR_REVIEW_TOKENS_JSON" \
@@ -122,6 +131,7 @@ emit_pr_review_duration() {
         fallback_from:($fallback_from | split(",") | map(select(length > 0)))}
        + (if $fallback_failures == "" then {} else {fallback_failures:$fallback_failures} end)
        + (if $cross_host_bypass_url == "" then {} else {cross_host_bypass_url:$cross_host_bypass_url} end)
+       + (if $review_model_id == "" then {} else {review_model_key:$review_model_key,review_model_id:$review_model_id,review_model_provider_family:$review_model_provider_family,review_model_reasoning_effort:$review_model_reasoning_effort} end)
        + (if $tokens == null then {} else {tokens:$tokens} end)')
   else
     data=$(printf '{"pr":"%s","review_host":"%s","selected_review_host":"%s","verdict":"%s","method":"%s","status":"%s","parent_host":"%s","eligible_review_hosts":"%s","cross_host":"%s","cross_host_required":"%s","fallback_from":"%s","fallback_failures":"%s","duration_s":%s,"exit_code":%s}' \
@@ -145,10 +155,21 @@ yaml_field() {
 }
 
 host_family() {
-  case "$1" in
-    claude*|*claude*) printf 'claude\n' ;;
-    codex*|*codex*) printf 'codex\n' ;;
-    *) printf '%s\n' "$1" ;;
+  local host="$1" family
+  if command -v yq >/dev/null 2>&1 && [ -f "$REPO_ROOT/_shared/schemas/model-catalog.yaml" ]; then
+    family=$(HOST_NAME="$host" yq -r '
+      (.adapter_profiles[strenv(HOST_NAME)].provider_family // "") as $direct
+      | if $direct != "" then $direct
+        else ((.provider_families | to_entries | map(select((.value.adapters // []) | contains([strenv(HOST_NAME)])) | .key) | .[0]) // "")
+        end
+    ' "$REPO_ROOT/_shared/schemas/model-catalog.yaml" 2>/dev/null || true)
+    [ -n "$family" ] && [ "$family" != "null" ] && { printf '%s\n' "$family"; return 0; }
+  fi
+  case "$host" in
+    claude*|*claude*) printf 'anthropic\n' ;;
+    codex*|*codex*) printf 'openai\n' ;;
+    unknown|"") printf 'unknown\n' ;;
+    *) printf '%s\n' "$host" ;;
   esac
 }
 
@@ -319,10 +340,15 @@ if [ "$CROSS_HOST_REQUIRED" -eq 1 ] && [ "$PARENT_HOST" = "unknown" ] && [ "$ALL
   printf 'pr-headless-review: cross-host review required but PARENT_HOST is unknown; set STUDIO_PARENT_HOST or pass --allow-same-host-review --user-approved-bypass <url>\n' >&2
   exit 1
 fi
+if [ "$CROSS_HOST_REQUIRED" -eq 1 ] && [ "$cross_host_available" -eq 0 ] && [ "$ALLOW_SAME_HOST_REVIEW" -eq 0 ]; then
+  printf 'pr-headless-review: cross-host review required but no independent eligible reviewer exists for parent host %s\n' "$PARENT_HOST" >&2
+  printf 'Add an independent reviewer adapter, or pass --allow-same-host-review --user-approved-bypass <url> after explicit user approval.\n' >&2
+  exit 1
+fi
 if [ "$CROSS_HOST_REQUIRED" -eq 1 ] && [ "$EXPLICIT_REVIEW_HOST" -eq 1 ] \
-    && [ "$cross_host_available" -eq 1 ] && ! is_cross_host "$PARENT_HOST" "$REVIEW_HOST" \
+    && ! is_cross_host "$PARENT_HOST" "$REVIEW_HOST" \
     && [ "$ALLOW_SAME_HOST_REVIEW" -eq 0 ]; then
-  printf 'pr-headless-review: cross-host review required; %s is same-family as parent host %s while alternate reviewer is available\n' "$REVIEW_HOST" "$PARENT_HOST" >&2
+  printf 'pr-headless-review: cross-host review required; %s is same-family as parent host %s\n' "$REVIEW_HOST" "$PARENT_HOST" >&2
   printf 'Use an alternate --review-host, or pass --allow-same-host-review --user-approved-bypass <url> after explicit user approval.\n' >&2
   exit 1
 fi
@@ -367,7 +393,8 @@ PROMPT
 } > "$payload"
 
 run_review_candidate() {
-  local candidate="$1" eligibility spawn_command verdict_count
+  local candidate="$1" eligibility spawn_command verdict_count model_resolution
+  local -a resolver_args
   REVIEW_HOST="$candidate"
   eligibility=$(STUDIO_INTERNAL_REVIEWER_SKIP_SMOKE=1 "$SCRIPT_DIR/pr-reviewer-eligibility.sh" "$REVIEW_HOST") || {
     printf '%s\n' "$eligibility" > "$summary"
@@ -382,6 +409,15 @@ run_review_candidate() {
     append_failure "$REVIEW_HOST" "$summary" "$summary.err"
     return 1
   }
+  resolver_args=(--review-host "$REVIEW_HOST" --implementation-host "$PARENT_HOST" --role reviewer.heavyweight)
+  [ "$ALLOW_SAME_HOST_REVIEW" -eq 0 ] || resolver_args+=(--allow-same-family)
+  model_resolution=$("$SCRIPT_DIR/resolve-reviewer-model.sh" "${resolver_args[@]}" 2>&1) || {
+    printf 'pr-headless-review: failed to resolve reviewer model for %s\n%s\n' "$REVIEW_HOST" "$model_resolution" > "$summary.err"
+    append_failure "$REVIEW_HOST" "$summary" "$summary.err"
+    return 1
+  }
+  # resolve-reviewer-model.sh is repo-owned and emits only %q-quoted shell assignments.
+  eval "$model_resolution"
 
   reviewer_codex_home=""
   reviewer_claude_home=""
@@ -427,6 +463,14 @@ run_review_candidate() {
 
   # shellcheck disable=SC2206
   spawn_argv=( $spawn_command )
+  case "$REVIEW_HOST" in
+    codex*|*codex*)
+      spawn_argv+=(-m "$REVIEWER_MODEL_ID" -c "model_reasoning_effort=$REVIEWER_MODEL_REASONING_EFFORT")
+      ;;
+    claude*|*claude*)
+      spawn_argv+=(--model "$REVIEWER_MODEL_ID")
+      ;;
+  esac
   review_prompt="Read $payload, review PR $pr_url at HEAD $head_sha, and print STUDIO_REVIEW_VERDICT=<approved|approved_with_fixes|blocked>."
 
   case "$REVIEW_HOST" in
@@ -438,6 +482,9 @@ run_review_candidate() {
         USER="${USER:-}" \
         ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
         STUDIO_HOST="$REVIEW_HOST" \
+        STUDIO_REVIEW_MODEL_ID="$REVIEWER_MODEL_ID" \
+        STUDIO_REVIEW_REASONING_EFFORT="$REVIEWER_MODEL_REASONING_EFFORT" \
+        STUDIO_REVIEW_PROVIDER_FAMILY="$REVIEWER_MODEL_PROVIDER_FAMILY" \
         REVIEW_PAYLOAD="$payload" \
         PR_URL="$pr_url" \
         PR_HEAD_SHA="$head_sha" \
@@ -453,6 +500,9 @@ run_review_candidate() {
         ${reviewer_claude_config_dir:+CLAUDE_CONFIG_DIR="$reviewer_claude_config_dir"} \
         CLAUDE_REVIEWER_HOME="$reviewer_claude_home" \
         STUDIO_HOST="$REVIEW_HOST" \
+        STUDIO_REVIEW_MODEL_ID="$REVIEWER_MODEL_ID" \
+        STUDIO_REVIEW_REASONING_EFFORT="$REVIEWER_MODEL_REASONING_EFFORT" \
+        STUDIO_REVIEW_PROVIDER_FAMILY="$REVIEWER_MODEL_PROVIDER_FAMILY" \
         REVIEW_PAYLOAD="$payload" \
         PR_URL="$pr_url" \
         PR_HEAD_SHA="$head_sha" \
@@ -481,6 +531,10 @@ run_review_candidate() {
       return 1
       ;;
   esac
+  REVIEW_MODEL_KEY_FOR_EVENT="$REVIEWER_MODEL_KEY"
+  REVIEW_MODEL_ID_FOR_EVENT="$REVIEWER_MODEL_ID"
+  REVIEW_MODEL_PROVIDER_FAMILY_FOR_EVENT="$REVIEWER_MODEL_PROVIDER_FAMILY"
+  REVIEW_MODEL_REASONING_EFFORT_FOR_EVENT="$REVIEWER_MODEL_REASONING_EFFORT"
   return 0
 }
 
@@ -547,6 +601,8 @@ printf 'PR_REVIEW_VERDICT=%s\n' "$verdict"
 printf 'PR_REVIEW_PARENT_HOST=%s\n' "$PARENT_HOST"
 printf 'PR_REVIEW_ELIGIBLE_HOSTS=%s\n' "$ELIGIBLE_REVIEW_HOSTS_CSV"
 printf 'PR_REVIEW_CROSS_HOST=%s\n' "$CROSS_HOST_FOR_EVENT"
+printf 'PR_REVIEW_MODEL_ID=%s\n' "$REVIEW_MODEL_ID_FOR_EVENT"
+printf 'PR_REVIEW_REASONING_EFFORT=%s\n' "$REVIEW_MODEL_REASONING_EFFORT_FOR_EVENT"
 [ -z "$FALLBACK_FROM_CSV" ] || printf 'PR_REVIEW_FALLBACK_FROM=%s\n' "$FALLBACK_FROM_CSV"
 
 autopilot_args=(
@@ -557,6 +613,9 @@ autopilot_args=(
   --eligible-review-hosts "$ELIGIBLE_REVIEW_HOSTS_CSV"
   --cross-host "$CROSS_HOST_FOR_EVENT"
   --cross-host-required "$CROSS_HOST_REQUIRED"
+  --review-model-id "$REVIEW_MODEL_ID_FOR_EVENT"
+  --review-model-provider-family "$REVIEW_MODEL_PROVIDER_FAMILY_FOR_EVENT"
+  --review-reasoning-effort "$REVIEW_MODEL_REASONING_EFFORT_FOR_EVENT"
   --reviewer-smoke-passed
   --summary-file "$summary"
   --expected-head-sha "$head_sha"

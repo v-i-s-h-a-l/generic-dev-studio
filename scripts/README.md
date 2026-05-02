@@ -155,9 +155,11 @@ scripts/phase-review.sh --review-host claude-reviewer --input phase-plan.md --ou
 scripts/pre-commit-review.sh                            # manual reviewer gate for risky staged diffs; accepts approved/approved_with_fixes only
 scripts/lint-project-skill-links.sh [--host codex]      # repo-local project skill discovery link invariant + repair helper
 scripts/pr-headless-review.sh <pr>                      # run smoke-eligible reviewer, post gate with cross-host/fallback metadata, merge if non-blocked
-scripts/pr-headless-review.sh <pr> --require-cross-host-when-available  # Forge safety-floor PR gate; same-host fallback needs --allow-same-host-review --user-approved-bypass <url>
+scripts/pr-headless-review.sh <pr> --no-require-cross-host  # opt out of default independent-provider reviewer policy for explicit non-safety-floor runs
 scripts/pr-autopilot.sh <pr> --verdict approved         # post reviewer gate, then merge if non-blocked
 scripts/pr-merge-finalize.sh <pr> --method auto         # <4 commits=rebase, larger main=merge commit, then fetch/prune
+scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-host claude-code  # policy-backed reviewer model/profile resolver
+scripts/check-model-catalog.sh --print-refresh-checklist # validate model catalog + print official-doc refresh checklist
 scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
 
 # Chanakya sweep-time detections (Step 0E3, auto-invoked by Chanakya):
