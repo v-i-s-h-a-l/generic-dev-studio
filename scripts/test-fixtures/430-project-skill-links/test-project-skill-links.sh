@@ -80,6 +80,12 @@ if [ ! -L "$REPO/.codex/skills/studio" ]; then
   exit 1
 fi
 
+if [ ! -L "$TMPROOT/home/.codex/skills/hosts" ]; then
+  echo "FAIL: sync did not deploy hosts companion into global skill dir" >&2
+  cat "$TMPROOT/sync.err" >&2
+  exit 1
+fi
+
 target=$(readlink "$REPO/.codex/skills/studio")
 if [ "$target" != "../../.claude/skills/studio" ]; then
   echo "FAIL: expected relative project link, got $target" >&2

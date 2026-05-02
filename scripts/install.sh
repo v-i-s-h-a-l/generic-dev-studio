@@ -35,7 +35,7 @@ DRY_RUN=0
 
 # Agents globally installed as skill roots. `studio` is omitted on purpose —
 # it is project-scoped via .claude/skills/studio/.
-AGENTS=(chanakya achilles argus _shared scripts)
+AGENTS=(chanakya achilles argus _shared scripts hosts)
 
 # Commands globally installed. `studio-help` is omitted on purpose — it lives
 # at .claude/commands/studio-help.md and only fires in this repo.
