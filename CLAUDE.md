@@ -118,6 +118,60 @@ If the issue appears in `FORGE-RELIABILITY.md`, update that lookup's `Status` in
 
 When the user asks "what's pending?" / "what's on the list?" / "what's next?" — run `gh issue list` and surface; don't load the issue list speculatively into context.
 
+## Cross-host phase review (hard rule)
+
+For any multi-issue arc (umbrella + sub-issues), substrate redesign, or batch operation that spans more than one logical unit of work, **enforce sibling-host review at every phase boundary**:
+
+1. **Before kicking off a new phase / step / batch:** the host running the work drafts a plan; the sibling host reviews headlessly; iterate until the review returns clean ("nothing fatal").
+2. **After completing a phase:** the host that ran the work synthesizes the outcome (changes made, artifacts touched, verification evidence); the sibling host reviews the outcome for drift, scope creep, or missed acceptance criteria.
+
+**Headless review commands (symmetric):**
+
+| Primary host | Reviewer | Command |
+|---|---|---|
+| Claude Code | Codex | `codex exec --sandbox read-only -c model_reasoning_effort=high < prompt.md > review.md` |
+| Codex | Claude Code | `claude -p < prompt.md > review.md` |
+
+**Required content of phase-plan.md:**
+
+- Goal of the phase
+- Scope (in / out)
+- Specific changes to be made (files, issues, body edits, closures)
+- Acceptance criteria
+- Push-backs against any prior review (if applicable)
+- Explicit ask: "what's still wrong / missing?"
+
+**Required content of phase-outcome.md:**
+
+- What was actually changed
+- Diff summary or list of touched artifacts
+- Verification evidence (commands run, results)
+- Explicit ask: "did the execution match the plan? any drift?"
+
+**Iterate until "nothing fatal."** Do not execute a phase without a clean plan review. Do not move to the next phase without a clean outcome review.
+
+**Archive every review** to `~/.dev-studio/<project>/analysis/<date>-<phase>-<plan|outcome>-review.md` (NEVER `/tmp` — gets wiped per `feedback_codex_sibling_review_pattern.md` lesson).
+
+**When this rule fires:**
+
+- Multi-issue arcs (current example: v2 transition #442-#446)
+- Batch closures of ≥3 issues
+- Substrate / architecture changes (anything in `core/`, `_shared/`, schema files, mode pack contracts)
+- Release substrate changes
+- Any work the user labels as a "phase" or "step"
+
+**When this rule does NOT fire (single-pass agent judgment is sufficient):**
+
+- Single-issue refactors
+- Bug fixes
+- Doc-only changes
+- Time-pressured emergency hotfixes (use solo judgment + post-mortem)
+- Work fully scoped within one sub-issue's acceptance criteria
+
+**Why:** different model hosts catch different blind spots. Single-pass review misses framing-level errors that emerge under cross-host scrutiny. The v2 plan's three-round codex review (2026-05-02) demonstrated this — silent scope loss through premature closure was caught by codex round-2 and would have shipped otherwise.
+
+**See also:** `feedback_codex_sibling_review_pattern.md` (operational pattern), `~/.dev-studio/generic-dev-studio/PROMPT.md` (per-session bootstrap that surfaces phase boundaries).
+
 ## Request shaping (non-negotiable)
 
 Every host session in this repo must help sharpen feature, bug-fix, workflow, and planning requests before implementation or capture. Treat user wording as the starting point, not a fixed spec.
