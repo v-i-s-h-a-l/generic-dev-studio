@@ -142,6 +142,19 @@ Pick the sibling reviewer explicitly (`claude-reviewer` when primary is Codex,
 `scripts/pr-reviewer-eligibility.sh` first and stops before the phase if the
 reviewer is not smoke-eligible.
 
+**Field-agent review setup rule:** this same primitive applies when v2 field
+agents add cross-host **review** to worker, planner/architect, qa-engineer,
+flow-tester, release-manager, or perf workflows. Do not embed raw review-host
+CLI spawns (`claude -p`, `codex exec`, etc.) in worker/architect mode packs,
+briefs, manifests, or issue acceptance criteria. Route review through the
+smoke-gated reviewer profile wrapper (`scripts/phase-review.sh` today) or a v2
+successor that preserves the same contract: auth-home selection, no-secret env
+scrubbing, MCP isolation, sandbox-readable payload handoff, and failure-detail
+surfacing stay centralized. User-controlled override for emergency/debug-only
+cases: `STUDIO_BYPASS_FIELD_REVIEW_WRAPPER=1`; the bypass must be mentioned in
+the plan/outcome artifact and must not be used silently by an assistant. See
+`hosts/ADAPTER-SPEC.md` §PR reviewer profiles for the adapter-side contract.
+
 **Required content of phase-plan.md:**
 
 - Goal of the phase

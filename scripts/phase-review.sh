@@ -5,6 +5,11 @@
 #   scripts/phase-review.sh --review-host claude-reviewer --input plan.md --output review.md
 #   scripts/phase-review.sh --kind outcome --input outcome.md --output outcome-review.md
 #
+# Emergency/debug-only bypass for field-agent wrapper enforcement:
+#   STUDIO_BYPASS_FIELD_REVIEW_WRAPPER=1
+# The bypass is user-controlled and must be recorded in the plan/outcome
+# artifact; assistants must not use it silently.
+#
 # This is deliberately a thin wrapper over pr-reviewer-eligibility.sh. Phase
 # gates must not hand-compose raw `claude -p` / `codex exec` calls; those bypass
 # the smoke/auth/config checks that keep reviewer sessions reliable.
