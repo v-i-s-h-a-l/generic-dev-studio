@@ -537,6 +537,7 @@ execute_issue_session() {
   local chain_name="$1" chain_branch="$2" issue="$3" host="$4" worktree="$5" chain_run_id="$6" issue_run_id="$7" before="$8"
   local issue_json issue_title issue_body spawn prompt summary_path
   local -a spawn_argv
+  local launch_home=""
 
   issue_json=$(gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,body,url,state)
   issue_title=$(printf '%s' "$issue_json" | jq -r '.title')
@@ -546,6 +547,7 @@ execute_issue_session() {
   spawn=$(host_spawn_command "$host")
   # shellcheck disable=SC2206
   spawn_argv=( $spawn )
+  launch_home=$(resolve_user_login_home 2>/dev/null || true)
 
   prompt=$(cat <<EOF
 Implement this studio issue in a fresh chain-runner session.
@@ -607,7 +609,11 @@ EOF
     return 0
   fi
 
-  (cd "$worktree" && "${spawn_argv[@]}" "$prompt")
+  if [ -n "$launch_home" ] && [ -d "$launch_home" ]; then
+    (cd "$worktree" && env HOME="$launch_home" "${spawn_argv[@]}" "$prompt")
+  else
+    (cd "$worktree" && "${spawn_argv[@]}" "$prompt")
+  fi
 }
 
 finalize_chain_pr() {
