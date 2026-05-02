@@ -208,6 +208,27 @@ _emit_terminal() {
   rm -f "$ATTEMPTS_FILE" 2>/dev/null || true
 }
 
+_json_string_from_file_tail() {
+  local file="${1:?}" lines="${2:-200}"
+  if [ ! -s "$file" ]; then
+    printf '""'
+    return 0
+  fi
+  if command -v jq >/dev/null 2>&1; then
+    tail -n "$lines" "$file" 2>/dev/null | jq -Rs .
+    return 0
+  fi
+  tail -n "$lines" "$file" 2>/dev/null | python3 -c 'import json, sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || printf '""'
+}
+
+_emit_build_harness_failed() {
+  local reason="${1:?}" exit_code="${2:?}" log_tail_json="${3:?}"
+  local data
+  data=$(printf '{"mode":"full-green","node":"%s","scheme":"%s","attempt":%s,"reason":"%s","xcode_exit_code":%s,"log_tail":%s%s}' \
+    "$NODE_ID" "$SCHEME" "$ATTEMPT" "$reason" "$exit_code" "$log_tail_json" "$DISPATCH_FIELDS")
+  emit_event_keyed achilles task build_harness_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+}
+
 # Announce the attempt so analysis can bucket red gates by mode + retry.
 start_data=$(printf '{"mode":"%s","worktree":"%s","attempt":%s%s}' "$MODE" "$WORKTREE" "$ATTEMPT" "$DISPATCH_FIELDS")
 emit_event_keyed achilles task build_check_started "$TASK_ID" "$start_data" >/dev/null 2>&1 || true
@@ -355,28 +376,35 @@ if [ "$HARVESTED" = "1" ]; then
       success_marker_present=0
     fi
   fi
-  rm -f "$build_log" 2>/dev/null || true
   GATE_DUR_S=0
   gate_announce_start build "$NODE_ID" "$TASK_ID" full-green
   if [ "$BUILD_STATUS" -ne 0 ]; then
-    if [ "$BUILD_STATUS" -eq 124 ]; then
-      data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"remote_timeout","harvested":true%s}' \
-        "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
-    else
-      data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"harvested":true%s}' \
-        "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    log_tail_json="null"
+    if [ "$err_count" -eq 0 ]; then
+      log_tail_json=$(_json_string_from_file_tail "$build_log" 200)
     fi
+    failure_reason="build_invocation_failed"
+    if [ "$BUILD_STATUS" -eq 124 ]; then
+      failure_reason="remote_timeout"
+    fi
+    data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"%s","xcode_exit_code":%s,"log_tail":%s,"harvested":true%s}' \
+      "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$failure_reason" "$BUILD_STATUS" "$log_tail_json" "$DISPATCH_FIELDS")
     _emit_terminal build_check_failed "$data"
     gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
+    rm -f "$build_log" 2>/dev/null || true
     exit 2
   fi
   if [ "$success_marker_present" -eq 0 ]; then
-    data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"success_marker_absent","harvested":true%s}' \
-      "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    log_tail_json=$(_json_string_from_file_tail "$build_log" 200)
+    _emit_build_harness_failed success_marker_absent "$BUILD_STATUS" "$log_tail_json"
+    data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"success_marker_absent","xcode_exit_code":%s,"log_tail":%s,"harvested":true%s}' \
+      "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$BUILD_STATUS" "$log_tail_json" "$DISPATCH_FIELDS")
     _emit_terminal build_check_failed "$data"
     gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
+    rm -f "$build_log" 2>/dev/null || true
     exit 2
   fi
+  rm -f "$build_log" 2>/dev/null || true
   data=$(printf '{"mode":"full-green","node":"%s","warnings":%s,"scheme":"%s","attempt":%s,"harvested":true%s}' \
     "$NODE_ID" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
   _emit_terminal build_check_passed "$data"
@@ -678,26 +706,34 @@ if [ "$BUILD_STATUS" -ne 0 ]; then
       failure_reason=$(remote_failure_reason "$build_log")
     fi
   fi
-  data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"errors_json":%s%s}' \
-    "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$errors_json" "$DISPATCH_FIELDS")
+  log_tail_json="null"
+  if [ "$err_count" -eq 0 ]; then
+    log_tail_json=$(_json_string_from_file_tail "$build_log" 200)
+  fi
+  data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"xcode_exit_code":%s,"log_tail":%s,"errors_json":%s%s}' \
+    "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$BUILD_STATUS" "$log_tail_json" "$errors_json" "$DISPATCH_FIELDS")
   data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" '. + {reason:$reason}')
   if [ "$failure_reason" = "remote_marker_writer_failed" ]; then
     data=$(remote_enrich_marker_failure "$data" "$build_log")
   fi
-  rm -f "$build_log" "$build_json" 2>/dev/null || true
   _emit_terminal build_check_failed "$data"
   gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
+  rm -f "$build_log" "$build_json" 2>/dev/null || true
   exit 2
 fi
 
 if [ "$success_marker_present" -eq 0 ]; then
-  data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"success_marker_absent","errors_json":%s%s}' \
-    "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$errors_json" "$DISPATCH_FIELDS")
-  rm -f "$build_log" "$build_json" 2>/dev/null || true
+  log_tail_json=$(_json_string_from_file_tail "$build_log" 200)
+  _emit_build_harness_failed success_marker_absent "$BUILD_STATUS" "$log_tail_json"
+  data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"success_marker_absent","xcode_exit_code":%s,"log_tail":%s,"errors_json":%s%s}' \
+    "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$BUILD_STATUS" "$log_tail_json" "$errors_json" "$DISPATCH_FIELDS")
   _emit_terminal build_check_failed "$data"
   gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
+  rm -f "$build_log" "$build_json" 2>/dev/null || true
   exit 2
 fi
+
+rm -f "$build_log" "$build_json" 2>/dev/null || true
 
 data=$(printf '{"mode":"full-green","node":"%s","warnings":%s,"scheme":"%s","attempt":%s%s}' "$NODE_ID" "$warn_count" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
 if [ -n "$remote_derived_abs" ] && command -v jq >/dev/null 2>&1; then
