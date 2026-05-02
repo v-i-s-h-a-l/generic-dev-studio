@@ -17,8 +17,12 @@
 #   6. Conflict → abort the merge (leave worktree clean), emit
 #      `base_refresh_conflict`, exit 2. Caller surfaces to user; no auto-resolve.
 #
-# Threshold:
-#   $ACHILLES_BASE_REFRESH_THRESHOLD (env), else 2.
+# Threshold source:
+#   `_shared/primitives/base-staleness.md` (default `Threshold: 2`).
+# Per-run override:
+#   `$ACHILLES_BASE_REFRESH_THRESHOLD` (env) still wins when set.
+# Test seam:
+#   `$ACHILLES_BASE_STALENESS_DOC` can point at an alternate primitive file.
 #
 # Usage:
 #   scripts/achilles-refresh-base.sh <task-id> <worktree> <base-branch>
@@ -41,12 +45,27 @@ TASK_ID="${1:?usage: achilles-refresh-base.sh <task-id> <worktree> <base-branch>
 WORKTREE="${2:?worktree required}"
 BASE_BRANCH="${3:?base-branch required}"
 
-THRESHOLD="${ACHILLES_BASE_REFRESH_THRESHOLD:-2}"
+BASE_STALENESS_DOC="${ACHILLES_BASE_STALENESS_DOC:-$SCRIPT_DIR/../_shared/primitives/base-staleness.md}"
+read_base_staleness_threshold() {
+  local doc="${1:?read_base_staleness_threshold <doc>}"
+  [ -f "$doc" ] || { printf 'error: base staleness primitive not found: %s\n' "$doc" >&2; return 2; }
+  awk -F': *' '/^Threshold:[[:space:]]*/ {print $2; exit}' "$doc"
+}
+
+THRESHOLD_DEFAULT=$(read_base_staleness_threshold "$BASE_STALENESS_DOC") || exit $?
+case "$THRESHOLD_DEFAULT" in
+  ''|*[!0-9]*)
+    printf 'error: invalid base staleness threshold in %s\n' "$BASE_STALENESS_DOC" >&2
+    exit 2
+    ;;
+esac
+
+THRESHOLD="${ACHILLES_BASE_REFRESH_THRESHOLD:-$THRESHOLD_DEFAULT}"
 case "$THRESHOLD" in
   ''|*[!0-9]*)
-    printf 'warn: ACHILLES_BASE_REFRESH_THRESHOLD=%s not a non-negative integer; using 2\n' \
-      "$THRESHOLD" >&2
-    THRESHOLD=2
+    printf 'warn: ACHILLES_BASE_REFRESH_THRESHOLD=%s not a non-negative integer; using %s\n' \
+      "$THRESHOLD" "$THRESHOLD_DEFAULT" >&2
+    THRESHOLD="$THRESHOLD_DEFAULT"
     ;;
 esac
 

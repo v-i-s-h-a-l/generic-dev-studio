@@ -215,6 +215,13 @@ printf '%s\n' "$new_events" | while IFS= read -r line; do
     follow_up_mint_failed)
       push_append follow_up_mint_failed "$task" "structured follow-up could not be minted"
       ;;
+    review_timeout)
+      timeout_s=""
+      if command -v jq >/dev/null 2>&1; then
+        timeout_s=$(printf '%s' "$line" | jq -r '.data.timeout_s // ""' 2>/dev/null)
+      fi
+      push_append review_timeout "$task" "Argus review timed out${timeout_s:+ after ${timeout_s}s}"
+      ;;
     argus_gate_skipped)
       # Auto-file a GitHub issue for infra-broken skip reasons (#244).
       # Operational reasons (verdict_timeout, no_verdict_at_merge) are no-ops here.
