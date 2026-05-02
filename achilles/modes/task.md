@@ -313,7 +313,8 @@ eval "$(scripts/task-invoke-argus.sh "$TASK_ID" "$WORKTREE" "$ORIG_BRANCH" "$SIZ
 
 Emits `review_requested` and exports `ACHILLES_REVIEW_REQUESTED_AT` (carried into the debrief for verdict-timing correlation).
 
-Argus runs in **two sequential stages**, both dispatched via `scripts/dispatch-review.sh`. The script handles host adapter selection (Claude Code / Codex / future), env-scrubs the spawn (no API keys, no GH tokens), validates the handoff payload against `_shared/contracts/handoff.schema.json`, and tails the event log for the verdict — the contract is shell-reachable on every supported host.
+Argus runs in **two sequential stages**, both dispatched via `scripts/dispatch-review.sh`. The script handles host adapter selection (Claude Code / Codex / future), env-scrubs the spawn (no API keys, no GH tokens), validates the handoff payload against `_shared/contracts/handoff.schema.json`, and tails the event log for the verdict — the contract is shell-reachable on every supported host. If the tail times out, `dispatch-review.sh` emits `review_timeout`, kills the spawned review, and exits non-zero; treat that as a hard block, not a silent skip.
+Stage 2 carries a compact `prior_findings_summary` from Stage 1 in the routed handoff payload, so code-quality sees the earlier spec verdict once without re-reading the entire review artifact.
 
 #### Stage 1 — spec-compliance
 
@@ -329,7 +330,7 @@ Narrow question: does the diff match the brief?
 - **`approved`** or **`flagged`:** proceed to Stage 2. Carry Stage 1 findings forward into the debrief.
 - **`blocked`:** do NOT run Stage 2 — the spec is wrong at the structural level, re-reviewing code doesn't help. Surface block reason; attempt to fix (see below) or debrief with `report_state: blocked`.
 
-Retry policy: validator rejection never auto-retries (per `_shared/contracts/idempotency.md`). Transient failures (timeout, spawn fork) may retry once with `--attempt 2` and a fresh idempotency-key suffix.
+Retry policy: validator rejection never auto-retries (per `_shared/contracts/idempotency.md`). Transient failures (spawn fork, infra launch) may retry once with `--attempt 2` and a fresh idempotency-key suffix. A `review_timeout` is a hard block: do not merge, surface the stall, and write the debrief with `report_state: blocked`.
 
 #### Stage 2 — code-quality
 
@@ -375,7 +376,7 @@ Mints a UUIDv7, writes `plans/debriefs/<debrief-id>.yaml` (schema: `_shared/sche
 
 ### Step 10 — Commit, merge back, clean up
 
-**Respect `.argus-running` marker.** Before invoking the merge script, if `$WORKTREE/.argus-running` exists a standalone Argus is still reviewing — poll every 30s up to 10 min, then surface to user. Normal Step 8.5 flow clears the marker automatically.
+**No `.argus-running` polling.** The review dispatch now owns the timeout window and emits `review_timeout` when it expires. If the marker is still present at Step 10, treat the review session as unresolved and surface the block; do not sleep in a retry loop.
 
 ```bash
 scripts/task-merge.sh "$TASK_ID" "$WORKTREE" "$ORIG_BRANCH" "Merge <task-id> into $ORIG_BRANCH"
