@@ -134,6 +134,7 @@ scripts/task-build-debt-gate.sh [--override]            # exit 2 if blocked; emi
 scripts/task-claim.sh <task-uuid> <brief-uuid> <size>   # task + brief state transitions
 eval "$(scripts/task-worktree-setup.sh T001 /repo)"     # PROJECT/ORIG_BRANCH/ORIG_HEAD/WORKTREE
 scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" [zaps-app/Turnip.xcodeproj] # xcodebuild + lock; 6th arg pins -project/-workspace in multi-project repos (#238); exit 4 = duplicate-invocation refused (#209)
+scripts/studio-tf-push.sh push [--version X.Y.Z]        # TestFlight push driver; explicit version override + rejected-version preflight
 scripts/node-parity.sh [--fix|--dry-run]                # probe + cache toolchain versions; optionally install missing brew packages and print manual Xcode/runtime fixes (#126/#131)
 scripts/check-xcode-parity.sh m1mini                    # pre-dispatch guard; exit 1 = MAJOR Xcode drift; STUDIO_IGNORE_XCODE_DRIFT=1 overrides (#136)
 scripts/node-warmup.sh m1mini [project]                 # async-safe pre-dispatch source sync + package cache warm-up (#138)
