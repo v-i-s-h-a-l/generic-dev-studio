@@ -148,11 +148,12 @@ scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # 
 scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
 
 # Studio PR autopilot primitives (#318):
-scripts/pr-reviewer-eligibility.sh codex-reviewer       # no-prompt/no-secret reviewer host preflight
+scripts/pr-reviewer-eligibility.sh codex-reviewer       # no-prompt/no-secret reviewer preflight + real verdict-emitting smoke gate
 scripts/pr-reviewer-eligibility.sh claude-reviewer      # same reviewer floor for Claude Code; uses CLAUDE_REVIEWER_CONFIG_DIR (default ~/.claude-reviewer)
 scripts/pre-commit-review.sh                            # manual reviewer gate for risky staged diffs; accepts approved/approved_with_fixes only
 scripts/lint-project-skill-links.sh [--host codex]      # repo-local project skill discovery link invariant + repair helper
-scripts/pr-headless-review.sh <pr>                      # run eligible reviewer, post gate, merge if non-blocked
+scripts/pr-headless-review.sh <pr>                      # run smoke-eligible reviewer, post gate with cross-host/fallback metadata, merge if non-blocked
+scripts/pr-headless-review.sh <pr> --require-cross-host-when-available  # Forge safety-floor PR gate; same-host fallback needs --allow-same-host-review --user-approved-bypass <url>
 scripts/pr-autopilot.sh <pr> --verdict approved         # post reviewer gate, then merge if non-blocked
 scripts/pr-merge-finalize.sh <pr> --method auto         # <4 commits=rebase, larger main=merge commit, then fetch/prune
 scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1

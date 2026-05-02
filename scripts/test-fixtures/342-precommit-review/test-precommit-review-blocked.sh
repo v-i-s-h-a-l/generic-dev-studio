@@ -34,7 +34,8 @@ chmod +x "$BIN/codex"
 
 export PATH="$BIN:$PATH"
 export HOME="$TMPROOT/caller-home"
-mkdir -p "$HOME/.codex"
+export CODEX_HOME="$HOME/.codex"
+mkdir -p "$CODEX_HOME"
 
 git -C "$REPO" init -q
 git -C "$REPO" config user.email test@example.com
