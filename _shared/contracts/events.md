@@ -69,7 +69,7 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `review_flagged` | Argus returned flag | `review_file`, `finding_count`, `stage` (`spec`\|`quality`) |
 | `review_blocked` | Argus returned block | `review_file`, `block_reason`, `stage` (`spec`\|`quality`) |
 | `merge_conflict` | Merge failed with conflict | `branch`, `files` |
-| `merge_safety_blocked` | `task-merge.sh` refused because two or more merge safety signals were absent. Composite gate for build, review, and staged debrief. | `branch`, `missing_signals` (array: `build`, `review`, `debrief`), `signal_count` |
+| `merge_safety_blocked` | `task-merge.sh` refused because two or more merge safety signals were absent, or because the latest review verdict was `review_blocked`. Composite gate for build, review, and staged debrief. | `branch`, `missing_signals` (array: `build`, `review`, `debrief`), `signal_count`; optional `reason`, `latest_review` |
 | `merge_safety_warn` | `task-merge.sh` found exactly one absent merge safety signal and proceeded. | `branch`, `missing_signals`, `signal_count` |
 | `merge_safety_override` | User passed `--force` to bypass a composite merge safety block. | `branch`, `missing_signals`, `signal_count` |
 | `merge_deferred_on_flagged` | `task-merge.sh --require-approved` refused to merge because Argus returned `review_flagged`. | `branch`, `reason` (`review_flagged`), `require_approved` |

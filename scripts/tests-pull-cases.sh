@@ -69,9 +69,9 @@ emit_from_yaml() {
       | jq -r '
           .[] |
           if type == "string" then
-            ["  - title: " + ., "    preconditions: \"\"", "    steps: \"\"", "    expected: \"\""] | join("\n")
+            ["  - title: " + (. | @json), "    preconditions: \"\"", "    steps: \"\"", "    expected: \"\""] | join("\n")
           else
-            ["  - title: " + (.title // .name // "untitled"),
+            ["  - title: " + ((.title // .name // "untitled") | @json),
              "    preconditions: " + ((.preconditions // "") | @json),
              "    steps: " + ((.steps // "") | @json),
              "    expected: " + ((.expected // "") | @json)] | join("\n")
