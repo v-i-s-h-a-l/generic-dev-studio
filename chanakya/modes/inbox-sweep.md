@@ -32,7 +32,7 @@ First `/chanakya` invocation in a session (no `--auto-sweep`): proceed directly 
 
 ## Step 0 — Enumerate + ingest debriefs
 
-Run `scripts/sweep-enumerate-debriefs.sh`. Stdout is tab-separated `<kind>\t<path>\t<mode>` ingestable lines. For each stdout line, invoke `scripts/sweep-ingest.sh <kind> <path> [flags]`. Stderr may also contain diagnostic blind-spot lines (`mode=legacy`, `location=chanakya-inbox`, `stale_blocker=true`, or active Apollo deferred rows) plus a count summary; surface those to the user, but do not pass them to `sweep-ingest.sh`.
+Run `scripts/sweep-enumerate-debriefs.sh`. Stdout is tab-separated `<subcommand>\t<path>\t<mode>` ingestable lines, where `<subcommand>` is one of `debrief`, `build-check`, or `release`. For each stdout line, invoke `scripts/sweep-ingest.sh <subcommand> <path> [flags]`. Stop the sweep and surface stderr if any ingest exits non-zero; do not continue as though that item was handled. Stderr may also contain diagnostic blind-spot lines (`mode=legacy`, `location=chanakya-inbox`, `stale_blocker=true`, or active Apollo deferred rows) plus a count summary; surface those to the user, but do not pass them to `sweep-ingest.sh`.
 
 ### 0A — Uniform debrief ingest (task + direct-debrief)
 
