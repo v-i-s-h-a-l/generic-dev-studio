@@ -41,7 +41,7 @@ briefed        → dispatched       : brief@>=2 + worker idle marker present. RE
 dispatched     → in-progress      : Achilles emits `task_started`.
 in-progress    → self-reviewed    : Achilles writes debrief (pre-Argus). REQUIRED.
 self-reviewed  → argus-reviewed   : Argus emits `review_approved | review_flagged | review_blocked`.
-argus-reviewed → merged           : verdict ∈ {approved, flagged}. REQUIRED.
+argus-reviewed → merged           : verdict == approved, or verdict == flagged with explicit user override. REQUIRED.
 argus-reviewed → blocked          : verdict == blocked and Achilles cannot fix.
 merged         → user-verifying   : Chanakya adds to verify manifest.
 user-verifying → verified         : user sign-off via review-feedback.
