@@ -588,6 +588,31 @@ main() {
     fi
   fi
 
+  # Project-skill link invariant. This always runs in staged mode because a
+  # plain deletion of .codex/skills/studio is the exact failure class it guards.
+  local psl_lint="$SCRIPT_DIR/lint-project-skill-links.sh"
+  if [ -x "$psl_lint" ]; then
+    local psl_args=()
+    [ "$STAGED" -eq 1 ] && psl_args=("--staged")
+    local psl_output psl_rc psl_errors_before
+    psl_errors_before="$ERRORS"
+    psl_output=$("$psl_lint" ${psl_args[@]+"${psl_args[@]}"} 2>&1)
+    psl_rc=$?
+    if [ -n "$psl_output" ]; then
+      while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        case "$line" in
+          "lint-project-skill-links: "*) ;;
+          E_*) emit_error "$line" ;;
+          *) [ "$psl_rc" -ne 0 ] && emit_error "$line" || emit_warn "$line" ;;
+        esac
+      done <<< "$psl_output"
+    fi
+    if [ "$psl_rc" -ne 0 ] && [ "$ERRORS" -eq "$psl_errors_before" ]; then
+      emit_error "E_PROJECT_SKILL_LINK:lint-project-skill-links exited $psl_rc without a machine-readable error"
+    fi
+  fi
+
   print_findings
   [ "$ERRORS" -eq 0 ]
 }
