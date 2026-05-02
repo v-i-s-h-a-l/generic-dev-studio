@@ -80,9 +80,13 @@ normal worker/reference adapters. A reviewer profile must declare
 `secret_scope: none`, force no-prompt headless execution, and keep the session
 read-only unless a narrow auto-fix path is explicitly designed later.
 
-Claude-based reviewer profiles should also get a dedicated `CLAUDE_CONFIG_DIR`
-instead of inheriting the caller's home directory. Codex-based reviewers keep
-using `CODEX_HOME`.
+Claude Code 2.1.126 auth is coupled to `HOME` even when `CLAUDE_CONFIG_DIR`
+points at a dedicated profile. Claude-based reviewer profiles therefore run
+with `HOME=${CLAUDE_REVIEWER_HOME:-<login-home>}` and
+`CLAUDE_CONFIG_DIR=${CLAUDE_REVIEWER_CONFIG_DIR:-$HOME/.claude-reviewer}`.
+For fleet nodes, set `CLAUDE_REVIEWER_HOME` to a locked-down reviewer account
+home that contains no GitHub tokens or project secrets. Codex-based reviewers
+keep using scratch `HOME` plus `CODEX_HOME`.
 
 Do not make a normal worker profile eligible by relaxing the gate. Add a
 dedicated `<host>-reviewer` adapter with its own manifest and enforcement.

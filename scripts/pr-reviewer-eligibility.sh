@@ -43,7 +43,7 @@ first_line() {
 }
 
 run_smoke_gate() {
-  local tmpdir payload stdout_file stderr_file reviewer_home reviewer_codex_home reviewer_claude_config_dir
+  local tmpdir payload stdout_file stderr_file reviewer_home reviewer_codex_home reviewer_claude_home reviewer_claude_config_dir
   tmpdir=$(mktemp -d -t pr-reviewer-smoke.XXXXXX) || fail smoke_tmp_failed "mktemp failed"
   payload="$tmpdir/payload.md"
   stdout_file="$tmpdir/stdout"
@@ -70,7 +70,12 @@ run_smoke_gate() {
       }
       ;;
     claude*|*claude*)
-      reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-${LOGIN_HOME:+$LOGIN_HOME/.claude-reviewer}}"
+      reviewer_claude_home="${CLAUDE_REVIEWER_HOME:-$LOGIN_HOME}"
+      [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] || {
+        rm -rf "$tmpdir"
+        fail smoke_auth_unavailable "claude reviewer auth home not found; set CLAUDE_REVIEWER_HOME"
+      }
+      reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-$reviewer_claude_home/.claude-reviewer}"
       [ -n "$reviewer_claude_config_dir" ] || {
         rm -rf "$tmpdir"
         fail smoke_auth_unavailable "claude reviewer config dir not found; set CLAUDE_REVIEWER_CONFIG_DIR or HOME"
@@ -124,10 +129,11 @@ run_smoke_gate() {
     *)
       ( cd "$REPO_ROOT" && env -i \
       PATH="$PATH" \
-      HOME="$reviewer_home" \
+      HOME="$reviewer_claude_home" \
       LANG="${LANG:-C.UTF-8}" \
       USER="${USER:-}" \
       ${reviewer_claude_config_dir:+CLAUDE_CONFIG_DIR="$reviewer_claude_config_dir"} \
+      CLAUDE_REVIEWER_HOME="$reviewer_claude_home" \
       STUDIO_HOST="$HOST" \
       REVIEW_PAYLOAD="$payload" \
       "${smoke_cmd[@]}" </dev/null >"$stdout_file" 2>"$stderr_file" )

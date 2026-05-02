@@ -334,6 +334,7 @@ summary="$tmpdir/reviewer-summary.md"
 reviewer_home="$tmpdir/reviewer-home"
 mkdir -p "$reviewer_home"
 reviewer_codex_home=""
+reviewer_claude_home=""
 reviewer_claude_config_dir=""
 
 {
@@ -383,6 +384,7 @@ run_review_candidate() {
   }
 
   reviewer_codex_home=""
+  reviewer_claude_home=""
   reviewer_claude_config_dir=""
   set +e
   case "$REVIEW_HOST" in
@@ -402,7 +404,13 @@ run_review_candidate() {
       }
       ;;
     claude*|*claude*)
-      reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-${LOGIN_HOME:+$LOGIN_HOME/.claude-reviewer}}"
+      reviewer_claude_home="${CLAUDE_REVIEWER_HOME:-$LOGIN_HOME}"
+      [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] || {
+        printf 'pr-headless-review: claude reviewer auth home not found; set CLAUDE_REVIEWER_HOME\n' > "$summary.err"
+        append_failure "$REVIEW_HOST" "$summary" "$summary.err"
+        return 1
+      }
+      reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-$reviewer_claude_home/.claude-reviewer}"
       [ -n "$reviewer_claude_config_dir" ] || {
         printf 'pr-headless-review: claude reviewer config dir not found; set CLAUDE_REVIEWER_CONFIG_DIR or HOME\n' > "$summary.err"
         append_failure "$REVIEW_HOST" "$summary" "$summary.err"
@@ -439,10 +447,11 @@ run_review_candidate() {
     *)
       ( cd "$REPO_ROOT" && env -i \
         PATH="$PATH" \
-        HOME="$reviewer_home" \
+        HOME="$reviewer_claude_home" \
         LANG="${LANG:-C.UTF-8}" \
         USER="${USER:-}" \
         ${reviewer_claude_config_dir:+CLAUDE_CONFIG_DIR="$reviewer_claude_config_dir"} \
+        CLAUDE_REVIEWER_HOME="$reviewer_claude_home" \
         STUDIO_HOST="$REVIEW_HOST" \
         REVIEW_PAYLOAD="$payload" \
         PR_URL="$pr_url" \
