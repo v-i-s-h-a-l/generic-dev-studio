@@ -61,7 +61,9 @@ case "${CLAUDE_CONFIG_DIR:-}" in
   */.claude-reviewer) ;;
   *) printf 'claude reviewer config dir has wrong shape: %s\n' "${CLAUDE_CONFIG_DIR:-}" >&2; exit 17 ;;
 esac
-[ "${CLAUDE_CONFIG_DIR:-}" != "$HOME" ] || { printf 'claude reviewer config dir reused the temp HOME\n' >&2; exit 18; }
+[ -n "${CLAUDE_REVIEWER_HOME:-}" ] || { printf 'claude reviewer auth home not declared\n' >&2; exit 18; }
+[ "$HOME" = "$CLAUDE_REVIEWER_HOME" ] || { printf 'claude reviewer did not use reviewer auth HOME\n' >&2; exit 20; }
+[ "${CLAUDE_CONFIG_DIR:-}" != "$HOME" ] || { printf 'claude reviewer config dir reused auth HOME\n' >&2; exit 21; }
 [ -d "${CLAUDE_CONFIG_DIR:-}" ] || { printf 'claude reviewer config dir missing\n' >&2; exit 19; }
 
 [ -n "${REVIEW_PAYLOAD:-}" ] && [ -f "$REVIEW_PAYLOAD" ] || exit 10
@@ -120,8 +122,10 @@ export GITHUB_TOKEN="must-not-leak"
 export OPENAI_API_KEY="must-not-leak"
 export ANTHROPIC_API_KEY="must-not-leak"
 export HOME="$TMPROOT/caller-home"
-export CLAUDE_REVIEWER_CONFIG_DIR="$TMPROOT/.claude-reviewer"
+export CLAUDE_REVIEWER_HOME="$TMPROOT/reviewer-home"
+export CLAUDE_REVIEWER_CONFIG_DIR="$CLAUDE_REVIEWER_HOME/.claude-reviewer"
 mkdir -p "$HOME/.config/gh"
+mkdir -p "$CLAUDE_REVIEWER_CONFIG_DIR"
 printf 'github.com: token\n' > "$HOME/.config/gh/hosts.yml"
 
 failures=0
