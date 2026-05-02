@@ -78,5 +78,24 @@ assert "pull keeps YAML object title" "grep -q 'title: \"Open export sheet\"' '$
 assert "pull keeps YAML object expected result" "grep -q 'expected: \"The export sheet stays visible.\"' '$pull_out'"
 assert "pull tolerates legacy title-only YAML case" "grep -q 'title: \"Legacy title-only case\"' '$pull_out'"
 
+manifest_payload="$TMPROOT/manifest.yaml"
+cat > "$manifest_payload" <<YAML
+tasks:
+  - id: T335
+    title: YAML test cases
+    debrief_path: plans/debriefs/$DEBRIEF_UUID.yaml
+$(sed 's/^/    /' "$pull_out")
+YAML
+
+manifest_out="$TMPROOT/manifest.out"
+manifest_err="$TMPROOT/manifest.err"
+HOME="$TMPROOT" ACHILLES_PROJECT="$PROJECT" \
+  bash "$ROOT/scripts/tests-write-manifest.sh" --force <"$manifest_payload" >"$manifest_out" 2>"$manifest_err"
+manifest_rc=$?
+
+assert "manifest writer accepts array steps" "[ $manifest_rc -eq 0 ]"
+assert "manifest includes flattened steps" "grep -q 'Tap Export / Choose JPEG' '$PLANS/user-testing.md'"
+assert "manifest includes expected result" "grep -q 'The export sheet stays visible.' '$PLANS/user-testing.md'"
+
 printf '%s assertions, %s failures\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
