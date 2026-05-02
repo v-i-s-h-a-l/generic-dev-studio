@@ -210,6 +210,22 @@ When the user proposes or asks for work:
 
 Keep this pragmatic. Do not turn tiny edits into ceremony, do not block urgent fixes on speculative polish, and do not expand scope silently. If an improvement is obvious and low-risk, fold it in; if it changes behavior, cost, priority, or runtime risk, surface it before implementation.
 
+## Parallel chain surfacing
+
+When studio work contains independent chains, tracks, batches, or issue groups,
+surface the parallelization option explicitly. The default assistant shape is:
+one short "parallel opportunities" line, followed by one command per manual
+shell/session when the user is expected to launch work themselves. Name the
+independence boundary (different chain names, disjoint issues, separate
+worktrees/branches) and keep dependency-ordered work sequential.
+
+Do not auto-spawn user shell sessions. Do not suggest parallelizing across:
+unclean phase-gate reviews, dependent phases, shared branch/index mutations,
+or work that has not been shaped enough to know its write boundaries. For
+studio chains, suggest `scripts/studio-chain-runner.sh <manifest> --only
+<chain> --dry-run` per shell first, then the non-dry-run command after the user
+accepts the shape.
+
 ## Auto-apply tiers (reduce user touchpoints)
 
 The studio's own rules and conventions are auto-improvable. Some changes apply silently; some require a quick OK. Default to action; ask only when there's real ambiguity.
