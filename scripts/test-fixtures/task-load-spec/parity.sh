@@ -48,6 +48,8 @@ TASK_UUID="11111111-1111-7111-8111-111111111111"
 BRIEF_UUID="22222222-2222-7222-8222-222222222222"
 BAD_TASK_UUID="33333333-3333-7333-8333-333333333333"
 BAD_BRIEF_UUID="44444444-4444-7444-8444-444444444444"
+NON_READY_TASK_UUID="55555555-5555-7555-8555-555555555555"
+NON_READY_BRIEF_UUID="66666666-6666-7666-8666-666666666666"
 
 cat > "$PROJECT_ROOT/plans/tasks/$TASK_UUID.yaml" <<YAML
 schema_version: {name: task, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}
@@ -131,6 +133,47 @@ body: |
   Broken parity fixture.
 YAML
 
+cat > "$PROJECT_ROOT/plans/tasks/$NON_READY_TASK_UUID.yaml" <<YAML
+schema_version: {name: task, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}
+id: $NON_READY_TASK_UUID
+legacy_task_id: "T339"
+title: Non-ready canonical brief
+state: briefed
+type: feature
+size: m
+links:
+  brief: $NON_READY_BRIEF_UUID
+  debrief: null
+  reviews: []
+  release: null
+  feedback: []
+YAML
+
+cat > "$PROJECT_ROOT/plans/briefs/$NON_READY_BRIEF_UUID.yaml" <<YAML
+schema_version: {name: brief, version: 3.5.0, min_reader: 3.0.0, deprecated_at: null}
+id: $NON_READY_BRIEF_UUID
+task_id: $NON_READY_TASK_UUID
+legacy_task_id: "T339"
+type: impl
+size: m
+state: draft
+created_at: 2026-04-30T00:00:00Z
+updated_at: 2026-04-30T00:00:00Z
+reads: []
+writes: []
+acceptance:
+  - non-ready
+testability: []
+rework_of: null
+reproducer: null
+dispatch_agent: achilles
+perf_mode: null
+evidence: null
+summary: non-ready dispatch fixture
+body: |
+  Non-ready dispatch fixture.
+YAML
+
 cat > "$PROJECT_ROOT/plans/chanakya-tasks/T338-impl.md" <<'MD'
 # Task Brief: T338 — Legacy diagnostic brief
 
@@ -173,6 +216,15 @@ if TASK_LOAD_SPEC_DIAGNOSTIC=1 "$ROOT/scripts/task-load-spec.sh" T337 >"$BAD_OUT
   exit 1
 fi
 assert "diagnostic mode still blocks parity mismatch" "grep -q 'task/brief parity mismatch' '$BAD_ERR'"
+
+NON_READY_OUT="$TMPROOT/non-ready.out"
+NON_READY_ERR="$TMPROOT/non-ready.err"
+set +e
+"$ROOT/scripts/task-load-spec.sh" T339 >"$NON_READY_OUT" 2>"$NON_READY_ERR"
+non_ready_rc=$?
+set -e
+assert "non-ready canonical brief exits 6" "[ '$non_ready_rc' = 6 ]"
+assert "non-ready canonical brief explains recovery" "grep -q 'not ready' '$NON_READY_ERR'"
 
 LEGACY_OUT="$TMPROOT/legacy.out"
 LEGACY_ERR="$TMPROOT/legacy.err"
