@@ -16,7 +16,7 @@
 #       cases:
 #         - title: "..."
 #           preconditions: "..."
-#           steps: "..."
+#           steps: ["..."]
 #           expected: "..."
 #
 # Exit codes:
@@ -87,13 +87,19 @@ tmp=$(mktemp)
   printf -- '- When done, run `/chanakya review-feedback` to apply your edits to the master plan.\n\n'
   printf -- '---\n'
 
-  # One section per task. jq emits a tab-separated record per case so we can
-  # handle multi-line strings safely when rendering.
+  # One section per task. jq emits a tab-separated record per case; array steps
+  # are flattened for the human-facing checklist while YAML keeps structure.
   printf '%s' "$json" | jq -r '
+    def steps_text:
+      if (.steps // []) | type == "array" then
+        (.steps // [] | join(" / "))
+      else
+        (.steps // "")
+      end;
     .tasks[]? |
-    "TASK\t" + (.id // "—") + "\t" + (.title // "—") + "\t" + (.debrief_path // "") + "\n" +
+    (["TASK", (.id // "—"), (.title // "—"), (.debrief_path // "")] | @tsv) + "\n" +
     ((.cases // []) | map(
-      "CASE\t" + (.title // "untitled") + "\t" + (.preconditions // "") + "\t" + (.steps // "") + "\t" + (.expected // "")
+      ["CASE", (.title // "untitled"), (.preconditions // ""), steps_text, (.expected // "")] | @tsv
     ) | join("\n"))
   ' 2>/dev/null | while IFS=$'\t' read -r kind a b c d; do
     case "$kind" in
