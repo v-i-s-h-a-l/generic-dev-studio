@@ -85,13 +85,13 @@ Chain behavior:
 6. Size the fresh-session pool from healthy registered `xcodebuild` offload nodes: local-only stays at 1; N healthy offload nodes yields N+1 sessions, capped by available RAM. Override only for emergencies with `STUDIO_CHAIN_WORKER_POOL`, or clamp with `STUDIO_CHAIN_MAX_WORKERS`.
 7. For each issue, create `<chain-branch>-issue-<N>` in a separate `/tmp/studio-chain-runner/...` worktree. Issue execution is sequential within a chain; `--parallel-chains <n|auto|1>` records the requested chain scheduling policy, while the current runner serializes chain PR/review/issue-closure mutation unless a later scheduler proves safe concurrency.
 8. Write `.studio/chain-task-start.json` in the issue worktree, then spawn a fresh host session (`codex exec` by default for `host: auto`, or the manifest/flag host) with a scoped prompt to implement exactly that issue and commit on the issue branch. The prompt includes `run_id`, `chain_run_id`, `issue_run_id`, the start envelope path, and the required `.studio/chain-worker-summary.json` completion path.
-9. Validate and ingest each worker summary as a completion envelope. If it is missing, emit a telemetry gap rather than treating absent model/token/build data as zero.
+9. Validate and ingest each worker summary as a completion envelope. If it is missing, emit a telemetry gap rather than treating absent model/token/build data as zero. Normalize paused or terminated execution into private `chain-halt-record` artifacts, and normalize compact low-risk defaults from `assumptions_escrowed` / `decisions_made` into private `chain-decision-escrow` artifacts.
 10. Rebase completed issue branches onto the chain branch and fast-forward them into the chain branch in manifest order.
 11. Keep the issue open while the chain branch is still only a feature branch.
 12. After the last issue, rebase the chain branch on latest base, open a PR, and run `scripts/pr-headless-review.sh <pr> --method auto`.
 13. If the reviewer blocks, STOP with the PR and worktree intact for repair. If non-blocked, the normal autopilot merge path runs.
 14. Close/comment the chain issues after the PR path succeeds.
-15. Write a final private report under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/report.md` with functionality delivered, telemetry roll-up, quality signals, carryover, lessons when available, and telemetry gaps, then fetch/prune locally and remove the chain/issue worktrees after merge.
+15. Write a final private report under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/report.md` with functionality delivered, telemetry roll-up, quality signals, halt records, decision escrow, carryover, lessons when available, and telemetry gaps, then fetch/prune locally and remove the chain/issue worktrees after merge.
 
 Telemetry:
 
