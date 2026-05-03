@@ -1,0 +1,102 @@
+schema_version: 1
+kind: studio-v2-dev-studio-forwarders
+parent_issue: 444
+leaf_issue: 516
+schema_file: core/v2/schemas/dev-studio-forwarders.schema.json
+umbrella:
+  invocation: /dev-studio
+  skill: core/v2/skills/dev-studio/SKILL.md
+  routing: core/v2/skills/dev-studio/routing.yaml
+  role_registry: core/v2/registry/roles.json
+transition:
+  v1_studio_router: .claude/skills/studio/SKILL.md
+  v1_status: "unchanged; /studio remains the v1 Forge router until A9 traffic switch"
+  cutover_status: not-cut-over
+dispatch:
+  - canonical_role: manager
+    invocation: /dev-studio manager
+    compatibility_aliases:
+      - chanakya
+      - coordinator
+      - orchestrator
+    status: v1-forwarder-present
+  - canonical_role: worker
+    invocation: /dev-studio worker
+    compatibility_aliases:
+      - achilles
+      - implementer
+    status: v1-forwarder-present
+  - canonical_role: reviewer
+    invocation: /dev-studio reviewer
+    compatibility_aliases:
+      - argus
+      - verifier
+    status: v1-forwarder-present
+  - canonical_role: perf
+    invocation: /dev-studio perf
+    compatibility_aliases:
+      - apollo
+      - performance
+      - performance-engineer
+    status: v1-forwarder-present
+  - canonical_role: planner
+    invocation: /dev-studio planner
+    compatibility_aliases:
+      - architect
+      - luban
+      - lu-ban
+    status: reserved
+  - canonical_role: qa-engineer
+    invocation: /dev-studio qa-engineer
+    compatibility_aliases:
+      - qa
+      - chiron
+      - synthetic-qa
+    status: reserved
+  - canonical_role: flow-tester
+    invocation: /dev-studio flow-tester
+    compatibility_aliases:
+      - flow
+      - manual-qa
+      - exploratory-tester
+    status: reserved
+  - canonical_role: release-manager
+    invocation: /dev-studio release-manager
+    compatibility_aliases:
+      - release
+      - shipper
+    status: reserved
+  - canonical_role: host-adapter
+    invocation: /dev-studio host-adapter
+    compatibility_aliases:
+      - adapter
+      - host
+    status: reserved
+  - canonical_role: operator
+    invocation: /dev-studio operator
+    compatibility_aliases:
+      - user
+      - human
+      - owner
+    status: reserved-non-routable
+forwarders:
+  - legacy_invocation: /chanakya
+    canonical_role: manager
+    v2_invocation: /dev-studio manager
+    v1_skill: chanakya/SKILL.md
+    runtime_cutover: false
+  - legacy_invocation: /achilles
+    canonical_role: worker
+    v2_invocation: /dev-studio worker
+    v1_skill: achilles/SKILL.md
+    runtime_cutover: false
+  - legacy_invocation: /argus
+    canonical_role: reviewer
+    v2_invocation: /dev-studio reviewer
+    v1_skill: argus/SKILL.md
+    runtime_cutover: false
+  - legacy_invocation: /apollo
+    canonical_role: perf
+    v2_invocation: /dev-studio perf
+    v1_skill: apollo/SKILL.md
+    runtime_cutover: false

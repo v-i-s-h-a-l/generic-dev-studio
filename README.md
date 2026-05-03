@@ -75,6 +75,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /studio work chain v2-transition                      # canonical phasewise Studio v2 transition chain
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
+scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters from private chain-run telemetry
 scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
 STUDIO_TRACK=<track>             # session-start shortcut for /studio work <track>
 /studio nodes                    # day-2 fleet management — status, add, remove, health, sync, schedule
@@ -160,6 +161,8 @@ scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --appl
 scripts/pre-commit-review.sh                                # manual no-secret reviewer gate for risky staged diffs
 scripts/v2-role-resolve.sh chanakya                         # resolve Studio v2 compatibility aliases to canonical role names
 scripts/lint-v2-enforcement.sh --staged                     # A0.6 Studio v2 SPEC-derived substrate/profile gates
+scripts/v2-profile.sh --profile ios-turnip --list           # A6 project-profile operation resolver
+scripts/lint-build-release-message.sh --file draft.md --channel testflight # A11 build/release message shape + duplicate lint
 scripts/pr-headless-review.sh <pr>                          # run smoke-eligible no-secret reviewer gate, then merge if non-blocked
 scripts/pr-headless-review.sh <pr> --no-require-cross-host   # opt out of the default independent-provider reviewer requirement
 scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-host claude-code  # resolve reviewer model from policy
@@ -236,6 +239,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-dependency-export.sh # Mermaid graph from native GitHub blocked_by issue dependencies
   studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
   studio-chain-runner.sh   # plan/execute/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, locks, and private run reports
+  studio-chain-telemetry-digest.sh # v1 counters and weekly digest from private chain-run reports/events
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   studio-staleness-triage.sh # scheduled GitHub issue staleness labels + escalation comments for the PM surface
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
@@ -253,6 +257,8 @@ scripts/                # multi-worker fleet (BETA)
   lint-project-skill-links.sh # blocks missing repo-local project skill discovery links
   v2-role-resolve.sh    # Studio v2 canonical role + compatibility alias resolver
   lint-v2-enforcement.sh # A0.6 Studio v2 SPEC-derived substrate/profile gates
+  v2-profile.sh          # A6 resolver/runner for profile-owned build/test/lint/release operations
+  lint-build-release-message.sh # A11 build/release message shape + duplicate linter
   test-mode-pack.sh     # skill-testing driver — runs fixtures against mode packs (on-demand, spawns claude -p)
   lint-field-review-surfaces.sh # blocks raw cross-host review snippets outside phase-review wrappers
   lint-v2-bootstrap.sh  # A0.4 substrate bootstrap gate before A0.5 SPEC sign-off

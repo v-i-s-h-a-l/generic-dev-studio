@@ -1,0 +1,213 @@
+schema_version:
+  name: ios-skill-catalog
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+
+catalog: ios
+parent_issue: 444
+leaf_issue: 520
+profile: ios
+scope: project-profile
+scope_note: "A3c catalog content for v2 iOS projects; A3/A3b own loading and advisory route resolution."
+
+catalog_policy:
+  routing_authority: advisory
+  source_of_truth: core/v2/skills/ios/catalog.yaml
+  install_profile: recipes/profiles/ios.yaml
+  host_registry_mutation: forbidden
+
+skills:
+  - id: swiftui-pro
+    display_name: SwiftUI Pro
+    kind: vendored
+    status: available
+    domains: [swift, swiftui, ios]
+    roles: [worker, reviewer, planner]
+    triggers:
+      - writing or reviewing SwiftUI views
+      - SwiftUI best practices
+      - SwiftUI code review
+    skill_path: skills/vendored/twostraws/swiftui-pro/SKILL.md
+    recipe_path: recipes/twostraws/swiftui-pro.yaml
+    vendor_path: skills/vendored/twostraws/swiftui-pro/vendor.yaml
+    portability_path: skills/vendored/twostraws/swiftui-pro/portability.yaml
+    source:
+      upstream: github.com/twostraws/SwiftUI-Agent-Skill
+      path: swiftui-pro/
+      pinned_sha: be297ff80dddec529af1f9b1f1f114aab6c9d11c
+    license: MIT
+    authoring_standard: exempt
+    routing:
+      when_to_load: "Use for SwiftUI implementation or review tasks that are not more specifically performance, Liquid Glass, or large-view refactor work."
+      primary_reason: "General SwiftUI correctness, API hygiene, data flow, navigation, accessibility, design, and performance review."
+
+  - id: swiftui-view-refactor
+    display_name: SwiftUI View Refactor
+    kind: vendored
+    status: available
+    domains: [swift, swiftui, ios, refactor]
+    roles: [worker, reviewer]
+    triggers:
+      - refactor a large SwiftUI view
+      - split a long SwiftUI body
+      - standardize SwiftUI view structure
+    skill_path: skills/vendored/Dimillian/swiftui-view-refactor/SKILL.md
+    recipe_path: recipes/dimillian/swiftui-view-refactor.yaml
+    vendor_path: skills/vendored/Dimillian/swiftui-view-refactor/vendor.yaml
+    portability_path: skills/vendored/Dimillian/swiftui-view-refactor/portability.yaml
+    source:
+      upstream: github.com/Dimillian/Skills
+      path: swiftui-view-refactor/
+      pinned_sha: 05ba982bfeb0d77d3c97d4542b0ee15034d05f84
+    license: MIT
+    authoring_standard: exempt
+    routing:
+      when_to_load: "Use when a SwiftUI view is being split, simplified, or moved toward stable dedicated subviews."
+      primary_reason: "Dedicated guidance for SwiftUI view decomposition, MV-over-MVVM defaults, dependency injection, and Observation usage."
+
+  - id: swiftui-performance-audit
+    display_name: SwiftUI Performance Audit
+    kind: vendored
+    status: available
+    domains: [swift, swiftui, ios, performance]
+    roles: [reviewer, perf, worker]
+    triggers:
+      - scroll jank
+      - excessive SwiftUI view updates
+      - SwiftUI runtime performance audit
+    skill_path: skills/vendored/Dimillian/swiftui-performance-audit/SKILL.md
+    recipe_path: recipes/dimillian/swiftui-performance-audit.yaml
+    vendor_path: skills/vendored/Dimillian/swiftui-performance-audit/vendor.yaml
+    portability_path: skills/vendored/Dimillian/swiftui-performance-audit/portability.yaml
+    source:
+      upstream: github.com/Dimillian/Skills
+      path: swiftui-performance-audit/
+      pinned_sha: 05ba982bfeb0d77d3c97d4542b0ee15034d05f84
+    license: MIT
+    authoring_standard: exempt
+    routing:
+      when_to_load: "Use for SwiftUI slow rendering, janky scrolling, hangs, high CPU or memory, and excessive invalidation symptoms."
+      primary_reason: "Performance-specific audit workflow with code-first checks and profiling evidence guidance."
+
+  - id: swiftui-liquid-glass
+    display_name: SwiftUI Liquid Glass
+    kind: vendored
+    status: available
+    domains: [swift, swiftui, ios, design-system]
+    roles: [worker, reviewer]
+    triggers:
+      - iOS 26 Liquid Glass
+      - adopt Liquid Glass in SwiftUI
+      - review Liquid Glass usage
+    skill_path: skills/vendored/Dimillian/swiftui-liquid-glass/SKILL.md
+    recipe_path: recipes/dimillian/swiftui-liquid-glass.yaml
+    vendor_path: skills/vendored/Dimillian/swiftui-liquid-glass/vendor.yaml
+    portability_path: skills/vendored/Dimillian/swiftui-liquid-glass/portability.yaml
+    source:
+      upstream: github.com/Dimillian/Skills
+      path: swiftui-liquid-glass/
+      pinned_sha: 05ba982bfeb0d77d3c97d4542b0ee15034d05f84
+    license: MIT
+    authoring_standard: exempt
+    routing:
+      when_to_load: "Use for iOS 26+ SwiftUI work that adopts, reviews, or improves Liquid Glass surfaces and interactions."
+      primary_reason: "Liquid Glass API usage, availability fallbacks, glass grouping, modifier ordering, and interaction guidance."
+
+  - id: swift-concurrency-pro
+    display_name: Swift Concurrency Pro
+    kind: vendored
+    status: available
+    domains: [swift, concurrency, ios]
+    roles: [worker, reviewer]
+    triggers:
+      - writing or reviewing Swift concurrency
+      - async await review
+      - actor isolation
+      - Sendable conformance
+    skill_path: skills/vendored/twostraws/swift-concurrency-pro/SKILL.md
+    recipe_path: recipes/twostraws/swift-concurrency-pro.yaml
+    vendor_path: skills/vendored/twostraws/swift-concurrency-pro/vendor.yaml
+    portability_path: skills/vendored/twostraws/swift-concurrency-pro/portability.yaml
+    source:
+      upstream: github.com/twostraws/Swift-Concurrency-Agent-Skill
+      path: swift-concurrency-pro/
+      pinned_sha: e710f8d577ccbff1ac047aac1594a5683000cb0b
+    license: MIT
+    authoring_standard: exempt
+    routing:
+      when_to_load: "Use for Swift async/await, actors, Sendable, cancellation, async sequences, and strict-concurrency diagnostics."
+      primary_reason: "Concurrency-specific correctness review and implementation guidance."
+
+  - id: swift-testing-pro
+    display_name: Swift Testing Pro
+    kind: vendored
+    status: available
+    domains: [swift, testing, ios]
+    roles: [worker, reviewer, qa-engineer]
+    triggers:
+      - writing or reviewing Swift Testing
+      - Test macro
+      - expect macro
+      - migrating from XCTest
+    skill_path: skills/vendored/twostraws/swift-testing-pro/SKILL.md
+    recipe_path: recipes/twostraws/swift-testing-pro.yaml
+    vendor_path: skills/vendored/twostraws/swift-testing-pro/vendor.yaml
+    portability_path: skills/vendored/twostraws/swift-testing-pro/portability.yaml
+    source:
+      upstream: github.com/twostraws/Swift-Testing-Agent-Skill
+      path: swift-testing-pro/
+      pinned_sha: 3d434c7d81f35e5726d4363fc30260735d541c2f
+    license: MIT
+    authoring_standard: exempt
+    routing:
+      when_to_load: "Use when writing, reviewing, or migrating Swift Testing unit and integration tests."
+      primary_reason: "Modern Swift Testing APIs, async tests, assertions, migration guidance, and test quality checks."
+
+  - id: swift-api-design-guidelines-skill
+    display_name: Swift API Design Guidelines
+    kind: vendored
+    status: available
+    domains: [swift, api-design, ios]
+    roles: [planner, worker, reviewer]
+    triggers:
+      - designing or reviewing Swift APIs
+      - argument labels
+      - Swift naming conventions
+    skill_path: skills/vendored/Erikote04/swift-api-design-guidelines-skill/SKILL.md
+    recipe_path: recipes/erikote04/swift-api-design-guidelines-skill.yaml
+    vendor_path: skills/vendored/Erikote04/swift-api-design-guidelines-skill/vendor.yaml
+    portability_path: skills/vendored/Erikote04/swift-api-design-guidelines-skill/portability.yaml
+    source:
+      upstream: github.com/Erikote04/Swift-API-Design-Guidelines-Agent-Skill
+      path: swift-api-design-guidelines-skill/
+      pinned_sha: 36cdc1b5680f5d6c5c52c353a6857d176f4929e8
+    license: MIT
+    authoring_standard: exempt
+    routing:
+      when_to_load: "Use when public or internal Swift APIs, names, argument labels, overloads, or docs are being designed or reviewed."
+      primary_reason: "Swift API Design Guidelines applied to call-site fluency, naming, terminology, and documentation."
+
+  - id: swift-architecture-skill
+    display_name: Swift Architecture Skill
+    kind: vendored
+    status: available
+    domains: [swift, architecture, ios]
+    roles: [planner, worker, reviewer]
+    triggers:
+      - module or package architecture
+      - MVVM vs TCA vs Clean Architecture
+      - architecture refactor
+    skill_path: skills/vendored/efremidze/swift-architecture-skill/SKILL.md
+    recipe_path: recipes/efremidze/swift-architecture-skill.yaml
+    vendor_path: skills/vendored/efremidze/swift-architecture-skill/vendor.yaml
+    portability_path: skills/vendored/efremidze/swift-architecture-skill/portability.yaml
+    source:
+      upstream: github.com/efremidze/swift-architecture-skill
+      path: swift-architecture-skill/
+      pinned_sha: 457f1355657f2431d7c19e1cfa8d9480ea9d30ed
+    license: MIT
+    authoring_standard: exempt
+    routing:
+      when_to_load: "Use for Swift module boundaries, architecture pattern selection, broad refactors, and cross-feature design."
+      primary_reason: "Architecture selection and review across MVVM, TCA, Clean Architecture, VIPER, MVI, MVP, and reactive styles."
