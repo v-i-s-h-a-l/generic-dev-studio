@@ -330,6 +330,7 @@
 /studio work &lt;track&gt;      # run a parallel track, then final reviewed PR + cleanup + summary
 /studio work chain workflow-measurement-improvements  # run issue chains with fresh sessions, UUID telemetry, reviewed PRs, cleanup
 scripts/studio-chain-reviewed.sh apollo-network-efficiency --host codex --review-host claude-reviewer  # phase-review the plan, then run reviewed chain PRs
+scripts/run-apollo-network-reviewed-chain.sh  # background Apollo network chain; prints PID + latest-log tail command
 /studio janitor [--yes]   # cross-project sweep of stale artifacts (dry-run by default)
 /studio nodes             # day-2 fleet management — status, add, sync, health, diagnose, schedule, recheck
 /studio tf-push [--dry-run] [--version X.Y.Z] [--background]  # TestFlight push; explicit version + optional background handle
