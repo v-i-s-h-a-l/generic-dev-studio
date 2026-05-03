@@ -28,6 +28,9 @@ Current bootstrap artifacts:
   artifact matching `schemas/vendored-skill-artifact.schema.json`.
 - `skills/routing-rules.yaml` is the A3b role-aware skill routing ruleset.
   Resolve a task context to required skills with `scripts/v2-skill-route.sh`.
+- `skills/ios/catalog.yaml` is the A3c iOS skill catalog manifest. It is
+  catalog content only: A3 owns vendored skill loading, and A3b owns advisory
+  skill-routing rules and resolver behavior.
 
 Until `SPEC.md` carries `<!-- v2-bootstrap:a0.5-sign-off:complete -->`, the gate
 allows substrate docs, metadata, schemas, and this bootstrap hook only. It blocks
