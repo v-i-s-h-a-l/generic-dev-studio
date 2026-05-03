@@ -5,11 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-<<<<<<< HEAD
-  "generated_at": "2026-05-03T03:56:09Z",
-=======
-  "generated_at": "2026-05-03T04:05:50Z",
->>>>>>> 802d943 (Archive Forge reliability freeze)
+  "generated_at": "2026-05-03T04:23:14Z",
   "agents": [
     {
       "name": "studio",

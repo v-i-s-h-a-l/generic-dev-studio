@@ -11,6 +11,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+# shellcheck source=lib-paths.sh
+. "$SCRIPT_DIR/lib-paths.sh"
+
 TRACK="${1:?usage: track-next.sh <track-name>}"
 REPO="v-i-s-h-a-l/generic-dev-studio"
 LABEL="track:${TRACK}"
@@ -38,7 +42,7 @@ git pull --quiet origin "$BRANCH" 2>/dev/null || true
 # first, so lowest number is a good tiebreaker when Blocked-by is absent.
 # The Blocked-by filter is the correctness guarantee; number-order is the
 # pick heuristic when multiple issues are unblocked.
-issue_json=$(gh issue list \
+issue_json=$(with_login_home_for_github gh issue list \
   --repo "$REPO" \
   --label "$LABEL" \
   --assignee "" \
@@ -55,12 +59,16 @@ fi
 # "Blocked by:" may appear on its own line, inside tables, or inline —
 # pattern match case-insensitively on `Blocked by:` followed by #<digits>,
 # take the union of all such numbers, and check each is closed via gh.
-pick_json=$(REPO="$REPO" ISSUES_JSON="$issue_json" python3 <<'PY'
+GITHUB_PARENT_HOME=$(resolve_parent_home_for_github)
+pick_json=$(REPO="$REPO" ISSUES_JSON="$issue_json" GITHUB_PARENT_HOME="$GITHUB_PARENT_HOME" python3 <<'PY'
 import json, os, re, subprocess, sys
 
 issues = json.loads(os.environ["ISSUES_JSON"])
 issues.sort(key=lambda it: it["number"])
 repo = os.environ["REPO"]
+gh_env = os.environ.copy()
+if os.environ.get("GITHUB_PARENT_HOME"):
+    gh_env["HOME"] = os.environ["GITHUB_PARENT_HOME"]
 blocked_line_pat = re.compile(r'Blocked by:([^\n]+)', re.IGNORECASE)
 num_pat = re.compile(r'#(\d+)')
 
@@ -68,7 +76,7 @@ def is_open(n):
     try:
         r = subprocess.run(
             ["gh", "issue", "view", str(n), "--repo", repo, "--json", "state"],
-            capture_output=True, text=True, check=True,
+            capture_output=True, text=True, check=True, env=gh_env,
         )
         return json.loads(r.stdout)["state"] == "OPEN"
     except subprocess.CalledProcessError as e:
@@ -102,7 +110,7 @@ title=$(printf '%s' "$pick_json" | python3 -c "import sys,json; print(json.load(
 body=$(printf '%s' "$pick_json" | python3 -c "import sys,json; print(json.load(sys.stdin)['body'])")
 
 # Claim it
-gh issue edit "$number" --add-assignee "@me" --repo "$REPO" >/dev/null
+with_login_home_for_github gh issue edit "$number" --add-assignee "@me" --repo "$REPO" >/dev/null
 
 printf '=== TRACK WORK DIRECTIVE ===\n'
 printf 'track:   %s\n' "$TRACK"

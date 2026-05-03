@@ -73,7 +73,8 @@ case "$kind" in
 esac
 
 if [ -z "$review_host" ]; then
-  case "${STUDIO_PARENT_HOST:-${STUDIO_HOST:-}}" in
+  parent_host=$(resolve_current_studio_host "")
+  case "$parent_host" in
     *codex*) review_host="claude-reviewer" ;;
     *claude*) review_host="codex-reviewer" ;;
     *) review_host="${STUDIO_REVIEW_HOST:-claude-reviewer}" ;;

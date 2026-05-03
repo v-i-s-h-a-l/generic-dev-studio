@@ -118,6 +118,71 @@ resolve_user_login_home() {
   return 1
 }
 
+studio_home_is_synthetic() {
+  local home="${1:-${HOME:-}}"
+  case "$home" in
+    */.codex-homes/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+resolve_current_studio_host() {
+  local fallback="${1:-unknown}"
+  if [ -n "${STUDIO_PARENT_HOST:-}" ]; then
+    printf '%s\n' "$STUDIO_PARENT_HOST"
+    return 0
+  fi
+  if [ -n "${STUDIO_HOST:-}" ]; then
+    printf '%s\n' "$STUDIO_HOST"
+    return 0
+  fi
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+    printf '%s\n' "claude-code"
+    return 0
+  fi
+  if [ -n "${CODEX_PLUGIN_ROOT:-}" ] || studio_home_is_synthetic "${HOME:-}"; then
+    printf '%s\n' "codex"
+    return 0
+  fi
+  printf '%s\n' "$fallback"
+}
+
+resolve_parent_home_for_github() {
+  case "${STUDIO_BYPASS_PARENT_HOME_FLIP:-0}" in
+    1|true|TRUE|yes|YES)
+      printf '%s\n' "${HOME:-}"
+      return 0
+      ;;
+  esac
+
+  if ! studio_home_is_synthetic "${HOME:-}"; then
+    printf '%s\n' "${HOME:-}"
+    return 0
+  fi
+
+  local login_home
+  login_home=$(resolve_user_login_home 2>/dev/null || true)
+  if [ -n "$login_home" ] && [ -d "$login_home" ]; then
+    printf '%s\n' "$login_home"
+    return 0
+  fi
+
+  printf '%s\n' "${HOME:-}"
+}
+
+with_login_home_for_github() {
+  [ "$#" -gt 0 ] || return 2
+  local original_home="${HOME:-}" parent_home parent_host
+  parent_home=$(resolve_parent_home_for_github)
+  if [ -n "$parent_home" ] && [ "$parent_home" != "$original_home" ]; then
+    parent_host=$(resolve_current_studio_host unknown)
+    printf 'studio: HOME normalized for GitHub op (parent=%s)\n' "$parent_host" >&2
+    HOME="$parent_home" "$@"
+    return $?
+  fi
+  "$@"
+}
+
 resolve_push_queue() {
   local project
   project=$(resolve_project) || return 1
