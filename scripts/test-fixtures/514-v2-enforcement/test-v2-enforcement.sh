@@ -53,6 +53,7 @@ privacy_classification: private-runtime
 status: ready
 YAML
   cat > "$repo/core/v2/roles/worker.yaml" <<'YAML'
+role: worker
 purpose: implement scoped work
 inputs: []
 outputs: []

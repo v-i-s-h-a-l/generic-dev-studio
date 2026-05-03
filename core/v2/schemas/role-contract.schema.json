@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "role-contract.schema.json",
+  "title": "Studio v2 role contract",
+  "description": "Minimum executable role contract declared by Studio v2 roles.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "parent_issue",
+    "leaf_issue",
+    "status",
+    "role",
+    "purpose",
+    "inputs",
+    "outputs",
+    "reads",
+    "writes",
+    "idempotency_key",
+    "decision_rights",
+    "escalation_triggers",
+    "failure_semantics",
+    "verification_floor"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "studio-v2-role-contract"},
+    "parent_issue": {"const": 444},
+    "leaf_issue": {"const": 526},
+    "status": {"enum": ["active", "reserved", "retired"]},
+    "role": {
+      "enum": ["worker", "reviewer", "perf"]
+    },
+    "purpose": {"type": "string", "minLength": 1},
+    "inputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/namedEntry"}
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/namedEntry"}
+    },
+    "reads": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/scopeEntry"}
+    },
+    "writes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/scopeEntry"}
+    },
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "decision_rights": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "escalation_triggers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "failure_semantics": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "verification_floor": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "$defs": {
+    "namedEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "description"],
+      "properties": {
+        "kind": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "required": {"type": "boolean"}
+      }
+    },
+    "scopeEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "description"],
+      "properties": {
+        "scope": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

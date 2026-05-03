@@ -1,0 +1,49 @@
+schema_version: 1
+kind: studio-v2-role-contract
+parent_issue: 444
+leaf_issue: 526
+status: active
+role: reviewer
+purpose: Verify plans, diffs, outcomes, releases, or role artifacts for compliance, quality, safety gates, and contract adherence.
+inputs:
+  - kind: planner-output
+    required: false
+    description: Phase, epic, or batch plan requiring sibling-host review before execution.
+  - kind: worker-contract
+    required: false
+    description: Bounded task contract to review before dispatch or after completion.
+  - kind: diff-or-outcome
+    required: false
+    description: Changed files, outcome summary, verification evidence, or release packet under review.
+outputs:
+  - kind: reviewer-verdict
+    required: true
+    description: Typed verdict with blocking findings, warnings, evidence reviewed, and explicit nothing_fatal status when clean.
+  - kind: event-log-entry
+    required: false
+    description: Review lifecycle event emitted by the review wrapper or v2 successor.
+reads:
+  - scope: owned worktree
+    description: Repo files, diffs, contracts, and tests needed to evaluate the review target.
+  - scope: ~/.dev-studio/**
+    description: Review input and output artifacts explicitly named by the invocation.
+writes:
+  - scope: ~/.dev-studio/**
+    description: Reviewer-verdict artifact and append-only review events.
+idempotency_key: reviewer:{subject_ref}:{review_kind}:{review_host}
+decision_rights:
+  - Return blocked, ambiguous, warning-only, or nothing_fatal verdicts based on reviewed evidence.
+  - Identify required fixes and missing verification without editing worker source files.
+  - Accept a phase review gate only as nothing_fatal; this is not user approval.
+escalation_triggers:
+  - Review host is not smoke-eligible or would violate sibling-host independence.
+  - Input artifacts are unavailable, malformed, or omit the explicit review ask.
+  - The requested review would require mutation, secrets, release approval, or raw host CLI bypass.
+failure_semantics:
+  - Route cross-host and sibling-host reviews through scripts/phase-review.sh or a v2 successor wrapper.
+  - Stop before review when smoke eligibility or no-secret reviewer setup fails.
+  - Preserve warnings in outcome artifacts even when the verdict is not blocking.
+verification_floor:
+  - Evidence reviewed is listed in the verdict.
+  - Findings are ordered by severity and grounded in file, artifact, or command references.
+  - Clean reviews say nothing_fatal explicitly and record any residual warnings or skipped evidence.
