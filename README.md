@@ -141,6 +141,7 @@ scripts/forge-latency-report.sh --days 14                   # stage-level Forge 
 scripts/field-workflow-report.sh --days 14                  # Field loop timing, tokens, gate pass rates, review coverage, improvement candidates
 scripts/studio-pr-baseline-report.sh 366                    # PR-level timing, churn, gate, and generated-file baselines
 scripts/host-preflight.sh codex /repo                       # prove gh + git credential access before host task work
+scripts/studio-chain-reviewed.sh apollo-network-efficiency --host codex --review-host claude-reviewer  # pre-run plan review + reviewed chain PR merges
 scripts/pre-commit-review.sh                                # manual no-secret reviewer gate for risky staged diffs
 scripts/pr-headless-review.sh <pr>                          # run smoke-eligible no-secret reviewer gate, then merge if non-blocked
 scripts/pr-headless-review.sh <pr> --no-require-cross-host   # opt out of the default independent-provider reviewer requirement

@@ -66,6 +66,7 @@ scripts/field-workflow-report.sh --project turnip-ios --days 14   # Field loop t
 scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # plan chain branches, capacity-scaled fresh sessions, PR review/merge
 scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex # execute chains with node/RAM-sized session pool + private report
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
+scripts/studio-chain-reviewed.sh apollo-network-efficiency --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
 scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
 
 # Chain runner pool sizing:
