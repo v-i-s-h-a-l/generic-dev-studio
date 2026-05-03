@@ -174,7 +174,7 @@ EOF
 ## Step 6 — Close issue
 
 ```
-gh issue close <N> --comment "Implemented in $(git rev-parse --short HEAD) on track/<name>."
+scripts/studio-gh.sh issue close <N> --comment "Implemented in $(git rev-parse --short HEAD) on track/<name>."
 ```
 
 ## Step 7 — Loop

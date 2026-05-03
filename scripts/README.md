@@ -75,10 +75,11 @@ scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a 
 scripts/studio-chain-reviewed.sh apollo-network-efficiency --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
 scripts/run-apollo-network-reviewed-chain.sh             # background Apollo network chain; prints PID + latest-log tail command
 scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
+scripts/studio-gh.sh issue list --state open          # gh wrapper for assistant/interactive calls; normalizes synthetic Codex HOME to login HOME
 scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply; STUDIO_BYPASS_ISSUE_BODY_GUARD=1 is user-controlled emergency/debug bypass
 
 # Parent-side GitHub auth:
-# scripts that own gh/PR/issue mutations normalize synthetic Codex HOME to the login HOME per command
+# assistant-initiated calls use scripts/studio-gh.sh; scripts that own gh/PR/issue mutations call with_login_home_for_github
 # STUDIO_BYPASS_PARENT_HOME_FLIP=1   preserve caller HOME for intentional isolation tests
 
 # Chain runner pool sizing:

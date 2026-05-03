@@ -52,7 +52,7 @@ When threshold is met, execute the full release in one shot:
 1. **Draft** release notes to `/tmp/vX.Y.Z-notes.md` per RELEASES.md template. Outcome-first bullets.
 2. **Tag**: `git tag -a vX.Y.Z -m "vX.Y.Z — <theme>"` (annotated).
 3. **Push tag**: `git push origin vX.Y.Z`.
-4. **Create GH release**: `gh release create vX.Y.Z --notes-file /tmp/vX.Y.Z-notes.md --title "vX.Y.Z — <theme>"`.
+4. **Create GH release**: `scripts/studio-gh.sh release create vX.Y.Z --notes-file /tmp/vX.Y.Z-notes.md --title "vX.Y.Z — <theme>"`.
 5. **Update README.md**: Mermaid timeline line + "Story so far" paragraph + remove delivered "Coming next" themes.
 6. **Commit + push README**: `README: vX.Y.Z timeline + Story so far update`.
 

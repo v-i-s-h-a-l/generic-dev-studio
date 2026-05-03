@@ -62,7 +62,7 @@ Return control to the foreground conversation immediately. The agent will report
 > **Extraction criteria — skip:**
 > - Routine tool output, build failures, commit messages.
 > - Anything already listed in `ROADMAP.md` (§Phase sequence) or `ARCHITECTURE.md` (§Design Vision).
-> - Anything tracked by an existing open GitHub issue — `gh issue list --limit 60 --state open` first, skip matches.
+> - Anything tracked by an existing open GitHub issue — `scripts/studio-gh.sh issue list --limit 60 --state open` first, skip matches.
 > - Duplicate mentions of the same idea (merge, don't re-add).
 >
 > **Dedup logic:**
