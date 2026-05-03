@@ -36,6 +36,7 @@ Every line carries the same top-level envelope:
 
 | Event family | Required `data` fields |
 |---|---|
+| Supervisor: `chain_supervisor_decision` | Emitted for mutating `--auto` decisions; `--auto --dry-run` and `--explain-next` print the decision envelope without writing telemetry. Include `action`; include `selected_run_id` for resume/start when available, `candidate_run_ids` for ambiguity/refusals, `reason_id` for refusals, and `lock_path` for lock-held refusals. |
 | Lifecycle: `chain_run_started`, `chain_started`, `chain_issue_started`, `chain_issue_completed`, `chain_completed`, `chain_run_completed` | `status`, `duration_s`; scoped IDs in the envelope; stage-specific fields such as `chain`, `host`, `commit_before`, `commit_after`, or `report` when available. |
 | Resume: `chain_resume_attempt_started`, `chain_resume_attempt_completed` | `attempt_id`; completed event also includes `failure_reason` when non-empty. |
 | Halt: `chain_halt_recorded` | `reason_id`, `halt_class`, `halt_record`. |
