@@ -569,23 +569,40 @@ phase_review_record() {
 compact_phase_review_feedback_json() {
   local review_file="$1"
   awk '
+    function review_section(line, lower) {
+      lower=tolower(line)
+      sub(/^[[:space:]]*#+[[:space:]]*/, "", lower)
+      sub(/^[[:space:]]*/, "", lower)
+      if (lower ~ /^accepted plan adjustments?([[:space:]:]|$)/) return "accepted plan adjustments"
+      if (lower ~ /^plan adjustments?([[:space:]:]|$)/) return "plan adjustments"
+      if (lower ~ /^recommendations?([[:space:]:]|$)/) return "recommendations"
+      if (lower ~ /^warnings?([[:space:]:]|$)/) return "warnings"
+      if (lower ~ /^(fatal blockers?|blockers?)([[:space:]:]|$)/) return "__stop__"
+      return ""
+    }
     BEGIN { section="" }
     /^[[:space:]]*PHASE_REVIEW_VERDICT[[:space:]]*[:=]/ { next }
-    /^[[:space:]]*(Warnings?|Recommendations?|Plan adjustments?|Accepted plan adjustments?)[[:space:]]*:?/ {
-      section=tolower($0)
-      sub(/:.*/, "", section)
-      next
+    {
+      next_section=review_section($0)
+      if (next_section == "__stop__") {
+        section=""
+        next
+      }
+      if (next_section != "") {
+        section=next_section
+        next
+      }
     }
-    /^[[:space:]]*(Fatal blockers?|Blockers?)[[:space:]]*:?/ { section=""; next }
-    section != "" && /^[[:space:]]*([-*]|\d+[.)])[[:space:]]+/ {
+    section != "" && /^[[:space:]]*([-*]|[0-9]+[.)])[[:space:]]+/ {
       line=$0
-      sub(/^[[:space:]]*([-*]|\d+[.)])[[:space:]]+/, "", line)
-      gsub(/"/, "\\\"", line)
+      sub(/^[[:space:]]*([-*]|[0-9]+[.)])[[:space:]]+/, "", line)
       if (line != "") print section "\t" line
+      next
     }
   ' "$review_file" | jq -R -s -c '
     split("\n")[:-1]
-    | map(split("\t") | {kind:.[0], text:.[1]})
+    | map(capture("^(?<kind>[^\t]+)\t(?<text>.*)$")?)
+    | map(select(. != null))
     | map(select(.text != null and .text != ""))
     | .[:8]
   '
