@@ -25,7 +25,7 @@
 #              event taxonomy without exposing `lib-ledger.sh` directly.
 #
 # Usage:
-#   scripts/studio-tf-push.sh [push] [--scheme <name>] [--dry-run] [--background]
+#   scripts/studio-tf-push.sh [push] [--scheme <name>] [--version <X.Y.Z>] [--dry-run] [--background]
 #   scripts/studio-tf-push.sh appstore --build <n> --version <v> \
 #                              --release-notes-file <path> --whatsnew-file <path> \
 #                              [--dry-run]
@@ -43,6 +43,9 @@
 #                                 minting one. Wrappers generate the tag up
 #                                 front so that `push` and later `emit` calls
 #                                 share one idempotency key.
+#   STUDIO_TF_FORCE_VERSION       explicit MARKETING_VERSION for `push`.
+#                                 Equivalent to `push --version`; the flag
+#                                 wins when both are set.
 #   STUDIO_TF_PUSH_FIXTURE_NODE   override the resolved node id (smoke tests).
 #   STUDIO_TF_PUSH_SKIP_NODE_PICK=1   skip the node-pick gate (fixtures only).
 #   STUDIO_RELEASE_TAG            reused by --background so parent, child, and
@@ -347,14 +350,25 @@ cmd_push() {
   DRY_RUN_FLAG=0
   local BACKGROUND_FLAG=0
   local SCHEME="Zaps"
+  local FORCE_VERSION="${STUDIO_TF_FORCE_VERSION:-}"
   while [ $# -gt 0 ]; do
     case "$1" in
       --dry-run) DRY_RUN_FLAG=1; shift ;;
       --background) BACKGROUND_FLAG=1; shift ;;
       --scheme) SCHEME="${2:?}"; shift 2 ;;
+      --version) FORCE_VERSION="${2:?}"; shift 2 ;;
       *) printf 'push: unknown arg %s\n' "$1" >&2; exit 2 ;;
     esac
   done
+  if [ -n "$FORCE_VERSION" ]; then
+    case "$FORCE_VERSION" in
+      *[!0-9.]*|.*|*.) printf 'push: --version must look like X.Y.Z (got %s)\n' "$FORCE_VERSION" >&2; exit 2 ;;
+    esac
+    if ! printf '%s\n' "$FORCE_VERSION" | grep -Eq '^[0-9]+[.][0-9]+[.][0-9]+$'; then
+      printf 'push: --version must look like X.Y.Z (got %s)\n' "$FORCE_VERSION" >&2
+      exit 2
+    fi
+  fi
 
   if [ "$BACKGROUND_FLAG" = "1" ]; then
     cmd_push_background "$SCHEME" "$DRY_RUN_FLAG"
@@ -404,21 +418,16 @@ cmd_push() {
     [ -n "$CURRENT_VERSION" ] || halt_failed prereq "could not parse MARKETING_VERSION from pbxproj"
   fi
 
-  RELEASE_TAG="${STUDIO_RELEASE_TAG:-release-$((LATEST_BUILD_NUMBER + 1))-$(date -u +%Y%m%d-%H%M%S)}"
-
-  emit_release release_started "$(_json_obj \
-    "build_from=$LATEST_BUILD_NUMBER" \
-    "live_version=$LIVE_VERSION" \
-    "current_version=$CURRENT_VERSION" \
-    "branch=$BRANCH")"
-
-  printf 'studio-tf-push: routed to %s (release-tag=%s, dry-run=%s, scheme=%s)\n' \
-    "$NODE" "$RELEASE_TAG" "$DRY_RUN_FLAG" "$SCHEME" >&2
-
   local NEW_BUILD_NUMBER=$((LATEST_BUILD_NUMBER + 1))
   local VERSION="$CURRENT_VERSION"
+  local VERSION_SOURCE="pbxproj"
+  local VERSION_DECISION=""
 
-  if [ "$DRY_RUN_FLAG" != "1" ] && [ "$CURRENT_VERSION" = "$LIVE_VERSION" ]; then
+  if [ -n "$FORCE_VERSION" ]; then
+    VERSION="$FORCE_VERSION"
+    VERSION_SOURCE="override"
+    VERSION_DECISION="using explicit version override"
+  elif [ "$DRY_RUN_FLAG" != "1" ] && [ "$CURRENT_VERSION" = "$LIVE_VERSION" ]; then
     local YY MM N
     YY=$(date -u +%y)
     MM=$(date -u +%-m)
@@ -428,6 +437,55 @@ cmd_push() {
       N=0
     fi
     VERSION="${YY}.${MM}.${N}"
+    VERSION_SOURCE="auto-bump"
+    VERSION_DECISION="pbxproj matched live version; auto-bumping"
+  else
+    VERSION_DECISION="keeping pbxproj MARKETING_VERSION"
+  fi
+
+  RELEASE_TAG="${STUDIO_RELEASE_TAG:-release-${NEW_BUILD_NUMBER}-$(date -u +%Y%m%d-%H%M%S)}"
+
+  printf 'studio-tf-push: version decision: pbxproj=%s live=%s resolved=%s source=%s (%s)\n' \
+    "$CURRENT_VERSION" "$LIVE_VERSION" "$VERSION" "$VERSION_SOURCE" "$VERSION_DECISION" >&2
+
+  emit_release release_started "$(_json_obj \
+    "build_from=$LATEST_BUILD_NUMBER" \
+    "live_version=$LIVE_VERSION" \
+    "current_version=$CURRENT_VERSION" \
+    "resolved_version=$VERSION" \
+    "version_source=$VERSION_SOURCE" \
+    "branch=$BRANCH")"
+
+  printf 'studio-tf-push: routed to %s (release-tag=%s, dry-run=%s, scheme=%s)\n' \
+    "$NODE" "$RELEASE_TAG" "$DRY_RUN_FLAG" "$SCHEME" >&2
+
+  if [ "$DRY_RUN_FLAG" != "1" ]; then
+    local version_resp rejected_state
+    version_resp=$(curl -sg "https://api.appstoreconnect.apple.com/v1/apps/${APP_ID}/appStoreVersions?fields[appStoreVersions]=versionString,appStoreState" \
+      -H "Authorization: Bearer $TOKEN")
+    printf '%s' "$version_resp" | jq -e '.data | type == "array"' >/dev/null 2>&1 \
+      || halt_failed prereq "ASC version-state preflight returned an unreadable response"
+    rejected_state=$(printf '%s' "$version_resp" | jq -r --arg v "$VERSION" '
+      .data[]?
+      | select(.attributes.versionString == $v)
+      | .attributes.appStoreState
+      | select(test("^(INVALID_BINARY|DEVELOPER_REJECTED|REJECTED|METADATA_REJECTED)$"))
+    ' | head -1)
+    if [ -n "$rejected_state" ]; then
+      halt_failed prereq "STUDIO_TF_REJECTED_VERSION: resolved MARKETING_VERSION=$VERSION has App Store state $rejected_state. Set STUDIO_TF_FORCE_VERSION=<new> or update pbxproj before re-running."
+    fi
+    if [ -n "$FORCE_VERSION" ]; then
+      local existing_live_state
+      existing_live_state=$(printf '%s' "$version_resp" | jq -r --arg v "$VERSION" '
+        .data[]?
+        | select(.attributes.versionString == $v)
+        | .attributes.appStoreState
+        | select(. == "READY_FOR_SALE")
+      ' | head -1)
+      if [ -n "$existing_live_state" ]; then
+        halt_failed prereq "explicit version $VERSION already exists in ASC as $existing_live_state; choose a new STUDIO_TF_FORCE_VERSION"
+      fi
+    fi
   fi
 
   # Phase 1.5 — pbxproj bump + commit + push (Step 3).
@@ -450,7 +508,10 @@ cmd_push() {
       rm -f "$lock"
     fi
     git add zaps-app/Turnip.xcodeproj/project.pbxproj
-    if ! git commit -m "$(cat <<EOF
+    if git diff --cached --quiet -- zaps-app/Turnip.xcodeproj/project.pbxproj; then
+      printf 'studio-tf-push: pbxproj already at target build=%s version=%s; skipping bump commit\n' \
+        "$NEW_BUILD_NUMBER" "$VERSION" >&2
+    elif ! git commit -m "$(cat <<EOF
 Bump build number to ${NEW_BUILD_NUMBER}
 
 Preparing TestFlight build ${NEW_BUILD_NUMBER} (v${VERSION}) from branch ${BRANCH}.

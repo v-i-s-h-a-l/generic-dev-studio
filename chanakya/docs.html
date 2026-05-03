@@ -569,7 +569,8 @@
   <pre><code>git clone https://github.com/v-i-s-h-a-l/generic-dev-studio.git
 cd generic-dev-studio
 ./scripts/install.sh           # idempotent &mdash; safe to re-run after pulls
-./scripts/verify-install.sh    # reports any drift</code></pre>
+./scripts/verify-install.sh    # reports any drift
+./scripts/host-preflight.sh codex /repo  # prove gh + git remote auth before host task work</code></pre>
   <p>Or, for a one-shot install with all manager defaults plus deps and SSH keys:</p>
   <pre><code>./scripts/bootstrap.sh --yes --role manager   # one-shot
 ./scripts/bootstrap.sh                        # interactive</code></pre>
@@ -763,7 +764,7 @@ cd generic-dev-studio
     </div>
   </div>
   <div class="callout" style="margin-top: 20px; border-left-color: var(--purple); background: rgba(188, 140, 255, 0.07);">
-    <strong>Week 1 posture:</strong> only hard checks block (compile/test failure, secrets, staleness). Everything else flags &mdash; merge proceeds and Chanakya auto-files follow-up tasks from flagged findings. Promote checks to blocks after observing real signal.
+    <strong>Week 1 posture:</strong> only hard checks block (compile/test failure, secrets, staleness). Everything else flags; autonomous Achilles defers merge until the user chooses fix-first or explicit merge override, and Chanakya auto-files follow-up tasks from flagged findings.
   </div>
 
   <div class="callout" style="margin-top: 20px; border-left-color: var(--purple); background: rgba(188, 140, 255, 0.07);">
@@ -771,7 +772,7 @@ cd generic-dev-studio
   </div>
 
   <div class="callout" style="margin-top: 20px;">
-    <strong>Default is merge-immediately.</strong> Achilles invokes Argus pre-merge (Step 8.5), then merges on approved/flagged. Chanakya processes findings from the event log on its next sweep. Batch-test with <code>/chanakya test-manifest</code> or <code>/chanakya test-flow</code> when ready.
+    <strong>Default is approved-only merge.</strong> Achilles invokes Argus pre-merge (Step 8.5), merges approved work, and stages flagged work for a user decision. Chanakya processes findings from the event log on its next sweep. Batch-test with <code>/chanakya test-manifest</code> or <code>/chanakya test-flow</code> when ready.
   </div>
 
   <h3>Minimal Intervention</h3>
@@ -800,9 +801,11 @@ cd generic-dev-studio
   </table>
 
   <h3>Model Recommendations</h3>
-  <p>Per-agent defaults remain the fallback, while brief authors can now generate task-level recommendations from size, kind, file spread, and novelty.</p>
+  <p>Per-agent defaults remain the fallback, while brief authors can now generate task-level recommendations from size, kind, file spread, and novelty. Concrete provider model names live in <code>_shared/schemas/model-catalog.yaml</code> and reviewer role policy lives in <code>_shared/rules/model-policy.yaml</code>; update those refreshable policy files after checking official provider docs instead of burying model IDs in scripts or mode prose.</p>
   <pre><code>scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
-scripts/recommend-model.sh --size xs --kind docs --cross-file-count 1 --novelty-score 0 --preference fast_turnaround</code></pre>
+scripts/recommend-model.sh --size xs --kind docs --cross-file-count 1 --novelty-score 0 --preference fast_turnaround
+scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-host claude-code
+scripts/check-model-catalog.sh --print-refresh-checklist</code></pre>
   <table class="decision-table">
     <thead><tr><th>Agent</th><th>Default</th><th>When to upgrade / downgrade</th></tr></thead>
     <tbody>
@@ -818,8 +821,8 @@ scripts/recommend-model.sh --size xs --kind docs --cross-file-count 1 --novelty-
       </tr>
       <tr>
         <td style="color: var(--purple);"><strong>Argus</strong></td>
-        <td>Opus (always)</td>
-        <td>Reasoning-heavy edge-case analysis requires the strongest model. Do not downgrade.</td>
+        <td>Policy-resolved heavyweight reviewer</td>
+        <td>PR review defaults to an independent provider family from the implementation host. Same-family fallback blocks auto-merge unless a user-approved bypass URL is supplied. Do not downgrade reviewer reasoning below high without telemetry-backed policy change.</td>
       </tr>
     </tbody>
   </table>
@@ -1012,6 +1015,22 @@ scripts/sync-workers-all.sh                 # immediate first sync</code></pre>
 scripts/waive-lift.sh argus    # reports N tasks merged without review during the pause</code></pre>
   <p>While a waive is active, every <code>review_pending</code> emission from <code>sweep-ingest.sh</code> bumps <code>accumulated_count</code> atomically. The SessionStart hook surfaces a one-line banner on every new session so a pause can't become invisible. Closes <a href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/83">#83</a>.</p>
 
+  <h3 style="margin-top: 32px;">Guarded issue body edits</h3>
+  <p>Replace GitHub issue bodies from generated content through a preview-first wrapper. The guard refuses empty input, rejects bodies below configurable byte/line thresholds by default, and keeps mutation behind explicit <code>--apply</code>.</p>
+  <pre><code>scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md
+scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply</code></pre>
+  <p>Emergency/debug bypass is user-controlled via <code>STUDIO_BYPASS_ISSUE_BODY_GUARD=1</code> or <code>--bypass-body-guard</code>; assistants must not set it silently.</p>
+
+  <h3 style="margin-top: 32px;">Native dependency export</h3>
+  <p>Render GitHub-native issue dependencies as Mermaid for PM-surface review. The exporter reads the <code>blocked_by</code> API and does not parse issue bodies.</p>
+  <pre><code>scripts/studio-dependency-export.sh --issue 443</code></pre>
+
+  <h3 style="margin-top: 32px;">PM-surface staleness triage</h3>
+  <p>Preview or apply GitHub issue staleness labels for the studio PM surface. The script adds stale, escalation, and archive-candidate labels at configurable inactivity thresholds; live mutation stays behind <code>--apply</code>.</p>
+  <pre><code>scripts/studio-staleness-triage.sh --json
+scripts/studio-staleness-triage.sh --apply</code></pre>
+  <p>The scheduled GitHub Action runs weekly with <code>permissions: issues: write</code>. Comments are marker-based so escalation prompts are idempotent.</p>
+
   <h3 style="margin-top: 32px;">Orphan-debrief backfill</h3>
   <p>Recover tasks that completed and emitted a debrief but never landed a row in the master plan — a "silent double-miss" where prior sweeps flipped <code>state: emitted → done</code> without updating the plan, then subsequent sweeps skipped the already-done debrief permanently.</p>
   <pre><code>scripts/backfill-orphan-debriefs.sh           # dry-run: preview what would be back-filled
@@ -1031,6 +1050,13 @@ scripts/forge-latency-report.sh --project turnip-ios --since 2026-04-01 --cutove
 scripts/studio-pr-baseline-report.sh --recent 10
 scripts/studio-pr-baseline-report.sh 366 --json</code></pre>
   <p>Use the trend summary during retrospectives to identify which workflow phase is growing by PR class. Treat the numbers as process baselines, not individual productivity scoring.</p>
+
+  <h3 style="margin-top: 32px;">Studio weekly digest script</h3>
+  <p>Summarize the studio repo's GitHub issue activity for the free-tier PM surface: open/created/closed counts, net backlog change, open-age buckets, label distribution, aged open issues, recent closures, and closed-issue trend.</p>
+  <pre><code>scripts/studio-weekly.sh
+scripts/studio-weekly.sh --json
+scripts/studio-weekly.sh --post</code></pre>
+  <p>The scheduled GitHub workflow runs <code>--post</code> every Monday, creates or reuses the <code>Weekly Studio Digest</code> issue, pins it, and appends the weekly summary as a comment.</p>
 
   <h3 style="margin-top: 32px;">Field workflow report</h3>
   <p>Measure the full Field loop from canonical events and brief YAML: stage timing, token usage, build/test pass rates, review coverage, telemetry gaps, and aggregate improvement candidates. The report is private-analysis safe by default and prints only abstract failure classes and workflow patterns.</p>
@@ -1096,7 +1122,7 @@ scripts/achilles-refresh-base.sh &lt;worktree&gt; [--dry-run]</code></pre>
     <div class="flow-row">
       <span class="flow-node" style="border-color: var(--purple); color: var(--purple);">/argus &mdash; cross-file regression, edge cases, test adequacy, diff anomalies, staleness, secrets</span>
     </div>
-    <div class="flow-row"><span class="flow-arrow">&#8595; approved / flagged</span></div>
+    <div class="flow-row"><span class="flow-arrow">&#8595; approved (flagged waits for user)</span></div>
     <div class="flow-row">
       <span class="flow-node achilles-node">merge &mdash; emit brief_completed event &rarr; debrief</span>
     </div>
@@ -1106,7 +1132,7 @@ scripts/achilles-refresh-base.sh &lt;worktree&gt; [--dry-run]</code></pre>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
-      <span class="flow-node chanakya-node">Chanakya sweeps inbox + event log &mdash; updates debt counters, auto-files follow-ups from flagged reviews</span>
+      <span class="flow-node chanakya-node">Chanakya sweeps inbox + event log &mdash; updates debt counters, surfaces flagged merge decisions, auto-files follow-ups</span>
     </div>
     <div class="flow-row"><span class="flow-arrow">&#8595;</span></div>
     <div class="flow-row">
@@ -1620,7 +1646,6 @@ scripts/achilles-refresh-base.sh &lt;worktree&gt; [--dry-run]</code></pre>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-export-settings.md</span> <span class="comment"># Implementation brief</span><br>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001a-unit-tests-export.md</span> <span class="comment"># Unit test brief</span><br>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001c-ui-tests-export.md</span> <span class="comment"># UI test brief</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-tests.md</span> <span class="comment"># Manual test cases (by Achilles)</span><br>
     &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">chanakya-inbox/</span><br>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">T001-debrief.md</span> <span class="comment"># Unprocessed (includes Testability Report)</span><br>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">processed/</span><br>

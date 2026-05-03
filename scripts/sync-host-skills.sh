@@ -4,8 +4,9 @@
 # For each skill that declares this host in its portability.yaml, create or
 # verify a symlink at the host's global skill_dir (per hosts/registry.yaml).
 # Stale symlinks (skills that no longer declare this host, or canonical roots
-# that no longer exist) are removed. Companion content (_shared, scripts) is
-# always linked alongside skills so SKILL.md prose like `_shared/...` resolves.
+# that no longer exist) are removed. Companion content (_shared, scripts, hosts)
+# is always linked alongside skills so SKILL.md prose like `_shared/...` and
+# dispatch paths like `hosts/registry.yaml` resolve.
 #
 # After linking, injects skill-routing instructions from _shared/skill-routing.md
 # into each host's global instructions file (global_instructions_path in
@@ -192,10 +193,23 @@ resolve_symlink_target() {
   esac
 }
 
+canonical_path() {
+  # $1 = existing absolute path. Prints the path with a physical parent, so
+  # macOS /var and /private/var spellings compare equal.
+  local path="$1" dir base
+  dir=$(dirname "$path")
+  base=$(basename "$path")
+  ( cd "$dir" && printf '%s/%s\n' "$(pwd -P)" "$base" )
+}
+
 symlink_points_to() {
   # $1 = symlink path, $2 = expected absolute target path.
+  local actual expected
   [ -L "$1" ] || return 1
-  [ "$(resolve_symlink_target "$1" 2>/dev/null || true)" = "$2" ]
+  actual=$(resolve_symlink_target "$1" 2>/dev/null || true)
+  [ -e "$actual" ] && actual=$(canonical_path "$actual" 2>/dev/null || printf '%s\n' "$actual")
+  expected=$(canonical_path "$2" 2>/dev/null || printf '%s\n' "$2")
+  [ "$actual" = "$expected" ]
 }
 
 link_target_for() {
@@ -444,7 +458,8 @@ sync_one_host() {
 
   if [ "$AUDIT_ONLY" -eq 0 ]; then
     ensure_dir "$skill_dir"
-    # Companions first — skills reference _shared/ and scripts/ in their prose.
+    # Companions first — skills reference _shared/ and scripts/ in their prose,
+    # and host-dispatched scripts resolve hosts/registry.yaml from this layout.
     # Companions are always global-scoped.
     for c in "${COMPANIONS[@]}"; do
       ensure_link "$REPO_ROOT/$c" "$skill_dir/$c" || true

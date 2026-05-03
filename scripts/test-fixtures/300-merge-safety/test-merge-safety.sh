@@ -151,17 +151,17 @@ set -e
 assert "latest blocked review blocks merge safety" "[ $rc -eq 4 ]"
 assert "latest blocked review emits merge_safety_blocked" "grep -q 'review_blocked' '$(events_log)'"
 
-# --force remains the user-controlled emergency lever.
+# --steal-flagged is the user-controlled flagged-review override.
 reset_runtime
 stage_debrief
 emit_event_line build_check_passed
 emit_event_line review_flagged
 set +e
-run_safety_only --require-approved --force
+run_safety_only --require-approved --steal-flagged
 rc=$?
 set -e
-assert "force bypasses require-approved flagged defer" "[ $rc -eq 0 ]"
-assert "force emits review_override for flagged merge" "grep -q 'review_override' '$(events_log)'"
+assert "steal-flagged bypasses require-approved flagged defer" "[ $rc -eq 0 ]"
+assert "steal-flagged emits review_override for flagged merge" "grep -q 'review_override' '$(events_log)'"
 
 # --force bypasses a composite block and emits override.
 reset_runtime

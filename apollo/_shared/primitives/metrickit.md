@@ -31,8 +31,8 @@ All properties optional (nil if not collected for the window):
 | `applicationLaunchMetrics` | `MXAppLaunchMetric` (histogrammedTimeToFirstDraw, histogrammedApplicationResumeTime) | launch (Phase 2) |
 | `applicationResponsivenessMetrics` | `MXAppResponsivenessMetric` (histogrammedApplicationHangTime) | responsiveness (Phase 2) |
 | `diskIOMetrics` | `MXDiskIOMetric` (cumulativeLogicalWrites) | battery |
-| `cellularConditionMetrics` | `MXCellularConditionMetric` (histogrammedCellularConditionTime) | network (Phase 2) |
-| `networkTransferMetrics` | `MXNetworkTransferMetric` (cumulativeWifiUpload, cumulativeCellularUpload, …) | network (Phase 2), battery |
+| `cellularConditionMetrics` | `MXCellularConditionMetric` (histogrammedCellularConditionTime) | network |
+| `networkTransferMetrics` | `MXNetworkTransferMetric` (cumulativeWifiUpload, cumulativeCellularUpload, …) | network, battery |
 | `applicationTimeMetrics` | `MXAppRunTimeMetric` (cumulativeForegroundTime, cumulativeBackgroundTime, cumulativeForegroundEnergy iOS 14+) | battery |
 | `applicationExitMetrics` | `MXAppExitMetric` (foregroundExitData / backgroundExitData — categorized exit reasons incl. OOM) | memory, thermal |
 | `animationMetrics` | `MXAnimationMetric` (scrollHitchTimeRatio, iOS 14+) | scroll-perf (Phase 2) |
@@ -110,8 +110,11 @@ Mode packs cite specific properties as evidence in their procedure tables:
 | memory | `MXMemoryMetric.peakMemoryUsage` p95 over `<window>` payloads, cohort `<device-class>/<os>` |
 | thermal | `MXMetaData.thermalState` distribution (% serious / critical) over `<window>` |
 | battery | `MXAppRunTimeMetric.cumulativeForegroundEnergy` per session, normalized by `cumulativeForegroundTime` |
+| network | `MXNetworkTransferMetric.cumulativeCellularDownload` / `cumulativeCellularUpload` / `cumulativeWifiDownload` / `cumulativeWifiUpload` over `<window>`, paired with `MXCellularConditionMetric.histogrammedCellularConditionTime` for cellular claims, cohort `<device-class>/<os>`, build `<version>`, baseline `<window-or-build>` |
 
 Mode packs MUST cite the exact payload property, the aggregation window, and the cohort. The strict-9 gate rejects citations missing any of those three.
+
+Network-mode and battery networking-radio-drain citations additionally follow `apollo/_shared/primitives/evidence-gate.md §Network hard-evidence catalogue`: cellular claims require carrier-class / cellular-condition context, and field payloads without a comparison baseline remain soft evidence.
 
 ## Why
 

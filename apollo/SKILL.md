@@ -1,9 +1,9 @@
 ---
 name: apollo
-description: iOS performance agent. Per-metric mode packs (memory/thermal/battery/cpu) under a strict-9 evidence gate. Refuses recommendations without hard evidence; auto-captures via the execution surface.
+description: iOS performance agent. Per-metric mode packs (memory/thermal/battery/cpu/network) under strict-9 evidence gating. Refuses recommendations without hard evidence.
 type: agent-router
 schema_version: 1
-version: 0.4.0
+version: 0.5.0
 budget_tokens: 400
 ---
 
@@ -55,22 +55,23 @@ The gate is the load-bearing invariant. Every mode pack's entry conditions cite 
 | `thermal` / "thermal throttling" / "device heat" | `modes/thermal.md` | Stage 2b — #231, shipped |
 | `battery` / "battery drain" / "energy regression" | `modes/battery.md` | Stage 2c — #232, shipped |
 | `cpu` / "CPU spike" / "high CPU" / "main-thread CPU" | `modes/cpu.md` | Apollo expansion — #406, shipped |
+| `network` / `network-efficiency` / "network regression" / "chatty network" / "high data usage" | `modes/network.md` | Apollo expansion — #424, shipped |
 | `measure <metric>` / `--capture-only` | `modes/measure.md` | Stage 5 — #235, shipped |
 | `profile` / "guided profiling session" / "run this flow on device" | `modes/profile.md` | Apollo expansion — #410, shipped |
-| *(no args or free-text)* | infer metric from cited artifact / prompt for one of {memory, thermal, battery, cpu} | router-only until Stage 2 |
+| *(no args or free-text)* | infer metric from cited artifact / prompt for one of {memory, thermal, battery, cpu, network} | router-only |
 
-Phase 2 modes (launch-time, scroll-perf, binary-size, network-efficiency) are deferred. Adding a mode = one file under `modes/`, one dispatch row, one fixture at `tests/mode-packs/apollo/<mode>.yaml`. Same rule as every other router in this repo.
+Phase 2 modes (launch-time, scroll-perf, binary-size) are deferred. Adding a mode = one file under `modes/`, one dispatch row, one fixture at `tests/mode-packs/apollo/<mode>.yaml`. Same rule as every other router in this repo.
 
-`/apollo measure <metric>` (capture-only) is the pre-flight tool for Chanakya brief authoring — it produces a hard-evidence artifact path that the brief's `evidence.artifacts[]` references, then exits without recommending a fix. The diagnostic mode packs (memory/thermal/battery/cpu) accept `--capture-only` as an alias for the same exit-after-capture behavior.
+`/apollo measure <metric>` (capture-only) is the pre-flight tool for Chanakya brief authoring — it produces a hard-evidence artifact path that the brief's `evidence.artifacts[]` references, then exits without recommending a fix. The diagnostic mode packs (memory/thermal/battery/cpu/network) accept `--capture-only` as an alias for the same exit-after-capture behavior.
 
 ## Intent detection
 
 Priority order:
 
-1. **Explicit arg** — `/apollo memory`, `/apollo thermal`, `/apollo battery`, `/apollo cpu`. Always wins.
+1. **Explicit arg** — `/apollo memory`, `/apollo thermal`, `/apollo battery`, `/apollo cpu`, `/apollo network`. Always wins.
 2. **Cited artifact** — if the user message attaches a `.trace`, `MXMetricPayload` JSON, or `.xcresult` path, route to the mode whose hard-evidence catalogue (`apollo/_shared/primitives/evidence-gate.md`) lists that artifact shape.
 3. **Conversational switch** — mid-session pivots ("actually look at thermals instead") re-dispatch inline.
-4. **Default** — no arg, no cited artifact → ask once for one of `{memory, thermal, battery, cpu}`. Never guess across metrics; the evidence catalogue diverges per mode.
+4. **Default** — no arg, no cited artifact → ask once for one of `{memory, thermal, battery, cpu, network}`. Never guess across metrics; the evidence catalogue diverges per mode.
 
 ## Behavior invariants
 

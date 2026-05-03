@@ -89,26 +89,26 @@ You describe work
         v
    /argus <task-id>  ←── auto-invoked by Achilles before merge ──→  approved/flagged/blocked
         |                                                                    |
-        v (approved or flagged)                                    (blocked) → fix & retry
+        v (approved; flagged waits for user in autonomous mode)     (blocked) → fix & retry
    merge --no-ff (serialized) → emit brief_completed event
         |
         v
    worktree + per-task DerivedData cleaned up; debrief dropped to inbox
         |
         v
-   Chanakya sweeps inbox + event log — marks done, auto-files follow-ups from flagged reviews
+   Chanakya sweeps inbox + event log — marks done, surfaces flagged merge decisions
         |
         v
    /chanakya test-manifest → you tick boxes → /chanakya review-feedback → verified
 ```
 
-Default behavior is **merge immediately** and log a "manual verification" follow-up. Batch-test whenever with `/chanakya test-manifest` or `/chanakya test-flow`. Achilles never self-selects the next task — the user (or Chanakya) always drives.
+Default autonomous behavior is **merge approved work immediately**. Flagged Argus verdicts stage a `done_with_concerns` debrief and wait for the user to fix first or explicitly merge flagged work. Batch-test whenever with `/chanakya test-manifest` or `/chanakya test-flow`. Achilles never self-selects the next task — the user (or Chanakya) always drives.
 
 ### Safety guarantees
 
 - Uncommitted changes in the main checkout are **never** touched — Achilles branches from committed HEAD.
 - A red `xcodebuild` **never** merges. Branch + per-task DerivedData stay alive for inspection.
-- **Argus blocks what must not ship.** Compile failures, test failures, secrets in diff, and base-branch staleness are hard blocks. Everything else flags and merges — with findings auto-filed as follow-up tasks by Chanakya.
+- **Argus blocks what must not ship.** Compile failures, test failures, secrets in diff, and base-branch staleness are hard blocks. Flagged findings are non-blocking, but autonomous mode waits for a user decision before merge.
 - Merge conflicts are **never** force-resolved — Achilles surfaces them and stops.
 - Builds and merges are **serialized across parallel Achilles instances** via `mkdir` locks in `~/.dev-studio/<project>/locks/` — designed for 6–10 parallel workers.
 - **Test slots are shared fairly.** Argus uses a 3-slot file semaphore for concurrent test runs. XS/S reviews never run tests and never acquire a slot.
@@ -129,6 +129,8 @@ Argus runs automatically between Achilles's self-review and the merge step. You 
 /argus T001              # review a specific task's worktree
 ```
 
+Forge PR review uses the same reviewer-independence doctrine: reviewer hosts resolve a heavyweight model through `_shared/rules/model-policy.yaml` and `_shared/schemas/model-catalog.yaml`, excluding the implementation provider family by default. Same-family fallback requires an explicit user-approved bypass URL; model IDs are refreshable policy, not constants in shell scripts.
+
 ### What Argus checks (v1)
 
 | Check | What it does | Week 1 verdict |
@@ -140,12 +142,12 @@ Argus runs automatically between Achilles's self-review and the merge step. You 
 | Base-branch staleness | Base advanced since the branch was created → must rebase | **block** |
 | Secrets in diff | Credentials, API keys, tokens in diff's added lines | **block** |
 
-**Week 1 posture:** only staleness and secrets are hard blocks. Everything else flags — merge proceeds and findings become Chanakya follow-up tasks automatically.
+**Week 1 posture:** only staleness and secrets are hard blocks. Everything else flags; autonomous Achilles defers merge until the user chooses fix-first or explicit merge override.
 
 ### Verdicts
 
 - **Approved** — silent. Merge proceeds.
-- **Flagged** — findings written to `<project-memory>/reviews/review_<task-id>.md`. Chanakya reads the `review_flagged` event and auto-files follow-up tasks. Merge proceeds.
+- **Flagged** — findings written to `<project-memory>/reviews/review_<task-id>.md`. Chanakya reads the `review_flagged` event, auto-files follow-up tasks, and surfaces the deferred merge for a user decision.
 - **Blocked** — Achilles loops back to fix the issue (max 3 cycles). Hard blocks: compile/test failure (M/L), secrets, staleness. No user input required for staleness (rebase) or code-fixable blocks.
 
 ### Concurrent test runs
@@ -587,11 +589,10 @@ After a typical feature lifecycle, here's what the file tree looks like:
     user-testing-archive/                     # Past manifests after review-feedback
     chanakya-tasks/
       T001-onboarding-flow.md                 # Brief (written by Chanakya)
-      T001-tests.md                           # Test cases (written by Achilles)
       T002-format-selection.md
       ...
     debriefs/
-      0190f52a-...yaml                        # Structured Achilles debriefs
+      0190f52a-...yaml                        # Structured Achilles debriefs, including test cases
       0190f52b-...yaml
   worktrees/                                  # Per-task isolated checkouts
     T001/                                     # branch achilles/T001 — removed on clean merge

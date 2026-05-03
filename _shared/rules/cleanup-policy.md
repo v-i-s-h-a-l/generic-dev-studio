@@ -86,14 +86,7 @@ rm -f "$MARKER"
 trap - EXIT INT TERM
 ```
 
-**Achilles respects this marker:** refuse worktree cleanup (`git worktree remove`) while `.argus-running` exists. Check before Step 9:
-
-```bash
-if [ -f "$WORKTREE/.argus-running" ]; then
-  echo "Argus is still reviewing — waiting before cleanup..." >&2
-  # poll every 30s, up to 10 min
-fi
-```
+**Achilles respects this marker:** `.argus-running` remains Argus-owned cleanup state, but it is no longer a polling gate. `dispatch-review.sh` owns the wait window, emits `review_timeout` if the verdict never arrives, and kills the spawned review on timeout. Achilles should not busy-wait on the marker before merge cleanup.
 
 ---
 

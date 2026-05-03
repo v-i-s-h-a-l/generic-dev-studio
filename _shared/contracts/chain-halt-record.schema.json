@@ -1,0 +1,346 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "chain-halt-record.schema.json",
+  "schema": 1,
+  "title": "Chain Halt Record",
+  "description": "Private-runtime record written when an autonomous studio chain pauses or terminates. Reason IDs are closed in v1 and map to fixed halt classes so writers cannot choose inconsistent severity.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "created_at",
+    "run_id",
+    "status",
+    "reason_id",
+    "halt_class",
+    "writer",
+    "summary",
+    "resumable_state",
+    "next_command",
+    "affected_artifacts",
+    "rollback_path",
+    "true_hard_stop"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "chain-halt-record"
+    },
+    "created_at": {
+      "$ref": "debrief.schema.json#/$defs/rfc3339"
+    },
+    "run_id": {
+      "$ref": "debrief.schema.json#/$defs/uuidv7"
+    },
+    "chain_run_id": {
+      "oneOf": [
+        {
+          "$ref": "debrief.schema.json#/$defs/uuidv7"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "issue_run_id": {
+      "oneOf": [
+        {
+          "$ref": "debrief.schema.json#/$defs/uuidv7"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "chain": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "issue_number": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "status": {
+      "enum": [
+        "paused",
+        "terminated"
+      ]
+    },
+    "reason_id": {
+      "$ref": "#/$defs/reasonId"
+    },
+    "halt_class": {
+      "$ref": "#/$defs/haltClass"
+    },
+    "writer": {
+      "enum": [
+        "parent-runner",
+        "child-worker",
+        "reviewer",
+        "operator"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "details": {
+      "type": [
+        "string",
+        "object",
+        "array",
+        "null"
+      ]
+    },
+    "resumable_state": {
+      "type": "object",
+      "description": "Minimal state needed to resume or inspect the halt without chat history.",
+      "additionalProperties": true
+    },
+    "next_command": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Single operator command to resume/continue. Null only for true hard stops."
+    },
+    "affected_artifacts": {
+      "$ref": "#/$defs/stringList"
+    },
+    "rollback_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "review_deadline": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "true_hard_stop": {
+      "type": "boolean"
+    },
+    "human_action_required": {
+      "type": "boolean",
+      "default": false
+    },
+    "privacy": {
+      "type": "object",
+      "properties": {
+        "classification": {
+          "const": "private-runtime"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "#/$defs/reasonClassMap"
+    },
+    {
+      "if": {
+        "properties": {
+          "true_hard_stop": {
+            "const": false
+          }
+        },
+        "required": [
+          "true_hard_stop"
+        ]
+      },
+      "then": {
+        "properties": {
+          "next_command": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "true_hard_stop": {
+            "const": true
+          }
+        },
+        "required": [
+          "true_hard_stop"
+        ]
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "terminated"
+          },
+          "next_command": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "haltClass": {
+      "enum": [
+        "retryable",
+        "recoverable",
+        "review-needed",
+        "human-needed",
+        "fatal"
+      ]
+    },
+    "reasonId": {
+      "enum": [
+        "github_auth_unavailable",
+        "github_home_mismatch",
+        "parent_host_unknown",
+        "reviewer_host_ineligible",
+        "reviewer_blocked",
+        "reviewer_ambiguous",
+        "required_review_failed",
+        "branch_worktree_conflict",
+        "base_branch_advanced",
+        "missing_child_summary",
+        "child_timeout",
+        "child_crash",
+        "issue_body_changed",
+        "partial_github_operation",
+        "github_rate_limited",
+        "network_partition",
+        "test_build_infra_unavailable",
+        "disk_runtime_pressure",
+        "model_tool_permission_prompt",
+        "context_output_overflow",
+        "telemetry_artifact_malformed",
+        "telemetry_artifact_missing",
+        "manifest_schema_version_mismatch",
+        "secret_detected",
+        "destructive_change_required",
+        "permission_expansion_required",
+        "unsafe_external_state",
+        "implementation_scope_blocked"
+      ]
+    },
+    "stringList": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reasonClassMap": {
+      "oneOf": [
+        {
+          "properties": {
+            "reason_id": {
+              "enum": [
+                "github_auth_unavailable",
+                "github_home_mismatch",
+                "github_rate_limited",
+                "network_partition",
+                "child_timeout",
+                "disk_runtime_pressure"
+              ]
+            },
+            "halt_class": {
+              "const": "retryable"
+            },
+            "true_hard_stop": {
+              "const": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "reason_id": {
+              "enum": [
+                "parent_host_unknown",
+                "branch_worktree_conflict",
+                "base_branch_advanced",
+                "missing_child_summary",
+                "child_crash",
+                "issue_body_changed",
+                "partial_github_operation",
+                "test_build_infra_unavailable",
+                "telemetry_artifact_malformed",
+                "telemetry_artifact_missing",
+                "manifest_schema_version_mismatch",
+                "implementation_scope_blocked"
+              ]
+            },
+            "halt_class": {
+              "const": "recoverable"
+            },
+            "true_hard_stop": {
+              "const": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "reason_id": {
+              "enum": [
+                "reviewer_blocked",
+                "reviewer_ambiguous"
+              ]
+            },
+            "halt_class": {
+              "const": "review-needed"
+            },
+            "true_hard_stop": {
+              "const": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "reason_id": {
+              "enum": [
+                "reviewer_host_ineligible",
+                "model_tool_permission_prompt",
+                "context_output_overflow"
+              ]
+            },
+            "halt_class": {
+              "const": "human-needed"
+            },
+            "true_hard_stop": {
+              "const": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "reason_id": {
+              "enum": [
+                "required_review_failed",
+                "secret_detected",
+                "destructive_change_required",
+                "permission_expansion_required",
+                "unsafe_external_state"
+              ]
+            },
+            "halt_class": {
+              "const": "fatal"
+            },
+            "true_hard_stop": {
+              "const": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

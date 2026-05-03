@@ -18,7 +18,7 @@
 # Preserved (live, not legacy — per #245 A.1 OOS list):
 #   plans/chanakya-master.md                    — rendered projection (#273)
 #   plans/chanakya-inbox/assets/                — sweep-janitor still prunes
-#   plans/chanakya-inbox/*-tests.md             — task-write-test-cases.sh writer
+#   plans/chanakya-inbox/*-tests.md             — historical test-case sidecars (read-only import fallback)
 #   plans/chanakya-inbox/*-test-cases.md        — same shape, older naming
 #   plans/chanakya-inbox/{design,product}-report-*.md
 #   plans/chanakya-inbox/processed/feedback-attachments/

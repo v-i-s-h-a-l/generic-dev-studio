@@ -1,6 +1,23 @@
 # Parallel Tracks
 
-Two independent work tracks running concurrently. Each session works on one track only.
+Independent work tracks. Each session works on one track only.
+
+## Track label registry
+
+`track:*` labels identify active or historical work lanes. A track label is not a theme; every issue still needs one dominant `theme/*` label from `THEMES.md`.
+
+| Label | Status | Planning surface |
+|---|---|---|
+| `track:apollo` | Active | Apollo performance-agent research and build arc. Detailed work lives in the Apollo issues and skill docs. |
+| `track:build-opt` | Active | Documented below as Track B. |
+| `track:forge-safety` | Historical / archived | Historical lookup lives in `archive/forge-reliability-2026-05-03.md`; keep for filtering and future safety-floor regressions. |
+| `track:host-agnostic` | Historical / mostly shipped | Documented below as Track A for context. |
+| `track:pm-surface` | Active | GitHub-as-PM-surface arc, including labels, projects, milestones, and issue graph hygiene. Primary board: [Studio v2 transition](https://github.com/users/v-i-s-h-a-l/projects/1); field contract: [PM-SURFACE.md](PM-SURFACE.md). |
+| `track:skill-distribution` | Active backlog | Skill distribution and recipe-system follow-ups from the skill distribution arc. |
+| `track:v2` | Active | Studio v2 substrate rebuild and transition issues; sequence context lives in `ROADMAP.md`. |
+| `track:workflow` | Active | Chain-runner and workflow-control-plane enhancements. |
+
+Legacy follow-up labels such as `phase-2-5-followup`, `phase-2-6-followup`, and `phase-2.7-epic` are retained for existing issue filtering, but they are not `track:*` labels. Prefer a `track:*` label for new parallel work lanes.
 
 ## How to use
 
@@ -64,9 +81,15 @@ Track A owns **Step 8.5**. Track B owns **Step 6**.
 These are different sections — edits don't conflict.  
 **Merge rule:** Track A merges to main first. Track B rebases `track/build-opt` on `main` before opening its PR (one rebase, trivial).
 
-## Adding a third track
+## Track C — forge-safety (`track/forge-safety`)
 
-1. Add a row to this file.
+Archived on 2026-05-03 after the safety-floor queue closed and the user explicitly waived the freeze as an active blocker.
+
+Historical detail lives in [`archive/forge-reliability-2026-05-03.md`](archive/forge-reliability-2026-05-03.md). Do not append routine backlog drift to that archive. New safety-floor regressions should get fresh GitHub issues and, if they reopen this lane, a new active planning surface.
+
+## Adding a new track
+
+1. Add a section to this file.
 2. Create a `track/<name>` branch.
 3. Create a `track:<name>` GH label.
-4. Add owned files to the table (verify no overlap with A or B).
+4. Add owned files to the table (verify no overlap with existing tracks).

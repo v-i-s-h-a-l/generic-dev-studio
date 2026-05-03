@@ -1,0 +1,57 @@
+# Canonical chain manifest for the Studio v2 transition.
+#
+# Manifest name:
+#   /studio work chain v2-transition
+#
+# Supervisor checks:
+#   scripts/studio-chain-runner.sh --explain-next v2-transition
+#   scripts/studio-chain-runner.sh --auto v2-transition
+#
+# Safety rule: add only runnable leaf issues here. Do not add umbrella issues
+# such as #442, #443, #444, or #445; the chain runner closes executed issues
+# after the reviewed PR merges.
+#
+# Phase schedule:
+# - B2-B5 are already closed leaf evidence: #464, #465, #466, #495.
+# - B10 is intentionally excluded because #443 marks it as a placeholder
+#   dependent on the closed #446 D5 work and not part of B acceptance.
+# - A10 is intentionally excluded from unattended execution because #444
+#   requires a >=2 week stability window plus user sign-off after A9.
+# - #445 children are intentionally excluded until post-A7 contract timing.
+
+schema_version: 1
+chains:
+  - name: v2-pm-surface-prereq
+    base: main
+    branch: feature/v2-pm-surface-prereq
+    host: auto
+    phase_review: required
+    issues: [498]
+
+  - name: v2-pm-surface-followups
+    base: main
+    branch: feature/v2-pm-surface-followups
+    host: auto
+    phase_review: required
+    issues: [499, 500, 501, 502, 503, 504, 505, 506]
+
+  - name: v2-substrate-spec
+    base: main
+    branch: feature/v2-substrate-spec
+    host: auto
+    phase_review: required
+    issues: [507, 508, 509, 510, 511, 512, 513, 514]
+
+  - name: v2-substrate-core
+    base: main
+    branch: feature/v2-substrate-core
+    host: auto
+    phase_review: required
+    issues: [515, 516, 517, 518, 519, 520, 523, 521, 522, 524, 528]
+
+  - name: v2-agent-migration-pre-cutover
+    base: main
+    branch: feature/v2-agent-migration-pre-cutover
+    host: auto
+    phase_review: required
+    issues: [525, 526, 527]

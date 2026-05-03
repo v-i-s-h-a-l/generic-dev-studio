@@ -1,0 +1,99 @@
+name: Arc
+description: Plan a multi-phase studio sequence with gates, ordering, and review boundaries.
+title: "Arc: "
+labels:
+  - roadmap
+  - theme/internal
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for a multi-phase or multi-session sequence where order and phase gates matter.
+  - type: textarea
+    id: arc-outcome
+    attributes:
+      label: Arc Outcome
+      description: What should be true when the full arc is complete?
+    validations:
+      required: true
+  - type: textarea
+    id: phase-sequence
+    attributes:
+      label: Phase Sequence
+      description: Ordered phases, dependencies, and expected review gates.
+      placeholder: "1. ...\n2. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Scope Boundaries
+      description: What is in scope, out of scope, and deferred?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Concrete checks that prove the arc is done.
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
+  - type: textarea
+    id: edge-cases
+    attributes:
+      label: Edge Cases / Risks
+      description: Drift, sequencing, rollback, review, or integration risks to manage.
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-Goals
+      description: What should not be included in this arc?
+    validations:
+      required: true
+  - type: dropdown
+    id: owner
+    attributes:
+      label: Owner Surface
+      description: Pick the surface most likely to own the arc. Use studio-repo for repo or router work.
+      options:
+        - studio-repo
+        - chanakya
+        - achilles
+        - argus
+        - cross-agent
+        - needs-triage
+    validations:
+      required: true
+  - type: dropdown
+    id: theme
+    attributes:
+      label: Theme
+      description: Pick the closest canonical theme from THEMES.md.
+      options:
+        - theme/internal
+        - theme/ios-craft
+        - theme/release
+        - theme/integrations
+        - theme/design
+        - theme/discovery
+        - needs-triage
+    validations:
+      required: true
+  - type: input
+    id: proposed-theme
+    attributes:
+      label: Proposed Theme
+      description: Optional. Use only when the canonical themes do not fit.
+  - type: input
+    id: track-or-chain
+    attributes:
+      label: Track / Chain
+      description: Optional dynamic label or lane, such as track:name or chain/name.
+  - type: input
+    id: related-issues
+    attributes:
+      label: Parent / Related Issues
+      description: Optional issue numbers for parent, child, blocked-by, or phase context.

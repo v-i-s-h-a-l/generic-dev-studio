@@ -32,7 +32,7 @@ First `/chanakya` invocation in a session (no `--auto-sweep`): proceed directly 
 
 ## Step 0 — Enumerate + ingest debriefs
 
-Run `scripts/sweep-enumerate-debriefs.sh`. Stdout is tab-separated `<kind>\t<path>\t<mode>` ingestable lines. For each stdout line, invoke `scripts/sweep-ingest.sh <kind> <path> [flags]`. Stderr may also contain diagnostic blind-spot lines (`mode=legacy`, `location=chanakya-inbox`, `stale_blocker=true`, or active Apollo deferred rows) plus a count summary; surface those to the user, but do not pass them to `sweep-ingest.sh`.
+Run `scripts/sweep-enumerate-debriefs.sh`. Stdout is tab-separated `<subcommand>\t<path>\t<mode>` ingestable lines, where `<subcommand>` is one of `debrief`, `build-check`, or `release`. For each stdout line, invoke `scripts/sweep-ingest.sh <subcommand> <path> [flags]`. Stop the sweep and surface stderr if any ingest exits non-zero; do not continue as though that item was handled. Stderr may also contain diagnostic blind-spot lines (`mode=legacy`, `location=chanakya-inbox`, `stale_blocker=true`, or active Apollo deferred rows) plus a count summary; surface those to the user, but do not pass them to `sweep-ingest.sh`.
 
 ### 0A — Uniform debrief ingest (task + direct-debrief)
 
@@ -121,6 +121,9 @@ Read the stuck state by `grep '"stuck": true'` on the marker — don't re-invoke
 | `debrief_concerns` | Push-queue append kind=`debrief_concerns` for `report_state: done_with_concerns`. |
 | `debrief_needs_context` | Push-queue append kind=`debrief_needs_context` for `report_state: needs_context`. |
 | `follow_up_mint_failed` | Push-queue append kind=`follow_up_mint_failed`; structured follow-ups never disappear silently. |
+| `review_timeout` | Push-queue append kind=`review_timeout`; dispatch timed out before Argus returned a verdict. |
+| `merge_deferred_on_flagged` | Push-queue append kind=`merge_deferred_on_flagged`; autonomous Achilles stopped before merge because `--require-approved` saw an Argus flagged verdict. User chooses fix-first or explicit merge override. |
+| `base_diverged_post_review` | Push-queue append kind=`base_diverged_post_review`; a sibling merge advanced the base after Argus review. Re-run Achilles from Step 8.4 so review covers the new base. |
 | `argus_gate_skipped` | When `reason ∈ {unknown_host, missing_manifest, missing_spawn_command, secret_scope_floor_unmet}`: idempotently file `bug` + `theme/internal` GitHub issue titled "Argus infra-failure: `<reason>` on `<host>`"; if an open issue with that title already exists, append a comment with the timestamp and `idem_key` instead. Operational reasons (`verdict_timeout_*`, `no_verdict_at_merge`) are no-ops. See `scripts/sweep-process-events.sh`. |
 | `test_run_failed` / `build_debt_incremented` | No direct action; surfaced in status. |
 

@@ -15,9 +15,13 @@ umask 022
 HOST="${1:-${STUDIO_REVIEW_HOST:-codex-reviewer}}"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+SMOKE_TIMEOUT_SEC="${STUDIO_REVIEWER_SMOKE_TIMEOUT_SEC:-45}"
+CALLER_HOME="${HOME:-}"
 
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+
+LOGIN_HOME=$(resolve_user_login_home 2>/dev/null || true)
 
 fail() {
   printf 'PR_REVIEWER_ELIGIBLE=0\n'
@@ -32,6 +36,134 @@ yaml_field() {
     | head -1 \
     | sed "s/^${key}:[[:space:]]*//" \
     | tr -d '"'"'"
+}
+
+first_line() {
+  sed -n '1p' "$1" 2>/dev/null | tr '\n' ' ' | cut -c 1-240
+}
+
+run_smoke_gate() {
+  local tmpdir payload stdout_file stderr_file reviewer_home reviewer_codex_home reviewer_claude_home reviewer_claude_config_dir
+  tmpdir=$(mktemp -d -t pr-reviewer-smoke.XXXXXX) || fail smoke_tmp_failed "mktemp failed"
+  payload="$tmpdir/payload.md"
+  stdout_file="$tmpdir/stdout"
+  stderr_file="$tmpdir/stderr"
+  reviewer_home="$tmpdir/home"
+  mkdir -p "$reviewer_home"
+  printf '# Reviewer smoke payload\n\nEmit one STUDIO_REVIEW_VERDICT line.\n' > "$payload"
+
+  reviewer_codex_home=""
+  reviewer_claude_config_dir=""
+  case "$HOST" in
+    codex*|*codex*)
+      reviewer_codex_home="${CODEX_REVIEWER_HOME:-${CODEX_HOME:-}}"
+      if [ -z "$reviewer_codex_home" ]; then
+        if [ -n "$CALLER_HOME" ] && [ -d "$CALLER_HOME/.codex" ]; then
+          reviewer_codex_home="$CALLER_HOME/.codex"
+        elif [ -n "$LOGIN_HOME" ] && [ -d "$LOGIN_HOME/.codex" ]; then
+          reviewer_codex_home="$LOGIN_HOME/.codex"
+        fi
+      fi
+      [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] || {
+        rm -rf "$tmpdir"
+        fail smoke_auth_unavailable "codex reviewer auth home not found; set CODEX_REVIEWER_HOME or CODEX_HOME"
+      }
+      ;;
+    claude*|*claude*)
+      reviewer_claude_home="${CLAUDE_REVIEWER_HOME:-$LOGIN_HOME}"
+      [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] || {
+        rm -rf "$tmpdir"
+        fail smoke_auth_unavailable "claude reviewer auth home not found; set CLAUDE_REVIEWER_HOME"
+      }
+      reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-$reviewer_claude_home/.claude-reviewer}"
+      [ -n "$reviewer_claude_config_dir" ] || {
+        rm -rf "$tmpdir"
+        fail smoke_auth_unavailable "claude reviewer config dir not found; set CLAUDE_REVIEWER_CONFIG_DIR or HOME"
+      }
+      mkdir -p "$reviewer_claude_config_dir" || {
+        rm -rf "$tmpdir"
+        fail smoke_auth_unavailable "failed to create claude reviewer config dir: $reviewer_claude_config_dir"
+      }
+      ;;
+  esac
+
+  # shellcheck disable=SC2206
+  local smoke_argv=( $spawn_command )
+  local timeout_argv=()
+  case "$SMOKE_TIMEOUT_SEC" in
+    ''|*[!0-9]*) fail invalid_smoke_timeout "STUDIO_REVIEWER_SMOKE_TIMEOUT_SEC must be numeric" ;;
+    0) ;;
+    *)
+      if command -v gtimeout >/dev/null 2>&1; then
+        timeout_argv=(gtimeout "$SMOKE_TIMEOUT_SEC")
+      elif command -v timeout >/dev/null 2>&1; then
+        timeout_argv=(timeout "$SMOKE_TIMEOUT_SEC")
+      else
+        rm -rf "$tmpdir"
+        fail smoke_timeout_unavailable "reviewer smoke timeout requires gtimeout or timeout"
+      fi
+      ;;
+  esac
+
+  local prompt="Studio reviewer smoke test. Read $payload and print exactly one line: STUDIO_REVIEW_VERDICT=approved"
+  local smoke_cmd=()
+  if [ "${#timeout_argv[@]}" -gt 0 ]; then
+    smoke_cmd=("${timeout_argv[@]}" "${smoke_argv[@]}" "$prompt")
+  else
+    smoke_cmd=("${smoke_argv[@]}" "$prompt")
+  fi
+  local smoke_rc
+  case "$HOST" in
+    codex*|*codex*)
+      ( cd "$REPO_ROOT" && env -i \
+        PATH="$PATH" \
+        HOME="$reviewer_home" \
+        LANG="${LANG:-C.UTF-8}" \
+        USER="${USER:-}" \
+        ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
+        STUDIO_HOST="$HOST" \
+        REVIEW_PAYLOAD="$payload" \
+        "${smoke_cmd[@]}" >"$stdout_file" 2>"$stderr_file" )
+      smoke_rc=$?
+      ;;
+    *)
+      ( cd "$REPO_ROOT" && env -i \
+      PATH="$PATH" \
+      HOME="$reviewer_claude_home" \
+      LANG="${LANG:-C.UTF-8}" \
+      USER="${USER:-}" \
+      ${reviewer_claude_config_dir:+CLAUDE_CONFIG_DIR="$reviewer_claude_config_dir"} \
+      CLAUDE_REVIEWER_HOME="$reviewer_claude_home" \
+      STUDIO_HOST="$HOST" \
+      REVIEW_PAYLOAD="$payload" \
+      "${smoke_cmd[@]}" </dev/null >"$stdout_file" 2>"$stderr_file" )
+      smoke_rc=$?
+      ;;
+  esac
+  if [ "$smoke_rc" -ne 0 ]; then
+    local detail
+    detail=$(first_line "$stderr_file")
+    [ -n "$detail" ] || detail=$(first_line "$stdout_file")
+    rm -rf "$tmpdir"
+    fail smoke_failed "${detail:-reviewer smoke command exited non-zero}"
+  fi
+
+  local verdict_count verdict detail
+  verdict_count=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$stdout_file" | wc -l | tr -d ' ')
+  verdict=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$stdout_file")
+  if [ "$verdict_count" != "1" ]; then
+    detail=$(first_line "$stdout_file")
+    rm -rf "$tmpdir"
+    fail smoke_no_verdict "expected exactly one STUDIO_REVIEW_VERDICT line; found $verdict_count${detail:+; first_stdout=$detail}"
+  fi
+  case "$verdict" in
+    approved|approved_with_fixes|blocked) ;;
+    *)
+      rm -rf "$tmpdir"
+      fail smoke_invalid_verdict "$verdict"
+      ;;
+  esac
+  rm -rf "$tmpdir"
 }
 
 registry="$REPO_ROOT/hosts/registry.yaml"
@@ -129,7 +261,16 @@ case "$HOST" in
     ;;
 esac
 
+case "${STUDIO_INTERNAL_REVIEWER_SKIP_SMOKE:-0}" in
+  1|true|yes) smoke_status="skipped" ;;
+  *)
+    run_smoke_gate
+    smoke_status="passed"
+    ;;
+esac
+
 printf 'PR_REVIEWER_ELIGIBLE=1\n'
 printf 'HOST=%s\n' "$HOST"
 printf 'MANIFEST=%s\n' "${manifest#"$REPO_ROOT/"}"
 printf 'SPAWN_COMMAND=%s\n' "$spawn_command"
+printf 'SMOKE=%s\n' "$smoke_status"

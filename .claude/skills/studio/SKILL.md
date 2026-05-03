@@ -33,13 +33,13 @@ Task-level work on the user's iOS project (`/chanakya`, `/achilles`, `/argus` ow
 | `sync` / "sync skills" / "fan out skills" / "refresh host skills" | `modes/sync.md` |
 | `janitor [--yes]` / "clean up the studio" / "what's reclaimable across projects?" / "sweep all projects" | `modes/janitor.md` |
 | `nodes` / `nodes status` / `nodes add\|remove\|enable\|disable` / `nodes health` / `nodes diagnose` / `nodes sync` / `nodes schedule` / "show the fleet" / "list workers" / "are the workers up?" / "register a worker" / "diagnose a worker" / "why is dispatch failing?" / "sync the workers" | `modes/nodes.md` |
-| `tf-push [--dry-run] [--background]` / "push a TestFlight build via studio" | `modes/tf-push.md` |
+| `tf-push [--dry-run] [--version <X.Y.Z>] [--background]` / "push a TestFlight build via studio" | `modes/tf-push.md` |
 
 | `work <track>` / `work chain <manifest-or-name>` / `STUDIO_TRACK=<track>` auto-start | `modes/work.md` |
 
 Mode composition convention: `/studio <mode> ... + summary` means run the selected mode, then finish with `modes/summary.md`'s completion report. This is a reporting composition only; it does not change the mode's writes or gates.
 
-Tier 2 modes (not shipped today; spawn on demand): `backlog` (gh issue triage), `scaffold` (new mode pack / primitive scaffold).
+Tier 2 modes (not shipped today; spawn on demand): `backlog` (Project-field issue triage), `scaffold` (new mode pack / primitive scaffold).
 
 **Onboarding a new machine** (manager / worker / dual) is **not** a `/studio` mode. Use `/studio-setup` (or `scripts/bootstrap.sh` directly). The `nodes` mode is day-2 ops only — it never bootstraps a fresh machine.
 

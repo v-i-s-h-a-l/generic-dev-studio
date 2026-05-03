@@ -14,7 +14,7 @@ Version 3.6.0 adds `recommended_models`, a task-level best-result and fast-turna
 
 Version 3.7.0 adds optional `base_branch`, a dispatch-time branch base for briefs that must start from a non-current branch. Omit it for normal tasks; `task-worktree-setup.sh` falls back to the operator checkout only when this field is absent.
 
-Version 3.5.0 promotes `legacy_task_id` to a documented field (#296). Previously undocumented and caller-dependent — older `task-load-spec.sh` relied on it for brief resolution but hand-authored briefs silently omitted it, breaking Achilles dispatch. The canonical loader now follows `task.links.brief`; `legacy_task_id` remains useful for migration/backfill parity and the optional diagnostic legacy path. `write_brief_artifact` auto-resolves it from the parent task YAML when not passed explicitly, and `validate-brief.sh` enforces presence when the parent task carries one.
+Version 3.5.0 promotes `legacy_task_id` to a documented field (#296). Previously undocumented and caller-dependent — `task-load-spec.sh` relied on it for brief resolution but hand-authored briefs silently omitted it, breaking Achilles dispatch. Now auto-resolved from the parent task YAML by `write_brief_artifact` when not passed explicitly. `validate-brief.sh` enforces presence when the parent task carries one.
 
 Version 3.3.0 adds explicit dispatch routing: `dispatch_agent` (optional enum, default `achilles`) and `evidence` (required when `dispatch_agent: apollo`). Apollo Stage 5 (#235) wiring — perf briefs declare their target agent at brief-write time so dispatch is deterministic and Apollo's strict-9 evidence gate can pre-flight at brief creation rather than at refusal time. Additive over 3.2.0; readers on 3.0.0+ ignore unknown fields and continue dispatching to Achilles.
 
@@ -111,7 +111,7 @@ Long background, raw research, and design discussion belong in linked context do
 | `schema_version` | object | yes | Per `contracts/schema-version.md`. `min_reader: 3.0.0` — readers on brief@2.x or older reject. |
 | `id` | string (UUIDv7) | yes | Stable for the life of this brief. |
 | `task_id` | string (UUIDv7) | yes | Parent task. Must resolve to an existing `task.yaml`. |
-| `legacy_task_id` | string \| null | no | Human-readable task ID (e.g. `T042`) from the parent task. Auto-resolved by `write_brief_artifact` from `tasks/<task_id>.yaml` when not passed explicitly. Required when the parent task carries one; null for UUID-only tasks. Used by `backfill-legacy-yaml.sh` dedup and the optional `TASK_LOAD_SPEC_DIAGNOSTIC=1` legacy path. |
+| `legacy_task_id` | string \| null | no | Human-readable task ID (e.g. `T042`) from the parent task. Auto-resolved by `write_brief_artifact` from `tasks/<task_id>.yaml` when not passed explicitly. Required when the parent task carries one; null for UUID-only tasks. `task-load-spec.sh` validates this against the task YAML before dispatch; `backfill-legacy-yaml.sh` uses it for dedup. |
 | `type` | enum | yes | One of `impl`, `unit-test`, `ui-test`, `integration-test`, `tdd`. Drives brief-template expansion in Chanakya's brief mode. |
 | `size` | enum | yes | `xs` \| `s` \| `m` \| `l`. Must match the parent task's `size`. |
 | `state` | enum | yes | Per `state-machines/brief-lifecycle.md`. |

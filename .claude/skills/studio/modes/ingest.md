@@ -69,7 +69,7 @@ If the input came verbatim from a user-project artifact and you can't cleanly an
 
 ## Step 4 — Act on the classification
 
-- **Abstract pattern** → `gh issue create --title ... --body ... --label <enhancement|bug|phase-2|roadmap|polish>` per `CLAUDE.md` §Backlog.
+- **Abstract pattern** → `scripts/studio-gh.sh issue create --title ... --body ... --label <enhancement|bug|phase-2|roadmap|polish>` per `CLAUDE.md` §Backlog.
 - **Raw analysis** → write to `~/.dev-studio/<project>/analysis/<date>.md`. Never `git add` this file.
 - **Parking-lot candidate** → append entry to `studio-consolidation/parking-lot.md` with date + rationale.
 - **Direct rule change** → in-place edit + commit.
