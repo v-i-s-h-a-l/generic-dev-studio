@@ -10,7 +10,7 @@ Independent work tracks. Each session works on one track only.
 |---|---|---|
 | `track:apollo` | Active | Apollo performance-agent research and build arc. Detailed work lives in the Apollo issues and skill docs. |
 | `track:build-opt` | Active | Documented below as Track B. |
-| `track:forge-safety` | Retained / no open issues | Documented below as Track C and in `FORGE-RELIABILITY.md`; keep for historical filtering until a new forge-safety issue reopens the lane. |
+| `track:forge-safety` | Historical / archived | Historical lookup lives in `archive/forge-reliability-2026-05-03.md`; keep for filtering and future safety-floor regressions. |
 | `track:host-agnostic` | Historical / mostly shipped | Documented below as Track A for context. |
 | `track:pm-surface` | Active | GitHub-as-PM-surface arc, including labels, projects, milestones, and issue graph hygiene. |
 | `track:skill-distribution` | Active backlog | Skill distribution and recipe-system follow-ups from the skill distribution arc. |
@@ -83,63 +83,9 @@ These are different sections — edits don't conflict.
 
 ## Track C — forge-safety (`track/forge-safety`)
 
-**Label:** `track:forge-safety`
-**Branch:** `track/forge-safety`
-**Issues:** 7 analysis bugs — safety floor + data integrity + operational fixes
-**Merge order:** merges independently (no file overlap with A or B)
-**Forge flag system:** 🟢 Green (autonomous) / 🟡 Yellow (deploy-gated) / 🔴 Red (user-gated)
+Archived on 2026-05-03 after the safety-floor queue closed and the user explicitly waived the freeze as an active blocker.
 
-### Execution waves
-
-| Wave | Issues | Deps | Flag | Can parallelize |
-|---|---|---|---|---|
-| 1 | #299 (Argus infra root causes) | none | 🟢 | yes — independent |
-| 1 | #301 (debrief contract + writer) | none | 🟢 | yes — independent |
-| 1 | #279 (debrief enforcement) | none | 🟢 | yes — independent |
-| 1 | #76 (dual-write audit) | none | 🟢 | yes — independent |
-| 2 | #298 (sweep blind spots) | Blocked by: #301 | 🟢 | after #301 |
-| 2 | #300 (cascade circuit breaker) | Blocked by: #299, #279 | 🟡 | after #299 + #279 |
-| 3 | #97 (App Store version) | Blocked by: #300 | 🔴 | after #300; needs user API key |
-
-### Flag definitions
-
-- 🟢 **Green** — fully autonomous. Implement, verify against acceptance criteria, commit, close. No user touchpoint.
-- 🟡 **Yellow** — can be built autonomously, but deployment is gated on upstream issues. Build in parallel, hold merge until deps are verified.
-- 🔴 **Red** — hard user dependency. Cannot complete acceptance criteria without user action (API keys, live API calls, device verification). Implement all automatable parts, then pause with a clear "user action needed" summary.
-
-### Files owned
-
-| File | Notes |
-|---|---|
-| `scripts/task-merge.sh` | #279 (debrief precondition), #300 (composite gate) |
-| `scripts/task-emit-debrief.sh` | #279 (--stage / --finalize split) |
-| `scripts/sweep-enumerate-debriefs.sh` | #298 (blind spot fixes) |
-| `scripts/dispatch-review.sh` | #299 (Argus preflight checks) |
-| `scripts/check-merge-precondition.sh` | #279 (new — reusable git hook) |
-| `_shared/contracts/debrief-format.md` | #301 (rewrite to YAML schema) |
-| `_shared/contracts/.legacy/` | #301 (archive old MD template) |
-| `_shared/patterns/dual-write-transition.md` | #76 (new primitive) |
-| `achilles/modes/task.md` | #279 (Steps 8.6–8.7 + Step 9 rewrite) |
-| `chanakya/modes/*.md` | #76 (audit: dual-write prose fixes) |
-| `argus/SKILL.md` | #76 (audit), #299 (preflight) |
-| `pushTFBuild.md` | #97 (Step 1c endpoint fix) |
-| Mode packs touched by #76 audit | read-only audit; write only if OR→AND fix needed |
-
-### Acceptance gate
-
-Track is complete when:
-1. All 7 issues closed
-2. Every AC (acceptance criterion) on every issue verified by synthetic test or runtime check
-3. Zero `argus_gate_skipped` events in the first full day post-deploy (#299 AC6)
-4. Zero non-archived `.md` debriefs in the canonical debriefs directory (#301 AC5)
-5. Zero false-positive merge blocks on next 10 real Achilles runs (#300 AC9)
-
-### Shared file conflicts
-
-| File | This track | Other track | Conflict? |
-|---|---|---|---|
-| `achilles/modes/task.md` | Steps 8.6–9 | Track A: Step 8.5, Track B: Step 6 | No — different sections |
-| `scripts/dispatch-review.sh` | Argus preflight | Track A: Argus dispatch | Possible — review at merge time |
+Historical detail lives in [`archive/forge-reliability-2026-05-03.md`](archive/forge-reliability-2026-05-03.md). Do not append routine backlog drift to that archive. New safety-floor regressions should get fresh GitHub issues and, if they reopen this lane, a new active planning surface.
 
 ## Adding a new track
 
