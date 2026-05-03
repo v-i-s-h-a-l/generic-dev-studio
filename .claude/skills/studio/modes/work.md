@@ -39,6 +39,7 @@ Run:
 ```bash
 scripts/studio-chain-runner.sh <manifest-or-name> [--only <chain>] [--host codex|claude-code] [--dry-run] [--yes]
 scripts/studio-chain-runner.sh --resume <run_id> [--yes]
+scripts/studio-chain-runner.sh --list
 ```
 
 ## Manual parallel shell guidance
@@ -79,7 +80,7 @@ Chain behavior:
 1. Fetch latest `origin/<base>`.
 2. Create one chain feature branch/worktree from latest base.
 3. Print the resolved execution plan by default: chain order, issue titles/states, branches, worktrees, host policy, risk notes, planned PRs, and the private state path. The runner exits after this plan unless `--yes` / `--no-confirm` is present; `--dry-run` prints the same graph and then non-mutating commands.
-4. Persist run state under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/state.json`. Resume a blocked/crashed run with `scripts/studio-chain-runner.sh --resume <run_id> --yes`; completed chains/issues are skipped or re-integrated from their recorded branches.
+4. Persist run state under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/state.json`. List persisted runs with `scripts/studio-chain-runner.sh --list`. Resume a blocked/crashed run with `scripts/studio-chain-runner.sh --resume <run_id> --yes`; completed chains/issues are skipped or re-integrated from their recorded branches.
 5. Validate the graph before live execution: issue IDs must be unique across chains, issues must be open unless `--allow-closed-issues` is present, branch refs must be safe and non-colliding, GitHub auth must work, the reviewer host must be available, and base refs must be reachable.
 6. Size the fresh-session pool from healthy registered `xcodebuild` offload nodes: local-only stays at 1; N healthy offload nodes yields N+1 sessions, capped by available RAM. Override only for emergencies with `STUDIO_CHAIN_WORKER_POOL`, or clamp with `STUDIO_CHAIN_MAX_WORKERS`.
 7. For each issue, create `<chain-branch>-issue-<N>` in a separate `/tmp/studio-chain-runner/...` worktree. Issue execution is sequential within a chain; `--parallel-chains <n|auto|1>` records the requested chain scheduling policy, while the current runner serializes chain PR/review/issue-closure mutation unless a later scheduler proves safe concurrency.
@@ -90,7 +91,7 @@ Chain behavior:
 12. After the last issue, rebase the chain branch on latest base, open a PR, and run `scripts/pr-headless-review.sh <pr> --method auto`.
 13. If the reviewer blocks, STOP with the PR and worktree intact for repair. If non-blocked, the normal autopilot merge path runs.
 14. Close/comment the chain issues after the PR path succeeds.
-15. Write a final private report under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/report.md`, then fetch/prune locally and remove the chain/issue worktrees after merge.
+15. Write a final private report under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/report.md` with functionality delivered, telemetry roll-up, quality signals, carryover, lessons when available, and telemetry gaps, then fetch/prune locally and remove the chain/issue worktrees after merge.
 
 Telemetry:
 

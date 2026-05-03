@@ -4,6 +4,7 @@
 # Usage:
 #   scripts/studio-chain-runner.sh <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--yes] [--parallel-chains <n|auto|1>]
 #   scripts/studio-chain-runner.sh --resume <run_id> [--yes]
+#   scripts/studio-chain-runner.sh --list
 #
 # Manifest shape:
 #   schema_version: 1
@@ -38,9 +39,11 @@ YES=0
 RESUME_ID=""
 ALLOW_CLOSED_ISSUES=0
 PARALLEL_CHAINS="auto"
+LIST_RUNS=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --list) LIST_RUNS=1; shift ;;
     --only) ONLY_CHAIN="${2:?--only requires a chain name}"; shift 2 ;;
     --only=*) ONLY_CHAIN="${1#--only=}"; shift ;;
     --host) HOST_OVERRIDE="${2:?--host requires a host name}"; shift 2 ;;
@@ -67,6 +70,40 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+list_persisted_runs() {
+  command -v jq >/dev/null 2>&1 || { printf 'studio-chain-runner: jq required\n' >&2; exit 2; }
+  local parent_home project_root chain_root state_count
+  parent_home=$(resolve_parent_home_for_github)
+  project_root=$(HOME="$parent_home" resolve_project_root_for generic-dev-studio)
+  chain_root="$project_root/chain-runs"
+
+  printf '# Studio Chain Runs\n\n'
+  printf -- '- Root: `%s`\n\n' "$chain_root"
+  if [ ! -d "$chain_root" ]; then
+    printf 'No persisted chain runs found.\n'
+    return 0
+  fi
+
+  state_count=$(find "$chain_root" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$state_count" -eq 0 ]; then
+    printf 'No persisted chain runs found.\n'
+    return 0
+  fi
+
+  printf '| Run ID | Manifest | Status | Started | Updated | Report |\n'
+  printf '|---|---|---|---|---|---|\n'
+  find "$chain_root" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null | sort | while IFS= read -r state; do
+    jq -r --arg state "$state" '
+      "| \(.run_id // "unknown") | \(.manifest // "unknown") | \(.status // "unknown") | \(.started_at // "unknown") | \(.updated_at // "unknown") | \(.report // "missing") |"
+    ' "$state" 2>/dev/null || printf '| unknown | unknown | unreadable | unknown | unknown | `%s` |\n' "$state"
+  done
+}
+
+if [ "$LIST_RUNS" -eq 1 ]; then
+  list_persisted_runs
+  exit 0
+fi
 
 if [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ]; then
   usage
@@ -292,6 +329,9 @@ ingest_worker_summary() {
         additions: (.additions // $stats.additions),
         deletions: (.deletions // $stats.deletions),
         generated_file_count: (.generated_file_count // $stats.generated_file_count),
+        functionality_delivered: (.functionality_delivered // null),
+        carryover: (.carryover // null),
+        lessons: (.lessons // null),
         telemetry_gaps: (.telemetry_gaps // [])
       }' "$summary_path" > "$dest"
   else
@@ -329,6 +369,9 @@ ingest_worker_summary() {
         tokens: null,
         model: null,
         model_recommendation: null,
+        functionality_delivered: null,
+        carryover: null,
+        lessons: null,
         telemetry_gaps: ["worker_summary_missing", "model", "tokens", "tests_lints_builds"]
       }' > "$dest"
   fi
@@ -357,6 +400,77 @@ generate_run_report() {
     printf -- '- Ended: `%s`\n' "$ended_ts"
     printf -- '- Duration: `%ss`\n' "$duration_s"
     [ -n "$failure_reason" ] && printf -- '- Failure reason: `%s`\n' "$failure_reason"
+    printf '\n## Functionality Delivered\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        def lines($v):
+          if $v == null then []
+          elif ($v | type) == "array" then [$v[] | tostring]
+          elif ($v | type) == "object" then [$v | tojson]
+          else [$v | tostring]
+          end;
+        [ .[] | {issue:(.issue_number // "unknown"), lines: lines(.functionality_delivered)} | select(.lines | length > 0) ] as $items |
+        if ($items | length) == 0 then "No functionality narrative was supplied by worker summaries."
+        else $items[] | . as $item | $item.lines[] | "- #\($item.issue): \(.)"
+        end
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf 'No worker summaries were ingested.\n'
+    fi
+    printf '\n## Telemetry Roll-up\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        def token_total:
+          (.tokens // null) as $t |
+          if $t == null then null
+          elif ($t | type) == "number" then $t
+          elif ($t | type) == "object" then ($t.total // $t.total_tokens // $t.usage.total_tokens // null)
+          else null
+          end;
+        def cache_rate:
+          (.tokens // null) as $t |
+          if ($t | type) == "object" then ($t.cache_hit_rate // $t.cache_hit_ratio // null) else null end;
+        . as $rows |
+        ($rows | length) as $issue_count |
+        ([ $rows[].duration_s? // empty ] | add // 0) as $worker_seconds |
+        ([ $rows[] | token_total | select(. != null) ] | add // null) as $tokens |
+        ([ $rows[] | cache_rate | select(. != null) ]) as $cache_rates |
+        (if ($cache_rates | length) == 0 then null else (($cache_rates | add) / ($cache_rates | length)) end) as $cache_hit_rate |
+        ($rows | max_by(.duration_s // -1)) as $slowest |
+        "- Worker summaries: \($issue_count)",
+        "- Total worker wall-clock: \($worker_seconds)s",
+        "- Slowest issue: #\($slowest.issue_number // "unknown") at \($slowest.duration_s // "unknown")s",
+        "- Token total: \(if $tokens == null then "missing" else ($tokens | tostring) end)",
+        "- Cache hit rate: \(if $cache_hit_rate == null then "missing" else ($cache_hit_rate | tostring) end)",
+        "",
+        "| Issue | Host | Model | Duration | Tokens |",
+        "|---:|---|---|---:|---|",
+        ($rows[] | "| #\(.issue_number // "unknown") | \(.host // "unknown") | \(.model // .model_name // "missing") | \(.duration_s // "unknown")s | \(if (token_total) == null then "missing" else (token_total | tostring) end) |")
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf -- '- Worker summaries: 0\n'
+      printf -- '- Event counters: unavailable without worker summaries.\n'
+    fi
+    if [ -s "$EVENTS_JSONL" ] && [ "$EVENTS_JSONL" != "/dev/null" ]; then
+      printf '\nEvent counters:\n'
+      jq -r -s '
+        [.[].event] | group_by(.) | map({event: .[0], count: length}) | sort_by(.event) |
+        if length == 0 then "- none" else .[] | "- \(.event): \(.count)" end
+      ' "$EVENTS_JSONL" 2>/dev/null || printf -- '- unreadable event log\n'
+    fi
+    printf '\n## Quality Signals\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        def outcome_bad($arr): [($arr // [])[]? | select((.outcome // .status // "") | test("fail|error"; "i"))] | length;
+        ["| Issue | Exit | Review Passes | Findings Tier | Tests | Lints | Builds | Gaps |",
+         "|---:|---:|---:|---|---:|---:|---:|---|"],
+        (.[] |
+          "| #\(.issue_number // "unknown") | \(.exit_code // "unknown") | \(.review_pass_count // .review_passes // "missing") | \(.review_findings_tier // .findings_tier // "missing") | \((.tests // []) | length) total / \(outcome_bad(.tests)) bad | \((.lints // []) | length) total / \(outcome_bad(.lints)) bad | \((.builds // []) | length) total / \(outcome_bad(.builds)) bad | \((.telemetry_gaps // []) | join(", ")) |"
+        )
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf 'No quality signals were ingested.\n'
+    fi
     printf '\n## Chains And Issues\n\n'
     if [ "$summary_count" -gt 0 ]; then
       jq -r -s '
@@ -366,6 +480,40 @@ generate_run_report() {
       ' "$SUMMARY_ROOT"/*.json
     else
       printf 'No worker summaries were ingested.\n'
+    fi
+    printf '\n## Carryover\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        def lines($v):
+          if $v == null then []
+          elif ($v | type) == "array" then [$v[] | tostring]
+          elif ($v | type) == "object" then [$v | tojson]
+          else [$v | tostring]
+          end;
+        [ .[] | {issue:(.issue_number // "unknown"), lines: lines(.carryover)} | select(.lines | length > 0) ] as $items |
+        if ($items | length) == 0 then "No carryover was supplied by worker summaries."
+        else $items[] | . as $item | $item.lines[] | "- #\($item.issue): \(.)"
+        end
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf 'No carryover was ingested.\n'
+    fi
+    printf '\n## Lessons\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        def lines($v):
+          if $v == null then []
+          elif ($v | type) == "array" then [$v[] | tostring]
+          elif ($v | type) == "object" then [$v | tojson]
+          else [$v | tostring]
+          end;
+        [ .[] | {issue:(.issue_number // "unknown"), lines: lines(.lessons)} | select(.lines | length > 0) ] as $items |
+        if ($items | length) == 0 then "A4a-enriched lessons were not available for this run."
+        else $items[] | . as $item | $item.lines[] | "- #\($item.issue): \(.)"
+        end
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf 'A4a-enriched lessons were not available for this run.\n'
     fi
     printf '\n## PRs And Review\n\n'
     if [ -n "$FINAL_PR_URL" ]; then
@@ -903,6 +1051,9 @@ Summary JSON fields:
 - files_changed/additions/deletions/generated_file_count
 - tests/lints/builds arrays with command/outcome when run
 - tokens object when available, otherwise null
+- functionality_delivered optional string or array describing what users/agents can now do
+- carryover optional string or array for follow-up issues, parking-lot adds, or uncaptured asks
+- lessons optional string or array when telemetry supports next-chain recommendations
 - telemetry_gaps array listing missing fields such as "tokens" or "model"
 - blocked_reason when nonzero
 
