@@ -31,6 +31,7 @@ set -u
 umask 022
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=lib-ui.sh
@@ -252,7 +253,7 @@ cmd_recheck() {
   role=$(jq -r '.role // ""' "$state" 2>/dev/null || true)
   wroles=$(jq -r '(.worker_roles // []) | join(",")' "$state" 2>/dev/null || true)
   if [ -z "$role" ]; then
-    if [ -L "$HOME/.claude/skills/chanakya" ]; then role="manager"; else role="worker"; fi
+    if [ -L "$REPO_ROOT/.claude/skills/dev-studio" ]; then role="manager"; else role="worker"; fi
   fi
   [ -z "$wroles" ] && wroles="swift-test,xcodebuild"
   printf '%sRecheck%s — role=%s worker_roles=%s\n\n' "$c_bold" "$c_reset" "$role" "$wroles"
@@ -331,7 +332,7 @@ _guide_resolve_role() {
     _GUIDE_WROLES=$(jq -r '(.worker_roles // []) | join(",")' "$state" 2>/dev/null || true)
   fi
   [ -z "$_GUIDE_ROLE" ] && {
-    if [ -L "$HOME/.claude/skills/chanakya" ]; then _GUIDE_ROLE="manager"; else _GUIDE_ROLE="worker"; fi
+    if [ -L "$REPO_ROOT/.claude/skills/dev-studio" ]; then _GUIDE_ROLE="manager"; else _GUIDE_ROLE="worker"; fi
   }
 }
 
@@ -421,8 +422,9 @@ _guide_tour() {
   The studio has three layers:
 
   1. AGENTS — AI-powered task management
-     /chanakya plans work, /achilles implements, /argus reviews.
-     They run inside Claude Code on your manager machine.
+     /dev-studio manager plans work, /dev-studio worker implements,
+     and /dev-studio reviewer reviews. They run inside a host session
+     on your manager machine.
 
   2. DISPATCH — distributed builds
      Your manager sends compile/test work to registered workers

@@ -183,8 +183,8 @@ tools:
     category: runtime
     tier: recommended
     roles: [manager, dual]
-    why: "AI agent runtime — /chanakya /achilles /argus run inside it"
-    details: "The Anthropic CLI that hosts the studio's agent layer. Without it, you can still use scripts and worker infrastructure, but AI-powered task management (Chanakya), implementation (Achilles), and review (Argus) won't be available. Install via the official Anthropic docs."
+    why: "AI agent runtime — /dev-studio roles run inside it"
+    details: "The Anthropic CLI that hosts the studio's agent layer. Without it, you can still use scripts and worker infrastructure, but AI-powered manager, worker, and reviewer roles won't be available. Install via the official Anthropic docs."
     check_type: command
     check_target: claude
     version_cmd: "claude --version 2>/dev/null | head -1 | awk '{print $1}'"
@@ -257,7 +257,7 @@ tools:
     tier: required
     roles: [worker, dual]
     conditional_on: worker_role:swift-test
-    why: "Swift compiler — needed for swift test dispatches"
+    why: "Swift compiler — needed for Swift package test dispatches"
     details: "The Swift compiler, provided by Command Line Tools or Xcode.app. If CLT is installed, Swift is typically available. This check confirms the toolchain is functional."
     check_type: command
     check_target: swift

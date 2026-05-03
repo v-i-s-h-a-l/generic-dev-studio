@@ -6,7 +6,7 @@ type: reference
 
 # Capability Manifest Pattern
 
-The studio has ~30 mode packs across Chanakya, Achilles, Argus, and upcoming Lu Ban + Chiron folds. Tracking capabilities by hand across that surface is drift-prone. The capability manifest is a machine-readable roster, regenerated from mode-pack frontmatter on every commit — like `docs-surface.json`, but deeper.
+The studio has a v2 role roster plus generated compatibility metadata. Tracking capabilities by hand across that surface is drift-prone. The capability manifest is a machine-readable roster regenerated on every commit — like `docs-surface.json`, but deeper.
 
 ## Shape
 
@@ -23,14 +23,14 @@ The studio has ~30 mode packs across Chanakya, Achilles, Argus, and upcoming Lu 
   "generated_at": "2026-04-22T14:32:01Z",
   "agents": [
     {
-      "name": "achilles",
-      "router": "achilles/SKILL.md",
+      "name": "worker",
+      "router": "core/v2/skills/dev-studio/SKILL.md",
       "modes": [
         {
           "name": "task",
-          "path": "achilles/modes/task.md",
+          "path": "core/v2/roles/worker.yaml",
           "type": "mode-pack",
-          "reads": ["~/.dev-studio/<project>/plans/chanakya-tasks/*.md", "…"],
+          "reads": ["~/.dev-studio/<project>/plans/briefs/*.yaml", "…"],
           "writes": ["~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml", "…"],
           "snapshots": [],
           "dry_run": true,
@@ -82,7 +82,7 @@ lint-architecture.sh --staged
 
 - Ad-hoc grep-through-mode-pack-frontmatter when an orchestrator needs to know what exists.
 - Mental roster of "which modes support dry-run" / "which modes read the event log".
-- Drift between `chanakya/SKILL.md` dispatch table and the actual `modes/` directory.
+- Drift between a v2 router dispatch table and the actual role/mode surface.
 
 ## Non-goals
 

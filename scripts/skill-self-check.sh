@@ -17,10 +17,9 @@
 # the YAML, not 4 separate SKILL.md procedural blocks.
 #
 # Usage:
-#   scripts/skill-self-check.sh <agent>
-#     <agent>: one of the names under `agents:` in the manifest
-#              (achilles, argus, chanakya, apollo). Companions are checked
-#              for every invocation regardless of agent.
+#   scripts/skill-self-check.sh [agent]
+#     agent is optional after A10. When omitted, the script validates only
+#     shared companions and host adapter anchors.
 #
 # Exit codes:
 #   0  layout matches the manifest
@@ -40,17 +39,18 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 SKILLS_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
 AGENT="${1:-}"
-[ -z "$AGENT" ] && { printf 'skill-self-check: usage: %s <agent>\n' "$0" >&2; exit 3; }
 
 # AGENT must be a simple identifier — used as a YAML key reference, so reject
 # anything that could escape the manifest query. Owned-agent names are fixed
 # (achilles / argus / chanakya / apollo / future kebab-case additions); a
 # stricter regex than yq's tolerance keeps the surface tight.
-case "$AGENT" in
-  *[!a-zA-Z0-9_-]*|"")
-    printf 'skill-self-check: agent name %q invalid (alphanumeric / underscore / hyphen only)\n' "$AGENT" >&2
-    exit 3 ;;
-esac
+if [ -n "$AGENT" ]; then
+  case "$AGENT" in
+    *[!a-zA-Z0-9_-]*)
+      printf 'skill-self-check: agent name %q invalid (alphanumeric / underscore / hyphen only)\n' "$AGENT" >&2
+      exit 3 ;;
+  esac
+fi
 
 MANIFEST="$SKILLS_ROOT/_shared/distribution/expected-layout.yaml"
 if [ ! -r "$MANIFEST" ]; then
@@ -107,14 +107,16 @@ fi
 
 # Agent-specific. mikefarah/yq doesn't support --arg, so AGENT (validated
 # above to be safe identifier chars only) is interpolated directly.
-agent_present=$(yq -r ".agents | has(\"$AGENT\")" "$MANIFEST" 2>/dev/null)
-if [ "$agent_present" != "true" ]; then
-  printf 'skill-self-check: agent %q not declared in manifest %s\n' "$AGENT" "$MANIFEST" >&2
-  exit 3
+if [ -n "$AGENT" ]; then
+  agent_present=$(yq -r ".agents | has(\"$AGENT\")" "$MANIFEST" 2>/dev/null)
+  if [ "$agent_present" != "true" ]; then
+    printf 'skill-self-check: agent %q not declared in manifest %s\n' "$AGENT" "$MANIFEST" >&2
+    exit 3
+  fi
+  while IFS= read -r d; do [ -n "$d" ] && check_dir  "$d"; done < <(yq -r ".agents.\"$AGENT\".required_dirs[]?" "$MANIFEST" 2>/dev/null)
+  while IFS= read -r f; do [ -n "$f" ] && check_file "$f"; done < <(yq -r ".agents.\"$AGENT\".required_files[]?" "$MANIFEST" 2>/dev/null)
+  while IFS= read -r f; do [ -n "$f" ] && check_file "$f"; done < <(yq -r ".agents.\"$AGENT\".required_modes[]?" "$MANIFEST" 2>/dev/null)
 fi
-while IFS= read -r d; do [ -n "$d" ] && check_dir  "$d"; done < <(yq -r ".agents.\"$AGENT\".required_dirs[]?" "$MANIFEST" 2>/dev/null)
-while IFS= read -r f; do [ -n "$f" ] && check_file "$f"; done < <(yq -r ".agents.\"$AGENT\".required_files[]?" "$MANIFEST" 2>/dev/null)
-while IFS= read -r f; do [ -n "$f" ] && check_file "$f"; done < <(yq -r ".agents.\"$AGENT\".required_modes[]?" "$MANIFEST" 2>/dev/null)
 
 if [ -z "$missing" ]; then
   exit 0

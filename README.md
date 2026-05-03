@@ -1,6 +1,6 @@
 # Generic Dev Studio
 
-A three-agent system for Claude Code. **Chanakya** plans the work; **Achilles** executes it in an isolated git worktree, self-reviews, gates on a green build, and invokes **Argus** for a pre-merge cross-file review before merging back — without ever touching your uncommitted changes.
+A multi-host orchestration system for `/dev-studio` v2 roles. The canonical router lives in `core/v2/skills/dev-studio`; role contracts under `core/v2/roles` cover manager, planner, worker, reviewer, QA, flow testing, performance, and release work without touching your uncommitted changes.
 
 Built around an iOS/SwiftUI project, but the orchestration layer is stack-agnostic.
 
@@ -60,79 +60,38 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 ## TL;DR
 
 ```
-# Studio router — cross-agent / studio-level ops (not task work)
-/studio resume-plan              # "where were we" — load ROADMAP + ARCHITECTURE + pending memory
-/studio review                   # walk REVIEW.md against the pending diff
-/studio release                  # draft release notes per RELEASES.md (never auto-tags)
-/studio ingest                   # capture a single studio-level pattern / rule-tweak proposal
-/studio analyze [<project>]      # sweep studio-feedback inbox + event logs for a project
-/studio summary                  # end-of-task/session report: done, changed, verified, next command
-/studio <mode> ... + summary     # run a studio mode, then finish with the standard report shape
-/studio help                     # open the studio docs page in your browser
-/studio-help                     # slash-command shortcut for /studio help
-/studio work <track>             # claim track issues, then final reviewed PR + cleanup + summary
-/studio work chain workflow-measurement-improvements  # plan/resume issue chains: fresh sessions, UUID telemetry, reviewed PRs, cleanup
-/studio work chain v2-transition                      # canonical phasewise Studio v2 transition chain
+# Studio v2 router — canonical role dispatch
+/dev-studio manager resume-plan  # "where were we" — load ROADMAP + ARCHITECTURE + pending memory
+/dev-studio reviewer review      # walk REVIEW.md against the pending diff
+/dev-studio release-manager      # draft release notes per RELEASES.md (never auto-tags)
+/dev-studio manager ingest       # capture a single studio-level pattern / rule-tweak proposal
+/dev-studio manager analyze      # sweep studio-feedback inbox + event logs for a project
+/studio-help                     # open the v2 router source
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
 scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters from private chain-run telemetry
 scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
-STUDIO_TRACK=<track>             # session-start shortcut for /studio work <track>
-/studio nodes                    # day-2 fleet management — status, add, remove, health, sync, schedule
-/studio tf-push --background     # start TF archive/upload and keep session free for Slack drafting
-/studio tf-push --version 26.5.0 # TestFlight push with explicit MARKETING_VERSION; live work needs STUDIO_TF_PUSH_LIVE=1
+STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
+/dev-studio host-adapter nodes   # day-2 fleet management — status, add, remove, health, sync, schedule
+/dev-studio release-manager tf-push --background     # start TF archive/upload and keep session free for Slack drafting
+/dev-studio release-manager tf-push --version 26.5.0 # TestFlight push with explicit MARKETING_VERSION; live work needs STUDIO_TF_PUSH_LIVE=1
 /studio-setup                    # onboard THIS machine — auto-pilot, prompts for role only
 /studio-setup --manager          # zero-prompt manager onboarding
 /studio-setup --worker           # zero-prompt worker (id = hostname; --id X to override)
 /studio-setup --dual             # both roles on one machine
 /studio-setup --interactive      # legacy: prompt at every step
-/studio-setup --help             # open the setup guide + usage summary
+/studio-setup --help             # open the v2 router source + usage summary
 
-/argus                           # review current worktree (auto-invoked by Achilles pre-merge)
-/argus T001                      # review a specific task's worktree standalone
-/chanakya                        # describe features → get a master plan
-/chanakya brief T001             # generate a reviewer-ready XS/S/M worker brief
-/chanakya brief-review T001      # checklist pass over an authored brief (warn-tier, pre-dispatch)
-/chanakya ship T001,T002         # brief + dispatch to Achilles in one step
-/chanakya brief-all              # brief every pending task in priority order
-/chanakya sweep-debt             # brief + dispatch all pending debt tasks
-/chanakya verify                 # guided: test-flow → promote → review-feedback
-/chanakya reopen T347 --reason="qa-rejected: <text>"  # reopen a closed task with recorded provenance
-/achilles T001                   # execute (XS/S: lsp-only, M/L: full build; approved merges, flagged waits)
-/achilles T001 --wait            # execute, pause up to 10 min for feedback before merging
-/achilles T001 --force-build     # override size-driven gate; run full xcodebuild
-/achilles T001 --dry-run         # simulate every write + event; reads + LSP run normally
-/achilles next                   # auto-pick highest-priority ready task and execute
-/achilles build                  # on-demand build check at HEAD; auto-bisects on red
-/achilles debrief                # direct-debrief: capture in-chat bug-fix as YAML debrief (no brief, no worktree, no Argus)
-/chanakya status                 # tasks in flight + debt gauges + what's next
-/chanakya sweep                  # Step 0 inbox sweep only, no status table (lighter)
-/chanakya train list             # query layer over lean schema: list trains
-/chanakya train show <name>      # tasks in a train, grouped by state
-/chanakya train burn-down <name> # state-count summary for a train
-/chanakya train run <name>       # reviewed single-train loop: plan review → Achilles → outcome review
-/chanakya stale [--days=N]       # tasks stuck in their state > N days (default 7)
-/chanakya blocked-by <task-id>   # reverse predecessors lookup — what does shipping this unblock
-/chanakya dispatch-ready         # briefed tasks whose predecessors are merged/verified/archived or duplicates
-/chanakya urgent <free-text>     # hotfix fast-path — minimal brief tagged urgent + immediate Achilles dispatch (skips brief-review)
-/chanakya test-manifest          # per-task checklist → user-testing.md
-/chanakya test-flow              # journey-ordered walkthrough → round files
-/chanakya review-feedback        # promote passing tasks to verified; file follow-ups for failures
-/chanakya sync-slack             # sync Slack bug list with master plan after a build
-/chanakya sync-slack --configure-token   # one-time: save Slack bot token
-/chanakya sync-slack --configure         # one-time: configure project Slack list IDs
-/chanakya ingest-thread <ch> <ts>        # pull Slack thread into feedback/active.md
-/chanakya ingest-dm <user>               # ingest a DM history into feedback
-/chanakya ingest-slack                   # broad channel sweep into feedback
-/chanakya report-design                  # filtered feedback report for design stakeholders
-/chanakya report-product                 # filtered feedback report for PM stakeholders
-/chanakya feedback-archive               # prune resolved records from feedback/active.md
-/chanakya feedback-history               # search archived feedback (--reporter/--module/--root-cause)
-/chanakya studio-feedback                # capture feedback about the studio itself → writes to canonical inbox; auto-ingested next generic-dev-studio session
-/achilles studio-feedback                # same, from an Achilles session; subagents write direct to inbox
+/dev-studio manager              # conversational shaping and status
+/dev-studio worker <contract>    # worker role execution contract
+/dev-studio reviewer review      # reviewer role contract
+/dev-studio perf profile         # performance role contract
+/dev-studio planner              # planning/architecture role contract
+/dev-studio qa-engineer          # synthetic QA role contract
+/dev-studio flow-tester          # exploratory flow-test role contract
 
 # Multi-worker fleet (BETA)
-/achilles worker                 # in a Claude session (broadcast-typed across N panes); each claims a slot
+/dev-studio worker               # worker role surface
 scripts/achilles-worker.sh       # bash equivalent; same atomic claim, no Claude wrapper
 scripts/achilles-dispatch.sh T001        # direct dispatch (single task)
 scripts/achilles-queue.sh enqueue T001   # work-stealing queue — batch-friendly, no idle slots
@@ -141,9 +100,9 @@ scripts/worker-status.sh                 # one-shot fleet table
 scripts/achilles-cancel.sh T001          # remove pending dispatch
 scripts/fleet-cleanup.sh [--dry-run|--all]  # soft sweep / full teardown
 
-# Review-waive lifecycle (per-project pause of a gate like argus)
-scripts/waive-start.sh argus "<reason>" "<sunset_trigger>"  # open a structured pause
-scripts/waive-lift.sh argus                                 # lift the pause; reports merges-skipped count
+# Review-waive lifecycle (per-project pause of a gate like reviewer)
+scripts/waive-start.sh reviewer "<reason>" "<sunset_trigger>"  # open a structured pause
+scripts/waive-lift.sh reviewer                                 # lift the pause; reports merges-skipped count
 scripts/backfill-orphan-debriefs.sh [--apply] [--quiet]     # recover tasks that finished but slipped the master plan
 scripts/forge-latency-report.sh --days 14                   # stage-level Forge task latency from event logs
 scripts/field-workflow-report.sh --days 14                  # Field loop timing, tokens, gate pass rates, review coverage, improvement candidates
@@ -155,8 +114,6 @@ scripts/studio-gh.sh issue list --state open                # assistant-safe Git
 scripts/studio-dependency-export.sh --issue 443             # Mermaid graph from native GitHub blocked_by dependencies
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run plan review + reviewed chain PR merges
 # Chain manifests may set phase_review: required|auto|off; required/auto gates issue phases through scripts/phase-review.sh and forwards compact clean outcome feedback privately.
-scripts/chanakya-task-train.sh --train export-flow --dry-run # preview one manual train before dispatch
-scripts/chanakya-task-train.sh --train export-flow --yes     # serial plan-review → Achilles → outcome-review train with resume state
 scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply
 scripts/pre-commit-review.sh                                # manual no-secret reviewer gate for risky staged diffs
 scripts/v2-role-resolve.sh chanakya                         # resolve Studio v2 compatibility aliases to canonical role names
@@ -172,60 +129,32 @@ scripts/check-model-catalog.sh --print-refresh-checklist     # validate refresha
 scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
 ```
 
-**Minimal-intervention by default.** Chanakya runs end-to-end without stopping for confirmation. The only points where it pauses are: Slack publish, first-time config writes (`--configure-token`, `--configure`), merge conflicts, and `--wait` mode feedback windows.
-
-Achilles merges approved green work immediately and stages flagged Argus findings for a user decision. XS/S tasks skip `xcodebuild` (LSP-only) and accumulate **build debt** — warn at 6, block at 12. Run `/achilles build` any time: green resets the counter, red auto-bisects and files a P0 fix.
+**Minimal-intervention by default.** Studio v2 routes through canonical roles under `/dev-studio`. The former top-level v1 agent surfaces were removed by A10; compatibility names such as `chanakya`, `achilles`, `argus`, and `apollo` now live as v2 role aliases.
 
 ---
 
 ## What's in the Repo
 
 ```
-argus/
-  SKILL.md         # reviewer agent — cross-file regression risk, edge-case coverage,
-                   #   test adequacy, diff anomalies, staleness, secrets
+core/v2/skills/dev-studio/
+  SKILL.md         # v2 umbrella role router
+  routing.yaml     # /dev-studio invocation metadata
+  forwarders.yaml  # post-A10 compatibility-alias state
 
-chanakya/
-  SKILL.md         # manager agent — intake, briefing, status, PRD review, inbox sweep,
-                   #   event log processing, test-manifest, test-flow, review-feedback,
-                   #   sync-slack, ship, brief-all, sweep-debt, verify, reopen, compact,
-                   #   ingest-thread/dm/slack, report-design, report-product,
-                   #   feedback-archive, feedback-history, urgent (hotfix fast-path)
-  README.md        # long-form user docs with examples
-  docs.html        # interactive docs page (open in browser)
+core/v2/roles/
+  *.yaml           # canonical role contracts: manager, worker, reviewer, perf,
+                   #   planner, qa-engineer, flow-tester, release-manager
 
-achilles/
-  SKILL.md         # worker agent — isolated execution pipeline + Argus pre-merge gate
-
-apollo/
-  SKILL.md         # performance agent — per-metric mode packs (memory/thermal/battery/cpu/network) +
-                   #   measure (capture-only) under a strict-9 evidence gate; auto-capture-
-                   #   before-refuse via execution surface; dispatched from Chanakya when
-                   #   brief.dispatch_agent: apollo (Argus skips those merges)
-  README.md        # overview + composition with chanakya/achilles/argus
-  docs.html        # quick-reference docs page
-  _shared/primitives/      # cross-cutting primitives — evidence-gate, execution-surface,
-                           #   metrickit, signposts, xctest-baselines, instruments-index,
-                           #   organizer-asc, regression-detection, perf-merge-loop
-  modes/                   # per-metric mode packs (#230/#231/#232/#406/#424) + measure (#235)
-
-.claude/skills/studio/    # project-scoped vendor skill — auto-loads when cwd is in this repo
-  SKILL.md         # cross-agent router — studio-level ops (resume-plan, review, release,
-                   #   ingest, help, audit, guard); not for task work
-  modes/           # Tier-1 mode packs — resume-plan, review, release, ingest, help,
-                   #   audit (plan-drift probes), guard (pre-work "already-shipped" probes),
-                   #   janitor (cross-project sweep), nodes (day-2 fleet management)
-  docs.html        # studio docs page — capabilities, workflows, tips, troubleshooting
-  setup.html       # studio machine-setup guide — manager / worker / dual onboarding
+core/v2/handoffs/
+  *.yaml           # typed handoff fixtures shared across roles
 
 .claude/commands/       # project-scoped slash commands (fire only when cwd is this repo)
-  studio-help.md        # /studio-help — opens studio docs.html in browser
+  studio-help.md        # /studio-help — opens the v2 router source
   studio-setup.md       # /studio-setup — onboard THIS machine (--manager/--worker/--dual; no args = auto-pilot prompting only for role)
-  resume-plan.md        # /resume-plan — forwards to studio/modes/resume-plan.md
+  resume-plan.md        # /resume-plan — routes through /dev-studio manager
   capture.md            # /capture — retrospective session scan → IDEAS.md
 
 commands/               # globally-installed slash commands (see scripts/install.sh)
-  chanakya-help.md      # /chanakya-help — opens chanakya docs.html in browser
   pushTFBuild.md        # /pushTFBuild — archive + upload to TestFlight; --background keeps Slack drafting live
   fullSendToAppStore.md # /fullSendToAppStore — submit build to App Store review
 
@@ -250,7 +179,7 @@ scripts/                # multi-worker fleet (BETA)
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   appstore-watch.sh     # polls ASC for pending submission; finalizes draft release + Slack on release
   backfill-orphan-debriefs.sh  # recover tasks that finished without landing in master plan (dry-run default)
-  achilles-refresh-base.sh     # auto-invoked by Achilles Step 8.4: fetch + merge base before Argus review
+  achilles-refresh-base.sh     # legacy worker helper: fetch + merge base before reviewer handoff
   task-merge.sh                # serialized merge gate: approved-only option + post-review base re-check
   worker-status.sh      # one-shot fleet status table
   achilles-cancel.sh    # remove pending dispatches
@@ -305,16 +234,16 @@ _shared/                # reusable primitives (symlinked from ~/.claude/skills/_
 ./scripts/verify-install.sh   # reports any drift between repo and ~/.claude/
 ```
 
-`install.sh` symlinks the **globally-installed** agents (`chanakya`, `achilles`, `argus`, `_shared`, `scripts`, `hosts`) into `~/.claude/skills/` and the corresponding slash commands into `~/.claude/commands/`. These reach you from anywhere — including your iOS project — because that is where you use them.
+`install.sh` symlinks shared companions (`_shared`, `scripts`, `hosts`) into `~/.claude/skills/` and the remaining global slash commands into `~/.claude/commands/`. Project-scoped v2 skills are fanned out by `scripts/sync-host-skills.sh` from `core/v2/skills`.
 
-The `studio` skill is **not** installed globally. It lives at `.claude/skills/studio/` inside this repo and auto-loads only when your working directory is inside `generic-dev-studio`. Studio ops act on the studio itself; firing them outside this repo would be a misfire.
+The `dev-studio` skill is project-scoped. It lives at `core/v2/skills/dev-studio/` and is linked into each host's repo-local project skill directory when `scripts/sync-host-skills.sh` runs.
 
 Fresh-clone workflow:
 
 ```bash
 git clone <this-repo> && cd generic-dev-studio
 ./scripts/install.sh
-# /studio is already live here; /chanakya /achilles /argus live everywhere
+# /dev-studio is linked repo-locally; v1 top-level agents are deleted after A10
 ```
 
 ### Fleet prerequisites (only if you'll use multi-worker mode)
@@ -341,7 +270,7 @@ Use one feature or reliability branch for related issues when they share a workf
 
 ### One-time directories (per project)
 
-Achilles auto-creates everything on first run. The scripts resolve paths via `scripts/lib-paths.sh` — project slug defaults to the git toplevel basename, override with `ACHILLES_PROJECT=<slug>`. No setup needed.
+Worker scripts auto-create everything on first run. The scripts resolve paths via `scripts/lib-paths.sh` — project slug defaults to the git toplevel basename, override with `ACHILLES_PROJECT=<slug>`. No setup needed.
 
 If you prefer to create the tree up front:
 
@@ -349,8 +278,7 @@ If you prefer to create the tree up front:
 PROJECT=$(basename "$(git rev-parse --show-toplevel)")
 
 # Per-project state (workflow, fleet, push queue — one set per project):
-mkdir -p ~/.dev-studio/$PROJECT/plans/chanakya-tasks
-mkdir -p ~/.dev-studio/$PROJECT/plans/chanakya-inbox/processed
+mkdir -p ~/.dev-studio/$PROJECT/plans/{tasks,briefs,debriefs,reviews}
 mkdir -p ~/.dev-studio/$PROJECT/worktrees
 mkdir -p ~/.dev-studio/$PROJECT/locks
 mkdir -p ~/.dev-studio/$PROJECT/derived-data
@@ -394,19 +322,19 @@ sandbox_mode = "workspace-write"
 writable_roots = ["/Users/<you>/.dev-studio"]
 ```
 
-For unattended Achilles workers, combine the writable root with `--ask-for-approval never`.
+For unattended worker sessions, combine the writable root with `--ask-for-approval never`.
 
 ---
 
 ## How It Works (30-second version)
 
-1. **Chanakya** turns your feature description into prioritized tasks with IDs (`T001`, `T002`, …).
-2. **Chanakya** writes a compact, self-contained brief per executable task (Figma specs, codebase pointers, measurable acceptance criteria, verification evidence). Broad L-sized work stays as a parent planning task unless explicitly waived.
-3. **Achilles** reads the brief, implements in an isolated worktree, self-reviews, gates on green build, merges back, and drops a debrief.
-4. **Chanakya** sweeps the inbox, marks tasks done, briefs follow-ups, tracks build/test debt.
-5. When tasks accumulate: `/chanakya test-manifest` or `/chanakya test-flow` → tick boxes → `/chanakya review-feedback` → verified.
+1. `/dev-studio manager` shapes feature requests into role-scoped work and handoffs.
+2. `/dev-studio planner`, `worker`, `reviewer`, `qa-engineer`, `flow-tester`, `perf`, and `release-manager` are canonical role contracts under `core/v2/roles/`.
+3. Handoffs between roles use typed YAML fixtures under `core/v2/handoffs/`.
+4. Cross-host phase and outcome reviews run through `scripts/phase-review.sh`.
+5. Compatibility names such as `chanakya`, `achilles`, `argus`, and `apollo` resolve through `scripts/v2-role-resolve.sh`.
 
-The pipeline (isolate → implement → self-review → green build → optional wait → merge → debrief → follow-ups) is the same for every task.
+The active router state is recorded by `core/v2/skills/dev-studio/forwarders.yaml` and `core/v2/cutover/manifest.yaml`.
 
 ---
 
@@ -415,26 +343,25 @@ The pipeline (isolate → implement → self-review → green build → optional
 The orchestration is project-agnostic. `<project>` slug is derived from the git toplevel basename automatically.
 
 To port to a non-iOS stack:
-1. Replace the Swift/SwiftUI skill table in `chanakya/SKILL.md` with your stack's equivalents.
-2. Replace `xcodebuild -derivedDataPath ...` in `achilles/modes/task.md` Step 6 with `cargo build`, `pnpm build`, `go build`, etc. Keep the per-task output-dir convention.
-3. Drop Figma calls from Brief Generation Step 3 if unused.
-4. Update `_shared/primitives/turnip-project-config.md` (or replace it) with your project's config.
+1. Replace the Swift/SwiftUI skill routing rules in `AGENTS.md` / `CLAUDE.md` with your stack's equivalents.
+2. Update the v2 worker and QA role contracts under `core/v2/roles/`.
+3. Replace iOS-specific release and project config primitives under `_shared/`.
 
 ---
 
 ## Multi-Worker Fleet (BETA)
 
-Fan tasks out to N independent Achilles worker panes from one Chanakya session via file-based IPC.
+Fan tasks out to N independent worker panes from a manager session via file-based IPC.
 
-**In-Claude (recommended):** launch `claude --dangerously-skip-permissions` in N panes, turn on iTerm Broadcast Input (`Cmd+Opt+I`), type `/achilles worker` once. Each Claude session atomically claims a slot via `mkdir worker-N/.lock` (PID-token verified — race-safe under broadcast). The session shells out to the bash watch loop in the background and stays available for status/stop questions. Tasks themselves spawn fresh `claude -p` subprocesses, so per-task context stays clean.
+**In-host session:** launch N host sessions, turn on iTerm Broadcast Input (`Cmd+Opt+I`), and route each to `/dev-studio worker`. Each session atomically claims a slot via `mkdir worker-N/.lock` (PID-token verified — race-safe under broadcast). The session shells out to the bash watch loop in the background and stays available for status/stop questions.
 
 **Pure bash (no wrapper):** `scripts/achilles-worker.sh` in each pane. Same atomic claim, no Claude session around it.
 
-Then dispatch from your Chanakya pane normally — Chanakya auto-detects fleet mode (alive worker dirs present) and routes `ship`/`dispatch` through `scripts/achilles-dispatch.sh`. Communication stays via the existing event log; no new IPC.
+Then dispatch from the manager normally. The manager detects fleet mode (alive worker dirs present) and routes dispatch through the worker queue scripts. Communication stays via the existing event log; no new IPC.
 
 **Cleanup:** workers self-clean their `.lock` and `busy` markers on exit, and prune their own old `done/` files on boot. Between sessions or after crashes, run `scripts/fleet-cleanup.sh` (soft sweep — clears stale locks/busy/old-done, rotates large logs) or `scripts/fleet-cleanup.sh --all` (full teardown — refuses if any worker is still alive).
 
-**Multi-project:** each project gets its own independent fleet — run one Chanakya + N workers per project. Panes auto-title as `<project>:worker-N` for at-a-glance visibility. Use `scripts/worker-status.sh --all-projects` for a machine-wide view.
+**Multi-project:** each project gets its own independent fleet — run one manager + N workers per project. Panes auto-title as `<project>:worker-N` for at-a-glance visibility. Use `scripts/worker-status.sh --all-projects` for a machine-wide view.
 
 See `scripts/README.md` for the full on-disk layout, env vars (`ACHILLES_PROJECT`, `ACHILLES_INBOX_ROOT`, `ACHILLES_MAX_SLOTS`, `ACHILLES_TASK_TIMEOUT_SEC`, `ACHILLES_UNATTENDED`, `ACHILLES_AUTONOMOUS`), and caveats.
 
@@ -442,11 +369,9 @@ See `scripts/README.md` for the full on-disk layout, env vars (`ACHILLES_PROJECT
 
 ## Docs
 
-**Studio-level docs** (capabilities, workflows, tips, troubleshooting): [`studio/docs.html`](studio/docs.html) — or run `/studio-help` (alias: `/studio help`) from inside Claude Code.
+**Studio v2 router**: [`core/v2/skills/dev-studio/SKILL.md`](core/v2/skills/dev-studio/SKILL.md) — or run `/studio-help` from inside Claude Code.
 
-**Agent-level command reference** (Chanakya + Achilles + Argus): [`chanakya/docs.html`](chanakya/docs.html) — or run `/chanakya-help`.
-
-Long-form user walkthrough with examples: [`chanakya/README.md`](chanakya/README.md).
+**Role contracts**: [`core/v2/roles/`](core/v2/roles/).
 
 Usage-analysis procedure + report template: [`ANALYSIS.md`](ANALYSIS.md). Run `scripts/analyze-collect.sh --project <slug>` for a mechanical stats dump to seed each pass.
 

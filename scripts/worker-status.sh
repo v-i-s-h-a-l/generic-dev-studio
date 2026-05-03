@@ -50,7 +50,7 @@ print_fleet() {
       "worker-$N" "$state" "$(count "$d/inbox")" "$(count "$d/done")" "$(count "$d/rescue")" "$hb" "${busy:--}"
   done
   shopt -u nullglob
-  [ "$found" = "1" ] || echo "(no worker-* dirs; launch one with /achilles worker or scripts/achilles-worker.sh)"
+  [ "$found" = "1" ] || echo "(no worker-* dirs; launch one with /dev-studio worker or scripts/achilles-worker.sh)"
 }
 
 if [ "$ALL" = "1" ]; then

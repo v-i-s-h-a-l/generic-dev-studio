@@ -7,7 +7,7 @@
 #
 # Roles
 #
-#   manager    Runs /chanakya /achilles /argus inside a Claude Code session.
+#   manager    Runs the /dev-studio v2 role surface inside a host session.
 #           Dispatches work to registered workers. Holds the iOS project.
 #           This is your primary dev machine.
 #
@@ -269,7 +269,7 @@ step "Preflight"
 
 if [ "$(uname)" != "Darwin" ]; then
   err "This wizard is macOS-only (detected: $(uname))."
-  err "Linux worker/worker support can land later — for now, do the manual steps in .claude/skills/studio/setup.html."
+  err "Linux worker/worker support can land later — for now, follow /studio-setup from this repo."
   exit 1
 fi
 ok "macOS: $(sw_vers -productVersion) ($(sw_vers -buildVersion))"
@@ -308,8 +308,8 @@ if [ -z "$ROLE" ]; then
 
   Which role does this machine take?
 
-    ${c_bold}manager${c_reset}   — your primary dev machine. Runs /chanakya /achilles /argus
-             inside a Claude Code session. Holds your iOS project. Dispatches
+    ${c_bold}manager${c_reset}   — your primary dev machine. Runs /dev-studio
+             inside a host session. Holds your project. Dispatches
              compile + test work to registered workers. (Agents-only is just
              this role with no workers registered — pick manager.)
 
@@ -1074,7 +1074,7 @@ ${c_cyan}═══ VERIFY (run on MANAGER, from the studio repo) ═══${c_re
   scripts/node-pick.sh swift-test
 
   ${c_dim}# If the manager's user differs from this worker's user (\"$CURRENT_USER\"),${c_reset}
-  ${c_dim}# that's fine — Achilles' source-sync (lib-source-sync.sh / #127) mirrors${c_reset}
+  ${c_dim}# that's fine — worker source-sync (lib-source-sync.sh / #127) mirrors${c_reset}
   ${c_dim}# every dispatched path under the REMOTE \$HOME, not the manager's absolute${c_reset}
   ${c_dim}# path. The two machines stay decoupled in user namespace.${c_reset}
 
@@ -1156,9 +1156,7 @@ check_step() {
 }
 
 if [ "$ROLE" = "manager" ] || [ "$ROLE" = "dual" ]; then
-  check_step skill_chanakya  "~/.claude/skills/chanakya symlinked"  test -L "$HOME/.claude/skills/chanakya"
-  check_step skill_achilles  "~/.claude/skills/achilles symlinked"  test -L "$HOME/.claude/skills/achilles"
-  check_step skill_argus     "~/.claude/skills/argus symlinked"     test -L "$HOME/.claude/skills/argus"
+  check_step skill_dev_studio "repo-local dev-studio skill linked"  test -L "$STUDIO_REPO_DIR/.claude/skills/dev-studio"
   check_step jq              "jq present"                           command -v jq
   check_step git_user_email  "git user.email set"                   bash -c 'test -n "$(git config --global user.email)"'
   [ -n "$STUDIO_REPO_DIR" ] && check_step verify_install "verify-install passes" "$STUDIO_REPO_DIR/scripts/verify-install.sh"
@@ -1185,7 +1183,7 @@ if [ "$FAIL" -gt 0 ]; then
     id="${entry%%:*}"
     label="${entry#*:}"
     case "$id" in
-      skill_chanakya|skill_achilles|skill_argus|verify_install)
+      skill_dev_studio|verify_install)
         printf '  %s✗%s %s\n' "$c_red" "$c_reset" "$label"
         printf '       fix: cd %s && scripts/install.sh\n' "${STUDIO_REPO_DIR:-<studio-repo>}"
         ;;
@@ -1233,7 +1231,7 @@ echo
 info "${c_bold}Next steps:${c_reset}"
 case "$ROLE" in
   manager)
-    info "  1. Invoke /chanakya in your iOS project to try the agent layer."
+    info "  1. Invoke /dev-studio manager in your project to try the v2 role layer."
     info "  2. When you have a worker Mac: run this wizard there with --role worker."
     info "  3. Paste the worker's emitted nodes.json block into ~/.dev-studio/.runtime/nodes.json here."
     info "  4. Tweak config any time:  scripts/configure.sh"
@@ -1246,7 +1244,7 @@ case "$ROLE" in
   dual)
     info "  1. Re-run this wizard with --role worker to generate the self-worker entry for this machine."
     info "  2. Add the generated block to ~/.dev-studio/.runtime/nodes.json here."
-    info "  3. Invoke /chanakya to try the agent layer; dispatches that pick this id run via ssh-to-localhost."
+    info "  3. Invoke /dev-studio manager to try the v2 role layer; dispatches that pick this id run via ssh-to-localhost."
     info "  4. Tweak config any time:  scripts/configure.sh"
     ;;
 esac

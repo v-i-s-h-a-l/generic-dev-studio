@@ -1,9 +1,0 @@
-schema_version: 1
-hosts:
-  - all
-scope: global
-notes: |
-  Host-agnostic reviewer. Argus dispatch enforces a stricter security floor
-  than Achilles (secret_scope: none) via env-scrubbing in
-  scripts/dispatch-review.sh. Any host satisfying the floor is supported.
-  Conformance suite: scripts/test-host.sh <host>.

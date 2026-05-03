@@ -11,8 +11,8 @@
 #   $CLAUDE_PLUGIN_ROOT set  → STUDIO_HOST=claude-code  (current contract)
 #   $CODEX_PLUGIN_ROOT  set  → STUDIO_HOST=codex        (v0.120+; H10 verifies)
 #   Neither set              → hook-less host: exit 0 silently. The prose
-#                              preamble in achilles/SKILL.md and argus/SKILL.md
-#                              is the fallback entry point on those hosts.
+#                              preamble in the v2 skill surface is the
+#                              fallback entry point on those hosts.
 #
 # Output schemas (stdout JSON):
 #   claude-code: {"hookSpecificOutput":{"hookEventName":"SessionStart",
@@ -157,7 +157,7 @@ skill_freshness_banner() {
     probe_paths+=("$p")
   done < <(
     cd "$REPO_ROOT" 2>/dev/null && \
-    find achilles argus chanakya .claude/skills skills/owned skills/vendored \
+    find core/v2/skills skills/owned skills/vendored \
          -maxdepth 4 -name 'portability.yaml' -o -name 'SKILL.md' 2>/dev/null \
       | head -200
   )

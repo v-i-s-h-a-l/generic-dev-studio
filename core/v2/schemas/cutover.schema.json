@@ -21,7 +21,7 @@
     "kind": { "const": "studio-v2-cutover" },
     "parent_issue": { "const": 444 },
     "leaf_issue": { "const": 527 },
-    "status": { "enum": ["staged", "cut-over", "rolled-back"] },
+    "status": { "enum": ["staged", "cut-over", "rolled-back", "v1-deleted"] },
     "archive": {
       "type": "object",
       "additionalProperties": false,
@@ -38,7 +38,7 @@
             "properties": {
               "path": { "type": "string", "minLength": 1 },
               "archive_path": { "type": "string", "pattern": "^legacy/v1/.+" },
-              "status": { "enum": ["preserved-forwarder", "archived-by-manifest", "deferred"] }
+              "status": { "enum": ["preserved-forwarder", "archived-by-manifest", "deferred", "deleted"] }
             }
           }
         },
@@ -53,10 +53,10 @@
         "primary_invocation": { "const": "/dev-studio" },
         "compatibility_forwarders": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 0,
           "items": { "type": "string", "pattern": "^/.+" }
         },
-        "cutover_status": { "const": "cut-over" },
+        "cutover_status": { "enum": ["cut-over", "v1-deleted"] },
         "source_of_truth": { "const": "core/v2/skills/dev-studio/forwarders.yaml" }
       }
     },

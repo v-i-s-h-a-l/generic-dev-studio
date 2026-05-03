@@ -330,7 +330,7 @@ fi
 # Word-split spawn_command into argv array (e.g. "claude -p" → claude + -p).
 # shellcheck disable=SC2206
 spawn_argv=( $SPAWN_COMMAND )
-review_prompt="/argus $STAGE $TASK_ID"
+review_prompt="/dev-studio reviewer $STAGE $TASK_ID"
 
 env -i \
   PATH="$PATH" \

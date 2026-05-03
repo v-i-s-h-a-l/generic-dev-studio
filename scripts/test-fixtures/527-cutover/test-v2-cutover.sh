@@ -38,13 +38,12 @@ grep -Fq 'v2-cutover: ok' /tmp/v2-cutover-validate.err || fail "validation did n
 
 [ "$(yq -r '.kind' "$MANIFEST")" = "studio-v2-cutover" ] || fail "manifest kind mismatch"
 [ "$(yq -r '.leaf_issue' "$MANIFEST")" = "527" ] || fail "manifest leaf issue mismatch"
-[ "$(yq -r '.traffic_switch.cutover_status' "$MANIFEST")" = "cut-over" ] || fail "traffic switch is not cut over"
-[ "$(yq -r '.transition.cutover_status' "$FORWARDERS")" = "cut-over" ] || fail "forwarder manifest is not cut over"
-[ "$(yq -r '[.forwarders[] | select(.runtime_cutover != true)] | length' "$FORWARDERS")" = "0" ] || fail "not all forwarders are runtime cut over"
-
-for legacy in /studio /chanakya /achilles /argus /apollo; do
-  yq -e ".traffic_switch.compatibility_forwarders[] | select(. == \"$legacy\")" "$MANIFEST" >/dev/null || fail "missing compatibility forwarder: $legacy"
-done
+[ "$(yq -r '.status' "$MANIFEST")" = "v1-deleted" ] || fail "manifest should record A10 v1 deletion"
+[ "$(yq -r '.traffic_switch.cutover_status' "$MANIFEST")" = "v1-deleted" ] || fail "traffic switch should record v1 deletion"
+[ "$(yq -r '.transition.cutover_status' "$FORWARDERS")" = "v1-deleted" ] || fail "forwarder manifest should record v1 deletion"
+[ "$(yq -r '.forwarders | length' "$FORWARDERS")" = "0" ] || fail "A10 should remove v1 forwarder rows"
+[ "$(yq -r '.traffic_switch.compatibility_forwarders | length' "$MANIFEST")" = "0" ] || fail "A10 should remove compatibility forwarders"
+[ "$(yq -r '[.archive.surfaces[] | select(.status != "deleted")] | length' "$MANIFEST")" = "0" ] || fail "A10 should mark every v1 surface deleted"
 
 for evidence in core/v2/manager/proof-of-life.yaml core/v2/roles/worker.yaml core/v2/roles/reviewer.yaml core/v2/roles/perf.yaml; do
   yq -e ".parity.golden_scenarios[].evidence | select(. == \"$evidence\")" "$MANIFEST" >/dev/null || fail "missing parity evidence: $evidence"

@@ -8,7 +8,7 @@ Independent work tracks. Each session works on one track only.
 
 | Label | Status | Planning surface |
 |---|---|---|
-| `track:apollo` | Active | Apollo performance-agent research and build arc. Detailed work lives in the Apollo issues and skill docs. |
+| `track:perf` | Active | v2 performance-role research and build arc. Detailed work lives in the perf issues and `core/v2/roles/perf.yaml`. |
 | `track:build-opt` | Active | Documented below as Track B. |
 | `track:forge-safety` | Historical / archived | Historical lookup lives in `archive/forge-reliability-2026-05-03.md`; keep for filtering and future safety-floor regressions. |
 | `track:host-agnostic` | Historical / mostly shipped | Documented below as Track A for context. |
@@ -38,15 +38,14 @@ Legacy follow-up labels such as `phase-2-5-followup`, `phase-2-6-followup`, and 
 
 | File | Notes |
 |---|---|
-| `achilles/modes/task.md` | **Step 8.5 only** (Argus dispatch) |
-| `argus/modes/*.md` | full ownership |
-| `argus/SKILL.md` | full ownership |
+| `core/v2/roles/reviewer.yaml` | reviewer role contract |
+| `core/v2/roles/worker.yaml` | worker-to-reviewer handoff points |
 | `scripts/dispatch-review.sh` | new |
 | `scripts/test-host.sh` | new |
 | `_shared/contracts/*.md` | JSON schema additions |
 | `REVIEW.md` | graceful-degradation rule |
 | `ARCHITECTURE.md` | host-agnostic section |
-| `tests/mode-packs/achilles/*.yaml` | host-agnostic fixtures |
+| `tests/mode-packs/*/*.yaml` | historical mode-pack fixtures |
 
 ## Track B — build-opt (`track/build-opt`)
 
@@ -67,7 +66,7 @@ Legacy follow-up labels such as `phase-2-5-followup`, `phase-2-6-followup`, and 
 
 | File | Notes |
 |---|---|
-| `achilles/modes/task.md` | **Step 6 only** (build routing hook) |
+| `core/v2/roles/worker.yaml` | **Step 6 only** (build routing hook) |
 | `scripts/swift-test-gate.sh` | new |
 | `scripts/node-dispatch.sh` | new |
 | `scripts/node-health.sh` | new |
@@ -75,7 +74,7 @@ Legacy follow-up labels such as `phase-2-5-followup`, `phase-2-6-followup`, and 
 | `scripts/snapshot-sync.sh` | new |
 | `_shared/primitives/file-locations.md` | snapshot path addition only |
 
-## Shared file: `achilles/modes/task.md`
+## Shared file: `core/v2/roles/worker.yaml`
 
 Track A owns **Step 8.5**. Track B owns **Step 6**.  
 These are different sections — edits don't conflict.  

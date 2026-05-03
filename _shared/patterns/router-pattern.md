@@ -112,7 +112,7 @@ Canonical resolution:
 SKILLS_ROOT=""; for _d in ~/.claude/skills ~/.codex/skills ~/.gemini/skills; do [ -d "$_d/scripts" ] && [ -d "$_d/_shared" ] && SKILLS_ROOT="$_d" && break; done
 ```
 
-Project-scoped skills (e.g., `.claude/skills/studio/`) are exempt — their CWD is the repo root, so bare paths resolve naturally.
+Project-scoped skills (e.g., `core/v2/skills/dev-studio/`) are exempt — their CWD is the repo root, so bare paths resolve naturally.
 
 ## Invariants not negotiable
 

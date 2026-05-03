@@ -60,8 +60,9 @@ set -u
 umask 022
 
 # Source path resolver if not already loaded.
+_LSW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+_LSW_REPO_ROOT="$(cd "$_LSW_DIR/.." && pwd)"
 if ! command -v resolve_runtime_global >/dev/null 2>&1; then
-  _LSW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
   # shellcheck source=lib-paths.sh
   . "$_LSW_DIR/lib-paths.sh"
 fi
@@ -206,9 +207,7 @@ except Exception: pass' 2>/dev/null || true)
 stepwise_validate() {
   local id="${1:?step-id required}"
   case "$id" in
-    skill_chanakya)        test -L "$HOME/.claude/skills/chanakya" ;;
-    skill_achilles)        test -L "$HOME/.claude/skills/achilles" ;;
-    skill_argus)           test -L "$HOME/.claude/skills/argus" ;;
+    skill_dev_studio)      test -L "$_LSW_REPO_ROOT/.claude/skills/dev-studio" ;;
     brew)                  command -v brew >/dev/null 2>&1 || [ -x /opt/homebrew/bin/brew ] || [ -x /usr/local/bin/brew ] ;;
     jq)                    command -v jq >/dev/null 2>&1 ;;
     rsync)                 command -v rsync >/dev/null 2>&1 ;;
@@ -236,7 +235,7 @@ stepwise_recheck_all() {
   local -a steps=()
   case "$role" in
     manager|dual)
-      steps+=(skill_chanakya skill_achilles skill_argus brew jq yq coreutils fswatch git git_user_email nodes_json)
+      steps+=(skill_dev_studio brew jq yq coreutils fswatch git git_user_email nodes_json)
       ;;
   esac
   case "$role" in

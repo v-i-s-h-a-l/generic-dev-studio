@@ -234,14 +234,14 @@ sweep_scaling_alerts() {
   rows=$(grep -cE '^\| *F[0-9]' "$active" 2>/dev/null)
   case "$rows" in ''|*[!0-9]*) rows=0 ;; esac  # #237 — see grep -c sanitiser
   if [ "$rows" -ge 100 ]; then
-    printf '⛔ feedback/active.md has %s records — ingest refused. Run /chanakya feedback-archive.\n' "$rows"
+    printf '⛔ feedback/active.md has %s records — ingest refused. Run /dev-studio manager feedback-archive.\n' "$rows"
     if [ "$DRY_FLAG" = "0" ]; then
       mkdir -p "$STATE_DIR" 2>/dev/null || true
       printf 'rows: %s\nset_at: %s\n' "$rows" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         > "$STATE_DIR/feedback_ingest_blocked" 2>/dev/null || true
     fi
   elif [ "$rows" -gt 50 ]; then
-    printf '⚠️ feedback/active.md has %s records; run /chanakya feedback-archive to prune.\n' "$rows"
+    printf '⚠️ feedback/active.md has %s records; run /dev-studio manager feedback-archive to prune.\n' "$rows"
   fi
 }
 

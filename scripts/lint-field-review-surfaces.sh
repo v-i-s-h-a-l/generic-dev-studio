@@ -31,7 +31,7 @@ collect_targets() {
       git -C "$REPO_ROOT" diff --cached --name-only --diff-filter=ACMR 2>/dev/null \
         | while IFS= read -r f; do
             case "$f" in
-              achilles/*|argus/*|apollo/*|chanakya/*|.claude/skills/studio/*|chains/*|scripts/*|_shared/*|hosts/*|REVIEW.md|CLAUDE.md|AGENTS.md)
+              core/v2/*|chains/*|scripts/*|_shared/*|hosts/*|REVIEW.md|CLAUDE.md|AGENTS.md)
                 case "$f" in
                   *.md|*.sh|*.yaml|*.yml|*.json|CLAUDE.md|AGENTS.md|REVIEW.md) printf '%s\n' "$f" ;;
                 esac
@@ -42,7 +42,7 @@ collect_targets() {
     "")
       (
         cd "$REPO_ROOT" || exit 1
-        find achilles argus apollo chanakya .claude/skills/studio chains scripts _shared hosts \
+        find core/v2 chains scripts _shared hosts \
           -type f \( -name '*.md' -o -name '*.sh' -o -name '*.yaml' -o -name '*.yml' -o -name '*.json' \) 2>/dev/null
         [ -f REVIEW.md ] && printf '%s\n' REVIEW.md
         [ -f CLAUDE.md ] && printf '%s\n' CLAUDE.md

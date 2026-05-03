@@ -22,7 +22,7 @@ Informed by observing how the studio is actually used today — not aspirational
 
 **Vision.** Be the best assistant for Swift/SwiftUI/UIKit work — first-class knowledge of Apple APIs, conventions, idioms, gotchas. Eventually the iOS module other stacks learn from.
 
-**Status.** Implicit today (Swift/SwiftUI table in chanakya/SKILL.md, xcodebuild gates in achilles). Explicit when issue #2 (stack modules) lands.
+**Status.** Implicit today (Swift/SwiftUI routing in `AGENTS.md` / `CLAUDE.md`, xcodebuild gates in worker scripts). Explicit when issue #2 (stack modules) lands.
 
 **Seed signals.** Most active modules (Enhance, Filter/Texture, Crop) → image processing patterns matter; localization activity; accessibility coverage; Apple deprecation signals.
 
@@ -48,7 +48,7 @@ Informed by observing how the studio is actually used today — not aspirational
 
 **Status.** Brief generation pulls Figma context. No design-token sync. No automated asset extraction.
 
-**Seed signals.** "Pranjali waiting on assets" is a recurring blocker (master plan); design-team report mode exists in chanakya. Designer is an active stakeholder.
+**Seed signals.** "Pranjali waiting on assets" is a recurring blocker (master plan); design-team reporting belongs in the v2 manager role. Designer is an active stakeholder.
 
 ## theme/discovery
 

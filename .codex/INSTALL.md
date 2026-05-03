@@ -1,6 +1,6 @@
 # Codex Adapter — Install Guide
 
-Sets up the generic-dev-studio for use with the OpenAI Codex CLI (v0.120+). After completing these steps, Achilles and Argus run on Codex identically to how they run on Claude Code.
+Sets up generic-dev-studio for use with the OpenAI Codex CLI (v0.120+). After completing these steps, the v2 `/dev-studio` role surface is visible to Codex from this repo.
 
 ## Prerequisites
 
@@ -18,10 +18,9 @@ This installs Claude Code links and then runs `sync-host-skills.sh --all`, which
 
 ## What gets linked
 
-- **Agents:** `achilles`, `argus` (Chanakya is Claude Code-only today; see #141)
-- **Companions:** `_shared`, `scripts` (so SKILL.md relative paths resolve)
+- **Companions:** `_shared`, `scripts`, `hosts` (so SKILL.md relative paths resolve)
 - **Vendored skills:** all skills in `skills/vendored/` and `skills/owned/` that declare `hosts: all`
-- **Project-scoped studio router:** `.codex/skills/studio` points at the canonical `.claude/skills/studio` router, so `$studio` is visible only inside this repo.
+- **Project-scoped studio router:** `.codex/skills/dev-studio` points at `core/v2/skills/dev-studio`, so `$dev-studio` is visible only inside this repo.
 
 ## Root instruction file
 
@@ -37,7 +36,7 @@ export CODEX_HOOKS_CONFIG=".codex/hooks-codex.json"
 
 ## Permissions
 
-Codex must be able to write the studio runtime root as well as the active project worktree. This is the Codex equivalent of the Claude `permissions.allow` entries in the main README; without it, Achilles build gates can still prompt when they write `~/.dev-studio/**` or per-task DerivedData.
+Codex must be able to write the studio runtime root as well as the active project worktree. This is the Codex equivalent of the Claude `permissions.allow` entries in the main README; without it, worker build gates can still prompt when they write `~/.dev-studio/**` or per-task DerivedData.
 
 One-shot launch:
 
@@ -91,6 +90,6 @@ All tasks must PASS before the adapter is considered production-ready. By defaul
 
 ## Notes
 
-- Codex's `sandbox_profile: workspace-write` satisfies the Achilles security floor when `~/.dev-studio` is included as a writable root (see `hosts/ADAPTER-SPEC.md`).
+- Codex's `sandbox_profile: workspace-write` satisfies the worker security floor when `~/.dev-studio` is included as a writable root (see `hosts/ADAPTER-SPEC.md`).
 - Codex does **not** walk parent directories for `AGENTS.md` — it must be at the cwd.
 - Codex scans `~/.codex/skills/` + `<cwd>/.codex/skills/` (merged, symlinks followed).

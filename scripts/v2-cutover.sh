@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# v2-cutover.sh - validate and report Studio v2 A9 cutover state.
+# v2-cutover.sh - validate and report Studio v2 cutover state.
 
 set -euo pipefail
 umask 022
@@ -19,8 +19,8 @@ Usage:
   scripts/v2-cutover.sh --validate [--allow-rolled-back]
   scripts/v2-cutover.sh --status [--json]
 
-Validates the A9 archive, traffic-switch, parity, and rollback manifest without
-moving v1 files. A10 owns deletion after the stability window.
+Validates the cutover manifest. A9 kept v1 compatibility forwarders live;
+A10 records their deletion and verifies that v2 is the only active surface.
 EOF
   exit 2
 }
@@ -60,7 +60,7 @@ forwarder_status() {
 }
 
 validate_cutover() {
-  local key status fwd_status false_count evidence
+  local key status fwd_status false_count evidence forwarder_count deleted_count surface_count compat_count
   [ -f "$MANIFEST" ] || { printf 'v2-cutover: missing manifest: %s\n' "$MANIFEST" >&2; return 1; }
   [ -f "$FORWARDERS" ] || { printf 'v2-cutover: missing forwarders: %s\n' "$FORWARDERS" >&2; return 1; }
 
@@ -75,11 +75,11 @@ validate_cutover() {
 
   status=$(manifest_status)
   case "$status" in
-    cut-over) ;;
+    cut-over|v1-deleted) ;;
     rolled-back)
       [ "$ALLOW_ROLLED_BACK" -eq 1 ] || { printf 'v2-cutover: rolled back; pass --allow-rolled-back for rollback validation\n' >&2; return 1; }
       ;;
-    *) printf 'v2-cutover: status must be cut-over or rolled-back, got %s\n' "$status" >&2; return 1 ;;
+    *) printf 'v2-cutover: status must be cut-over, v1-deleted, or rolled-back, got %s\n' "$status" >&2; return 1 ;;
   esac
 
   [ "$(yq -r '.traffic_switch.primary_invocation' "$MANIFEST")" = "/dev-studio" ] || {
@@ -97,6 +97,16 @@ validate_cutover() {
     [ "$fwd_status" = "cut-over" ] || { printf 'v2-cutover: forwarders are not cut over\n' >&2; return 1; }
     false_count=$(yq -r '[.forwarders[] | select(.runtime_cutover != true)] | length' "$FORWARDERS")
     [ "$false_count" = "0" ] || { printf 'v2-cutover: %s forwarders are not runtime_cutover=true\n' "$false_count" >&2; return 1; }
+  fi
+  if [ "$status" = "v1-deleted" ]; then
+    [ "$fwd_status" = "v1-deleted" ] || { printf 'v2-cutover: A10 requires forwarder status v1-deleted\n' >&2; return 1; }
+    forwarder_count=$(yq -r '.forwarders | length' "$FORWARDERS")
+    [ "$forwarder_count" = "0" ] || { printf 'v2-cutover: A10 requires zero v1 forwarder rows, got %s\n' "$forwarder_count" >&2; return 1; }
+    compat_count=$(yq -r '.traffic_switch.compatibility_forwarders | length' "$MANIFEST")
+    [ "$compat_count" = "0" ] || { printf 'v2-cutover: A10 requires zero compatibility forwarders, got %s\n' "$compat_count" >&2; return 1; }
+    surface_count=$(yq -r '.archive.surfaces | length' "$MANIFEST")
+    deleted_count=$(yq -r '[.archive.surfaces[] | select(.status == "deleted")] | length' "$MANIFEST")
+    [ "$surface_count" = "$deleted_count" ] || { printf 'v2-cutover: A10 requires all archive surfaces deleted\n' >&2; return 1; }
   fi
   if [ "$status" = "rolled-back" ]; then
     [ "$fwd_status" = "not-cut-over" ] || { printf 'v2-cutover: rollback requires forwarders not-cut-over\n' >&2; return 1; }

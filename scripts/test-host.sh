@@ -34,7 +34,7 @@ usage() {
 
 list_tasks() {
   cat <<'EOF'
-xs-trivial         — Achilles mode pack declares XS-trivial Argus skip.
+xs-trivial         — worker/reviewer role contracts are present after A10.
 m-multi-file       — spawn-worker.sh accepts a workspace-write adapter, builds a valid handoff.
 tdd-rgr            — dispatch-review.sh produces a review_approved event via the host adapter.
 cross-host-handoff — handoff envelope validates under both STUDIO_HOST values.
@@ -118,15 +118,15 @@ export ACHILLES_PROJECT="$PROJECT_SLUG"
 # ---------------------------------------------------------------------------
 
 task_xs_trivial() {
-  local pack="$REPO_ROOT/achilles/modes/task.md"
-  if [ ! -f "$pack" ]; then
-    report_fail "xs-trivial" "achilles/modes/task.md missing"
+  local worker="$REPO_ROOT/core/v2/roles/worker.yaml" reviewer="$REPO_ROOT/core/v2/roles/reviewer.yaml"
+  if [ ! -f "$worker" ] || [ ! -f "$reviewer" ]; then
+    report_fail "xs-trivial" "worker/reviewer role contracts missing"
     return
   fi
-  if grep -qiE 'XS[-[:space:]]?trivial.*(skip|exempt).*argus|argus.*(skip|exempt).*XS' "$pack"; then
+  if grep -q '^role: worker$' "$worker" && grep -q '^role: reviewer$' "$reviewer"; then
     report_pass "xs-trivial"
   else
-    report_fail "xs-trivial" "no XS-trivial Argus-skip rule in achilles/modes/task.md"
+    report_fail "xs-trivial" "role contracts missing canonical role markers"
   fi
 }
 
@@ -189,7 +189,7 @@ EOF
   fi
   STUDIO_TEST_TASK_ID=0190f52a-6e0c-7b3c-9a1d-000000000003 \
   STUDIO_TEST_VERDICT=approved \
-    codex-exec-mock "/argus tdd-rgr spec" || {
+    codex-exec-mock "/dev-studio reviewer tdd-rgr spec" || {
       report_fail "tdd-rgr" "mock spawn failed"; return
     }
   local log="$PROJECT_ROOT/events/$(date -u +%Y-%m-%d).jsonl"

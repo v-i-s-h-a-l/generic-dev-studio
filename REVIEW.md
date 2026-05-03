@@ -59,7 +59,7 @@ Scripts have `#!/usr/bin/env bash` shebangs but users may `source` them from zsh
 **Fix pattern:** newline-separated accumulators + quoted expansions; `find` instead of glob expansion.
 
 ### R6 — SKILL.md kept in sync with script behavior (tier: **warn**)
-When scripts change, check for cross-references in `chanakya/SKILL.md`, `achilles/SKILL.md`, `argus/SKILL.md`, `_shared/*.md`, `README.md`, `scripts/README.md`. Stale examples and old flag names are a drift risk given how many cross-refs exist.
+When scripts change, check for cross-references in `core/v2/skills/dev-studio/SKILL.md`, `core/v2/roles/*.yaml`, `core/v2/handoffs/*.yaml`, `_shared/*.md`, `README.md`, and `scripts/README.md`. Stale examples and old flag names are a drift risk given how many cross-refs exist.
 
 **How to check:** after any script edit, `grep -rn '<script-name>\|<old-flag>' --include="*.md"` and verify each hit still matches reality.
 
@@ -123,7 +123,7 @@ Scripts and mode prose must never run `git push origin main` (or `master`, or an
 **Why:** a studio-initiated `git push origin main` was observed bypassing an open PR (#3150), silently advancing the remote while review was still in flight. The PR-gated integration workflow is load-bearing for Argus review, CI, and human sign-off; direct base pushes erase all three gates.
 
 **How to check:**
-- `grep -rnE 'git\s+push.*(origin|upstream).*(main|master|trunk|develop)' scripts/ commands/ chanakya/ achilles/ argus/ _shared/` — expected: zero hits.
+- `grep -rnE 'git\s+push.*(origin|upstream).*(main|master|trunk|develop)' scripts/ commands/ core/v2/skills/ core/v2/roles/ _shared/` — expected: zero hits.
 - `git push -u origin HEAD` while on a base branch counts as a violation. Scripts must guard with `[ "$(git symbolic-ref --short HEAD)" != "main" ]` or equivalent before any `push -u HEAD`.
 - Any prose in a SKILL.md or mode file instructing the agent to "push to main" / "update remote main" / "push the merge" is a violation — replace with "open a PR" or "merge via `gh pr merge`".
 
@@ -146,9 +146,9 @@ Every worker capability must be implementable via file I/O on the repo + `~/.dev
 
 ### R13 — Zero new third-party runtime deps in worker paths (tier: **block**)
 
-Worker-facing code paths (`achilles/`, `argus/`) stay on POSIX + `jq` + `yq` + `check-jsonschema` — the set frozen at host-agnostic v1. Adding a runtime dependency requires an ADR filed as a GitHub issue before the commit lands. Infrastructure scripts (`scripts/`) may use additional tools; they are not worker code.
+Worker-facing code paths (`core/v2/roles/worker.yaml`, `core/v2/roles/reviewer.yaml`, and their referenced mode/rule payloads) stay on POSIX + `jq` + `yq` + `check-jsonschema` — the set frozen at host-agnostic v1. Adding a runtime dependency requires an ADR filed as a GitHub issue before the commit lands. Infrastructure scripts (`scripts/`) may use additional tools; they are not worker code.
 
-**How to check:** `scripts/lint-host-agnostic.sh --staged` greps for `npm install`, `pip install`, `brew install`, `gem install` in `achilles/` and `argus/`. Any new package-manager invocation outside a comment is a block.
+**How to check:** `scripts/lint-host-agnostic.sh --staged` greps for `npm install`, `pip install`, `brew install`, `gem install` in v2 worker/reviewer payloads. Any new package-manager invocation outside a comment is a block.
 
 ### R14 — Graceful degradation as loud failure, never silent skip (tier: **block + auto-fix**)
 
@@ -169,23 +169,23 @@ fi
 
 **How to check:** grep the diff for `for _ in 1 2`, `while retry`, `attempt=`, or `RETRY_COUNT` patterns in `scripts/*.sh`. If a loop implements retry semantics that isn't the single allowed outer retry in dispatch/spawn scripts, flag for review.
 
-### R16 — Worker-to-worker handoffs forbidden; all routing through Chanakya (tier: **ask**)
+### R16 — Worker-to-worker handoffs forbidden; all routing through the manager (tier: **ask**)
 
-Workers (Achilles, Argus) do not route to each other directly. Argus's verdict returns to Chanakya (via the event log and verdict artifact), not directly to Achilles. Achilles dispatches Argus via `dispatch-review.sh`, which emits a handoff event that Chanakya observes — the architecture remains hub-and-spoke, not peer-to-peer.
+Workers and reviewers do not route to each other directly. Reviewer verdicts return to the manager (via the event log and verdict artifact), not directly to the worker. Worker review dispatch goes through `dispatch-review.sh`, which emits a handoff event that the manager observes — the architecture remains hub-and-spoke, not peer-to-peer.
 
-**How to check:** grep the diff for direct Achilles→Argus calls that bypass the event log (e.g., `argus-emit-verdict.sh` called from `achilles-worker.sh` instead of via `task-invoke-argus.sh`). Any path where Argus mutates state that only Chanakya should own is a violation.
+**How to check:** grep the diff for direct worker-to-reviewer calls that bypass the event log (for example, verdict emission from the worker loop instead of via `dispatch-review.sh`). Any path where the reviewer mutates state that only the manager should own is a violation.
 
 ### R17 — Ownership of mutations (tier: **ask**)
 
 | Actor | What it may mutate |
 |---|---|
-| Achilles | Worktree files, task state, debriefs |
-| Chanakya | `briefs/`, task state (via `plans/`), event sweeps |
-| Argus | Verdict events and artifacts; append-only back-refs on `task.links.reviews` per the comms-boundary primitive; read-only on the diff |
+| Worker | Worktree files, task state, debriefs |
+| Manager | `briefs/`, task state (via `plans/`), event sweeps |
+| Reviewer | Verdict events and artifacts; append-only back-refs on `task.links.reviews` per the comms-boundary primitive; read-only on the diff |
 
-Argus must not mutate task YAML payload, `briefs/`, `debriefs/`, or the worktree. Append-only back-refs (`links.reviews`) are permitted as a lifecycle co-writer per `_shared/primitives/agent-comms-boundary.md` — they uphold the bidirectional invariant in `_shared/contracts/plans-index-validator.md` (`task.links.reviews[] ⇔ review.subject`). Achilles must not write to `briefs/`. Chanakya must not write to the worktree. `scripts/lint-host-agnostic.sh` enforces path-ownership greps; flag any diff that crosses these lines.
+Reviewers must not mutate task YAML payload, `briefs/`, `debriefs/`, or the worktree. Append-only back-refs (`links.reviews`) are permitted as a lifecycle co-writer per `_shared/primitives/agent-comms-boundary.md` — they uphold the bidirectional invariant in `_shared/contracts/plans-index-validator.md` (`task.links.reviews[] ⇔ review.subject`). Workers must not write to `briefs/`. Managers must not write to the worktree. `scripts/lint-host-agnostic.sh` enforces path-ownership greps; flag any diff that crosses these lines.
 
-**How to check:** in a diff that touches argus modes or argus-emit-verdict.sh, verify writes against `plans/tasks/<task-id>.yaml` are confined to `links.reviews` append (no payload field changes); no writes reach `plans/briefs/`, `plans/debriefs/`, or worktree paths. In Achilles diffs, verify no `briefs/` mutations.
+**How to check:** in a diff that touches reviewer role payloads or verdict emission, verify writes against `plans/tasks/<task-id>.yaml` are confined to `links.reviews` append (no payload field changes); no writes reach `plans/briefs/`, `plans/debriefs/`, or worktree paths. In worker diffs, verify no `briefs/` mutations.
 
 ### R18 — Skill Authoring Standard conformance (tier: **block + auto-fix**)
 
@@ -209,7 +209,7 @@ Every owned `SKILL.md`, mode-pack `modes/*.md`, `routing.yaml`, and `portability
 
 Soft modals are linter-blocks specifically because procedures are not optional — they are the contract. If a step is genuinely conditional, model it via a decision table, not "should" prose.
 
-**Migration carve-out:** the four legacy studio agents (Achilles, Argus, Chanakya, studio router) migrate under issue #172. While that issue is open, the linter accepts them at warn-level; once #172 closes, they drop to block-level alongside everything else.
+**Migration carve-out:** historical v1 mode-pack fixtures under `tests/mode-packs/` are inert regression fixtures and remain grandfathered. Active v2 skills and roles are block-level alongside every other owned skill surface.
 
 ### R19 — Mode pack discipline (tier: **block + auto-fix** for inline dups; **ask** for missing references; **warn** for token-budget headroom)
 

@@ -101,7 +101,7 @@ fi
 # instead of `mapfile` so the script runs on macOS's stock bash 3.2.
 ROUTING_FILES_LIST=$(
   cd "$REPO_ROOT" && \
-  find achilles argus chanakya .claude/skills skills/owned skills/vendored \
+  find core/v2/skills skills/owned skills/vendored \
        -name routing.yaml -type f 2>/dev/null \
     | sort
 )

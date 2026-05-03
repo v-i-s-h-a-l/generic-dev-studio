@@ -1,3 +1,0 @@
-interface:
-  display_name: "Achilles"
-  short_description: "Worker agent — implements tasks on isolated worktrees, self-reviews, invokes Argus, merges, debriefs"

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# argus-select-rules.sh — apply Argus rule-pack frontmatter to a diff classifier JSON.
+# argus-select-rules.sh — apply reviewer rule-pack frontmatter to a diff classifier JSON.
 
 set -u
 umask 022
 
 CLASSIFIER_JSON="${1:?usage: argus-select-rules.sh <classifier-json> [rules-dir]}"
-RULES_DIR="${2:-argus/rules}"
+RULES_DIR="${2:-core/v2/reviewer/rules}"
 
 [ -d "$RULES_DIR" ] || {
   printf 'argus-select-rules.sh: rules dir not found: %s\n' "$RULES_DIR" >&2

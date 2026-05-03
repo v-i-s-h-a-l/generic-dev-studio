@@ -1,12 +1,12 @@
-# Achilles worker fleet
+# Worker fleet
 
-File-based IPC that lets one Chanakya session dispatch tasks to N independent
-Achilles worker panes. Each worker is a long-running shell loop that spawns a
-fresh `claude -p "/achilles <id>"` per task — clean context every time, no
+File-based IPC that lets one manager session dispatch tasks to N independent
+worker panes. Each worker is a long-running shell loop that spawns a
+fresh `claude -p "/dev-studio worker <id>"` per task — clean context every time, no
 harness changes required.
 
 **Multi-project:** each project gets its own independent fleet, resolved
-automatically from the git toplevel basename. Run one Chanakya + N workers
+automatically from the git toplevel basename. Run one manager + N workers
 per project. Cross-project one-offs: `ACHILLES_PROJECT=<slug>`.
 
 ## Setup
@@ -40,7 +40,7 @@ After each dispatched task, the pane prints the last 40 lines of `worker.log` so
 
 **Stuck-state detection:** if `claude -p` exits `rc=0` but no YAML debrief for the task exists under `~/.dev-studio/<project>/plans/debriefs/`, the worker treats the task as silently stuck (the subagent almost certainly exited after asking a clarifying question the one-shot process could never answer). The task file goes to `rescue/` and a sidecar `<task-id>-stuck.md` captures the flags, timestamp, and last 200 lines of log. Operator decides whether to re-brief and re-dispatch.
 
-In your Chanakya session (or any shell):
+In your manager session (or any shell):
 
 ```sh
 scripts/achilles-dispatch.sh T001              # current project, least-loaded worker
@@ -96,18 +96,18 @@ scripts/studio-staleness-triage.sh --json             # dry-run PM issue stalene
 
 # Event log reader (dedupes on producer.agent + idempotency_key; see _shared/contracts/event-emission.md):
 scripts/read-events.sh                                  # current project, deduped
-scripts/read-events.sh --agent achilles --event task_completed --tail 20
+scripts/read-events.sh --agent worker --event task_completed --tail 20
 scripts/read-events.sh --project turnip-ios --since 2026-04-18 --until 2026-04-22
 
 # Event writer — CLI wrapper over emit_event_keyed; validates JSON + 4KB cap.
-scripts/write-event.sh --agent achilles --event task_completed --task T001 \
+scripts/write-event.sh --agent worker --event task_completed --task T001 \
     --data '{"merge_sha":"abc1234"}' --mode task
 
 # Ledger library (sourced by extraction scripts; see _shared/patterns/dual-write-transition.md):
 #   scripts/lib-ledger.sh       dual-write helpers for plans/<kind>/*.yaml + legacy surfaces
 #   scripts/lib-fixtures.sh     scrub-timestamps + YAML/event multiset asserts for fixture replay
 
-# Chanakya status mode — mechanical extractions from modes/status.md (Phase 2.6.5):
+# Manager status mode — mechanical extractions from historical status mode payloads (Phase 2.6.5):
 scripts/status-load-snapshots.sh                        # 4-domain freshness + detached rewarms; prints {domain: {state, age_s, payload}}
 scripts/status-fallback-loaders.sh briefs               # full-load when snapshot misses: briefs|debt|feedback|events-tail
 scripts/status-render-tasks.sh < briefs-payload         # stdin JSON → markdown task table
@@ -116,17 +116,17 @@ scripts/push-queue.sh mark-displayed <id>...            # clear after surfacing
 scripts/status-domain.sh rounds                         # one-line round summary (prefers YAML; legacy fallback)
 scripts/status-domain.sh releases                       # one-line release summary + push-tf suggestion
 
-# Argus review pipeline — mechanical extractions from argus/SKILL.md (Phase 2.6.5):
+# Reviewer pipeline — mechanical extractions from the v2 reviewer role contract:
 eval "$(scripts/argus-setup.sh T001 S /path/to/worktree)"           # marker + review_requested + trap line
 TASK_ID=T001 eval "$(scripts/argus-diff-extract.sh /path main)"     # BASE_SHA + DIFF_PATH + scope-cap events
 scripts/argus-classify-diff.sh /tmp/argus-T001-diff.txt             # JSON diff signals for selective rule loading
-scripts/argus-select-rules.sh '{"touches_swiftui":true}' argus/rules # JSON load/skipped rule-pack lists
+scripts/argus-select-rules.sh '{"touches_swiftui":true}' core/v2/reviewer/rules # JSON load/skipped rule-pack lists
 scripts/argus-run-tests.sh T001 MyScheme MyTests                    # xcodebuild + test-slot mgmt; exit 0 green, 3 red
 scripts/argus-verify-tdd.sh T001 /path main MyScheme MyTests        # red→green verify; exit 0 ok, 2 flag, 3 block
 scripts/argus-emit-verdict.sh T001 approved '[]' --task-uuid <uuid> # YAML verdict + back-ref + event + stdout line
 scripts/emit-agent-session-completed.sh argus review T001 auto:T001 --verdict approved   # shared session-close (any agent); auto: resolves start-ts from emit-agent-boot stamp
 
-# Chanakya inbox sweep — mechanical extractions from modes/inbox-sweep.md (Phase 2.6.5):
+# Manager inbox sweep — mechanical extractions from historical inbox-sweep payloads (Phase 2.6.5):
 scripts/sweep-enumerate-debriefs.sh                     # stdout: canonical ingest queue (debrief/build-check/release); stderr: blind-spot diagnostics
 scripts/sweep-ingest.sh debrief <path> [--argus-exempt] # Step 0A — task + direct-debrief ingest (follow-ups, back-refs, state flip)
 scripts/sweep-ingest.sh build-check <path>              # Step 0B — debt counter reset/hold, TBUILD auto-file on red
@@ -139,7 +139,7 @@ scripts/lib-sweep-timing.sh                             # best-effort sweep_phas
 scripts/sweep-adaptive-backoff.sh 1                     # Step 0G — 900→1800→3600→7200 on blank; reset 900 on activity
 scripts/push-queue.sh append --kind review_blocked --task T001 --text "..."   # used by sweep + argus
 
-# Chanakya test-manifest + test-flow — extractions from modes/tests.md (Phase 2.6.5):
+# Manager test-manifest + test-flow — extractions from historical tests payloads (Phase 2.6.5):
 scripts/tests-dirty-state-check.sh <path>               # exit 2 if user-testing.md has checked boxes or Notes
 scripts/tests-scan-candidates.sh                        # enumerate merged + user-verifying tasks
 scripts/tests-pull-cases.sh <task-id>                   # YAML `cases:` block from debrief YAML; historical sidecar import fallback
@@ -148,7 +148,7 @@ scripts/tests-write-round.sh <N> <scope> <tasks-csv> <body-file>   # round artif
 scripts/tests-promote-round.sh <N>                      # gate-check + pre-checked manifest; exit 3 on gate fail
 scripts/tests-diff-rounds.sh <A> <B>                    # markdown diff between rounds
 
-# Achilles task mode — mechanical extractions from modes/task.md (Phase 2.6.5):
+# Worker task mode — mechanical extractions from historical task payloads (Phase 2.6.5):
 eval "$(scripts/task-load-spec.sh T001)"                # TASK_MODE/BRIEF_PATH/SIZE/TYPE/ACCEPTANCE_JSON
 scripts/task-build-debt-gate.sh [--override]            # exit 2 if blocked; emits build_debt_blocked
 scripts/task-claim.sh <task-uuid> <brief-uuid> <size>   # task + brief state transitions
@@ -159,7 +159,7 @@ scripts/node-parity.sh [--fix|--dry-run]                # probe + cache toolchai
 scripts/check-xcode-parity.sh m1mini                    # pre-dispatch guard; exit 1 = MAJOR Xcode drift; STUDIO_IGNORE_XCODE_DRIFT=1 overrides (#136)
 scripts/node-warmup.sh m1mini [project]                 # async-safe pre-dispatch source sync + package cache warm-up (#138)
 scripts/task-write-test-cases.sh T001 '[{...}]'         # stdout debrief `tests.added` payload; no standalone sidecar write
-scripts/task-invoke-argus.sh T001 /wt main S            # emits review_requested with reviewed base SHA (Argus invoked via Agent tool)
+scripts/task-invoke-argus.sh T001 /wt main S            # emits review_requested with reviewed base SHA (reviewer invoked through dispatch wrapper)
 scripts/task-merge.sh T001 /wt feature-branch --require-approved  # merge lock + approved-only policy + post-review base re-check
 scripts/node-janitor.sh [--days N] [--dry-run]          # periodic node-side sweep of stale derived-data + worktrees + dispatch logs/registry (#129, #272); LaunchAgent-driven
 scripts/install-node-janitor-launchagent.sh             # render + load every-6h LaunchAgent on the local node (auto-run by bootstrap --worker)
@@ -167,7 +167,7 @@ scripts/monitor-install.sh install                      # opt-in laptop LaunchAg
 scripts/node-monitor.sh                                 # one-shot monitor check; tracks streak/cooldown state and emits node_unreachable alerts (#132)
 scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # YAML debrief + state flips
 
-# Studio-feedback ingestion (auto-fires via SessionStart hook + Chanakya Step 0F):
+# Studio-feedback ingestion (auto-fires via SessionStart hook + manager sweep):
 scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
 
 # Studio PR autopilot primitives (#318):
@@ -176,7 +176,7 @@ scripts/pr-reviewer-eligibility.sh claude-reviewer      # same reviewer floor fo
 scripts/phase-review.sh --review-host claude-reviewer --input phase-plan.md --output review.md   # sibling-host phase gate; emits PHASE_REVIEW_VERDICT=clean|blocked|ambiguous
 scripts/pre-commit-review.sh                            # manual reviewer gate for risky staged diffs; accepts approved/approved_with_fixes only
 scripts/lint-field-review-surfaces.sh --staged          # blocks raw cross-host review snippets outside phase-review wrappers
-scripts/v2-role-resolve.sh chanakya                     # resolve Studio v2 compatibility aliases to canonical role names
+scripts/v2-role-resolve.sh manager                      # resolve Studio v2 role aliases to canonical role names
 scripts/lint-v2-bootstrap.sh --staged                   # blocks pre-A0.5 substrate code outside the A0.4 bootstrap/meta boundary
 scripts/lint-v2-enforcement.sh --staged                 # A0.6 Studio v2 SPEC-derived substrate/profile gates
 scripts/v2-profile.sh --profile ios-turnip --validate   # validate the A6 project-profile layer and iOS profile
@@ -193,10 +193,10 @@ scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-
 scripts/check-model-catalog.sh --print-refresh-checklist # validate model catalog + print official-doc refresh checklist
 scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
 
-# Chanakya sweep-time detections (Step 0E3, auto-invoked by Chanakya):
+# Manager sweep-time detections:
 scripts/detect-edits.sh --quiet                         # emits brief_edited + debrief_edited
 
-# App Store submission watcher (Chanakya Step 0B3, auto-invoked by every sweep):
+# App Store submission watcher (auto-invoked by every sweep):
 scripts/appstore-watch.sh                               # idempotent; self-gated on marker.next_check_at
 ```
 
@@ -250,7 +250,7 @@ dispatched_from=user@host
 | `NODE_SOURCE_SYNC_SMOKE` | `0` | Set to `1` to dry-run compare selective sync against a full rsync and fall back to full when they diverge. |
 | `NODE_WARMUP_TIMEOUT` | `900` (15m) | Max async node warm-up command stream. The first remote gate invocation per session/node launches warm-up in the background and continues. |
 | `ACHILLES_UNATTENDED` | `0` | Set to `1` to pass `--dangerously-skip-permissions` for fully unattended overnight runs. |
-| `ACHILLES_AUTONOMOUS` | `0` (set to `1` automatically by the worker per task) | Tells the Achilles subagent there is no user to answer clarifying questions; it must pick obvious defaults and document them in the debrief. Exported by `achilles-worker.sh` for every `claude -p` subprocess. Do not set manually unless testing. |
+| `ACHILLES_AUTONOMOUS` | `0` (set to `1` automatically by the worker per task) | Tells the worker subprocess there is no user to answer clarifying questions; it must pick obvious defaults and document them in the debrief. Exported by `achilles-worker.sh` for every `claude -p` subprocess. Do not set manually unless testing. |
 | `ACHILLES_DISPLAY_NAME` | derived (see below) | Friendly name for panes / logs. Override per-shell, or pre-bake per-project via `~/.dev-studio/<project>/.display_name` (first non-comment line wins). |
 
 **Display-name resolution:** `ACHILLES_DISPLAY_NAME` env var → `~/.dev-studio/<project>/.display_name` file → git-remote basename → project slug.

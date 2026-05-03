@@ -58,15 +58,7 @@ emit_error() {
 
 candidate_roots() {
   ( cd "$REPO_ROOT" && {
-      find . -maxdepth 2 -name 'SKILL.md' -type f \
-        -not -path './.git/*' \
-        -not -path './.claude/*' \
-        -not -path './skills/*' \
-        -not -path './_shared/*' \
-        -not -path './tests/*' \
-        -not -path './docs*' \
-        2>/dev/null
-      find .claude/skills skills/owned skills/vendored \
+      find core/v2/skills skills/owned skills/vendored \
         -maxdepth 4 -name 'SKILL.md' -type f 2>/dev/null
     } \
     | while IFS= read -r f; do dirname "$f"; done \
