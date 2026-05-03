@@ -26,6 +26,8 @@ Current bootstrap artifacts:
   `skills/vendored/**` artifacts by skill name, validates their repo-pinned
   `vendor.yaml` SHA and portability metadata, and emits a normalized JSON
   artifact matching `schemas/vendored-skill-artifact.schema.json`.
+- `skills/routing-rules.yaml` is the A3b role-aware skill routing ruleset.
+  Resolve a task context to required skills with `scripts/v2-skill-route.sh`.
 
 Until `SPEC.md` carries `<!-- v2-bootstrap:a0.5-sign-off:complete -->`, the gate
 allows substrate docs, metadata, schemas, and this bootstrap hook only. It blocks

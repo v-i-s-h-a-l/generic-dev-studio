@@ -247,6 +247,12 @@ repo-vendored skills under `skills/vendored/**`, validates each artifact's
 `vendor.yaml` pin and `portability.yaml` host/scope declaration, and returns a
 path, prompt body, or normalized JSON artifact for later A3b/A5 consumers.
 
+Intelligent skill routing is data-driven. `core/v2/skills/routing-rules.yaml`
+maps canonical Studio v2 roles, invocation phases, task types, stacks, paths,
+and prompt signals to required skills; `scripts/v2-skill-route.sh` resolves the
+rules against a JSON context before consumers load skill content. Routing rules
+select skills only; they do not mutate host registries or embed skill guidance.
+
 Context-budget enforcement is a shared subsystem, not duplicated prose inside
 each role. A5 defines budgets and telemetry; A0.6 ensures new role contracts
 declare what they read before relying on it.
