@@ -329,8 +329,8 @@
 /studio guard "topic"     # has this work been done before?
 /studio work &lt;track&gt;      # run a parallel track, then final reviewed PR + cleanup + summary
 /studio work chain workflow-measurement-improvements  # run issue chains with fresh sessions, UUID telemetry, reviewed PRs, cleanup
-scripts/studio-chain-reviewed.sh apollo-network-efficiency --host codex --review-host claude-reviewer  # phase-review the plan, then run reviewed chain PRs
-scripts/run-apollo-network-reviewed-chain.sh  # background Apollo network chain; prints PID + latest-log tail command
+/studio work chain v2-transition  # canonical phasewise Studio v2 transition chain
+scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # phase-review the plan, then run reviewed chain PRs
 /studio janitor [--yes]   # cross-project sweep of stale artifacts (dry-run by default)
 /studio nodes             # day-2 fleet management — status, add, sync, health, diagnose, schedule, recheck
 /studio tf-push [--dry-run] [--version X.Y.Z] [--background]  # TestFlight push; explicit version + optional background handle
