@@ -9,7 +9,7 @@ reads:
   - git log --all (read-only)
   - git tag (read-only, with subjects)
   - ~/.claude-personal/projects/<project-hash>/memory/*.md
-  - scripts/studio-gh.sh issue list (if GitHub is authenticated; remote call)
+  - scripts/studio-project-state.sh (if GitHub is authenticated; remote call)
 writes: []
 ---
 
@@ -21,9 +21,9 @@ The prevention half of the planning-quality layer. Before proposing a piece of w
 |---|---|
 | G1 Already shipped | `git log` subject + `git tag` annotations mentioning the keyword — shipped or in-progress work. |
 | G2 Already tried | Memory files (`~/.claude-personal/projects/<hash>/memory/*.md`) mentioning the keyword — prior decisions, failed approaches, or context the user previously gave. |
-| G3 Already in backlog | `scripts/studio-gh.sh issue list --state all --search` — any open or closed issue mentioning the keyword. |
+| G3 Already in backlog | `scripts/studio-project-state.sh --search` — any Project item mentioning the keyword, including Status / Track / Phase / Size / review-state fields. |
 
-Grep-only, no LLM. Remote call only for G3 (GitHub issue list); skipped silently if GitHub auth isn't available through `scripts/studio-gh.sh`.
+Grep-only, no LLM. Remote call only for G3 (GitHub Projects v2); skipped silently if Project state isn't available through `scripts/studio-project-state.sh`.
 
 ## Step 1 — Run the guard
 
@@ -40,7 +40,7 @@ Exit codes: `0` no prior mention anywhere, `1` one or more channels matched.
 Two cases:
 
 - **No hits:** say "no prior mention found — proceeding is safe." Continue with the proposed work.
-- **Hits:** stop and surface findings before continuing. Format each channel separately (G1 / G2 / G3). Ask whether the new work should:
+- **Hits:** stop and surface findings before continuing. Format each channel separately (G1 / G2 / G3). Project hits must include Project fields when present (`Status`, `Track`, `Phase`, `Size`, `Sibling host reviewed`) so the user can tell whether the item is planned, active, reviewed, or done. Ask whether the new work should:
   - continue (distinct from prior mentions),
   - merge with the existing issue / commit,
   - or be dropped (already done / already tried).

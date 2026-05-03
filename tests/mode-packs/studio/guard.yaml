@@ -14,8 +14,8 @@ scenario: |
            1234abc studio-consolidation F1: land ARCHITECTURE.md §Host-agnosticism
          G2 already tried (memory):
            project_host_agnostic_workers — Implementation release is next
-         G3 already in backlog (gh issues):
-           #88 [OPEN] Host-Agnostic Workers v1 (Achilles + Argus)
+         G3 already in backlog (Project state):
+           #88 [Todo] Host-Agnostic Workers v1 (Achilles + Argus) -- track=C agent topology phase=C size=M review=Needs review
        What do you do next?
     3. If the script exits 0 with "no prior mentions found", what do you do?
     4. Are you allowed to invoke guard with a single-word query like "refactor"?
@@ -38,4 +38,4 @@ notes: |
       different things (shipped code, prior decision, open backlog).
     - Never auto-proceeds past hits: user decides continue/merge/drop.
     - Refuses vague single-word queries (grep noise would swamp signal).
-    - G3 (gh issue list) is remote; silent skip if gh isn't authenticated.
+    - G3 (Project state) is remote; silent skip if Project state isn't available.

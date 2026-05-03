@@ -15,6 +15,28 @@ state only.
 Backlog-facing docs should point here first for current planning state. Use
 repo issues for the durable issue body, discussion, labels, and CLI fallback.
 
+## Agent Backlog Reader Contract
+
+Agents that need backlog state MUST read the Project board through:
+
+```bash
+scripts/studio-project-state.sh [--json] [--search "<keywords>"] [--status "<Status>"]
+```
+
+This reader returns issue identity plus the Project fields that decide backlog
+flow: `Status`, `Track`, `Phase`, `Size`, and `Sibling host reviewed`. Raw
+`scripts/studio-gh.sh issue list` remains acceptable for narrow issue lookups,
+but it is not sufficient for backlog planning because it cannot see Project
+fields.
+
+Mode expectations:
+
+| Flow | Project-state use |
+|---|---|
+| `studio/guard` | G3 duplicate/backlog hits come from `scripts/studio-project-state.sh --search`, not raw issue search. |
+| `studio/audit` | A4 verifies the current v2 parent arcs are present on the board with required Project fields populated. |
+| Chanakya triage/backlog flows | Before shaping studio backlog work, read this Project state and preserve the Project fields in any surfaced candidate list. |
+
 ## Field Contract
 
 Required custom fields:

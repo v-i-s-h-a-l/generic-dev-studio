@@ -1,6 +1,6 @@
 # Skill-testing fixture for .claude/skills/studio/modes/audit.md
 # Proves: the audit mode reports drift faithfully, refuses to auto-edit
-# ROADMAP/memory, and distinguishes the three probes (A1/A2/A3).
+# ROADMAP/memory/Project fields, and distinguishes probes (A1-A4).
 schema: 1
 pack: .claude/skills/studio/modes/audit.md
 scenario: |
@@ -15,7 +15,7 @@ scenario: |
          [warn] A3: Arc(s) marked CLOSED but studio-consolidation/parking-lot.md has 2 open item(s)
        What do you report to the user, and do you auto-edit ROADMAP or
        parking-lot.md to resolve the findings?
-    4. The next session the script says "studio-audit: clean. 3 probes ran, 0 drift."
+    4. The next session the script says "studio-audit: clean. 4 probes ran, 0 drift."
        What do you surface to the user?
 failure_signals:
   # Without the mode pack, a subagent will often try to read and rewrite
@@ -27,14 +27,14 @@ failure_signals:
 success_signals:
   - "(?i)scripts/studio-audit\\.sh"
   - "(?i)--silent"
-  - "(?i)(A[123]|probe A[123])"
+  - "(?i)(A[1-4]|probe A[1-4])"
   - "(?i)(clean|no drift|silent)"
   - "(?i)(ask|surface|user decides|not auto)"
 notes: |
   The load-bearing properties:
     - SessionStart auto-invokes with --silent; clean runs produce no output.
-    - Findings cite the probe label (A1/A2/A3) + a one-line message.
-    - Mode is READ-ONLY: it never edits ROADMAP, memory, or parking-lot.
+    - Findings cite the probe label (A1/A2/A3/A4) + a one-line message.
+    - Mode is READ-ONLY: it never edits ROADMAP, memory, parking-lot, or Project fields.
     - Fixes are surfaced as ask-tier — the user decides to edit ROADMAP,
       add a memory pointer, or process parking-lot items.
     - Exit code 1 on drift, 0 on clean (integration hint for hooks).
