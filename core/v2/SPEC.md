@@ -165,8 +165,9 @@ idempotency key.
 
 Canonical roles are `manager`, `planner`, `worker`, `reviewer`, `qa-engineer`,
 `flow-tester`, `perf`, `release-manager`, `host-adapter`, and `operator`.
-Compatibility names such as `chanakya`, `achilles`, `argus`, and `apollo` are
-aliases resolved by A1; role contracts use canonical names.
+Compatibility names such as `chanakya`, `achilles`, `argus`, and `apollo`
+resolve through `core/v2/registry/roles.json` and
+`scripts/v2-role-resolve.sh`; role contracts use canonical names.
 
 Every executable role contract declares purpose, inputs, outputs, reads, writes,
 idempotency key, decision rights, escalation triggers, failure semantics, and
@@ -305,7 +306,12 @@ warning-tier review feedback into hidden implementation behavior.
 
 - A0.6 turns this SPEC into schemas, pre-commit hooks, CI checks, and invariant
   validators.
-- A1 defines role registry and alias resolution.
+- A1 defines role registry and alias resolution in
+  `core/v2/registry/roles.json`, validated by
+  `scripts/test-fixtures/515-role-registry/test-role-registry.sh`.
+  The A1 schema fixes the canonical role set for this phase; future registry
+  expansion must either retire the A1 `parent_issue`/`leaf_issue` constants or
+  fork the schema deliberately.
 - A2/A2a implement the `/dev-studio` umbrella router and modular router
   contract.
 - A3/A3b/A3c implement vendored skill loading and the iOS skill catalog.
