@@ -67,6 +67,7 @@ scripts/studio-chain-runner.sh workflow-measurement-improvements            # de
 scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # same resolved graph, then non-mutating command trace
 scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex --yes # execute after plan with node/RAM-sized session pool + private report
 scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from ~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/state.json
+scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
 scripts/studio-chain-reviewed.sh apollo-network-efficiency --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
 scripts/run-apollo-network-reviewed-chain.sh             # background Apollo network chain; prints PID + latest-log tail command

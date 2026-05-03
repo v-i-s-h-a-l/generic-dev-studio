@@ -219,7 +219,7 @@ scripts/                # multi-worker fleet (BETA)
   forge-latency-report.sh  # stage-level task latency + review-gate comparison from event logs
   field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
-  studio-chain-runner.sh   # plan/execute/resume studio issue chains with capacity-scaled fresh sessions, UUID telemetry, and private run reports
+  studio-chain-runner.sh   # plan/execute/resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, and private run reports
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
