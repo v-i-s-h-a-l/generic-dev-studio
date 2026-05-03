@@ -1,0 +1,99 @@
+name: Feature
+description: Propose a scoped studio improvement with behavior, criteria, and boundaries.
+title: "Feature: "
+labels:
+  - enhancement
+  - theme/internal
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for a focused improvement that can be implemented without creating a full epic.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should change?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Why does this matter, and who benefits?
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Before / After Behavior
+      description: Describe the current behavior and the desired behavior.
+      placeholder: "Before:\n\nAfter:"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Concrete checks that prove the feature is complete.
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
+  - type: textarea
+    id: edge-cases
+    attributes:
+      label: Edge Cases / Risks
+      description: Inputs, states, permissions, retries, or compatibility concerns to handle.
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-Goals
+      description: What should stay out of this feature?
+    validations:
+      required: true
+  - type: dropdown
+    id: owner
+    attributes:
+      label: Owner Surface
+      description: Pick the surface most likely to own the work. Use studio-repo for repo or router work.
+      options:
+        - studio-repo
+        - chanakya
+        - achilles
+        - argus
+        - cross-agent
+        - needs-triage
+    validations:
+      required: true
+  - type: dropdown
+    id: theme
+    attributes:
+      label: Theme
+      description: Pick the closest canonical theme from THEMES.md.
+      options:
+        - theme/internal
+        - theme/ios-craft
+        - theme/release
+        - theme/integrations
+        - theme/design
+        - theme/discovery
+        - needs-triage
+    validations:
+      required: true
+  - type: input
+    id: proposed-theme
+    attributes:
+      label: Proposed Theme
+      description: Optional. Use only when the canonical themes do not fit.
+  - type: input
+    id: track-or-chain
+    attributes:
+      label: Track / Chain
+      description: Optional dynamic label or lane, such as track:name or chain/name.
+  - type: input
+    id: related-issues
+    attributes:
+      label: Parent / Related Issues
+      description: Optional issue numbers for parent, duplicate, blocked-by, or caused-by context.

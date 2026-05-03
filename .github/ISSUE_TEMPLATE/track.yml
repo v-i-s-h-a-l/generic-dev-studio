@@ -1,0 +1,99 @@
+name: Track
+description: Define a parallelizable studio work lane with issue set, ownership, and ordering.
+title: "Track: "
+labels:
+  - roadmap
+  - theme/internal
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for a parallel work lane or issue group with clear branch, label, or ownership boundaries.
+  - type: textarea
+    id: track-goal
+    attributes:
+      label: Track Goal
+      description: What does this track deliver?
+    validations:
+      required: true
+  - type: textarea
+    id: issue-set
+    attributes:
+      label: Issue Set
+      description: Issues in the track, or criteria for adding issues to it.
+      placeholder: "- #123 ...\n- #124 ..."
+    validations:
+      required: true
+  - type: textarea
+    id: ordering
+    attributes:
+      label: Ordering / Independence
+      description: What can run in parallel, what must be sequential, and what files or surfaces are owned?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Concrete checks that prove the track is complete.
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
+  - type: textarea
+    id: edge-cases
+    attributes:
+      label: Edge Cases / Risks
+      description: Merge conflicts, dependency gates, shared files, or coordination risks.
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-Goals
+      description: What should not be included in this track?
+    validations:
+      required: true
+  - type: dropdown
+    id: owner
+    attributes:
+      label: Owner Surface
+      description: Pick the surface most likely to own the track. Use studio-repo for repo or router work.
+      options:
+        - studio-repo
+        - chanakya
+        - achilles
+        - argus
+        - cross-agent
+        - needs-triage
+    validations:
+      required: true
+  - type: dropdown
+    id: theme
+    attributes:
+      label: Theme
+      description: Pick the closest canonical theme from THEMES.md.
+      options:
+        - theme/internal
+        - theme/ios-craft
+        - theme/release
+        - theme/integrations
+        - theme/design
+        - theme/discovery
+        - needs-triage
+    validations:
+      required: true
+  - type: input
+    id: proposed-theme
+    attributes:
+      label: Proposed Theme
+      description: Optional. Use only when the canonical themes do not fit.
+  - type: input
+    id: track-or-chain
+    attributes:
+      label: Track / Chain
+      description: Optional dynamic label or lane, such as track:name or chain/name.
+  - type: input
+    id: related-issues
+    attributes:
+      label: Parent / Related Issues
+      description: Optional issue numbers for umbrella, sibling, blocked-by, or dependency context.
