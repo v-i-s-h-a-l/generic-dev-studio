@@ -423,7 +423,7 @@ scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude
       <div class="mode-card">
         <code>/studio guard "&lt;topic&gt;"</code>
         <div class="triggers">"has this been done?", "are we repeating work?"</div>
-        <div class="what">Before proposing new work, searches three channels. <strong>G1</strong> git log + tags (already shipped). <strong>G2</strong> memory files (already tried / prior decisions). <strong>G3</strong> <code>gh issue list --state all</code> (already in backlog). Surfaces hits separately; user decides continue / merge / drop. Refuses vague single-word queries.</div>
+        <div class="what">Before proposing new work, searches three channels. <strong>G1</strong> git log + tags (already shipped). <strong>G2</strong> memory files (already tried / prior decisions). <strong>G3</strong> <code>scripts/studio-project-state.sh --search</code> (already in Project backlog, with Status / Track / Phase / Size / review state). Surfaces hits separately; user decides continue / merge / drop. Refuses vague single-word queries.</div>
       </div>
       <div class="mode-card">
         <code>scripts/studio-staleness-triage.sh</code>
@@ -502,9 +502,9 @@ scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude
       <li>Update this page and <code>CLAUDE.md</code>'s studio-router trigger table.</li>
     </ol>
     <h3>Add a new audit probe</h3>
-    <p>Audit probes live in <code>scripts/studio-audit.sh</code>. Each probe is a function that calls <code>add_finding &lt;probe-id&gt; &lt;severity&gt; "&lt;msg&gt;"</code> when drift is detected. Keep it grep-only and sub-second — no LLM calls. The probe must calibrate to clean on the current repo state (add evidence to ROADMAP, or tighten the regex, or add memory pointers — do not weaken the probe).</p>
+    <p>Audit probes live in <code>scripts/studio-audit.sh</code>. Each probe is a function that calls <code>add_finding &lt;probe-id&gt; &lt;severity&gt; "&lt;msg&gt;"</code> when drift is detected. Keep it grep/JQ/GitHub-CLI only — no LLM calls. The A4 Project-state probe reads <code>scripts/studio-project-state.sh</code>. The probe must calibrate to clean on the current repo state (add evidence to ROADMAP, update the Project fields, tighten the regex, or add memory pointers — do not weaken the probe).</p>
     <h3>Add a new guard channel</h3>
-    <p>Guard channels live in <code>scripts/studio-guard.sh</code> (<code>probe_g1</code> / <code>probe_g2</code> / <code>probe_g3</code>). A new channel needs a grep source (git log, memory, gh, Slack archive, etc.) and a unique label so hits surface separately.</p>
+    <p>Guard channels live in <code>scripts/studio-guard.sh</code> (<code>probe_g1</code> / <code>probe_g2</code> / <code>probe_g3</code>). G3 reads the Studio v2 Projects board through <code>scripts/studio-project-state.sh</code> so backlog hits include Project fields. A new channel needs a grep source (git log, memory, Project state, Slack archive, etc.) and a unique label so hits surface separately.</p>
     <h3>Auto-apply tiers</h3>
     <ul>
       <li><strong>Auto-apply</strong> — rule-wording tweaks in REVIEW / RELEASES / CLAUDE, threshold tuning backed by data, brief-template additions, skill-prose trimming, dead-code removal, GH issue creation on explicitly-agreed work, README timeline updates on releases.</li>
@@ -554,7 +554,7 @@ scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude
     <ul>
       <li><a class="inline" href="./setup.html">Onboarding a machine</a> — step-by-step wizard for manager / worker / dual roles (any Mac: laptop, mini, studio); also <code>/studio-setup</code></li>
       <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio">Repository</a> — source, issues, releases</li>
-      <li><a class="inline" href="https://github.com/users/v-i-s-h-a-l/projects/1">Studio v2 Projects board</a> — actionable backlog</li>
+      <li><a class="inline" href="https://github.com/users/v-i-s-h-a-l/projects/1">Studio v2 Projects board</a> — actionable backlog with Project fields</li>
       <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues">Open issues</a> — durable issue records</li>
       <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/releases">Releases</a> — version history + notes</li>
       <li><a class="inline" href="../../../chanakya/docs.html">Agent orchestration docs</a> — Chanakya / Achilles / Argus</li>

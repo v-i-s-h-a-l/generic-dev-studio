@@ -39,7 +39,7 @@ Task-level work on the user's iOS project (`/chanakya`, `/achilles`, `/argus` ow
 
 Mode composition convention: `/studio <mode> ... + summary` means run the selected mode, then finish with `modes/summary.md`'s completion report. This is a reporting composition only; it does not change the mode's writes or gates.
 
-Tier 2 modes (not shipped today; spawn on demand): `backlog` (gh issue triage), `scaffold` (new mode pack / primitive scaffold).
+Tier 2 modes (not shipped today; spawn on demand): `backlog` (Project-field issue triage), `scaffold` (new mode pack / primitive scaffold).
 
 **Onboarding a new machine** (manager / worker / dual) is **not** a `/studio` mode. Use `/studio-setup` (or `scripts/bootstrap.sh` directly). The `nodes` mode is day-2 ops only — it never bootstraps a fresh machine.
 
