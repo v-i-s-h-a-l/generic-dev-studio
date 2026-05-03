@@ -1,0 +1,37 @@
+name: Staleness triage
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      stale_days:
+        description: "Days before applying stale label"
+        required: false
+        default: "30"
+      escalate_days:
+        description: "Days before applying escalation label"
+        required: false
+        default: "60"
+      archive_days:
+        description: "Days before applying archive-candidate label"
+        required: false
+        default: "90"
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply staleness triage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STUDIO_STALE_DAYS: ${{ inputs.stale_days || '30' }}
+          STUDIO_ESCALATE_DAYS: ${{ inputs.escalate_days || '60' }}
+          STUDIO_ARCHIVE_DAYS: ${{ inputs.archive_days || '90' }}
+        run: scripts/studio-staleness-triage.sh --repo "$GITHUB_REPOSITORY" --apply

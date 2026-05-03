@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # studio-guard.sh — pre-work "don't repeat yourself" probes.
 #
-# Before starting new work, grep git history, memory, and the backlog for
+# Before starting new work, grep git history, memory, and Project backlog for
 # prior mentions. Catches the "I forgot we shipped this" / "I forgot we
 # tried this and it didn't work" / "I forgot there's an issue open" class
 # of errors without loading context the model already has.
@@ -9,7 +9,7 @@
 # Probes:
 #   G1  Already-shipped   — git log + git tag + README Mermaid timeline
 #   G2  Already-tried     — memory/*.md (user feedback + project notes)
-#   G3  Already-in-backlog— gh issue list --state all (if gh authenticated)
+#   G3  Already-in-backlog— GitHub Projects v2 state (if gh authenticated)
 #
 # Usage:
 #   scripts/studio-guard.sh "<search keywords>"        # human output
@@ -87,14 +87,15 @@ probe_g2() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# G3 — Already in backlog (gh issue list)
+# G3 — Already in backlog (GitHub Projects v2)
 # ──────────────────────────────────────────────────────────────────────────────
 probe_g3() {
-  command -v gh >/dev/null 2>&1 || return
-  with_login_home_for_github gh auth status >/dev/null 2>&1 || return
+  [ -x "$SCRIPT_DIR/studio-project-state.sh" ] || return
   local hits
-  hits=$(with_login_home_for_github gh issue list --state all --search "$QUERY" --limit 10 --json number,title,state \
-    --template '{{range .}}#{{.number}} [{{.state}}] {{.title}}{{"\n"}}{{end}}' 2>/dev/null || true)
+  hits=$("$SCRIPT_DIR/studio-project-state.sh" --search "$QUERY" 2>/dev/null | head -10 || true)
+  if printf '%s\n' "$hits" | grep -q '^studio-project-state: no Project items matched'; then
+    hits=""
+  fi
   [ -n "$hits" ] && g3_hits="$hits"
 }
 
@@ -120,7 +121,7 @@ else
     printf 'studio-guard: prior mentions found for "%s" — review before proceeding.\n\n' "$QUERY"
     [ -n "$g1_hits" ] && printf 'G1 already shipped (git log/tags):\n%s\n\n' "$g1_hits"
     [ -n "$g2_hits" ] && printf 'G2 already tried (memory):\n%s\n\n' "$g2_hits"
-    [ -n "$g3_hits" ] && printf 'G3 already in backlog (gh issues):\n%s\n' "$g3_hits"
+    [ -n "$g3_hits" ] && printf 'G3 already in backlog (Project state):\n%s\n' "$g3_hits"
   fi
 fi
 
