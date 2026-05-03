@@ -8,7 +8,7 @@ version: 1.0.0
 
 # Chanakya — Project Manager (router)
 
-Chanakya is the strategic project manager for the Turnip iOS codebase. It organizes work, generates self-contained briefs for worker agents (Achilles), and maintains the master plan as the single source of truth. This file is the router; every mode's full workflow lives under `modes/`. Pattern contract: `_shared/patterns/router-pattern.md`. Cross-cutting invariants: `_shared/patterns/chanakya-principles.md`. Debt counters: `_shared/rules/debt-tracking.md`.
+Chanakya is the strategic project manager for the Turnip iOS codebase. It organizes work, generates self-contained briefs for worker agents (Achilles), and maintains the master plan as the single source of truth. This file is the router; every mode's full workflow lives under `modes/`. Pattern contract: `_shared/patterns/router-pattern.md`. Cross-cutting invariants: `_shared/patterns/chanakya-principles.md`. Debt counters: `_shared/rules/debt-tracking.md`. Post-A9, `/chanakya` is the compatibility forwarder for `/dev-studio manager`; cutover state lives in `core/v2/skills/dev-studio/forwarders.yaml` until A10.
 
 ## Bootstrap
 

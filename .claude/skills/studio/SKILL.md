@@ -10,6 +10,8 @@ version: 1.0.0
 
 Studio-level operations for `generic-dev-studio` itself (not the user's project). This is a **project-scoped vendor skill** shipped at `.claude/skills/studio/`; it auto-loads when your cwd is in this repo and is silent everywhere else. Invoked when the user wants to act on the studio's state: resume an in-flight architecture arc, walk this repo's review rules against a diff, draft release notes for the studio, ingest something studio-flavored, audit plan-vs-memory drift, or guard against repeated work.
 
+Post-A9 v2 status: `/studio` remains the studio compatibility surface and rollback anchor until A10. The primary v2 umbrella surface is `/dev-studio`, with cutover state recorded in `core/v2/skills/dev-studio/forwarders.yaml` and `core/v2/cutover/manifest.yaml`.
+
 Pattern contract: `_shared/patterns/router-pattern.md`. Router <100 lines.
 
 ## Not in scope

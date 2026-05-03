@@ -10,6 +10,8 @@ budget_tokens: 400
 
 # Argus — Reviewer Agent (router)
 
+Post-A9 v2 status: `/argus` remains a compatibility forwarder for the v2 reviewer role (`/dev-studio reviewer`) and a rollback surface until A10. The cutover source of truth is `core/v2/skills/dev-studio/forwarders.yaml`.
+
 ## Bootstrap
 
 **Skills-root resolution.** All bare `scripts/…` and `_shared/…` paths in this file and its mode packs are relative to the **skills-root** (the parent of this agent's directory — where `scripts/`, `_shared/`, and per-agent dirs live as siblings), NOT this file's directory. Resolve once at session start and prefix every bare path when running or reading:
