@@ -28,6 +28,7 @@ Claude sessions and humans alike use this file to resolve failures without guess
 | `E_MISSING_RW_DECL` | A `modes/*.md` lacks `reads:` or `writes:` frontmatter keys | Add `reads: []` / `writes: []` (empty list is a valid declaration — the key's presence is the point). Routers are exempt; their surfaces are auto-synthesized from mode packs. See `_shared/contracts/read-write-decls.md`. |
 | `E_UNKNOWN_CONTRACT_REF` | A reference to `_shared/<subdir>/<file>` in prose does not resolve to an existing file | Move/rename the target, or fix the reference path. Matches repo-relative (`_shared/...`) and absolute (`~/.claude/skills/_shared/...`) forms. |
 | `E_ORPHAN_FIXTURE` | A file under `tests/mode-packs/` names a `pack:` that no longer exists, or omits the `pack` field | Pack was renamed/removed — update the fixture's `pack:` field to match, or delete the fixture if the pack is gone. See `_shared/primitives/skill-testing.md`. |
+| `E_V2_*` | `scripts/lint-v2-enforcement.sh` finds a Studio v2 substrate/profile artifact that violates the A0.6 SPEC-derived gates | Restore `core/v2/SPEC.md` anchors, add missing schema/role/handoff/authority fields, register event names, keep routers dispatch-only, or route phase review through `scripts/phase-review.sh`. |
 
 ## Warn-tier (W_) — stderr only, commit proceeds
 
