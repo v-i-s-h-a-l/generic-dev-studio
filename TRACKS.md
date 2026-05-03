@@ -12,7 +12,7 @@ Independent work tracks. Each session works on one track only.
 | `track:build-opt` | Active | Documented below as Track B. |
 | `track:forge-safety` | Historical / archived | Historical lookup lives in `archive/forge-reliability-2026-05-03.md`; keep for filtering and future safety-floor regressions. |
 | `track:host-agnostic` | Historical / mostly shipped | Documented below as Track A for context. |
-| `track:pm-surface` | Active | GitHub-as-PM-surface arc, including labels, projects, milestones, and issue graph hygiene. |
+| `track:pm-surface` | Active | GitHub-as-PM-surface arc, including labels, projects, milestones, and issue graph hygiene. Primary board: [Studio v2 transition](https://github.com/users/v-i-s-h-a-l/projects/1); field contract: [PM-SURFACE.md](PM-SURFACE.md). |
 | `track:skill-distribution` | Active backlog | Skill distribution and recipe-system follow-ups from the skill distribution arc. |
 | `track:v2` | Active | Studio v2 substrate rebuild and transition issues; sequence context lives in `ROADMAP.md`. |
 | `track:workflow` | Active | Chain-runner and workflow-control-plane enhancements. |
