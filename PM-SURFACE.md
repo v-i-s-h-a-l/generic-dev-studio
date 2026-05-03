@@ -151,6 +151,50 @@ The current open v2 arcs are present on the board:
 The B1 leaf `#498` is also on the board with `Track=B PM surface`,
 `Phase=B1`, `Size=S`, and `Sibling host reviewed=Needs review`.
 
+## macOS Actions Runner Policy
+
+This policy satisfies `#443` B13 for Studio-internal CI. It applies to
+`generic-dev-studio` workflows only; Turnip-iOS build and simulator routing
+remain outside this PM-surface policy.
+
+Default to GitHub-hosted runners. Studio workflows should use
+`ubuntu-latest` unless the job genuinely needs macOS APIs, Xcode, Keychain,
+or Apple tooling. When macOS is required, use standard GitHub-hosted macOS
+labels such as `macos-latest` or a pinned supported macOS image; do not add a
+self-hosted macOS runner just to conserve minutes.
+
+Keep paid Actions exposure at zero by default. GitHub-hosted runners for
+private repositories consume the account's included monthly Actions minutes,
+and GitHub documents `2,000` included minutes for GitHub Free plus paid
+overage once configured budgets allow it. The studio policy is: do not raise
+the Actions budget above `0 USD`, do not enable paid overage, and let
+non-urgent Studio CI stop once included minutes are exhausted. Any budget
+increase must be explicit, human-approved work.
+
+Self-hosted macOS runners are opt-in infrastructure, not the baseline. Add
+one only when a concrete Studio workflow cannot run correctly on
+GitHub-hosted macOS, or when repeated monthly exhaustion blocks accepted
+Studio work after the workflows have already been trimmed. A self-hosted
+runner decision must document owner, machine, labels, secret scope, update
+cadence, failure mode when the machine sleeps or disappears, and teardown
+steps before registration.
+
+Cost controls for new Studio Actions:
+
+| Rule | Policy |
+|---|---|
+| Runner choice | Prefer `ubuntu-latest`; use macOS only for macOS-only capability. |
+| Budget | Keep Actions budget at `0 USD` unless the user explicitly approves overage. |
+| Cron frequency | Use weekly or manual triggers by default; justify anything more frequent. |
+| Timeouts | Set job-level timeouts for any non-trivial workflow. |
+| Self-hosted macOS | Require a documented decision record before registration. |
+
+References:
+[GitHub Actions billing and usage](https://docs.github.com/actions/learn-github-actions/usage-limits-billing-and-administration),
+[Actions limits](https://docs.github.com/en/actions/reference/usage-limits-for-self-hosted-runners),
+and
+[GitHub-hosted runners](https://docs.github.com/en/actions/reference/github-hosted-runners-reference).
+
 ## Views
 
 Expected human views:
