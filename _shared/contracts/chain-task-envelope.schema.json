@@ -1,0 +1,464 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "chain-task-envelope.schema.json",
+  "schema": 1,
+  "title": "Chain Task Envelope",
+  "description": "Compact start and completion envelopes for autonomous studio chain task slices. Start envelopes are private runtime handoffs written before a child host starts; completion envelopes are the normalized chain worker summaries ingested by the parent runner.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/startEnvelope"
+    },
+    {
+      "$ref": "#/$defs/completionEnvelope"
+    }
+  ],
+  "$defs": {
+    "startEnvelope": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "created_at",
+        "run_id",
+        "chain_run_id",
+        "issue_run_id",
+        "source_issue",
+        "ownership",
+        "expected_summary_artifact",
+        "required_checks",
+        "allowed_assumptions",
+        "stop_conditions",
+        "privacy"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "start"
+        },
+        "created_at": {
+          "$ref": "debrief.schema.json#/$defs/rfc3339"
+        },
+        "run_id": {
+          "$ref": "debrief.schema.json#/$defs/uuidv7"
+        },
+        "chain_run_id": {
+          "$ref": "debrief.schema.json#/$defs/uuidv7"
+        },
+        "issue_run_id": {
+          "$ref": "debrief.schema.json#/$defs/uuidv7"
+        },
+        "source_issue": {
+          "type": "object",
+          "required": [
+            "number",
+            "title",
+            "body",
+            "url",
+            "state"
+          ],
+          "properties": {
+            "number": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "title": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        "ownership": {
+          "type": "object",
+          "required": [
+            "chain",
+            "branch",
+            "issue_branch",
+            "worktree",
+            "host"
+          ],
+          "properties": {
+            "chain": {
+              "type": "string",
+              "minLength": 1
+            },
+            "branch": {
+              "type": "string",
+              "minLength": 1
+            },
+            "issue_branch": {
+              "type": "string",
+              "minLength": 1
+            },
+            "worktree": {
+              "type": "string",
+              "minLength": 1
+            },
+            "host": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": true
+        },
+        "expected_summary_artifact": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required_checks": {
+          "$ref": "#/$defs/stringList"
+        },
+        "allowed_assumptions": {
+          "$ref": "#/$defs/stringList"
+        },
+        "phase_review_context": {
+          "type": "array",
+          "description": "Compact private feedback forwarded from prior clean outcome reviews.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "source_issue": {
+                "type": "integer"
+              },
+              "source_issue_run_id": {
+                "type": "string"
+              },
+              "source_review": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "text"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "stop_conditions": {
+          "$ref": "#/$defs/stringList"
+        },
+        "privacy": {
+          "$ref": "#/$defs/privacy"
+        }
+      },
+      "additionalProperties": true
+    },
+    "completionEnvelope": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "created_at",
+        "status",
+        "run_id",
+        "chain_run_id",
+        "issue_run_id",
+        "host",
+        "exit_code",
+        "commit_before",
+        "commit_after",
+        "files_changed",
+        "additions",
+        "deletions",
+        "generated_file_count",
+        "tests",
+        "lints",
+        "builds",
+        "tokens",
+        "telemetry_gaps"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "completion"
+        },
+        "created_at": {
+          "$ref": "debrief.schema.json#/$defs/rfc3339"
+        },
+        "status": {
+          "type": "string",
+          "description": "Normalized completion status. exit_code remains the compatibility field for v1 chain-runner summaries."
+        },
+        "run_id": {
+          "$ref": "debrief.schema.json#/$defs/uuidv7"
+        },
+        "chain_run_id": {
+          "$ref": "debrief.schema.json#/$defs/uuidv7"
+        },
+        "issue_run_id": {
+          "$ref": "debrief.schema.json#/$defs/uuidv7"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "issue_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "issue_title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {},
+        "model_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effort": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ended_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration_s": {
+          "type": [
+            "integer",
+            "number"
+          ],
+          "minimum": 0
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "commit_before": {
+          "type": "string"
+        },
+        "commit_after": {
+          "type": "string"
+        },
+        "files_changed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "additions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "generated_file_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "changed_artifacts": {
+          "$ref": "#/$defs/stringList"
+        },
+        "commit_or_pr_references": {
+          "type": "object",
+          "properties": {
+            "commit_before": {
+              "type": "string"
+            },
+            "commit_after": {
+              "type": "string"
+            },
+            "pr_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "pr_number": {
+              "type": [
+                "string",
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "tests": {
+          "$ref": "#/$defs/checkResults"
+        },
+        "lints": {
+          "$ref": "#/$defs/checkResults"
+        },
+        "builds": {
+          "$ref": "#/$defs/checkResults"
+        },
+        "tokens": {
+          "type": [
+            "object",
+            "number",
+            "null"
+          ]
+        },
+        "functionality_delivered": {
+          "$ref": "#/$defs/narrative"
+        },
+        "decisions_made": {
+          "$ref": "#/$defs/narrativeOrRecords"
+        },
+        "assumptions_escrowed": {
+          "$ref": "#/$defs/narrativeOrRecords"
+        },
+        "carryover": {
+          "$ref": "#/$defs/narrative"
+        },
+        "lessons": {
+          "$ref": "#/$defs/narrative"
+        },
+        "next_recommended_action": {
+          "$ref": "#/$defs/narrative"
+        },
+        "telemetry_gaps": {
+          "$ref": "#/$defs/stringList"
+        },
+        "blocked_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "checkResults": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "narrative": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/stringList"
+        },
+        {
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "narrativeOrRecords": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/narrative"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      ]
+    },
+    "privacy": {
+      "type": "object",
+      "required": [
+        "classification",
+        "rules"
+      ],
+      "properties": {
+        "classification": {
+          "const": "private-runtime"
+        },
+        "rules": {
+          "$ref": "#/$defs/stringList"
+        }
+      },
+      "additionalProperties": true
+    },
+    "stringList": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": 1,
+      "kind": "start",
+      "created_at": "2026-05-03T00:00:00Z",
+      "run_id": "019dec7f-271e-7574-a4cc-ab2ec7edfd7c",
+      "chain_run_id": "019dec7f-2798-786f-a2b5-1bee59583334",
+      "issue_run_id": "019dec7f-2aec-7724-ac41-304d93f45f09",
+      "source_issue": {
+        "number": 478,
+        "title": "Autonomous chains: standard task handoff envelopes",
+        "body": "Define compact handoff envelopes.",
+        "url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/478",
+        "state": "OPEN"
+      },
+      "ownership": {
+        "chain": "autonomous-continuation-loop-478",
+        "branch": "feature/autonomous-continuation-loop-478",
+        "issue_branch": "feature/autonomous-continuation-loop-478-issue-478",
+        "worktree": "/tmp/studio-chain-runner/autonomous-continuation-loop-478-issue-478",
+        "host": "codex"
+      },
+      "expected_summary_artifact": "/tmp/studio-chain-runner/autonomous-continuation-loop-478-issue-478/.studio/chain-worker-summary.json",
+      "required_checks": [
+        "Commit the scoped issue change before exit."
+      ],
+      "allowed_assumptions": [
+        "The issue body is the authoritative scoped brief."
+      ],
+      "stop_conditions": [
+        "Exit non-zero after writing a concise blocked_reason when the issue cannot be completed safely."
+      ],
+      "privacy": {
+        "classification": "private-runtime",
+        "rules": [
+          "Do not commit .studio artifacts."
+        ]
+      }
+    }
+  ]
+}

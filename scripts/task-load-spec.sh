@@ -1,21 +1,17 @@
 #!/usr/bin/env bash
 # task-load-spec.sh — Step 1 of the Achilles task mode.
 #
-# Resolves a brief for <task-id> from the canonical YAML ledger. The task
-# YAML must point at the current brief via `links.brief`, and the brief file
-# must point back at the same task before dispatch continues. Legacy
-# plans/chanakya-tasks/<task-id>-*.md remains available only behind the
-# explicit TASK_LOAD_SPEC_DIAGNOSTIC=1 migration switch. Empty task-id →
-# direct mode (no brief). Diagnostic legacy reads emit one
-# `legacy_artifact_read` so the migration tail stays measurable.
+# Resolves a brief for <task-id> through the post-2.6 task YAML
+# links.brief pointer. Empty task-id → direct mode (no brief). Legacy markdown
+# is checked only to make migration failures diagnostic; it is never returned
+# as BRIEF_PATH.
 #
 # Output is eval-able (key=value per line), same contract as argus-diff-extract.sh:
 #   TASK_MODE=brief|direct
 #   BRIEF_PATH=<path>          (empty on direct mode)
-#   BRIEF_UUID=<uuid>          (empty on diagnostic legacy fallback and on direct mode)
-#   SIZE=<xs|s|m|l>            (inferred `m` if legacy brief lacks a size marker)
-#   TYPE=<feature|bugfix|...>  (feature is the safe default when legacy brief
-#                               omits an explicit Type: line)
+#   BRIEF_UUID=<uuid>          (empty on direct mode)
+#   SIZE=<xs|s|m|l>
+#   TYPE=<feature|bugfix|...>
 #   ACCEPTANCE_JSON='<json-array>'
 #   BASE_BRANCH=<branch>        (optional explicit dispatch base from brief)
 #   BRIEF_SUMMARY=<string>      (only when BRIEF_SLICE=summary)
@@ -26,7 +22,7 @@
 #
 # Exit codes:
 #   0  spec resolved (or direct mode)
-#   2  brief requested but nothing found on either surface
+#   2  brief requested but canonical task/brief YAML is missing or mismatched
 #   5  task is in a terminal state (#263) — refusing re-dispatch. Override
 #      with ACHILLES_REOPEN=1 (writes a follow-up debrief) or run
 #      `/chanakya reopen <task-id>` for a formal state-machine reopen.
@@ -44,7 +40,6 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-ledger.sh"
 
 TASK_ID="${1:-}"
-TASK_LOAD_SPEC_DIAGNOSTIC="${TASK_LOAD_SPEC_DIAGNOSTIC:-0}"
 
 emit_assign() {
   local key="${1:?}" value="${2:-}"
@@ -76,85 +71,53 @@ BASE_BRANCH=""
 BRIEF_SUMMARY=""
 BRIEF_SUMMARY_TOKENS=""
 NON_READY_STATE=""
+TASK_YAML=""
+TASK_UUID=""
 
-# _find_unique_task_yaml_for_legacy_id — resolve exactly one task YAML whose
-# `legacy_task_id` matches the requested task. The canonical dispatch path
-# refuses to guess when the deployed layout is partial or duplicated.
-_find_unique_task_yaml_for_legacy_id() {
-  local legacy_id="$1" tasks_dir="$2" task_yaml legacy_task_id match=""
-  local match_count=0
-
-  [ -d "$tasks_dir" ] || return 1
-
-  while IFS= read -r task_yaml; do
-    [ -r "$task_yaml" ] || continue
-    legacy_task_id=$(yq -r '.legacy_task_id // ""' "$task_yaml" 2>/dev/null || echo "")
-    [ "$legacy_task_id" = "$legacy_id" ] || continue
-    match="$task_yaml"
-    match_count=$((match_count + 1))
-    if [ "$match_count" -gt 1 ]; then
-      printf 'error: multiple task YAMLs claim legacy_task_id %s (layout is incomplete or duplicated)\n' \
-        "$legacy_id" >&2
-      return 2
-    fi
-  done < <(find "$tasks_dir" -maxdepth 1 -type f -name '*.yaml' | sort)
-
-  if [ "$match_count" -eq 0 ]; then
-    return 1
-  fi
-
-  printf '%s\n' "$match"
+emit_legacy_markdown_diagnostic() {
+  local reason="$1" legacy_tasks_dir legacy_match data
+  legacy_tasks_dir="$(resolve_plans_dir_for "$PROJECT")/chanakya-tasks"
+  [ -d "$legacy_tasks_dir" ] || return 1
+  legacy_match=$(find "$legacy_tasks_dir" -maxdepth 1 -type f -name "$TASK_ID-*.md" -print 2>/dev/null | sort | head -1)
+  [ -n "$legacy_match" ] || return 1
+  data=$(jq -nc \
+    --arg domain "briefs" \
+    --arg reason "$reason" \
+    --arg caller "task-load-spec.sh" \
+    --arg legacy_path "$legacy_match" \
+    '{domain:$domain, reason:$reason, caller:$caller, diagnostic:true, legacy_path:$legacy_path}' 2>/dev/null \
+    || printf '{"domain":"briefs","reason":"%s","caller":"task-load-spec.sh","diagnostic":true}' "$reason")
+  emit_event_keyed achilles task legacy_artifact_read "$TASK_ID" "$data" \
+    >/dev/null 2>&1 || true
+  printf '  Legacy markdown exists at %s, but markdown is diagnostic-only; backfill canonical YAML instead.\n' "$legacy_match" >&2
 }
 
-# _load_canonical_brief_from_task_yaml — follow task.links.brief and require
-# the brief file to agree on both `id` and `task_id`.
-_load_canonical_brief_from_task_yaml() {
-  local task_yaml="$1" briefs_dir="$2" task_uuid brief_uuid candidate brief_id brief_task_id brief_state
-
-  task_uuid=$(yq -r '.id // ""' "$task_yaml" 2>/dev/null || echo "")
-  brief_uuid=$(yq -r '.links.brief // ""' "$task_yaml" 2>/dev/null || echo "")
-
-  if [ -z "$task_uuid" ] || [ -z "$brief_uuid" ]; then
-    printf 'error: task YAML %s must populate id and links.brief before dispatch\n' "$task_yaml" >&2
-    return 2
-  fi
-
-  candidate="$briefs_dir/${brief_uuid}.yaml"
-  if [ ! -r "$candidate" ]; then
-    printf 'error: task %s points at missing brief %s (%s)\n' \
-      "$task_yaml" "$brief_uuid" "$candidate" >&2
-    return 2
-  fi
-
-  brief_id=$(yq -r '.id // ""' "$candidate" 2>/dev/null || echo "")
-  brief_task_id=$(yq -r '.task_id // ""' "$candidate" 2>/dev/null || echo "")
-  brief_state=$(yq -r '.state // "null"' "$candidate" 2>/dev/null || echo null)
-
-  if [ "$brief_id" != "$brief_uuid" ] || [ "$brief_task_id" != "$task_uuid" ]; then
-    printf 'error: task/brief parity mismatch for %s -> %s (task.id=%s, brief.id=%s, brief.task_id=%s)\n' \
-      "$task_yaml" "$candidate" "$task_uuid" "$brief_id" "$brief_task_id" >&2
-    return 2
-  fi
-
-  if [ "$brief_state" != "ready" ] && [ "${ACHILLES_ALLOW_NON_READY_BRIEF:-0}" != "1" ]; then
-    NON_READY_STATE="$brief_state"
-    cat >&2 <<EOF
-error: brief for task-id '$TASK_ID' is state '$brief_state', not ready — refusing dispatch.
+# _try_brief_candidate — test one brief YAML for dispatchable state, populate
+# globals on match. Returns 0 if matched, 1 otherwise.
+_try_brief_candidate() {
+  local candidate="$1"
+  local strict="${2:-0}"
+  [ -r "$candidate" ] || return 1
+  local state
+  state=$(yq -r '.state // "null"' "$candidate" 2>/dev/null || echo null)
+  if [ "$state" != "ready" ] && [ "${ACHILLES_ALLOW_NON_READY_BRIEF:-0}" != "1" ]; then
+    NON_READY_STATE="$state"
+    if [ "$strict" = "1" ]; then
+      cat >&2 <<EOF
+error: brief for task-id '$TASK_ID' is state '$state', not ready — refusing dispatch.
   Run \`/chanakya brief $TASK_ID\` or the relevant authoring step to mark it
   ready. Set ACHILLES_ALLOW_NON_READY_BRIEF=1 only for intentional recovery.
 EOF
-    return 6
+      exit 6
+    fi
+    return 1
   fi
-  case "$brief_state" in
+  case "$state" in
     ready|dispatched|draft) ;;
-    *)
-      printf 'error: brief %s is in non-dispatchable state %s\n' "$candidate" "$brief_state" >&2
-      return 2
-      ;;
+    *) return 1 ;;
   esac
-
   BRIEF_PATH="$candidate"
-  BRIEF_UUID="$brief_uuid"
+  BRIEF_UUID=$(yq -r '.id // ""' "$candidate" 2>/dev/null || echo "")
   SIZE=$(yq -r '.size // ""' "$candidate" 2>/dev/null || echo "")
   TYPE=$(yq -r '.type // ""' "$candidate" 2>/dev/null || echo "")
   ACCEPTANCE_JSON=$(yq -o=json -I=0 '.acceptance // []' "$candidate" 2>/dev/null || echo '[]')
@@ -162,94 +125,135 @@ EOF
   return 0
 }
 
-# Canonical surface: YAML task -> YAML brief. The task and brief must agree
-# on the UUID join before dispatch proceeds.
-if command -v yq >/dev/null 2>&1; then
-  tasks_dir=$(resolve_tasks_dir_for "$PROJECT")
-  briefs_dir=$(resolve_briefs_dir_for "$PROJECT")
-  if [ -d "$tasks_dir" ] && [ -d "$briefs_dir" ]; then
-    task_yaml=""
-    canonical_rc=0
-    task_yaml=$(_find_unique_task_yaml_for_legacy_id "$TASK_ID" "$tasks_dir") || canonical_rc=$?
-    if [ "$canonical_rc" -eq 0 ] && [ -n "$task_yaml" ]; then
-      _load_canonical_brief_from_task_yaml "$task_yaml" "$briefs_dir" || canonical_rc=$?
-    fi
-    if [ "$canonical_rc" -eq 2 ] || [ "$canonical_rc" -eq 6 ]; then
-      exit "$canonical_rc"
-    fi
-  fi
+if ! command -v yq >/dev/null 2>&1; then
+  printf 'error: task brief dispatch requires yq to read canonical task/brief YAML.\n' >&2
+  emit_legacy_markdown_diagnostic "yq_unavailable" || true
+  exit 2
 fi
 
-# Diagnostic legacy fallback — opt-in only.
-if [ -z "$BRIEF_PATH" ] && [ "$TASK_LOAD_SPEC_DIAGNOSTIC" = "1" ]; then
-  legacy_tasks_dir="$(resolve_plans_dir_for "$PROJECT")/chanakya-tasks"
-  if [ -d "$legacy_tasks_dir" ]; then
-    legacy_match=$(ls "$legacy_tasks_dir"/"$TASK_ID"-*.md 2>/dev/null | head -1)
-    if [ -n "$legacy_match" ]; then
-      BRIEF_PATH="$legacy_match"
-      # Make the fallback observable so the migration's long tail is visible.
-      # Reason is `no_yaml_brief_for_legacy_id` — accurate: we grep briefs/ by
-      # legacy_task_id, not via plans/index.yaml (which exists). The prior
-      # `plans_index_missing` reason was a misnomer that drowned real legacy
-      # pickups in happy-path noise; see issue #105 root-cause trace.
-      emit_event_keyed achilles task legacy_artifact_read "$TASK_ID" \
-        '{"domain":"briefs","reason":"no_yaml_brief_for_legacy_id","caller":"task-load-spec.sh"}' \
-        >/dev/null 2>&1 || true
-      # Extract size/type from the legacy markdown header (`Size: S`, `Type: feature`).
-      SIZE=$(awk '
-        /^Size:/ { sub(/^Size:[[:space:]]*/, ""); print tolower($0); exit }
-        /^- \*\*Size:\*\*/ { sub(/^- \*\*Size:\*\*[[:space:]]*/, ""); print tolower($0); exit }
-      ' "$legacy_match" 2>/dev/null | tr -d ' ' | head -c 16)
-      TYPE=$(awk '
-        /^Type:/ { sub(/^Type:[[:space:]]*/, ""); print tolower($0); exit }
-        /^- \*\*Type:\*\*/ { sub(/^- \*\*Type:\*\*[[:space:]]*/, ""); print tolower($0); exit }
-      ' "$legacy_match" 2>/dev/null | tr -d ' ' | head -c 32)
-      # Legacy briefs don't carry acceptance as typed JSON; leave empty array.
-      # The prose remains in the file the caller reads at BRIEF_PATH.
-      ACCEPTANCE_JSON='[]'
-    fi
-  fi
+tasks_dir=$(resolve_tasks_dir_for "$PROJECT")
+briefs_dir=$(resolve_briefs_dir_for "$PROJECT")
+if [ ! -d "$tasks_dir" ] || [ ! -d "$briefs_dir" ]; then
+  cat >&2 <<EOF
+error: canonical plans layout incomplete for task-id '$TASK_ID'.
+  Expected both:
+    $tasks_dir
+    $briefs_dir
+EOF
+  emit_legacy_markdown_diagnostic "canonical_layout_incomplete" || true
+  exit 2
 fi
+
+task_match_count=0
+while IFS= read -r candidate_task; do
+  [ -z "$candidate_task" ] && continue
+  candidate_legacy_task_id=$(yq -r '.legacy_task_id // ""' "$candidate_task" 2>/dev/null) || {
+    printf 'error: failed to parse task YAML: %s\n' "$candidate_task" >&2
+    exit 2
+  }
+  [ "$candidate_legacy_task_id" = "$TASK_ID" ] || continue
+  task_match_count=$((task_match_count + 1))
+  TASK_YAML="$candidate_task"
+done < <(find "$tasks_dir" -maxdepth 1 -type f -name '*.yaml' -print 2>/dev/null | sort)
+
+if [ "$task_match_count" -eq 0 ]; then
+  cat >&2 <<EOF
+error: no canonical task YAML found for task-id '$TASK_ID'.
+  Run \`/chanakya brief $TASK_ID\` to author one, or invoke \`/achilles\` (no
+  task-id) for direct mode.
+EOF
+  emit_legacy_markdown_diagnostic "no_task_yaml_for_legacy_id" || true
+  exit 2
+fi
+
+if [ "$task_match_count" -gt 1 ]; then
+  printf "error: %s canonical task YAML files match legacy task-id '%s'; refusing ambiguous dispatch.\n" "$task_match_count" "$TASK_ID" >&2
+  exit 2
+fi
+
+TASK_UUID=$(yq -r '.id // ""' "$TASK_YAML" 2>/dev/null) || {
+  printf 'error: failed to read task id from %s\n' "$TASK_YAML" >&2
+  exit 2
+}
+brief_uuid_link=$(yq -r '.links.brief // ""' "$TASK_YAML" 2>/dev/null) || {
+  printf 'error: failed to read links.brief from %s\n' "$TASK_YAML" >&2
+  exit 2
+}
+if [ -z "$TASK_UUID" ] || [ -z "$brief_uuid_link" ]; then
+  cat >&2 <<EOF
+error: canonical task YAML for '$TASK_ID' is incomplete.
+  task: $TASK_YAML
+  required fields: id, links.brief
+EOF
+  emit_legacy_markdown_diagnostic "task_yaml_missing_brief_link" || true
+  exit 2
+fi
+
+candidate="$briefs_dir/${brief_uuid_link}.yaml"
+if [ ! -r "$candidate" ]; then
+  cat >&2 <<EOF
+error: task '$TASK_ID' links brief '$brief_uuid_link', but the brief file is missing.
+  task:  $TASK_YAML
+  brief: $candidate
+EOF
+  emit_legacy_markdown_diagnostic "linked_brief_yaml_missing" || true
+  exit 2
+fi
+
+brief_id=$(yq -r '.id // ""' "$candidate" 2>/dev/null) || {
+  printf 'error: failed to read brief id from %s\n' "$candidate" >&2
+  exit 2
+}
+brief_task_id=$(yq -r '.task_id // ""' "$candidate" 2>/dev/null) || {
+  printf 'error: failed to read brief task_id from %s\n' "$candidate" >&2
+  exit 2
+}
+brief_legacy_task_id=$(yq -r '.legacy_task_id // ""' "$candidate" 2>/dev/null) || {
+  printf 'error: failed to read brief legacy_task_id from %s\n' "$candidate" >&2
+  exit 2
+}
+
+if [ "$brief_id" != "$brief_uuid_link" ] || [ "$brief_task_id" != "$TASK_UUID" ] || [ "$brief_legacy_task_id" != "$TASK_ID" ]; then
+  cat >&2 <<EOF
+error: task/brief parity failed for task-id '$TASK_ID'.
+  task:              $TASK_YAML
+  task.id:           $TASK_UUID
+  task.links.brief:  $brief_uuid_link
+  brief:             $candidate
+  brief.id:          $brief_id
+  brief.task_id:     $brief_task_id
+  brief.legacy_task_id: $brief_legacy_task_id
+EOF
+  emit_legacy_markdown_diagnostic "task_brief_parity_mismatch" || true
+  exit 2
+fi
+
+_try_brief_candidate "$candidate" 1
 
 if [ -z "$BRIEF_PATH" ]; then
-  if [ -n "$NON_READY_STATE" ]; then
-    cat >&2 <<EOF
-error: brief for task-id '$TASK_ID' is state '$NON_READY_STATE', not ready — refusing dispatch.
-  Run \`/chanakya brief $TASK_ID\` or the relevant authoring step to mark it
-  ready. Set ACHILLES_ALLOW_NON_READY_BRIEF=1 only for intentional recovery.
-EOF
-    exit 6
-  fi
   cat >&2 <<EOF
-error: no brief found for task-id '$TASK_ID'.
-  Author a canonical YAML brief with task.links.brief set, or run
-  \`scripts/backfill-legacy-yaml.sh --apply\` for migration input.
-  Set TASK_LOAD_SPEC_DIAGNOSTIC=1 to inspect a legacy markdown brief during
-  migration only.
+error: no dispatchable canonical brief found for task-id '$TASK_ID'.
+  Run \`/chanakya brief $TASK_ID\` to author one, or invoke \`/achilles\` (no
+  task-id) for direct mode.
 EOF
   exit 2
 fi
 
-# #263 — terminal-state guard. Canonical YAML dispatch covers post-migration
-# briefs; the optional diagnostic legacy path skips this guard because the
-# markdown archive has no state machine. Read task state from the YAML SSOT by
-# legacy_task_id and refuse when terminal. ACHILLES_REOPEN=1 is the explicit
-# user override — legacy escape hatch that mints a follow-up debrief on the
-# existing task without recording reopen lineage. The formal path is
-# `/chanakya reopen` (#252), which transitions the task to `reopened`, stamps
-# reopen_reason, appends the prior debrief id to reopen_chain, and emits
-# task_reopened so the next brief carries the round-2 context. Prefer the
-# formal path when you need provenance; the env-var override remains for
-# one-off recovery.
-if [ "$TASK_LOAD_SPEC_DIAGNOSTIC" != "1" ] && [ -z "${ACHILLES_REOPEN:-}" ] && command -v yq >/dev/null 2>&1; then
-  tasks_dir=$(resolve_tasks_dir_for "$PROJECT")
-  if [ -d "$tasks_dir" ]; then
-    task_state=""
-    while IFS= read -r task_yaml; do
-      [ -z "$task_yaml" ] && continue
-      task_state=$(yq -r '.state // ""' "$task_yaml" 2>/dev/null)
-      [ -n "$task_state" ] && break
-    done < <(grep -l "^legacy_task_id: \"$TASK_ID\"$" "$tasks_dir"/*.yaml 2>/dev/null)
+# #263 — terminal-state guard. Brief-state filtering above (ready / dispatched
+# / draft) covers brief lifecycle; task lifecycle still needs its own refusal
+# so a terminal-history retrieval does not re-run a completed task — fresh
+# worktree, second debrief, and in build / push-tf modes a second release
+# action. Read the resolved task YAML and refuse when terminal.
+# ACHILLES_REOPEN=1 is the explicit user override —
+# legacy escape hatch that mints a follow-up debrief on the existing task
+# without recording reopen lineage. The formal path is `/chanakya reopen`
+# (#252), which transitions the task to `reopened`, stamps reopen_reason,
+# appends the prior debrief id to reopen_chain, and emits task_reopened so
+# the next brief carries the round-2 context. Prefer the formal path when
+# you need provenance; the env-var override remains for one-off recovery.
+if [ -z "${ACHILLES_REOPEN:-}" ] && command -v yq >/dev/null 2>&1; then
+  if [ -n "$TASK_YAML" ]; then
+    task_state=$(yq -r '.state // ""' "$TASK_YAML" 2>/dev/null)
     case "$task_state" in
       merged|user-verifying|verified|archived)
         cat >&2 <<EOF
@@ -280,8 +284,8 @@ estimate_summary_tokens() {
 if [ "${BRIEF_SLICE:-}" = "summary" ]; then
   if [ "${BRIEF_PATH##*.}" != "yaml" ]; then
     cat >&2 <<EOF
-error: BRIEF_SLICE=summary requested for task '$TASK_ID', but resolved brief is a legacy artifact with no summary field.
-  Re-author or backfill the YAML brief summary before using the compact slice.
+error: BRIEF_SLICE=summary requested for task '$TASK_ID', but resolved brief is not canonical YAML.
+  Re-author or backfill the YAML brief before using the compact slice.
 EOF
     exit 7
   fi

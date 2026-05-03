@@ -150,17 +150,30 @@ reviewer_home="$tmpdir/reviewer-home"
 mkdir -p "$reviewer_home"
 
 reviewer_codex_home=""
+reviewer_claude_home=""
 reviewer_claude_config_dir=""
 case "$REVIEW_HOST" in
   codex*|*codex*)
-    reviewer_codex_home="${CODEX_REVIEWER_HOME:-${CODEX_HOME:-${LOGIN_HOME:+$LOGIN_HOME/.codex}}}"
+    reviewer_codex_home="${CODEX_REVIEWER_HOME:-${CODEX_HOME:-}}"
+    if [ -z "$reviewer_codex_home" ]; then
+      if [ -n "$CALLER_HOME" ] && [ -d "$CALLER_HOME/.codex" ]; then
+        reviewer_codex_home="$CALLER_HOME/.codex"
+      elif [ -n "$LOGIN_HOME" ] && [ -d "$LOGIN_HOME/.codex" ]; then
+        reviewer_codex_home="$LOGIN_HOME/.codex"
+      fi
+    fi
     [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] || {
       printf 'pre-commit-review: codex reviewer auth home not found; set CODEX_REVIEWER_HOME or CODEX_HOME\n' >&2
       exit 1
     }
     ;;
   claude*|*claude*)
-    reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-${LOGIN_HOME:+$LOGIN_HOME/.claude-reviewer}}"
+    reviewer_claude_home="${CLAUDE_REVIEWER_HOME:-$LOGIN_HOME}"
+    [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] || {
+      printf 'pre-commit-review: claude reviewer auth home not found; set CLAUDE_REVIEWER_HOME\n' >&2
+      exit 1
+    }
+    reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-$reviewer_claude_home/.claude-reviewer}"
     [ -n "$reviewer_claude_config_dir" ] || {
       printf 'pre-commit-review: claude reviewer config dir not found; set CLAUDE_REVIEWER_CONFIG_DIR or HOME\n' >&2
       exit 1
@@ -205,17 +218,38 @@ PROMPT
 spawn_argv=( $spawn_command )
 review_prompt="Read $payload, review the staged studio diff, and print STUDIO_REVIEW_VERDICT=<approved|approved_with_fixes|blocked>."
 
-if ! ( cd "$REPO_ROOT" && env -i \
-    PATH="$PATH" \
-    HOME="$reviewer_home" \
-    LANG="${LANG:-C.UTF-8}" \
-    USER="${USER:-}" \
-    ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
-    ${reviewer_claude_config_dir:+CLAUDE_CONFIG_DIR="$reviewer_claude_config_dir"} \
-    STUDIO_HOST="$REVIEW_HOST" \
-    REVIEW_PAYLOAD="$payload" \
-    STAGED_PATCH_ID="$patch_id" \
-    "${spawn_argv[@]}" "$review_prompt" > "$summary" 2>"$summary.err" ); then
+case "$REVIEW_HOST" in
+  codex*|*codex*)
+    review_cmd=(env -i \
+      PATH="$PATH" \
+      HOME="$reviewer_home" \
+      LANG="${LANG:-C.UTF-8}" \
+      USER="${USER:-}" \
+      ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
+      STUDIO_HOST="$REVIEW_HOST" \
+      REVIEW_PAYLOAD="$payload" \
+      STAGED_PATCH_ID="$patch_id" \
+      "${spawn_argv[@]}" "$review_prompt")
+    ;;
+  *)
+    review_cmd=(env -i \
+      PATH="$PATH" \
+      HOME="$reviewer_claude_home" \
+      LANG="${LANG:-C.UTF-8}" \
+      USER="${USER:-}" \
+      ${reviewer_claude_config_dir:+CLAUDE_CONFIG_DIR="$reviewer_claude_config_dir"} \
+      CLAUDE_REVIEWER_HOME="$reviewer_claude_home" \
+      STUDIO_HOST="$REVIEW_HOST" \
+      REVIEW_PAYLOAD="$payload" \
+      STAGED_PATCH_ID="$patch_id" \
+      "${spawn_argv[@]}" "$review_prompt")
+    ;;
+esac
+
+if ! ( cd "$REPO_ROOT" && case "$REVIEW_HOST" in
+    codex*|*codex*) "${review_cmd[@]}" > "$summary" 2>"$summary.err" ;;
+    *) "${review_cmd[@]}" </dev/null > "$summary" 2>"$summary.err" ;;
+  esac ); then
   print_reviewer_failure "$summary" "$summary.err"
   exit 1
 fi

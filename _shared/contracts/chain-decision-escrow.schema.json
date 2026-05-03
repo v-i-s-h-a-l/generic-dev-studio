@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "chain-decision-escrow.schema.json",
+  "schema": 1,
+  "title": "Chain Decision Escrow",
+  "description": "Private-runtime record for a low-risk assumption or default chosen while an autonomous studio chain continues. Escrow records are sticky on resume until their review deadline or explicit human override.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "created_at",
+    "run_id",
+    "decision_id",
+    "decision",
+    "default_chosen",
+    "rationale",
+    "affected_artifacts",
+    "rollback_path",
+    "review_deadline",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "chain-decision-escrow"
+    },
+    "created_at": {
+      "$ref": "debrief.schema.json#/$defs/rfc3339"
+    },
+    "run_id": {
+      "$ref": "debrief.schema.json#/$defs/uuidv7"
+    },
+    "chain_run_id": {
+      "oneOf": [
+        {
+          "$ref": "debrief.schema.json#/$defs/uuidv7"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "issue_run_id": {
+      "oneOf": [
+        {
+          "$ref": "debrief.schema.json#/$defs/uuidv7"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "decision_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "default_chosen": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "risk_class": {
+      "enum": [
+        "low-risk",
+        "review-needed",
+        "human-needed"
+      ],
+      "default": "low-risk"
+    },
+    "status": {
+      "enum": [
+        "continued",
+        "reviewed",
+        "overridden",
+        "expired"
+      ]
+    },
+    "affected_artifacts": {
+      "$ref": "#/$defs/stringList"
+    },
+    "rollback_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "review_deadline": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "override_command": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "privacy": {
+      "type": "object",
+      "properties": {
+        "classification": {
+          "const": "private-runtime"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "stringList": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

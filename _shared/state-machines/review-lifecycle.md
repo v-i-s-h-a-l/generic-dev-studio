@@ -15,8 +15,8 @@ Argus reviews have their own short-cycle state machine, separate from task and b
 | `pending` | Argus has been invoked; review not yet started. |
 | `in-progress` | Argus is actively reading diff + running checks. `.argus-running` marker exists. |
 | `approved` | All checks passed. Safe to merge. |
-| `flagged` | Non-blocking findings. Safe to merge; Chanakya files follow-ups. |
-| `blocked` | Hard block (secrets, base staleness Achilles can't fix, etc.). Do not merge. |
+| `flagged` | Non-blocking findings. Mergeable only after user approval; Chanakya files follow-ups. |
+| `blocked` | Hard block (secrets, base staleness Achilles can't fix, dispatch timeout, etc.). Do not merge. |
 | `acknowledged` | Terminal. Achilles or Chanakya consumed the verdict and acted. |
 
 ## Transitions
@@ -25,9 +25,9 @@ Argus reviews have their own short-cycle state machine, separate from task and b
 pending      → in-progress  : Argus writes `.argus-running` marker.
 in-progress  → approved     : all checks green.
 in-progress  → flagged      : findings but not blocking.
-in-progress  → blocked      : hard block.
+in-progress  → blocked      : hard block, including dispatch timeout (`review_timeout`).
 approved     → acknowledged : Achilles proceeds to merge.
-flagged      → acknowledged : Achilles proceeds; Chanakya files follow-up.
+flagged      → acknowledged : Achilles stages concerns; Chanakya surfaces fix-first vs merge-override.
 blocked      → acknowledged : Achilles fixes and re-invokes, or surfaces to user.
 ```
 
@@ -53,7 +53,8 @@ Emission policy: emit `review_state_changed` on `pending → in-progress` only (
 ## Pairing with task lifecycle
 
 - `task: self-reviewed` precedes `review: pending`.
-- `review: approved | flagged` permits `task: argus-reviewed → merged`.
+- `review: approved` permits `task: argus-reviewed → merged`.
+- `review: flagged` permits `task: argus-reviewed → merged` only with explicit user override.
 - `review: blocked` forces `task: argus-reviewed → blocked` unless Achilles can fix.
 
 ## Related

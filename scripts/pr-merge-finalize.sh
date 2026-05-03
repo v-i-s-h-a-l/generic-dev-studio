@@ -55,12 +55,12 @@ case "$METHOD" in
   *) printf 'pr-merge-finalize: --method must be auto|merge|squash|rebase\n' >&2; exit 2 ;;
 esac
 
-command -v gh >/dev/null 2>&1 || { printf 'pr-merge-finalize: gh is required\n' >&2; exit 1; }
-command -v jq >/dev/null 2>&1 || { printf 'pr-merge-finalize: jq is required\n' >&2; exit 1; }
-
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh" 2>/dev/null || true
+
+command -v gh >/dev/null 2>&1 || { printf 'pr-merge-finalize: gh is required\n' >&2; exit 1; }
+command -v jq >/dev/null 2>&1 || { printf 'pr-merge-finalize: jq is required\n' >&2; exit 1; }
 
 STARTED_AT=$(date -u +%s)
 number=""
@@ -133,7 +133,7 @@ $cleanup_paths
 EOF
 }
 
-json=$(gh pr view "$PR" --json number,state,isDraft,mergeable,mergeStateStatus,headRefName,headRefOid,headRepositoryOwner,baseRefName,url,commits) \
+json=$(with_login_home_for_github gh pr view "$PR" --json number,state,isDraft,mergeable,mergeStateStatus,headRefName,headRefOid,headRepositoryOwner,baseRefName,url,commits) \
   || { printf 'pr-merge-finalize: failed to read PR %s\n' "$PR" >&2; exit 1; }
 
 state=$(printf '%s' "$json" | jq -r '.state')
@@ -172,7 +172,7 @@ case "$merge_state" in
     ;;
 esac
 
-gate_comment=$(gh pr view "$PR" --json comments --jq '
+gate_comment=$(with_login_home_for_github gh pr view "$PR" --json comments --jq '
   [.comments[]?
    | select(.body | contains("<!-- studio:pr-review-gate v1 -->"))
    | select(.body | test("STUDIO_REVIEW_GATE=(approved|approved_with_fixes)"))
@@ -194,7 +194,7 @@ if [ -z "$gate_comment" ]; then
     https://github.com/*/issues/*|https://github.com/*/pull/*|https://github.com/*/discussions/*) ;;
     *) printf 'pr-merge-finalize: user-approved bypass must be a GitHub issue, PR, comment, or discussion URL\n' >&2; exit 1 ;;
   esac
-  gh pr comment "$PR" --body "$(cat <<EOF
+  with_login_home_for_github gh pr comment "$PR" --body "$(cat <<EOF
 <!-- studio:pr-review-gate v1 -->
 STUDIO_REVIEW_GATE=bypassed
 USER_APPROVED_BYPASS=$USER_APPROVED_BYPASS
@@ -216,12 +216,12 @@ fi
 printf 'Merging PR via GitHub: %s\n' "$url"
 remote_merge_warning=""
 case "$METHOD" in
-  merge)  merge_cmd=(gh pr merge "$PR" --merge --delete-branch) ;;
-  squash) merge_cmd=(gh pr merge "$PR" --squash --delete-branch) ;;
-  rebase) merge_cmd=(gh pr merge "$PR" --rebase --delete-branch) ;;
+  merge)  merge_cmd=(with_login_home_for_github gh pr merge "$PR" --merge --delete-branch) ;;
+  squash) merge_cmd=(with_login_home_for_github gh pr merge "$PR" --squash --delete-branch) ;;
+  rebase) merge_cmd=(with_login_home_for_github gh pr merge "$PR" --rebase --delete-branch) ;;
 esac
 if ! "${merge_cmd[@]}"; then
-  merged_state=$(gh pr view "$PR" --json state --jq '.state' 2>/dev/null || true)
+  merged_state=$(with_login_home_for_github gh pr view "$PR" --json state --jq '.state' 2>/dev/null || true)
   if [ "$merged_state" != "MERGED" ]; then
     printf 'pr-merge-finalize: GitHub merge failed and PR is not merged (state=%s)\n' "${merged_state:-unknown}" >&2
     exit 1
@@ -231,11 +231,11 @@ fi
 
 current_path=$(current_worktree_path)
 control_path=""
-if ! git fetch --prune origin; then
+if ! with_login_home_for_github git fetch --prune origin; then
   cleanup_failed=1
   cleanup_notes="${cleanup_notes}fetch_prune_failed;"
 fi
-if ! git fetch origin "$base_ref"; then
+if ! with_login_home_for_github git fetch origin "$base_ref"; then
   cleanup_failed=1
   cleanup_notes="${cleanup_notes}fetch_base_failed;"
 fi

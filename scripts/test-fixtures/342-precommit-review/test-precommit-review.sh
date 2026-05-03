@@ -27,6 +27,7 @@ cat > "$BIN/codex" <<'SH'
 #!/usr/bin/env bash
 case " $* " in
   *" --help "*) printf 'codex fixture help\n'; exit 0 ;;
+  *"smoke test"*) printf 'STUDIO_REVIEW_VERDICT=approved\n'; exit 0 ;;
 esac
 [ -n "${REVIEW_PAYLOAD:-}" ] && [ -f "$REVIEW_PAYLOAD" ] || exit 3
 grep -q 'Staged diff:' "$REVIEW_PAYLOAD" || exit 7
@@ -47,7 +48,8 @@ export GITHUB_TOKEN="must-not-leak"
 export OPENAI_API_KEY="must-not-leak"
 export ANTHROPIC_API_KEY="must-not-leak"
 export HOME="$TMPROOT/caller-home"
-mkdir -p "$HOME/.config/gh" "$HOME/.codex"
+export CODEX_HOME="$HOME/.codex"
+mkdir -p "$HOME/.config/gh" "$CODEX_HOME"
 printf 'github.com: token\n' > "$HOME/.config/gh/hosts.yml"
 
 git -C "$REPO" init -q

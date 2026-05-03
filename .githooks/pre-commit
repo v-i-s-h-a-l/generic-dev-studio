@@ -12,9 +12,11 @@
 #       budget_tokens enforcement, _shared/* dup detection, router cap.
 #   2f. lint-debrief-writers.sh --staged — block legacy markdown/misrouted
 #       active debrief write paths (#311).
+#   2g. lint-field-review-surfaces.sh --staged — block raw cross-host
+#       review-host commands outside the reviewer wrapper (#458).
 #   3.  privacy gate — reject if staged diff leaks another project's runtime.
 #
-# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/3.
+# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/2g/3.
 # Gates 1+1b (manifest regens) always run because stale manifests leak
 # downstream.
 # LLM review is not part of the default hook path. Run
@@ -138,6 +140,17 @@ if [ -x "$SCRIPTS/lint-debrief-writers.sh" ]; then
   rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '\npre-commit: legacy/misrouted debrief writer found — use plans/debriefs/<id>.yaml via lib-ledger\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2g — field-agent review wrapper linter (#458).
+if [ -x "$SCRIPTS/lint-field-review-surfaces.sh" ]; then
+  "$SCRIPTS/lint-field-review-surfaces.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: raw cross-host review command found — use scripts/phase-review.sh or a wrapper successor\n' >&2
     printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
     exit 1
   fi

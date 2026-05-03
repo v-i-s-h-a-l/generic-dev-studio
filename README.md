@@ -25,8 +25,9 @@ timeline
              : v0.8.0 — review gates + Forge safety floor
              : v0.8.1 — Forge latency report
              : v0.8.2 — reviewer gate reliability
-    Coming next : Forge reliability freeze — fix known bugs before new feature arcs
-                : Issue graph hygiene — duplicate, blocked-by, caused-by, urgent triage
+    May 2026 : v0.9.0 — Forge reliability closure
+             : v0.10.0 — Apollo network efficiency
+    Coming next : Issue graph hygiene — duplicate, blocked-by, caused-by, urgent triage
     Deferred : Knowledge layer — memory-query + synthesis across debriefs
              : Lu Ban — a dedicated architect agent for design dialogue
              : iOS depth — first-class Swift/SwiftUI/UIKit intelligence
@@ -37,6 +38,8 @@ timeline
 
 ### Story so far
 
+- **[v0.10.0](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.10.0)** — Apollo can now explain network efficiency with the same strict evidence discipline it already applies to memory, thermal, battery, and CPU. Network traces, URLSession task metrics, MetricKit transfer windows, cellular-condition context, and paired Power Profiler evidence now route through a dedicated `/apollo network` mode. Guided profiling can hand a human-run app flow across battery, CPU, memory, and network, while the reviewed Apollo chain path keeps multi-issue studio work gated by sibling review before it lands.
+- **[v0.9.0](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.9.0)** — Forge reliability work now closes with fewer loose ends: `/studio work` surfaces parallel chain opportunities, track lookups stay current as issues close, and PR review payloads land somewhere sibling hosts can actually read. Cross-host review wrappers now centralize smoke eligibility, MCP isolation, auth-home selection, and failure details. The safety floor also got sharper at runtime: Argus warnings can block risky merges, TestFlight pushes can pin an explicit marketing version with safer App Store-state checks, and build gates preserve bounded log tails when the success marker goes missing.
 - **[v0.8.2](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.8.2)** — Reviewer-gate failures are visible again: Claude startup errors now show the useful stdout/stderr text instead of collapsing to a generic wrapper failure. The Claude reviewer profile starts from a valid empty MCP config, preserves the review prompt correctly, and launches from the repo root so relative config paths resolve consistently. Studio PR cleanup also got a practical pass: release secrets resolve through project runtime config, TestFlight release preflight is safer, PR flow instructions are clearer, and workflow/process rules are pinned to repo files rather than assistant memory.
 - **[v0.8.1](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.8.1)** — Forge slowdown claims can now be measured instead of debated: `scripts/forge-latency-report.sh` reads canonical event logs and ranks task stages by total time, p50/p90, and sample count. It can compare end-to-end task duration before and after a cutover date, and it reports missing or impossible timings as telemetry gaps rather than pretending they took zero seconds. The Forge reliability lookup now marks #347 closed and keeps the next ten open reliability tasks visible.
 - **[v0.8.0](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.8.0)** — Unsafe changes now get stopped before they become commits: staged diffs run through a no-secret reviewer gate, and only approved verdicts proceed. Routine studio PRs can run through a headless review + merge path that posts a machine-readable gate comment before integration. Dedicated Codex and Claude reviewer profiles keep review sessions prompt-free and secret-free. The Forge safety floor hardened around the commit and merge edges: composite merge checks, debrief-writer lint, Argus preflight events, and sweep blind-spot fixes make missing lifecycle signals visible instead of silent.
@@ -50,7 +53,7 @@ timeline
 - **[v0.1.0-beta.2](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.1.0-beta.2)** — Workers can run as real Claude sessions (`/achilles worker`), broadcast across N panes with collision-safe slot claiming. Fleet cleanup script for between-session sweeps.
 - **[v0.1.0-beta.1](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.1.0-beta.1)** — First beta. Three Claude agents — Chanakya plans, Achilles writes, Argus reviews — coordinated over a file-based inbox so work survives Claude restarts. Multi-worker fan-out for parallel tasks.
 
-For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term vision, see [`ROADMAP.md`](ROADMAP.md). For actionable backlog, see [open issues](https://github.com/v-i-s-h-a-l/generic-dev-studio/issues).
+For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term vision, see [`ROADMAP.md`](ROADMAP.md). For actionable backlog with Project fields, see the [Studio v2 Projects board](https://github.com/users/v-i-s-h-a-l/projects/1).
 
 ---
 
@@ -68,10 +71,15 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /studio help                     # open the studio docs page in your browser
 /studio-help                     # slash-command shortcut for /studio help
 /studio work <track>             # claim track issues, then final reviewed PR + cleanup + summary
-/studio work chain workflow-measurement-improvements  # run issue chains: fresh sessions, UUID telemetry, reviewed PRs, cleanup
+/studio work chain workflow-measurement-improvements  # plan/resume issue chains: fresh sessions, UUID telemetry, reviewed PRs, cleanup
+/studio work chain v2-transition                      # canonical phasewise Studio v2 transition chain
+scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
+scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
+scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
 STUDIO_TRACK=<track>             # session-start shortcut for /studio work <track>
 /studio nodes                    # day-2 fleet management — status, add, remove, health, sync, schedule
 /studio tf-push --background     # start TF archive/upload and keep session free for Slack drafting
+/studio tf-push --version 26.5.0 # TestFlight push with explicit MARKETING_VERSION; live work needs STUDIO_TF_PUSH_LIVE=1
 /studio-setup                    # onboard THIS machine — auto-pilot, prompts for role only
 /studio-setup --manager          # zero-prompt manager onboarding
 /studio-setup --worker           # zero-prompt worker (id = hostname; --id X to override)
@@ -89,7 +97,7 @@ STUDIO_TRACK=<track>             # session-start shortcut for /studio work <trac
 /chanakya sweep-debt             # brief + dispatch all pending debt tasks
 /chanakya verify                 # guided: test-flow → promote → review-feedback
 /chanakya reopen T347 --reason="qa-rejected: <text>"  # reopen a closed task with recorded provenance
-/achilles T001                   # execute (XS/S: lsp-only, M/L: full build; merges immediately)
+/achilles T001                   # execute (XS/S: lsp-only, M/L: full build; approved merges, flagged waits)
 /achilles T001 --wait            # execute, pause up to 10 min for feedback before merging
 /achilles T001 --force-build     # override size-driven gate; run full xcodebuild
 /achilles T001 --dry-run         # simulate every write + event; reads + LSP run normally
@@ -138,14 +146,25 @@ scripts/backfill-orphan-debriefs.sh [--apply] [--quiet]     # recover tasks that
 scripts/forge-latency-report.sh --days 14                   # stage-level Forge task latency from event logs
 scripts/field-workflow-report.sh --days 14                  # Field loop timing, tokens, gate pass rates, review coverage, improvement candidates
 scripts/studio-pr-baseline-report.sh 366                    # PR-level timing, churn, gate, and generated-file baselines
+scripts/studio-weekly.sh --post                             # weekly GitHub PM digest; cron posts to the pinned summary issue
+scripts/host-preflight.sh codex /repo                       # prove gh + git credential access before host task work
+scripts/studio-project-state.sh --status Todo               # Project-field backlog reader for Status / Track / Phase / Size / review state
+scripts/studio-gh.sh issue list --state open                # assistant-safe GitHub CLI wrapper for narrow issue lookups; normalizes synthetic Codex HOME
+scripts/studio-dependency-export.sh --issue 443             # Mermaid graph from native GitHub blocked_by dependencies
+scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run plan review + reviewed chain PR merges
+# Chain manifests may set phase_review: required|auto|off; required/auto gates issue phases through scripts/phase-review.sh and forwards compact clean outcome feedback privately.
+scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply
 scripts/pre-commit-review.sh                                # manual no-secret reviewer gate for risky staged diffs
-scripts/pr-headless-review.sh <pr>                          # run no-secret reviewer gate, then merge if non-blocked
+scripts/pr-headless-review.sh <pr>                          # run smoke-eligible no-secret reviewer gate, then merge if non-blocked
+scripts/pr-headless-review.sh <pr> --no-require-cross-host   # opt out of the default independent-provider reviewer requirement
+scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-host claude-code  # resolve reviewer model from policy
+scripts/check-model-catalog.sh --print-refresh-checklist     # validate refreshable model IDs against official-source metadata
 scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
 ```
 
 **Minimal-intervention by default.** Chanakya runs end-to-end without stopping for confirmation. The only points where it pauses are: Slack publish, first-time config writes (`--configure-token`, `--configure`), merge conflicts, and `--wait` mode feedback windows.
 
-Achilles merges immediately on green and logs a "manual verification" follow-up. XS/S tasks skip `xcodebuild` (LSP-only) and accumulate **build debt** — warn at 6, block at 12. Run `/achilles build` any time: green resets the counter, red auto-bisects and files a P0 fix.
+Achilles merges approved green work immediately and stages flagged Argus findings for a user decision. XS/S tasks skip `xcodebuild` (LSP-only) and accumulate **build debt** — warn at 6, block at 12. Run `/achilles build` any time: green resets the counter, red auto-bisects and files a P0 fix.
 
 ---
 
@@ -169,7 +188,7 @@ achilles/
   SKILL.md         # worker agent — isolated execution pipeline + Argus pre-merge gate
 
 apollo/
-  SKILL.md         # performance agent — per-metric mode packs (memory/thermal/battery) +
+  SKILL.md         # performance agent — per-metric mode packs (memory/thermal/battery/cpu/network) +
                    #   measure (capture-only) under a strict-9 evidence gate; auto-capture-
                    #   before-refuse via execution surface; dispatched from Chanakya when
                    #   brief.dispatch_agent: apollo (Argus skips those merges)
@@ -178,7 +197,7 @@ apollo/
   _shared/primitives/      # cross-cutting primitives — evidence-gate, execution-surface,
                            #   metrickit, signposts, xctest-baselines, instruments-index,
                            #   organizer-asc, regression-detection, perf-merge-loop
-  modes/                   # per-metric mode packs (#230/#231/#232) + measure (#235)
+  modes/                   # per-metric mode packs (#230/#231/#232/#406/#424) + measure (#235)
 
 .claude/skills/studio/    # project-scoped vendor skill — auto-loads when cwd is in this repo
   SKILL.md         # cross-agent router — studio-level ops (resume-plan, review, release,
@@ -208,17 +227,26 @@ scripts/                # multi-worker fleet (BETA)
   forge-latency-report.sh  # stage-level task latency + review-gate comparison from event logs
   field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
-  studio-chain-runner.sh   # execute studio issue chains with capacity-scaled fresh sessions, UUID telemetry, and private run reports
+  studio-dependency-export.sh # Mermaid graph from native GitHub blocked_by issue dependencies
+  studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
+  studio-chain-runner.sh   # plan/execute/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, locks, and private run reports
+  issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
+  studio-staleness-triage.sh # scheduled GitHub issue staleness labels + escalation comments for the PM surface
+  host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
+  studio-gh.sh          # GitHub CLI wrapper for assistant/interactive calls; normalizes synthetic Codex HOME
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   appstore-watch.sh     # polls ASC for pending submission; finalizes draft release + Slack on release
   backfill-orphan-debriefs.sh  # recover tasks that finished without landing in master plan (dry-run default)
   achilles-refresh-base.sh     # auto-invoked by Achilles Step 8.4: fetch + merge base before Argus review
+  task-merge.sh                # serialized merge gate: approved-only option + post-review base re-check
   worker-status.sh      # one-shot fleet status table
   achilles-cancel.sh    # remove pending dispatches
   fleet-cleanup.sh      # soft sweep (stale locks, old done/) or --all teardown
   lint-architecture.sh  # staged router/frontmatter checks; --full runs repository-wide audits
+  lint-project-skill-links.sh # blocks missing repo-local project skill discovery links
   test-mode-pack.sh     # skill-testing driver — runs fixtures against mode packs (on-demand, spawns claude -p)
+  lint-field-review-surfaces.sh # blocks raw cross-host review snippets outside phase-review wrappers
   update-surface-manifest.sh  # regenerates docs-surface.json from command surface
   scaffold-agent.sh     # create new router-pattern-compliant agent skeleton
   graduation-scan.sh    # Jaccard scan for prose that should graduate into _shared/
@@ -286,7 +314,7 @@ After cloning this repo to contribute back, enable the deterministic architectur
 git config core.hooksPath .githooks
 ```
 
-The hook regenerates `docs-surface.json`, runs the architecture/privacy gates, and emits `precommit_hook_completed` with `duration_s`. SessionStart emits `session_start_completed` against a 5s warning budget and stays quiet unless that budget is exceeded. It does not spawn an LLM reviewer by default. Run `scripts/pre-commit-review.sh` manually before committing risky local diffs; its bypass remains explicit (`STUDIO_BYPASS_REVIEW=1` or `--bypass-review`) and audited through `precommit_review_bypassed`. PR integration still goes through `scripts/pr-headless-review.sh`, with timing split across reviewer, autopilot, and merge-finalize events. Use `scripts/studio-pr-baseline-report.sh <pr>` during retrospectives to compare phase timing, churn, and gate gaps across PR classes; use the numbers to tune workflow bottlenecks, not to score individual productivity. Error codes and fix recipes live in `_shared/rules/enforcement-contract.md`. Emergency lint bypass: `ARCH_LINT=0 git commit ...` (hotfixes only).
+The hook regenerates `docs-surface.json`, runs the architecture/privacy gates, and emits `precommit_hook_completed` with `duration_s`. SessionStart emits `session_start_completed` against a 5s warning budget and stays quiet unless that budget is exceeded. It does not spawn an LLM reviewer by default. Run `scripts/pre-commit-review.sh` manually before committing risky local diffs; its bypass remains explicit (`STUDIO_BYPASS_REVIEW=1` or `--bypass-review`) and audited through `precommit_review_bypassed`. Multi-phase work uses `scripts/phase-review.sh --review-host <claude-reviewer|codex-reviewer> --input phase-plan.md --output ~/.dev-studio/generic-dev-studio/analysis/...` so sibling-host reviews go through the same smoke-eligible reviewer profiles instead of raw host CLI calls and emit `PHASE_REVIEW_VERDICT=clean|blocked|ambiguous` for deterministic callers. Chain manifests can opt issue phases into the same gate with `phase_review: required|auto|off`; clean outcome warnings, recommendations, and accepted plan adjustments are forwarded only as compact private context to later issue start envelopes. `scripts/lint-field-review-surfaces.sh` blocks new field-agent review setup that reintroduces raw host commands. PR integration still goes through `scripts/pr-headless-review.sh`, with timing split across reviewer, autopilot, and merge-finalize events; PR gate comments now expose parent host, smoke-eligible reviewer profiles, selected reviewer, cross-host status, fallback attempts, and selected reviewer model metadata. Reviewer model names resolve through `_shared/schemas/model-catalog.yaml` plus `_shared/rules/model-policy.yaml`; treat them as refreshable policy, not shell-script constants. Cross-provider review is required by default; same-host fallback requires `--allow-same-host-review --user-approved-bypass <github-url>`, and `--no-require-cross-host` is only for explicit non-safety-floor runs. Claude reviewers use `CLAUDE_REVIEWER_HOME` plus `CLAUDE_REVIEWER_CONFIG_DIR`; set the home to a locked-down reviewer account on fleet nodes. Use `scripts/studio-pr-baseline-report.sh <pr>` during retrospectives to compare phase timing, churn, and gate gaps across PR classes; use the numbers to tune workflow bottlenecks, not to score individual productivity. Error codes and fix recipes live in `_shared/rules/enforcement-contract.md`. Emergency lint bypass: `ARCH_LINT=0 git commit ...` (hotfixes only).
 
 ### Feature branches and grouped PRs
 

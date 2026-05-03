@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # studio-audit.sh — arc-coherence probes for planning quality.
 #
-# Runs three cheap checks against ROADMAP.md + the project's memory store +
-# git history. Silent when clean. Emits structured + human output on drift.
+# Runs cheap checks against ROADMAP.md, the project's memory store, git history,
+# and the studio GitHub Project state. Silent when clean. Emits structured +
+# human output on drift.
 #
 # Probes:
 #   A1  Decision-ledger consistency — phases marked ✓ in ROADMAP must be
@@ -15,6 +16,9 @@
 #       must be consistent: parking-lot empty (no studio-consolidation/
 #       parking-lot.md with open items), no project_*_pending.md left
 #       unanswered, release tagged if the arc crossed a release threshold.
+#   A4  PM-surface Project state — current v2 parent arcs must be present on
+#       the Studio v2 transition Project with Status, Track, Phase, Size, and
+#       Sibling host reviewed fields populated.
 #
 # Usage:
 #   scripts/studio-audit.sh              # human + summary, exit 0 on clean, 1 on drift
@@ -22,7 +26,8 @@
 #   scripts/studio-audit.sh --json       # machine-readable summary (for hooks)
 #   scripts/studio-audit.sh --report     # write full report to ~/.dev-studio/<proj>/audit/<date>.md
 #
-# All probes are grep-only, sub-second, no LLM round-trips.
+# Probes are grep/JQ/GitHub-CLI only, no LLM round-trips. A4 is the only remote
+# probe and reads Projects v2 through scripts/studio-project-state.sh.
 
 set -u
 umask 022
@@ -192,22 +197,64 @@ probe_a3() {
   fi
 }
 
+# ──────────────────────────────────────────────────────────────────────────────
+# A4 — PM-surface Project state
+# Current v2 parent arcs should be readable from GitHub Projects v2 with the
+# fields agents need for backlog flows.
+# ──────────────────────────────────────────────────────────────────────────────
+
+probe_a4() {
+  local reader="$SCRIPT_DIR/studio-project-state.sh"
+  [ -x "$reader" ] || { add_finding A4 warn "scripts/studio-project-state.sh missing or not executable"; return; }
+
+  local state_json
+  state_json=$("$reader" --json --limit 200 2>/dev/null) || {
+    add_finding A4 warn "GitHub Project state unreadable via scripts/studio-project-state.sh"
+    return
+  }
+
+  local issue missing missing_fields
+  for issue in 443 444 445 446; do
+    missing=$(printf '%s\n' "$state_json" | jq -r --argjson issue "$issue" '
+      any(.[]; .issue_number == $issue) | not
+    ')
+    if [ "$missing" = true ]; then
+      add_finding A4 warn "#$issue missing from Studio v2 transition Project state"
+      continue
+    fi
+
+    missing_fields=$(printf '%s\n' "$state_json" | jq -r --argjson issue "$issue" '
+      .[] | select(.issue_number == $issue)
+      | [
+          (if (.status // "") == "" then "Status" else empty end),
+          (if (.track // "") == "" then "Track" else empty end),
+          (if (.phase // "") == "" then "Phase" else empty end),
+          (if (.size // "") == "" then "Size" else empty end),
+          (if (.sibling_host_reviewed // "") == "" then "Sibling host reviewed" else empty end)
+        ]
+      | join(", ")
+    ')
+    [ -n "$missing_fields" ] && add_finding A4 warn "#$issue Project item missing field(s): $missing_fields"
+  done
+}
+
 probe_a1
 probe_a2
 probe_a3
+probe_a4
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Output
 # ──────────────────────────────────────────────────────────────────────────────
 
 emit_json() {
-  printf '{"status":"%s","drift":%d,"probes":["A1","A2","A3"]}\n' \
+  printf '{"status":"%s","drift":%d,"probes":["A1","A2","A3","A4"]}\n' \
     "$([ $drift_count -eq 0 ] && echo ok || echo drift)" "$drift_count"
 }
 
 emit_human() {
   if [ $drift_count -eq 0 ]; then
-    printf 'studio-audit: clean. 3 probes ran, 0 drift.\n'
+    printf 'studio-audit: clean. 4 probes ran, 0 drift.\n'
     return
   fi
   printf 'studio-audit: %d drift item(s).\n\n%s' "$drift_count" "$report"

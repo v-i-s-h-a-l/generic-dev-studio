@@ -329,9 +329,11 @@
 /studio guard "topic"     # has this work been done before?
 /studio work &lt;track&gt;      # run a parallel track, then final reviewed PR + cleanup + summary
 /studio work chain workflow-measurement-improvements  # run issue chains with fresh sessions, UUID telemetry, reviewed PRs, cleanup
+/studio work chain v2-transition  # canonical phasewise Studio v2 transition chain
+scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # phase-review the plan, then run reviewed chain PRs
 /studio janitor [--yes]   # cross-project sweep of stale artifacts (dry-run by default)
 /studio nodes             # day-2 fleet management — status, add, sync, health, diagnose, schedule, recheck
-/studio tf-push [--dry-run] [--background]  # TestFlight push; background returns a run handle for Slack drafting
+/studio tf-push [--dry-run] [--version X.Y.Z] [--background]  # TestFlight push; explicit version + optional background handle
 /studio-setup             # onboard THIS machine (--manager / --worker / --dual; no args → interactive manager)
 /studio-help              # open this docs page</code></pre>
     <p>Most users type <code>/studio</code> and let intent detection pick the mode. Sub-commands above are also available conversationally — "where were we", "any issues with this diff?", "should we tag?" all route correctly. For unattended track work without the sub-command, start the session with <code>STUDIO_TRACK=&lt;track&gt;</code>.</p>
@@ -355,7 +357,7 @@
       <li>No writes outside <code>~/.dev-studio/&lt;project&gt;/audit/</code> (audit reports in <code>--report</code> mode). Everything else is read-only chat output + file edits you approve.</li>
     </ul>
     <h3>PR autopilot</h3>
-    <p>Routine studio PRs run <code>scripts/pr-headless-review.sh &lt;pr&gt;</code>. The script selects an eligible no-secret reviewer host, captures <code>STUDIO_REVIEW_VERDICT</code>, posts the <code>studio:pr-review-gate</code> comment, and merges only when the verdict is not <code>blocked</code>. Merge cleanup deletes the remote branch and refreshes refs with <code>git fetch --prune</code>.</p>
+    <p>Routine studio PRs run <code>scripts/pr-headless-review.sh &lt;pr&gt;</code>. The script selects a smoke-eligible no-secret reviewer host, captures <code>STUDIO_REVIEW_VERDICT</code>, posts the <code>studio:pr-review-gate</code> comment, and merges only when the verdict is not <code>blocked</code>. The gate records parent host, eligible reviewer profiles, selected reviewer, cross-host status, and fallback attempts. Forge safety-floor PRs add <code>--require-cross-host-when-available</code>; same-host fallback requires <code>--allow-same-host-review --user-approved-bypass &lt;github-url&gt;</code>. Merge cleanup deletes the remote branch and refreshes refs with <code>git fetch --prune</code>.</p>
     <h3>Commit gate</h3>
     <p>The repo hook runs <code>scripts/pre-commit-review.sh</code> on the staged diff after local architecture and privacy gates. Only <code>approved</code> and <code>approved_with_fixes</code> allow the commit. User bypass is explicit with <code>STUDIO_BYPASS_REVIEW=1 git commit ...</code> and emits <code>precommit_review_bypassed</code>.</p>
     <h3>Mode composition</h3>
@@ -416,12 +418,17 @@
       <div class="mode-card">
         <code>/studio work chain &lt;manifest-or-name&gt;</code>
         <div class="triggers">"run these chains end to end", "fresh session per chain"</div>
-        <div class="what">Script-backed chain runner for studio issue work. Each chain starts from latest <code>main</code> into a feature branch; each issue gets its own branch, <code>/tmp</code> worktree, fresh host session, issue-run UUID, and required <code>.studio/chain-worker-summary.json</code>. The active session pool scales from healthy registered <code>xcodebuild</code> offload nodes plus local, then clamps by available RAM; completed issue branches rebase and fast-forward into the chain branch in manifest order. The final chain PR runs <code>scripts/pr-headless-review.sh &lt;pr&gt; --method auto</code>, merges only through autopilot, then prunes refs and removes worktrees. Runner telemetry emits chain lifecycle events and writes private reports under <code>~/.dev-studio/generic-dev-studio/chain-runs/&lt;run_id&gt;/</code>. Dry-run first with <code>scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run</code>.</div>
+        <div class="what">Script-backed chain runner for studio issue work. Each chain starts from latest <code>main</code> into a feature branch; each issue gets its own branch, <code>/tmp</code> worktree, fresh host session, issue-run UUID, private <code>.studio/chain-task-start.json</code> start envelope, and required <code>.studio/chain-worker-summary.json</code> completion envelope. The runner prints a plan by default before mutation, persists resumable state under <code>~/.dev-studio/generic-dev-studio/chain-runs/&lt;run_id&gt;/state.json</code>, lists persisted runs with <code>scripts/studio-chain-runner.sh --list</code>, and resumes manually with <code>scripts/studio-chain-runner.sh --resume &lt;run_id&gt; --yes</code>. Unattended continuation uses <code>scripts/studio-chain-runner.sh --auto &lt;manifest-or-name&gt;</code>: it canonicalizes the manifest path, starts only when no matching state exists, resumes exactly one safe non-completed run, takes a non-blocking <code>state.json.lock</code>, and refuses ambiguous, locked, true-hard-stopped, or decision-escrowed runs. <code>scripts/studio-chain-runner.sh --explain-next &lt;manifest-or-name&gt;</code> prints the same supervisor decision without mutating state. Live execution requires <code>--yes</code> / <code>--no-confirm</code> after preflight validation of issues, branch refs, GitHub auth, reviewer host, and base sync. The active session pool scales from healthy registered <code>xcodebuild</code> offload nodes plus local, then clamps by available RAM; issue execution stays sequential within each chain. Chain manifests may set <code>phase_review: required|auto|off</code>; required/auto issue phases run <code>scripts/phase-review.sh</code>, archive plan/outcome reviews, stop on typed reviewer blockers, and forward only compact clean outcome feedback to later private start envelopes. Chain scheduling exposes <code>--parallel-chains &lt;n|auto|1&gt;</code> and currently serializes chain PR/review/issue-closure mutation unless a later scheduler proves safe concurrency. Completed issue branches rebase and fast-forward into the chain branch in manifest order. The final chain PR runs <code>scripts/pr-headless-review.sh &lt;pr&gt; --method auto</code>, merges only through autopilot, then prunes refs and removes worktrees. Private reports include functionality delivered, telemetry roll-up, quality signals, halt records, phase reviews, decision escrow, carryover, lessons when available, and telemetry gaps. For unattended runs that need a sibling plan review before kickoff and a pinned PR reviewer during merge, use <code>scripts/studio-chain-reviewed.sh &lt;manifest-or-name&gt; --host codex --review-host claude-reviewer</code>. Dry-run with <code>scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run</code>.</div>
       </div>
       <div class="mode-card">
         <code>/studio guard "&lt;topic&gt;"</code>
         <div class="triggers">"has this been done?", "are we repeating work?"</div>
-        <div class="what">Before proposing new work, searches three channels. <strong>G1</strong> git log + tags (already shipped). <strong>G2</strong> memory files (already tried / prior decisions). <strong>G3</strong> <code>gh issue list --state all</code> (already in backlog). Surfaces hits separately; user decides continue / merge / drop. Refuses vague single-word queries.</div>
+        <div class="what">Before proposing new work, searches three channels. <strong>G1</strong> git log + tags (already shipped). <strong>G2</strong> memory files (already tried / prior decisions). <strong>G3</strong> <code>scripts/studio-project-state.sh --search</code> (already in Project backlog, with Status / Track / Phase / Size / review state). Surfaces hits separately; user decides continue / merge / drop. Refuses vague single-word queries.</div>
+      </div>
+      <div class="mode-card">
+        <code>scripts/studio-staleness-triage.sh</code>
+        <div class="triggers">weekly PM-surface issue aging</div>
+        <div class="what">Dry-run first GitHub issue aging pass for the studio PM surface. <code>--json</code> prints the planned label/comment mutations; <code>--apply</code> creates missing labels, applies stale/escalated/archive-candidate labels, removes stale labels from refreshed issues, and posts marker-based escalation comments. The scheduled workflow runs Mondays with <code>permissions: issues: write</code>; thresholds are configurable through <code>STUDIO_STALE_DAYS</code>, <code>STUDIO_ESCALATE_DAYS</code>, and <code>STUDIO_ARCHIVE_DAYS</code>.</div>
       </div>
       <div class="mode-card">
         <code>/studio janitor [--yes]</code>
@@ -477,7 +484,8 @@
     <h3>Installing the rest of the system</h3>
     <p>The agent layer (Chanakya / Achilles / Argus) is <em>global</em> — installed at <code>~/.claude/skills/</code> so <code>/chanakya</code>, <code>/achilles</code>, <code>/argus</code> reach you from any repo. Run the installer once:</p>
     <pre><code>./scripts/install.sh            # idempotent — re-run safely after pulls
-./scripts/verify-install.sh     # reports any drift</code></pre>
+./scripts/verify-install.sh     # reports any drift
+./scripts/host-preflight.sh codex /repo  # prove gh + git remote auth before host task work</code></pre>
     <p>Details in <a class="inline" href="../../../README.md">README.md</a>. Agent docs live at <a class="inline" href="../../../chanakya/docs.html">chanakya/docs.html</a>.</p>
   </div>
 </section>
@@ -494,9 +502,9 @@
       <li>Update this page and <code>CLAUDE.md</code>'s studio-router trigger table.</li>
     </ol>
     <h3>Add a new audit probe</h3>
-    <p>Audit probes live in <code>scripts/studio-audit.sh</code>. Each probe is a function that calls <code>add_finding &lt;probe-id&gt; &lt;severity&gt; "&lt;msg&gt;"</code> when drift is detected. Keep it grep-only and sub-second — no LLM calls. The probe must calibrate to clean on the current repo state (add evidence to ROADMAP, or tighten the regex, or add memory pointers — do not weaken the probe).</p>
+    <p>Audit probes live in <code>scripts/studio-audit.sh</code>. Each probe is a function that calls <code>add_finding &lt;probe-id&gt; &lt;severity&gt; "&lt;msg&gt;"</code> when drift is detected. Keep it grep/JQ/GitHub-CLI only — no LLM calls. The A4 Project-state probe reads <code>scripts/studio-project-state.sh</code>. The probe must calibrate to clean on the current repo state (add evidence to ROADMAP, update the Project fields, tighten the regex, or add memory pointers — do not weaken the probe).</p>
     <h3>Add a new guard channel</h3>
-    <p>Guard channels live in <code>scripts/studio-guard.sh</code> (<code>probe_g1</code> / <code>probe_g2</code> / <code>probe_g3</code>). A new channel needs a grep source (git log, memory, gh, Slack archive, etc.) and a unique label so hits surface separately.</p>
+    <p>Guard channels live in <code>scripts/studio-guard.sh</code> (<code>probe_g1</code> / <code>probe_g2</code> / <code>probe_g3</code>). G3 reads the Studio v2 Projects board through <code>scripts/studio-project-state.sh</code> so backlog hits include Project fields. A new channel needs a grep source (git log, memory, Project state, Slack archive, etc.) and a unique label so hits surface separately.</p>
     <h3>Auto-apply tiers</h3>
     <ul>
       <li><strong>Auto-apply</strong> — rule-wording tweaks in REVIEW / RELEASES / CLAUDE, threshold tuning backed by data, brief-template additions, skill-prose trimming, dead-code removal, GH issue creation on explicitly-agreed work, README timeline updates on releases.</li>
@@ -546,7 +554,8 @@
     <ul>
       <li><a class="inline" href="./setup.html">Onboarding a machine</a> — step-by-step wizard for manager / worker / dual roles (any Mac: laptop, mini, studio); also <code>/studio-setup</code></li>
       <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio">Repository</a> — source, issues, releases</li>
-      <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues">Open issues</a> — actionable backlog</li>
+      <li><a class="inline" href="https://github.com/users/v-i-s-h-a-l/projects/1">Studio v2 Projects board</a> — actionable backlog with Project fields</li>
+      <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues">Open issues</a> — durable issue records</li>
       <li><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/releases">Releases</a> — version history + notes</li>
       <li><a class="inline" href="../../../chanakya/docs.html">Agent orchestration docs</a> — Chanakya / Achilles / Argus</li>
       <li><a class="inline" href="../../../README.md">README.md</a> — install + repo layout</li>

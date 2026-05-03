@@ -66,11 +66,12 @@ chains:
     issues: [134]
 YAML
 
-PATH="$BIN:$PATH" \
-HOME="$HOME_DIR" \
-STUDIO_CHAIN_NODE_HEALTH_CMD="$TMPROOT/node-health" \
-STUDIO_CHAIN_AVAILABLE_RAM_GIB=64 \
-"$ROOT/scripts/studio-chain-runner.sh" "$manifest" --dry-run > "$TMPROOT/out" 2>&1
+env -u STUDIO_CHAIN_WORKER_POOL \
+  PATH="$BIN:$PATH" \
+  HOME="$HOME_DIR" \
+  STUDIO_CHAIN_NODE_HEALTH_CMD="$TMPROOT/node-health" \
+  STUDIO_CHAIN_AVAILABLE_RAM_GIB=64 \
+  "$ROOT/scripts/studio-chain-runner.sh" "$manifest" --dry-run > "$TMPROOT/out" 2>&1
 
 grep -q 'worker_pool=3' "$TMPROOT/out" || {
   printf 'expected two healthy offload nodes to yield worker_pool=3\n' >&2
@@ -78,11 +79,12 @@ grep -q 'worker_pool=3' "$TMPROOT/out" || {
   exit 1
 }
 
-PATH="$BIN:$PATH" \
-HOME="$HOME_DIR" \
-STUDIO_CHAIN_NODE_HEALTH_CMD="$TMPROOT/node-health" \
-STUDIO_CHAIN_AVAILABLE_RAM_GIB=12 \
-"$ROOT/scripts/studio-chain-runner.sh" "$manifest" --dry-run > "$TMPROOT/capped" 2>&1
+env -u STUDIO_CHAIN_WORKER_POOL \
+  PATH="$BIN:$PATH" \
+  HOME="$HOME_DIR" \
+  STUDIO_CHAIN_NODE_HEALTH_CMD="$TMPROOT/node-health" \
+  STUDIO_CHAIN_AVAILABLE_RAM_GIB=12 \
+  "$ROOT/scripts/studio-chain-runner.sh" "$manifest" --dry-run > "$TMPROOT/capped" 2>&1
 
 grep -q 'worker_pool=2' "$TMPROOT/capped" || {
   printf 'expected 12GiB at 6GiB/worker to cap worker_pool at 2\n' >&2

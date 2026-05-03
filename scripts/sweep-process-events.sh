@@ -209,11 +209,24 @@ printf '%s\n' "$new_events" | while IFS= read -r line; do
     debrief_concerns)
       push_append debrief_concerns "$task" "completed with concerns recorded in debrief"
       ;;
+    merge_deferred_on_flagged)
+      push_append merge_deferred_on_flagged "$task" "Argus flagged; merge deferred until user approves or fixes findings"
+      ;;
+    base_diverged_post_review)
+      push_append base_diverged_post_review "$task" "base advanced after Argus review; rerun from Step 8.4"
+      ;;
     debrief_needs_context)
       push_append debrief_needs_context "$task" "needs context before redispatch"
       ;;
     follow_up_mint_failed)
       push_append follow_up_mint_failed "$task" "structured follow-up could not be minted"
+      ;;
+    review_timeout)
+      timeout_s=""
+      if command -v jq >/dev/null 2>&1; then
+        timeout_s=$(printf '%s' "$line" | jq -r '.data.timeout_s // ""' 2>/dev/null)
+      fi
+      push_append review_timeout "$task" "Argus review timed out${timeout_s:+ after ${timeout_s}s}"
       ;;
     argus_gate_skipped)
       # Auto-file a GitHub issue for infra-broken skip reasons (#244).

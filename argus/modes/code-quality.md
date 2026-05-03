@@ -30,6 +30,8 @@ At first write of a review session, invoke `scripts/emit-agent-boot.sh argus <ta
 
 In week 1, only these checks produce **blocks**: compile failure, test failure (M/L only), secrets in diff, base-branch staleness.
 
+Base-branch staleness uses the shared threshold in `_shared/primitives/base-staleness.md`, so Achilles' pre-review refresh and Argus' block decision read the same floor.
+
 Everything else (diff anomalies, edge-case gaps, test adequacy, regression risk) produces a **flag** in week 1. Merge proceeds; Chanakya auto-files follow-ups from flagged findings. To promote a check to block, edit the `Block?` column in `_shared/rules/review-rules.md`.
 
 ## Scope Caps

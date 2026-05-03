@@ -14,6 +14,7 @@ cat > "$BIN/codex" <<'SH'
 #!/usr/bin/env bash
 case " $* " in
   *" --help "*) printf 'codex fixture help\n'; exit 0 ;;
+  *"smoke test"*) printf 'STUDIO_REVIEW_VERDICT=approved\n'; exit 0 ;;
 esac
 exit 0
 SH
@@ -41,7 +42,9 @@ chmod +x "$BIN/gh"
 
 export PATH="$BIN:$PATH"
 export HOME="$TMPROOT/home"
+export CODEX_HOME="$HOME/.codex"
 export ACHILLES_PROJECT="pr-autopilot-head-race"
+mkdir -p "$CODEX_HOME"
 EVENT_LOG="$HOME/.dev-studio/$ACHILLES_PROJECT/events/$(date -u +%Y-%m-%d).jsonl"
 
 summary="$TMPROOT/summary.md"

@@ -14,11 +14,10 @@ reads:
   - plans/reviews/<review-id>.yaml                 # argus verdict resolution (schema: _shared/schemas/review.md)
   - events/<date>.jsonl                            # via scripts/read-events.sh
 writes:
-  - plans/debriefs/<debrief-id>.yaml               # canonical (schema: _shared/schemas/debrief.md, debrief@2.0.1, mode: task)
+  - plans/debriefs/<debrief-id>.yaml               # canonical (schema: _shared/schemas/debrief.md, debrief@2.4.0, mode: task)
   - plans/tasks/<task-id>.yaml                     # back-ref update: links.debrief + state transitions per _shared/state-machines/task-lifecycle.md
   - plans/briefs/<brief-id>.yaml                   # brief state transition dispatched → debriefed per _shared/state-machines/brief-lifecycle.md
   - plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes
-  - plans/tests/<task-id>-tests.md                 # test-case artifact (read-write surface for test-manifest)
   - events/<date>.jsonl                            # via scripts/write-event.sh
 ---
 
@@ -87,7 +86,7 @@ Read the brief body at `$BRIEF_PATH` for the narrative context. If the brief lis
 
 Both live in-context only. They feed `debt.skills_unused` at Step 11.
 
-**`BRIEF_SLICE=summary` fallback (#256).** When the env var is set (caller is a sweep / dispatch decision / context-budget-tight subagent), read only the brief's `summary` field (`yq -r '.summary // ""' "$BRIEF_PATH"`) instead of the full body. Skip the body and the `## Required Skills` parse — both belong to the full-brief path. Emit `brief_summary_used` (per `_shared/contracts/events.md` § Achilles events) carrying `brief_uuid=$BRIEF_UUID`, `summary_tokens_est` (word-count × 1.3 — same heuristic as `scripts/lint-brief.sh`), and `reason=caller_request`. If the summary is null (legacy brief, pre-3.2.0), surface `report_state: needs_context` and stop — do not silently fall back to a full read; the caller asked for the slice for a reason. The summary slice is sufficient for sweep gating, dispatch-readiness checks, and status display, but **not** for execution work — Step 4 onward MUST run from the full brief, so callers that pass `BRIEF_SLICE=summary` are by contract not driving the execution pipeline.
+**`BRIEF_SLICE=summary` fallback (#256).** When the env var is set (caller is a sweep / dispatch decision / context-budget-tight subagent), read only the brief's `summary` field (`yq -r '.summary // ""' "$BRIEF_PATH"`) instead of the full body. Skip the body and the `## Required Skills` parse — both belong to the full-brief path. Emit `brief_summary_used` (per `_shared/contracts/events.md` § Achilles events) carrying `brief_uuid=$BRIEF_UUID`, `summary_tokens_est` (word-count × 1.3 — same heuristic as `scripts/lint-brief.sh`), and `reason=caller_request`. If the summary is null (pre-3.2.0 canonical brief), surface `report_state: needs_context` and stop — do not silently fall back to a full read; the caller asked for the slice for a reason. The summary slice is sufficient for sweep gating, dispatch-readiness checks, and status display, but **not** for execution work — Step 4 onward MUST run from the full brief, so callers that pass `BRIEF_SLICE=summary` are by contract not driving the execution pipeline.
 
 Record `WAIT_FOR_USER` (from `--wait`, else `no`). Don't prompt — the flag is the only opt-in.
 
@@ -275,13 +274,13 @@ Record `GATE = "lsp-only" | "full-green" | "swift-test"` for the debrief's `## B
 TEST_YAML=$(scripts/task-write-test-cases.sh "$TASK_ID" "$CASES_JSON")
 ```
 
-Writes the human-facing test-case projection path defined in `_shared/primitives/file-locations.md` and returns the YAML block for splicing into the debrief's `tests.added:` field. The debrief YAML is the active reader authority; the markdown projection is not a fallback source for `tests-pull-cases.sh`. Each case carries preconditions, steps, expected result. Runs regardless of `WAIT_FOR_USER`.
+Returns the YAML-compatible JSON block for splicing into the debrief's `tests.added:` field. Each case carries title, preconditions, steps, and expected result. Chanakya derives `user-testing.md` and test-flow rounds from the debrief YAML; Achilles does not write a standalone test-case sidecar. Runs regardless of `WAIT_FOR_USER`.
 
 ### Step 8 — Optional wait for user feedback
 
 **`WAIT_FOR_USER=no` (default):** append `## Follow-up Tasks` — "Manual verification of <task-id> — user will test later." Proceed to Step 9.
 
-**`WAIT_FOR_USER=yes` (from `--wait`):** prompt — "T001 implementation is done and the build is green. Test cases are at `<task-id>-tests.md`. Reply within 10 min with feedback, or I'll auto-merge." — then call `ScheduleWakeup` with `delaySeconds: 600` resuming Step 8 in timeout-merge mode. End the turn. Three resumptions:
+**`WAIT_FOR_USER=yes` (from `--wait`):** prompt — "T001 implementation is done and the build is green. Test cases are recorded in the debrief and will appear in `/chanakya test-manifest`. Reply within 10 min with feedback, or I'll auto-merge." — then call `ScheduleWakeup` with `delaySeconds: 600` resuming Step 8 in timeout-merge mode. End the turn. Three resumptions:
 - **User replies before wake:** iterate. Re-run Steps 5–6 if non-trivial. Loop back to Step 8. Cancel the pending wake; ignore it if it fires.
 - **User approves before wake:** proceed to Step 9.
 - **Wake fires with no reply:** append `## Follow-up Tasks` ("no reply within 10-min window"), proceed to Step 9.
@@ -314,7 +313,8 @@ eval "$(scripts/task-invoke-argus.sh "$TASK_ID" "$WORKTREE" "$ORIG_BRANCH" "$SIZ
 
 Emits `review_requested` and exports `ACHILLES_REVIEW_REQUESTED_AT` (carried into the debrief for verdict-timing correlation).
 
-Argus runs in **two sequential stages**, both dispatched via `scripts/dispatch-review.sh`. The script handles host adapter selection (Claude Code / Codex / future), env-scrubs the spawn (no API keys, no GH tokens), validates the handoff payload against `_shared/contracts/handoff.schema.json`, and tails the event log for the verdict — the contract is shell-reachable on every supported host.
+Argus runs in **two sequential stages**, both dispatched via `scripts/dispatch-review.sh`. The script handles host adapter selection (Claude Code / Codex / future), env-scrubs the spawn (no API keys, no GH tokens), validates the handoff payload against `_shared/contracts/handoff.schema.json`, and tails the event log for the verdict — the contract is shell-reachable on every supported host. If the tail times out, `dispatch-review.sh` emits `review_timeout`, kills the spawned review, and exits non-zero; treat that as a hard block, not a silent skip.
+Stage 2 carries a compact `prior_findings_summary` from Stage 1 in the routed handoff payload, so code-quality sees the earlier spec verdict once without re-reading the entire review artifact.
 
 #### Stage 1 — spec-compliance
 
@@ -330,7 +330,7 @@ Narrow question: does the diff match the brief?
 - **`approved`** or **`flagged`:** proceed to Stage 2. Carry Stage 1 findings forward into the debrief.
 - **`blocked`:** do NOT run Stage 2 — the spec is wrong at the structural level, re-reviewing code doesn't help. Surface block reason; attempt to fix (see below) or debrief with `report_state: blocked`.
 
-Retry policy: validator rejection never auto-retries (per `_shared/contracts/idempotency.md`). Transient failures (timeout, spawn fork) may retry once with `--attempt 2` and a fresh idempotency-key suffix.
+Retry policy: validator rejection never auto-retries (per `_shared/contracts/idempotency.md`). Transient failures (spawn fork, infra launch) may retry once with `--attempt 2` and a fresh idempotency-key suffix. A `review_timeout` is a hard block: do not merge, surface the stall, and write the debrief with `report_state: blocked`.
 
 #### Stage 2 — code-quality
 
@@ -346,7 +346,8 @@ eval "$qual_out"
 Broad question: cross-file regression risk, edge cases, diff anomalies, secrets, base staleness, test run (M/L).
 
 - **`approved`:** proceed to Step 9.
-- **`flagged`:** proceed to Step 9 (stage debrief). In autonomous mode, Step 10 passes `--require-approved`, so flagged reviews defer merge and surface to the user unless the user explicitly approves a `--force` merge. Interactive mode may still merge flagged work after the user accepts the findings. Include a `## Argus Review` block in the debrief referencing both stages' review files + combined finding count.
+- **`flagged` + autonomous/default `--require-approved`:** proceed to Step 9, stage the debrief with `report_state: done_with_concerns`, emit/allow `merge_deferred_on_flagged`, and stop before Step 10. Chanakya's inbox sweep surfaces the flagged task; the user either fixes first (re-dispatch) or explicitly merges via `scripts/task-merge.sh ... --steal-flagged`.
+- **`flagged` + explicit merge override:** proceed to Step 9, then Step 10 with `--steal-flagged`. Include a `## Argus Review` block in the debrief referencing both stages' review files + combined finding count.
 - **`blocked`:** do NOT merge. Surface block reason + review file. Attempt to fix — **base staleness:** rebase, re-run Steps 5–8.5; **compile/test failure Achilles can fix:** fix, re-run Steps 5–6, re-run Step 8.5 (both stages); **secrets in diff:** remove, re-commit, re-run Step 8.5; **cannot address:** surface, do not merge, debrief with `report_state: blocked`.
 
 Two `review_approved` / `review_flagged` / `review_blocked` events land per task (one per stage, distinguished by `stage: spec | quality`). Chanakya's inbox sweep reads both — see `chanakya/modes/inbox-sweep.md` Step 0A.
@@ -368,7 +369,7 @@ CALLER_SKILL=achilles-merge safe_git_commit -m "<task-id>: <summary>"   # or sev
 DEBRIEF_UUID=$(scripts/task-emit-debrief.sh "$TASK_UUID" "$BRIEF_UUID" argus-reviewed "$FIELDS_JSON")
 ```
 
-Mints a UUIDv7, writes `plans/debriefs/<debrief-id>.yaml` (schema: `_shared/schemas/debrief.md`, `debrief@2.0.1`) at `state: emitted`, sets `tasks/<uuid>.yaml` `links.debrief`, transitions the task to `argus-reviewed` (idempotent — Argus already moved it there). The brief→debriefed transition and `brief_completed` event are deferred to Step 11.
+Mints a UUIDv7, writes `plans/debriefs/<debrief-id>.yaml` (schema: `_shared/schemas/debrief.md`, `debrief@2.0.1`) at `state: emitted`, sets `tasks/<uuid>.yaml` `links.debrief`, transitions the task to `argus-reviewed` (idempotent — Argus already moved it there). The brief→debriefed transition and `brief_completed` event are deferred to Step 11. If `--require-approved` defers a flagged task, leave the debrief emitted with `report_state: done_with_concerns`; Chanakya ingests it and surfaces the human decision without stamping a `merge_sha`.
 
 `$FIELDS_JSON` is a JSON object whose keys become debrief YAML fields — `branch`, `commits`, `diff_summary`, `decisions`, `tests`, `testability`, `build_gate`, `build_debt_override`, `debt`, `performance`, `key_learnings`, `known_issues`, `follow_ups`, `open_questions`, `argus_review`, plus `legacy_task_id` for compatibility with older task IDs. `argus_review.status` is Step 8.5's verdict — `approved` / `flagged` / `blocked`; `not-invoked` is only valid on exempted build-mode / test-suite-mode paths, which don't land here. If Argus returned `flagged`, reference the review file + finding count in `argus_review.notes`. Leave `branch.merge_sha` empty — Step 11 stamps it.
 
@@ -376,13 +377,15 @@ Mints a UUIDv7, writes `plans/debriefs/<debrief-id>.yaml` (schema: `_shared/sche
 
 ### Step 10 — Commit, merge back, clean up
 
-**Respect `.argus-running` marker.** Before invoking the merge script, if `$WORKTREE/.argus-running` exists a standalone Argus is still reviewing — poll every 30s up to 10 min, then surface to user. Normal Step 8.5 flow clears the marker automatically.
+**No `.argus-running` polling.** The review dispatch now owns the timeout window and emits `review_timeout` when it expires. If the marker is still present at Step 10, treat the review session as unresolved and surface the block; do not sleep in a retry loop.
 
 ```bash
-scripts/task-merge.sh "$TASK_ID" "$WORKTREE" "$ORIG_BRANCH" "Merge <task-id> into $ORIG_BRANCH"
+scripts/task-merge.sh "$TASK_ID" "$WORKTREE" "$ORIG_BRANCH" --require-approved "Merge <task-id> into $ORIG_BRANCH"
 ```
 
-The script runs the **#300 composite merge safety gate** before acquiring the project-scoped merge lock under `~/.dev-studio/.runtime/merge-lock/<project>` (30-minute staleness reclaim, 30-minute wait envelope). The gate checks three signals: `build_check_passed`, `review_approved` or `review_flagged`, and a staged `state: emitted` debrief for `$TASK_ID`. Two or three absent signals refuse with exit `4` and emit `merge_safety_blocked`; exactly one absent signal emits `merge_safety_warn` and proceeds. Missing debrief also emits `debrief_missing` (`reason: pre_merge_blocked` or `pre_merge_warn`) for existing sweep surfaces. In autonomous mode, pass `--require-approved` so any `review_flagged` event emits `merge_deferred_on_flagged` and refuses merge until the user approves an override. `--force` is emergency-only and emits `merge_safety_override` for composite-safety bypasses or `review_override` for flagged-review bypasses. After the gate, the script clears a stale `.git/index.lock` per `_shared/primitives/safe-git.md` (emits `stale_index_lock_removed`), checks out `$ORIG_BRANCH`, fetches best-effort, runs `git merge --no-ff achilles/<task-id>`, removes the worktree, cleans DerivedData, emits `task_merged`. Exit codes: `0` merged, `2` conflict (emits `merge_conflict`; worktree + DerivedData retained), `3` locked-out, `4` composite safety block or flagged-review defer. Prints `MERGE_SHA=<sha>` on success.
+The script runs the **#300 composite merge safety gate** before acquiring the project-scoped merge lock under `~/.dev-studio/.runtime/merge-lock/<project>` (30-minute staleness reclaim, 30-minute wait envelope). The gate checks three signals: `build_check_passed`, `review_approved` or `review_flagged`, and a staged `state: emitted` debrief for `$TASK_ID`. Two or three absent signals refuse with exit `4` and emit `merge_safety_blocked`; exactly one absent signal emits `merge_safety_warn` and proceeds. Missing debrief also emits `debrief_missing` (`reason: pre_merge_blocked` or `pre_merge_warn`) for existing sweep surfaces. `--require-approved` refuses a flagged-only review with `merge_deferred_on_flagged`; `--steal-flagged` is the user-approved override. `--force` is emergency-only for composite-safety signal loss and emits `merge_safety_override`. After the gate, the script clears a stale `.git/index.lock` per `_shared/primitives/safe-git.md` (emits `stale_index_lock_removed`), checks out `$ORIG_BRANCH`, fetches best-effort, re-checks `origin/$ORIG_BRANCH` against the base SHA recorded at Argus handoff, runs `git merge --no-ff achilles/<task-id>`, removes the worktree, cleans DerivedData, emits `task_merged`. Exit codes: `0` merged, `2` conflict (emits `merge_conflict`; worktree + DerivedData retained), `3` locked-out, `4` composite safety block / flagged-deferred / base diverged after review. Prints `MERGE_SHA=<sha>` on success.
+
+If the post-lock base re-check emits `base_diverged_post_review`, stop and rerun from Step 8.4. The project merge lock prevents concurrent merges; this re-check closes the sequential race where another sibling task lands after Argus reviewed this task but before this merge owns the lock.
 
 On conflict: branch stays alive, DerivedData kept, surface to user. **Do not force-resolve.** On red build (Step 6): don't call this script — the branch + DerivedData stay for the user to inspect.
 
@@ -398,7 +401,7 @@ Stamps `branch.merge_sha` into the staged debrief, transitions the task `argus-r
 
 Print a short message to the user:
 
-> "**T001 done.** Branched from `<ORIG_BRANCH>`@`<short-hash>`, implemented, self-reviewed, build green, Argus approved/flagged, merged back. Test cases at `<task-id>-tests.md`. Debrief dropped for Chanakya."
+> "**T001 done.** Branched from `<ORIG_BRANCH>`@`<short-hash>`, implemented, self-reviewed, build green, Argus approved, merged back. Test cases recorded in the debrief. Debrief dropped for Chanakya."
 
 ### Step 11 — Signal completion; sit idle
 
@@ -407,7 +410,7 @@ Pick a `report_state` for the debrief (set in `$FIELDS_JSON` before Step 9 stage
 | State | Pick when |
 |---|---|
 | `done` | Merged clean, Argus approved (or skipped for XS), all `debt.*: false`, no deferred tests |
-| `done_with_concerns` | Merged, but at least one of: build debt accrued, tests skipped, Argus flagged, known issues surfaced |
+| `done_with_concerns` | Merged or deferred with concerns: build debt accrued, tests skipped, Argus flagged, or known issues surfaced |
 | `blocked` | No merge — hard stop on external dependency, unresolvable state, or Argus `blocked` verdict |
 | `needs_context` | No merge — brief missing information (ambiguous spec, absent reference, unstated decision) |
 

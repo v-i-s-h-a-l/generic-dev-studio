@@ -2,13 +2,12 @@
 # argus-emit-verdict.sh — Step 7 of the Argus pipeline (+ Step 8 stdout line).
 #
 # Writes the YAML review artifact via `write_review_artifact`, also writes a
-# free-form review markdown under the project's Claude memory dir (separate
-# carve-out from plans/, see file-locations.md "Review files (legacy archive)"
-# row — unaffected by #245 A.4), appends the review to the parent task's
-# `links.reviews` via `append_task_link`, emits the verdict event (handled
-# inside write_review_artifact), appends to the push queue on block, manages
-# result-bundle retention on flag, and prints the Step-8 machine-parseable
-# verdict line on stdout.
+# free-form review markdown under the project's Claude memory dir (a separate
+# review-notes carve-out from plans/, see file-locations.md), appends the
+# review to the parent task's `links.reviews` via `append_task_link`, emits
+# the verdict event (handled inside write_review_artifact), appends to the
+# push queue on block, manages result-bundle retention on flag, and prints
+# the Step-8 machine-parseable verdict line on stdout.
 #
 # Usage:
 #   scripts/argus-emit-verdict.sh <task-id> <verdict> <findings-json> \
@@ -17,7 +16,6 @@
 # Exit codes:
 #   0  verdict recorded
 #   2  missing args, task-uuid resolution failed, or unknown verdict
-#   3  dual-write partial failure (propagated from lib-ledger)
 
 set -u
 umask 022
@@ -76,17 +74,15 @@ fi
 
 REVIEW_ID=$(mint_uuidv7)
 
-# Primary write: YAML artifact + verdict event. lib-ledger attempts the
+# Primary write: YAML artifact + verdict event.
 write_review_artifact "$REVIEW_ID" task "$TASK_UUID" "$VERDICT" "$FINDINGS_JSON" "$STAGE"
 rc=$?
-if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
-  # rc=3 is retained for older dual-write-aware callers. Any other nonzero is
-  # a real failure.
+if [ "$rc" -ne 0 ]; then
   printf 'error: write_review_artifact failed rc=%s\n' "$rc" >&2
   exit "$rc"
 fi
 
-# Write the legacy review markdown directly. Path: project-memory carve-out
+# Write the review markdown directly. Path: project-memory carve-out
 # (~/.claude/projects/<slug>/memory/reviews/), not under ~/.dev-studio/plans/
 # — separate surface, unaffected by the #245 archive of plans/.legacy-archive.
 if [ -n "$LEGACY_PATH_OVERRIDE" ]; then

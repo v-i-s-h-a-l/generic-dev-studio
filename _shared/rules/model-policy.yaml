@@ -1,33 +1,81 @@
 schema_version:
   name: model-policy
-  version: 1.0.0
+  version: 1.1.0
   min_reader: 1.0.0
   deprecated_at: null
 default_preference: best_result
 allow_inline_override: true
-reviewer_policy:
-  independent_provider_family_required: true
-  block_when_no_independent_reviewer: true
-  default_role: reviewer.heavyweight
-  fallback_role: reviewer.fallback
-  default_reasoning_effort: high
-  routine_reasoning_effort: medium
-  implementation_host_family_exclusion:
-    claude-code: anthropic
-    claude-reviewer: anthropic
-    codex: openai
-    codex-reviewer: openai
-  reviewer_profiles:
-    - host: claude-reviewer
-      provider_family: anthropic
-      preferred_catalog_key: opus
-      fallback_catalog_key: sonnet
-    - host: codex-reviewer
-      provider_family: openai
-      preferred_catalog_key: gpt_frontier
-      fallback_catalog_key: gpt_balanced
+catalog: _shared/schemas/model-catalog.yaml
 recommendation_fields:
   - task.size
   - task.kind
   - task.cross_file_count
   - task.novelty_score
+provider_families:
+  openai:
+    adapters:
+      - codex
+      - codex-reviewer
+  anthropic:
+    adapters:
+      - claude-code
+      - claude
+      - claude-reviewer
+roles:
+  implementer.heavyweight:
+    purpose: non-trivial implementation, schema changes, migrations, architecture-sensitive edits
+    role_suitability: implementer
+    reasoning_effort: high
+    model_preferences:
+      - opus
+      - openai_gpt_5_5
+      - openai_gpt_5_3_codex
+      - openai_gpt_5_2
+    downgrade_requires_telemetry: true
+  reviewer.heavyweight:
+    purpose: Argus-style PR review, safety-floor review, cross-file regression review
+    role_suitability: reviewer
+    reasoning_effort: high
+    independent_provider_family_required: true
+    model_preferences:
+      - opus
+      - openai_gpt_5_5
+      - openai_gpt_5_3_codex
+      - openai_gpt_5_2
+      - openai_gpt_5
+    downgrade_requires_telemetry: true
+  reviewer.fallback:
+    purpose: user-approved same-family fallback when no independent eligible reviewer can run
+    role_suitability: reviewer
+    reasoning_effort: high
+    user_approved_bypass_required: true
+    model_preferences:
+      - opus
+      - openai_gpt_5_5
+      - openai_gpt_5_3_codex
+      - openai_gpt_5_2
+      - openai_gpt_5
+  reviewer.reasoning_effort:
+    default: high
+    routine_after_telemetry: medium
+    rule: "Do not silently downgrade Argus-style review or non-trivial implementation to cheaper/faster models."
+reviewer_selection:
+  default_role: reviewer.heavyweight
+  fallback_role: reviewer.fallback
+  exclude_implementation_provider_family: true
+  block_without_independent_reviewer: true
+  bypass:
+    env: STUDIO_ALLOW_SAME_HOST_REVIEW
+    flag: --allow-same-host-review
+    requires_user_approved_bypass_url: true
+  metadata_fields:
+    - selected_review_host
+    - selected_review_provider_family
+    - selected_review_model_id
+    - selected_review_reasoning_effort
+refresh:
+  command: scripts/check-model-catalog.sh --print-refresh-checklist
+  required_before:
+    - changing role defaults
+    - changing model_preferences
+    - changing adapter/provider-family mappings

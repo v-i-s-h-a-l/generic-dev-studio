@@ -80,12 +80,27 @@ normal worker/reference adapters. A reviewer profile must declare
 `secret_scope: none`, force no-prompt headless execution, and keep the session
 read-only unless a narrow auto-fix path is explicitly designed later.
 
-Claude-based reviewer profiles should also get a dedicated `CLAUDE_CONFIG_DIR`
-instead of inheriting the caller's home directory. Codex-based reviewers keep
-using `CODEX_HOME`.
+Claude Code 2.1.126 auth is coupled to `HOME` even when `CLAUDE_CONFIG_DIR`
+points at a dedicated profile. Claude-based reviewer profiles therefore run
+with `HOME=${CLAUDE_REVIEWER_HOME:-<login-home>}` and
+`CLAUDE_CONFIG_DIR=${CLAUDE_REVIEWER_CONFIG_DIR:-$HOME/.claude-reviewer}`.
+For fleet nodes, set `CLAUDE_REVIEWER_HOME` to a locked-down reviewer account
+home that contains no GitHub tokens or project secrets. Codex-based reviewers
+keep using scratch `HOME` plus `CODEX_HOME`.
 
 Do not make a normal worker profile eligible by relaxing the gate. Add a
 dedicated `<host>-reviewer` adapter with its own manifest and enforcement.
+
+The reviewer-profile primitive is not PR-only. Any cross-host review used by
+field agents (worker, planner/architect, qa-engineer, flow-tester,
+release-manager, perf) must route through this same smoke-gated profile layer
+or a v2 successor with the same contract, not through hand-written raw host
+commands. The contract is: host auth roots, no-secret env scrubbing, MCP
+isolation, sandbox-readable payload handoff, and startup-failure diagnostics
+are centralized. Emergency/debug-only override is
+`STUDIO_BYPASS_FIELD_REVIEW_WRAPPER=1`; use must be user-controlled and
+recorded in the review artifact. See `CLAUDE.md` §Cross-host phase review for
+the workflow rule that consumes this adapter contract.
 
 ### Env-scrub at Argus dispatch
 
@@ -111,6 +126,31 @@ env -i \
 
 Claude Code (`.claude-plugin/capabilities.yaml`) declares `host-native` + `inherit-env`. This violates the Achilles security floor. The reference host is explicitly exempted because it is the primary development environment where the security constraints are enforced by human oversight rather than mechanical isolation. **Do not use the reference host's values as a template for new adapters.**
 
+## Host preflight
+
+Worker-capable hosts must prove GitHub auth parity before any task work that
+can fetch, resolve commits, push, or verify private-repo changes. The studio
+uses `scripts/host-preflight.sh <host> <repo-root>` as the shared gate. It
+requires both:
+
+- `gh auth status` succeeds through the normalized login `HOME` used for
+  studio GitHub operations.
+- `git ls-remote --exit-code <project-origin> HEAD` succeeds, which exercises
+  the Git credential helper, ssh-agent, or keychain path that later
+  commit-resolution and fetch steps depend on, also through the normalized
+  login `HOME` when the caller started under a synthetic host home.
+
+Adapters must document how the host receives the same credential surface as
+the reference host. Codex chain-runner sessions launch with the user's login
+`HOME`, so `gh`, the Git credential helper, `.ssh`, and keychain-backed SSH
+agents match normal terminal/Claude sessions. Parent-side scripts that own
+GitHub mutations normalize synthetic Codex `HOME` values to the login `HOME`
+per command; `STUDIO_BYPASS_PARENT_HOME_FLIP=1` preserves caller `HOME` for
+intentional isolation tests. Do not inject tokens into the repo. The
+user-controlled emergency bypass for the preflight gate is
+`STUDIO_BYPASS_GITHUB_AUTH_PREFLIGHT=1`; bypass use is loud and should be
+reserved for deliberate recovery.
+
 ## Conformance test
 
 Every adapter must pass `scripts/test-host.sh <host-name>` before claiming support. The harness runs four tasks:
@@ -119,6 +159,11 @@ Every adapter must pass `scripts/test-host.sh <host-name>` before claiming suppo
 2. **M multi-file with build gate** — full build gate + Argus dispatch.
 3. **TDD red-green-refactor** — test-first flow + Argus spec-compliance.
 4. **Cross-host handoff** — Achilles on host A, Argus on host B; validates `handoff.schema.json` across hosts.
+
+The failure-mode floor also verifies GitHub auth preflight wiring and canonical
+Swift package test invocation for nested local-package graphs. A host cannot
+claim conformance if a missing credential-helper path or wrong package root
+would only be discovered after work starts.
 
 `test-host.sh` is implemented in H10. Adapters authored before H10 lands should include a `conformance: pending` note in `capabilities.yaml`; after H10 ships, `conformance: pending` is a lint error.
 

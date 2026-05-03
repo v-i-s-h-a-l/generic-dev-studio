@@ -108,15 +108,103 @@ The **agent layer** (`chanakya/`, `achilles/`, `argus/` — their SKILL.md, docs
 
 This rule applies retroactively: when touching any doc surface, if existing cross-layer cards are present, strip them in the same commit.
 
+## GitHub CLI home normalization (hard rule)
+
+Assistant-initiated GitHub CLI calls in this repo MUST go through `scripts/studio-gh.sh ...`, not raw `gh ...`. Codex and other hosts can launch with synthetic `HOME` values; `scripts/studio-gh.sh` sources `scripts/lib-paths.sh` and uses `with_login_home_for_github` so `gh` sees the user's real login keychain/config. Inside scripts, source `scripts/lib-paths.sh` and wrap GitHub/PR/issue mutations or remote credential probes with `with_login_home_for_github gh ...` or `with_login_home_for_github git ...`.
+
+User-controlled override for intentional isolation tests: `STUDIO_BYPASS_PARENT_HOME_FLIP=1`. Assistants must not set it to bypass a failing GitHub operation.
+
 ## Backlog
 
-When the user agrees on new work in chat (explicitly: "let's do X", "let's plan Y for later") — **open a GitHub issue** for it via `gh issue create` with the appropriate label (`phase-2`, `roadmap`, `enhancement`, `bug`, `polish`). No need to ask permission for items the user has explicitly discussed and agreed to.
+The canonical actionable backlog is the GitHub Projects v2 board documented in
+[`PM-SURFACE.md`](PM-SURFACE.md). Use the board for current planning state
+(track, phase, size, sibling-review status, and table/board/roadmap views);
+GitHub issues remain the durable work items behind each row.
+
+When the user agrees on new work in chat (explicitly: "let's do X", "let's plan Y for later") — **open a GitHub issue** via `scripts/studio-gh.sh issue create` with the appropriate label (`phase-2`, `roadmap`, `enhancement`, `bug`, `polish`). No need to ask permission for items the user has explicitly discussed and agreed to.
 
 When work lands on `main` that closes an issue, close the issue with a one-line note pointing at the commit/PR.
 
-If the issue appears in `FORGE-RELIABILITY.md`, update that lookup's `Status` in the same PR or immediate cleanup commit. The file is the curated active-track index; do not let it drift from GitHub.
+`FORGE-RELIABILITY.md` is archived, not the active-track index. Do not update its historical status rows for routine issue drift. If a new safety-floor regression reopens the Forge lane, create a fresh active planning surface and link the archive instead of appending to it.
 
-When the user asks "what's pending?" / "what's on the list?" / "what's next?" — run `gh issue list` and surface; don't load the issue list speculatively into context.
+When the user asks "what's pending?" / "what's on the list?" / "what's next?" — run `scripts/studio-project-state.sh --status Todo` and surface Project fields (`Status`, `Track`, `Phase`, `Size`, `Sibling host reviewed`) for backlog planning. Use `scripts/studio-gh.sh issue list` only for narrow issue lookups that do not need Project fields. Don't load either list speculatively into context.
+
+## Cross-host phase review (hard rule)
+
+For any multi-issue arc (umbrella + sub-issues), substrate redesign, or batch operation that spans more than one logical unit of work, **enforce sibling-host review at every phase boundary**:
+
+1. **Before kicking off a new phase / step / batch:** the host running the work drafts a plan; the sibling host reviews headlessly; iterate until the review returns clean ("nothing fatal").
+2. **After completing a phase:** the host that ran the work synthesizes the outcome (changes made, artifacts touched, verification evidence); the sibling host reviews the outcome for drift, scope creep, or missed acceptance criteria.
+
+**Headless review command:**
+
+Use the smoke-gated reviewer wrapper; do **not** hand-compose raw `claude -p`
+or `codex exec` commands for phase reviews. Raw commands bypass reviewer auth
+root selection, no-secret env scrubbing, MCP isolation, and failure-detail
+normalization.
+
+```bash
+scripts/phase-review.sh --review-host claude-reviewer --kind plan --input phase-plan.md --output ~/.dev-studio/generic-dev-studio/analysis/<date>-<phase>-plan-review.md
+scripts/phase-review.sh --review-host codex-reviewer --kind outcome --input phase-outcome.md --output ~/.dev-studio/generic-dev-studio/analysis/<date>-<phase>-outcome-review.md
+```
+
+Pick the sibling reviewer explicitly (`claude-reviewer` when primary is Codex,
+`codex-reviewer` when primary is Claude Code). The wrapper runs
+`scripts/pr-reviewer-eligibility.sh` first and stops before the phase if the
+reviewer is not smoke-eligible.
+
+**Field-agent review setup rule:** this same primitive applies when v2 field
+agents add cross-host **review** to worker, planner/architect, qa-engineer,
+flow-tester, release-manager, or perf workflows. Do not embed raw review-host
+CLI spawns (`claude -p`, `codex exec`, etc.) in worker/architect mode packs,
+briefs, manifests, or issue acceptance criteria. Route review through the
+smoke-gated reviewer profile wrapper (`scripts/phase-review.sh` today) or a v2
+successor that preserves the same contract: auth-home selection, no-secret env
+scrubbing, MCP isolation, sandbox-readable payload handoff, and failure-detail
+surfacing stay centralized. User-controlled override for emergency/debug-only
+cases: `STUDIO_BYPASS_FIELD_REVIEW_WRAPPER=1`; the bypass must be mentioned in
+the plan/outcome artifact and must not be used silently by an assistant. See
+`hosts/ADAPTER-SPEC.md` §PR reviewer profiles for the adapter-side contract.
+
+**Required content of phase-plan.md:**
+
+- Goal of the phase
+- Scope (in / out)
+- Specific changes to be made (files, issues, body edits, closures)
+- Acceptance criteria
+- Push-backs against any prior review (if applicable)
+- Explicit ask: "what's still wrong / missing?"
+
+**Required content of phase-outcome.md:**
+
+- What was actually changed
+- Diff summary or list of touched artifacts
+- Verification evidence (commands run, results)
+- Explicit ask: "did the execution match the plan? any drift?"
+
+**Iterate until "nothing fatal."** Do not execute a phase without a clean plan review. Do not move to the next phase without a clean outcome review.
+
+**Archive every review** to `~/.dev-studio/<project>/analysis/<date>-<phase>-<plan|outcome>-review.md` (NEVER `/tmp` — gets wiped per `feedback_codex_sibling_review_pattern.md` lesson).
+
+**When this rule fires:**
+
+- Multi-issue arcs (current example: v2 transition #442-#446)
+- Batch closures of ≥3 issues
+- Substrate / architecture changes (anything in `core/`, `_shared/`, schema files, mode pack contracts)
+- Release substrate changes
+- Any work the user labels as a "phase" or "step"
+
+**When this rule does NOT fire (single-pass agent judgment is sufficient):**
+
+- Single-issue refactors
+- Bug fixes
+- Doc-only changes
+- Time-pressured emergency hotfixes (use solo judgment + post-mortem)
+- Work fully scoped within one sub-issue's acceptance criteria
+
+**Why:** different model hosts catch different blind spots. Single-pass review misses framing-level errors that emerge under cross-host scrutiny. The v2 plan's three-round codex review (2026-05-02) demonstrated this — silent scope loss through premature closure was caught by codex round-2 and would have shipped otherwise.
+
+**See also:** `feedback_codex_sibling_review_pattern.md` (operational pattern), `~/.dev-studio/generic-dev-studio/PROMPT.md` (per-session bootstrap that surfaces phase boundaries).
 
 ## Request shaping (non-negotiable)
 
@@ -132,6 +220,22 @@ When the user proposes or asks for work:
 - Apply the same habit to changes to these instructions: improve the prompt itself, not just transcribe it.
 
 Keep this pragmatic. Do not turn tiny edits into ceremony, do not block urgent fixes on speculative polish, and do not expand scope silently. If an improvement is obvious and low-risk, fold it in; if it changes behavior, cost, priority, or runtime risk, surface it before implementation.
+
+## Parallel chain surfacing
+
+When studio work contains independent chains, tracks, batches, or issue groups,
+surface the parallelization option explicitly. The default assistant shape is:
+one short "parallel opportunities" line, followed by one command per manual
+shell/session when the user is expected to launch work themselves. Name the
+independence boundary (different chain names, disjoint issues, separate
+worktrees/branches) and keep dependency-ordered work sequential.
+
+Do not auto-spawn user shell sessions. Do not suggest parallelizing across:
+unclean phase-gate reviews, dependent phases, shared branch/index mutations,
+or work that has not been shaped enough to know its write boundaries. For
+studio chains, suggest `scripts/studio-chain-runner.sh <manifest> --only
+<chain> --dry-run` per shell first, then the non-dry-run command after the user
+accepts the shape.
 
 ## Auto-apply tiers (reduce user touchpoints)
 

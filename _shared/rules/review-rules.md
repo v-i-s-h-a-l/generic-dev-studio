@@ -26,7 +26,7 @@ Argus's narrow v1 review catalog. These are the checks Achilles cannot do well f
 | Verdict | Meaning | Action |
 |---|---|---|
 | **Block** | Cannot merge safely | Argus returns `blocked`; Achilles loops back to revise |
-| **Flag** | Suboptimal; mergeable | Argus records findings in `review_<task-id>.md`; merge proceeds |
+| **Flag** | Suboptimal; mergeable with user approval | Argus records findings in `review_<task-id>.md`; autonomous Achilles defers merge until the user fixes first or explicitly overrides |
 | **Approve** | Nothing notable | Silent; merge proceeds |
 
 ---

@@ -244,7 +244,7 @@
 <header class="hero">
   <div class="container">
     <h1><span class="apollo-name">/apollo</span></h1>
-    <p class="tagline">iOS performance agent. Per-metric mode packs (memory / thermal / battery / CPU) under a strict-9 evidence gate. Refuses fix recommendations without hard evidence; auto-captures via the execution surface when possible.</p>
+    <p class="tagline">iOS performance agent. Per-metric mode packs (memory / thermal / battery / CPU / network) under a strict-9 evidence gate. Refuses fix recommendations without hard evidence; auto-captures via the execution surface when possible.</p>
     <p class="subtagline">Greek god of medicine + the Apollo program — healing + measurement + precision.</p>
   </div>
 </header>
@@ -268,7 +268,7 @@
     <p><strong>A dedicated iOS performance agent.</strong> Diagnoses, fixes, and verifies one metric at a time. Composes with the existing topology — Chanakya dispatches, Achilles applies, Argus reviews. Never replaces them.</p>
     <p>Performance work is orthogonal to feature work. Different evidence (Instruments traces, MetricKit payloads, signposts), different review criteria (cohort-aware, regression-aware), different cadence (often retroactive on shipped code). Bolting onto Argus would bloat the reviewer; folding into Achilles would dilute the worker. A dedicated agent with per-metric mode packs matches the lean architecture cleanly.</p>
     <div class="callout">
-      <strong>Status.</strong> Memory, thermal, battery, CPU, and measure mode packs are tracked in the router. Each mode keeps its own evidence catalogue and refusal rules.
+      <strong>Status.</strong> Memory, thermal, battery, CPU, network, profile, and measure mode packs are tracked in the router. Each mode keeps its own evidence catalogue and refusal rules.
     </div>
   </div>
 </section>
@@ -354,6 +354,11 @@ Resume with `apollo &lt;mode&gt; --evidence &lt;path&gt;`.</code></pre>
         <div class="what">Foreground CPU spikes, hot paths, main-thread saturation, waits, and field CPU diagnostics. Hard evidence: CPU Profiler / Time Profiler <code>.trace</code>, CPU Counters, Processor Trace, System Trace, <code>MXCPUMetric</code>, <code>MXCPUExceptionDiagnostic</code>, and <code>XCTCPUMetric</code>.</div>
       </div>
       <div class="mode-card">
+        <code>/apollo network</code>
+        <div class="status shipping-soon">Apollo expansion · #424</div>
+        <div class="what">Request latency, retry churn, over-fetch, cache misses, connection reuse, and transfer regressions. Hard evidence: Network / HTTP Traffic <code>.trace</code>, signposted <code>URLSessionTaskMetrics</code>, <code>MXNetworkTransferMetric</code>, <code>MXCellularConditionMetric</code>, and ASC rows.</div>
+      </div>
+      <div class="mode-card">
         <code>/apollo measure &lt;metric&gt;</code>
         <div class="status shipping-soon">Stage 5 · #235</div>
         <div class="what">Capture-only path. Produces one hard-evidence artifact for a named metric on a named cohort, then exits — no fix, no patch dispatch. Pre-flight tool for Chanakya brief authoring (populates <code>evidence.artifacts[]</code>) and for cohort re-capture after a perf-merge refusal. <code>--capture-only</code> alias on the diagnostic mode packs has the same effect.</div>
@@ -367,9 +372,9 @@ Resume with `apollo &lt;mode&gt; --evidence &lt;path&gt;`.</code></pre>
     <h3>Perf-mode dispatch from Chanakya</h3>
     <p>Briefs declared with <code>dispatch_agent: apollo</code> route to Apollo instead of Achilles, with <code>perf_mode</code> selecting the diagnostic mode pack and <code>evidence</code> pre-flighting the strict-9 gate at brief-write time. Argus skips these merges entirely (<code>argus/SKILL.md</code> §Skip threshold) — Apollo's re-measure delta on the brief's cohort is the merge gate. Loop spec: <code>apollo/_shared/primitives/perf-merge-loop.md</code>.</p>
     <h3>Phase 2 modes (deferred)</h3>
-    <p>Launch-time, scroll-perf, binary-size, network-efficiency. Each follows the same per-metric mode-pack pattern. Adding one = one file under <code>modes/</code>, one dispatch row in <code>SKILL.md</code>, one fixture at <code>tests/mode-packs/apollo/&lt;mode&gt;.yaml</code>.</p>
+    <p>Launch-time, scroll-perf, and binary-size remain deferred. Each follows the same per-metric mode-pack pattern. Adding one = one file under <code>modes/</code>, one dispatch row in <code>SKILL.md</code>, one fixture at <code>tests/mode-packs/apollo/&lt;mode&gt;.yaml</code>.</p>
     <h3>Default behavior</h3>
-    <p>Invoking <code>/apollo</code> with no argument prompts once for one of <code>{memory, thermal, battery, cpu}</code>. Apollo never guesses across metrics — the evidence catalogues diverge and a wrong guess wastes the auto-capture budget.</p>
+    <p>Invoking <code>/apollo</code> with no argument prompts once for one of <code>{memory, thermal, battery, cpu, network}</code>. Apollo never guesses across metrics — the evidence catalogues diverge and a wrong guess wastes the auto-capture budget.</p>
   </div>
 </section>
 
@@ -430,6 +435,8 @@ Resume with `apollo &lt;mode&gt; --evidence &lt;path&gt;`.</code></pre>
         <tr><td>4</td><td><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/234">#234</a></td><td>SKILL.md + routing.yaml + scaffold</td><td><span style="color:var(--apollo)">this PR</span></td></tr>
         <tr><td>5</td><td><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/235">#235</a></td><td>Chanakya dispatch + Argus interaction policy</td><td>blocked on 4 + ≥1 mode</td></tr>
         <tr><td>Expansion</td><td><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/406">#406</a></td><td><code>cpu</code> mode pack</td><td><span style="color:var(--green)">shipped</span></td></tr>
+        <tr><td>Expansion</td><td><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/410">#410</a></td><td><code>profile</code> guided profiling mode</td><td><span style="color:var(--green)">shipped</span></td></tr>
+        <tr><td>Expansion</td><td><a class="inline" href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/424">#424</a></td><td><code>network</code> mode pack</td><td><span style="color:var(--green)">shipped</span></td></tr>
       </tbody>
     </table>
   </div>

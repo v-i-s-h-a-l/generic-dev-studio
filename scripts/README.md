@@ -63,8 +63,27 @@ scripts/analyze-collect.sh --project turnip-ios         # stats dump for a usage
 scripts/analyze-collect.sh --project turnip-ios --since 2026-04-01
 scripts/forge-latency-report.sh --project turnip-ios --days 14   # stage-level task latency + review-gate comparison
 scripts/field-workflow-report.sh --project turnip-ios --days 14   # Field loop timing, tokens, gates, review coverage, improvement candidates
-scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # plan chain branches, capacity-scaled fresh sessions, PR review/merge
-scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex # execute chains with node/RAM-sized session pool + private report
+scripts/studio-weekly.sh --post                                  # weekly GitHub PM digest comment on the pinned summary issue
+scripts/studio-chain-runner.sh workflow-measurement-improvements            # default plan/explain + private resumable state
+scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # same resolved graph, then non-mutating command trace
+scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex --yes # execute after plan with node/RAM-sized session pool + private report
+scripts/studio-chain-runner.sh --auto workflow-measurement-improvements     # unattended start/resume when state is safe and unambiguous
+scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show the supervisor's next action without mutating state
+scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from ~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/state.json
+scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
+scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
+# Chain reports include typed halt records and decision escrow when automation pauses or continues on a low-risk default.
+scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
+scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
+scripts/studio-project-state.sh --status Todo         # field-aware backlog reader for the Studio v2 Projects board
+scripts/studio-gh.sh issue list --state open          # gh wrapper for narrow issue lookups; normalizes synthetic Codex HOME to login HOME
+scripts/studio-dependency-export.sh --issue 443       # Mermaid graph from native GitHub blocked_by dependencies; no body parsing
+scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply; STUDIO_BYPASS_ISSUE_BODY_GUARD=1 is user-controlled emergency/debug bypass
+scripts/studio-staleness-triage.sh --json             # dry-run PM issue staleness plan; --apply labels stale/escalated/archive-candidate issues and posts idempotent comments
+
+# Parent-side GitHub auth:
+# assistant-initiated calls use scripts/studio-gh.sh; scripts that own gh/PR/issue mutations call with_login_home_for_github
+# STUDIO_BYPASS_PARENT_HOME_FLIP=1   preserve caller HOME for intentional isolation tests
 
 # Chain runner pool sizing:
 # default = 1 local session + one per healthy xcodebuild offload node, RAM-capped at 6 GiB/session
@@ -105,7 +124,7 @@ scripts/argus-emit-verdict.sh T001 approved '[]' --task-uuid <uuid> # YAML verdi
 scripts/emit-agent-session-completed.sh argus review T001 auto:T001 --verdict approved   # shared session-close (any agent); auto: resolves start-ts from emit-agent-boot stamp
 
 # Chanakya inbox sweep — mechanical extractions from modes/inbox-sweep.md (Phase 2.6.5):
-scripts/sweep-enumerate-debriefs.sh                     # stdout: ingestable debrief queue; stderr: blind-spot diagnostics
+scripts/sweep-enumerate-debriefs.sh                     # stdout: canonical ingest queue (debrief/build-check/release); stderr: blind-spot diagnostics
 scripts/sweep-ingest.sh debrief <path> [--argus-exempt] # Step 0A — task + direct-debrief ingest (follow-ups, back-refs, state flip)
 scripts/sweep-ingest.sh build-check <path>              # Step 0B — debt counter reset/hold, TBUILD auto-file on red
 scripts/sweep-ingest.sh release <path>                  # Step 0B2 — release artifact + per-task release back-ref
@@ -120,7 +139,7 @@ scripts/push-queue.sh append --kind review_blocked --task T001 --text "..."   # 
 # Chanakya test-manifest + test-flow — extractions from modes/tests.md (Phase 2.6.5):
 scripts/tests-dirty-state-check.sh <path>               # exit 2 if user-testing.md has checked boxes or Notes
 scripts/tests-scan-candidates.sh                        # enumerate merged + user-verifying tasks
-scripts/tests-pull-cases.sh <task-id>                   # YAML `cases:` block from debrief
+scripts/tests-pull-cases.sh <task-id>                   # YAML `cases:` block from debrief YAML; historical sidecar import fallback
 scripts/tests-write-manifest.sh [--force]               # stdin YAML → plans/user-testing.md
 scripts/tests-write-round.sh <N> <scope> <tasks-csv> <body-file>   # round artifact via lib-ledger write_round_artifact
 scripts/tests-promote-round.sh <N>                      # gate-check + pre-checked manifest; exit 3 on gate fail
@@ -132,12 +151,13 @@ scripts/task-build-debt-gate.sh [--override]            # exit 2 if blocked; emi
 scripts/task-claim.sh <task-uuid> <brief-uuid> <size>   # task + brief state transitions
 eval "$(scripts/task-worktree-setup.sh T001 /repo)"     # PROJECT/ORIG_BRANCH/ORIG_HEAD/WORKTREE
 scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" [zaps-app/Turnip.xcodeproj] # xcodebuild + lock; 6th arg pins -project/-workspace in multi-project repos (#238); exit 4 = duplicate-invocation refused (#209)
+scripts/studio-tf-push.sh push [--version X.Y.Z]        # TestFlight push driver; explicit version override + rejected-version preflight
 scripts/node-parity.sh [--fix|--dry-run]                # probe + cache toolchain versions; optionally install missing brew packages and print manual Xcode/runtime fixes (#126/#131)
 scripts/check-xcode-parity.sh m1mini                    # pre-dispatch guard; exit 1 = MAJOR Xcode drift; STUDIO_IGNORE_XCODE_DRIFT=1 overrides (#136)
 scripts/node-warmup.sh m1mini [project]                 # async-safe pre-dispatch source sync + package cache warm-up (#138)
-scripts/task-write-test-cases.sh T001 '[{...}]'         # markdown projection + stdout YAML for debrief
-scripts/task-invoke-argus.sh T001 /wt main S            # emits review_requested (Argus invoked via Agent tool)
-scripts/task-merge.sh T001 /wt feature-branch           # merge lock + merge + worktree remove + DerivedData clean
+scripts/task-write-test-cases.sh T001 '[{...}]'         # stdout debrief `tests.added` payload; no standalone sidecar write
+scripts/task-invoke-argus.sh T001 /wt main S            # emits review_requested with reviewed base SHA (Argus invoked via Agent tool)
+scripts/task-merge.sh T001 /wt feature-branch --require-approved  # merge lock + approved-only policy + post-review base re-check
 scripts/node-janitor.sh [--days N] [--dry-run]          # periodic node-side sweep of stale derived-data + worktrees + dispatch logs/registry (#129, #272); LaunchAgent-driven
 scripts/install-node-janitor-launchagent.sh             # render + load every-6h LaunchAgent on the local node (auto-run by bootstrap --worker)
 scripts/monitor-install.sh install                      # opt-in laptop LaunchAgent; hourly node-health monitor + notifications for >6h unreachable nodes (#132)
@@ -148,12 +168,18 @@ scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # 
 scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
 
 # Studio PR autopilot primitives (#318):
-scripts/pr-reviewer-eligibility.sh codex-reviewer       # no-prompt/no-secret reviewer host preflight
-scripts/pr-reviewer-eligibility.sh claude-reviewer      # same reviewer floor for Claude Code; uses CLAUDE_REVIEWER_CONFIG_DIR (default ~/.claude-reviewer)
+scripts/pr-reviewer-eligibility.sh codex-reviewer       # no-prompt/no-secret reviewer preflight + real verdict-emitting smoke gate
+scripts/pr-reviewer-eligibility.sh claude-reviewer      # same reviewer floor for Claude Code; uses CLAUDE_REVIEWER_HOME + CLAUDE_REVIEWER_CONFIG_DIR
+scripts/phase-review.sh --review-host claude-reviewer --input phase-plan.md --output review.md   # sibling-host phase gate; emits PHASE_REVIEW_VERDICT=clean|blocked|ambiguous
 scripts/pre-commit-review.sh                            # manual reviewer gate for risky staged diffs; accepts approved/approved_with_fixes only
-scripts/pr-headless-review.sh <pr>                      # run eligible reviewer, post gate, merge if non-blocked
+scripts/lint-field-review-surfaces.sh --staged          # blocks raw cross-host review snippets outside phase-review wrappers
+scripts/lint-project-skill-links.sh [--host codex]      # repo-local project skill discovery link invariant + repair helper
+scripts/pr-headless-review.sh <pr>                      # run smoke-eligible reviewer, post gate with cross-host/fallback metadata, merge if non-blocked
+scripts/pr-headless-review.sh <pr> --no-require-cross-host  # opt out of default independent-provider reviewer policy for explicit non-safety-floor runs
 scripts/pr-autopilot.sh <pr> --verdict approved         # post reviewer gate, then merge if non-blocked
 scripts/pr-merge-finalize.sh <pr> --method auto         # <4 commits=rebase, larger main=merge commit, then fetch/prune
+scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-host claude-code  # policy-backed reviewer model/profile resolver
+scripts/check-model-catalog.sh --print-refresh-checklist # validate model catalog + print official-doc refresh checklist
 scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
 
 # Chanakya sweep-time detections (Step 0E3, auto-invoked by Chanakya):

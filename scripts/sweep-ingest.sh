@@ -14,7 +14,6 @@
 # Exit codes:
 #   0  ingest ok (or idempotent no-op)
 #   2  parse / resolution error
-#   3  dual-write partial failure propagated from lib-ledger
 
 set -u
 umask 022
@@ -32,9 +31,6 @@ shift 2 2>/dev/null || true
 case "$SUBCMD" in
   task-debrief|direct-debrief) SUBCMD=debrief ;;
   manual-build-check) SUBCMD=build-check ;;
-esac
-
-case "$SUBCMD" in
   debrief|build-check|release) ;;
   "") printf 'usage: sweep-ingest.sh <debrief|build-check|release> <source-path> [flags]\n' >&2; exit 2 ;;
   *) printf 'unknown subcommand: %s\n' "$SUBCMD" >&2; exit 2 ;;

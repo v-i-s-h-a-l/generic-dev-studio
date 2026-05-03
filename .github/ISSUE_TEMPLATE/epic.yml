@@ -1,0 +1,100 @@
+name: Epic
+description: Plan a durable studio outcome with child issues and clear success criteria.
+title: "Epic: "
+labels:
+  - roadmap
+  - theme/internal
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for a durable outcome that should be split into child issues.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: What should be true when this epic is complete?
+      placeholder: The studio can...
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Who benefits, and what changes for them?
+    validations:
+      required: true
+  - type: textarea
+    id: child-work
+    attributes:
+      label: Child Work
+      description: List known child issues or work slices. Use placeholders if issue numbers do not exist yet.
+      placeholder: "- #123 ...\n- New issue: ..."
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Concrete checks that prove the epic is done.
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Edge Cases / Risks
+      description: Failure modes, dependencies, sequencing risks, or migration concerns.
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-Goals
+      description: What this epic should not include.
+    validations:
+      required: true
+  - type: dropdown
+    id: owner
+    attributes:
+      label: Owner Surface
+      description: Pick the surface most likely to own the work. Use studio-repo for repo or router work.
+      options:
+        - studio-repo
+        - chanakya
+        - achilles
+        - argus
+        - cross-agent
+        - needs-triage
+    validations:
+      required: true
+  - type: dropdown
+    id: theme
+    attributes:
+      label: Theme
+      description: Pick the closest canonical theme from THEMES.md.
+      options:
+        - theme/internal
+        - theme/ios-craft
+        - theme/release
+        - theme/integrations
+        - theme/design
+        - theme/discovery
+        - needs-triage
+    validations:
+      required: true
+  - type: input
+    id: proposed-theme
+    attributes:
+      label: Proposed Theme
+      description: Optional. Use only when the canonical themes do not fit.
+  - type: input
+    id: track-or-chain
+    attributes:
+      label: Track / Chain
+      description: Optional dynamic label or lane, such as track:name or chain/name.
+  - type: input
+    id: related-issues
+    attributes:
+      label: Parent / Related Issues
+      description: Optional issue numbers for parent, child, duplicate, blocked-by, or caused-by context.

@@ -111,6 +111,31 @@ EOF
 
 [ -n "$PKG_ROOT" ] || exit 1
 
+# Canonical package root selection (#372). In mixed iOS repos, a changed file
+# can live under a nested local package while the repo root Package.swift is
+# the actual test entry point that wires sibling packages together. Running a
+# focused `swift test` from the nested package can strand verification when
+# local path dependencies are only valid through the root package graph. If the
+# worktree root manifest references the detected nested package by path, run
+# swift-test from the worktree root instead; otherwise keep the nearest-package
+# fast path.
+DETECTED_PKG_ROOT="$PKG_ROOT"
+canonical_swift_test_package_root() {
+  local pkg="${1:?}" rel
+  [ "$pkg" = "." ] && { printf '.\n'; return 0; }
+  [ -f "Package.swift" ] || { printf '%s\n' "$pkg"; return 0; }
+  rel="${pkg#./}"
+  awk -v p="$rel" '
+    index($0, "path: \"" p "\"") ||
+    index($0, "path: \"./" p "\"") ||
+    index($0, "path: \"" p "/") ||
+    index($0, "path: \"./" p "/") { found=1 }
+    END { exit found ? 0 : 1 }
+  ' Package.swift 2>/dev/null && { printf '.\n'; return 0; }
+  printf '%s\n' "$pkg"
+}
+PKG_ROOT=$(canonical_swift_test_package_root "$PKG_ROOT")
+
 # Per-task attempt counter — same contract + storage layout as
 # task-build-gate.sh so analytics can join across both gate flavors.
 PROJECT=$(resolve_project 2>/dev/null || echo unknown)
