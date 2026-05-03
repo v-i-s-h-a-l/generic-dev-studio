@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap.schema.json",
+  "title": "Studio v2 bootstrap manifest",
+  "description": "Minimal A0.4 bootstrap manifest for Studio v2 substrate gating.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "kind",
+    "parent_issue",
+    "leaf_issue",
+    "phase",
+    "status",
+    "schema_file",
+    "hook_entrypoint",
+    "repo_gate",
+    "spec_signoff",
+    "enforced_rules",
+    "deferred_until_a0_6",
+    "required_anchors"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "kind": {
+      "const": "v2-bootstrap"
+    },
+    "parent_issue": {
+      "const": 444
+    },
+    "leaf_issue": {
+      "const": 512
+    },
+    "phase": {
+      "const": "A0.4"
+    },
+    "status": {
+      "enum": ["active", "retired"]
+    },
+    "schema_file": {
+      "const": "core/v2/schemas/bootstrap.schema.json"
+    },
+    "hook_entrypoint": {
+      "const": "core/v2/hooks/pre-commit"
+    },
+    "repo_gate": {
+      "const": "scripts/lint-v2-bootstrap.sh"
+    },
+    "spec_signoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_before_substrate_code", "marker", "file"],
+      "properties": {
+        "required_before_substrate_code": {
+          "const": true
+        },
+        "marker": {
+          "const": "<!-- v2-bootstrap:a0.5-sign-off:complete -->"
+        },
+        "file": {
+          "const": "core/v2/SPEC.md"
+        }
+      }
+    },
+    "enforced_rules": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "enum": [
+          "schema_presence",
+          "required_anchors",
+          "pre_a0_5_code_freeze",
+          "a0_6_deferred_rules"
+        ]
+      }
+    },
+    "deferred_until_a0_6": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      },
+      "contains": {
+        "const": "spec_derived_rules"
+      }
+    },
+    "required_anchors": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 5,
+      "items": {
+        "enum": [
+          "<!-- v2-bootstrap:a0.4-scope -->",
+          "<!-- v2-bootstrap:schema-presence -->",
+          "<!-- v2-bootstrap:required-anchors -->",
+          "<!-- v2-bootstrap:pre-a0.5-code-freeze -->",
+          "<!-- v2-bootstrap:a0.6-deferred-rules -->"
+        ]
+      }
+    }
+  }
+}
