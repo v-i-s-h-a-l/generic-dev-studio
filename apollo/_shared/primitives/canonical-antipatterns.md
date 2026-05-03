@@ -1,6 +1,6 @@
 ---
 name: Canonical anti-patterns primitive
-description: Curated 1/10 advisory channel for Apollo. Documented anti-patterns cited only when measurement is structurally impossible. Memory + thermal + battery rows seeded (Stage 2a + 2b + 2c).
+description: Curated 1/10 advisory channel for Apollo. Documented anti-patterns cited only when measurement is structurally impossible. Memory + thermal + battery + network rows seeded.
 type: reference
 schema_version: 1
 ---
@@ -71,6 +71,18 @@ The `measurement_path: blocked` line is mandatory. If the reason names a path th
 | `batt:07` | `UIApplication.shared.isIdleTimerDisabled = true` left enabled outside the scoped use case | `isIdleTimerDisabled = true` set in a view controller's `viewDidAppear` / `init` with no balancing `false` reset on `viewDidDisappear` / `applicationWillResignActive` / `scenePhase` transition; or set globally at app launch | Disabled idle timer keeps the screen on, dominating display energy; magnitude depends on user dwell and only resolves under Power Profiler Display row + `MXDisplayMetric.averagePixelLuminance` capture |
 | `batt:08` | Background URLSession / `BGProcessingTask` with un-bounded work; no `expirationHandler`, `BGProcessingTaskRequest.requiresExternalPower = false` for compute-heavy work, or no `BGTask.setTaskCompleted(success:)` in the success path | `URLSessionConfiguration.background(withIdentifier:)` task started without a registered `URLSessionDelegate.urlSession(_:didCompleteWithError:)` cleanup; or `BGTaskScheduler.shared.register(forTaskWithIdentifier:)` handler that does not register `task.expirationHandler` and call `task.setTaskCompleted(success:)` on every exit path | Background overruns hit the OS watchdog (`0xdead10cc`) and thrash the cohort battery aggregate; magnitude depends on cadence × work and only resolves under Power Profiler driven by a `simctl push` / `(lldb) BGTaskScheduler._simulateLaunchForTaskWithIdentifier:` script |
 
+## Network anti-patterns (Apollo expansion — #427)
+
+Network rows are request/connection advisories only. They never claim wattage, radio-tail energy, or measured impact; battery `batt:*` rows continue to own energy-shaped advisories.
+
+| Row id | Pattern | Diff signal | Why advisory, not recommendation |
+|---|---|---|---|
+| `net:01` | Duplicate request fan-out for one user action with no coalescing key | Multiple `URLSessionTask` starts from the same action path, no in-flight request registry / task dedupe / cancellation path | Request count is a real mechanism, but impact depends on payload size, cache, and network condition; without a Network trace the magnitude is unknown |
+| `net:02` | Cache-disabled GETs for stable resources | `URLRequest.cachePolicy = .reloadIgnoringLocalCacheData` or equivalent cache-bypass on idempotent stable reads, no freshness justification | Cache behavior is visible in Network / HTTP Traffic; without it Apollo cannot prove over-fetch or freshness tradeoff |
+| `net:03` | Retry loop without bounded backoff or jitter | Retry path recursively or repeatedly starts the same request, no max-attempt count, no exponential backoff / jitter, no cancellation on scenario exit | Retry churn can dominate latency and transfer volume, but only trace/task metrics prove the cadence |
+| `net:04` | Obsolete requests are not cancelled on navigation or scenario cancellation | View/task owner starts URLSession work and drops UI ownership without `cancel()` or structured cancellation propagation | The request may still be needed for cache warmup or persistence; Network trace decides whether completion is obsolete |
+| `net:05` | Foreground prefetch fetches unbounded pages/items | Prefetch loop has no page/item cap or viewport bound, and no scenario-specific stop condition | Over-fetch is workload-dependent; Apollo needs transfer bytes or task count before recommending bounds |
+
 ## How rows enter the list
 
 A new row is added under one of two conditions:
@@ -91,6 +103,7 @@ A pattern-match-on-diff system that flags "looks expensive" is the regression Ap
 - `apollo/modes/memory.md` — consumer of the `mem:NN` rows
 - `apollo/modes/thermal.md` — consumer of the `therm:NN` rows
 - `apollo/modes/battery.md` — consumer of the `batt:NN` rows
+- `apollo/modes/network.md` — consumer of the `net:NN` rows
 - WWDC18 219 — Image and Graphics Best Practices (canonical for `mem:01`)
 - WWDC21 10180 — Detect and diagnose memory issues (canonical for `mem:02`–`mem:05`)
 - Apple "ARC: Strong Reference Cycles for Closures" — Swift Programming Language guide (canonical for `mem:03`)
@@ -103,7 +116,7 @@ A pattern-match-on-diff system that flags "looks expensive" is the regression Ap
 - Apple Energy Efficiency Guide for iOS Apps — location accuracy / radio coalescing / always-on subsystem guidance (canonical for `batt:01`, `batt:02`, `batt:03`, `batt:05`, `batt:06`)
 - WWDC25 226 — Profile and optimize power usage in your app (canonical for `batt:01`–`batt:08` reproducible-vs-non-reproducible split)
 - WWDC22 10142 — Efficiency awaits: Background tasks in SwiftUI (canonical for `batt:08`)
-- WWDC21 10212 — Analyze HTTP traffic in Instruments (canonical for `batt:02`, `batt:03` tail-energy)
+- WWDC21 10212 — Analyze HTTP traffic in Instruments (canonical for `batt:02`, `batt:03` tail-energy and `net:01`–`net:05` request / connection behavior)
 - Apple `BGTaskScheduler` + `BGProcessingTaskRequest` references (canonical for `batt:08`)
 - Apple `UIApplication.isIdleTimerDisabled` reference (canonical for `batt:07`)
 - Apple `AVAudioSession` lifecycle reference (canonical for `batt:06`)
