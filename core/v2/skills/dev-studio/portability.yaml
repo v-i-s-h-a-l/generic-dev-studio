@@ -1,0 +1,8 @@
+schema_version: 1
+hosts:
+  - all
+scope: project
+notes: |
+  The v2 umbrella router uses only markdown, YAML, and the role-registry
+  resolver contract. Host adapters can expose it through native slash-command
+  surfaces, but the repo artifact is the source of truth.

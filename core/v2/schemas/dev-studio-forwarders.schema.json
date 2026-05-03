@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio/core/v2/schemas/dev-studio-forwarders.schema.json",
+  "title": "Studio v2 dev-studio forwarders",
+  "description": "Defines the /dev-studio umbrella skill dispatch surface and v1 compatibility forwarders for A2.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "parent_issue",
+    "leaf_issue",
+    "schema_file",
+    "umbrella",
+    "transition",
+    "dispatch",
+    "forwarders"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "studio-v2-dev-studio-forwarders"},
+    "parent_issue": {"const": 444},
+    "leaf_issue": {"const": 516},
+    "schema_file": {"const": "core/v2/schemas/dev-studio-forwarders.schema.json"},
+    "umbrella": {
+      "type": "object",
+      "required": ["invocation", "skill", "routing", "role_registry"],
+      "additionalProperties": false,
+      "properties": {
+        "invocation": {"const": "/dev-studio"},
+        "skill": {"const": "core/v2/skills/dev-studio/SKILL.md"},
+        "routing": {"const": "core/v2/skills/dev-studio/routing.yaml"},
+        "role_registry": {"const": "core/v2/registry/roles.json"}
+      }
+    },
+    "transition": {
+      "type": "object",
+      "required": ["v1_studio_router", "v1_status", "cutover_status"],
+      "additionalProperties": false,
+      "properties": {
+        "v1_studio_router": {"const": ".claude/skills/studio/SKILL.md"},
+        "v1_status": {"type": "string", "minLength": 8},
+        "cutover_status": {"enum": ["not-cut-over", "cut-over"]}
+      }
+    },
+    "dispatch": {
+      "type": "array",
+      "minItems": 10,
+      "items": {"$ref": "#/$defs/dispatchRow"}
+    },
+    "forwarders": {
+      "type": "array",
+      "minItems": 4,
+      "items": {"$ref": "#/$defs/forwarderRow"}
+    }
+  },
+  "$defs": {
+    "canonicalRole": {
+      "enum": [
+        "manager",
+        "planner",
+        "worker",
+        "reviewer",
+        "qa-engineer",
+        "flow-tester",
+        "perf",
+        "release-manager",
+        "host-adapter",
+        "operator"
+      ]
+    },
+    "dispatchRow": {
+      "type": "object",
+      "required": ["canonical_role", "invocation", "compatibility_aliases", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "canonical_role": {"$ref": "#/$defs/canonicalRole"},
+        "invocation": {
+          "type": "string",
+          "pattern": "^/dev-studio [a-z0-9][a-z0-9-]*$"
+        },
+        "compatibility_aliases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.-]*$"
+          }
+        },
+        "status": {
+          "enum": ["v1-forwarder-present", "reserved", "reserved-non-routable"]
+        }
+      }
+    },
+    "forwarderRow": {
+      "type": "object",
+      "required": [
+        "legacy_invocation",
+        "canonical_role",
+        "v2_invocation",
+        "v1_skill",
+        "runtime_cutover"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "legacy_invocation": {
+          "enum": ["/chanakya", "/achilles", "/argus", "/apollo"]
+        },
+        "canonical_role": {"$ref": "#/$defs/canonicalRole"},
+        "v2_invocation": {
+          "type": "string",
+          "pattern": "^/dev-studio [a-z0-9][a-z0-9-]*$"
+        },
+        "v1_skill": {
+          "enum": [
+            "chanakya/SKILL.md",
+            "achilles/SKILL.md",
+            "argus/SKILL.md",
+            "apollo/SKILL.md"
+          ]
+        },
+        "runtime_cutover": {"type": "boolean"}
+      }
+    }
+  }
+}

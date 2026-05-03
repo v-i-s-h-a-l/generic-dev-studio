@@ -15,6 +15,9 @@ Current bootstrap artifacts:
   to `scripts/lint-v2-bootstrap.sh`.
 - `registry/roles.json` is the A1 canonical role registry. Resolve canonical
   names and compatibility aliases with `scripts/v2-role-resolve.sh`.
+- `skills/dev-studio/` is the A2 umbrella skill. It defines `/dev-studio`,
+  lists canonical role dispatch rows, and records v1 compatibility forwarders
+  for `/chanakya`, `/achilles`, `/argus`, and `/apollo`.
 
 Until `SPEC.md` carries `<!-- v2-bootstrap:a0.5-sign-off:complete -->`, the gate
 allows substrate docs, metadata, schemas, and this bootstrap hook only. It blocks

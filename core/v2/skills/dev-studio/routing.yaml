@@ -1,0 +1,12 @@
+schema_version: 1
+name: dev-studio
+invocation:
+  slash_command: "/dev-studio"
+  default_mode: "manager"
+  triggers:
+    - "/dev-studio"
+    - "route through the Studio v2 umbrella skill"
+    - "use the canonical Studio v2 role router"
+domains:
+  - studio-v2
+  - forge
