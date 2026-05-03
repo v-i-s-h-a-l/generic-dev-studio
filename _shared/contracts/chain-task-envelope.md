@@ -63,6 +63,10 @@ Required normalized fields:
 
 Optional normalized fields include `commit_or_pr_references`, `decisions_made`, `assumptions_escrowed`, `next_recommended_action`, `functionality_delivered`, `carryover`, `lessons`, and `blocked_reason`.
 
+`decisions_made` and `assumptions_escrowed` may be strings, string arrays, compact objects, or arrays of compact objects. Full decision records validate against `_shared/contracts/chain-decision-escrow.schema.json` and remain private runtime artifacts; completion envelopes only need enough detail or references for phase outcomes and final digests to surface the decision.
+
+When a child cannot complete safely, it should write `blocked_reason` and may include a closed `halt_reason_id` from `_shared/contracts/chain-halt-record.md`. Parent runners normalize infrastructure/review/git/GitHub/runtime failures into full halt records.
+
 ## Privacy
 
 Active handoff artifacts contain only the bounded task brief, branch/worktree ownership, required checks, and machine-readable telemetry. Detailed private reports remain under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/`; public outputs must keep the existing chain-run privacy rule and avoid raw sensitive prompts, secrets, project-private details, or `.studio` artifacts.
