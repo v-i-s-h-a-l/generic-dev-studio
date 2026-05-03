@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-03T02:44:57Z",
+  "generated_at": "2026-05-03T03:20:08Z",
   "schema": 1,
   "commands": [
     {"name": "chanakya-help", "source": "commands/chanakya-help.md", "description": "", "agent": null, "scope": "global"},
@@ -24,7 +24,7 @@
     {"name": "achilles.task", "source": "achilles/modes/task.md", "agent": "achilles", "mode": "task", "description": "Execution pipeline for brief-based and direct-mode work. Handles every task type (feature / bugfix / refactor / test-* / debug) via the shared Step 1–11 pipeline — size-driven build gate, mandatory Argus pre-merge, merge-lock, debrief."},
     {"name": "achilles.test-suite", "source": "achilles/modes/test-suite.md", "agent": "achilles", "mode": "test-suite", "description": "Composite test-suite mode (`/achilles test-suite <unit|ui|all>`). Runs the full test suite (not individual task tests) against committed HEAD and produces a debrief that resets the corresponding debt counter on Chanakya's next sweep."},
     {"name": "achilles.worker", "source": "achilles/modes/worker.md", "agent": "achilles", "mode": "worker", "description": "Fleet worker mode. Turns the current session into a fleet pane — claims a slot atomically, starts a background watch loop, and spawns a fresh worker per dispatched task. The session is the operator-facing wrapper; the bash loop is the IPC primitive."},
-    {"name": "apollo.battery", "source": "apollo/modes/battery.md", "agent": "apollo", "mode": "battery", "description": "Diagnose → measure → propose → patch → re-measure protocol for battery / energy regressions under strict-9 evidence gating. Covers foreground compute, background overrun, always-on subsystems, and radio drain."},
+    {"name": "apollo.battery", "source": "apollo/modes/battery.md", "agent": "apollo", "mode": "battery", "description": "Diagnose → measure → propose → patch → re-measure protocol for battery / energy regressions under strict-9 evidence gating."},
     {"name": "apollo.cpu", "source": "apollo/modes/cpu.md", "agent": "apollo", "mode": "cpu", "description": "Diagnose -> measure -> attribute -> recommend -> verify protocol for CPU regressions under strict-9 evidence gating. Covers hot paths, main-thread saturation, off-CPU waits, and field CPU diagnostics."},
     {"name": "apollo.measure", "source": "apollo/modes/measure.md", "agent": "apollo", "mode": "measure", "description": "Capture-only mode for hard-evidence artifacts without recommending a fix. Pre-flight tool for Apollo perf briefs with empty evidence artifacts."},
     {"name": "apollo.memory", "source": "apollo/modes/memory.md", "agent": "apollo", "mode": "memory", "description": "Diagnose → measure → propose → patch → re-measure protocol for memory regressions under strict-9 evidence gating. Covers transient peaks, persistent growth, leaks, and OOM kills."},
