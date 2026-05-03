@@ -22,6 +22,10 @@ Current bootstrap artifacts:
   `schemas/router-contract.schema.json` define the A2a modular router contract.
   Validate router contracts and shell router boundaries with
   `scripts/v2-router-lint.sh`; the A0.6 gate delegates to it.
+- `scripts/v2-skill-load.sh` is the A3 vendored skill loader. It resolves
+  `skills/vendored/**` artifacts by skill name, validates their repo-pinned
+  `vendor.yaml` SHA and portability metadata, and emits a normalized JSON
+  artifact matching `schemas/vendored-skill-artifact.schema.json`.
 
 Until `SPEC.md` carries `<!-- v2-bootstrap:a0.5-sign-off:complete -->`, the gate
 allows substrate docs, metadata, schemas, and this bootstrap hook only. It blocks

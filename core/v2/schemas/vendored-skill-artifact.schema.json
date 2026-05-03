@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vendored-skill-artifact.schema.json",
+  "title": "Studio v2 vendored skill artifact",
+  "description": "Normalized loader output for a repo-vendored, version-pinned skill artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "parent_issue",
+    "leaf_issue",
+    "skill",
+    "source",
+    "paths",
+    "portability"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "studio-v2-vendored-skill-artifact"
+    },
+    "parent_issue": {
+      "const": 444
+    },
+    "leaf_issue": {
+      "const": 518
+    },
+    "skill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "license", "metadata_version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "description": {
+          "type": "string"
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metadata_version": {
+          "type": "string"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["upstream", "pinned_sha", "recipe", "strategy", "vendored_at"],
+      "properties": {
+        "upstream": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pinned_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "recipe": {
+          "type": "string",
+          "minLength": 1
+        },
+        "strategy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vendored_at": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "skill_md", "vendor_yaml", "portability_yaml"],
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "skill_md": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vendor_yaml": {
+          "type": "string",
+          "minLength": 1
+        },
+        "portability_yaml": {
+          "type": "string",
+          "minLength": 1
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "portability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hosts", "scope"],
+      "properties": {
+        "hosts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "scope": {
+          "enum": ["global", "project"]
+        }
+      }
+    }
+  }
+}
