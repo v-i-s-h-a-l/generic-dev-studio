@@ -60,11 +60,28 @@ Informed by observing how the studio is actually used today — not aspirational
 
 ---
 
+## Retained active theme labels
+
+These labels predate the current six-theme taxonomy and still appear on active issues. Retain them until their open issues are intentionally reclassified; do not add them to new issues by default. The GitHub issue templates offer the six canonical themes above plus `needs-triage` for this reason.
+
+| Label | Status | Use on existing issues |
+|---|---|---|
+| `theme/input` | Retained | PRD, Figma, conversation, and requirements intake work from the older input-pipeline taxonomy. |
+| `theme/implement` | Retained | Modularization, flags, and implementation-structure work from the older delivery taxonomy. |
+| `theme/observe` | Retained | Crash, telemetry, review, and post-release signal work from the older observability taxonomy. |
+| `theme/ship` | Retained | Release-health and rollout-manifest work from the older shipping taxonomy. |
+| `theme/meta` | Retained | Process, checklist, and changelog-convention work from the older process taxonomy. |
+
+---
+
 ## How themes interact with issues
 
-- Every issue gets one `theme/*` label.
-- One issue can address multiple themes (rare); pick the dominant theme.
-- Theme labels persist; issue labels (`phase-2`, `enhancement`, `bug`) describe the work type.
+- Every open issue gets one dominant `theme/*` label.
+- One issue can address multiple themes, but that is rare; keep the first label in issue prose and comments as the dominant theme when humans need to disambiguate.
+- Theme labels describe long-running investment areas. Work-type labels such as `enhancement`, `bug`, `documentation`, `polish`, `roadmap`, and `phase-2` describe the shape or timing of the work.
+- Track labels (`track:*`) identify parallel work lanes or active arcs. They are documented in `TRACKS.md`.
+- Chain labels (`chain/*`) identify automated runner chains and are operational, not thematic.
+- Status labels such as `urgent`, `blocked`, `parking-lot`, `pilot`, `duplicate`, `question`, and `wontfix` describe workflow state or handling.
 
 ## How themes evolve
 
