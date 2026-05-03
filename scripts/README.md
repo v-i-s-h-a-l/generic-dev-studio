@@ -67,6 +67,7 @@ scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # pl
 scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex # execute chains with node/RAM-sized session pool + private report
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
 scripts/studio-chain-reviewed.sh apollo-network-efficiency --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
+scripts/run-apollo-network-reviewed-chain.sh             # background Apollo network chain; prints PID + latest-log tail command
 scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
 
 # Chain runner pool sizing:
