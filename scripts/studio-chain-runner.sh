@@ -127,12 +127,14 @@ RUN_ROOT="${TMPDIR:-/tmp}/studio-chain-runner"
 mkdir -p "$RUN_ROOT"
 FINAL_PR_URL=""
 RUN_ID="${RESUME_ID:-$(mint_uuidv7)}"
+ATTEMPT_ID="$(mint_uuidv7)"
 RUN_STARTED_AT=$(date -u +%s)
 RUN_STARTED_TS=$(iso_ts_now)
 RUN_STATUS="completed"
 RUN_FAILURE_REASON=""
 RUN_FINISHED=0
 PARENT_HOME_FOR_GITHUB=$(resolve_parent_home_for_github)
+PARENT_STUDIO_HOST=$(resolve_current_studio_host unknown)
 STUDIO_PROJECT_ROOT=$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_project_root_for generic-dev-studio)
 CHAIN_RUN_ROOT="$STUDIO_PROJECT_ROOT/chain-runs/$RUN_ID"
 SUMMARY_ROOT="$CHAIN_RUN_ROOT/worker-summaries"
@@ -190,16 +192,56 @@ event_data() {
     } + $extra'
 }
 
+event_stage() {
+  case "$1" in
+    chain_run_started|chain_plan_prepared) printf 'plan\n' ;;
+    chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed) printf 'preflight\n' ;;
+    chain_started|chain_issue_started|chain_issue_completed|chain_issue_validated) printf 'execute\n' ;;
+    chain_worker_summary_ingested|chain_telemetry_gap) printf 'ingest\n' ;;
+    chain_pr_opened|chain_review_completed) printf 'review\n' ;;
+    chain_completed|chain_issue_merged) printf 'merge\n' ;;
+    chain_issue_closed) printf 'close\n' ;;
+    chain_resume_attempt_*) printf 'resume\n' ;;
+    chain_halt_recorded|chain_decision_escrow_*|chain_run_completed) printf 'finalize\n' ;;
+    *) printf 'execute\n' ;;
+  esac
+}
+
 emit_chain_event() {
   local event="$1" task="$2" run_id="$3" chain_run_id="$4" issue_run_id="$5" status="$6" duration_s="${7:-null}" extra="${8:-}"
   [ -n "$extra" ] || extra='{}'
-  local data
+  local data stage line
+  stage=$(event_stage "$event")
   data=$(event_data "$event" "$run_id" "$chain_run_id" "$issue_run_id" "$status" "$duration_s" "$extra")
   emit_event_keyed studio chain "$event" "$task" "$data" \
     --instance-id "$run_id" \
     --idem-key "studio-chain:$run_id:$event:${chain_run_id:-none}:${issue_run_id:-none}:$task" \
     >/dev/null 2>&1 || true
-  printf '{"event":"%s","task":"%s","data":%s}\n' "$event" "$task" "$data" >> "$EVENTS_JSONL"
+  line=$(jq -cn \
+    --arg created_at "$(iso_ts_now)" \
+    --arg run_id "$run_id" \
+    --arg event "$event" \
+    --arg stage "$stage" \
+    --arg status "$status" \
+    --arg task "$task" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg attempt_id "$ATTEMPT_ID" \
+    --argjson data "$data" \
+    '{
+      schema_version: 1,
+      run_id: $run_id,
+      created_at: $created_at,
+      event: $event,
+      stage: $stage,
+      status: $status,
+      task: $task,
+      chain_run_id: (if $chain_run_id == "" then null else $chain_run_id end),
+      issue_run_id: (if $issue_run_id == "" then null else $issue_run_id end),
+      attempt_id: $attempt_id,
+      data: $data
+    }')
+  printf '%s\n' "$line" >> "$EVENTS_JSONL"
 }
 
 write_run_state() {
@@ -391,6 +433,8 @@ write_halt_record() {
       '(.halt_records //= []) |
        .halt_records += [{path:$file, reason_id:$reason_id, halt_class:$halt_class, status:$status, next_command:(if $next_command == "" then null else $next_command end)}]'
   fi
+  emit_chain_event chain_halt_recorded "$issue_number" "$RUN_ID" "$chain_run_id" "$issue_run_id" "$status" 0 \
+    "$(jq -cn --arg reason_id "$reason_id" --arg halt_class "$halt_class" --arg halt_record "$file" '{reason_id:$reason_id, halt_class:$halt_class, halt_record:$halt_record}')"
   printf '%s\n' "$file"
 }
 
@@ -465,6 +509,11 @@ write_decision_escrows_from_summary() {
         --arg decision_id "$decision_id" \
         '(.decision_escrows //= []) | .decision_escrows += [{path:$file, decision_id:$decision_id}]'
     fi
+    emit_chain_event chain_decision_escrow_opened "$decision_id" "$RUN_ID" \
+      "$(jq -r '.chain_run_id // ""' "$file")" \
+      "$(jq -r '.issue_run_id // ""' "$file")" \
+      "$(jq -r '.status // "continued"' "$file")" 0 \
+      "$(jq -c '{decision_id, decision, escrow_record: input_filename, risk_class, status}' "$file")"
   done
 }
 
@@ -562,6 +611,18 @@ changed_artifacts_json() {
   git -C "$worktree" diff --name-only "$before" "$after" 2>/dev/null | jq -R -s -c 'split("\n")[:-1]'
 }
 
+emit_summary_telemetry_gaps() {
+  local summary_file="$1" chain_run_id="$2" issue_run_id="$3" issue="$4" gap
+  [ -f "$summary_file" ] || return 0
+  while IFS= read -r gap; do
+    [ -n "$gap" ] || continue
+    emit_chain_event chain_telemetry_gap "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" missing 0 \
+      "$(jq -cn --arg gap_kind "$gap" --arg stage "ingest" --arg reason "missing_or_unavailable" '{gap_kind:$gap_kind, stage:$stage, reason:$reason}')"
+  done <<EOF
+$(jq -r '.telemetry_gaps[]? | if type == "object" then (.gap_kind // .kind // empty) else . end' "$summary_file" 2>/dev/null)
+EOF
+}
+
 ingest_worker_summary() {
   local chain_name="$1" issue="$2" host="$3" worktree="$4" before="$5" after="$6" exit_code="$7" started_at="$8" chain_run_id="$9" issue_run_id="${10}"
   local summary_path="$worktree/.studio/chain-worker-summary.json"
@@ -586,7 +647,9 @@ ingest_worker_summary() {
       --argjson duration_s "$duration_s" \
       --argjson stats "$stats" \
       --argjson changed_artifacts "$changed_artifacts" \
-      '. + {
+      'def has_model: ((.model // .model_name // .model_version // null) != null);
+       def has_checks: (((.tests // []) | length) + ((.lints // []) | length) + ((.builds // []) | length)) > 0;
+       . + {
         schema_version: (.schema_version // 1),
         kind: (.kind // "completion"),
         created_at: (.created_at // $created_at),
@@ -612,8 +675,13 @@ ingest_worker_summary() {
         functionality_delivered: (.functionality_delivered // null),
         carryover: (.carryover // null),
         lessons: (.lessons // null),
-        telemetry_gaps: (.telemetry_gaps // [])
+        telemetry_gaps: (((.telemetry_gaps // [])
+          + (if (.tokens // null) == null then ["tokens"] else [] end)
+          + (if has_model then [] else ["model"] end)
+          + (if has_checks then [] else ["tests_lints_builds"] end)) | unique)
       }' "$summary_path" > "$dest"
+    emit_chain_event chain_worker_summary_ingested "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed "$duration_s" \
+      "$(jq -cn --arg summary "$dest" '{summary:$summary, validation:"valid"}')"
   else
     local summary_gap
     if [ -f "$summary_path" ]; then
@@ -668,7 +736,12 @@ ingest_worker_summary() {
         lessons: null,
         telemetry_gaps: [$summary_gap, "model", "tokens", "tests_lints_builds"]
       }' > "$dest"
+    emit_chain_event chain_artifact_validation_failed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$duration_s" \
+      "$(jq -cn --arg artifact "chain-worker-summary" --arg reason "$summary_gap" --arg summary "$dest" '{artifact:$artifact, reason_id:$reason, summary:$summary}')"
+    emit_chain_event chain_worker_summary_ingested "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$duration_s" \
+      "$(jq -cn --arg summary "$dest" --arg validation "$summary_gap" '{summary:$summary, validation:$validation}')"
   fi
+  emit_summary_telemetry_gaps "$dest" "$chain_run_id" "$issue_run_id" "$issue"
 
   printf '%s\n' "$dest"
 }
@@ -752,6 +825,67 @@ generate_run_report() {
         [.[].event] | group_by(.) | map({event: .[0], count: length}) | sort_by(.event) |
         if length == 0 then "- none" else .[] | "- \(.event): \(.count)" end
       ' "$EVENTS_JSONL" 2>/dev/null || printf -- '- unreadable event log\n'
+    fi
+    printf '\n## Stage Reconstruction\n\n'
+    if [ -s "$EVENTS_JSONL" ] && [ "$EVENTS_JSONL" != "/dev/null" ]; then
+      jq -r -s '
+        def stage_of($e):
+          $e.stage // (
+            if (($e.event // "") | test("review")) then "review"
+            elif (($e.event // "") | test("resume")) then "resume"
+            elif (($e.event // "") | test("pr_opened")) then "review"
+            elif (($e.event // "") | test("completed$")) then "execute"
+            else "execute" end
+          );
+        def dur($e): (($e.data.duration_s // $e.duration_s // 0) | tonumber? // 0);
+        [ "plan","preflight","execute","ingest","review","merge","close","resume","finalize" ] as $order |
+        [ .[] | {stage: stage_of(.), duration_s: dur(.), event:(.event // ""), status:(.status // .data.status // "")} ] as $rows |
+        ($order[] as $stage |
+          ($rows | map(select(.stage == $stage)) | length) as $count |
+          ($rows | map(select(.stage == $stage) | .duration_s) | add // 0) as $duration |
+          select($count > 0) |
+          "- \($stage): \($duration)s across \($count) events"
+        )
+      ' "$EVENTS_JSONL" 2>/dev/null || printf 'Stage durations unavailable: event log unreadable.\n'
+    else
+      printf 'Stage durations unavailable: no event log was written.\n'
+    fi
+    printf '\n## Review Summary\n\n'
+    if [ -s "$EVENTS_JSONL" ] && [ "$EVENTS_JSONL" != "/dev/null" ]; then
+      jq -r -s '
+        [ .[] | select((.event // "") == "chain_review_completed") ] as $reviews |
+        ($reviews | map(select((.status // .data.status // "") == "completed")) | length) as $pass |
+        ($reviews | map(select((.status // .data.status // "") != "completed")) | length) as $fail |
+        "- Review passes: \($pass)",
+        "- Review failures: \($fail)",
+        (if ($reviews | length) == 0 then "- Reviewer gate events: none"
+         else ($reviews[] | "- PR \(.task // .data.pr_number // "unknown"): \(.status // .data.status // "unknown") in \(.data.duration_s // "unknown")s")
+         end)
+      ' "$EVENTS_JSONL" 2>/dev/null || printf 'Review summary unavailable: event log unreadable.\n'
+    else
+      printf 'Review summary unavailable: no event log was written.\n'
+    fi
+    printf '\n## Resume Attempts\n\n'
+    if [ -s "$EVENTS_JSONL" ] && [ "$EVENTS_JSONL" != "/dev/null" ]; then
+      jq -r -s '
+        [ .[] | select((.event // "") | test("^chain_resume_attempt_")) ] as $attempts |
+        if ($attempts | length) == 0 then "No resume attempts were recorded."
+        else $attempts[] | "- \(.attempt_id // .data.attempt_id // "unknown"): \(.event) \(.status // .data.status // "unknown")"
+        end
+      ' "$EVENTS_JSONL" 2>/dev/null || printf 'Resume attempt summary unavailable: event log unreadable.\n'
+    else
+      printf 'Resume attempt summary unavailable: no event log was written.\n'
+    fi
+    printf '\n## Validation Failures\n\n'
+    if [ -s "$EVENTS_JSONL" ] && [ "$EVENTS_JSONL" != "/dev/null" ]; then
+      jq -r -s '
+        [ .[] | select((.event // "") == "chain_artifact_validation_failed") ] as $failures |
+        if ($failures | length) == 0 then "No artifact validation failures were recorded."
+        else $failures[] | "- \(.data.artifact // "artifact"): \(.data.reason_id // "unknown")"
+        end
+      ' "$EVENTS_JSONL" 2>/dev/null || printf 'Validation failure summary unavailable: event log unreadable.\n'
+    else
+      printf 'Validation failure summary unavailable: no event log was written.\n'
     fi
     printf '\n## Quality Signals\n\n'
     if [ "$summary_count" -gt 0 ]; then
@@ -870,6 +1004,11 @@ generate_run_report() {
       printf -- '- Add worker summary enforcement before relying on chain metrics.\n'
     fi
     printf '\n## Privacy\n\n'
+    printf -- '- Run state: `%s`\n' "${RUN_STATE_JSON:-missing}"
+    printf -- '- Event log: `%s`\n' "${EVENTS_JSONL:-missing}"
+    printf -- '- Worker summaries: `%s`\n' "${SUMMARY_ROOT:-missing}"
+    printf -- '- Halt records: `%s`\n' "${HALT_ROOT:-missing}"
+    printf -- '- Decision escrows: `%s`\n\n' "${ESCROW_ROOT:-missing}"
     printf 'This report is private local telemetry under `~/.dev-studio/generic-dev-studio/chain-runs/`. Public PR and issue comments should include run IDs, PR URLs, issue numbers, and abstract gap names only, not private project file paths or velocity details.\n'
   } > "$RUN_REPORT"
 }
@@ -888,6 +1027,10 @@ finish_run() {
   duration_s=$(duration_since "$RUN_STARTED_AT")
   emit_chain_event chain_run_completed "" "$RUN_ID" "" "" "$status" "$duration_s" \
     "$(jq -cn --arg report "$RUN_REPORT" --arg reason "$reason" '{report:$report, failure_reason:(if $reason == "" then null else $reason end)}')"
+  if [ -n "$RESUME_ID" ]; then
+    emit_chain_event chain_resume_attempt_completed "" "$RUN_ID" "" "" "$status" "$duration_s" \
+      "$(jq -cn --arg attempt_id "$ATTEMPT_ID" --arg reason "$reason" '{attempt_id:$attempt_id, failure_reason:(if $reason == "" then null else $reason end)}')"
+  fi
   log "report written to $RUN_REPORT"
 }
 
@@ -1220,6 +1363,8 @@ live_preflight() {
     printf 'studio-chain-runner: GitHub auth is not available\n' >&2
     exit 2
   }
+  emit_chain_event chain_auth_normalized "" "$RUN_ID" "" "" completed 0 \
+    "$(jq -cn --arg home_source "login-home" --arg github_auth "available" --arg secrets "omitted" '{home_source:$home_source, github_auth:$github_auth, secrets:$secrets}')"
   reviewer_host="${STUDIO_REVIEW_HOST:-claude-reviewer}"
   resolve_capabilities_manifest "$reviewer_host" "$REPO_ROOT" >/dev/null || {
     printf 'studio-chain-runner: reviewer host unavailable: %s\n' "$reviewer_host" >&2
@@ -1311,7 +1456,11 @@ else
 fi
 
 emit_chain_event chain_run_started "" "$RUN_ID" "" "" running 0 \
-  "$(jq -cn --arg manifest_arg "$MANIFEST" --arg only_chain "$ONLY_CHAIN" --arg host_override "$HOST_OVERRIDE" --arg resume_id "$RESUME_ID" '{manifest_arg:$manifest_arg, only_chain:(if $only_chain == "" then null else $only_chain end), host_override:(if $host_override == "" then null else $host_override end), resume_id:(if $resume_id == "" then null else $resume_id end)}')"
+  "$(jq -cn --arg manifest_arg "$MANIFEST" --arg only_chain "$ONLY_CHAIN" --arg host_override "$HOST_OVERRIDE" --arg resume_id "$RESUME_ID" --arg attempt_id "$ATTEMPT_ID" --arg parent_host "$PARENT_STUDIO_HOST" '{manifest_arg:$manifest_arg, only_chain:(if $only_chain == "" then null else $only_chain end), host_override:(if $host_override == "" then null else $host_override end), resume_id:(if $resume_id == "" then null else $resume_id end), attempt_id:$attempt_id, parent_host:$parent_host}')"
+if [ -n "$RESUME_ID" ]; then
+  emit_chain_event chain_resume_attempt_started "" "$RUN_ID" "" "" running 0 \
+    "$(jq -cn --arg attempt_id "$ATTEMPT_ID" '{attempt_id:$attempt_id}')"
+fi
 trap finish_unexpected_exit EXIT
 
 chain_count=$(jq '.chains | length' "$PLAN_JSON")
@@ -1413,7 +1562,7 @@ EOF
 
 finalize_chain_pr() {
   local chain_name="$1" chain_branch="$2" chain_worktree="$3" base="$4" chain_run_id="$5" implementation_host="${6:-}"
-  local pr_url pr_number review_started_at review_rc review_duration
+  local pr_url pr_number review_started_at review_rc review_duration review_out review_verdict review_model review_effort review_host review_parent_host
   [ -n "$implementation_host" ] || implementation_host=$(resolve_current_studio_host unknown)
 
   log "rebasing $chain_branch on origin/$base"
@@ -1456,17 +1605,24 @@ Public-safe telemetry: run/chain UUIDs and abstract gap names only."; then
   fi
 
   review_started_at=$(now_epoch)
+  review_out="$CHAIN_RUN_ROOT/review-$pr_number.out"
   set +e
-  STUDIO_PARENT_HOST="${STUDIO_PARENT_HOST:-$implementation_host}" "$SCRIPT_DIR/pr-headless-review.sh" "$pr_number" --method auto
+  STUDIO_PARENT_HOST="${STUDIO_PARENT_HOST:-$implementation_host}" "$SCRIPT_DIR/pr-headless-review.sh" "$pr_number" --method auto >"$review_out" 2>&1
   review_rc=$?
   set -e
+  cat "$review_out"
   review_duration=$(duration_since "$review_started_at")
+  review_verdict=$(sed -n 's/^PR_REVIEW_VERDICT=//p' "$review_out" | tail -1)
+  review_model=$(sed -n 's/^PR_REVIEW_MODEL_ID=//p' "$review_out" | tail -1)
+  review_effort=$(sed -n 's/^PR_REVIEW_REASONING_EFFORT=//p' "$review_out" | tail -1)
+  review_host=$(sed -n 's/^PR_REVIEW_HOST=//p' "$review_out" | tail -1)
+  review_parent_host=$(sed -n 's/^PR_REVIEW_PARENT_HOST=//p' "$review_out" | tail -1)
   if [ "$review_rc" -eq 0 ]; then
     emit_chain_event chain_review_completed "$pr_number" "$RUN_ID" "$chain_run_id" "" completed "$review_duration" \
-      "$(jq -cn --arg pr_url "$pr_url" --argjson exit_code "$review_rc" '{pr_url:$pr_url, exit_code:$exit_code}')"
+      "$(jq -cn --arg pr_url "$pr_url" --argjson exit_code "$review_rc" --arg verdict "$review_verdict" --arg model "$review_model" --arg effort "$review_effort" --arg review_host "$review_host" --arg parent_host "$review_parent_host" --arg output "$review_out" '{pr_url:$pr_url, exit_code:$exit_code, verdict:(if $verdict == "" then null else $verdict end), model:(if $model == "" then null else $model end), effort:(if $effort == "" then null else $effort end), review_host:(if $review_host == "" then null else $review_host end), parent_host:(if $parent_host == "" then null else $parent_host end), wrapper_output:$output}')"
   else
     emit_chain_event chain_review_completed "$pr_number" "$RUN_ID" "$chain_run_id" "" failed "$review_duration" \
-      "$(jq -cn --arg pr_url "$pr_url" --argjson exit_code "$review_rc" '{pr_url:$pr_url, exit_code:$exit_code}')"
+      "$(jq -cn --arg pr_url "$pr_url" --argjson exit_code "$review_rc" --arg verdict "$review_verdict" --arg model "$review_model" --arg effort "$review_effort" --arg review_host "$review_host" --arg parent_host "$review_parent_host" --arg output "$review_out" '{pr_url:$pr_url, exit_code:$exit_code, verdict:(if $verdict == "" then null else $verdict end), model:(if $model == "" then null else $model end), effort:(if $effort == "" then null else $effort end), review_host:(if $review_host == "" then null else $review_host end), parent_host:(if $parent_host == "" then null else $parent_host end), wrapper_output:$output}')"
     abort_run "PR review failed for $pr_url"
   fi
 }
@@ -1701,12 +1857,16 @@ for ((idx = 0; idx < chain_count; idx++)); do
   for ((i = 0; i < issue_count; i++)); do
     issue=$(jq -r ".chains[$idx].issues[$i].number" "$PLAN_JSON")
     if [ "$DRY_RUN" -eq 0 ]; then
-      with_login_home_for_github gh issue close "$issue" --repo "$REPO_SLUG" --comment "Merged through chain PR: ${FINAL_PR_URL:-$branch}
-
-Chain run: $RUN_ID" \
-        || with_login_home_for_github gh issue comment "$issue" --repo "$REPO_SLUG" --body "Merged through chain PR: ${FINAL_PR_URL:-$branch}
+      issue_comment="Chain issue integrated.
 
 Chain run: $RUN_ID"
+      [ -n "$FINAL_PR_URL" ] && issue_comment="$issue_comment
+
+PR: $FINAL_PR_URL"
+      with_login_home_for_github gh issue close "$issue" --repo "$REPO_SLUG" --comment "$issue_comment" \
+        || with_login_home_for_github gh issue comment "$issue" --repo "$REPO_SLUG" --body "$issue_comment"
+      emit_chain_event chain_issue_closed "$issue" "$RUN_ID" "$chain_run_id" "" completed 0 \
+        "$(jq -cn --arg pr_url "$FINAL_PR_URL" --arg issue_number "$issue" '{pr_url:(if $pr_url == "" then null else $pr_url end), issue_number:($issue_number|tonumber)}')"
     else
       printf 'DRY-RUN gh issue close %q --repo %q --comment %q\n' "$issue" "$REPO_SLUG" "Merged through chain PR: ${FINAL_PR_URL:-<pr-url>}"
     fi
