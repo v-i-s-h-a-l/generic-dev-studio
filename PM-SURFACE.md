@@ -92,6 +92,51 @@ must still include repository-wide issues when the question is "has this been
 done or discussed before?", because legacy and ad-hoc issues may not be on the
 board.
 
+## Automation Auth and Permissions
+
+All assistant-initiated GitHub CLI calls in this repo go through
+`scripts/studio-gh.sh ...` so `gh` sees the user's real login home instead of
+the host's synthetic `HOME`. That wrapper is required for Project reads and
+writes as well as normal issue, PR, and release operations.
+
+Projects v2 automation requires explicit Project access in addition to normal
+repository access:
+
+- Local `gh` reads of Project fields, items, and views require GitHub CLI auth
+  with repository access plus `read:project`.
+- Local `gh` writes to Project fields or item membership require GitHub CLI
+  auth with repository access plus `project`.
+- GitHub Actions that edit both the repo and the Project board use
+  `GITHUB_TOKEN` for repository operations and a separately provisioned
+  Project-capable token or GitHub App installation token for Project
+  mutations.
+
+For interactive setup, refresh the CLI token through the studio wrapper:
+
+```bash
+scripts/studio-gh.sh auth refresh -s project
+scripts/studio-gh.sh auth status
+```
+
+Use `read:project` only for readers that never mutate Project state. Any
+automation that adds items, moves items, or edits custom fields is a Project
+writer and must use `project` or an equivalent fine-grained Project write
+permission. Do not store Project tokens in repo files, issue bodies, chain
+manifests, or `.studio` handoff artifacts; keep them in GitHub Actions secrets,
+the GitHub CLI credential store, or the installed app/token store for the host.
+
+Agent-run boundaries:
+
+- Agents may read Project fields for planning, duplicate checks, and status
+  summaries when the task explicitly needs PM state.
+- Agents may mutate Project fields only from a documented workflow step, such
+  as a chain-runner integration phase or an issue/milestone maintenance script.
+- Agents must not bypass `scripts/studio-gh.sh`, must not print token values,
+  and must not request broader scopes as a workaround for a failing operation.
+- Missing Project auth is a loud blocker: report the missing scope or
+  permission and stop the mutation path instead of silently falling back to
+  issue-body parsing.
+
 ## Current Arc Rows
 
 The current open v2 arcs are present on the board:
