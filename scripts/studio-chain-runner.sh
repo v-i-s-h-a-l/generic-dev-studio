@@ -157,10 +157,12 @@ PARENT_HOME_FOR_GITHUB=$(resolve_parent_home_for_github)
 PARENT_STUDIO_HOST=$(resolve_current_studio_host unknown)
 STUDIO_PROJECT_ROOT=$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_project_root_for generic-dev-studio)
 CHAIN_RUNS_ROOT="$STUDIO_PROJECT_ROOT/chain-runs"
+ANALYSIS_ROOT=$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_analysis_root)
 CHAIN_RUN_ROOT=""
 SUMMARY_ROOT=""
 HALT_ROOT=""
 ESCROW_ROOT=""
+PHASE_REVIEW_ROOT=""
 EVENTS_JSONL="/dev/null"
 RUN_STATE_JSON=""
 RUN_REPORT=""
@@ -171,6 +173,7 @@ configure_run_paths() {
   SUMMARY_ROOT="$CHAIN_RUN_ROOT/worker-summaries"
   HALT_ROOT="$CHAIN_RUN_ROOT/halt-records"
   ESCROW_ROOT="$CHAIN_RUN_ROOT/decision-escrows"
+  PHASE_REVIEW_ROOT="$ANALYSIS_ROOT/$RUN_ID-phase-reviews"
   EVENTS_JSONL="$CHAIN_RUN_ROOT/events.jsonl"
   RUN_STATE_JSON="$CHAIN_RUN_ROOT/state.json"
   RUN_REPORT="$CHAIN_RUN_ROOT/report.md"
@@ -179,7 +182,7 @@ configure_run_paths() {
     PLAN_JSON="$RUN_ROOT/$RUN_ID-plan.json"
   fi
   if { [ "$DRY_RUN" -eq 0 ] || [ -n "$RESUME_ID" ]; } && [ "$EXPLAIN_NEXT" -eq 0 ]; then
-    mkdir -p "$SUMMARY_ROOT" "$HALT_ROOT" "$ESCROW_ROOT"
+    mkdir -p "$SUMMARY_ROOT" "$HALT_ROOT" "$ESCROW_ROOT" "$PHASE_REVIEW_ROOT"
   else
     EVENTS_JSONL="/dev/null"
   fi
@@ -224,7 +227,7 @@ event_data() {
 
 event_stage() {
   case "$1" in
-    chain_run_started|chain_plan_prepared) printf 'plan\n' ;;
+    chain_run_started|chain_plan_prepared|chain_phase_review_completed) printf 'plan\n' ;;
     chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed) printf 'preflight\n' ;;
     chain_started|chain_issue_started|chain_issue_completed|chain_issue_validated) printf 'execute\n' ;;
     chain_worker_summary_ingested|chain_telemetry_gap) printf 'ingest\n' ;;
@@ -276,11 +279,13 @@ emit_chain_event() {
 
 write_run_state() {
   local status="$1" failure_reason="${2:-}"
-  local chains_json="[]" halt_records_json="[]" decision_escrows_json="[]"
+  local chains_json="[]" halt_records_json="[]" decision_escrows_json="[]" phase_reviews_json="[]" phase_review_feedback_json="[]"
   if [ -f "$RUN_STATE_JSON" ]; then
     chains_json=$(jq -c '.chains // []' "$RUN_STATE_JSON")
     halt_records_json=$(jq -c '.halt_records // []' "$RUN_STATE_JSON")
     decision_escrows_json=$(jq -c '.decision_escrows // []' "$RUN_STATE_JSON")
+    phase_reviews_json=$(jq -c '.phase_reviews // []' "$RUN_STATE_JSON")
+    phase_review_feedback_json=$(jq -c '.phase_review_feedback // []' "$RUN_STATE_JSON")
   elif [ -f "$PLAN_JSON" ]; then
     chains_json=$(jq -c '.chains // []' "$PLAN_JSON")
   fi
@@ -297,6 +302,8 @@ write_run_state() {
     --argjson chains "$chains_json" \
     --argjson halt_records "$halt_records_json" \
     --argjson decision_escrows "$decision_escrows_json" \
+    --argjson phase_reviews "$phase_reviews_json" \
+    --argjson phase_review_feedback "$phase_review_feedback_json" \
     '{
       schema_version: 1,
       run_id: $run_id,
@@ -310,6 +317,8 @@ write_run_state() {
       chains: $chains,
       halt_records: $halt_records,
       decision_escrows: $decision_escrows,
+      phase_reviews: $phase_reviews,
+      phase_review_feedback: $phase_review_feedback,
       failure_reason: (if $failure_reason == "" then null else $failure_reason end)
     }' > "$RUN_STATE_JSON"
 }
@@ -371,6 +380,8 @@ halt_class_for_reason() {
 halt_reason_for_text() {
   case "$1" in
     *GitHub*auth*|*github*auth*) printf 'github_auth_unavailable\n' ;;
+    *reviewer_blocked*|*reviewer\ blocked*) printf 'reviewer_blocked\n' ;;
+    *reviewer_ambiguous*|*reviewer\ ambiguous*|*ambiguous\ review*) printf 'reviewer_ambiguous\n' ;;
     *reviewer\ host*|*reviewer\ host\ unavailable*|*reviewer\ host\ ineligible*) printf 'reviewer_host_ineligible\n' ;;
     *review\ failed*|*PR\ review\ failed*|*required\ review*) printf 'required_review_failed\n' ;;
     *branch\ already\ exists*|*worktree*conflict*) printf 'branch_worktree_conflict\n' ;;
@@ -533,7 +544,7 @@ write_decision_escrows_from_summary() {
        | .chain_run_id = (.chain_run_id // null)
        | .issue_run_id = (.issue_run_id // null)' > "$file"
     "$SCRIPT_DIR/validate-contract.sh" chain-decision-escrow "$file" >/dev/null
-    if [ -f "$RUN_STATE_JSON" ]; then
+    if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ]; then
       update_state_jq \
         --arg file "$file" \
         --arg decision_id "$decision_id" \
@@ -547,6 +558,158 @@ write_decision_escrows_from_summary() {
   done
 }
 
+phase_review_record() {
+  local boundary_id="$1" kind="$2"
+  [ -f "$RUN_STATE_JSON" ] || return 1
+  jq -e --arg boundary_id "$boundary_id" --arg kind "$kind" \
+    '(.phase_reviews // [])[]? | select(.boundary_id == $boundary_id and .kind == $kind and (.verdict // "") == "clean")' \
+    "$RUN_STATE_JSON" >/dev/null 2>&1
+}
+
+compact_phase_review_feedback_json() {
+  local review_file="$1"
+  awk '
+    BEGIN { section="" }
+    /^[[:space:]]*PHASE_REVIEW_VERDICT[[:space:]]*[:=]/ { next }
+    /^[[:space:]]*(Warnings?|Recommendations?|Plan adjustments?|Accepted plan adjustments?)[[:space:]]*:?/ {
+      section=tolower($0)
+      sub(/:.*/, "", section)
+      next
+    }
+    /^[[:space:]]*(Fatal blockers?|Blockers?)[[:space:]]*:?/ { section=""; next }
+    section != "" && /^[[:space:]]*([-*]|\d+[.)])[[:space:]]+/ {
+      line=$0
+      sub(/^[[:space:]]*([-*]|\d+[.)])[[:space:]]+/, "", line)
+      gsub(/"/, "\\\"", line)
+      if (line != "") print section "\t" line
+    }
+  ' "$review_file" | jq -R -s -c '
+    split("\n")[:-1]
+    | map(split("\t") | {kind:.[0], text:.[1]})
+    | map(select(.text != null and .text != ""))
+    | .[:8]
+  '
+}
+
+phase_review_feedback_for_issue_json() {
+  local issue_run_id="$1"
+  if [ -f "$RUN_STATE_JSON" ]; then
+    jq -c --arg issue_run_id "$issue_run_id" '
+      (.phase_review_feedback // [])
+      | map(select((.consumed_by_issue_run_id // null) == null or .consumed_by_issue_run_id == $issue_run_id))
+      | .[:8]
+    ' "$RUN_STATE_JSON"
+  else
+    printf '[]\n'
+  fi
+}
+
+mark_phase_review_feedback_consumed() {
+  local issue_run_id="$1"
+  update_state_jq --arg issue_run_id "$issue_run_id" '
+    (.phase_review_feedback //= [])
+    | (.phase_review_feedback[]? | select((.consumed_by_issue_run_id // null) == null) | .consumed_by_issue_run_id) = $issue_run_id
+  '
+}
+
+record_phase_review() {
+  local boundary_id="$1" kind="$2" verdict="$3" artifact="$4" review="$5" review_host="$6" chain_run_id="$7" issue_run_id="$8" feedback="${9:-[]}"
+  update_state_jq \
+    --arg boundary_id "$boundary_id" \
+    --arg kind "$kind" \
+    --arg verdict "$verdict" \
+    --arg artifact "$artifact" \
+    --arg review "$review" \
+    --arg review_host "$review_host" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --argjson feedback "$feedback" \
+    '(.phase_reviews //= [])
+     | .phase_reviews = ([.phase_reviews[]? | select(.boundary_id != $boundary_id or .kind != $kind)] + [{
+        boundary_id: $boundary_id,
+        kind: $kind,
+        verdict: $verdict,
+        artifact: $artifact,
+        review: $review,
+        review_host: $review_host,
+        chain_run_id: $chain_run_id,
+        issue_run_id: $issue_run_id,
+        feedback: $feedback
+       }])'
+}
+
+append_phase_review_feedback() {
+  local from_issue="$1" from_issue_run_id="$2" review="$3" feedback="$4"
+  [ "$(printf '%s' "$feedback" | jq 'length')" -gt 0 ] || return 0
+  update_state_jq \
+    --arg from_issue "$from_issue" \
+    --arg from_issue_run_id "$from_issue_run_id" \
+    --arg review "$review" \
+    --argjson feedback "$feedback" \
+    '(.phase_review_feedback //= [])
+     | .phase_review_feedback += ($feedback | map(. + {
+        source_issue: ($from_issue | tonumber),
+        source_issue_run_id: $from_issue_run_id,
+        source_review: $review
+       }))
+     | .phase_review_feedback = .phase_review_feedback[-12:]'
+}
+
+run_phase_review_gate() {
+  local kind="$1" boundary_id="$2" artifact="$3" chain_run_id="$4" issue_run_id="$5" chain_name="$6" issue="$7"
+  local review_host review_file review_meta review_rc verdict feedback review_started_at review_duration
+  review_host="${STUDIO_REVIEW_HOST:-claude-reviewer}"
+  review_file="$PHASE_REVIEW_ROOT/$boundary_id-$kind-review.md"
+
+  if phase_review_record "$boundary_id" "$kind"; then
+    log "resume skip completed $kind phase review for $boundary_id"
+    return 0
+  fi
+
+  review_started_at=$(now_epoch)
+  set +e
+  review_meta=$(HOME="$PARENT_HOME_FOR_GITHUB" STUDIO_PHASE_REVIEW_ELIGIBILITY_CACHE_DIR="$CHAIN_RUN_ROOT/reviewer-eligibility" \
+    "$SCRIPT_DIR/phase-review.sh" --review-host "$review_host" --kind "$kind" --input "$artifact" --output "$review_file" 2>&1)
+  review_rc=$?
+  set -e
+  printf '%s\n' "$review_meta"
+  review_duration=$(duration_since "$review_started_at")
+
+  if [ "$review_rc" -ne 0 ]; then
+    emit_chain_event chain_phase_review_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$review_duration" \
+      "$(jq -cn --arg kind "$kind" --arg boundary_id "$boundary_id" --arg review_host "$review_host" --arg exit_code "$review_rc" '{kind:$kind, boundary_id:$boundary_id, review_host:$review_host, exit_code:($exit_code|tonumber), reason_id:"reviewer_host_ineligible"}')"
+    write_halt_record "reviewer_host_ineligible" "$kind phase review wrapper failed for $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" >/dev/null || true
+    return 70
+  fi
+
+  verdict=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_VERDICT=//p' | tail -1)
+  [ -n "$verdict" ] || verdict="ambiguous"
+  feedback="[]"
+  if [ "$kind" = "outcome" ] && [ -f "$review_file" ]; then
+    feedback=$(compact_phase_review_feedback_json "$review_file")
+  fi
+  record_phase_review "$boundary_id" "$kind" "$verdict" "$artifact" "$review_file" "$review_host" "$chain_run_id" "$issue_run_id" "$feedback"
+  emit_chain_event chain_phase_review_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" "$verdict" "$review_duration" \
+    "$(jq -cn --arg kind "$kind" --arg boundary_id "$boundary_id" --arg verdict "$verdict" --arg review_host "$review_host" --arg artifact "$artifact" --arg review "$review_file" --argjson feedback "$feedback" '{kind:$kind, boundary_id:$boundary_id, verdict:$verdict, review_host:$review_host, artifact:$artifact, review:$review, feedback:$feedback}')"
+
+  case "$verdict" in
+    clean)
+      if [ "$kind" = "outcome" ]; then
+        append_phase_review_feedback "$issue" "$issue_run_id" "$review_file" "$feedback"
+      fi
+      return 0
+      ;;
+    blocked)
+      write_halt_record "reviewer_blocked" "$kind phase review blocked $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" >/dev/null || true
+      return 71
+      ;;
+    ambiguous|*)
+      write_halt_record "reviewer_ambiguous" "$kind phase review verdict was ambiguous for $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" >/dev/null || true
+      return 72
+      ;;
+  esac
+}
+
 generated_file_count_between() {
   local worktree="$1" before="$2" after="$3"
   git -C "$worktree" diff --name-only "$before" "$after" 2>/dev/null \
@@ -558,8 +721,33 @@ generated_file_count_between() {
     '
 }
 
+resolve_phase_review_mode() {
+  local chain_idx="$1" mode
+  mode="${STUDIO_CHAIN_PHASE_REVIEW:-}"
+  if [ -z "$mode" ]; then
+    mode=$(yq -r ".chains[$chain_idx].phase_review // .phase_review // \"auto\"" "$MANIFEST")
+  fi
+  case "$mode" in
+    required|auto|off) printf '%s\n' "$mode" ;;
+    *)
+      printf 'studio-chain-runner: phase_review must be required, auto, or off: %s\n' "$mode" >&2
+      exit 2
+      ;;
+  esac
+}
+
+phase_review_required_for_issue() {
+  local mode="$1" issue_count="$2"
+  case "$mode" in
+    required) return 0 ;;
+    auto) [ "$issue_count" -gt 1 ] ;;
+    off) return 1 ;;
+    *) return 1 ;;
+  esac
+}
+
 write_chain_task_start_envelope() {
-  local chain_name="$1" chain_branch="$2" issue_branch="$3" issue_json="$4" host="$5" worktree="$6" chain_run_id="$7" issue_run_id="$8" summary_path="$9" start_path="${10}"
+  local chain_name="$1" chain_branch="$2" issue_branch="$3" issue_json="$4" host="$5" worktree="$6" chain_run_id="$7" issue_run_id="$8" summary_path="$9" start_path="${10}" phase_review_context="${11:-[]}"
   mkdir -p "$(dirname "$start_path")"
   jq -n \
     --argjson source_issue "$issue_json" \
@@ -573,6 +761,7 @@ write_chain_task_start_envelope() {
     --arg worktree "$worktree" \
     --arg host "$host" \
     --arg summary_path "$summary_path" \
+    --argjson phase_review_context "$phase_review_context" \
     '{
       schema_version: 1,
       kind: "start",
@@ -605,8 +794,10 @@ write_chain_task_start_envelope() {
       allowed_assumptions: [
         "The source issue body is the authoritative scoped brief.",
         "The chain runner owns PR creation, main merge, issue closure, and worktree cleanup.",
-        "Runtime handoff artifacts under .studio are private and disposable."
+        "Runtime handoff artifacts under .studio are private and disposable.",
+        "Prior phase-review feedback in this envelope is private context from a clean outcome review, not human acceptance."
       ],
+      phase_review_context: $phase_review_context,
       stop_conditions: [
         "Required scope cannot be implemented safely from the source issue.",
         "Verification needed for an unqualified completion claim cannot be run or captured.",
@@ -895,6 +1086,19 @@ generate_run_report() {
     else
       printf 'Review summary unavailable: no event log was written.\n'
     fi
+    if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ]; then
+      jq -r '
+        "\nPhase reviews:",
+        ((.phase_reviews // []) as $reviews |
+          if ($reviews | length) == 0 then "- Phase-review gates: none"
+          else $reviews[] | "- \(.kind) \(.boundary_id): \(.verdict) (`\(.review)`)"
+          end),
+        ((.phase_review_feedback // []) as $feedback |
+          if ($feedback | length) == 0 then "- Forwarded review feedback: none"
+          else "- Forwarded review feedback items: \($feedback | length)"
+          end)
+      ' "$RUN_STATE_JSON" 2>/dev/null || true
+    fi
     printf '\n## Resume Attempts\n\n'
     if [ -s "$EVENTS_JSONL" ] && [ "$EVENTS_JSONL" != "/dev/null" ]; then
       jq -r -s '
@@ -1038,7 +1242,8 @@ generate_run_report() {
     printf -- '- Event log: `%s`\n' "${EVENTS_JSONL:-missing}"
     printf -- '- Worker summaries: `%s`\n' "${SUMMARY_ROOT:-missing}"
     printf -- '- Halt records: `%s`\n' "${HALT_ROOT:-missing}"
-    printf -- '- Decision escrows: `%s`\n\n' "${ESCROW_ROOT:-missing}"
+    printf -- '- Decision escrows: `%s`\n' "${ESCROW_ROOT:-missing}"
+    printf -- '- Phase reviews: `%s`\n\n' "${PHASE_REVIEW_ROOT:-missing}"
     printf 'This report is private local telemetry under `~/.dev-studio/generic-dev-studio/chain-runs/`. Public PR and issue comments should include run IDs, PR URLs, issue numbers, and abstract gap names only, not private project file paths or velocity details.\n'
   } > "$RUN_REPORT"
 }
@@ -1510,7 +1715,7 @@ resolve_resume_state() {
 }
 
 build_plan_json() {
-  local out="$1" chain_count idx name base branch host issue_count i issue issue_json issue_title issue_state
+  local out="$1" chain_count idx name base branch host phase_review_mode issue_count i issue issue_json issue_title issue_state
   local chain_run_id issue_run_id issue_slug issue_branch issue_worktree chain_slug chain_worktree worker_pool
   local tmp chains_tmp issues_tmp
   tmp="$out.tmp.$$"
@@ -1534,6 +1739,7 @@ build_plan_json() {
     host=$(yq -r ".chains[$idx].host // \"auto\"" "$MANIFEST")
     [ "$host" = "auto" ] && host="${HOST_OVERRIDE:-codex}"
     [ -n "$HOST_OVERRIDE" ] && host="$HOST_OVERRIDE"
+    phase_review_mode=$(resolve_phase_review_mode "$idx")
     validate_chain_branch "$branch" "$base"
     issue_count=$(yq -r ".chains[$idx].issues | length" "$MANIFEST")
     case "$issue_count" in
@@ -1583,11 +1789,12 @@ build_plan_json() {
       --arg base "$base" \
       --arg branch "$branch" \
       --arg host "$host" \
+      --arg phase_review_mode "$phase_review_mode" \
       --arg chain_run_id "$chain_run_id" \
       --arg worktree "$chain_worktree" \
       --argjson worker_pool "$worker_pool" \
       --slurpfile issues "$issues_tmp" \
-      '. + [{name:$name,base:$base,branch:$branch,host:$host,chain_run_id:$chain_run_id,chain_worktree:$worktree,worker_pool:$worker_pool,status:"pending",issues:$issues[0]}]' \
+      '. + [{name:$name,base:$base,branch:$branch,host:$host,phase_review:$phase_review_mode,chain_run_id:$chain_run_id,chain_worktree:$worktree,worker_pool:$worker_pool,status:"pending",issues:$issues[0]}]' \
       "$chains_tmp" > "$chains_tmp.next"
     mv "$chains_tmp.next" "$chains_tmp"
     rm -f "$issues_tmp"
@@ -1684,6 +1891,7 @@ explain_plan() {
     "- Branch: `\(.branch)`\n" +
     "- Worktree: `\(.chain_worktree)`\n" +
     "- Host: `\(.host)`\n" +
+    "- Phase review: `\(.phase_review // "auto")`\n" +
     "- Worker pool: `\(.worker_pool)`\n" +
     "- Planned PR: base `\(.base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
     "| Issue | State | Status | Issue-run UUID | Branch | Worktree |\n|---:|---|---|---|---|---|\n" +
@@ -1754,7 +1962,7 @@ fi
 chain_count=$(jq '.chains | length' "$PLAN_JSON")
 
 execute_issue_session() {
-  local chain_name="$1" chain_branch="$2" issue="$3" host="$4" worktree="$5" issue_branch="$6" chain_run_id="$7" issue_run_id="$8" before="$9"
+  local chain_name="$1" chain_branch="$2" issue="$3" host="$4" worktree="$5" issue_branch="$6" chain_run_id="$7" issue_run_id="$8" before="$9" phase_review_context="${10:-[]}"
   local issue_json issue_title issue_body spawn prompt summary_path start_path
   local -a spawn_argv
   local launch_home=""
@@ -1765,7 +1973,7 @@ execute_issue_session() {
   summary_path="$worktree/.studio/chain-worker-summary.json"
   start_path="$worktree/.studio/chain-task-start.json"
   if [ "$DRY_RUN" -eq 0 ]; then
-    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$issue_branch" "$issue_json" "$host" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path"
+    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$issue_branch" "$issue_json" "$host" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context"
   fi
 
   spawn=$(host_spawn_command "$host")
@@ -1828,6 +2036,9 @@ Summary JSON fields:
 - lessons optional string or array when telemetry supports next-chain recommendations
 - telemetry_gaps array listing missing fields such as "tokens" or "model"
 - blocked_reason when nonzero
+
+Private phase-review context forwarded from prior clean outcome reviews:
+$phase_review_context
 
 Issue body:
 $issue_body
@@ -1915,9 +2126,83 @@ Public-safe telemetry: run/chain UUIDs and abstract gap names only."; then
   fi
 }
 
+write_issue_phase_plan_artifact() {
+  local artifact="$1" chain_name="$2" branch="$3" issue="$4" issue_run_id="$5" host="$6" before="$7" context="$8"
+  mkdir -p "$(dirname "$artifact")"
+  {
+    printf '# Chain Issue Phase Plan\n\n'
+    printf -- '- Run UUID: `%s`\n' "$RUN_ID"
+    printf -- '- Chain: `%s`\n' "$chain_name"
+    printf -- '- Branch: `%s`\n' "$branch"
+    printf -- '- Issue: `#%s`\n' "$issue"
+    printf -- '- Issue-run UUID: `%s`\n' "$issue_run_id"
+    printf -- '- Host: `%s`\n' "$host"
+    printf -- '- Commit before: `%s`\n\n' "$before"
+    printf '## Goal\n\n'
+    printf 'Execute exactly this issue in its isolated worktree and commit the result on the issue branch.\n\n'
+    printf '## Scope\n\n'
+    printf -- '- In: bounded issue implementation, private worker summary, focused verification evidence.\n'
+    printf -- '- Out: PR creation, merge to main, issue closure, unrelated issue work, public copy of private review prose.\n\n'
+    printf '## Prior Clean Outcome Feedback\n\n'
+    if [ "$(printf '%s' "$context" | jq 'length')" -gt 0 ]; then
+      printf '%s\n' "$context" | jq -r '.[] | "- \(.kind): \(.text)"'
+    else
+      printf 'None.\n'
+    fi
+    printf '\n## Acceptance Criteria\n\n'
+    printf -- '- Worker reads `.studio/chain-task-start.json` before acting.\n'
+    printf -- '- Worker summary is valid JSON and remains uncommitted.\n'
+    printf -- '- Issue branch produces a non-empty commit for successful execution.\n'
+    printf -- '- Any stale assumption from prior outcome feedback is handled or surfaced in the worker summary.\n\n'
+    printf '## Explicit Ask\n\n'
+    printf "Review whether this issue phase is safe to execute now. What's still wrong or missing?\n"
+  } > "$artifact"
+}
+
+write_issue_phase_outcome_artifact() {
+  local artifact="$1" chain_name="$2" issue="$3" issue_run_id="$4" before="$5" after="$6" summary_file="$7"
+  mkdir -p "$(dirname "$artifact")"
+  {
+    printf '# Chain Issue Phase Outcome\n\n'
+    printf -- '- Run UUID: `%s`\n' "$RUN_ID"
+    printf -- '- Chain: `%s`\n' "$chain_name"
+    printf -- '- Issue: `#%s`\n' "$issue"
+    printf -- '- Issue-run UUID: `%s`\n' "$issue_run_id"
+    printf -- '- Commit before: `%s`\n' "$before"
+    printf -- '- Commit after: `%s`\n' "$after"
+    printf -- '- Worker summary: `%s`\n\n' "$summary_file"
+    printf '## What Changed\n\n'
+    jq -r '
+      def lines($v):
+        if $v == null then []
+        elif ($v | type) == "array" then [$v[] | tostring]
+        elif ($v | type) == "object" then [$v | tojson]
+        else [$v | tostring]
+        end;
+      (lines(.functionality_delivered) | if length == 0 then ["No worker narrative supplied."] else . end)[] | "- \(.)"
+    ' "$summary_file"
+    printf '\n## Diff Summary\n\n'
+    jq -r '"- Files changed: \(.files_changed // 0)\n- Additions: \(.additions // 0)\n- Deletions: \(.deletions // 0)\n- Generated files: \(.generated_file_count // 0)"' "$summary_file"
+    printf '\n\n## Changed Artifacts\n\n'
+    jq -r '(.changed_artifacts // []) | if length == 0 then "None listed." else .[] | "- `\(.)`" end' "$summary_file"
+    printf '\n## Verification Evidence\n\n'
+    jq -r '
+      def rows($name; $items):
+        ($items // []) as $xs |
+        if ($xs | length) == 0 then ["- \($name): none supplied"]
+        else [ $xs[] | "- \($name): \(.command // .name // "unnamed") -> \(.outcome // .status // "unknown")" ]
+        end;
+      rows("test"; .tests)[], rows("lint"; .lints)[], rows("build"; .builds)[]
+    ' "$summary_file"
+    printf '\n## Explicit Ask\n\n'
+    printf 'Did execution match the plan? Identify stale assumptions, warnings, recommendations, or accepted plan adjustments for upcoming phases. Do not include public-sensitive raw details.\n'
+  } > "$artifact"
+}
+
 run_issue_job() {
-  local name="$1" branch="$2" issue="$3" host="$4" issue_worktree="$5" issue_branch="$6" chain_run_id="$7" issue_run_id="$8" result_file="$9"
+  local name="$1" branch="$2" issue="$3" host="$4" issue_worktree="$5" issue_branch="$6" chain_run_id="$7" issue_run_id="$8" result_file="$9" phase_review_mode="${10:-auto}" issue_count_for_review="${11:-1}"
   local before after worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason
+  local phase_context boundary_id phase_plan_artifact phase_outcome_artifact phase_review_rc phase_review_reason
   issue_started_at=$(now_epoch)
 
   log "issue #$issue -> $issue_branch"
@@ -1933,9 +2218,33 @@ run_issue_job() {
   emit_chain_event chain_issue_started "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" running 0 \
     "$(jq -cn --arg chain "$name" --arg branch "$issue_branch" --arg host "$host" --arg before "$before" '{chain:$chain, issue_branch:$branch, host:$host, commit_before:$before}')"
   mark_issue_state "$issue_run_id" running "$before"
+  phase_context=$(phase_review_feedback_for_issue_json "$issue_run_id")
+  mark_phase_review_feedback_consumed "$issue_run_id"
+
+  if [ "$DRY_RUN" -eq 0 ] && phase_review_required_for_issue "$phase_review_mode" "$issue_count_for_review"; then
+    boundary_id="$chain_run_id-$issue_run_id"
+    phase_plan_artifact="$PHASE_REVIEW_ROOT/$boundary_id-plan.md"
+    write_issue_phase_plan_artifact "$phase_plan_artifact" "$name" "$branch" "$issue" "$issue_run_id" "$host" "$before" "$phase_context"
+    set +e
+    run_phase_review_gate plan "$boundary_id" "$phase_plan_artifact" "$chain_run_id" "$issue_run_id" "$name" "$issue"
+    phase_review_rc=$?
+    set -e
+    if [ "$phase_review_rc" -ne 0 ]; then
+      case "$phase_review_rc" in
+        70) phase_review_reason="reviewer_host_ineligible" ;;
+        71) phase_review_reason="reviewer_blocked" ;;
+        72) phase_review_reason="reviewer_ambiguous" ;;
+        *) phase_review_reason="required_review_failed" ;;
+      esac
+      mark_issue_state "$issue_run_id" failed "$before" "$before" "" "phase_review_failed"
+      jq -n --arg issue "$issue" --arg reason "$phase_review_reason" \
+        '{status:"failed", issue:($issue|tonumber), reason:$reason}' > "$result_file"
+      return 0
+    fi
+  fi
 
   set +e
-  execute_issue_session "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$before"
+  execute_issue_session "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$before" "$phase_context"
   worker_rc=$?
   set -e
 
@@ -1989,6 +2298,29 @@ run_issue_job() {
     return 0
   fi
 
+  if phase_review_required_for_issue "$phase_review_mode" "$issue_count_for_review"; then
+    boundary_id="$chain_run_id-$issue_run_id"
+    phase_outcome_artifact="$PHASE_REVIEW_ROOT/$boundary_id-outcome.md"
+    write_issue_phase_outcome_artifact "$phase_outcome_artifact" "$name" "$issue" "$issue_run_id" "$before" "$after" "$summary_file"
+    set +e
+    run_phase_review_gate outcome "$boundary_id" "$phase_outcome_artifact" "$chain_run_id" "$issue_run_id" "$name" "$issue"
+    phase_review_rc=$?
+    set -e
+    if [ "$phase_review_rc" -ne 0 ]; then
+      case "$phase_review_rc" in
+        70) phase_review_reason="reviewer_host_ineligible" ;;
+        71) phase_review_reason="reviewer_blocked" ;;
+        72) phase_review_reason="reviewer_ambiguous" ;;
+        *) phase_review_reason="required_review_failed" ;;
+      esac
+      emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" "$summary_payload"
+      mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "phase_review_failed"
+      jq -n --arg issue "$issue" --arg reason "$phase_review_reason" \
+        '{status:"failed", issue:($issue|tonumber), reason:$reason}' > "$result_file"
+      return 0
+    fi
+  fi
+
   emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed "$issue_duration" "$summary_payload"
   mark_issue_state "$issue_run_id" completed "$before" "$after" "$summary_file"
   jq -n \
@@ -2040,6 +2372,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
   base=$(jq -r ".chains[$idx].base" "$PLAN_JSON")
   branch=$(jq -r ".chains[$idx].branch" "$PLAN_JSON")
   host=$(jq -r ".chains[$idx].host" "$PLAN_JSON")
+  phase_review_mode=$(jq -r ".chains[$idx].phase_review // \"auto\"" "$PLAN_JSON")
   issue_count=$(jq -r ".chains[$idx].issues | length" "$PLAN_JSON")
   chain_run_id=$(jq -r ".chains[$idx].chain_run_id" "$PLAN_JSON")
   chain_status=$(jq -r ".chains[$idx].status // \"pending\"" "$RUN_STATE_JSON" 2>/dev/null || printf 'pending')
@@ -2098,9 +2431,9 @@ for ((idx = 0; idx < chain_count; idx++)); do
     fi
 
     if [ "$DRY_RUN" -eq 1 ]; then
-      run_issue_job "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file"
+      run_issue_job "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file" "$phase_review_mode" "$issue_count"
     else
-      run_issue_job "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file"
+      run_issue_job "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file" "$phase_review_mode" "$issue_count"
     fi
   done
 

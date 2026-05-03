@@ -95,8 +95,8 @@ slugify() {
 }
 
 review_allows_execution() {
-  local review_file="$1"
-  grep -Eiq 'nothing fatal|no fatal blockers|fatal blockers[[:space:]]*:?[[:space:]]*(none|no)|verdict[^[:cntrl:]]*(clean|proceed)' "$review_file"
+  local verdict="$1"
+  [ "$verdict" = "clean" ]
 }
 
 PARENT_HOME_FOR_GITHUB=$(resolve_parent_home_for_github)
@@ -203,14 +203,17 @@ Review whether this chain execution plan is safe to start unattended. What is st
 EOF
 
 printf 'studio-chain-reviewed: reviewing plan with %s\n' "$REVIEW_HOST" >&2
-HOME="$PARENT_HOME_FOR_GITHUB" "$SCRIPT_DIR/phase-review.sh" \
+review_meta=$(HOME="$PARENT_HOME_FOR_GITHUB" "$SCRIPT_DIR/phase-review.sh" \
   --review-host "$REVIEW_HOST" \
   --kind plan \
   --input "$plan_file" \
-  --output "$review_file"
+  --output "$review_file")
+printf '%s\n' "$review_meta"
+review_verdict=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_VERDICT=//p' | tail -1)
+[ -n "$review_verdict" ] || review_verdict="ambiguous"
 
-if ! review_allows_execution "$review_file"; then
-  printf 'studio-chain-reviewed: plan review did not include a clean/no-fatal verdict; not starting chain\n' >&2
+if ! review_allows_execution "$review_verdict"; then
+  printf 'studio-chain-reviewed: plan review verdict is %s; not starting chain\n' "$review_verdict" >&2
   printf 'studio-chain-reviewed: review file: %s\n' "$review_file" >&2
   exit 1
 fi
