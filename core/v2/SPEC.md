@@ -241,6 +241,12 @@ registries are not mutated by project work. Host-native skill systems may load
 the same vendored artifacts through adapters, but the repo remains the source of
 truth for skill content and portability metadata.
 
+A3 implements this as the read-only `scripts/v2-skill-load.sh` primitive plus
+`core/v2/schemas/vendored-skill-artifact.schema.json`. The loader resolves only
+repo-vendored skills under `skills/vendored/**`, validates each artifact's
+`vendor.yaml` pin and `portability.yaml` host/scope declaration, and returns a
+path, prompt body, or normalized JSON artifact for later A3b/A5 consumers.
+
 Context-budget enforcement is a shared subsystem, not duplicated prose inside
 each role. A5 defines budgets and telemetry; A0.6 ensures new role contracts
 declare what they read before relying on it.
@@ -315,7 +321,9 @@ warning-tier review feedback into hidden implementation behavior.
 - A2 defines the `/dev-studio` umbrella router and v1 compatibility forwarders
   in `core/v2/skills/dev-studio/`. A2a implements the modular router contract
   and complexity/no-business-logic lint.
-- A3/A3b/A3c implement vendored skill loading and the iOS skill catalog.
+- A3 ships vendored skill loading and pin validation via
+  `scripts/v2-skill-load.sh`; A3b/A3c add routing intelligence and the iOS skill
+  catalog.
 - A4/A4a implement durable subscribers, telemetry, and weekly metrics.
 - A5 implements context-budget enforcement.
 - A6 implements project profiles and iOS profile behavior.
