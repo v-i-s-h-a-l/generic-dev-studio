@@ -99,7 +99,9 @@ Iterating on extraction is harder than adding inline; default to inline until pa
 
 **Contract-first, not prose-first.** Inter-agent handoffs (briefs, debriefs, verdicts) validate against JSON Schemas at `_shared/contracts/<kind>.schema.json`. Validators reject malformed output *before* it reaches the next agent. Borrowed from CrewAI (`output_pydantic`) and AutoGen (typed message bus) — both independently converged on strict schemas as the stable cross-model substrate. Aider's `model-settings.yml` lesson reinforces: codify per-model quirks as data, never as branching code.
 
-**Adapter shape.** Canonical content at top-level `skills/` / `agents/` / `commands/` equivalents; host packaging under `.<host>/` dotdirectories mirroring each host's native config location; root instruction files named by each host's convention (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) with shared content. Hook scripts canonical; per-host hook-schema JSON points at the same script; prose-preamble fallback carries hosts without hook support. Shape validated across seven hosts by Superpowers (`obra/superpowers`). See `hosts/ADAPTER-SPEC.md` for the authoritative guide to authoring a host adapter — required files, capability manifest schema, security floor, and step-by-step conformance checklist.
+**Durable event log.** Studio v2 treats the event log as the durable fact stream and derived views as rebuildable. The A0b target semantics live at `core/EVENT-LOG-SEMANTICS.md`: byte-offset ordering, keyed dedupe, per-subscriber replay checkpoints, lock boundaries, and lag/backpressure behavior.
+
+**Adapter shape.** Canonical content at top-level `skills/` / `agents/` / `commands/` equivalents; host packaging under `.<host>/` dotdirectories mirroring each host's native config location; root instruction files named by each host's convention (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) with shared content. Hook scripts canonical; per-host hook-schema JSON points at the same script; prose-preamble fallback carries hosts without hook support. Shape validated across seven hosts by Superpowers (`obra/superpowers`). See `hosts/ADAPTER-SPEC.md` for the authoritative guide to authoring a host adapter — required files, capability manifest schema, security floor, and step-by-step conformance checklist. The Studio v2 A0a matrix at `core/HOST-CAPABILITY-MATRIX.md` is the feature-gating input for Claude Code, Codex CLI, Gemini CLI, and Ollama before A0.5 `SPEC.md`.
 
 **Zero third-party runtime deps.** Worker-facing code paths stay on POSIX + `jq` + `yq`. Host adapters may use host-native tooling; core scripts may not introduce package managers, brokers, or libraries. Borrowed verbatim from Superpowers' contributor rule — same substrate bar.
 
@@ -107,7 +109,13 @@ Iterating on extraction is harder than adding inline; default to inline until pa
 
 **Staging.** Workers ship first (Achilles + Argus together — half-portable review gate is worse than none). Chanakya portability follows in a later release; it's a scope-staging choice, not a technical constraint. Rationale: surface area (16 modes vs. 10), model-quality sensitivity (orchestration judgment leans harder on model capability than mechanical edits), conformance-test design (worker I/O is bounded, orchestrator I/O is open-ended), and prompt-cache economics (Chanakya sessions are longest — defer host-swap until Phase 3 cache strategy lands). New agents (Lu Ban, Chiron) are born portable.
 
+**Auth and permissions.** Studio v2 treats every mutating action as an explicit authority request. `core/AUTH-PERMISSIONS.md` is the A0c source for GitHub token boundaries, local tool boundaries, delegated-process scopes, release-action scopes, and loud failure semantics that A0.5/A0.6 must compose into enforceable manifests.
+
 **Explicitly not adopted.** LiteLLM-style universal model routers (hosts own inference). MCP as the worker tool transport (file I/O + shell already works). Framework adoption (AutoGen / LangGraph / CrewAI) — we steal patterns, not dependencies. Marketplace publishing per host (we're not shipping to marketplaces; conformance testing replaces it).
+
+### Studio v2 role topology and handoff contract
+
+The normative A0d source of truth is [`_shared/contracts/role-topology-handoff-rfc.md`](_shared/contracts/role-topology-handoff-rfc.md). A0.5 `SPEC.md` consumes that RFC for canonical role contracts, handoff artifact families, decision rights, and contract-level failure semantics; A0.6 turns the resulting SPEC requirements into schemas and gates.
 
 ### Host-agnostic Chanakya v2 plan (#141)
 

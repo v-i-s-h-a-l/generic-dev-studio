@@ -1,0 +1,29 @@
+schema: 1
+kind: v2-bootstrap
+parent_issue: 444
+leaf_issue: 512
+phase: A0.4
+status: active
+schema_file: core/v2/schemas/bootstrap.schema.json
+hook_entrypoint: core/v2/hooks/pre-commit
+repo_gate: scripts/lint-v2-bootstrap.sh
+spec_signoff:
+  required_before_substrate_code: true
+  marker: "<!-- v2-bootstrap:a0.5-sign-off:complete -->"
+  file: core/v2/SPEC.md
+enforced_rules:
+  - schema_presence
+  - required_anchors
+  - pre_a0_5_code_freeze
+  - a0_6_deferred_rules
+deferred_until_a0_6:
+  - spec_derived_rules
+  - runtime_event_invariants
+  - role_contract_validation
+  - profile_command_validation
+required_anchors:
+  - "<!-- v2-bootstrap:a0.4-scope -->"
+  - "<!-- v2-bootstrap:schema-presence -->"
+  - "<!-- v2-bootstrap:required-anchors -->"
+  - "<!-- v2-bootstrap:pre-a0.5-code-freeze -->"
+  - "<!-- v2-bootstrap:a0.6-deferred-rules -->"
