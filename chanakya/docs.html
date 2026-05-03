@@ -1045,6 +1045,13 @@ scripts/studio-pr-baseline-report.sh --recent 10
 scripts/studio-pr-baseline-report.sh 366 --json</code></pre>
   <p>Use the trend summary during retrospectives to identify which workflow phase is growing by PR class. Treat the numbers as process baselines, not individual productivity scoring.</p>
 
+  <h3 style="margin-top: 32px;">Studio weekly digest script</h3>
+  <p>Summarize the studio repo's GitHub issue activity for the free-tier PM surface: open/created/closed counts, net backlog change, open-age buckets, label distribution, aged open issues, recent closures, and closed-issue trend.</p>
+  <pre><code>scripts/studio-weekly.sh
+scripts/studio-weekly.sh --json
+scripts/studio-weekly.sh --post</code></pre>
+  <p>The scheduled GitHub workflow runs <code>--post</code> every Monday, creates or reuses the <code>Weekly Studio Digest</code> issue, pins it, and appends the weekly summary as a comment.</p>
+
   <h3 style="margin-top: 32px;">Field workflow report</h3>
   <p>Measure the full Field loop from canonical events and brief YAML: stage timing, token usage, build/test pass rates, review coverage, telemetry gaps, and aggregate improvement candidates. The report is private-analysis safe by default and prints only abstract failure classes and workflow patterns.</p>
   <pre><code>scripts/field-workflow-report.sh --project turnip-ios --days 14

@@ -145,6 +145,7 @@ scripts/backfill-orphan-debriefs.sh [--apply] [--quiet]     # recover tasks that
 scripts/forge-latency-report.sh --days 14                   # stage-level Forge task latency from event logs
 scripts/field-workflow-report.sh --days 14                  # Field loop timing, tokens, gate pass rates, review coverage, improvement candidates
 scripts/studio-pr-baseline-report.sh 366                    # PR-level timing, churn, gate, and generated-file baselines
+scripts/studio-weekly.sh --post                             # weekly GitHub PM digest; cron posts to the pinned summary issue
 scripts/host-preflight.sh codex /repo                       # prove gh + git credential access before host task work
 scripts/studio-gh.sh issue list --state open                # assistant-safe GitHub CLI wrapper; normalizes synthetic Codex HOME
 scripts/studio-dependency-export.sh --issue 443             # Mermaid graph from native GitHub blocked_by dependencies
@@ -225,6 +226,7 @@ scripts/                # multi-worker fleet (BETA)
   field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
   studio-dependency-export.sh # Mermaid graph from native GitHub blocked_by issue dependencies
+  studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
   studio-chain-runner.sh   # plan/execute/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, locks, and private run reports
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access

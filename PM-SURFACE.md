@@ -63,3 +63,22 @@ Use `scripts/studio-dependency-export.sh --issue <number>` to render the
 GitHub-native `blocked_by` graph for an epic as Mermaid. The exporter reads the
 `/issues/<n>/dependencies/blocked_by` API and intentionally ignores issue-body
 checkboxes or prose dependency lists.
+
+## Weekly Digest
+
+`scripts/studio-weekly.sh` fills the free-tier Projects insight gap with a
+GitHub issue digest. It reports open/created/closed counts, net backlog change,
+open-issue age buckets, top labels, aged open issues, recent closures, and a
+four-week closed-issue trend.
+
+Run it locally for markdown or JSON:
+
+```sh
+scripts/studio-weekly.sh
+scripts/studio-weekly.sh --json
+```
+
+`.github/workflows/studio-weekly.yml` runs every Monday and invokes
+`scripts/studio-weekly.sh --post`, which creates or reuses the
+`Weekly Studio Digest` issue, pins it, and appends the weekly digest as a
+comment.
