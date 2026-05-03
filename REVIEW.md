@@ -277,6 +277,20 @@ Token/context savings are default only when the wall-clock delta is nominal. Any
 
 **Non-goal:** safety-critical checks are not rejected solely because they are slow. Preserve the safety property, but shift it to the least frequent safe boundary or run it asynchronously when possible.
 
+### R23 — Field-agent cross-host review through wrapper only (tier: **block + auto-fix**)
+
+Field-agent review setup in mode packs, briefs, manifests, scripts, and issue acceptance criteria must not hand-compose raw `claude -p` or `codex exec` reviewer commands. Route sibling-host / cross-host review through `scripts/phase-review.sh` or a successor wrapper that preserves reviewer auth-home selection, no-secret env scrubbing, MCP isolation, sandbox-readable payload handoff, and failure-detail surfacing.
+
+Legitimate mentions are allowed only when documenting the banned pattern, testing wrapper behavior, or using an explicit `lint-field-review:allow next-line` annotation with a reason. `STUDIO_BYPASS_FIELD_REVIEW_WRAPPER=1` is the documented emergency/debug override; it must be user-controlled and recorded in the plan/outcome artifact, never used silently by an assistant.
+
+**How to check:** run `scripts/lint-field-review-surfaces.sh --staged`. The pre-commit hook runs it as Gate 2g.
+
+**Fix pattern:** replace raw review-host snippets with:
+
+```bash
+scripts/phase-review.sh --review-host claude-reviewer --kind plan --input phase-plan.md --output ~/.dev-studio/generic-dev-studio/analysis/<date>-<phase>-plan-review.md
+```
+
 ## Deferred / known gaps
 
 Not rules yet — track here so we remember:
