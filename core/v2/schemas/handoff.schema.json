@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "v2-handoff.schema.json",
+  "title": "Studio v2 handoff artifact",
+  "description": "Shared Studio v2 handoff envelope with planner-output payload validation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_kind",
+    "artifact_id",
+    "created_at",
+    "producer_role",
+    "consumer_role",
+    "subject_ref",
+    "idempotency_key",
+    "payload",
+    "evidence_refs",
+    "privacy_classification",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "artifact_kind": {
+      "enum": [
+        "planner-output",
+        "worker-contract",
+        "qa-contract",
+        "reviewer-verdict",
+        "flow-test-checklist",
+        "release-packet"
+      ]
+    },
+    "artifact_id": {"type": "string", "minLength": 1},
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer_role": {"$ref": "#/$defs/role"},
+    "consumer_role": {"$ref": "#/$defs/role"},
+    "subject_ref": {"type": "string", "minLength": 1},
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "payload": {"type": "object"},
+    "evidence_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "privacy_classification": {
+      "enum": ["public", "private-runtime", "secret"]
+    },
+    "status": {
+      "enum": ["draft", "ready", "blocked", "approved", "rejected", "completed", "partial"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"artifact_kind": {"const": "planner-output"}},
+        "required": ["artifact_kind"]
+      },
+      "then": {
+        "properties": {
+          "producer_role": {"const": "planner"},
+          "consumer_role": {"enum": ["manager", "reviewer"]},
+          "payload": {"$ref": "#/$defs/plannerOutputPayload"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "role": {
+      "enum": [
+        "manager",
+        "planner",
+        "worker",
+        "reviewer",
+        "qa-engineer",
+        "flow-tester",
+        "perf",
+        "release-manager",
+        "host-adapter",
+        "operator"
+      ]
+    },
+    "textArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "taskContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_id",
+        "summary",
+        "owner_role",
+        "allowed_paths",
+        "required_checks",
+        "stop_conditions",
+        "summary_artifact"
+      ],
+      "properties": {
+        "contract_id": {"type": "string", "minLength": 1},
+        "summary": {"type": "string", "minLength": 1},
+        "owner_role": {"const": "worker"},
+        "allowed_paths": {"$ref": "#/$defs/textArray"},
+        "required_checks": {"$ref": "#/$defs/textArray"},
+        "stop_conditions": {"$ref": "#/$defs/textArray"},
+        "summary_artifact": {"type": "string", "minLength": 1}
+      }
+    },
+    "plannerOutputPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "non_goals",
+        "dependencies",
+        "reusable_api_findings",
+        "risks",
+        "acceptance_criteria",
+        "decomposition",
+        "review_ask",
+        "escalation"
+      ],
+      "properties": {
+        "scope": {"$ref": "#/$defs/textArray"},
+        "non_goals": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "dependencies": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "reusable_api_findings": {"$ref": "#/$defs/textArray"},
+        "risks": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "acceptance_criteria": {"$ref": "#/$defs/textArray"},
+        "decomposition": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/taskContract"}
+        },
+        "review_ask": {"type": "string", "minLength": 1},
+        "escalation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required", "reason", "manager_decision_needed"],
+          "properties": {
+            "required": {"type": "boolean"},
+            "reason": {"type": "string"},
+            "manager_decision_needed": {"type": "string"}
+          }
+        }
+      }
+    }
+  }
+}

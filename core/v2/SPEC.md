@@ -172,6 +172,9 @@ resolve through `core/v2/registry/roles.json` and
 Every executable role contract declares purpose, inputs, outputs, reads, writes,
 idempotency key, decision rights, escalation triggers, failure semantics, and
 verification floor. Extracted helpers follow the same minimum before code moves.
+Planner owns scope shaping, reusable API discovery, task decomposition, and
+acceptance criteria for shaped work; irreducible conflicts over scope, priority,
+authority, or user-visible tradeoffs escalate back to manager before dispatch.
 
 Handoff artifacts use this shared envelope:
 
