@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "artifact_id",
+    "created_at",
+    "parent_issue",
+    "leaf_issue",
+    "producer_role",
+    "subject_ref",
+    "idempotency_key",
+    "privacy_classification",
+    "status",
+    "host",
+    "checks",
+    "payload",
+    "evidence_refs",
+    "carryover"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "studio-v2-manager-proof-of-life" },
+    "artifact_id": {
+      "type": "string",
+      "pattern": "^manager-proof-of-life:[A-Za-z0-9._:-]+$"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "parent_issue": { "const": 444 },
+    "leaf_issue": { "const": 525 },
+    "producer_role": { "const": "manager" },
+    "subject_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "privacy_classification": {
+      "enum": ["public", "private-runtime"]
+    },
+    "status": {
+      "enum": ["ready", "completed", "blocked"]
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "class", "contract_exercised"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "class": {
+          "enum": ["claude-code", "non-claude", "unknown"]
+        },
+        "contract_exercised": { "type": "boolean" }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonical_role",
+        "context_budget",
+        "artifact_contract",
+        "authority_manifest",
+        "event_log"
+      ],
+      "properties": {
+        "canonical_role": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input", "role"],
+          "properties": {
+            "input": { "type": "string", "minLength": 1 },
+            "role": { "const": "manager" }
+          }
+        },
+        "context_budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "effective_budget_tokens", "limiting_dimension", "telemetry_event"],
+          "properties": {
+            "status": {
+              "enum": ["unmeasured", "ok", "warning", "exceeded"]
+            },
+            "effective_budget_tokens": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "limiting_dimension": {
+              "type": "string",
+              "minLength": 1
+            },
+            "telemetry_event": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "artifact_contract": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema_file", "validated"],
+          "properties": {
+            "schema_file": { "const": "core/v2/schemas/manager-proof-of-life.schema.json" },
+            "validated": { "type": "boolean" }
+          }
+        },
+        "authority_manifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file", "declared"],
+          "properties": {
+            "file": { "const": "scripts/v2-manager.sh.authority.yaml" },
+            "declared": { "type": "boolean" }
+          }
+        },
+        "event_log": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["event_name", "appended"],
+          "properties": {
+            "event_name": { "const": "manager_proof_of_life" },
+            "appended": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "summary", "dry_run", "runtime_artifact_path", "event_path"],
+      "properties": {
+        "mode": { "const": "proof-of-life" },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dry_run": { "type": "boolean" },
+        "runtime_artifact_path": {
+          "type": ["string", "null"]
+        },
+        "event_path": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "carryover": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

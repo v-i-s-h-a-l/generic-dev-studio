@@ -1,0 +1,32 @@
+action: manager-proof-of-life
+role: manager
+filesystem:
+  reads:
+    - core/v2/registry/roles.json
+    - core/v2/context-budget/manifest.json
+    - core/v2/manager/proof-of-life.yaml
+    - core/v2/schemas/manager-proof-of-life.schema.json
+    - core/v2/events/registry.yaml
+  writes:
+    - "<runtime-root>/.runtime/v2/manager/proof-of-life/*.json"
+    - "<runtime-root>/events/YYYY-MM-DD.jsonl"
+commands:
+  - jq
+  - yq
+  - scripts/v2-role-resolve.sh
+  - scripts/v2-context-budget.sh
+  - scripts/v2-event-log.sh
+secret_scopes: []
+mutation_scopes:
+  - private-runtime-artifacts
+  - private-runtime-event-log
+interactive: false
+headless_safe: true
+failure_classes:
+  - unknown_role
+  - missing_subject_ref
+  - missing_runtime_root
+  - context_budget_exceeded
+  - artifact_write_failed
+  - event_append_failed
+override: null
