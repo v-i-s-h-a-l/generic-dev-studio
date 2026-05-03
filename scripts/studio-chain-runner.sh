@@ -990,12 +990,18 @@ worker_summary_tracked() {
 }
 
 generate_run_report() {
-  local status="$1" failure_reason="${2:-}" ended_ts ended_epoch duration_s summary_count halt_count halt_dir
+  local status="$1" failure_reason="${2:-}" ended_ts ended_epoch duration_s summary_count halt_count halt_dir digest_script
   ended_ts=$(iso_ts_now)
   ended_epoch=$(now_epoch)
   duration_s=$(duration_since "$RUN_STARTED_AT" "$ended_epoch")
   summary_count=$(find "$SUMMARY_ROOT" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
   halt_dir="${HALT_ROOT:-}"
+  digest_script=""
+  if [ -n "${SCRIPT_DIR:-}" ]; then
+    digest_script="$SCRIPT_DIR/studio-chain-telemetry-digest.sh"
+  elif [ -n "${ROOT:-}" ]; then
+    digest_script="$ROOT/scripts/studio-chain-telemetry-digest.sh"
+  fi
 
   {
     printf '# Studio Chain Run Report\n\n'
@@ -1063,6 +1069,12 @@ generate_run_report() {
         [.[].event] | group_by(.) | map({event: .[0], count: length}) | sort_by(.event) |
         if length == 0 then "- none" else .[] | "- \(.event): \(.count)" end
       ' "$EVENTS_JSONL" 2>/dev/null || printf -- '- unreadable event log\n'
+    fi
+    printf '\n## Weekly Chain Digest\n\n'
+    if [ -n "$digest_script" ] && [ -x "$digest_script" ]; then
+      "$digest_script" --chain-run-root "${CHAIN_RUN_ROOT:-$(dirname "$RUN_REPORT")}" --format markdown 2>/dev/null || printf 'Weekly chain digest unavailable: telemetry digest failed.\n'
+    else
+      printf 'Weekly chain digest unavailable: `scripts/studio-chain-telemetry-digest.sh` not found.\n'
     fi
     printf '\n## Stage Reconstruction\n\n'
     if [ -s "$EVENTS_JSONL" ] && [ "$EVENTS_JSONL" != "/dev/null" ]; then
