@@ -1015,6 +1015,12 @@ scripts/sync-workers-all.sh                 # immediate first sync</code></pre>
 scripts/waive-lift.sh argus    # reports N tasks merged without review during the pause</code></pre>
   <p>While a waive is active, every <code>review_pending</code> emission from <code>sweep-ingest.sh</code> bumps <code>accumulated_count</code> atomically. The SessionStart hook surfaces a one-line banner on every new session so a pause can't become invisible. Closes <a href="https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/83">#83</a>.</p>
 
+  <h3 style="margin-top: 32px;">Guarded issue body edits</h3>
+  <p>Replace GitHub issue bodies from generated content through a preview-first wrapper. The guard refuses empty input, rejects bodies below configurable byte/line thresholds by default, and keeps mutation behind explicit <code>--apply</code>.</p>
+  <pre><code>scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md
+scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply</code></pre>
+  <p>Emergency/debug bypass is user-controlled via <code>STUDIO_BYPASS_ISSUE_BODY_GUARD=1</code> or <code>--bypass-body-guard</code>; assistants must not set it silently.</p>
+
   <h3 style="margin-top: 32px;">Orphan-debrief backfill</h3>
   <p>Recover tasks that completed and emitted a debrief but never landed a row in the master plan — a "silent double-miss" where prior sweeps flipped <code>state: emitted → done</code> without updating the plan, then subsequent sweeps skipped the already-done debrief permanently.</p>
   <pre><code>scripts/backfill-orphan-debriefs.sh           # dry-run: preview what would be back-filled

@@ -145,6 +145,7 @@ scripts/studio-pr-baseline-report.sh 366                    # PR-level timing, c
 scripts/host-preflight.sh codex /repo                       # prove gh + git credential access before host task work
 scripts/studio-chain-reviewed.sh apollo-network-efficiency --host codex --review-host claude-reviewer  # pre-run plan review + reviewed chain PR merges
 scripts/run-apollo-network-reviewed-chain.sh                # fire-and-sleep Apollo network chain launcher; prints PID + log path
+scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply
 scripts/pre-commit-review.sh                                # manual no-secret reviewer gate for risky staged diffs
 scripts/pr-headless-review.sh <pr>                          # run smoke-eligible no-secret reviewer gate, then merge if non-blocked
 scripts/pr-headless-review.sh <pr> --no-require-cross-host   # opt out of the default independent-provider reviewer requirement
@@ -219,6 +220,7 @@ scripts/                # multi-worker fleet (BETA)
   field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
   studio-chain-runner.sh   # execute studio issue chains with capacity-scaled fresh sessions, UUID telemetry, and private run reports
+  issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
