@@ -181,6 +181,8 @@ scripts/lint-v2-bootstrap.sh --staged                   # blocks pre-A0.5 substr
 scripts/lint-v2-enforcement.sh --staged                 # A0.6 Studio v2 SPEC-derived substrate/profile gates
 scripts/v2-profile.sh --profile ios-turnip --validate   # validate the A6 project-profile layer and iOS profile
 scripts/v2-profile.sh --profile ios-turnip --operation build --project-root /path/to/project --dry-run  # resolve an abstract operation without running it
+scripts/v2-cutover.sh --status                          # report A9 v1 archive / v2 traffic-switch status
+scripts/v2-cutover.sh --validate                        # validate the A9 cutover manifest and rollback playbook
 scripts/lint-build-release-message.sh --file draft.md --channel appstore   # A11 message shape + duplicate lint
 scripts/lint-project-skill-links.sh [--host codex]      # repo-local project skill discovery link invariant + repair helper
 scripts/pr-headless-review.sh <pr>                      # run smoke-eligible reviewer, post gate with cross-host/fallback metadata, merge if non-blocked

@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/core/v2/schemas/cutover.schema.json",
+  "title": "Studio v2 cutover manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "parent_issue",
+    "leaf_issue",
+    "status",
+    "archive",
+    "traffic_switch",
+    "parity",
+    "rollback",
+    "carryover"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "studio-v2-cutover" },
+    "parent_issue": { "const": 444 },
+    "leaf_issue": { "const": 527 },
+    "status": { "enum": ["staged", "cut-over", "rolled-back"] },
+    "archive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["legacy_root", "surfaces", "policy"],
+      "properties": {
+        "legacy_root": { "const": "legacy/v1" },
+        "surfaces": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "archive_path", "status"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "archive_path": { "type": "string", "pattern": "^legacy/v1/.+" },
+              "status": { "enum": ["preserved-forwarder", "archived-by-manifest", "deferred"] }
+            }
+          }
+        },
+        "policy": { "type": "string", "minLength": 1 }
+      }
+    },
+    "traffic_switch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary_invocation", "compatibility_forwarders", "cutover_status", "source_of_truth"],
+      "properties": {
+        "primary_invocation": { "const": "/dev-studio" },
+        "compatibility_forwarders": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^/.+" }
+        },
+        "cutover_status": { "const": "cut-over" },
+        "source_of_truth": { "const": "core/v2/skills/dev-studio/forwarders.yaml" }
+      }
+    },
+    "parity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_checks", "golden_scenarios"],
+      "properties": {
+        "required_checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "golden_scenarios": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "legacy_invocation", "v2_invocation", "evidence"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "legacy_invocation": { "type": "string", "pattern": "^/.+" },
+              "v2_invocation": { "type": "string", "pattern": "^/dev-studio .+" },
+              "evidence": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trigger_events", "playbook"],
+      "properties": {
+        "trigger_events": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "playbook": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "carryover": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}
