@@ -7,7 +7,7 @@ budget_tokens: 1200
 reads:
   - current conversation context
   - git status / git diff / git log when repo changes are involved
-  - gh issue / gh pr state when GitHub work is involved
+  - GitHub issue / PR state via scripts/studio-gh.sh when GitHub work is involved
   - _shared/patterns/budget-telemetry.md when token usage is available
 writes: []
 ---
@@ -37,7 +37,7 @@ Do not use this for ordinary progress updates while work is still in flight.
    After: Evidence has been read or the missing evidence is stated.
    - `git status --short`
    - relevant `git log --oneline -n 5`
-   - `gh issue view` / `gh pr view` when GitHub state matters
+   - `scripts/studio-gh.sh issue view` / `scripts/studio-gh.sh pr view` when GitHub state matters
    - test/build command results if they were run
 3. RECORD automated work separately from user-pending work.
    Before: The scope includes elapsed time, decisions, blocked items, or follow-ups.

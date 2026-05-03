@@ -9,7 +9,7 @@ reads:
   - git log --all (read-only)
   - git tag (read-only, with subjects)
   - ~/.claude-personal/projects/<project-hash>/memory/*.md
-  - gh issue list (if gh authenticated; remote call)
+  - scripts/studio-gh.sh issue list (if GitHub is authenticated; remote call)
 writes: []
 ---
 
@@ -21,9 +21,9 @@ The prevention half of the planning-quality layer. Before proposing a piece of w
 |---|---|
 | G1 Already shipped | `git log` subject + `git tag` annotations mentioning the keyword — shipped or in-progress work. |
 | G2 Already tried | Memory files (`~/.claude-personal/projects/<hash>/memory/*.md`) mentioning the keyword — prior decisions, failed approaches, or context the user previously gave. |
-| G3 Already in backlog | `gh issue list --state all --search` — any open or closed issue mentioning the keyword. |
+| G3 Already in backlog | `scripts/studio-gh.sh issue list --state all --search` — any open or closed issue mentioning the keyword. |
 
-Grep-only, no LLM. Remote call only for G3 (gh issue list); skipped silently if `gh` isn't authenticated.
+Grep-only, no LLM. Remote call only for G3 (GitHub issue list); skipped silently if GitHub auth isn't available through `scripts/studio-gh.sh`.
 
 ## Step 1 — Run the guard
 
