@@ -75,7 +75,7 @@ chains:
     issues: [388, 25, 367]
 ```
 
-The manifest argument may be a file path, or a bare name resolved as `chains/<name>.yaml` and then `chains/<name>.yml`. For example, `/studio work chain workflow-measurement-improvements` resolves to `chains/workflow-measurement-improvements.yaml`.
+The manifest argument may be a file path, or a bare name resolved as `chains/<name>.yaml` and then `chains/<name>.yml`. For example, `/studio work chain workflow-measurement-improvements` resolves to `chains/workflow-measurement-improvements.yaml`; `/studio work chain v2-transition` resolves to the canonical phasewise Studio v2 transition manifest.
 
 Chain behavior:
 
