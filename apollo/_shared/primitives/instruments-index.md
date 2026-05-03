@@ -1,6 +1,6 @@
 ---
 name: Instruments routing index
-description: Diagnostic-question → Instruments template routing table covering P0 modes (memory, thermal, battery, cpu) and Phase-2 modes (launch, scroll, network, hangs), plus xctrace capture recipes.
+description: Diagnostic-question → Instruments template routing table covering shipped and planned Apollo modes, plus xctrace capture recipes.
 type: reference
 schema_version: 1
 ---
@@ -32,10 +32,10 @@ A trace is hard evidence only when (a) it was recorded under a named scenario, (
 | scroll (P2) | "is it main thread or GPU?" | Animation Hitches | Metal System Trace | Hitches splits CPU-bound vs GPU-bound |
 | hangs (P2) | "why did the main thread block?" | Hangs | Time Profiler | Hangs surfaces ≥250ms blocks; Time Profiler attributes the offending stack |
 | hangs (P2) | "is it a lock or sync I/O?" | System Trace | File Activity | System Trace shows kdebug events incl. lock contention and syscalls |
-| network (P2) | "what's on the wire?" | Network | System Trace | per-connection timing; correlate with `MXNetworkTransferMetric` |
+| network | "what's on the wire?" | Network | System Trace | HTTP Traffic tasks / transactions, per-connection timing, and transfer volume; correlate with `MXNetworkTransferMetric` |
 | any | "what just happened, broadly?" | System Trace | — | Catch-all when the question isn't yet sharpened |
 
-The table is exhaustive for the P0 modes and the named Phase-2 modes; expansion is additive (new row, no schema change).
+The table is exhaustive for the active and planned Apollo diagnostic questions listed here; expansion is additive (new row, no schema change).
 
 ## Templates Apollo uses
 
@@ -52,7 +52,7 @@ The table is exhaustive for the P0 modes and the named Phase-2 modes; expansion 
 | **Metal System Trace** | command-buffer scheduling, GPU work, display sync | iOS 13+ | Pair with Animation Hitches for end-to-end render diagnosis |
 | **Animation Hitches** | each frame's deadline-vs-actual + classification | iOS 13+ | Cite hitch ratio + per-hitch stack; matches `XCTOSSignpostMetric.scrollDecelerationHitchTimeRatio` |
 | **Hangs** | runs sampling on main-thread blocks ≥ threshold (default 250ms) | iOS 16+ | Pair with `MXHangDiagnostic` from MetricKit |
-| **Network** | per-connection bytes, RTT, retransmits | iOS 13+ | Correlate by timestamp with Power Profiler `network` row |
+| **Network** | HTTP Traffic / URLSession tasks and transactions, per-connection bytes, RTT, retransmits | iOS 13+ | Correlate by timestamp with Power Profiler `network` row; trace artifacts are sensitive and must not be committed or quoted with private URLs / payloads |
 | **System Trace** | kdebug events: VM, scheduling, syscalls, locks | iOS 13+ | Highest coverage, highest noise; drop into when nothing else fits |
 | **File Activity** | open / read / write / close with stacks and bytes | iOS 13+ | The only template that resolves which file is being written |
 | **Core Animation** | render-server FPS, commit / draw timing | iOS 13+ | Out-of-process render-server data; not visible in app-only profiling |
@@ -80,6 +80,7 @@ Mode-specific recipes (selected templates Apollo invokes most):
 | memory dirty | `xctrace record --template "VM Tracker" --launch -- <bundle> --time-limit 60s` |
 | thermal hot | `xctrace record --template "Time Profiler" --launch -- <bundle> --time-limit 30s --append-run` |
 | battery foreground | `xctrace record --template "Power Profiler" --device <ios-device> --time-limit 5m` |
+| network traffic | `xctrace record --template "Network" --device <ios-device> --launch -- <bundle> --time-limit 300s --output network.trace` |
 | scroll hitches | `xctrace record --template "Animation Hitches" --launch -- <bundle> --time-limit 20s` |
 | hangs | `xctrace record --template "Hangs" --launch -- <bundle> --time-limit 60s` |
 
@@ -105,6 +106,7 @@ Schemas Apollo reads:
 | `power-history` | Power Profiler | wattage per subsystem time series |
 | `cpu-profile` | Time Profiler | weighted call tree |
 | `hitch` | Animation Hitches | per-hitch stack + classification |
+| Network / HTTP Traffic schemas | Network | task / transaction intervals, connection timing, bytes, HTTP version, blocked / waiting / sending / receiving states; discover exact schema names with `xctrace export --toc` before parsing |
 
 `xctrace export --toc` lists every available schema for a given trace — Apollo runs it once per template to discover schemas without hard-coding.
 

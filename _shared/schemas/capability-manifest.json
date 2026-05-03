@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-05-03T03:17:46Z",
+  "generated_at": "2026-05-03T03:56:09Z",
   "agents": [
     {
       "name": "studio",
@@ -303,15 +303,15 @@
     {
       "name": "apollo",
       "router": "apollo/SKILL.md",
-      "description": "iOS performance agent. Per-metric mode packs (memory/thermal/battery/cpu) under a strict-9 evidence gate. Refuses recommendations without hard evidence; auto-captures via the execution surface.",
-      "reads": ["apollo/_shared/integrations/imgly-and-metal.md", "apollo/_shared/primitives/code-attribution.md", "apollo/_shared/primitives/evidence-gate.md", "apollo/_shared/primitives/execution-surface.md", "apollo/_shared/primitives/instruments-index.md", "apollo/_shared/primitives/metrickit.md", "apollo/_shared/primitives/scenarios.md", "apollo/_shared/primitives/signpost-assistant.md", "apollo/_shared/primitives/signposts.md", "apollo/_shared/primitives/source-map.md", "apollo/_shared/primitives/xctest-baselines.md", "~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/<project>/apollo/captures/**", "~/.dev-studio/<project>/apollo/deferred/*.yaml", "~/.dev-studio/<project>/apollo/scenarios/*.yaml", "~/.dev-studio/<project>/events/**.jsonl"],
+      "description": "iOS performance agent. Per-metric mode packs (memory/thermal/battery/cpu/network) under strict-9 evidence gating. Refuses recommendations without hard evidence.",
+      "reads": ["apollo/_shared/integrations/imgly-and-metal.md", "apollo/_shared/primitives/canonical-antipatterns.md", "apollo/_shared/primitives/code-attribution.md", "apollo/_shared/primitives/evidence-gate.md", "apollo/_shared/primitives/execution-surface.md", "apollo/_shared/primitives/instruments-index.md", "apollo/_shared/primitives/metrickit.md", "apollo/_shared/primitives/organizer-asc.md", "apollo/_shared/primitives/scenarios.md", "apollo/_shared/primitives/signpost-assistant.md", "apollo/_shared/primitives/signposts.md", "apollo/_shared/primitives/source-map.md", "apollo/_shared/primitives/xctest-baselines.md", "~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/<project>/apollo/captures/**", "~/.dev-studio/<project>/apollo/deferred/*.yaml", "~/.dev-studio/<project>/apollo/scenarios/*.yaml", "~/.dev-studio/<project>/events/**.jsonl"],
       "writes": ["~/.dev-studio/.runtime/locks/apollo/*", "~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/apollo/recommendations/<id>.md", "~/.dev-studio/<project>/apollo/scenarios/<scenario-id>.yaml", "~/.dev-studio/<project>/apollo/signpost-plans/<plan-id>.yaml", "~/.dev-studio/<project>/events/<today>.jsonl"],
       "modes": [
         {
           "name": "battery",
           "path": "apollo/modes/battery.md",
           "type": "mode-pack",
-          "description": "Diagnose → measure → propose → patch → re-measure protocol for battery / energy regressions under strict-9 evidence gating. Covers foreground compute, background overrun, always-on subsystems, and radio drain.",
+          "description": "Diagnose → measure → propose → patch → re-measure protocol for battery / energy regressions under strict-9 evidence gating.",
           "reads": ["~/.dev-studio/<project>/apollo/captures/**", "~/.dev-studio/<project>/apollo/baselines/*.json", "~/.dev-studio/<project>/apollo/deferred/*.yaml", "~/.dev-studio/.runtime/host-capabilities.yaml", "~/.dev-studio/<project>/events/**.jsonl"],
           "writes": ["~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/recommendations/<id>.md", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/events/<today>.jsonl", "~/.dev-studio/.runtime/locks/apollo/*"],
           "snapshots": [],
@@ -350,6 +350,17 @@
           "snapshots": [],
           "dry_run": false,
           "budget_tokens": 6000
+        },
+        {
+          "name": "network",
+          "path": "apollo/modes/network.md",
+          "type": "mode-pack",
+          "description": "Diagnose -> measure -> recommend -> verify protocol for network-efficiency regressions under strict-9 evidence gating.",
+          "reads": ["apollo/_shared/primitives/source-map.md", "apollo/_shared/primitives/evidence-gate.md", "apollo/_shared/primitives/instruments-index.md", "apollo/_shared/primitives/metrickit.md", "apollo/_shared/primitives/signposts.md", "apollo/_shared/primitives/organizer-asc.md", "apollo/_shared/primitives/canonical-antipatterns.md", "~/.dev-studio/.runtime/host-capabilities.yaml"],
+          "writes": ["~/.dev-studio/<project>/apollo/captures/<id>/**", "~/.dev-studio/<project>/apollo/recommendations/<id>.md", "~/.dev-studio/<project>/apollo/deferred/<id>.yaml", "~/.dev-studio/<project>/events/<today>.jsonl", "~/.dev-studio/.runtime/locks/apollo/*"],
+          "snapshots": [],
+          "dry_run": false,
+          "budget_tokens": 7000
         },
         {
           "name": "profile",
