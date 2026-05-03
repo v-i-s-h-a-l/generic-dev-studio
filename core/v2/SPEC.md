@@ -312,8 +312,9 @@ warning-tier review feedback into hidden implementation behavior.
   The A1 schema fixes the canonical role set for this phase; future registry
   expansion must either retire the A1 `parent_issue`/`leaf_issue` constants or
   fork the schema deliberately.
-- A2/A2a implement the `/dev-studio` umbrella router and modular router
-  contract.
+- A2 defines the `/dev-studio` umbrella router and v1 compatibility forwarders
+  in `core/v2/skills/dev-studio/`. A2a implements the modular router contract
+  and complexity/no-business-logic lint.
 - A3/A3b/A3c implement vendored skill loading and the iOS skill catalog.
 - A4/A4a implement durable subscribers, telemetry, and weekly metrics.
 - A5 implements context-budget enforcement.
