@@ -63,8 +63,10 @@ scripts/analyze-collect.sh --project turnip-ios         # stats dump for a usage
 scripts/analyze-collect.sh --project turnip-ios --since 2026-04-01
 scripts/forge-latency-report.sh --project turnip-ios --days 14   # stage-level task latency + review-gate comparison
 scripts/field-workflow-report.sh --project turnip-ios --days 14   # Field loop timing, tokens, gates, review coverage, improvement candidates
-scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # plan chain branches, capacity-scaled fresh sessions, PR review/merge
-scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex # execute chains with node/RAM-sized session pool + private report
+scripts/studio-chain-runner.sh workflow-measurement-improvements            # default plan/explain + private resumable state
+scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # same resolved graph, then non-mutating command trace
+scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex --yes # execute after plan with node/RAM-sized session pool + private report
+scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from ~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/state.json
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
 scripts/studio-chain-reviewed.sh apollo-network-efficiency --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
 scripts/run-apollo-network-reviewed-chain.sh             # background Apollo network chain; prints PID + latest-log tail command
