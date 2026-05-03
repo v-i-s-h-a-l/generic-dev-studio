@@ -12,10 +12,10 @@
 # after the reviewed PR merges.
 #
 # Phase schedule:
-# - B5 native sub-issue migration starts the chain because the v2 umbrellas
-#   need GitHub-native leaf issues before substrate work can be safely queued.
-# - Add later phase chains only after their leaf issues exist and their phase
-#   plan review is clean.
+# - B5 native sub-issue migration starts the chain by linking #495 as the
+#   first GitHub-native leaf under the #443 PM-surface umbrella.
+# - Keep this B5 chain scoped to #495. Add future B/A/C/D runnable leaves only
+#   after their native leaf issues exist and their phase plan review is clean.
 
 schema_version: 1
 chains:
