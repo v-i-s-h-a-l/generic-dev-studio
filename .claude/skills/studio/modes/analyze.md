@@ -84,7 +84,7 @@ If a pattern can't be cleanly anonymized, route it to the **private report** ins
 ## Step 5 — Act + confirm
 
 - Private report → write `~/.dev-studio/<project>/analysis/<today>.md`. Append if today's file already exists. Never `git add`.
-- Public issues → `gh issue create --label <enhancement|bug|polish>` per CLAUDE.md §Backlog. One issue per distinct pattern; do not lump.
+- Public issues → `scripts/studio-gh.sh issue create --label <enhancement|bug|polish>` per CLAUDE.md §Backlog. One issue per distinct pattern; do not lump.
 - Rule tweaks → in-place edit + commit message `review: <one-liner>` (auto-apply tier).
 - Parking-lot → append entry with date + rationale.
 
@@ -108,4 +108,4 @@ Never delete a skipped record without user consent.
 
 ## Fixture
 
-`tests/mode-packs/studio/analyze.yaml` — subagent must correctly route to private vs public output, refuse to dispatch to chanakya queues, surface skipped records explicitly, and apply the privacy scrub before any `gh issue create`.
+`tests/mode-packs/studio/analyze.yaml` — subagent must correctly route to private vs public output, refuse to dispatch to chanakya queues, surface skipped records explicitly, and apply the privacy scrub before any public issue create.

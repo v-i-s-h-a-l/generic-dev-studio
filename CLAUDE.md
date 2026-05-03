@@ -108,15 +108,21 @@ The **agent layer** (`chanakya/`, `achilles/`, `argus/` — their SKILL.md, docs
 
 This rule applies retroactively: when touching any doc surface, if existing cross-layer cards are present, strip them in the same commit.
 
+## GitHub CLI home normalization (hard rule)
+
+Assistant-initiated GitHub CLI calls in this repo MUST go through `scripts/studio-gh.sh ...`, not raw `gh ...`. Codex and other hosts can launch with synthetic `HOME` values; `scripts/studio-gh.sh` sources `scripts/lib-paths.sh` and uses `with_login_home_for_github` so `gh` sees the user's real login keychain/config. Inside scripts, source `scripts/lib-paths.sh` and wrap GitHub/PR/issue mutations or remote credential probes with `with_login_home_for_github gh ...` or `with_login_home_for_github git ...`.
+
+User-controlled override for intentional isolation tests: `STUDIO_BYPASS_PARENT_HOME_FLIP=1`. Assistants must not set it to bypass a failing GitHub operation.
+
 ## Backlog
 
-When the user agrees on new work in chat (explicitly: "let's do X", "let's plan Y for later") — **open a GitHub issue** for it via `gh issue create` with the appropriate label (`phase-2`, `roadmap`, `enhancement`, `bug`, `polish`). No need to ask permission for items the user has explicitly discussed and agreed to.
+When the user agrees on new work in chat (explicitly: "let's do X", "let's plan Y for later") — **open a GitHub issue** via `scripts/studio-gh.sh issue create` with the appropriate label (`phase-2`, `roadmap`, `enhancement`, `bug`, `polish`). No need to ask permission for items the user has explicitly discussed and agreed to.
 
 When work lands on `main` that closes an issue, close the issue with a one-line note pointing at the commit/PR.
 
 `FORGE-RELIABILITY.md` is archived, not the active-track index. Do not update its historical status rows for routine issue drift. If a new safety-floor regression reopens the Forge lane, create a fresh active planning surface and link the archive instead of appending to it.
 
-When the user asks "what's pending?" / "what's on the list?" / "what's next?" — run `gh issue list` and surface; don't load the issue list speculatively into context.
+When the user asks "what's pending?" / "what's on the list?" / "what's next?" — run `scripts/studio-gh.sh issue list` and surface; don't load the issue list speculatively into context.
 
 ## Cross-host phase review (hard rule)
 

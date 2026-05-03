@@ -44,6 +44,13 @@ grep -qx "$LOGIN_HOME" "$GH_HOME_LOG"
 grep -q 'studio: HOME normalized for GitHub op (parent=codex)' "$err"
 
 : > "$GH_HOME_LOG"
+PATH="$BIN:$PATH" HOME="$SYNTH_HOME" "$ROOT/scripts/studio-gh.sh" auth status \
+  >"$TMPROOT/studio-gh.out" 2>"$TMPROOT/studio-gh.err"
+
+grep -qx "$LOGIN_HOME" "$GH_HOME_LOG"
+grep -q 'studio: HOME normalized for GitHub op (parent=codex)' "$TMPROOT/studio-gh.err"
+
+: > "$GH_HOME_LOG"
 PATH="$BIN:$PATH" HOME="$SYNTH_HOME" STUDIO_BYPASS_PARENT_HOME_FLIP=1 bash -c "
   . '$ROOT/scripts/lib-paths.sh'
   with_login_home_for_github gh auth status

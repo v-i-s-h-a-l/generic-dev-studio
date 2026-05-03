@@ -133,11 +133,12 @@ can fetch, resolve commits, push, or verify private-repo changes. The studio
 uses `scripts/host-preflight.sh <host> <repo-root>` as the shared gate. It
 requires both:
 
-- `gh auth status` succeeds in the exact login environment used to launch the
-  host session.
+- `gh auth status` succeeds through the normalized login `HOME` used for
+  studio GitHub operations.
 - `git ls-remote --exit-code <project-origin> HEAD` succeeds, which exercises
   the Git credential helper, ssh-agent, or keychain path that later
-  commit-resolution and fetch steps depend on.
+  commit-resolution and fetch steps depend on, also through the normalized
+  login `HOME` when the caller started under a synthetic host home.
 
 Adapters must document how the host receives the same credential surface as
 the reference host. Codex chain-runner sessions launch with the user's login

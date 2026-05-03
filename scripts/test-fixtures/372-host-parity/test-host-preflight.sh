@@ -7,12 +7,23 @@ trap 'rm -rf "$TMPROOT"' EXIT
 
 BIN="$TMPROOT/bin"
 HOME_DIR="$TMPROOT/home"
+LOGIN_HOME="$TMPROOT/login-home"
+SYNTH_HOME="$TMPROOT/.codex-homes/personal"
 REPO="$TMPROOT/repo"
 REAL_GIT=$(command -v git)
-mkdir -p "$BIN" "$HOME_DIR" "$REPO"
+mkdir -p "$BIN" "$HOME_DIR" "$LOGIN_HOME" "$SYNTH_HOME" "$REPO"
+
+cat > "$BIN/dscl" <<SH
+#!/usr/bin/env bash
+printf 'NFSHomeDirectory: %s\n' "$LOGIN_HOME"
+SH
+chmod +x "$BIN/dscl"
 
 cat > "$BIN/gh" <<'SH'
 #!/usr/bin/env bash
+if [ -n "${GH_HOME_LOG:-}" ]; then
+  printf '%s\n' "$HOME" >> "$GH_HOME_LOG"
+fi
 case "$*" in
   "auth status")
     case "${GH_AUTH_STATUS:-ok}" in
@@ -29,6 +40,9 @@ cat > "$BIN/git" <<SH
 #!/usr/bin/env bash
 if [ "\$1" = "-C" ] && [ "\$3" = "ls-remote" ]; then
   printf 'ls-remote\\n' >> "$TMPROOT/git-calls"
+  if [ -n "\${GIT_HOME_LOG:-}" ]; then
+    printf '%s\\n' "\$HOME" >> "\$GIT_HOME_LOG"
+  fi
   case "\${LS_REMOTE_STATUS:-ok}" in
     ok) exit 0 ;;
     *) printf 'auth failed\\n' >&2; exit 128 ;;
@@ -62,6 +76,17 @@ PATH="$BIN:$PATH" HOME="$HOME_DIR" GH_AUTH_STATUS=ok LS_REMOTE_STATUS=ok \
   "$ROOT/scripts/host-preflight.sh" codex "$REPO" >"$TMPROOT/pass.out" 2>"$TMPROOT/pass.err"
 grep -q 'ls-remote' "$TMPROOT/git-calls" || { printf 'FAIL: git ls-remote was not exercised\n' >&2; exit 1; }
 grep -q 'PASS host=codex' "$TMPROOT/pass.err" || { printf 'FAIL: missing pass diagnostic\n' >&2; cat "$TMPROOT/pass.err" >&2; exit 1; }
+
+GH_HOME_LOG="$TMPROOT/gh-home.log"
+GIT_HOME_LOG="$TMPROOT/git-home.log"
+export GH_HOME_LOG GIT_HOME_LOG
+: > "$GH_HOME_LOG"
+: > "$GIT_HOME_LOG"
+PATH="$BIN:$PATH" HOME="$SYNTH_HOME" GH_AUTH_STATUS=ok LS_REMOTE_STATUS=ok \
+  "$ROOT/scripts/host-preflight.sh" codex "$REPO" >"$TMPROOT/synth.out" 2>"$TMPROOT/synth.err"
+grep -qx "$LOGIN_HOME" "$GH_HOME_LOG" || { printf 'FAIL: gh did not use login HOME under synthetic HOME\n' >&2; cat "$GH_HOME_LOG" >&2; exit 1; }
+grep -qx "$LOGIN_HOME" "$GIT_HOME_LOG" || { printf 'FAIL: git did not use login HOME under synthetic HOME\n' >&2; cat "$GIT_HOME_LOG" >&2; exit 1; }
+grep -q 'normalized GitHub HOME' "$TMPROOT/synth.err" || { printf 'FAIL: missing HOME normalization diagnostic\n' >&2; cat "$TMPROOT/synth.err" >&2; exit 1; }
 
 if ! grep -q 'host_preflight "$host" "$REPO_ROOT"' "$ROOT/scripts/studio-chain-runner.sh"; then
   printf 'FAIL: studio-chain-runner does not call host preflight before chain work\n' >&2

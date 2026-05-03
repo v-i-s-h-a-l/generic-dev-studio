@@ -145,6 +145,7 @@ scripts/forge-latency-report.sh --days 14                   # stage-level Forge 
 scripts/field-workflow-report.sh --days 14                  # Field loop timing, tokens, gate pass rates, review coverage, improvement candidates
 scripts/studio-pr-baseline-report.sh 366                    # PR-level timing, churn, gate, and generated-file baselines
 scripts/host-preflight.sh codex /repo                       # prove gh + git credential access before host task work
+scripts/studio-gh.sh issue list --state open                # assistant-safe GitHub CLI wrapper; normalizes synthetic Codex HOME
 scripts/studio-chain-reviewed.sh apollo-network-efficiency --host codex --review-host claude-reviewer  # pre-run plan review + reviewed chain PR merges
 # Chain manifests may set phase_review: required|auto|off; required/auto gates issue phases through scripts/phase-review.sh and forwards compact clean outcome feedback privately.
 scripts/run-apollo-network-reviewed-chain.sh                # fire-and-sleep Apollo network chain launcher; prints PID + log path
@@ -225,6 +226,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-chain-runner.sh   # plan/execute/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, locks, and private run reports
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
+  studio-gh.sh          # GitHub CLI wrapper for assistant/interactive calls; normalizes synthetic Codex HOME
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   appstore-watch.sh     # polls ASC for pending submission; finalizes draft release + Slack on release
