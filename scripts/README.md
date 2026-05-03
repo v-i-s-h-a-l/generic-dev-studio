@@ -63,6 +63,7 @@ scripts/analyze-collect.sh --project turnip-ios         # stats dump for a usage
 scripts/analyze-collect.sh --project turnip-ios --since 2026-04-01
 scripts/forge-latency-report.sh --project turnip-ios --days 14   # stage-level task latency + review-gate comparison
 scripts/field-workflow-report.sh --project turnip-ios --days 14   # Field loop timing, tokens, gates, review coverage, improvement candidates
+scripts/studio-weekly.sh --post                                  # weekly GitHub PM digest comment on the pinned summary issue
 scripts/studio-chain-runner.sh workflow-measurement-improvements            # default plan/explain + private resumable state
 scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # same resolved graph, then non-mutating command trace
 scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex --yes # execute after plan with node/RAM-sized session pool + private report
@@ -74,8 +75,11 @@ scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a 
 # Chain reports include typed halt records and decision escrow when automation pauses or continues on a low-risk default.
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
 scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
-scripts/studio-gh.sh issue list --state open          # gh wrapper for assistant/interactive calls; normalizes synthetic Codex HOME to login HOME
+scripts/studio-project-state.sh --status Todo         # field-aware backlog reader for the Studio v2 Projects board
+scripts/studio-gh.sh issue list --state open          # gh wrapper for narrow issue lookups; normalizes synthetic Codex HOME to login HOME
+scripts/studio-dependency-export.sh --issue 443       # Mermaid graph from native GitHub blocked_by dependencies; no body parsing
 scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply; STUDIO_BYPASS_ISSUE_BODY_GUARD=1 is user-controlled emergency/debug bypass
+scripts/studio-staleness-triage.sh --json             # dry-run PM issue staleness plan; --apply labels stale/escalated/archive-candidate issues and posts idempotent comments
 
 # Parent-side GitHub auth:
 # assistant-initiated calls use scripts/studio-gh.sh; scripts that own gh/PR/issue mutations call with_login_home_for_github

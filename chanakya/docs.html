@@ -1021,6 +1021,16 @@ scripts/waive-lift.sh argus    # reports N tasks merged without review during th
 scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply</code></pre>
   <p>Emergency/debug bypass is user-controlled via <code>STUDIO_BYPASS_ISSUE_BODY_GUARD=1</code> or <code>--bypass-body-guard</code>; assistants must not set it silently.</p>
 
+  <h3 style="margin-top: 32px;">Native dependency export</h3>
+  <p>Render GitHub-native issue dependencies as Mermaid for PM-surface review. The exporter reads the <code>blocked_by</code> API and does not parse issue bodies.</p>
+  <pre><code>scripts/studio-dependency-export.sh --issue 443</code></pre>
+
+  <h3 style="margin-top: 32px;">PM-surface staleness triage</h3>
+  <p>Preview or apply GitHub issue staleness labels for the studio PM surface. The script adds stale, escalation, and archive-candidate labels at configurable inactivity thresholds; live mutation stays behind <code>--apply</code>.</p>
+  <pre><code>scripts/studio-staleness-triage.sh --json
+scripts/studio-staleness-triage.sh --apply</code></pre>
+  <p>The scheduled GitHub Action runs weekly with <code>permissions: issues: write</code>. Comments are marker-based so escalation prompts are idempotent.</p>
+
   <h3 style="margin-top: 32px;">Orphan-debrief backfill</h3>
   <p>Recover tasks that completed and emitted a debrief but never landed a row in the master plan — a "silent double-miss" where prior sweeps flipped <code>state: emitted → done</code> without updating the plan, then subsequent sweeps skipped the already-done debrief permanently.</p>
   <pre><code>scripts/backfill-orphan-debriefs.sh           # dry-run: preview what would be back-filled
@@ -1040,6 +1050,13 @@ scripts/forge-latency-report.sh --project turnip-ios --since 2026-04-01 --cutove
 scripts/studio-pr-baseline-report.sh --recent 10
 scripts/studio-pr-baseline-report.sh 366 --json</code></pre>
   <p>Use the trend summary during retrospectives to identify which workflow phase is growing by PR class. Treat the numbers as process baselines, not individual productivity scoring.</p>
+
+  <h3 style="margin-top: 32px;">Studio weekly digest script</h3>
+  <p>Summarize the studio repo's GitHub issue activity for the free-tier PM surface: open/created/closed counts, net backlog change, open-age buckets, label distribution, aged open issues, recent closures, and closed-issue trend.</p>
+  <pre><code>scripts/studio-weekly.sh
+scripts/studio-weekly.sh --json
+scripts/studio-weekly.sh --post</code></pre>
+  <p>The scheduled GitHub workflow runs <code>--post</code> every Monday, creates or reuses the <code>Weekly Studio Digest</code> issue, pins it, and appends the weekly summary as a comment.</p>
 
   <h3 style="margin-top: 32px;">Field workflow report</h3>
   <p>Measure the full Field loop from canonical events and brief YAML: stage timing, token usage, build/test pass rates, review coverage, telemetry gaps, and aggregate improvement candidates. The report is private-analysis safe by default and prints only abstract failure classes and workflow patterns.</p>
