@@ -38,8 +38,23 @@ role_for_file() {
   yq -r '.role // ""' "$1"
 }
 
+expected_leaf_issue_for_role() {
+  case "$1" in
+    worker|reviewer|perf) printf '526\n' ;;
+    planner) printf '540\n' ;;
+    qa-engineer) printf '541\n' ;;
+    flow-tester) printf '542\n' ;;
+    release-manager) printf '543\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+is_migrated_role() {
+  expected_leaf_issue_for_role "$1" >/dev/null 2>&1
+}
+
 validate_contract_file() {
-  local file="$1" rel key role
+  local file="$1" rel key role expected_leaf actual_leaf
   case "$file" in
     "$REPO_ROOT"/*) rel="${file#"$REPO_ROOT/"}" ;;
     *) rel="$file" ;;
@@ -52,7 +67,7 @@ validate_contract_file() {
     }
   done
 
-  yq -e '.schema_version == 1 and .kind == "studio-v2-role-contract" and .parent_issue == 444 and .leaf_issue == 526' "$file" >/dev/null 2>&1 || {
+  yq -e '.schema_version == 1 and .kind == "studio-v2-role-contract" and .parent_issue == 444' "$file" >/dev/null 2>&1 || {
     printf 'v2-role-contract: invalid contract envelope: %s\n' "$rel" >&2
     return 1
   }
@@ -63,13 +78,17 @@ validate_contract_file() {
     return 1
   }
 
-  case "$role" in
-    worker|reviewer|perf) ;;
-    *)
-      printf 'v2-role-contract: A8 contract has out-of-scope role in %s: %s\n' "$rel" "$role" >&2
-      return 1
-      ;;
-  esac
+  if ! is_migrated_role "$role"; then
+    printf 'v2-role-contract: migrated contract has out-of-scope role in %s: %s\n' "$rel" "$role" >&2
+    return 1
+  fi
+
+  expected_leaf=$(expected_leaf_issue_for_role "$role")
+  actual_leaf=$(yq -r '.leaf_issue // ""' "$file")
+  [ "$actual_leaf" = "$expected_leaf" ] || {
+    printf 'v2-role-contract: %s has wrong leaf_issue for %s: got %s want %s\n' "$rel" "$role" "$actual_leaf" "$expected_leaf" >&2
+    return 1
+  }
 
   yq -e '(.inputs | length > 0) and (.outputs | length > 0) and (.reads | length > 0) and (.writes | length > 0) and (.decision_rights | length > 0) and (.escalation_triggers | length > 0) and (.failure_semantics | length > 0) and (.verification_floor | length > 0)' "$file" >/dev/null 2>&1 || {
     printf 'v2-role-contract: empty contract section in %s\n' "$rel" >&2
@@ -92,9 +111,9 @@ validate_contracts() {
     roles="${roles}${role}"$'\n'
   done < <(contract_files)
 
-  for role in worker reviewer perf; do
+  for role in planner worker reviewer qa-engineer flow-tester perf release-manager; do
     printf '%s' "$roles" | grep -Fxq "$role" || {
-      printf 'v2-role-contract: missing A8 role contract: %s\n' "$role" >&2
+      printf 'v2-role-contract: missing migrated role contract: %s\n' "$role" >&2
       exit 3
     }
   done
@@ -122,13 +141,10 @@ resolve_contract() {
     exit 1
   }
 
-  case "$canonical" in
-    worker|reviewer|perf) ;;
-    *)
-      printf 'v2-role-contract: role has no A8 migrated contract: %s\n' "$canonical" >&2
-      exit 1
-      ;;
-  esac
+  if ! is_migrated_role "$canonical"; then
+    printf 'v2-role-contract: role has no migrated contract: %s\n' "$canonical" >&2
+    exit 1
+  fi
 
   file="$CONTRACT_DIR/$canonical.yaml"
   [ -f "$file" ] || {

@@ -160,7 +160,7 @@ scripts/chanakya-task-train.sh --train export-flow --yes     # serial plan-revie
 scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply
 scripts/pre-commit-review.sh                                # manual no-secret reviewer gate for risky staged diffs
 scripts/v2-role-resolve.sh chanakya                         # resolve Studio v2 compatibility aliases to canonical role names
-scripts/v2-role-contract.sh --resolve --role achilles        # resolve migrated A8 worker/reviewer/perf contracts
+scripts/v2-role-contract.sh --resolve --role shipper         # resolve migrated v2 role contracts
 scripts/lint-v2-enforcement.sh --staged                     # A0.6 Studio v2 SPEC-derived substrate/profile gates
 scripts/v2-profile.sh --profile ios-turnip --list           # A6 project-profile operation resolver
 scripts/v2-cutover.sh --status                              # A9 v1 archive / v2 traffic-switch status
@@ -258,7 +258,7 @@ scripts/                # multi-worker fleet (BETA)
   lint-architecture.sh  # staged router/frontmatter checks; --full runs repository-wide audits
   lint-project-skill-links.sh # blocks missing repo-local project skill discovery links
   v2-role-resolve.sh    # Studio v2 canonical role + compatibility alias resolver
-  v2-role-contract.sh   # Studio v2 A8 worker/reviewer/perf contract resolver
+  v2-role-contract.sh   # Studio v2 migrated role-contract resolver
   lint-v2-enforcement.sh # A0.6 Studio v2 SPEC-derived substrate/profile gates
   v2-profile.sh          # A6 resolver/runner for profile-owned build/test/lint/release operations
   lint-build-release-message.sh # A11 build/release message shape + duplicate linter

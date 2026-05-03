@@ -1,0 +1,59 @@
+schema_version: 1
+artifact_kind: planner-output
+artifact_id: planner-output:issue-540
+created_at: "2026-05-03T21:24:24Z"
+producer_role: planner
+consumer_role: reviewer
+subject_ref: issue:540
+idempotency_key: planner:issue-540:role-contract
+payload:
+  scope:
+    - Add the planner role contract and its typed handoff validation fixture.
+  non_goals:
+    - Do not implement qa-engineer, flow-tester, or release-manager role contracts.
+    - Do not switch user-project runtime traffic.
+  dependencies:
+    - A0d role topology and handoff RFC.
+    - Existing worker, reviewer, and perf role-contract migration.
+  reusable_api_findings:
+    - scripts/v2-role-resolve.sh already resolves planner aliases from core/v2/registry/roles.json.
+    - scripts/v2-role-contract.sh is the existing resolver/list/validation primitive for executable role contracts.
+    - scripts/lint-v2-enforcement.sh already checks minimum handoff envelope and role-contract fields.
+  risks:
+    - Planner must not take manager-owned final acceptance or dispatch authority.
+    - Planner-output must preserve manager escalation for irreducible conflicts.
+  acceptance_criteria:
+    - Planner resolves through role-contract list and alias resolution without regressing worker, reviewer, or perf.
+    - Planner-output fixture validates against the v2 handoff schema.
+    - Planner contract documents decision rights, failure semantics, verification floor, and manager escalation triggers.
+  decomposition:
+    - contract_id: worker-contract:issue-540
+      summary: Implement planner role contract, resolver coverage, and planner-output handoff fixture.
+      owner_role: worker
+      allowed_paths:
+        - core/v2/roles/planner.yaml
+        - core/v2/schemas/role-contract.schema.json
+        - core/v2/schemas/handoff.schema.json
+        - core/v2/handoffs/planner-output.yaml
+        - scripts/v2-role-contract.sh
+        - scripts/test-fixtures/526-role-contracts/test-role-contracts.sh
+        - scripts/test-fixtures/540-planner-contract/test-planner-contract.sh
+      required_checks:
+        - scripts/test-fixtures/526-role-contracts/test-role-contracts.sh
+        - scripts/test-fixtures/540-planner-contract/test-planner-contract.sh
+        - scripts/lint-v2-enforcement.sh --full
+      stop_conditions:
+        - Required schema validation tooling is unavailable.
+        - Resolver changes would remove worker, reviewer, or perf coverage.
+        - Implementation would need qa-engineer, flow-tester, or release-manager role contracts.
+      summary_artifact: .studio/chain-worker-summary.json
+  review_ask: Verify the planner contract preserves manager escalation and the handoff fixture validates without broadening adjacent role scope.
+  escalation:
+    required: false
+    reason: ""
+    manager_decision_needed: ""
+evidence_refs:
+  - core/v2/roles/planner.yaml
+  - core/v2/schemas/handoff.schema.json
+privacy_classification: public
+status: ready

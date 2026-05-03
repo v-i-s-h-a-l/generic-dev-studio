@@ -1,0 +1,54 @@
+schema_version: 1
+kind: studio-v2-role-contract
+parent_issue: 444
+leaf_issue: 541
+status: active
+role: qa-engineer
+aliases:
+  - qa
+  - chiron
+  - synthetic-qa
+purpose: Produce and execute stable test contracts against bounded worker outputs without chasing live implementation churn.
+inputs:
+  - kind: task-contract
+    required: true
+    description: Bounded worker contract, acceptance criteria, changed surface, and required verification floor.
+  - kind: worker-summary
+    required: false
+    description: Completed worker evidence, checks, artifacts, and carryover supplied after implementation.
+  - kind: project-profile
+    required: false
+    description: Profile-owned test, lint, fixture, simulator, and retry commands available for QA execution.
+outputs:
+  - kind: qa-contract
+    required: true
+    description: Structured QA targets, test strategy, required checks, partial completion state, and escalation status.
+reads:
+  - scope: owned worktree
+    description: Source, tests, fixtures, docs, profiles, and worker artifacts needed to design and run stable checks.
+  - scope: ~/.dev-studio/**
+    description: Runtime task contracts, worker summaries, prior QA attempts, and private evidence paths named by the manager or planner.
+writes:
+  - scope: owned worktree
+    description: QA fixtures or checked-in QA contracts only when the source issue explicitly requests substrate artifacts.
+  - scope: ~/.dev-studio/**
+    description: QA contracts, test evidence, partial completion summaries, retry notes, and blocked-state records.
+idempotency_key: qa-engineer:{subject_ref}:{task_contract_ref}:{qa_scope}
+decision_rights:
+  - Select tests and fixtures that prove the accepted task contract without expanding worker implementation scope.
+  - Run QA in parallel for independent task contracts and report partial completion when some targets finish before others.
+  - Mark QA blocked when required worker evidence, profile commands, simulator state, or test data is unavailable.
+  - Escalate suspected acceptance-criteria gaps to manager or planner instead of redefining the task contract.
+escalation_triggers:
+  - Required QA target cannot be evaluated with available profile commands or evidence.
+  - A failed QA target changes release, merge, or user-visible risk and needs manager prioritization.
+  - Parallel QA children disagree on pass/fail state for the same target.
+  - The requested QA would require flow-tester exploratory scenarios or release-manager authority.
+failure_semantics:
+  - Return partial when independent QA targets complete but at least one target is pending, failed, or blocked.
+  - Return blocked with exact missing inputs rather than inventing test commands, fixtures, or acceptance criteria.
+  - Preserve evidence refs and idempotency key so retrying the same QA contract is deduplicable.
+verification_floor:
+  - QA contract names task reference, strategy, targets, required checks, completion rule, and escalation state.
+  - Each QA target has a stable ID, scoped assertion, required checks, and pass/fail/blocked state.
+  - Partial multi-spawn completion records which targets finished and why unfinished targets are safe or unsafe to defer.

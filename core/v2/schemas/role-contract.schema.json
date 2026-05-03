@@ -27,10 +27,19 @@
     "schema_version": {"const": 1},
     "kind": {"const": "studio-v2-role-contract"},
     "parent_issue": {"const": 444},
-    "leaf_issue": {"const": 526},
+    "leaf_issue": {"enum": [526, 540, 541, 542, 543]},
     "status": {"enum": ["active", "reserved", "retired"]},
     "role": {
-      "enum": ["worker", "reviewer", "perf"]
+      "enum": ["planner", "worker", "reviewer", "qa-engineer", "flow-tester", "perf", "release-manager"]
+    },
+    "aliases": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9 _-]*$"
+      }
     },
     "purpose": {"type": "string", "minLength": 1},
     "inputs": {

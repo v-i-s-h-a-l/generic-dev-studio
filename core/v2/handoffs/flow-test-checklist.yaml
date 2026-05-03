@@ -1,0 +1,35 @@
+schema_version: 1
+artifact_kind: flow-test-checklist
+artifact_id: flow-test-checklist:issue-542
+created_at: "2026-05-03T22:20:00Z"
+producer_role: flow-tester
+consumer_role: reviewer
+subject_ref: issue:542
+idempotency_key: flow-tester:issue-542:role-contract
+payload:
+  flow_scope:
+    - Validate the substrate distinction between exploratory user-flow checks, QA automation, and reviewer code review.
+  distinction: Flow tester owns scenario-level user outcomes and severity thresholds; qa-engineer owns automated test contracts; reviewer owns plan/spec/code compliance.
+  scenarios:
+    - scenario_id: role-contract-flow
+      description: Role contract names flow scope, scenario states, severity, evidence refs, and merge-block semantics.
+      severity: high
+      status: pass
+      evidence_refs:
+        - core/v2/roles/flow-tester.yaml
+    - scenario_id: checklist-schema
+      description: Handoff fixture validates scenario IDs, evidence refs, severity, and pass/fail/blocked states.
+      severity: medium
+      status: pass
+      evidence_refs:
+        - core/v2/handoffs/flow-test-checklist.yaml
+  merge_block_rule: Critical or high severity failed or blocked scenarios block merge until manager or operator resolves the risk.
+  escalation:
+    required: false
+    reason: ""
+    manager_decision_needed: ""
+evidence_refs:
+  - core/v2/roles/flow-tester.yaml
+  - core/v2/schemas/handoff.schema.json
+privacy_classification: public
+status: ready
