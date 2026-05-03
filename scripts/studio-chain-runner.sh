@@ -282,6 +282,71 @@ generated_file_count_between() {
     '
 }
 
+write_chain_task_start_envelope() {
+  local chain_name="$1" chain_branch="$2" issue_branch="$3" issue_json="$4" host="$5" worktree="$6" chain_run_id="$7" issue_run_id="$8" summary_path="$9" start_path="${10}"
+  mkdir -p "$(dirname "$start_path")"
+  jq -n \
+    --argjson source_issue "$issue_json" \
+    --arg created_at "$(iso_ts_now)" \
+    --arg run_id "$RUN_ID" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg chain "$chain_name" \
+    --arg branch "$chain_branch" \
+    --arg issue_branch "$issue_branch" \
+    --arg worktree "$worktree" \
+    --arg host "$host" \
+    --arg summary_path "$summary_path" \
+    '{
+      schema_version: 1,
+      kind: "start",
+      created_at: $created_at,
+      run_id: $run_id,
+      chain_run_id: $chain_run_id,
+      issue_run_id: $issue_run_id,
+      source_issue: {
+        number: ($source_issue.number | tonumber),
+        title: ($source_issue.title // ""),
+        body: ($source_issue.body // ""),
+        url: ($source_issue.url // ""),
+        state: ($source_issue.state // "")
+      },
+      ownership: {
+        chain: $chain,
+        branch: $branch,
+        issue_branch: $issue_branch,
+        worktree: $worktree,
+        host: $host
+      },
+      expected_summary_artifact: $summary_path,
+      required_checks: [
+        "Work only in the issue worktree.",
+        "Keep changes scoped to the source issue.",
+        "Commit the result on the current issue branch.",
+        "Write the expected summary artifact as valid JSON before exit.",
+        "Do not commit private .studio artifacts."
+      ],
+      allowed_assumptions: [
+        "The source issue body is the authoritative scoped brief.",
+        "The chain runner owns PR creation, main merge, issue closure, and worktree cleanup.",
+        "Runtime handoff artifacts under .studio are private and disposable."
+      ],
+      stop_conditions: [
+        "Required scope cannot be implemented safely from the source issue.",
+        "Verification needed for an unqualified completion claim cannot be run or captured.",
+        "The worker would need to change unrelated issues, open a PR, merge to main, close the issue, or commit private .studio artifacts."
+      ],
+      privacy: {
+        classification: "private-runtime",
+        rules: [
+          "Do not store secrets or raw sensitive prompts.",
+          "Do not commit .studio artifacts.",
+          "Keep public summaries abstract and free of project-private details."
+        ]
+      }
+    }' > "$start_path"
+}
+
 diff_stats_json() {
   local worktree="$1" before="$2" after="$3"
   local stats
@@ -295,28 +360,40 @@ diff_stats_json() {
     '$stats + {generated_file_count: $generated}'
 }
 
+changed_artifacts_json() {
+  local worktree="$1" before="$2" after="$3"
+  git -C "$worktree" diff --name-only "$before" "$after" 2>/dev/null | jq -R -s -c 'split("\n")[:-1]'
+}
+
 ingest_worker_summary() {
   local chain_name="$1" issue="$2" host="$3" worktree="$4" before="$5" after="$6" exit_code="$7" started_at="$8" chain_run_id="$9" issue_run_id="${10}"
   local summary_path="$worktree/.studio/chain-worker-summary.json"
   local dest="$SUMMARY_ROOT/${chain_name}-issue-${issue}-${issue_run_id}.json"
-  local ended_at duration_s stats
+  local ended_at created_at duration_s stats changed_artifacts
   ended_at=$(now_epoch)
+  created_at=$(iso_ts_now)
   duration_s=$(duration_since "$started_at" "$ended_at")
   stats=$(diff_stats_json "$worktree" "$before" "$after")
+  changed_artifacts=$(changed_artifacts_json "$worktree" "$before" "$after")
 
   if [ -f "$summary_path" ] && jq -e . "$summary_path" >/dev/null 2>&1; then
     jq -c \
       --arg run_id "$RUN_ID" \
       --arg chain_run_id "$chain_run_id" \
       --arg issue_run_id "$issue_run_id" \
+      --arg created_at "$created_at" \
       --arg host "$host" \
       --argjson exit_code "$exit_code" \
       --arg before "$before" \
       --arg after "$after" \
       --argjson duration_s "$duration_s" \
       --argjson stats "$stats" \
+      --argjson changed_artifacts "$changed_artifacts" \
       '. + {
         schema_version: (.schema_version // 1),
+        kind: (.kind // "completion"),
+        created_at: (.created_at // $created_at),
+        status: (.status // (if $exit_code == 0 then "completed" else "failed" end)),
         run_id: (.run_id // $run_id),
         chain_run_id: (.chain_run_id // $chain_run_id),
         issue_run_id: (.issue_run_id // $issue_run_id),
@@ -329,6 +406,12 @@ ingest_worker_summary() {
         additions: (.additions // $stats.additions),
         deletions: (.deletions // $stats.deletions),
         generated_file_count: (.generated_file_count // $stats.generated_file_count),
+        changed_artifacts: (.changed_artifacts // $changed_artifacts),
+        commit_or_pr_references: (.commit_or_pr_references // {commit_before:$before, commit_after:$after, pr_url:null, pr_number:null}),
+        tests: (.tests // []),
+        lints: (.lints // []),
+        builds: (.builds // []),
+        tokens: (.tokens // null),
         functionality_delivered: (.functionality_delivered // null),
         carryover: (.carryover // null),
         lessons: (.lessons // null),
@@ -339,6 +422,7 @@ ingest_worker_summary() {
       --arg run_id "$RUN_ID" \
       --arg chain_run_id "$chain_run_id" \
       --arg issue_run_id "$issue_run_id" \
+      --arg created_at "$created_at" \
       --arg chain "$chain_name" \
       --argjson issue "$issue" \
       --arg host "$host" \
@@ -347,8 +431,12 @@ ingest_worker_summary() {
       --arg after "$after" \
       --argjson duration_s "$duration_s" \
       --argjson stats "$stats" \
+      --argjson changed_artifacts "$changed_artifacts" \
       '{
         schema_version: 1,
+        kind: "completion",
+        created_at: $created_at,
+        status: (if $exit_code == 0 then "completed" else "failed" end),
         run_id: $run_id,
         chain_run_id: $chain_run_id,
         issue_run_id: $issue_run_id,
@@ -363,6 +451,8 @@ ingest_worker_summary() {
         additions: $stats.additions,
         deletions: $stats.deletions,
         generated_file_count: $stats.generated_file_count,
+        changed_artifacts: $changed_artifacts,
+        commit_or_pr_references: {commit_before:$before, commit_after:$after, pr_url:null, pr_number:null},
         tests: [],
         lints: [],
         builds: [],
@@ -991,8 +1081,8 @@ trap finish_unexpected_exit EXIT
 chain_count=$(jq '.chains | length' "$PLAN_JSON")
 
 execute_issue_session() {
-  local chain_name="$1" chain_branch="$2" issue="$3" host="$4" worktree="$5" chain_run_id="$6" issue_run_id="$7" before="$8"
-  local issue_json issue_title issue_body spawn prompt summary_path
+  local chain_name="$1" chain_branch="$2" issue="$3" host="$4" worktree="$5" issue_branch="$6" chain_run_id="$7" issue_run_id="$8" before="$9"
+  local issue_json issue_title issue_body spawn prompt summary_path start_path
   local -a spawn_argv
   local launch_home=""
 
@@ -1000,6 +1090,10 @@ execute_issue_session() {
   issue_title=$(printf '%s' "$issue_json" | jq -r '.title')
   issue_body=$(printf '%s' "$issue_json" | jq -r '.body // ""')
   summary_path="$worktree/.studio/chain-worker-summary.json"
+  start_path="$worktree/.studio/chain-task-start.json"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$issue_branch" "$issue_json" "$host" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path"
+  fi
 
   spawn=$(host_spawn_command "$host")
   # shellcheck disable=SC2206
@@ -1019,10 +1113,12 @@ Chain: $chain_name
 Chain branch: $chain_branch
 Issue: #$issue - $issue_title
 Working directory: $worktree
+Task start envelope: $start_path
 Required summary artifact: $summary_path
 
 Rules:
 - Work only in this working directory.
+- Read $start_path first when present; it is the bounded machine-readable start envelope for this task.
 - Implement only issue #$issue.
 - Keep changes scoped to this issue.
 - Commit the result on the current branch.
@@ -1036,6 +1132,9 @@ Rules:
 
 Summary JSON fields:
 - schema_version: 1
+- kind: "completion"
+- created_at
+- status
 - run_id: "$RUN_ID"
 - chain_run_id: "$chain_run_id"
 - issue_run_id: "$issue_run_id"
@@ -1156,7 +1255,7 @@ run_issue_job() {
   mark_issue_state "$issue_run_id" running "$before"
 
   set +e
-  execute_issue_session "$name" "$branch" "$issue" "$host" "$issue_worktree" "$chain_run_id" "$issue_run_id" "$before"
+  execute_issue_session "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$before"
   worker_rc=$?
   set -e
 
