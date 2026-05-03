@@ -121,6 +121,35 @@
         "allowed_assumptions": {
           "$ref": "#/$defs/stringList"
         },
+        "phase_review_context": {
+          "type": "array",
+          "description": "Compact private feedback forwarded from prior clean outcome reviews.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "source_issue": {
+                "type": "integer"
+              },
+              "source_issue_run_id": {
+                "type": "string"
+              },
+              "source_review": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "text"
+            ],
+            "additionalProperties": true
+          }
+        },
         "stop_conditions": {
           "$ref": "#/$defs/stringList"
         },

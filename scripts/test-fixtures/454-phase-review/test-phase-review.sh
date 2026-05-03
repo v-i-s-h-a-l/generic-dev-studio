@@ -107,6 +107,7 @@ fi
 
 grep -q 'PHASE_REVIEW_HOST=claude-reviewer' "$out"
 grep -q 'PHASE_REVIEW_OUTPUT=' "$out"
+grep -q 'PHASE_REVIEW_VERDICT=clean' "$out"
 grep -q 'nothing fatal' "$output"
 [ ! -s "$output.err" ]
 
