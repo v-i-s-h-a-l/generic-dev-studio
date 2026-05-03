@@ -72,6 +72,8 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /studio-help                     # slash-command shortcut for /studio help
 /studio work <track>             # claim track issues, then final reviewed PR + cleanup + summary
 /studio work chain workflow-measurement-improvements  # plan/resume issue chains: fresh sessions, UUID telemetry, reviewed PRs, cleanup
+scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
+scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
 STUDIO_TRACK=<track>             # session-start shortcut for /studio work <track>
 /studio nodes                    # day-2 fleet management — status, add, remove, health, sync, schedule
 /studio tf-push --background     # start TF archive/upload and keep session free for Slack drafting
@@ -219,7 +221,7 @@ scripts/                # multi-worker fleet (BETA)
   forge-latency-report.sh  # stage-level task latency + review-gate comparison from event logs
   field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
-  studio-chain-runner.sh   # plan/execute/resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, and private run reports
+  studio-chain-runner.sh   # plan/execute/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, locks, and private run reports
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
