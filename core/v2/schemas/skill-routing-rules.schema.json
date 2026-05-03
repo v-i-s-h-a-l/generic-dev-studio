@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "skill-routing-rules.schema.json",
+  "title": "Studio v2 skill routing rules",
+  "description": "YAML-driven, role-aware rules that map task context to vendored skills.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "parent_issue",
+    "leaf_issue",
+    "status",
+    "matching_policy",
+    "rules"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "studio-v2-skill-routing-rules"
+    },
+    "parent_issue": {
+      "const": 444
+    },
+    "leaf_issue": {
+      "const": 519
+    },
+    "status": {
+      "enum": ["active", "retired"]
+    },
+    "matching_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role_resolution", "rule_order", "condition_semantics", "unknown_context"],
+      "properties": {
+        "role_resolution": {
+          "const": "canonical Studio v2 role or alias via core/v2/registry/roles.json"
+        },
+        "rule_order": {
+          "const": "descending priority, then id"
+        },
+        "condition_semantics": {
+          "const": "all declared condition groups must match; omitted groups are unconstrained"
+        },
+        "unknown_context": {
+          "const": "missing optional context fields do not match constrained groups"
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "priority", "description", "skills", "when", "source"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "skills": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+            }
+          },
+          "finding_category": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "when": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "roles": {
+                "$ref": "#/$defs/non_empty_string_list"
+              },
+              "phases": {
+                "$ref": "#/$defs/non_empty_string_list"
+              },
+              "task_types": {
+                "$ref": "#/$defs/non_empty_string_list"
+              },
+              "stacks": {
+                "$ref": "#/$defs/non_empty_string_list"
+              },
+              "path_regexes": {
+                "$ref": "#/$defs/non_empty_string_list"
+              },
+              "prompt_regexes": {
+                "$ref": "#/$defs/non_empty_string_list"
+              }
+            }
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "non_empty_string_list": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

@@ -1,0 +1,152 @@
+schema_version: 1
+kind: studio-v2-skill-routing-rules
+parent_issue: 444
+leaf_issue: 519
+status: active
+matching_policy:
+  role_resolution: canonical Studio v2 role or alias via core/v2/registry/roles.json
+  rule_order: descending priority, then id
+  condition_semantics: all declared condition groups must match; omitted groups are unconstrained
+  unknown_context: missing optional context fields do not match constrained groups
+rules:
+  - id: swift-api-design
+    priority: 900
+    description: Route public or package API surface changes to Swift API naming review.
+    skills:
+      - swift-api-design-guidelines-skill
+    finding_category: api-design
+    when:
+      roles:
+        - worker
+        - reviewer
+        - planner
+      stacks:
+        - swift
+        - ios
+      path_regexes:
+        - "\\.swift$"
+      prompt_regexes:
+        - "\\b(public|package|protocol|api|rename|argument label|symbol)\\b"
+    source: _shared/rules/swift-skill-routing.md
+  - id: swift-architecture
+    priority: 850
+    description: Route new boundaries, modules, protocols, or architecture plans to the Swift architecture skill.
+    skills:
+      - swift-architecture-skill
+    finding_category: architecture
+    when:
+      roles:
+        - planner
+        - worker
+        - reviewer
+      stacks:
+        - swift
+        - ios
+      prompt_regexes:
+        - "\\b(module|boundary|architecture|coordinator|mvvm|tca|clean architecture|protocol)\\b"
+    source: _shared/rules/swift-skill-routing.md
+  - id: swift-concurrency
+    priority: 820
+    description: Route async, actor isolation, Sendable, and task lifecycle work to Swift concurrency review.
+    skills:
+      - swift-concurrency-pro
+    finding_category: concurrency
+    when:
+      roles:
+        - worker
+        - reviewer
+      stacks:
+        - swift
+        - ios
+      prompt_regexes:
+        - "\\b(async|await|task|actor|mainactor|sendable|nonisolated|cancellation)\\b"
+    source: _shared/rules/swift-skill-routing.md
+  - id: swiftui-view-work
+    priority: 800
+    description: Route SwiftUI view and state changes to SwiftUI implementation and refactor guidance.
+    skills:
+      - swiftui-pro
+      - swiftui-view-refactor
+    finding_category: swiftui
+    when:
+      roles:
+        - worker
+        - reviewer
+      stacks:
+        - swift
+        - ios
+      path_regexes:
+        - "\\.swift$"
+      prompt_regexes:
+        - "\\b(swiftui|view body|@state|@binding|@environment|@observable|view refactor|body split)\\b"
+    source: _shared/rules/swift-skill-routing.md
+  - id: swiftui-liquid-glass
+    priority: 780
+    description: Route iOS 26 Liquid Glass surfaces to the Liquid Glass skill.
+    skills:
+      - swiftui-liquid-glass
+    finding_category: swiftui-ios26
+    when:
+      roles:
+        - worker
+        - reviewer
+      stacks:
+        - swift
+        - ios
+      prompt_regexes:
+        - "\\b(liquid glass|ios 26|native blur|glass effect)\\b"
+    source: _shared/rules/swift-skill-routing.md
+  - id: swiftui-performance
+    priority: 760
+    description: Route SwiftUI rendering, redraw, allocation, and profiling work to the performance audit skill.
+    skills:
+      - swiftui-performance-audit
+    finding_category: swiftui-perf
+    when:
+      roles:
+        - worker
+        - reviewer
+        - perf
+      stacks:
+        - swift
+        - ios
+      prompt_regexes:
+        - "\\b(jank|hitch|redraw|render|allocation|instrument|profile|memory|cpu|scroll performance)\\b"
+    source: _shared/rules/swift-skill-routing.md
+  - id: imgly-engine
+    priority: 740
+    description: Route IMGLY CE.SDK engine changes to engine-specific guidance.
+    skills:
+      - imgly-engine-expert
+    finding_category: imgly
+    when:
+      roles:
+        - worker
+        - reviewer
+      stacks:
+        - swift
+        - ios
+      prompt_regexes:
+        - "\\b(imgly|ce\\.sdk|creative editor|block|scene|export|undo|redo|selection|history)\\b"
+    source: _shared/rules/swift-skill-routing.md
+  - id: swift-testing
+    priority: 720
+    description: Route Swift Testing and test-plan work to the Swift Testing skill.
+    skills:
+      - swift-testing-pro
+    finding_category: tests
+    when:
+      roles:
+        - worker
+        - reviewer
+        - qa-engineer
+      stacks:
+        - swift
+        - ios
+      task_types:
+        - test-unit
+        - test-integration
+        - test-tdd
+      prompt_regexes:
+        - "\\b(@test|#expect|swift testing|test plan|unit test|integration test)\\b"
+    source: _shared/rules/swift-skill-routing.md
