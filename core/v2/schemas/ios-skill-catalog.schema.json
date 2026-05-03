@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/core/v2/schemas/ios-skill-catalog.schema.json",
+  "title": "Studio v2 iOS skill catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "catalog",
+    "parent_issue",
+    "leaf_issue",
+    "profile",
+    "scope",
+    "catalog_policy",
+    "skills"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "min_reader", "deprecated_at"],
+      "properties": {
+        "name": { "const": "ios-skill-catalog" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "min_reader": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "deprecated_at": { "type": ["string", "null"] }
+      }
+    },
+    "catalog": { "type": "string", "minLength": 1 },
+    "parent_issue": { "type": "integer", "minimum": 1 },
+    "leaf_issue": { "type": "integer", "minimum": 1 },
+    "profile": { "type": "string", "minLength": 1 },
+    "scope": { "enum": ["project-profile", "global", "host-adapter"] },
+    "scope_note": { "type": "string" },
+    "catalog_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "routing_authority",
+        "source_of_truth",
+        "install_profile",
+        "host_registry_mutation"
+      ],
+      "properties": {
+        "routing_authority": { "enum": ["advisory", "authoritative"] },
+        "source_of_truth": { "type": "string", "minLength": 1 },
+        "install_profile": { "type": "string", "minLength": 1 },
+        "host_registry_mutation": { "enum": ["forbidden", "allowed"] }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "display_name",
+          "kind",
+          "status",
+          "domains",
+          "roles",
+          "triggers",
+          "skill_path",
+          "recipe_path",
+          "vendor_path",
+          "portability_path",
+          "source",
+          "license",
+          "authoring_standard",
+          "routing"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "display_name": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["vendored", "owned", "runtime-local"] },
+          "status": { "enum": ["available", "planned", "blocked"] },
+          "domains": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          },
+          "roles": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          },
+          "triggers": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          },
+          "skill_path": { "type": "string", "pattern": "^skills/" },
+          "recipe_path": { "type": "string", "pattern": "^recipes/" },
+          "vendor_path": { "type": "string", "pattern": "^skills/" },
+          "portability_path": { "type": "string", "pattern": "^skills/" },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["upstream", "path", "pinned_sha"],
+            "properties": {
+              "upstream": { "type": "string", "minLength": 1 },
+              "path": { "type": "string", "minLength": 1 },
+              "pinned_sha": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
+            }
+          },
+          "license": { "type": "string", "minLength": 1 },
+          "authoring_standard": { "enum": ["required", "exempt"] },
+          "routing": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["when_to_load", "primary_reason"],
+            "properties": {
+              "when_to_load": { "type": "string", "minLength": 1 },
+              "primary_reason": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

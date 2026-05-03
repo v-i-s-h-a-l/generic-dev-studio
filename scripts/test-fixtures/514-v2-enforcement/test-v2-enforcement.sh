@@ -14,6 +14,7 @@ make_repo() {
     "$repo/core/v2/routers" "$repo/core/v2/schemas" "$repo/core/v2/subscribers" \
     "$repo/profiles/ios/commands" "$repo/.githooks"
   cp "$ROOT/scripts/lint-v2-enforcement.sh" "$repo/scripts/lint-v2-enforcement.sh"
+  cp "$ROOT/scripts/v2-router-lint.sh" "$repo/scripts/v2-router-lint.sh"
   cp "$ROOT/scripts/lint-field-review-surfaces.sh" "$repo/scripts/lint-field-review-surfaces.sh"
   cat > "$repo/.githooks/pre-commit" <<'SH'
 #!/usr/bin/env bash

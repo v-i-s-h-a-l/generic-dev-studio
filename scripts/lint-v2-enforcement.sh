@@ -220,17 +220,17 @@ check_subscriber_checkpoints() {
 }
 
 check_router_constraints() {
-  local f rel count
-  find "$REPO_ROOT/core/v2/routers" -type f -name '*.sh' 2>/dev/null | while IFS= read -r f; do
-    rel=$(rel_for "$f")
-    count=$(sed '/^[[:space:]]*$/d;/^[[:space:]]*#/d' "$f" | wc -l | tr -d ' ')
-    if [ "$count" -gt 100 ]; then
-      printf 'E_V2_ROUTER_SIZE:%s:%s>100 | v2 routers stay dispatch-only; move logic to helpers\n' "$rel" "$count"
-    fi
-    if grep -nE '(xcodebuild|swift[[:space:]]+test|gh[[:space:]]+(issue|pr|release)|git[[:space:]]+push)' "$f" >/dev/null 2>&1; then
-      printf 'E_V2_ROUTER_LOGIC:%s | routers must not embed build, test, GitHub, release, or push logic\n' "$rel"
-    fi
-  done
+  local router_lint_out router_lint_rc
+  [ -x "$SCRIPT_DIR/v2-router-lint.sh" ] || {
+    printf 'E_V2_ROUTER_LINT:scripts/v2-router-lint.sh | v2 router enforcement must delegate to the A2a router linter\n'
+    return 0
+  }
+
+  router_lint_out=$("$SCRIPT_DIR/v2-router-lint.sh" "--$MODE" 2>&1)
+  router_lint_rc=$?
+  if [ "$router_lint_rc" -ne 0 ]; then
+    printf '%s\n' "$router_lint_out"
+  fi
 }
 
 check_profile_boundaries() {
@@ -258,6 +258,30 @@ check_docs_guidance() {
       printf 'E_V2_DOCS_AUTOMATION:%s | v2 docs must make automation/headless/operator-override guidance explicit\n' "$rel"
     fi
   done
+}
+
+check_context_budget_manifest() {
+  local manifest="core/v2/context-budget/manifest.json"
+  local schema="core/v2/schemas/context-budget.schema.json"
+  local resolver="scripts/v2-context-budget.sh"
+
+  [ -f "$REPO_ROOT/$manifest" ] || return 0
+
+  [ -f "$REPO_ROOT/$schema" ] || {
+    emit_error "E_V2_CONTEXT_BUDGET_SCHEMA:$schema | context-budget manifests need a schema"
+    return 0
+  }
+  [ -x "$REPO_ROOT/$resolver" ] || {
+    emit_error "E_V2_CONTEXT_BUDGET_RESOLVER:$resolver | context-budget manifests need an executable resolver"
+    return 0
+  }
+
+  local out rc
+  out=$("$REPO_ROOT/$resolver" --manifest "$REPO_ROOT/$manifest" --validate 2>&1)
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    emit_error "E_V2_CONTEXT_BUDGET:$manifest | resolver validation failed: $out"
+  fi
 }
 
 collect_subprocess_errors() {
@@ -288,6 +312,7 @@ check_subscriber_checkpoints
 collect_subprocess_errors < <(check_router_constraints)
 collect_subprocess_errors < <(check_profile_boundaries)
 collect_subprocess_errors < <(check_docs_guidance)
+check_context_budget_manifest
 
 if [ -x "$SCRIPT_DIR/lint-field-review-surfaces.sh" ] && { [ -d "$REPO_ROOT/core/v2" ] || [ -d "$REPO_ROOT/profiles" ]; }; then
   field_review_out=$("$SCRIPT_DIR/lint-field-review-surfaces.sh" "$REPO_ROOT/core/v2" "$REPO_ROOT/profiles" 2>&1)

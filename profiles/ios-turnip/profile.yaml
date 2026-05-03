@@ -1,0 +1,65 @@
+schema_version: 1
+kind: studio-v2-project-profile
+profile: ios-turnip
+display_name: iOS Turnip
+stack: ios
+project_detection:
+  required_any:
+    - "*.xcworkspace"
+    - "*.xcodeproj"
+  optional:
+    - Package.swift
+operations:
+  build:
+    description: Build the primary iOS scheme.
+    command: commands/xcode-operation
+    args: ["build"]
+    authority: commands/xcode-operation.authority.yaml
+    headless_safe: true
+  test:unit:
+    description: Run unit tests for the primary iOS scheme.
+    command: commands/xcode-operation
+    args: ["test-unit"]
+    authority: commands/xcode-operation.authority.yaml
+    headless_safe: true
+  test:ui:
+    description: Run UI tests for the primary iOS scheme.
+    command: commands/xcode-operation
+    args: ["test-ui"]
+    authority: commands/xcode-operation.authority.yaml
+    headless_safe: true
+  lint:
+    description: Run project-configured iOS linting.
+    command: commands/xcode-operation
+    args: ["lint"]
+    authority: commands/xcode-operation.authority.yaml
+    headless_safe: true
+  format:
+    description: Run project-configured iOS formatting.
+    command: commands/xcode-operation
+    args: ["format"]
+    authority: commands/xcode-operation.authority.yaml
+    headless_safe: false
+  release:beta:
+    description: Run the project beta-release command.
+    command: commands/xcode-operation
+    args: ["release-beta"]
+    authority: commands/xcode-operation.authority.yaml
+    headless_safe: false
+  release:prod:
+    description: Run the project production-release command.
+    command: commands/xcode-operation
+    args: ["release-prod"]
+    authority: commands/xcode-operation.authority.yaml
+    headless_safe: false
+rules:
+  - id: project-root-required
+    severity: block
+    description: Mutating profile operations require an explicit project root from invocation context or STUDIO_PROJECT_ROOT.
+  - id: release-command-explicit
+    severity: block
+    description: Release operations fail unless the project supplies the matching STUDIO_IOS_RELEASE_* command.
+  - id: no-core-command-edits
+    severity: block
+    description: Normal project command changes are made under profiles/ios-turnip, not core/v2.
+plugin_escape_hatches: []

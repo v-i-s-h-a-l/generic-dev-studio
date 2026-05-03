@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/core/v2/schemas/durable-event.schema.json",
+  "title": "Studio v2 durable event",
+  "type": "object",
+  "required": ["event", "occurred_at", "data"],
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "event_id": { "type": "string", "minLength": 1 },
+    "event": { "type": "string", "minLength": 1 },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "producer": {
+      "type": "object",
+      "properties": {
+        "agent": { "type": "string", "minLength": 1 },
+        "mode": { "type": "string" },
+        "instance_id": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "subject": { "type": "string" },
+    "task": { "type": "string" },
+    "idempotency_key": { "type": "string", "minLength": 1 },
+    "writable_action": { "type": "boolean" },
+    "data": { "type": "object" }
+  },
+  "additionalProperties": true
+}
