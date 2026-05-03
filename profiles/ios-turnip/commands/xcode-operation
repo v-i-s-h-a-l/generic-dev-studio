@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Shared iOS profile operation runner. The project profile owns platform mapping;
+# core/v2 only resolves abstract operation names.
+
+set -euo pipefail
+umask 022
+
+operation="${1:-}"
+[ -n "$operation" ] || {
+  printf 'xcode-operation: missing operation\n' >&2
+  exit 2
+}
+shift || true
+
+project_root="${STUDIO_PROJECT_ROOT:-}"
+[ -n "$project_root" ] || {
+  printf 'xcode-operation: STUDIO_PROJECT_ROOT is required for operation %s\n' "$operation" >&2
+  exit 2
+}
+[ -d "$project_root" ] || {
+  printf 'xcode-operation: project root not found: %s\n' "$project_root" >&2
+  exit 2
+}
+
+first_match() {
+  find "$project_root" -maxdepth 1 -name "$1" -print | sort | head -1
+}
+
+xcode_target_flags() {
+  local workspace project scheme destination
+  workspace="${STUDIO_IOS_WORKSPACE:-$(first_match '*.xcworkspace')}"
+  project="${STUDIO_IOS_PROJECT:-$(first_match '*.xcodeproj')}"
+  scheme="${STUDIO_IOS_SCHEME:-}"
+  destination="${STUDIO_IOS_DESTINATION:-platform=iOS Simulator,name=iPhone 16}"
+
+  if [ -n "$workspace" ]; then
+    printf '%s\0%s\0' -workspace "$workspace"
+  elif [ -n "$project" ]; then
+    printf '%s\0%s\0' -project "$project"
+  else
+    printf 'xcode-operation: no .xcworkspace or .xcodeproj found in %s\n' "$project_root" >&2
+    return 2
+  fi
+
+  if [ -n "$scheme" ]; then
+    printf '%s\0%s\0' -scheme "$scheme"
+  fi
+  printf '%s\0%s\0' -destination "$destination"
+}
+
+run_configured_shell() {
+  local env_name="$1" value
+  value="${!env_name:-}"
+  [ -n "$value" ] || {
+    printf 'xcode-operation: %s must be set for operation %s\n' "$env_name" "$operation" >&2
+    exit 2
+  }
+  (cd "$project_root" && sh -lc "$value")
+}
+
+run_xcodebuild() {
+  local action="$1"
+  local -a flags
+  while IFS= read -r -d '' part; do
+    flags+=("$part")
+  done < <(xcode_target_flags)
+  (cd "$project_root" && xcodebuild "${flags[@]}" "$action" "$@")
+}
+
+case "$operation" in
+  build) run_xcodebuild build "$@" ;;
+  test-unit) run_xcodebuild test "$@" ;;
+  test-ui) run_xcodebuild test "$@" ;;
+  lint) run_configured_shell STUDIO_IOS_LINT_COMMAND ;;
+  format) run_configured_shell STUDIO_IOS_FORMAT_COMMAND ;;
+  release-beta) run_configured_shell STUDIO_IOS_RELEASE_BETA_COMMAND ;;
+  release-prod) run_configured_shell STUDIO_IOS_RELEASE_PROD_COMMAND ;;
+  *)
+    printf 'xcode-operation: unsupported operation: %s\n' "$operation" >&2
+    exit 2
+    ;;
+esac

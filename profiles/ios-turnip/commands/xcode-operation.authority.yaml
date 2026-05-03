@@ -1,0 +1,24 @@
+action: ios-profile-operation
+role: helper
+filesystem:
+  reads:
+    - "$STUDIO_PROJECT_ROOT/**"
+  writes:
+    - "$STUDIO_PROJECT_ROOT/**"
+commands:
+  - xcodebuild
+  - sh
+secret_scopes:
+  - project-local
+mutation_scopes:
+  - build-artifacts
+  - project-formatting
+  - release-artifacts
+interactive: false
+headless_safe: true
+failure_classes:
+  - missing_project_root
+  - missing_xcode_container
+  - missing_project_command
+  - xcodebuild_failed
+override: null

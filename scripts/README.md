@@ -179,6 +179,8 @@ scripts/lint-field-review-surfaces.sh --staged          # blocks raw cross-host 
 scripts/v2-role-resolve.sh chanakya                     # resolve Studio v2 compatibility aliases to canonical role names
 scripts/lint-v2-bootstrap.sh --staged                   # blocks pre-A0.5 substrate code outside the A0.4 bootstrap/meta boundary
 scripts/lint-v2-enforcement.sh --staged                 # A0.6 Studio v2 SPEC-derived substrate/profile gates
+scripts/v2-profile.sh --profile ios-turnip --validate   # validate the A6 project-profile layer and iOS profile
+scripts/v2-profile.sh --profile ios-turnip --operation build --project-root /path/to/project --dry-run  # resolve an abstract operation without running it
 scripts/lint-project-skill-links.sh [--host codex]      # repo-local project skill discovery link invariant + repair helper
 scripts/pr-headless-review.sh <pr>                      # run smoke-eligible reviewer, post gate with cross-host/fallback metadata, merge if non-blocked
 scripts/pr-headless-review.sh <pr> --no-require-cross-host  # opt out of default independent-provider reviewer policy for explicit non-safety-floor runs
