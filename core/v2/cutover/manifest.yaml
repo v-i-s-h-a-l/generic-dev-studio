@@ -1,0 +1,73 @@
+schema_version: 1
+kind: studio-v2-cutover
+parent_issue: 444
+leaf_issue: 527
+status: cut-over
+archive:
+  legacy_root: legacy/v1
+  policy: "A9 records the v1 archive map and keeps compatibility forwarders as the rollback surface until A10 deletes v1 after the stability window."
+  surfaces:
+    - path: .claude/skills/studio/
+      archive_path: legacy/v1/.claude/skills/studio/
+      status: preserved-forwarder
+    - path: chanakya/
+      archive_path: legacy/v1/chanakya/
+      status: preserved-forwarder
+    - path: achilles/
+      archive_path: legacy/v1/achilles/
+      status: preserved-forwarder
+    - path: argus/
+      archive_path: legacy/v1/argus/
+      status: preserved-forwarder
+    - path: apollo/
+      archive_path: legacy/v1/apollo/
+      status: preserved-forwarder
+traffic_switch:
+  primary_invocation: /dev-studio
+  compatibility_forwarders:
+    - /studio
+    - /chanakya
+    - /achilles
+    - /argus
+    - /apollo
+  cutover_status: cut-over
+  source_of_truth: core/v2/skills/dev-studio/forwarders.yaml
+parity:
+  required_checks:
+    - scripts/lint-v2-bootstrap.sh --full
+    - scripts/lint-v2-enforcement.sh --full
+    - scripts/v2-cutover.sh --validate
+    - scripts/test-fixtures/527-cutover/test-v2-cutover.sh
+  golden_scenarios:
+    - name: manager triage
+      legacy_invocation: /studio resume-plan
+      v2_invocation: /dev-studio manager resume-plan
+      evidence: core/v2/manager/proof-of-life.yaml
+    - name: worker implementation
+      legacy_invocation: /achilles task
+      v2_invocation: /dev-studio worker task
+      evidence: core/v2/roles/worker.yaml
+    - name: reviewer verdict
+      legacy_invocation: /argus review
+      v2_invocation: /dev-studio reviewer review
+      evidence: core/v2/roles/reviewer.yaml
+    - name: perf investigation
+      legacy_invocation: /apollo profile
+      v2_invocation: /dev-studio perf profile
+      evidence: core/v2/roles/perf.yaml
+rollback:
+  trigger_events:
+    - v2 manager proof-of-life cannot produce a typed handoff artifact
+    - worker reviewer or perf role contract resolution fails
+    - parity fixture fails on the chain branch after ordered integration
+    - operator reports a v2 traffic regression during the A9 stability window
+  playbook:
+    - "Set core/v2/cutover/manifest.yaml status to rolled-back."
+    - "Set core/v2/skills/dev-studio/forwarders.yaml transition.cutover_status to not-cut-over."
+    - "Set every core/v2/skills/dev-studio/forwarders.yaml forwarders[].runtime_cutover to false."
+    - "Restore the v1 router wording from the legacy/v1 archive map if a host adapter replaced it."
+    - "Run scripts/v2-cutover.sh --validate --allow-rolled-back and scripts/test-fixtures/527-cutover/test-v2-cutover.sh --allow-rolled-back."
+    - "Record the rollback event and defer A10 until the failing parity scenario has a reviewed fix."
+carryover:
+  - "A10 deletes v1 only after the >=2 week stability window and operator sign-off required by #444."
+  - "Remaining canonical role contracts outside A8 stay tracked outside this leaf: manager, planner, qa-engineer, flow-tester, release-manager, host-adapter, operator."

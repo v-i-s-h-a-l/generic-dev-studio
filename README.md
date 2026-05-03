@@ -163,6 +163,7 @@ scripts/v2-role-resolve.sh chanakya                         # resolve Studio v2 
 scripts/v2-role-contract.sh --resolve --role achilles        # resolve migrated A8 worker/reviewer/perf contracts
 scripts/lint-v2-enforcement.sh --staged                     # A0.6 Studio v2 SPEC-derived substrate/profile gates
 scripts/v2-profile.sh --profile ios-turnip --list           # A6 project-profile operation resolver
+scripts/v2-cutover.sh --status                              # A9 v1 archive / v2 traffic-switch status
 scripts/lint-build-release-message.sh --file draft.md --channel testflight # A11 build/release message shape + duplicate lint
 scripts/pr-headless-review.sh <pr>                          # run smoke-eligible no-secret reviewer gate, then merge if non-blocked
 scripts/pr-headless-review.sh <pr> --no-require-cross-host   # opt out of the default independent-provider reviewer requirement
@@ -264,6 +265,7 @@ scripts/                # multi-worker fleet (BETA)
   test-mode-pack.sh     # skill-testing driver — runs fixtures against mode packs (on-demand, spawns claude -p)
   lint-field-review-surfaces.sh # blocks raw cross-host review snippets outside phase-review wrappers
   lint-v2-bootstrap.sh  # A0.4 substrate bootstrap gate before A0.5 SPEC sign-off
+  v2-cutover.sh         # A9 cutover manifest validator and rollback status reporter
   update-surface-manifest.sh  # regenerates docs-surface.json from command surface
   scaffold-agent.sh     # create new router-pattern-compliant agent skeleton
   graduation-scan.sh    # Jaccard scan for prose that should graduate into _shared/

@@ -9,9 +9,9 @@ version: 0.1.0
 # dev-studio — Studio v2 Umbrella Router
 
 `/dev-studio` is the Studio v2 entrypoint. It routes by canonical role first and
-keeps compatibility names as thin forwarders. This artifact is v2-scoped: the
-v1 `.claude/skills/studio/` router and `/studio` command remain authoritative
-for current Forge traffic until the A9 traffic switch.
+keeps compatibility names as thin forwarders. A9 cutover records v2 as the
+primary traffic surface in `core/v2/cutover/manifest.yaml`; v1 surfaces stay
+available as rollback-preserving compatibility forwarders until A10 deletion.
 
 Pattern contract: `core/v2/SPEC.md` §Roles and Handoffs. Canonical roles and
 compatibility aliases: `core/v2/registry/roles.json`. Forwarder manifest:
@@ -24,10 +24,9 @@ The router chooses the role contract for an invocation. Mode procedure,
 authority checks, handoff validation, event emission, and project-profile
 commands stay outside this router.
 
-It does not migrate v1 runtime behavior. Existing top-level skills
-(`/chanakya`, `/achilles`, `/argus`, `/apollo`) remain callable during the v1/v2
-transition; their v2 compatibility meaning is documented in
-`forwarders.yaml`.
+Existing top-level skills (`/chanakya`, `/achilles`, `/argus`, `/apollo`) remain
+callable during the A9 stability window. Their v2 compatibility meaning and
+runtime cutover state are documented in `forwarders.yaml`.
 
 <!-- v2-dev-studio:dispatch -->
 ## Dispatch table

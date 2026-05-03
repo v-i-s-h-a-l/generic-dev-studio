@@ -19,6 +19,9 @@ Current substrate artifacts:
 - `skills/dev-studio/` is the A2 umbrella skill. It defines `/dev-studio`,
   lists canonical role dispatch rows, and records v1 compatibility forwarders
   for `/chanakya`, `/achilles`, `/argus`, and `/apollo`.
+- `cutover/manifest.yaml` and `cutover/ROLLBACK.md` are the A9 archive,
+  traffic-switch, parity, and rollback playbook. Validate the cutover state
+  with `scripts/v2-cutover.sh --validate`.
 - `routers/modular-router-contract.yaml` and
   `schemas/router-contract.schema.json` define the A2a modular router contract.
   Validate router contracts and shell router boundaries with
