@@ -1,0 +1,48 @@
+schema_version: 1
+kind: studio-v2-role-contract
+parent_issue: 444
+leaf_issue: 526
+status: active
+role: worker
+purpose: Implement one bounded task contract in an isolated worktree and return typed completion evidence.
+inputs:
+  - kind: worker-contract
+    required: true
+    description: Scope, ownership, checks, stop conditions, and private summary artifact path for one executable leaf.
+  - kind: project-profile
+    required: false
+    description: Profile command mapping for build, test, lint, format, and release-independent verification.
+outputs:
+  - kind: worker-summary
+    required: true
+    description: Private completion artifact with status, changed files, verification evidence, commit, carryover, and blocked reason when applicable.
+  - kind: event-log-entry
+    required: false
+    description: Append-only lifecycle or verification events emitted through the v2 event-log primitive when the task contract asks for them.
+reads:
+  - scope: owned worktree
+    description: Source files and repo contracts inside the assigned worktree only.
+  - scope: ~/.dev-studio/**
+    description: Runtime input artifacts explicitly named by the worker contract.
+writes:
+  - scope: owned worktree
+    description: Files within the worker contract's ownership boundary.
+  - scope: ~/.dev-studio/**
+    description: Worker summary, debrief, evidence, or event artifacts explicitly named by the contract.
+idempotency_key: worker:{subject_ref}:{issue_run_id}
+decision_rights:
+  - Modify assigned files within the contract ownership boundary.
+  - Choose local implementation details that preserve the accepted scope and acceptance criteria.
+  - Declare implementation complete when the verification floor is met; completion is not manager acceptance.
+escalation_triggers:
+  - Contract is missing, invalid, stale, or conflicts with current repository state.
+  - Required verification cannot run or cannot produce evidence.
+  - Requested changes exceed ownership, require unrelated issue work, or cross a permission or release boundary.
+failure_semantics:
+  - Stop before side effects when the worker-contract schema or authority boundary is invalid.
+  - Return blocked with exact missing input when context or capability is unavailable.
+  - Preserve partial output details and the stable idempotency key if a failure happens after writes.
+verification_floor:
+  - Required checks from the worker contract are run or listed as skipped with reason.
+  - The private worker-summary artifact is valid JSON and names the final commit when changes are made.
+  - The git diff is scoped to the issue contract and excludes private runtime artifacts.

@@ -154,7 +154,7 @@ check_role_contracts() {
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     rel=$(rel_for "$f")
-    for key in purpose inputs outputs reads writes idempotency_key decision_rights escalation_triggers failure_semantics verification_floor; do
+    for key in role purpose inputs outputs reads writes idempotency_key decision_rights escalation_triggers failure_semantics verification_floor; do
       require_yaml_key "$rel" "$key" E_V2_ROLE_FIELD 'role contracts must declare the SPEC minimum fields'
     done
   done < <(find "$REPO_ROOT/core/v2/roles" -type f \( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null)

@@ -13,6 +13,9 @@ Current substrate artifacts:
   to `scripts/lint-v2-bootstrap.sh`.
 - `registry/roles.json` is the A1 canonical role registry. Resolve canonical
   names and compatibility aliases with `scripts/v2-role-resolve.sh`.
+- `roles/worker.yaml`, `roles/reviewer.yaml`, and `roles/perf.yaml` are the A8
+  executable role contracts for the migrated worker, reviewer, and perf roles.
+  Validate or resolve them with `scripts/v2-role-contract.sh`.
 - `skills/dev-studio/` is the A2 umbrella skill. It defines `/dev-studio`,
   lists canonical role dispatch rows, and records v1 compatibility forwarders
   for `/chanakya`, `/achilles`, `/argus`, and `/apollo`.

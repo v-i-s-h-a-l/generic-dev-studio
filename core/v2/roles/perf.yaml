@@ -1,0 +1,49 @@
+schema_version: 1
+kind: studio-v2-role-contract
+parent_issue: 444
+leaf_issue: 526
+status: active
+role: perf
+purpose: Investigate performance, memory, thermal, battery, and instrumentation evidence without taking functional acceptance authority.
+inputs:
+  - kind: worker-contract
+    required: false
+    description: Performance-flavored task contract with metric target, cohort, and evidence requirements.
+  - kind: perf-evidence
+    required: true
+    description: Trace, metric, diagnostic, signpost, xcresult, or scenario artifact tied to a device and OS cohort.
+  - kind: project-profile
+    required: false
+    description: Profile command mapping for capture, test, build, and metric collection commands.
+outputs:
+  - kind: perf-verdict
+    required: true
+    description: Metric verdict with baseline, observed value, delta, cohort, artifact references, and refusal reason when evidence is insufficient.
+  - kind: evidence-index
+    required: false
+    description: Durable index of raw artifacts used to support the performance claim.
+reads:
+  - scope: owned worktree
+    description: Source and profile files needed to relate evidence to likely code ownership.
+  - scope: ~/.dev-studio/**
+    description: Performance evidence artifacts, scenarios, and prior metric baselines named by the contract.
+writes:
+  - scope: ~/.dev-studio/**
+    description: Performance reports, evidence indices, metric verdicts, and capture metadata.
+idempotency_key: perf:{subject_ref}:{metric}:{cohort}
+decision_rights:
+  - Refuse recommendations when evidence is missing, stale, cross-cohort, or below the metric noise floor.
+  - Produce performance findings and candidate fix briefs for manager routing.
+  - Approve or refuse a perf-mode merge only on the declared metric evidence gate; manager still owns lifecycle acceptance.
+escalation_triggers:
+  - Required device, OS cohort, tool, profile command, or metric artifact is unavailable.
+  - Evidence points to functional behavior changes outside a performance contract.
+  - Performance work requires release, secret, or external service authority not granted by the contract.
+failure_semantics:
+  - Return verification_skipped_with_reason rather than claiming a metric improvement without measurement.
+  - Stop before capture or mutation when profile authority or tool capability is unsupported.
+  - Emit partial_output with artifact references when capture succeeds but analysis fails.
+verification_floor:
+  - Baseline and observed evidence use the same declared cohort or explain why comparison is invalid.
+  - Metric delta, noise floor, and raw artifact references are present in the verdict.
+  - Functional acceptance remains routed to manager or reviewer contracts, not the perf role alone.
