@@ -25,6 +25,7 @@ This is the machine-enforced complement to REVIEW.md R21 (the human gate for par
 | `project-memory.*reviews.*\.md` | #245 A.5 (2026-04-27) | legacy review markdown retired | write `plans/reviews/<id>.yaml` via argus-emit-verdict.sh |
 | `[Ww]rit(e\|es\|ing\|ten).*<task-id>-tests\.md` | #335 (2026-05-02) | standalone test-case sidecar writer retired | write full case objects to debrief `tests.added` / `tests.modified` |
 | `[Tt]est cases at .*<task-id>-tests\.md` | #335 (2026-05-02) | completion prose must not point users at retired sidecars | point users at `/chanakya test-manifest` or the debrief YAML |
+| `gh issue edit .*--body-file` | #463 (2026-05-03) | raw issue body replacement can erase generated bodies when stdin is empty | use `scripts/issue-body-edit.sh` with preview, thresholds, and explicit `--apply` |
 
 ## Adding an entry
 
@@ -52,4 +53,5 @@ plans/\.legacy-archive
 project-memory.*reviews.*\.md
 [Ww]rit(e|es|ing|ten).*<task-id>-tests\.md
 [Tt]est cases at .*<task-id>-tests\.md
+gh issue edit .*--body-file
 <!-- lint:patterns:end -->
