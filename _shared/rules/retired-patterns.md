@@ -23,8 +23,11 @@ This is the machine-enforced complement to REVIEW.md R21 (the human gate for par
 | `legacy_[a-zA-Z_]+_helpers` | #245 A.5 (2026-04-27) | helpers now stub-fail (exit 9) | use lib-ledger writers directly |
 | `plans/\.legacy-archive` | #245 A.4 (2026-04-27) | archive dir is read-only — no new writes | use `plans/tasks/*.yaml` via lib-ledger |
 | `project-memory.*reviews.*\.md` | #245 A.5 (2026-04-27) | legacy review markdown retired | write `plans/reviews/<id>.yaml` via argus-emit-verdict.sh |
+| `falling back to .*tests\.md` | #335 (2026-05-02) | `tests-pull-cases.sh` no longer treats markdown test projections as authority | read linked debrief YAML `tests.added` / `tests.modified` |
+| `processed debrief.*Test Cases` | #335 (2026-05-02) | processed markdown debriefs are not a test-case fallback source | read linked debrief YAML `tests.added` / `tests.modified` |
 | `[Ww]rit(e\|es\|ing\|ten).*<task-id>-tests\.md` | #335 (2026-05-02) | standalone test-case sidecar writer retired | write full case objects to debrief `tests.added` / `tests.modified` |
 | `[Tt]est cases at .*<task-id>-tests\.md` | #335 (2026-05-02) | completion prose must not point users at retired sidecars | point users at `/chanakya test-manifest` or the debrief YAML |
+| `task-load-spec.*non-ready.*exit[s]? 2` | #336 follow-up (2026-05-02) | non-ready canonical briefs have a distinct recovery exit | use exit 6 for non-ready briefs |
 | `gh issue edit .*--body-file` | #463 (2026-05-03) | raw issue body replacement can erase generated bodies when stdin is empty | use `scripts/issue-body-edit.sh` with preview, thresholds, and explicit `--apply` |
 
 ## Adding an entry
@@ -51,7 +54,10 @@ chanakya-tasks/
 legacy_[a-zA-Z_]+_helpers
 plans/\.legacy-archive
 project-memory.*reviews.*\.md
+falling back to .*tests\.md
+processed debrief.*Test Cases
 [Ww]rit(e|es|ing|ten).*<task-id>-tests\.md
 [Tt]est cases at .*<task-id>-tests\.md
+task-load-spec.*non-ready.*exit[s]? 2
 gh issue edit .*--body-file
 <!-- lint:patterns:end -->

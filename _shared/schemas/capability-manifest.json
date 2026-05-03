@@ -5,7 +5,7 @@
     "min_reader": "1.0.0",
     "deprecated_at": null
   },
-  "generated_at": "2026-05-03T14:24:25Z",
+  "generated_at": "2026-05-03T14:50:48Z",
   "agents": [
     {
       "name": "studio",
@@ -648,7 +648,7 @@
           "name": "tests",
           "path": "chanakya/modes/tests.md",
           "type": "mode-pack",
-          "description": "Test-manifest and test-flow generation from canonical debrief YAML, with historical sidecar fallback for old tasks.",
+          "description": "Test-manifest (per-task checklist) + test-flow (journey-ordered walkthrough, with promote + diff modes). The two test-planning sub-commands are grouped because they are consulted together and share reads against processed debriefs and per-task test artifacts.",
           "reads": ["plans/index.yaml                               # post-migration task + round + debrief index", "plans/tasks/*.yaml                             # post-migration per-task artifacts (schema: _shared/schemas/task.md)", "plans/debriefs/*.yaml                          # post-migration debrief artifacts (schema: _shared/schemas/debrief.md)", "plans/rounds/*.yaml                            # previous-round retest linkage (schema: _shared/schemas/round.md)", "journey-map.md                                 # optional project-root journey ordering", ".runtime/state/chanakya-snapshots/*.json       # snapshot cache"],
           "writes": ["plans/rounds/<round-id>.yaml                   # canonical (schema: _shared/schemas/round.md, round@1.0.0)", "plans/user-testing.md                          # per-task manifest (user-facing checklist surface)", "plans/index.yaml                               # regenerated via scripts/rebuild-index.sh after artifact writes", "events/<date>.jsonl                            # via scripts/write-event.sh"],
           "snapshots": ["briefs.json"],

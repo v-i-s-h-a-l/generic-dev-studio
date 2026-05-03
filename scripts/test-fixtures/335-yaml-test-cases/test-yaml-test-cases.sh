@@ -1,101 +1,87 @@
 #!/usr/bin/env bash
-# Regression fixture for #335: debrief YAML is the test-case authority.
+# Fixture for #335: test cases come from debrief YAML only.
 
 set -u
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-TMPROOT=$(mktemp -d -t yaml-test-cases.XXXXXX)
+TMPROOT=$(mktemp -d -t yaml-test-cases-335.XXXXXX)
 trap 'rm -rf "$TMPROOT"' EXIT
 
-pass=0
-fail=0
+export HOME="$TMPROOT/home"
+export ACHILLES_PROJECT="fixture-335"
+PROJ="$HOME/.dev-studio/$ACHILLES_PROJECT"
+TASK_UUID="01234567-89ab-7cde-8000-000000000335"
+DEBRIEF_UUID="01234567-89ab-7cde-8000-000000003350"
 
+mkdir -p "$PROJ/plans/tasks" "$PROJ/plans/debriefs" "$PROJ/plans/chanakya-inbox/processed"
+
+cat > "$PROJ/plans/tasks/$TASK_UUID.yaml" <<YAML
+schema_version: {name: task, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}
+id: $TASK_UUID
+legacy_task_id: T335
+title: "Fixture task"
+state: done
+created_at: 2026-05-02T00:00:00Z
+updated_at: 2026-05-02T00:00:00Z
+links:
+  brief: null
+  debrief: $DEBRIEF_UUID
+  reviews: []
+  release: null
+  feedback: []
+history: []
+YAML
+
+cat > "$PROJ/plans/debriefs/$DEBRIEF_UUID.yaml" <<YAML
+schema_version: {name: debrief, version: 2.0.2, min_reader: 2.0.0, deprecated_at: null}
+id: $DEBRIEF_UUID
+task_id: $TASK_UUID
+legacy_task_id: T335
+state: ingested
+tests:
+  added:
+    - title: "YAML case: colon"
+      preconditions: "fixture ready"
+      steps: "run the flow"
+      expected: "passes"
+  modified: []
+YAML
+
+cat > "$PROJ/plans/chanakya-inbox/T335-tests.md" <<'MD'
+## Test Cases
+- Legacy standalone case
+MD
+
+cat > "$PROJ/plans/chanakya-inbox/processed/T335-debrief.md" <<'MD'
+## Test Cases
+- Legacy processed case
+MD
+
+out="$TMPROOT/out.yaml"
+bash "$ROOT/scripts/tests-pull-cases.sh" T335 > "$out"
+
+failures=0
 assert() {
-  local name="$1" expr="$2"
-  if eval "$expr"; then
+  local name="$1" cmd="$2"
+  if eval "$cmd"; then
     printf 'ok - %s\n' "$name"
-    pass=$((pass + 1))
   else
     printf 'not ok - %s\n' "$name" >&2
-    fail=$((fail + 1))
+    failures=$((failures + 1))
   fi
 }
 
-PROJECT=fixture-project
-PLANS="$TMPROOT/.dev-studio/$PROJECT/plans"
-TASK_UUID=019dde9b-0000-7000-8000-000000000335
-DEBRIEF_UUID=019dde9b-0000-7000-8000-000000000336
-mkdir -p "$PLANS/tasks" "$PLANS/debriefs"
+assert "YAML case emitted with quoted title" "grep -q 'title: \"YAML case: colon\"' '$out'"
+assert "standalone markdown ignored" "! grep -q 'Legacy standalone case' '$out'"
+assert "processed markdown ignored" "! grep -q 'Legacy processed case' '$out'"
 
-CASES='[
-  {
-    "title": "Open export sheet",
-    "preconditions": "A project is open.",
-    "steps": ["Tap Export", "Choose JPEG"],
-    "expected": "The export sheet stays visible."
-  }
-]'
+rm -f "$PROJ/plans/debriefs/$DEBRIEF_UUID.yaml"
+bash "$ROOT/scripts/tests-pull-cases.sh" T335 > "$out"
+assert "missing YAML produces empty output, not legacy fallback" "[ ! -s '$out' ]"
 
-writer_out="$TMPROOT/writer.out"
-writer_err="$TMPROOT/writer.err"
-HOME="$TMPROOT" ACHILLES_PROJECT="$PROJECT" \
-  bash "$ROOT/scripts/task-write-test-cases.sh" T335 "$CASES" >"$writer_out" 2>"$writer_err"
-writer_rc=$?
+if [ "$failures" -ne 0 ]; then
+  printf 'FAIL: %s assertion(s)\n' "$failures" >&2
+  exit 1
+fi
 
-assert "writer succeeds" "[ $writer_rc -eq 0 ]"
-assert "writer preserves full case title" "jq -e '.[0].title == \"Open export sheet\"' '$writer_out' >/dev/null"
-assert "writer preserves steps array" "jq -e '.[0].steps == [\"Tap Export\", \"Choose JPEG\"]' '$writer_out' >/dev/null"
-assert "writer does not create legacy sidecar" "[ ! -e '$PLANS/chanakya-inbox/T335-tests.md' ]"
-
-cat > "$PLANS/tasks/$TASK_UUID.yaml" <<YAML
-legacy_task_id: T335
-links:
-  debrief: $DEBRIEF_UUID
-YAML
-
-cat > "$PLANS/debriefs/$DEBRIEF_UUID.yaml" <<YAML
-tests:
-  added:
-    - title: Open export sheet
-      preconditions: A project is open.
-      steps:
-        - Tap Export
-        - Choose JPEG
-      expected: The export sheet stays visible.
-  modified:
-    - Legacy title-only case
-  skipped_because: null
-YAML
-
-pull_out="$TMPROOT/pull.out"
-HOME="$TMPROOT" ACHILLES_PROJECT="$PROJECT" \
-  bash "$ROOT/scripts/tests-pull-cases.sh" T335 >"$pull_out"
-pull_rc=$?
-
-assert "pull succeeds from YAML" "[ $pull_rc -eq 0 ]"
-assert "pull emits canonical cases block" "grep -q '^cases:$' '$pull_out'"
-assert "pull keeps YAML object title" "grep -q 'title: \"Open export sheet\"' '$pull_out'"
-assert "pull keeps YAML object expected result" "grep -q 'expected: \"The export sheet stays visible.\"' '$pull_out'"
-assert "pull tolerates legacy title-only YAML case" "grep -q 'title: \"Legacy title-only case\"' '$pull_out'"
-
-manifest_payload="$TMPROOT/manifest.yaml"
-cat > "$manifest_payload" <<YAML
-tasks:
-  - id: T335
-    title: YAML test cases
-    debrief_path: plans/debriefs/$DEBRIEF_UUID.yaml
-$(sed 's/^/    /' "$pull_out")
-YAML
-
-manifest_out="$TMPROOT/manifest.out"
-manifest_err="$TMPROOT/manifest.err"
-HOME="$TMPROOT" ACHILLES_PROJECT="$PROJECT" \
-  bash "$ROOT/scripts/tests-write-manifest.sh" --force <"$manifest_payload" >"$manifest_out" 2>"$manifest_err"
-manifest_rc=$?
-
-assert "manifest writer accepts array steps" "[ $manifest_rc -eq 0 ]"
-assert "manifest includes flattened steps" "grep -q 'Tap Export / Choose JPEG' '$PLANS/user-testing.md'"
-assert "manifest includes expected result" "grep -q 'The export sheet stays visible.' '$PLANS/user-testing.md'"
-
-printf '%s assertions, %s failures\n' "$pass" "$fail"
-[ "$fail" -eq 0 ]
+printf 'PASS: #335 YAML-only test cases\n'

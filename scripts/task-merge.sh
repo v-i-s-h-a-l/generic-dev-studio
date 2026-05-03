@@ -144,19 +144,23 @@ _review_policy_verdict() {
           END {
             approved = 0
             for (stage in verdict) {
+              if (verdict[stage] == "blocked") blocked = 1
               if (verdict[stage] == "flagged") flagged = 1
               if (verdict[stage] == "approved") approved = 1
             }
-            if (flagged) print "flagged"
+            if (blocked) print "blocked"
+            else if (flagged) print "flagged"
             else if (approved) print "approved"
           }'
     return 0
   fi
-  if _task_has_event "review_flagged"; then
+  if _task_has_event "review_blocked"; then
+    printf 'blocked\n'
+    return 0
+  elif _task_has_event "review_flagged"; then
     printf 'flagged\n'
     return 0
-  fi
-  if _task_has_event "review_approved"; then
+  elif _task_has_event "review_approved"; then
     printf 'approved\n'
     return 0
   fi
@@ -183,15 +187,28 @@ _latest_review_base_sha() {
 }
 
 merge_safety_check() {
-  local missing="" missing_count=0 missing_json review_policy_verdict
+  local missing="" missing_count=0 missing_json review_policy_verdict data
+  review_policy_verdict=$(_review_policy_verdict || printf '')
+  if [ "$review_policy_verdict" = "blocked" ]; then
+    data=$(printf '{"branch":"%s","missing_signals":["review"],"signal_count":1,"reason":"review_blocked","latest_review":"review_blocked"}' "$BRANCH")
+    if [ "$FORCE_MERGE" -eq 1 ]; then
+      emit_event_keyed achilles task merge_safety_override "$TASK_ID" "$data" >/dev/null 2>&1 || true
+      printf 'warn: merge safety override for %s; latest review is blocked\n' "$TASK_ID" >&2
+      return 0
+    fi
+    emit_event_keyed achilles task merge_safety_blocked "$TASK_ID" "$data" >/dev/null 2>&1 || true
+    printf 'error: merge safety blocked for %s; latest review is blocked\n' "$TASK_ID" >&2
+    return 4
+  fi
+
   if ! _task_has_event "build_check_passed"; then
     missing="${missing:+$missing,}build"
     missing_count=$((missing_count + 1))
   fi
-  if ! _task_has_event "review_approved|review_flagged"; then
-    missing="${missing:+$missing,}review"
-    missing_count=$((missing_count + 1))
-  fi
+  case "$review_policy_verdict" in
+    approved|flagged) ;;
+    *) missing="${missing:+$missing,}review"; missing_count=$((missing_count + 1)) ;;
+  esac
   if [ "$debrief_staged" -eq 0 ]; then
     missing="${missing:+$missing,}debrief"
     missing_count=$((missing_count + 1))
@@ -205,13 +222,16 @@ merge_safety_check() {
   fi
 
   if [ "$REQUIRE_APPROVED" -eq 1 ] && [ "$STEAL_FLAGGED" -ne 1 ]; then
-    review_policy_verdict=$(_review_policy_verdict || printf '')
     if [ "$review_policy_verdict" = "flagged" ]; then
-      data=$(printf '{"branch":"%s","reason":"require_approved","override":"--steal-flagged"}' "$BRANCH")
+      data=$(printf '{"branch":"%s","reason":"review_flagged","require_approved":true,"override":"--steal-flagged"}' "$BRANCH")
       emit_event_keyed achilles task merge_deferred_on_flagged "$TASK_ID" "$data" >/dev/null 2>&1 || true
       printf 'error: Argus flagged %s; merge deferred by --require-approved. Pass --steal-flagged only after user approval.\n' "$TASK_ID" >&2
       return 4
     fi
+  fi
+  if [ "$REQUIRE_APPROVED" -eq 1 ] && [ "$STEAL_FLAGGED" -eq 1 ] && [ "$review_policy_verdict" = "flagged" ]; then
+    data=$(printf '{"branch":"%s","review_file":"","finding_count":0,"reason":"steal_flagged"}' "$BRANCH")
+    emit_event_keyed achilles task review_override "$TASK_ID" "$data" >/dev/null 2>&1 || true
   fi
 
   if [ "$missing_count" -eq 0 ]; then
