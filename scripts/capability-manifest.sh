@@ -198,8 +198,8 @@ emit_manifest() {
     printf '    }'
   done < <(
     {
-      find "$REPO_ROOT" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' 2>/dev/null
-      find "$REPO_ROOT/.claude/skills" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' 2>/dev/null
+      find "$REPO_ROOT/core/v2/skills" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' 2>/dev/null
+      find "$REPO_ROOT/skills/owned" "$REPO_ROOT/skills/vendored" -mindepth 2 -maxdepth 4 -type f -name 'SKILL.md' 2>/dev/null
     } | sort -u
   )
 

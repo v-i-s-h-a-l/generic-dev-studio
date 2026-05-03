@@ -360,10 +360,8 @@ check_contract_refs() {
     [ -z "$hit" ] && continue
     line_no="${hit%%:*}"
     # Extract every reference on the line (one line may have several). The
-    # regex optionally captures an agent prefix (apollo/, chanakya/, ...)
-    # so agent-scoped _shared/ namespaces (e.g. apollo/_shared/primitives/)
-    # are recognized as their own roots, not mis-resolved against the
-    # global _shared/.
+    # Only the global _shared/ namespace is active after A10 deleted v1
+    # agent-scoped _shared/ directories.
     while IFS= read -r match; do
       [ -z "$match" ] && continue
       # Normalize absolute form.
@@ -373,7 +371,6 @@ check_contract_refs() {
       # rewritten by the sed sweep — not this linter's problem to flag twice.
       case "$normalized" in
         _shared/*/*) ;;
-        apollo/_shared/*/*|chanakya/_shared/*/*|achilles/_shared/*/*|argus/_shared/*/*) ;;
         *) continue ;;
       esac
       target_path="$REPO_ROOT/$normalized"
@@ -382,8 +379,8 @@ check_contract_refs() {
       if [ ! -e "$target_path" ]; then
         emit_error "E_UNKNOWN_CONTRACT_REF:$file:$line_no:$normalized | reference does not resolve — move/rename or fix"
       fi
-    done < <(printf '%s\n' "${hit#*:}" | grep -oE '(~/\.claude/skills/)?(apollo/|chanakya/|achilles/|argus/)?_shared/[a-z-]+/[a-z0-9./_-]+\.(md|json)')
-  done < <(grep -nE '(~/\.claude/skills/)?(apollo/|chanakya/|achilles/|argus/)?_shared/[a-z-]+/[a-z0-9./_-]+\.(md|json)' "$file" 2>/dev/null || true)
+    done < <(printf '%s\n' "${hit#*:}" | grep -oE '(~/\.claude/skills/)?_shared/[a-z-]+/[a-z0-9./_-]+\.(md|json)')
+  done < <(grep -nE '(~/\.claude/skills/)?_shared/[a-z-]+/[a-z0-9./_-]+\.(md|json)' "$file" 2>/dev/null || true)
 }
 
 # ---------- W_CAPABILITY_STALE ----------
@@ -500,6 +497,9 @@ check_surface_removed() {
     '($a.commands // []) as $A | ($b.commands // []) as $B
      | [$A[].name] - [$B[].name] | .[]' 2>/dev/null || true)
   if [ -n "$removed" ]; then
+    if [ "${STUDIO_ALLOW_SURFACE_REMOVALS:-0}" = "1" ]; then
+      return 0
+    fi
     local cmd
     while IFS= read -r cmd; do
       [ -z "$cmd" ] && continue
@@ -565,7 +565,7 @@ main() {
   # Host-agnostic sub-linter. Pass through --staged flag so pre-commit mode
   # applies block-tier prose checks; standalone allows pre-sweep warnings.
   local ha_lint="$SCRIPT_DIR/lint-host-agnostic.sh"
-  if [ -x "$ha_lint" ] && { [ "$STAGED" -eq 0 ] || staged_matches '^(achilles|argus|hosts|\.codex|\.claude-plugin)/|^scripts/(lint-host-agnostic|dispatch-review|spawn-worker)\.sh$'; }; then
+  if [ -x "$ha_lint" ] && { [ "$STAGED" -eq 0 ] || staged_matches '^(core/v2|hosts|\.codex|\.claude-plugin)/|^scripts/(lint-host-agnostic|dispatch-review|spawn-worker)\.sh$'; }; then
     local ha_args=()
     [ "$STAGED" -eq 1 ] && ha_args=("--staged")
     local ha_output ha_rc ha_errors_before
@@ -589,7 +589,7 @@ main() {
   fi
 
   # Project-skill link invariant. This always runs in staged mode because a
-  # plain deletion of .codex/skills/studio is the exact failure class it guards.
+  # plain deletion of project skill links is the exact failure class it guards.
   local psl_lint="$SCRIPT_DIR/lint-project-skill-links.sh"
   if [ -x "$psl_lint" ]; then
     local psl_args=()

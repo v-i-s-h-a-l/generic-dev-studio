@@ -84,7 +84,7 @@ tmp=$(mktemp)
   printf 'Instructions:\n'
   printf -- '- Tick `[ ]` → `[x]` for each case that passes.\n'
   printf -- '- Write any failure or issue under the `Notes:` line below the case.\n'
-  printf -- '- When done, run `/chanakya review-feedback` to apply your edits to the master plan.\n\n'
+  printf -- '- When done, run `/dev-studio manager review-feedback` to apply your edits to the master plan.\n\n'
   printf -- '---\n'
 
   # One section per task. jq emits a tab-separated record per case; array steps

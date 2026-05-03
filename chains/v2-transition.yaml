@@ -1,7 +1,7 @@
 # Canonical chain manifest for the Studio v2 transition.
 #
 # Manifest name:
-#   /studio work chain v2-transition
+#   scripts/studio-chain-runner.sh v2-transition --dry-run
 #
 # Supervisor checks:
 #   scripts/studio-chain-runner.sh --explain-next v2-transition

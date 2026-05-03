@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://generic-dev-studio/core/v2/schemas/dev-studio-forwarders.schema.json",
   "title": "Studio v2 dev-studio forwarders",
-  "description": "Defines the /dev-studio umbrella skill dispatch surface and v1 compatibility forwarders for A2.",
+  "description": "Defines the /dev-studio umbrella skill dispatch surface and the legacy compatibility state.",
   "type": "object",
   "required": [
     "schema_version",
@@ -40,7 +40,7 @@
       "properties": {
         "v1_studio_router": {"const": ".claude/skills/studio/SKILL.md"},
         "v1_status": {"type": "string", "minLength": 8},
-        "cutover_status": {"enum": ["not-cut-over", "cut-over"]}
+        "cutover_status": {"enum": ["not-cut-over", "cut-over", "v1-deleted"]}
       }
     },
     "dispatch": {
@@ -50,7 +50,7 @@
     },
     "forwarders": {
       "type": "array",
-      "minItems": 4,
+      "minItems": 0,
       "items": {"$ref": "#/$defs/forwarderRow"}
     }
   },
@@ -88,7 +88,7 @@
           }
         },
         "status": {
-          "enum": ["v1-forwarder-present", "reserved", "reserved-non-routable"]
+          "enum": ["v1-forwarder-present", "v1-deleted", "reserved", "reserved-non-routable"]
         }
       }
     },

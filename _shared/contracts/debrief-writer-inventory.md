@@ -13,10 +13,10 @@ Issue #311 invariant: active debrief producers write YAML only through `write_de
 
 | Surface | Producer | Classification | Canonical target |
 |---|---|---|---|
-| Achilles task mode | `scripts/task-emit-debrief.sh` -> `scripts/lib-ledger.sh::write_debrief_artifact` | canonical | `plans/debriefs/<debrief-id>.yaml` |
-| Achilles direct debrief | `achilles/modes/debrief.md` procedure, using the debrief schema contract | canonical | `plans/debriefs/<debrief-id>.yaml` |
-| Achilles build/test/release modes | `achilles/modes/{build,test-suite,push-tf,app-store}.md` procedures, using the debrief schema contract | canonical | `plans/debriefs/<debrief-id>.yaml` |
-| Apollo perf debriefs | `_shared/schemas/debrief.md` declares Apollo as a metrics-populated debrief author | canonical | `plans/debriefs/<debrief-id>.yaml` |
+| Worker task role | `scripts/task-emit-debrief.sh` -> `scripts/lib-ledger.sh::write_debrief_artifact` | canonical | `plans/debriefs/<debrief-id>.yaml` |
+| Worker direct debrief | `core/v2/roles/worker.yaml` direct-debrief procedure, using the debrief schema contract | canonical | `plans/debriefs/<debrief-id>.yaml` |
+| Worker build/test/release paths | `core/v2/roles/worker.yaml` procedures, using the debrief schema contract | canonical | `plans/debriefs/<debrief-id>.yaml` |
+| Perf debriefs | `_shared/schemas/debrief.md` declares perf as a metrics-populated debrief author | canonical | `plans/debriefs/<debrief-id>.yaml` |
 
 ## Diagnostic-Only Legacy Readers
 

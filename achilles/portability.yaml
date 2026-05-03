@@ -1,8 +1,0 @@
-schema_version: 1
-hosts:
-  - all
-scope: global
-notes: |
-  Host-agnostic worker. Any host satisfying the Achilles security floor
-  (sandbox_profile ∈ {workspace-write, full}, secret_scope ∈ {cwd-only, none})
-  is supported. Conformance suite: scripts/test-host.sh <host>.

@@ -6,11 +6,11 @@ type: primitive
 
 # Router bootstrap (<150 words)
 
-**Agents.** Chanakya (PM/orchestrator, singleton), Achilles (implementer, many-concurrent worktrees), Argus (reviewer, 2-stage: spec-compliance → code-quality), Apollo (performance, per-metric mode packs under strict-9 evidence gate; scaffold-stage). Planned: Lu Ban (architect), Chiron (synthetic QA).
+**Roles.** `/dev-studio` routes canonical roles: manager, planner, worker, reviewer, qa-engineer, flow-tester, perf, release-manager, host-adapter, operator.
 
-**Before architectural work:** read `ROADMAP.md` §Phase sequence and `ARCHITECTURE.md` §Design Vision. For review work, read `REVIEW.md`. For releases, `RELEASES.md`. For perf work, read `apollo/_shared/primitives/evidence-gate.md`.
+**Before architectural work:** read `ROADMAP.md` §Phase sequence and `ARCHITECTURE.md` §Design Vision. For review work, read `REVIEW.md`. For releases, `RELEASES.md`. For perf work, read `core/v2/roles/perf.yaml`.
 
-**Mode pack index.** `chanakya/modes/*.md` (15 packs), `achilles/modes/*.md` (10), `argus/modes/{spec-compliance,code-quality}.md`, `apollo/modes/*.md` (memory/thermal/battery/cpu plus measure). Routers live at each agent's `SKILL.md` — ≤100 lines, dispatch only.
+**Role index.** Router: `core/v2/skills/dev-studio/SKILL.md`. Role contracts: `core/v2/roles/*.yaml`. Handoffs: `core/v2/handoffs/*.yaml`.
 
 **Iron laws.**
 1. Runtime writes → `~/.dev-studio/**` (never `~/.claude`, `/tmp`, `$HOME`).

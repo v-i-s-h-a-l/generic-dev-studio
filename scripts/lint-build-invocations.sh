@@ -7,7 +7,7 @@
 #
 # Usage:
 #   scripts/lint-build-invocations.sh [<file_or_dir> ...]
-#       Lint specific paths; if none given, walks achilles/, argus/,
+#       Lint specific paths; if none given, walks core/v2/skills/,
 #       _shared/, scripts/, .claude/skills/.
 #
 #   scripts/lint-build-invocations.sh --staged
@@ -54,7 +54,7 @@ collect_targets() {
       git -C "$REPO_ROOT" diff --cached --name-only --diff-filter=ACMR 2>/dev/null \
         | while IFS= read -r f; do
             case "$f" in
-              achilles/*|argus/*|chanakya/*|_shared/*|scripts/*|.claude/skills/*)
+              core/v2/skills/*|_shared/*|scripts/*|.claude/skills/*)
                 printf '%s\n' "$f"
                 ;;
             esac
@@ -64,7 +64,7 @@ collect_targets() {
       # `.yaml` is excluded — yaml is configuration metadata, not executable;
       # the strings "swift test"/"xcodebuild" appearing in description fields
       # are documentation, never the actual call site.
-      ( cd "$REPO_ROOT" && find achilles argus chanakya _shared scripts .claude/skills \
+      ( cd "$REPO_ROOT" && find core/v2/skills _shared scripts \
           -type f \( -name '*.sh' -o -name '*.md' \) 2>/dev/null )
       ;;
     *)

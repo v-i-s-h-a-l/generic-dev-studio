@@ -2,35 +2,30 @@ schema_version: 1
 kind: studio-v2-cutover
 parent_issue: 444
 leaf_issue: 527
-status: cut-over
+status: v1-deleted
 archive:
   legacy_root: legacy/v1
-  policy: "A9 records the v1 archive map and keeps compatibility forwarders as the rollback surface until A10 deletes v1 after the stability window."
+  policy: "A10 deletes the v1 repo surfaces by operator override before the original stability window. Post-A10 recovery uses git checkout or revert of the pre-A10 commit; no legacy/v1 file archive is kept in-tree."
   surfaces:
     - path: .claude/skills/studio/
       archive_path: legacy/v1/.claude/skills/studio/
-      status: preserved-forwarder
+      status: deleted
     - path: chanakya/
       archive_path: legacy/v1/chanakya/
-      status: preserved-forwarder
+      status: deleted
     - path: achilles/
       archive_path: legacy/v1/achilles/
-      status: preserved-forwarder
+      status: deleted
     - path: argus/
       archive_path: legacy/v1/argus/
-      status: preserved-forwarder
+      status: deleted
     - path: apollo/
       archive_path: legacy/v1/apollo/
-      status: preserved-forwarder
+      status: deleted
 traffic_switch:
   primary_invocation: /dev-studio
-  compatibility_forwarders:
-    - /studio
-    - /chanakya
-    - /achilles
-    - /argus
-    - /apollo
-  cutover_status: cut-over
+  compatibility_forwarders: []
+  cutover_status: v1-deleted
   source_of_truth: core/v2/skills/dev-studio/forwarders.yaml
 parity:
   required_checks:
@@ -60,14 +55,17 @@ rollback:
     - v2 manager proof-of-life cannot produce a typed handoff artifact
     - worker reviewer or perf role contract resolution fails
     - parity fixture fails on the chain branch after ordered integration
-    - operator reports a v2 traffic regression during the A9 stability window
+    - operator reports a v2 traffic regression after A10 deletion
   playbook:
-    - "Set core/v2/cutover/manifest.yaml status to rolled-back."
-    - "Set core/v2/skills/dev-studio/forwarders.yaml transition.cutover_status to not-cut-over."
-    - "Set every core/v2/skills/dev-studio/forwarders.yaml forwarders[].runtime_cutover to false."
-    - "Restore the v1 router wording from the legacy/v1 archive map if a host adapter replaced it."
-    - "Run scripts/v2-cutover.sh --validate --allow-rolled-back and scripts/test-fixtures/527-cutover/test-v2-cutover.sh --allow-rolled-back."
-    - "Record the rollback event and defer A10 until the failing parity scenario has a reviewed fix."
+    - "Identify the pre-A10 merge commit from the PR or git log."
+    - "Restore deleted v1 surfaces with git checkout <pre-a10-commit> -- .claude/skills/studio chanakya achilles argus apollo, or revert the A10 commit if full rollback is required."
+    - "Set core/v2/cutover/manifest.yaml status to cut-over and traffic_switch.cutover_status to cut-over if restored forwarders will be kept live."
+    - "Set core/v2/skills/dev-studio/forwarders.yaml transition.cutover_status to cut-over and restore the forwarders[] rows from the pre-A10 commit."
+    - "Run scripts/v2-cutover.sh --validate and scripts/test-fixtures/527-cutover/test-v2-cutover.sh."
+    - "Record the rollback event and reopen A10 before retrying deletion."
 carryover:
-  - "A10 deletes v1 only after the >=2 week stability window and operator sign-off required by #444."
-  - "Remaining canonical role contracts outside A8 stay tracked outside this leaf: manager, planner, qa-engineer, flow-tester, release-manager, host-adapter, operator."
+  - "A10 deletion was performed early by explicit operator override on 2026-05-04 because the project is beta and only one operator is using it."
+  - "No in-tree legacy/v1 archive exists after A10; recovery is git-history based."
+  - "archive_path entries are rollback hints retained by the schema, not directories created in-tree."
+  - "Historical tests/mode-packs fixtures for v1 routers are intentionally kept as inert baselines; scripts/test-mode-pack.sh no longer enumerates deleted v1 surfaces."
+  - "scripts/verify-install.sh is not a reliable pass/fail gate from an isolated worktree because it compares installed global symlinks to the current checkout path."

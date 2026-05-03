@@ -7,7 +7,7 @@ schema_version: 1
 
 # Skill-Fanout LaunchAgent
 
-Watches the studio's canonical skill roots (`achilles/`, `argus/`, `chanakya/`, `.claude/skills/`, `skills/owned/`, `skills/vendored/`, `_shared/standards/`, `hosts/registry.yaml`). On any mtime change, fires `scripts/sync-host-skills.sh --all` to refresh the symlink farm at every host's discovery dir.
+Watches the studio's canonical skill roots (`core/v2/skills/`, `core/v2/roles/`, `skills/owned/`, `skills/vendored/`, `_shared/standards/`, `hosts/registry.yaml`). On any mtime change, fires `scripts/sync-host-skills.sh --all` to refresh the symlink farm at every host's discovery dir.
 
 ## Why this exists
 

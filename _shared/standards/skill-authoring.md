@@ -37,8 +37,8 @@ The frontmatter `type` field discriminates four shapes. Each has different confo
 
 | Type | Examples | Body shape |
 |---|---|---|
-| `agent-router` | `achilles/SKILL.md`, `argus/SKILL.md`, `chanakya/SKILL.md`, `studio/SKILL.md` | Dispatch table + intent-detection rules. No procedures. |
-| `mode-pack` | `achilles/modes/task.md`, `argus/modes/code-quality.md` | Numbered procedures with sentinel verbs, pre/post, failure-modes. |
+| `agent-router` | `core/v2/skills/dev-studio/SKILL.md`, owned router skills | Dispatch table + intent-detection rules. No procedures. |
+| `mode-pack` | Historical fixtures under `tests/mode-packs/`; active role procedures live under `core/v2/roles/` | Numbered procedures with sentinel verbs, pre/post, failure-modes. |
 | `skill` | Owned standalone skills (e.g. `skills/owned/<name>/SKILL.md`) | Same as mode-pack, plus the affordance header. |
 | `primitive` / `reference` / `standard` | `_shared/primitives/*.md`, `_shared/standards/*.md` | Reference content. Looser; only frontmatter is enforced. |
 
@@ -210,7 +210,7 @@ Skill bodies use neutral verbs (`READ`, `WRITE`, `RUN`). Host-specific tool name
 
 ## Migration semantics
 
-- Existing owned skills (`achilles/`, `argus/`, `chanakya/`, `.claude/skills/studio/`) are migrated under issue #172.
+- Existing v1 owned skills were deleted by A10; active owned routers live under `core/v2/skills/`.
 - New owned skills MUST conform from day one — `scripts/scaffold-skill.sh` emits a conformant skeleton.
 - Vendored skills declare `authoring_standard: exempt` in their `vendor.yaml`; the linter validates frontmatter only and skips the body grammar checks.
 

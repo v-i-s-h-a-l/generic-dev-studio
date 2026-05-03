@@ -63,7 +63,7 @@ collect_targets() {
       ;;
     --all)
       ( cd "$REPO_ROOT" && \
-        find achilles argus chanakya .claude/skills skills/owned skills/vendored \
+        find core/v2/skills skills/owned skills/vendored \
              _shared/standards \
              -type f \
              \( -name 'SKILL.md' -o -name 'routing.yaml' -o -name 'portability.yaml' \

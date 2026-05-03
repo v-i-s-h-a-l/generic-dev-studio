@@ -9,7 +9,7 @@ REPO="$TMPROOT/repo"
 mkdir -p \
   "$REPO/scripts" \
   "$REPO/hosts" \
-  "$REPO/.claude/skills/studio" \
+  "$REPO/core/v2/skills/dev-studio" \
   "$REPO/.codex/skills" \
   "$REPO/_shared" \
   "$TMPROOT/home"
@@ -31,17 +31,17 @@ codex:
   status: provisional
 YAML
 
-cat > "$REPO/.claude/skills/studio/SKILL.md" <<'MD'
+cat > "$REPO/core/v2/skills/dev-studio/SKILL.md" <<'MD'
 ---
-name: studio
+name: dev-studio
 description: Test project-scoped skill.
 type: agent-router
 ---
 
-# Studio
+# Dev Studio
 MD
 
-cat > "$REPO/.claude/skills/studio/portability.yaml" <<'YAML'
+cat > "$REPO/core/v2/skills/dev-studio/portability.yaml" <<'YAML'
 schema_version: 1
 hosts:
   - codex
@@ -50,10 +50,10 @@ YAML
 
 missing_err="$TMPROOT/missing.err"
 if HOME="$TMPROOT/home" "$REPO/scripts/lint-project-skill-links.sh" --host codex >"$TMPROOT/missing.out" 2>"$missing_err"; then
-  echo "FAIL: lint accepted missing .codex/skills/studio" >&2
+  echo "FAIL: lint accepted missing .codex/skills/dev-studio" >&2
   exit 1
 fi
-grep -q 'E_PROJECT_SKILL_LINK:.claude/skills/studio declares host=codex scope=project' "$missing_err" || {
+grep -q 'E_PROJECT_SKILL_LINK:core/v2/skills/dev-studio declares host=codex scope=project' "$missing_err" || {
   echo "FAIL: missing-link error did not name the project skill invariant" >&2
   cat "$missing_err" >&2
   exit 1
@@ -66,7 +66,7 @@ grep -q 'repair: scripts/sync-host-skills.sh codex' "$missing_err" || {
 
 HOME="$TMPROOT/home" "$REPO/scripts/lint-project-skill-links.sh" --host codex --repair >"$TMPROOT/repair.out" 2>"$TMPROOT/repair.err"
 HOME="$TMPROOT/home" "$REPO/scripts/lint-project-skill-links.sh" --host codex >"$TMPROOT/repaired.out" 2>"$TMPROOT/repaired.err"
-rm "$REPO/.codex/skills/studio"
+rm "$REPO/.codex/skills/dev-studio"
 
 if ! HOME="$TMPROOT/home" "$REPO/scripts/sync-host-skills.sh" codex >"$TMPROOT/sync.out" 2>"$TMPROOT/sync.err"; then
   echo "FAIL: sync-host-skills.sh codex failed" >&2
@@ -74,8 +74,8 @@ if ! HOME="$TMPROOT/home" "$REPO/scripts/sync-host-skills.sh" codex >"$TMPROOT/s
   exit 1
 fi
 
-if [ ! -L "$REPO/.codex/skills/studio" ]; then
-  echo "FAIL: sync did not create .codex/skills/studio symlink" >&2
+if [ ! -L "$REPO/.codex/skills/dev-studio" ]; then
+  echo "FAIL: sync did not create .codex/skills/dev-studio symlink" >&2
   cat "$TMPROOT/sync.err" >&2
   exit 1
 fi
@@ -86,8 +86,8 @@ if [ ! -L "$TMPROOT/home/.codex/skills/hosts" ]; then
   exit 1
 fi
 
-target=$(readlink "$REPO/.codex/skills/studio")
-if [ "$target" != "../../.claude/skills/studio" ]; then
+target=$(readlink "$REPO/.codex/skills/dev-studio")
+if [ "$target" != "../../core/v2/skills/dev-studio" ]; then
   echo "FAIL: expected relative project link, got $target" >&2
   exit 1
 fi

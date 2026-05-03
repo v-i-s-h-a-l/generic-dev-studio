@@ -222,7 +222,7 @@ echo
 
 echo "## Review verdict rates"
 # Source of truth: Argus-emitted verdict events in the event log. Approved
-# reviews aren't persisted as files (argus/rules: silent on approve), so any
+# approved reviews aren't persisted as files, so any
 # file-scan count is structurally incomplete — #21. File-scan stays as a
 # sanity cross-check for flagged/blocked; drift surfaces via reconcile lines.
 count_verdict_events() {

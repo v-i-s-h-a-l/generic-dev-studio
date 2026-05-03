@@ -20,7 +20,7 @@ Parse `$ARGUMENTS`:
 | `--manager` | `scripts/bootstrap.sh --role manager` (zero prompts) |
 | `--worker [--id <id>] [--roles a,b]` | `scripts/bootstrap.sh --role worker [--id …] [--worker-roles …]` (zero prompts) |
 | `--dual [--id <id>] [--roles a,b]` | `scripts/bootstrap.sh --role dual [--id …] [--worker-roles …]` (zero prompts) |
-| `--help` or `-h` | Open `setup.html` in browser, print usage summary, exit |
+| `--help` or `-h` | Print usage summary, exit |
 
 Modifiers (apply on top of any role flag):
 - `--interactive` — pass through; bootstrap prompts at every step.
@@ -40,7 +40,7 @@ REPO_ROOT="$(git -C "$(pwd)" rev-parse --show-toplevel 2>/dev/null)"
 ### 2. `--help` / `-h` short-circuit
 
 ```bash
-DOCS="$REPO_ROOT/.claude/skills/studio/setup.html"
+DOCS="$REPO_ROOT/core/v2/skills/dev-studio/SKILL.md"
 [ -f "$DOCS" ] && open "$DOCS"
 ```
 
@@ -54,10 +54,10 @@ Then print:
 /studio-setup --dual            both roles on one box (rare)
 /studio-setup --interactive     prompt at every step (legacy)
 /studio-setup --dry-run         preview without changing anything
-/studio-setup --help            this message + open the setup guide
+/studio-setup --help            this message + open the v2 router source
 ```
 
-Tell the user: "Setup guide opened. To run the wizard: `/studio-setup --manager` (or `--worker`, `--dual`)." Stop.
+Tell the user: "Studio v2 router opened. To run the wizard: `/studio-setup --manager` (or `--worker`, `--dual`)." Stop.
 
 ### 3. Build the bootstrap command
 
@@ -100,8 +100,8 @@ If exit was 0, print:
 
 ```
 Bootstrap complete. Next steps:
-  /studio nodes               # see registered workers and fleet health
-  /studio nodes add           # register a worker (e.g. your Mac mini)
+  scripts/worker-status.sh     # see registered workers and fleet health
+  /studio-setup --worker       # run on another machine to register a worker
   scripts/configure.sh        # post-install tweaks
 ```
 
@@ -110,5 +110,5 @@ If exit was non-zero, just surface the error and the bootstrap log path (bootstr
 ## Out of scope
 
 - Onboarding remote machines over SSH — that requires running this command (or `scripts/bootstrap.sh`) on the remote machine itself.
-- Day-2 fleet management (registering workers, syncing, health checks). Use `/studio nodes`.
+- Day-2 fleet management beyond status and bootstrap-time registration.
 - Editing the worker manifest. Use `scripts/configure.sh manifest`.
