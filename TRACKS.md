@@ -2,6 +2,23 @@
 
 Independent work tracks. Each session works on one track only.
 
+## Track label registry
+
+`track:*` labels identify active or historical work lanes. A track label is not a theme; every issue still needs one dominant `theme/*` label from `THEMES.md`.
+
+| Label | Status | Planning surface |
+|---|---|---|
+| `track:apollo` | Active | Apollo performance-agent research and build arc. Detailed work lives in the Apollo issues and skill docs. |
+| `track:build-opt` | Active | Documented below as Track B. |
+| `track:forge-safety` | Retained / no open issues | Documented below as Track C and in `FORGE-RELIABILITY.md`; keep for historical filtering until a new forge-safety issue reopens the lane. |
+| `track:host-agnostic` | Historical / mostly shipped | Documented below as Track A for context. |
+| `track:pm-surface` | Active | GitHub-as-PM-surface arc, including labels, projects, milestones, and issue graph hygiene. |
+| `track:skill-distribution` | Active backlog | Skill distribution and recipe-system follow-ups from the skill distribution arc. |
+| `track:v2` | Active | Studio v2 substrate rebuild and transition issues; sequence context lives in `ROADMAP.md`. |
+| `track:workflow` | Active | Chain-runner and workflow-control-plane enhancements. |
+
+Legacy follow-up labels such as `phase-2-5-followup`, `phase-2-6-followup`, and `phase-2.7-epic` are retained for existing issue filtering, but they are not `track:*` labels. Prefer a `track:*` label for new parallel work lanes.
+
 ## How to use
 
 1. **Pick a track** — open a session, check out the track branch.
