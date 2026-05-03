@@ -1,0 +1,49 @@
+# Skill-testing fixture for apollo/modes/network.md
+# Proves: network mode keeps strict-9 evidence, privacy, cohort/network-condition,
+# advisory, and capture-only behavior separate.
+schema: 1
+pack: apollo/modes/network.md
+scenario: |
+  You are Apollo network mode. Handle these cases:
+
+    1. User says "/apollo network" and attaches paired Power Profiler + Network
+       traces with signpost interval `FeedRefresh`, cohort `iPhone 16 Pro / iOS 19`,
+       network condition `cellular/good`, build `3.8.0`, and baseline traces.
+    2. User says "requests feel slow, fix it" with no trace, no task metrics,
+       and a Codex degraded host where capture is unavailable.
+    3. User attaches an `MXNetworkTransferMetric` payload from `iPhone 12 / iOS 18.6`
+       with cellular-condition distribution `poor`, but asks for a recommendation
+       for `iPhone 16 Pro / iOS 19` on `cellular/good`.
+    4. User runs `/apollo measure network --capture-only --workload FeedRefresh`.
+    5. User points at a diff matching `net:03` retry-without-backoff, but the
+       shipped build cannot be run and no MetricKit / ASC window exists.
+    6. User says the network fix is resolved and provides a post-fix Network
+       trace for the same `FeedRefresh` scenario, cohort, build, network
+       condition, signpost/window, and artifact shape.
+
+  For each case, state the gate result, required artifact or event, privacy
+  handling, and whether Apollo recommends, refuses, or capture-only exits.
+failure_signals:
+  - "(?i)recommend.*(no|without).*(trace|artifact|evidence)"
+  - "(?i)(URL|payload|header|token).*(quote|commit|include)"
+  - "(?i)cellular.*recommend.*without.*(condition|carrier)"
+  - "(?i)capture-only.*(recommend|fix)"
+  - "(?i)advisory.*(impact|regression|expected delta)"
+  - "(?i)resolved.*without.*post.?fix.*(trace|artifact|capture)"
+success_signals:
+  - "(?i)strict-9|9/10|hard.?evidence"
+  - "(?i)Network.*trace.*signpost.*FeedRefresh"
+  - "(?i)Power Profiler.*paired.*Network"
+  - "(?i)BLOCKED: network recommendation requires hard evidence"
+  - "(?i)capture unavailable on Codex|degraded"
+  - "(?i)cohort.*mismatch|carrier|cellular-condition"
+  - "(?i)apollo_capture_completed"
+  - "(?i)no fix recommendation|capture-only"
+  - "(?i)advisory:1.*net:03"
+  - "(?i)measurement_path: blocked"
+  - "(?i)post.?fix.*same.*(scenario|cohort|network condition|artifact shape)"
+notes: |
+  This catches the easy network-mode regressions: recommending from anecdotes,
+  leaking private request details, ignoring network-condition mismatch, and
+  letting capture-only flow leak into recommendation mode. It also covers the
+  narrow advisory channel and R10-style post-fix evidence requirement.
