@@ -1,0 +1,99 @@
+name: Bug
+description: Report broken studio behavior with evidence, expected behavior, and fix criteria.
+title: "Bug: "
+labels:
+  - bug
+  - theme/internal
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for behavior that is wrong, missing, flaky, or misleading.
+  - type: textarea
+    id: observed-behavior
+    attributes:
+      label: Observed Behavior
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Who or what workflow is affected?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction / Evidence
+      description: Steps, command output, logs, or links that are safe to share publicly.
+      placeholder: "1. ...\n2. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Concrete checks that prove the bug is fixed.
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
+  - type: textarea
+    id: edge-cases
+    attributes:
+      label: Edge Cases / Risks
+      description: Related states, regressions, or compatibility concerns to verify.
+    validations:
+      required: true
+  - type: dropdown
+    id: owner
+    attributes:
+      label: Owner Surface
+      description: Pick the surface most likely to own the fix. Use studio-repo for repo or router behavior.
+      options:
+        - studio-repo
+        - chanakya
+        - achilles
+        - argus
+        - cross-agent
+        - needs-triage
+    validations:
+      required: true
+  - type: dropdown
+    id: theme
+    attributes:
+      label: Theme
+      description: Pick the closest canonical theme from THEMES.md.
+      options:
+        - theme/internal
+        - theme/ios-craft
+        - theme/release
+        - theme/integrations
+        - theme/design
+        - theme/discovery
+        - needs-triage
+    validations:
+      required: true
+  - type: input
+    id: proposed-theme
+    attributes:
+      label: Proposed Theme
+      description: Optional. Use only when the canonical themes do not fit.
+  - type: input
+    id: track-or-chain
+    attributes:
+      label: Track / Chain
+      description: Optional dynamic label or lane, such as track:name or chain/name.
+  - type: input
+    id: related-issues
+    attributes:
+      label: Parent / Related Issues
+      description: Optional issue numbers for duplicate, blocked-by, caused-by, or parent context.

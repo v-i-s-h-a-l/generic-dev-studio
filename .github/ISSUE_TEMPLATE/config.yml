@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Routing Help
+    url: https://github.com/v-i-s-h-a-l/generic-dev-studio/blob/main/README.md#whats-in-the-repo
+    about: Use the repo guide when none of the structured issue forms fits.
