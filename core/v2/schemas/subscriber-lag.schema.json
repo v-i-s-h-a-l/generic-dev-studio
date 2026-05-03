@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/core/v2/schemas/subscriber-lag.schema.json",
+  "title": "Studio v2 subscriber lag status",
+  "type": "object",
+  "required": ["schema_version", "subscriber", "pending_bytes", "severity", "updated_at"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "subscriber": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "checkpoint": {
+      "type": "object",
+      "properties": {
+        "shard": { "type": "string" },
+        "next_byte_offset": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "latest_shard": { "type": ["string", "null"] },
+    "pending_bytes": { "type": "integer", "minimum": 0 },
+    "oldest_unprocessed_shard": { "type": ["string", "null"] },
+    "severity": { "enum": ["ok", "warning", "critical"] },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}
