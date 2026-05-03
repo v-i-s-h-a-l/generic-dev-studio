@@ -186,7 +186,7 @@ $chain_table
 ## Execution Command
 
 \`\`\`sh
-STUDIO_PARENT_HOST=$HOST STUDIO_REVIEW_HOST=$REVIEW_HOST scripts/studio-chain-runner.sh $MANIFEST_ARG --host $HOST$( [ "$DRY_RUN" -eq 1 ] && printf ' --dry-run' )
+STUDIO_PARENT_HOST=$HOST STUDIO_REVIEW_HOST=$REVIEW_HOST scripts/studio-chain-runner.sh $MANIFEST_ARG --host $HOST$( [ "$DRY_RUN" -eq 1 ] && printf ' --dry-run' || printf ' --yes' )
 \`\`\`
 
 ## Acceptance Criteria
@@ -216,7 +216,11 @@ if ! review_allows_execution "$review_file"; then
 fi
 
 runner_cmd=("$SCRIPT_DIR/studio-chain-runner.sh" "$MANIFEST_ARG" --host "$HOST")
-[ "$DRY_RUN" -eq 0 ] || runner_cmd+=(--dry-run)
+if [ "$DRY_RUN" -eq 0 ]; then
+  runner_cmd+=(--yes)
+else
+  runner_cmd+=(--dry-run)
+fi
 
 printf 'studio-chain-reviewed: plan review accepted: %s\n' "$review_file" >&2
 printf 'studio-chain-reviewed: starting chain with STUDIO_REVIEW_HOST=%s STUDIO_PARENT_HOST=%s\n' "$REVIEW_HOST" "$HOST" >&2

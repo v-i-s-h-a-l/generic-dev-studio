@@ -37,7 +37,8 @@ Use chain mode when the user wants a multi-chain sequence where each chain start
 Run:
 
 ```bash
-scripts/studio-chain-runner.sh <manifest-or-name> [--only <chain>] [--host codex|claude-code] [--dry-run]
+scripts/studio-chain-runner.sh <manifest-or-name> [--only <chain>] [--host codex|claude-code] [--dry-run] [--yes]
+scripts/studio-chain-runner.sh --resume <run_id> [--yes]
 ```
 
 ## Manual parallel shell guidance
@@ -77,16 +78,19 @@ Chain behavior:
 
 1. Fetch latest `origin/<base>`.
 2. Create one chain feature branch/worktree from latest base.
-3. Size the fresh-session pool from healthy registered `xcodebuild` offload nodes: local-only stays at 1; N healthy offload nodes yields N+1 sessions, capped by available RAM. Override only for emergencies with `STUDIO_CHAIN_WORKER_POOL`, or clamp with `STUDIO_CHAIN_MAX_WORKERS`.
-4. For each issue, create `<chain-branch>-issue-<N>` in a separate `/tmp/studio-chain-runner/...` worktree and run up to the sized pool in parallel.
-5. Spawn a fresh host session (`codex exec` by default for `host: auto`, or the manifest/flag host) with a scoped prompt to implement exactly that issue and commit on the issue branch. The prompt includes `run_id`, `chain_run_id`, `issue_run_id`, and the required `.studio/chain-worker-summary.json` path.
-6. Validate and ingest each worker summary. If it is missing, emit a telemetry gap rather than treating absent model/token/build data as zero.
-7. Rebase completed issue branches onto the chain branch and fast-forward them into the chain branch in manifest order.
-8. Keep the issue open while the chain branch is still only a feature branch.
-9. After the last issue, rebase the chain branch on latest base, open a PR, and run `scripts/pr-headless-review.sh <pr> --method auto`.
-10. If the reviewer blocks, STOP with the PR and worktree intact for repair. If non-blocked, the normal autopilot merge path runs.
-11. Close/comment the chain issues after the PR path succeeds.
-12. Write a final private report under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/report.md`, then fetch/prune locally and remove the chain/issue worktrees after merge.
+3. Print the resolved execution plan by default: chain order, issue titles/states, branches, worktrees, host policy, risk notes, planned PRs, and the private state path. The runner exits after this plan unless `--yes` / `--no-confirm` is present; `--dry-run` prints the same graph and then non-mutating commands.
+4. Persist run state under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/state.json`. Resume a blocked/crashed run with `scripts/studio-chain-runner.sh --resume <run_id> --yes`; completed chains/issues are skipped or re-integrated from their recorded branches.
+5. Validate the graph before live execution: issue IDs must be unique across chains, issues must be open unless `--allow-closed-issues` is present, branch refs must be safe and non-colliding, GitHub auth must work, the reviewer host must be available, and base refs must be reachable.
+6. Size the fresh-session pool from healthy registered `xcodebuild` offload nodes: local-only stays at 1; N healthy offload nodes yields N+1 sessions, capped by available RAM. Override only for emergencies with `STUDIO_CHAIN_WORKER_POOL`, or clamp with `STUDIO_CHAIN_MAX_WORKERS`.
+7. For each issue, create `<chain-branch>-issue-<N>` in a separate `/tmp/studio-chain-runner/...` worktree. Issue execution is sequential within a chain; `--parallel-chains <n|auto|1>` records the requested chain scheduling policy, while the current runner serializes chain PR/review/issue-closure mutation unless a later scheduler proves safe concurrency.
+8. Spawn a fresh host session (`codex exec` by default for `host: auto`, or the manifest/flag host) with a scoped prompt to implement exactly that issue and commit on the issue branch. The prompt includes `run_id`, `chain_run_id`, `issue_run_id`, and the required `.studio/chain-worker-summary.json` path.
+9. Validate and ingest each worker summary. If it is missing, emit a telemetry gap rather than treating absent model/token/build data as zero.
+10. Rebase completed issue branches onto the chain branch and fast-forward them into the chain branch in manifest order.
+11. Keep the issue open while the chain branch is still only a feature branch.
+12. After the last issue, rebase the chain branch on latest base, open a PR, and run `scripts/pr-headless-review.sh <pr> --method auto`.
+13. If the reviewer blocks, STOP with the PR and worktree intact for repair. If non-blocked, the normal autopilot merge path runs.
+14. Close/comment the chain issues after the PR path succeeds.
+15. Write a final private report under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/report.md`, then fetch/prune locally and remove the chain/issue worktrees after merge.
 
 Telemetry:
 
@@ -94,7 +98,7 @@ Telemetry:
 - Join keys are `run_id`, `chain_run_id`, and `issue_run_id`; the same keys appear in events, prompts, PR comments, issue comments, worker summaries, and private reports.
 - Worker summaries capture model/token/test data when available and list missing fields in `telemetry_gaps`.
 
-Use `--dry-run` before a new manifest shape or a risky chain. Dry-run prints branch, worktree, spawn, PR, review, and cleanup commands without mutating git or GitHub.
+Use the default plan before a new manifest shape or a risky chain. Dry-run prints branch, worktree, spawn, PR, review, and cleanup commands without mutating git or GitHub. Use `--yes` only after the plan is acceptable.
 
 Chain mode is for studio-repo issue chains. It does not run user-project task work; that remains `/chanakya` / `/achilles`.
 
