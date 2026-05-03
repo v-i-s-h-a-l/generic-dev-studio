@@ -99,10 +99,7 @@ review_allows_execution() {
   grep -Eiq 'nothing fatal|no fatal blockers|fatal blockers[[:space:]]*:?[[:space:]]*(none|no)|verdict[^[:cntrl:]]*(clean|proceed)' "$review_file"
 }
 
-LOGIN_HOME=$(resolve_user_login_home 2>/dev/null || true)
-if [ -n "$LOGIN_HOME" ] && [ -d "$LOGIN_HOME" ]; then
-  export HOME="$LOGIN_HOME"
-fi
+PARENT_HOME_FOR_GITHUB=$(resolve_parent_home_for_github)
 
 MANIFEST_PATH=$(resolve_manifest "$MANIFEST_ARG") || {
   printf 'studio-chain-reviewed: manifest not found: %s\n' "$MANIFEST_ARG" >&2
@@ -130,7 +127,7 @@ esac
 
 run_stamp=$(date -u +%Y%m%dT%H%M%SZ)
 manifest_slug=$(slugify "$(basename "$MANIFEST_PATH" | sed -E 's/[.][^.]+$//')")
-analysis_root=$(resolve_analysis_root)
+analysis_root=$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_analysis_root)
 mkdir -p "$analysis_root"
 plan_file="$analysis_root/${run_stamp}-${manifest_slug}-chain-plan.md"
 review_file="$analysis_root/${run_stamp}-${manifest_slug}-chain-plan-review.md"
@@ -189,7 +186,7 @@ $chain_table
 ## Execution Command
 
 \`\`\`sh
-STUDIO_PARENT_HOST=$HOST STUDIO_REVIEW_HOST=$REVIEW_HOST HOME=<resolved-login-home> scripts/studio-chain-runner.sh $MANIFEST_ARG --host $HOST$( [ "$DRY_RUN" -eq 1 ] && printf ' --dry-run' )
+STUDIO_PARENT_HOST=$HOST STUDIO_REVIEW_HOST=$REVIEW_HOST scripts/studio-chain-runner.sh $MANIFEST_ARG --host $HOST$( [ "$DRY_RUN" -eq 1 ] && printf ' --dry-run' )
 \`\`\`
 
 ## Acceptance Criteria
@@ -206,7 +203,7 @@ Review whether this chain execution plan is safe to start unattended. What is st
 EOF
 
 printf 'studio-chain-reviewed: reviewing plan with %s\n' "$REVIEW_HOST" >&2
-"$SCRIPT_DIR/phase-review.sh" \
+HOME="$PARENT_HOME_FOR_GITHUB" "$SCRIPT_DIR/phase-review.sh" \
   --review-host "$REVIEW_HOST" \
   --kind plan \
   --input "$plan_file" \

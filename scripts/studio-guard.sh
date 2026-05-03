@@ -28,6 +28,9 @@ umask 022
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
+# shellcheck source=lib-paths.sh
+. "$SCRIPT_DIR/lib-paths.sh"
+
 MODE=human
 QUERY=""
 for arg in "$@"; do
@@ -88,9 +91,9 @@ probe_g2() {
 # ──────────────────────────────────────────────────────────────────────────────
 probe_g3() {
   command -v gh >/dev/null 2>&1 || return
-  gh auth status >/dev/null 2>&1 || return
+  with_login_home_for_github gh auth status >/dev/null 2>&1 || return
   local hits
-  hits=$(gh issue list --state all --search "$QUERY" --limit 10 --json number,title,state \
+  hits=$(with_login_home_for_github gh issue list --state all --search "$QUERY" --limit 10 --json number,title,state \
     --template '{{range .}}#{{.number}} [{{.state}}] {{.title}}{{"\n"}}{{end}}' 2>/dev/null || true)
   [ -n "$hits" ] && g3_hits="$hits"
 }

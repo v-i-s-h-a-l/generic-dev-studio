@@ -142,8 +142,11 @@ requires both:
 Adapters must document how the host receives the same credential surface as
 the reference host. Codex chain-runner sessions launch with the user's login
 `HOME`, so `gh`, the Git credential helper, `.ssh`, and keychain-backed SSH
-agents match normal terminal/Claude sessions. Do not inject tokens into the
-repo. The user-controlled emergency bypass is
+agents match normal terminal/Claude sessions. Parent-side scripts that own
+GitHub mutations normalize synthetic Codex `HOME` values to the login `HOME`
+per command; `STUDIO_BYPASS_PARENT_HOME_FLIP=1` preserves caller `HOME` for
+intentional isolation tests. Do not inject tokens into the repo. The
+user-controlled emergency bypass for the preflight gate is
 `STUDIO_BYPASS_GITHUB_AUTH_PREFLIGHT=1`; bypass use is loud and should be
 reserved for deliberate recovery.
 

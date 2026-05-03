@@ -27,7 +27,7 @@ shift
 
 VERDICT=""
 REVIEW_HOST="${STUDIO_REVIEW_HOST:-codex-reviewer}"
-PARENT_HOST="${STUDIO_PARENT_HOST:-${STUDIO_HOST:-unknown}}"
+PARENT_HOST="${STUDIO_PARENT_HOST:-${STUDIO_HOST:-}}"
 ELIGIBLE_REVIEW_HOSTS=""
 CROSS_HOST="false"
 CROSS_HOST_REQUIRED="0"
@@ -71,6 +71,7 @@ done
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh" 2>/dev/null || true
+[ -n "$PARENT_HOST" ] || PARENT_HOST=$(resolve_current_studio_host unknown)
 
 STARTED_AT=$(date -u +%s)
 PR_URL=""
@@ -164,7 +165,7 @@ elif ! "$SCRIPT_DIR/pr-reviewer-eligibility.sh" "$REVIEW_HOST" >/dev/null; then
   exit 1
 fi
 
-pr_json=$(gh pr view "$PR" --json headRefOid,url) \
+pr_json=$(with_login_home_for_github gh pr view "$PR" --json headRefOid,url) \
   || { printf 'pr-autopilot: failed to read PR %s\n' "$PR" >&2; exit 1; }
 HEAD_SHA=$(printf '%s' "$pr_json" | jq -r '.headRefOid')
 PR_URL=$(printf '%s' "$pr_json" | jq -r '.url')
@@ -180,7 +181,7 @@ if [ -n "$SUMMARY_FILE" ]; then
   summary=$(sed -n '1,120p' "$SUMMARY_FILE")
 fi
 
-gh pr comment "$PR" --body "$(cat <<EOF
+with_login_home_for_github gh pr comment "$PR" --body "$(cat <<EOF
 <!-- studio:pr-review-gate v1 -->
 STUDIO_REVIEW_GATE=$VERDICT
 REVIEW_HOST=$REVIEW_HOST
