@@ -254,8 +254,10 @@ rules against a JSON context before consumers load skill content. Routing rules
 select skills only; they do not mutate host registries or embed skill guidance.
 
 Context-budget enforcement is a shared subsystem, not duplicated prose inside
-each role. A5 defines budgets and telemetry; A0.6 ensures new role contracts
-declare what they read before relying on it.
+each role. A5 defines budgets and telemetry in
+`core/v2/context-budget/manifest.json`; `scripts/v2-context-budget.sh` resolves
+the effective role + skill + invocation ceiling for a contract. A0.6 ensures new
+role contracts declare what they read before relying on it.
 
 <!-- v2-spec:testing-release -->
 ## Testing, Review, and Release Workflow
@@ -331,7 +333,8 @@ warning-tier review feedback into hidden implementation behavior.
   `scripts/v2-skill-load.sh`; A3b/A3c add routing intelligence and the iOS skill
   catalog.
 - A4/A4a implement durable subscribers, telemetry, and weekly metrics.
-- A5 implements context-budget enforcement.
+- A5 implements context-budget enforcement through the shared manifest and
+  resolver.
 - A6 implements project profiles and iOS profile behavior.
 - A7 proves manager v2 on the substrate before broader migration.
 - A8/A9/A10 migrate remaining roles, archive v1, switch traffic, and delete v1

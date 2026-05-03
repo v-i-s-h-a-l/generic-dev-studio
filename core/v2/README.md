@@ -31,6 +31,9 @@ Current bootstrap artifacts:
 - `skills/ios/catalog.yaml` is the A3c iOS skill catalog manifest. It is
   catalog content only: A3 owns vendored skill loading, and A3b owns advisory
   skill-routing rules and resolver behavior.
+- `context-budget/manifest.json` is the A5 unified context-budget policy for
+  role, skill, and invocation ceilings. Resolve and check effective budgets with
+  `scripts/v2-context-budget.sh`.
 
 Until `SPEC.md` carries `<!-- v2-bootstrap:a0.5-sign-off:complete -->`, the gate
 allows substrate docs, metadata, schemas, and this bootstrap hook only. It blocks
