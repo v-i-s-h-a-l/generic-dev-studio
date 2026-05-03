@@ -41,6 +41,8 @@ Current substrate artifacts:
 - `schemas/project-profile.schema.json` defines profile-owned operation
   mappings. Resolve and validate profile commands with `scripts/v2-profile.sh`;
   the first profile is `profiles/ios-turnip/`.
+- `MESSAGES.md` defines A11 build/release message shape. Validate same-draft
+  duplicates with `scripts/lint-build-release-message.sh`.
 
 Runtime event-log behavior is implemented by `scripts/v2-event-log.sh`:
 

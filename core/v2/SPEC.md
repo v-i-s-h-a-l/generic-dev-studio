@@ -342,6 +342,9 @@ warning-tier review feedback into hidden implementation behavior.
 - A6 implements project profiles and iOS profile behavior through
   `scripts/v2-profile.sh`, `core/v2/schemas/project-profile.schema.json`, and
   the `profiles/ios-turnip/` profile.
+- A11 implements build/release message style and same-draft duplicate linting
+  through `core/v2/MESSAGES.md` and
+  `scripts/lint-build-release-message.sh`.
 - A7 proves manager v2 on the substrate before broader migration.
 - A8/A9/A10 migrate remaining roles, archive v1, switch traffic, and delete v1
   only after the stability window and operator sign-off.
