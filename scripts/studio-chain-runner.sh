@@ -2,7 +2,8 @@
 # studio-chain-runner.sh - execute issue chains with capacity-scaled fresh host sessions.
 #
 # Usage:
-#   scripts/studio-chain-runner.sh <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run]
+#   scripts/studio-chain-runner.sh <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--yes] [--parallel-chains <n|auto|1>]
+#   scripts/studio-chain-runner.sh --resume <run_id> [--yes]
 #
 # Manifest shape:
 #   schema_version: 1
@@ -33,6 +34,10 @@ MANIFEST=""
 ONLY_CHAIN=""
 HOST_OVERRIDE=""
 DRY_RUN=0
+YES=0
+RESUME_ID=""
+ALLOW_CLOSED_ISSUES=0
+PARALLEL_CHAINS="auto"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -40,7 +45,13 @@ while [ $# -gt 0 ]; do
     --only=*) ONLY_CHAIN="${1#--only=}"; shift ;;
     --host) HOST_OVERRIDE="${2:?--host requires a host name}"; shift 2 ;;
     --host=*) HOST_OVERRIDE="${1#--host=}"; shift ;;
+    --resume) RESUME_ID="${2:?--resume requires a run id}"; shift 2 ;;
+    --resume=*) RESUME_ID="${1#--resume=}"; shift ;;
+    --parallel-chains) PARALLEL_CHAINS="${2:?--parallel-chains requires n, auto, or 1}"; shift 2 ;;
+    --parallel-chains=*) PARALLEL_CHAINS="${1#--parallel-chains=}"; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --yes|--no-confirm) YES=1; shift ;;
+    --allow-closed-issues) ALLOW_CLOSED_ISSUES=1; shift ;;
     -h|--help) usage ;;
     -*)
       printf 'studio-chain-runner: unknown flag %s\n' "$1" >&2
@@ -57,7 +68,18 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$MANIFEST" ] || usage
+if [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ]; then
+  usage
+fi
+
+case "$PARALLEL_CHAINS" in
+  auto|1|*[!0-9]*)
+    if [ "$PARALLEL_CHAINS" != "auto" ] && [ "$PARALLEL_CHAINS" != "1" ]; then
+      printf 'studio-chain-runner: --parallel-chains must be n, auto, or 1\n' >&2
+      exit 2
+    fi
+    ;;
+esac
 
 command -v yq >/dev/null 2>&1 || { printf 'studio-chain-runner: yq required\n' >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || { printf 'studio-chain-runner: jq required\n' >&2; exit 2; }
@@ -67,7 +89,7 @@ REPO_SLUG="v-i-s-h-a-l/generic-dev-studio"
 RUN_ROOT="${TMPDIR:-/tmp}/studio-chain-runner"
 mkdir -p "$RUN_ROOT"
 FINAL_PR_URL=""
-RUN_ID=$(mint_uuidv7)
+RUN_ID="${RESUME_ID:-$(mint_uuidv7)}"
 RUN_STARTED_AT=$(date -u +%s)
 RUN_STARTED_TS=$(iso_ts_now)
 RUN_STATUS="completed"
@@ -80,7 +102,15 @@ SUMMARY_ROOT="$CHAIN_RUN_ROOT/worker-summaries"
 EVENTS_JSONL="$CHAIN_RUN_ROOT/events.jsonl"
 RUN_STATE_JSON="$CHAIN_RUN_ROOT/state.json"
 RUN_REPORT="$CHAIN_RUN_ROOT/report.md"
-if [ "$DRY_RUN" -eq 0 ]; then
+PLAN_JSON="$CHAIN_RUN_ROOT/plan.json"
+if [ "$DRY_RUN" -eq 1 ] && [ -z "$RESUME_ID" ]; then
+  PLAN_JSON="$RUN_ROOT/$RUN_ID-plan.json"
+fi
+if [ -n "$RESUME_ID" ] && [ ! -f "$RUN_STATE_JSON" ]; then
+  printf 'studio-chain-runner: resume state not found: %s\n' "$RUN_STATE_JSON" >&2
+  exit 2
+fi
+if [ "$DRY_RUN" -eq 0 ] || [ -n "$RESUME_ID" ]; then
   mkdir -p "$SUMMARY_ROOT"
 else
   EVENTS_JSONL="/dev/null"
@@ -135,22 +165,73 @@ emit_chain_event() {
 
 write_run_state() {
   local status="$1" failure_reason="${2:-}"
+  local chains_json="[]"
+  if [ -f "$RUN_STATE_JSON" ]; then
+    chains_json=$(jq -c '.chains // []' "$RUN_STATE_JSON")
+  elif [ -f "$PLAN_JSON" ]; then
+    chains_json=$(jq -c '.chains // []' "$PLAN_JSON")
+  fi
   jq -n \
     --arg run_id "$RUN_ID" \
     --arg manifest "$MANIFEST" \
     --arg status "$status" \
     --arg started_at "$RUN_STARTED_TS" \
+    --arg updated_at "$(iso_ts_now)" \
     --arg report "$RUN_REPORT" \
+    --arg plan "$PLAN_JSON" \
+    --arg parallel_chains "$PARALLEL_CHAINS" \
     --arg failure_reason "$failure_reason" \
+    --argjson chains "$chains_json" \
     '{
       schema_version: 1,
       run_id: $run_id,
       manifest: $manifest,
       status: $status,
       started_at: $started_at,
+      updated_at: $updated_at,
       report: $report,
+      plan: $plan,
+      parallel_chains: $parallel_chains,
+      chains: $chains,
       failure_reason: (if $failure_reason == "" then null else $failure_reason end)
     }' > "$RUN_STATE_JSON"
+}
+
+update_state_jq() {
+  local filter tmp
+  [ "$DRY_RUN" -eq 0 ] || return 0
+  [ -f "$RUN_STATE_JSON" ] || return 0
+  filter="${*: -1}"
+  set -- "${@:1:$(($# - 1))}"
+  tmp="$RUN_STATE_JSON.tmp.$$"
+  jq "$@" --arg updated_at "$(iso_ts_now)" ".updated_at = \$updated_at | $filter" "$RUN_STATE_JSON" > "$tmp"
+  mv "$tmp" "$RUN_STATE_JSON"
+}
+
+mark_chain_state() {
+  local chain_run_id="$1" status="$2" pr_url="${3:-}"
+  update_state_jq \
+    --arg chain_run_id "$chain_run_id" \
+    --arg status "$status" \
+    --arg pr_url "$pr_url" \
+    '(.chains[] | select(.chain_run_id == $chain_run_id) | .status) = $status
+     | if $pr_url == "" then . else (.chains[] | select(.chain_run_id == $chain_run_id) | .pr_url) = $pr_url end'
+}
+
+mark_issue_state() {
+  local issue_run_id="$1" status="$2" before="${3:-}" after="${4:-}" summary="${5:-}" reason="${6:-}"
+  update_state_jq \
+    --arg issue_run_id "$issue_run_id" \
+    --arg status "$status" \
+    --arg before "$before" \
+    --arg after "$after" \
+    --arg summary "$summary" \
+    --arg reason "$reason" \
+    '(.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .status) = $status
+     | if $before == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .commit_before) = $before end
+     | if $after == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .commit_after) = $after end
+     | if $summary == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .summary) = $summary end
+     | if $reason == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .failure_reason) = $reason end'
 }
 
 generated_file_count_between() {
@@ -494,7 +575,9 @@ healthy_xcodebuild_offload_count() {
   ids=$(jq -r '.nodes[]? | select(.enabled != false) | select(.roles? // [] | index("xcodebuild")) | .id' "$registry" 2>/dev/null) || ids=""
   while IFS= read -r id; do
     [ -n "$id" ] || continue
-    node_is_self "$id" && continue
+    if node_is_self "$id"; then
+      continue
+    fi
     row=$("$health_cmd" "$id" 2>/dev/null | head -n 1)
     status=$(printf '%s' "$row" | awk -F'\t' '{print $2}')
     case "$status" in
@@ -535,26 +618,229 @@ chain_worker_pool_size() {
   printf '%s\n' "$desired"
 }
 
-MANIFEST=$(resolve_manifest "$MANIFEST")
-if [ "$DRY_RUN" -eq 0 ]; then
+resolve_resume_state() {
+  MANIFEST=$(jq -r '.manifest' "$RUN_STATE_JSON")
+  [ -n "$MANIFEST" ] && [ "$MANIFEST" != "null" ] || {
+    printf 'studio-chain-runner: resume state has no manifest: %s\n' "$RUN_STATE_JSON" >&2
+    exit 2
+  }
+  RUN_STARTED_TS=$(jq -r '.started_at // empty' "$RUN_STATE_JSON")
+  [ -n "$RUN_STARTED_TS" ] || RUN_STARTED_TS=$(iso_ts_now)
+}
+
+build_plan_json() {
+  local out="$1" chain_count idx name base branch host issue_count i issue issue_json issue_title issue_state
+  local chain_run_id issue_run_id issue_slug issue_branch issue_worktree chain_slug chain_worktree worker_pool
+  local tmp chains_tmp issues_tmp
+  tmp="$out.tmp.$$"
+  chains_tmp="$out.chains.$$"
+  printf '[]\n' > "$chains_tmp"
+
+  chain_count=$(yq -r '.chains | length' "$MANIFEST")
+  case "$chain_count" in
+    ''|null|*[!0-9]*)
+      printf 'studio-chain-runner: manifest must contain chains[]\n' >&2
+      exit 2
+      ;;
+  esac
+  [ "$chain_count" -gt 0 ] || { printf 'studio-chain-runner: manifest has no chains\n' >&2; exit 2; }
+
+  for ((idx = 0; idx < chain_count; idx++)); do
+    name=$(yq -r ".chains[$idx].name" "$MANIFEST")
+    [ -n "$ONLY_CHAIN" ] && [ "$name" != "$ONLY_CHAIN" ] && continue
+    base=$(yq -r ".chains[$idx].base // \"main\"" "$MANIFEST")
+    branch=$(yq -r ".chains[$idx].branch // (\"feature/\" + .chains[$idx].name)" "$MANIFEST")
+    host=$(yq -r ".chains[$idx].host // \"auto\"" "$MANIFEST")
+    [ "$host" = "auto" ] && host="${HOST_OVERRIDE:-codex}"
+    [ -n "$HOST_OVERRIDE" ] && host="$HOST_OVERRIDE"
+    validate_chain_branch "$branch" "$base"
+    issue_count=$(yq -r ".chains[$idx].issues | length" "$MANIFEST")
+    case "$issue_count" in
+      ''|null|*[!0-9]*|0)
+        printf 'studio-chain-runner: chain %s has no issues\n' "$name" >&2
+        exit 2
+        ;;
+    esac
+    chain_run_id=$(mint_uuidv7)
+    chain_slug=$(slugify "$name")
+    chain_worktree="$RUN_ROOT/$chain_slug-feature"
+    worker_pool=$(chain_worker_pool_size)
+    issues_tmp="$out.issues.$$"
+    printf '[]\n' > "$issues_tmp"
+    for ((i = 0; i < issue_count; i++)); do
+      issue=$(yq -r ".chains[$idx].issues[$i]" "$MANIFEST")
+      case "$issue" in ''|null|*[!0-9]*)
+        printf 'studio-chain-runner: invalid issue id in chain %s: %s\n' "$name" "$issue" >&2
+        exit 2
+        ;;
+      esac
+      issue_json=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,state,url)
+      issue_title=$(printf '%s' "$issue_json" | jq -r '.title')
+      issue_state=$(printf '%s' "$issue_json" | jq -r '.state')
+      if [ "$ALLOW_CLOSED_ISSUES" -eq 0 ] && [ "$issue_state" != "OPEN" ]; then
+        printf 'studio-chain-runner: issue #%s is %s; use --allow-closed-issues to include it\n' "$issue" "$issue_state" >&2
+        exit 2
+      fi
+      issue_slug=$(slugify "$issue")
+      issue_branch="$branch-issue-$issue_slug"
+      validate_branch_ref "$issue_branch" "issue"
+      issue_worktree="$RUN_ROOT/$chain_slug-issue-$issue_slug"
+      issue_run_id=$(mint_uuidv7)
+      jq \
+        --argjson issue "$issue" \
+        --arg title "$issue_title" \
+        --arg state "$issue_state" \
+        --arg branch "$issue_branch" \
+        --arg worktree "$issue_worktree" \
+        --arg issue_run_id "$issue_run_id" \
+        '. + [{number:$issue,title:$title,state:$state,issue_branch:$branch,issue_worktree:$worktree,issue_run_id:$issue_run_id,status:"pending"}]' \
+        "$issues_tmp" > "$issues_tmp.next"
+      mv "$issues_tmp.next" "$issues_tmp"
+    done
+    jq \
+      --arg name "$name" \
+      --arg base "$base" \
+      --arg branch "$branch" \
+      --arg host "$host" \
+      --arg chain_run_id "$chain_run_id" \
+      --arg worktree "$chain_worktree" \
+      --argjson worker_pool "$worker_pool" \
+      --slurpfile issues "$issues_tmp" \
+      '. + [{name:$name,base:$base,branch:$branch,host:$host,chain_run_id:$chain_run_id,chain_worktree:$worktree,worker_pool:$worker_pool,status:"pending",issues:$issues[0]}]' \
+      "$chains_tmp" > "$chains_tmp.next"
+    mv "$chains_tmp.next" "$chains_tmp"
+    rm -f "$issues_tmp"
+  done
+
+  jq -n \
+    --arg run_id "$RUN_ID" \
+    --arg manifest "$MANIFEST" \
+    --arg only_chain "$ONLY_CHAIN" \
+    --arg host_override "$HOST_OVERRIDE" \
+    --arg parallel_chains "$PARALLEL_CHAINS" \
+    --slurpfile chains "$chains_tmp" \
+    '{schema_version:1, run_id:$run_id, manifest:$manifest, only_chain:(if $only_chain == "" then null else $only_chain end), host_override:(if $host_override == "" then null else $host_override end), parallel_chains:$parallel_chains, chains:$chains[0]}' > "$tmp"
+  mv "$tmp" "$out"
+  rm -f "$chains_tmp"
+}
+
+validate_execution_graph() {
+  local plan="$1"
+  local duplicate_issues duplicate_branches protected_targets dependency_conflicts
+  duplicate_issues=$(jq -r '[.chains[].issues[].number] | group_by(.)[] | select(length > 1) | .[0]' "$plan" | paste -sd, -)
+  [ -z "$duplicate_issues" ] || { printf 'studio-chain-runner: duplicate issue IDs across chains: %s\n' "$duplicate_issues" >&2; exit 2; }
+  duplicate_branches=$(jq -r '[.chains[].branch, (.chains[].issues[].issue_branch)] | group_by(.)[] | select(length > 1) | .[0]' "$plan" | paste -sd, -)
+  [ -z "$duplicate_branches" ] || { printf 'studio-chain-runner: duplicate branch refs in plan: %s\n' "$duplicate_branches" >&2; exit 2; }
+  protected_targets=$(jq -r '.chains[].base | select(. == "feature" or . == "production" or . == "develop" or . == "trunk")' "$plan" | paste -sd, -)
+  [ -z "$protected_targets" ] || { printf 'studio-chain-runner: protected base targets are not allowed: %s\n' "$protected_targets" >&2; exit 2; }
+  dependency_conflicts=$(yq -r '[.chains[] | select(has("depends_on") or has("dependencies"))] | length' "$MANIFEST")
+  if [ "$dependency_conflicts" != "0" ] && [ "$PARALLEL_CHAINS" != "1" ]; then
+    log "dependency metadata present; falling back to sequential chain execution"
+    PARALLEL_CHAINS="1"
+  fi
+}
+
+live_preflight() {
+  local plan="$1" reviewer_host branch issue_branch base
+  with_login_home_for_github gh auth status >/dev/null 2>&1 || {
+    printf 'studio-chain-runner: GitHub auth is not available\n' >&2
+    exit 2
+  }
+  reviewer_host="${STUDIO_REVIEW_HOST:-claude-reviewer}"
+  resolve_capabilities_manifest "$reviewer_host" "$REPO_ROOT" >/dev/null || {
+    printf 'studio-chain-runner: reviewer host unavailable: %s\n' "$reviewer_host" >&2
+    exit 2
+  }
+  while IFS=$'\t' read -r branch base; do
+    with_login_home_for_github git ls-remote --exit-code --heads origin "$base" >/dev/null 2>&1 || {
+      printf 'studio-chain-runner: cannot verify origin/%s\n' "$base" >&2
+      exit 2
+    }
+    if [ -z "$RESUME_ID" ] && git show-ref --verify --quiet "refs/heads/$branch"; then
+      printf 'studio-chain-runner: local chain branch already exists: %s\n' "$branch" >&2
+      exit 2
+    fi
+    if [ -z "$RESUME_ID" ] && with_login_home_for_github git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+      printf 'studio-chain-runner: remote chain branch already exists: %s\n' "$branch" >&2
+      exit 2
+    fi
+  done <<EOF
+$(jq -r '.chains[] | [.branch, .base] | @tsv' "$plan")
+EOF
+  while IFS= read -r issue_branch; do
+    [ -n "$issue_branch" ] || continue
+    if [ -z "$RESUME_ID" ] && git show-ref --verify --quiet "refs/heads/$issue_branch"; then
+      printf 'studio-chain-runner: local issue branch already exists: %s\n' "$issue_branch" >&2
+      exit 2
+    fi
+    if [ -z "$RESUME_ID" ] && with_login_home_for_github git ls-remote --exit-code --heads origin "$issue_branch" >/dev/null 2>&1; then
+      printf 'studio-chain-runner: remote issue branch already exists: %s\n' "$issue_branch" >&2
+      exit 2
+    fi
+  done <<EOF
+$(jq -r '.chains[].issues[].issue_branch' "$plan")
+EOF
+}
+
+explain_plan() {
+  local plan="$1" effective_parallel risk
+  effective_parallel=1
+  risk="sequential execution: this runner serializes chain PR/review/issue-closure mutation; preflight still blocks duplicate issues, branch collisions, and declared dependency conflicts before execution"
+  printf '# Studio Chain Plan\n\n'
+  printf -- '- Run UUID: `%s`\n' "$RUN_ID"
+  printf -- '- Manifest: `%s`\n' "$MANIFEST"
+  printf -- '- State: `%s`\n' "$RUN_STATE_JSON"
+  printf -- '- Parallel chains: `%s` effective `%s`\n' "$PARALLEL_CHAINS" "$effective_parallel"
+  printf -- '- Host/model policy: manifest host, overridden by `--host`; `auto` resolves to `%s`\n' "${HOST_OVERRIDE:-codex}"
+  printf -- '- Risk notes: %s\n\n' "$risk"
+  jq -r '
+    .chains[] |
+    "## Chain \(.name)\n\n" +
+    "- Chain-run UUID: `\(.chain_run_id)`\n" +
+    "- Base: `\(.base)`\n" +
+    "- Branch: `\(.branch)`\n" +
+    "- Worktree: `\(.chain_worktree)`\n" +
+    "- Host: `\(.host)`\n" +
+    "- Worker pool: `\(.worker_pool)`\n" +
+    "- Planned PR: base `\(.base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
+    "| Issue | State | Status | Issue-run UUID | Branch | Worktree |\n|---:|---|---|---|---|---|\n" +
+    ([.issues[] | "| #\(.number) \(.title) | \(.state) | \(.status) | `\(.issue_run_id)` | `\(.issue_branch)` | `\(.issue_worktree)` |"] | join("\n")) +
+    "\n"
+  ' "$plan"
+}
+
+prepare_plan() {
+  if [ -n "$RESUME_ID" ]; then
+    resolve_resume_state
+    cp "$RUN_STATE_JSON" "$PLAN_JSON"
+  else
+    MANIFEST=$(resolve_manifest "$MANIFEST")
+    build_plan_json "$PLAN_JSON"
+    if [ "$DRY_RUN" -eq 0 ]; then
+      write_run_state planned ""
+    fi
+  fi
+  validate_execution_graph "$PLAN_JSON"
+}
+
+prepare_plan
+explain_plan "$PLAN_JSON"
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  log "dry-run plan follows with non-mutating commands"
+elif [ "$YES" -eq 0 ]; then
+  log "plan written; rerun with --yes or --no-confirm to execute, or --resume $RUN_ID --yes after a blocked run"
+  exit 0
+else
+  live_preflight "$PLAN_JSON"
   write_run_state running ""
 fi
+
 emit_chain_event chain_run_started "" "$RUN_ID" "" "" running 0 \
-  "$(jq -cn --arg manifest_arg "$MANIFEST" --arg only_chain "$ONLY_CHAIN" --arg host_override "$HOST_OVERRIDE" '{manifest_arg:$manifest_arg, only_chain:(if $only_chain == "" then null else $only_chain end), host_override:(if $host_override == "" then null else $host_override end)}')"
+  "$(jq -cn --arg manifest_arg "$MANIFEST" --arg only_chain "$ONLY_CHAIN" --arg host_override "$HOST_OVERRIDE" --arg resume_id "$RESUME_ID" '{manifest_arg:$manifest_arg, only_chain:(if $only_chain == "" then null else $only_chain end), host_override:(if $host_override == "" then null else $host_override end), resume_id:(if $resume_id == "" then null else $resume_id end)}')"
 trap finish_unexpected_exit EXIT
 
-chain_count=$(yq -r '.chains | length' "$MANIFEST")
-case "$chain_count" in
-  ''|null|*[!0-9]*)
-    printf 'studio-chain-runner: manifest must contain chains[]\n' >&2
-    exit 2
-    ;;
-esac
-
-if [ "$chain_count" -eq 0 ]; then
-  printf 'studio-chain-runner: manifest has no chains\n' >&2
-  exit 2
-fi
+chain_count=$(jq '.chains | length' "$PLAN_JSON")
 
 execute_issue_session() {
   local chain_name="$1" chain_branch="$2" issue="$3" host="$4" worktree="$5" chain_run_id="$6" issue_run_id="$7" before="$8"
@@ -716,6 +1002,7 @@ run_issue_job() {
 
   emit_chain_event chain_issue_started "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" running 0 \
     "$(jq -cn --arg chain "$name" --arg branch "$issue_branch" --arg host "$host" --arg before "$before" '{chain:$chain, issue_branch:$branch, host:$host, commit_before:$before}')"
+  mark_issue_state "$issue_run_id" running "$before"
 
   set +e
   execute_issue_session "$name" "$branch" "$issue" "$host" "$issue_worktree" "$chain_run_id" "$issue_run_id" "$before"
@@ -740,6 +1027,7 @@ run_issue_job() {
   if worker_summary_tracked "$issue_worktree"; then
     emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" \
       "$(jq -cn --arg summary "$summary_file" --arg reason "worker_summary_committed" '{summary:$summary, failure_reason:$reason}')"
+    mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "worker_summary_committed"
     jq -n --arg issue "$issue" --arg reason "issue #$issue committed private worker summary" \
       '{status:"failed", issue:($issue|tonumber), reason:$reason}' > "$result_file"
     return 0
@@ -748,6 +1036,7 @@ run_issue_job() {
   rm -rf "$issue_worktree/.studio"
   if [ "$worker_rc" -ne 0 ]; then
     emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" "$summary_payload"
+    mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "worker_exited_$worker_rc"
     jq -n --arg issue "$issue" --argjson rc "$worker_rc" --arg reason "issue #$issue worker exited $worker_rc" \
       '{status:"failed", issue:($issue|tonumber), exit_code:$rc, reason:$reason}' > "$result_file"
     return 0
@@ -756,6 +1045,7 @@ run_issue_job() {
   if [ "$after" = "$before" ]; then
     emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" \
       "$(jq -cn --arg summary "$summary_file" --arg reason "no_commit" '{summary:$summary, failure_reason:$reason}')"
+    mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "no_commit"
     printf 'studio-chain-runner: issue #%s produced no commit; leaving worktree at %s\n' "$issue" "$issue_worktree" >&2
     jq -n --arg issue "$issue" --arg reason "issue #$issue produced no commit" \
       '{status:"failed", issue:($issue|tonumber), reason:$reason}' > "$result_file"
@@ -763,6 +1053,7 @@ run_issue_job() {
   fi
 
   emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed "$issue_duration" "$summary_payload"
+  mark_issue_state "$issue_run_id" completed "$before" "$after" "$summary_file"
   jq -n \
     --arg issue "$issue" \
     --arg branch "$issue_branch" \
@@ -808,43 +1099,43 @@ wait_for_all_issue_jobs() {
 }
 
 for ((idx = 0; idx < chain_count; idx++)); do
-  name=$(yq -r ".chains[$idx].name" "$MANIFEST")
-  base=$(yq -r ".chains[$idx].base // \"main\"" "$MANIFEST")
-  branch=$(yq -r ".chains[$idx].branch // (\"feature/\" + .chains[$idx].name)" "$MANIFEST")
-  host=$(yq -r ".chains[$idx].host // \"auto\"" "$MANIFEST")
-  issue_count=$(yq -r ".chains[$idx].issues | length" "$MANIFEST")
-  chain_run_id=$(mint_uuidv7)
+  name=$(jq -r ".chains[$idx].name" "$PLAN_JSON")
+  base=$(jq -r ".chains[$idx].base" "$PLAN_JSON")
+  branch=$(jq -r ".chains[$idx].branch" "$PLAN_JSON")
+  host=$(jq -r ".chains[$idx].host" "$PLAN_JSON")
+  issue_count=$(jq -r ".chains[$idx].issues | length" "$PLAN_JSON")
+  chain_run_id=$(jq -r ".chains[$idx].chain_run_id" "$PLAN_JSON")
+  chain_status=$(jq -r ".chains[$idx].status // \"pending\"" "$RUN_STATE_JSON" 2>/dev/null || printf 'pending')
   chain_started_at=$(now_epoch)
 
-  [ -n "$ONLY_CHAIN" ] && [ "$name" != "$ONLY_CHAIN" ] && { log "skip chain $name (--only $ONLY_CHAIN)"; continue; }
-  validate_chain_branch "$branch" "$base"
-  [ "$host" = "auto" ] && host="${HOST_OVERRIDE:-codex}"
-  [ -n "$HOST_OVERRIDE" ] && host="$HOST_OVERRIDE"
-
-  case "$issue_count" in
-    ''|null|*[!0-9]*|0)
-      printf 'studio-chain-runner: chain %s has no issues\n' "$name" >&2
-      exit 2
-      ;;
-  esac
+  if [ "$chain_status" = "completed" ]; then
+    log "resume skip completed chain $name"
+    continue
+  fi
 
   chain_slug=$(slugify "$name")
-  chain_worktree="$RUN_ROOT/$chain_slug-feature"
+  chain_worktree=$(jq -r ".chains[$idx].chain_worktree" "$PLAN_JSON")
   chain_results_dir="$RUN_ROOT/$chain_slug-results-$chain_run_id"
-  CHAIN_WORKER_POOL=$(chain_worker_pool_size)
+  CHAIN_WORKER_POOL=$(jq -r ".chains[$idx].worker_pool" "$PLAN_JSON")
 
   log "starting chain $name on $branch from latest $base using host=$host worker_pool=$CHAIN_WORKER_POOL"
+  mark_chain_state "$chain_run_id" running
   emit_chain_event chain_started "" "$RUN_ID" "$chain_run_id" "" running 0 \
     "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, host:$host, issue_count:$issue_count, worker_pool:$worker_pool}')"
   host_preflight "$host" "$REPO_ROOT" || abort_run "host preflight failed for $host"
   run with_login_home_for_github git -C "$REPO_ROOT" fetch origin --prune
   if [ "$DRY_RUN" -eq 0 ]; then
     mkdir -p "$chain_results_dir"
-    if [ ! -d "$chain_worktree/.git" ]; then
+    if [ -n "$RESUME_ID" ] && [ -d "$chain_worktree/.git" ]; then
+      git -C "$chain_worktree" checkout "$branch"
+    elif [ ! -d "$chain_worktree/.git" ]; then
       git -C "$REPO_ROOT" worktree add -B "$branch" "$chain_worktree" "origin/$base"
+      git -C "$chain_worktree" checkout "$branch"
+      git -C "$chain_worktree" reset --hard "origin/$base"
+    else
+      git -C "$chain_worktree" checkout "$branch"
+      git -C "$chain_worktree" reset --hard "origin/$base"
     fi
-    git -C "$chain_worktree" checkout "$branch"
-    git -C "$chain_worktree" reset --hard "origin/$base"
   else
     mkdir -p "$chain_results_dir"
     printf 'DRY-RUN git worktree add -B %q %q origin/%q\n' "$branch" "$chain_worktree" "$base"
@@ -852,26 +1143,32 @@ for ((idx = 0; idx < chain_count; idx++)); do
 
   ISSUE_PIDS=()
   for ((i = 0; i < issue_count; i++)); do
-    issue=$(yq -r ".chains[$idx].issues[$i]" "$MANIFEST")
-    issue_slug=$(slugify "$issue")
-    issue_branch="$branch-issue-$issue_slug"
-    issue_worktree="$RUN_ROOT/$chain_slug-issue-$issue_slug"
-    issue_run_id=$(mint_uuidv7)
+    issue=$(jq -r ".chains[$idx].issues[$i].number" "$PLAN_JSON")
+    issue_branch=$(jq -r ".chains[$idx].issues[$i].issue_branch" "$PLAN_JSON")
+    issue_worktree=$(jq -r ".chains[$idx].issues[$i].issue_worktree" "$PLAN_JSON")
+    issue_run_id=$(jq -r ".chains[$idx].issues[$i].issue_run_id" "$PLAN_JSON")
+    issue_status=$(jq -r --arg id "$issue_run_id" '.chains[].issues[] | select(.issue_run_id == $id) | .status // "pending"' "$RUN_STATE_JSON" 2>/dev/null || printf 'pending')
     result_file="$chain_results_dir/issue-$issue-$issue_run_id.json"
+
+    if [ "$issue_status" = "completed" ]; then
+      log "resume skip completed issue #$issue"
+      jq -n \
+        --arg issue "$issue" \
+        --arg branch "$issue_branch" \
+        --arg worktree "$issue_worktree" \
+        '{status:"completed", issue:($issue|tonumber), issue_branch:$branch, issue_worktree:$worktree, resumed:true}' > "$result_file"
+      continue
+    fi
 
     if [ "$DRY_RUN" -eq 1 ]; then
       run_issue_job "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file"
     else
-      wait_for_issue_slot 1
-      run_issue_job "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file" &
-      ISSUE_PIDS+=("$!")
+      run_issue_job "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file"
     fi
   done
 
-  wait_for_all_issue_jobs
-
   for ((i = 0; i < issue_count; i++)); do
-    issue=$(yq -r ".chains[$idx].issues[$i]" "$MANIFEST")
+    issue=$(jq -r ".chains[$idx].issues[$i].number" "$PLAN_JSON")
     result_file=$(find "$chain_results_dir" -maxdepth 1 -name "issue-$issue-*.json" -print -quit 2>/dev/null || true)
     if [ -z "$result_file" ] || [ ! -r "$result_file" ]; then
       abort_run "issue #$issue produced no runner result"
@@ -884,6 +1181,10 @@ for ((idx = 0; idx < chain_count; idx++)); do
     issue_branch=$(jq -r '.issue_branch' "$result_file")
     issue_worktree=$(jq -r '.issue_worktree' "$result_file")
     if [ "$DRY_RUN" -eq 0 ]; then
+      if [ "$(jq -r '.resumed // false' "$result_file")" = "true" ] && ! git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/$issue_branch"; then
+        log "resume assumes completed issue #$issue already integrated; issue branch missing"
+        continue
+      fi
       git -C "$chain_worktree" checkout "$branch"
       git -C "$issue_worktree" rebase "$branch"
       git -C "$chain_worktree" merge --ff-only "$issue_branch"
@@ -900,11 +1201,12 @@ for ((idx = 0; idx < chain_count; idx++)); do
 
   finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id" "$host"
   chain_duration=$(duration_since "$chain_started_at")
+  mark_chain_state "$chain_run_id" completed "$FINAL_PR_URL"
   emit_chain_event chain_completed "" "$RUN_ID" "$chain_run_id" "" completed "$chain_duration" \
     "$(jq -cn --arg name "$name" --arg pr_url "$FINAL_PR_URL" '{chain:$name, pr_url:(if $pr_url == "" then null else $pr_url end)}')"
 
   for ((i = 0; i < issue_count; i++)); do
-    issue=$(yq -r ".chains[$idx].issues[$i]" "$MANIFEST")
+    issue=$(jq -r ".chains[$idx].issues[$i].number" "$PLAN_JSON")
     if [ "$DRY_RUN" -eq 0 ]; then
       with_login_home_for_github gh issue close "$issue" --repo "$REPO_SLUG" --comment "Merged through chain PR: ${FINAL_PR_URL:-$branch}
 
