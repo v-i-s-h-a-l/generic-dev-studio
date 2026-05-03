@@ -18,6 +18,10 @@ Current bootstrap artifacts:
 - `skills/dev-studio/` is the A2 umbrella skill. It defines `/dev-studio`,
   lists canonical role dispatch rows, and records v1 compatibility forwarders
   for `/chanakya`, `/achilles`, `/argus`, and `/apollo`.
+- `routers/modular-router-contract.yaml` and
+  `schemas/router-contract.schema.json` define the A2a modular router contract.
+  Validate router contracts and shell router boundaries with
+  `scripts/v2-router-lint.sh`; the A0.6 gate delegates to it.
 
 Until `SPEC.md` carries `<!-- v2-bootstrap:a0.5-sign-off:complete -->`, the gate
 allows substrate docs, metadata, schemas, and this bootstrap hook only. It blocks

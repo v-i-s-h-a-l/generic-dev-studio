@@ -220,17 +220,17 @@ check_subscriber_checkpoints() {
 }
 
 check_router_constraints() {
-  local f rel count
-  find "$REPO_ROOT/core/v2/routers" -type f -name '*.sh' 2>/dev/null | while IFS= read -r f; do
-    rel=$(rel_for "$f")
-    count=$(sed '/^[[:space:]]*$/d;/^[[:space:]]*#/d' "$f" | wc -l | tr -d ' ')
-    if [ "$count" -gt 100 ]; then
-      printf 'E_V2_ROUTER_SIZE:%s:%s>100 | v2 routers stay dispatch-only; move logic to helpers\n' "$rel" "$count"
-    fi
-    if grep -nE '(xcodebuild|swift[[:space:]]+test|gh[[:space:]]+(issue|pr|release)|git[[:space:]]+push)' "$f" >/dev/null 2>&1; then
-      printf 'E_V2_ROUTER_LOGIC:%s | routers must not embed build, test, GitHub, release, or push logic\n' "$rel"
-    fi
-  done
+  local router_lint_out router_lint_rc
+  [ -x "$SCRIPT_DIR/v2-router-lint.sh" ] || {
+    printf 'E_V2_ROUTER_LINT:scripts/v2-router-lint.sh | v2 router enforcement must delegate to the A2a router linter\n'
+    return 0
+  }
+
+  router_lint_out=$("$SCRIPT_DIR/v2-router-lint.sh" "--$MODE" 2>&1)
+  router_lint_rc=$?
+  if [ "$router_lint_rc" -ne 0 ]; then
+    printf '%s\n' "$router_lint_out"
+  fi
 }
 
 check_profile_boundaries() {
