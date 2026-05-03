@@ -14,9 +14,12 @@
 #       active debrief write paths (#311).
 #   2g. lint-field-review-surfaces.sh --staged — block raw cross-host
 #       review-host commands outside the reviewer wrapper (#458).
+#   2h. lint-v2-bootstrap.sh --staged — keep v2 substrate pre-SPEC changes
+#       inside the A0.4 bootstrap/meta boundary.
+#   2i. lint-v2-enforcement.sh --staged — A0.6 Studio v2 SPEC-derived gates.
 #   3.  privacy gate — reject if staged diff leaks another project's runtime.
 #
-# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/2g/3.
+# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/2g/2h/2i/3.
 # Gates 1+1b (manifest regens) always run because stale manifests leak
 # downstream.
 # LLM review is not part of the default hook path. Run
@@ -151,6 +154,28 @@ if [ -x "$SCRIPTS/lint-field-review-surfaces.sh" ]; then
   rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '\npre-commit: raw cross-host review command found — use scripts/phase-review.sh or a wrapper successor\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2h — v2 bootstrap/meta boundary (#512 A0.4).
+if [ -x "$SCRIPTS/lint-v2-bootstrap.sh" ]; then
+  "$SCRIPTS/lint-v2-bootstrap.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: v2 bootstrap boundary violations above — see core/v2/BOOTSTRAP.md\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2i — Studio v2 SPEC-derived enforcement (#514).
+if [ -x "$SCRIPTS/lint-v2-enforcement.sh" ]; then
+  "$SCRIPTS/lint-v2-enforcement.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: Studio v2 enforcement violations above — see core/v2/SPEC.md and _shared/rules/enforcement-contract.md\n' >&2
     printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
     exit 1
   fi

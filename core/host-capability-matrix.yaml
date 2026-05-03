@@ -1,0 +1,151 @@
+schema_version: 1
+name: host-capability-matrix
+updated_at: 2026-05-03T00:00:00Z
+source_issue: 508
+parent_issue: 444
+purpose: "A0a substrate input: feature-gate Studio v2 behavior across Claude Code, Codex CLI, Gemini CLI, and Ollama before A0.5 SPEC sign-off."
+status_vocabulary:
+  supported: "Usable by Studio v2 load-bearing paths after adapter conformance."
+  provisional: "Host surface exists or is planned, but Studio adapter/conformance is incomplete."
+  unsupported: "Known not to satisfy the dimension without an external wrapper or future adapter work."
+  unknown: "Insufficient evidence for a substrate claim; callers must fail explicitly or choose a supported host."
+load_bearing_floor:
+  required_for_all_hosts:
+    - repo_file_io
+    - posix_shell_or_equivalent_command_runner
+    - explicit_instruction_file
+    - deterministic_artifact_handoff
+    - json_schema_validation
+  forbidden_as_required_features:
+    - session_start_hooks
+    - host_native_subagents
+    - slash_command_only_dispatch
+    - host_specific_tool_names
+    - inherited_secret_environment
+feature_gates:
+  tool_calling:
+    rule: "Required for autonomous worker/reviewer execution. If absent or unknown, the host may only run read-only prose planning through an explicit wrapper."
+  subagent_spawning:
+    rule: "Never load-bearing. Use process-level handoff artifacts and chain-runner dispatch instead."
+  skill_loading:
+    rule: "May be host-native when available; substrate must also support repo-vendored prompt artifacts loaded by path."
+  filesystem_access:
+    rule: "Must allow repo reads/writes plus ~/.dev-studio/** runtime artifacts for worker-capable hosts."
+  long_running_state:
+    rule: "Never kept inside host session memory. Durable state lives in event logs, summary artifacts, and chain-runner envelopes."
+  hooks:
+    rule: "Optional accelerator only. Required checks must also be invocable by scripts/pre-commit/CI."
+  secret_isolation:
+    rule: "Worker-capable hosts must avoid inherited full env. Reviewer-capable hosts must receive no secrets."
+hosts:
+  claude-code:
+    display_name: "Claude Code"
+    family: anthropic
+    current_registry_status: adapted
+    current_manifest: ".claude-plugin/capabilities.yaml"
+    instruction_file: CLAUDE.md
+    tool_dialect: claude
+    tool_calling: supported
+    subagent_spawning: supported
+    skill_loading: supported
+    filesystem_access: supported
+    shell_execution: supported
+    long_running_state: provisional
+    hooks: supported
+    sandbox_profile: host-native
+    secret_scope: inherit-env
+    worker_capable: provisional
+    reviewer_capable: supported
+    v2_gate: "Reference host for interactive Forge work, but not a template for new worker adapters because the current worker profile violates the mechanical secret/sandbox floor."
+    required_follow_up:
+      - "Keep Claude reviewer profile separate with secret_scope none."
+      - "Do not require Claude subagents, slash commands, or SessionStart hooks in v2 load-bearing paths."
+  codex:
+    display_name: "OpenAI Codex CLI"
+    family: openai
+    current_registry_status: adapted
+    current_manifest: ".codex/capabilities.yaml"
+    instruction_file: AGENTS.md
+    tool_dialect: openai
+    tool_calling: supported
+    subagent_spawning: unsupported
+    skill_loading: supported
+    filesystem_access: supported
+    shell_execution: supported
+    long_running_state: provisional
+    hooks: supported
+    sandbox_profile: workspace-write
+    secret_scope: cwd-only
+    worker_capable: supported
+    reviewer_capable: supported
+    v2_gate: "Primary non-Claude worker/reviewer proof host. Use chain-runner artifacts and scripts for multi-agent work."
+    required_follow_up:
+      - "Keep reviewer profile no-secret and read-only."
+      - "Model defaults resolve through _shared/schemas/model-catalog.yaml, not hardcoded host names."
+  gemini-cli:
+    display_name: "Gemini CLI"
+    family: google
+    current_registry_status: provisional
+    current_manifest: null
+    instruction_file: GEMINI.md
+    tool_dialect: openai
+    tool_calling: provisional
+    subagent_spawning: unknown
+    skill_loading: provisional
+    filesystem_access: provisional
+    shell_execution: provisional
+    long_running_state: unknown
+    hooks: unknown
+    sandbox_profile: unknown
+    secret_scope: unknown
+    worker_capable: unknown
+    reviewer_capable: unknown
+    v2_gate: "Candidate host only until a capabilities.yaml, install guide, security floor, and conformance row land."
+    required_follow_up:
+      - "Add .gemini/capabilities.yaml before worker dispatch."
+      - "Prove sandbox and secret isolation before marking worker_capable."
+      - "Map Gemini extensions/skills into the vendored skill artifact contract."
+  ollama:
+    display_name: "Ollama"
+    family: local
+    current_registry_status: absent
+    current_manifest: null
+    instruction_file: null
+    tool_dialect: openai
+    tool_calling: provisional
+    subagent_spawning: unsupported
+    skill_loading: unsupported
+    filesystem_access: unsupported
+    shell_execution: unsupported
+    long_running_state: unsupported
+    hooks: unsupported
+    sandbox_profile: none
+    secret_scope: none
+    worker_capable: unsupported
+    reviewer_capable: unsupported
+    v2_gate: "Model provider only unless paired with a coding-agent host adapter. It must not receive worker tasks directly."
+    required_follow_up:
+      - "Represent Ollama as a provider/model backend or add an explicit adapter wrapper; do not pretend the Ollama daemon is a coding host."
+      - "Gate tool-calling by selected model capability, because Ollama API support does not imply every local model supports tools."
+conformance_rows:
+  minimum_before_a0_5:
+    - "Claude Code reference host: interactive planning and reviewer profile documented."
+    - "Codex worker/reviewer: adapted profiles remain the non-Claude proof path."
+    - "Gemini CLI and Ollama: explicit unknown/provisional gates prevent silent support claims."
+  minimum_before_a7:
+    - "At least Claude Code plus one non-Claude host run manager proof-of-life against the same artifact contracts."
+    - "Unsupported host combinations fail loudly with actionable host/missing-capability fields."
+sources:
+  local:
+    - "hosts/registry.yaml"
+    - "hosts/ADAPTER-SPEC.md"
+    - ".claude-plugin/capabilities.yaml"
+    - ".codex/capabilities.yaml"
+    - ".claude-reviewer/capabilities.yaml"
+    - ".codex-reviewer/capabilities.yaml"
+    - "_shared/schemas/model-catalog.yaml"
+  external:
+    - "https://google-gemini.github.io/gemini-cli/docs/extensions/"
+    - "https://google-gemini.github.io/gemini-cli/docs/cli/commands.html"
+    - "https://docs.ollama.com/capabilities/tool-calling"
+    - "https://docs.ollama.com/api"

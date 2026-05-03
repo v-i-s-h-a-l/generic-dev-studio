@@ -173,6 +173,8 @@ scripts/pr-reviewer-eligibility.sh claude-reviewer      # same reviewer floor fo
 scripts/phase-review.sh --review-host claude-reviewer --input phase-plan.md --output review.md   # sibling-host phase gate; emits PHASE_REVIEW_VERDICT=clean|blocked|ambiguous
 scripts/pre-commit-review.sh                            # manual reviewer gate for risky staged diffs; accepts approved/approved_with_fixes only
 scripts/lint-field-review-surfaces.sh --staged          # blocks raw cross-host review snippets outside phase-review wrappers
+scripts/lint-v2-bootstrap.sh --staged                   # blocks pre-A0.5 substrate code outside the A0.4 bootstrap/meta boundary
+scripts/lint-v2-enforcement.sh --staged                 # A0.6 Studio v2 SPEC-derived substrate/profile gates
 scripts/lint-project-skill-links.sh [--host codex]      # repo-local project skill discovery link invariant + repair helper
 scripts/pr-headless-review.sh <pr>                      # run smoke-eligible reviewer, post gate with cross-host/fallback metadata, merge if non-blocked
 scripts/pr-headless-review.sh <pr> --no-require-cross-host  # opt out of default independent-provider reviewer policy for explicit non-safety-floor runs
