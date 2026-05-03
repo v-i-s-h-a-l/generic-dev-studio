@@ -12,6 +12,9 @@ place to read v2 transition issue state when GitHub fields are needed. Runtime
 state still lives under `~/.dev-studio/**`; the Projects board is planning
 state only.
 
+Backlog-facing docs should point here first for current planning state. Use
+repo issues for the durable issue body, discussion, labels, and CLI fallback.
+
 ## Field Contract
 
 Required custom fields:
