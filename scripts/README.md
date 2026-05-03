@@ -47,6 +47,8 @@ scripts/achilles-dispatch.sh T001              # current project, least-loaded w
 scripts/achilles-dispatch.sh T002 worker-3     # pin to a specific worker
 scripts/achilles-dispatch.sh T004 any -- --wait --force-build
 ACHILLES_PROJECT=other-app scripts/achilles-dispatch.sh T001   # cross-project
+scripts/chanakya-task-train.sh --train export-flow --dry-run    # preview reviewed single-train dispatch
+scripts/chanakya-task-train.sh --train export-flow --yes        # plan review, dispatch, watch, outcome review, resumable
 scripts/worker-status.sh                       # current project's fleet
 scripts/worker-status.sh --all-projects        # machine-wide view
 scripts/achilles-cancel.sh T002                # remove a pending dispatch

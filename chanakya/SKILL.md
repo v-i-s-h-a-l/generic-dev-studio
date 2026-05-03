@@ -1,6 +1,6 @@
 ---
 name: chanakya
-description: Project manager for the Turnip iOS codebase. Plans tasks, generates Achilles briefs, runs inbox sweeps, tracks build/test debt, manages verification. See routing.yaml for the sub-command surface. Bug fixes / one-file changes route to /achilles.
+description: Project manager for Turnip iOS. Plans tasks, generates Achilles briefs, runs sweeps, tracks debt, and verifies work. Bug fixes / one-file changes route to /achilles.
 type: agent-router
 schema_version: 1
 version: 1.0.0
@@ -67,7 +67,7 @@ Every invocation, regardless of mode, scans `~/.dev-studio/<project>/plans/debri
 | `feedback-history [filters]` | `modes/feedback.md` |
 | `studio-feedback` / "capture this as feedback" | `modes/feedback.md` |
 | `auto-sweep` | `modes/inbox-sweep.md` (Step 0 re-run + backoff) |
-| `train <show\|list\|burn-down\|dispatch-ready> [name]` | `modes/train.md` |
+| `train <show\|list\|burn-down\|dispatch-ready\|run> [name]` | `modes/train.md` |
 | `stale [--days=N] [--state=<state>]` | `modes/stale.md` |
 | `digest [day\|week\|month]` | `modes/digest.md` |
 | `blocked-by <task-id>` | `modes/blocked-by.md` |
