@@ -147,6 +147,7 @@ scripts/field-workflow-report.sh --days 14                  # Field loop timing,
 scripts/studio-pr-baseline-report.sh 366                    # PR-level timing, churn, gate, and generated-file baselines
 scripts/host-preflight.sh codex /repo                       # prove gh + git credential access before host task work
 scripts/studio-gh.sh issue list --state open                # assistant-safe GitHub CLI wrapper; normalizes synthetic Codex HOME
+scripts/studio-dependency-export.sh --issue 443             # Mermaid graph from native GitHub blocked_by dependencies
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run plan review + reviewed chain PR merges
 # Chain manifests may set phase_review: required|auto|off; required/auto gates issue phases through scripts/phase-review.sh and forwards compact clean outcome feedback privately.
 scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply
@@ -223,6 +224,7 @@ scripts/                # multi-worker fleet (BETA)
   forge-latency-report.sh  # stage-level task latency + review-gate comparison from event logs
   field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
+  studio-dependency-export.sh # Mermaid graph from native GitHub blocked_by issue dependencies
   studio-chain-runner.sh   # plan/execute/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, locks, and private run reports
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access

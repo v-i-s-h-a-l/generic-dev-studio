@@ -1021,6 +1021,10 @@ scripts/waive-lift.sh argus    # reports N tasks merged without review during th
 scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply</code></pre>
   <p>Emergency/debug bypass is user-controlled via <code>STUDIO_BYPASS_ISSUE_BODY_GUARD=1</code> or <code>--bypass-body-guard</code>; assistants must not set it silently.</p>
 
+  <h3 style="margin-top: 32px;">Native dependency export</h3>
+  <p>Render GitHub-native issue dependencies as Mermaid for PM-surface review. The exporter reads the <code>blocked_by</code> API and does not parse issue bodies.</p>
+  <pre><code>scripts/studio-dependency-export.sh --issue 443</code></pre>
+
   <h3 style="margin-top: 32px;">Orphan-debrief backfill</h3>
   <p>Recover tasks that completed and emitted a debrief but never landed a row in the master plan — a "silent double-miss" where prior sweeps flipped <code>state: emitted → done</code> without updating the plan, then subsequent sweeps skipped the already-done debrief permanently.</p>
   <pre><code>scripts/backfill-orphan-debriefs.sh           # dry-run: preview what would be back-filled

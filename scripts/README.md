@@ -75,6 +75,7 @@ scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a 
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
 scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
 scripts/studio-gh.sh issue list --state open          # gh wrapper for assistant/interactive calls; normalizes synthetic Codex HOME to login HOME
+scripts/studio-dependency-export.sh --issue 443       # Mermaid graph from native GitHub blocked_by dependencies; no body parsing
 scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply; STUDIO_BYPASS_ISSUE_BODY_GUARD=1 is user-controlled emergency/debug bypass
 
 # Parent-side GitHub auth:
