@@ -18,6 +18,11 @@
 #
 # Parent umbrella #280 is intentionally not included; these chains execute the
 # concrete network-efficiency child issues only.
+#
+# Interactive exception: when the user explicitly asks for active-session-only
+# Codex work and forbids chain runners/background jobs, a single isolated branch
+# with per-issue commits plus foreground phase reviews is acceptable. This
+# manifest remains the automated runner shape.
 
 schema_version: 1
 chains:

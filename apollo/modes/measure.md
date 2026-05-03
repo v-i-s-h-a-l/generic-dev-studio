@@ -25,7 +25,7 @@ writes:
 
 # Mode: Measure (`/apollo measure <metric>` / `--capture-only`)
 
-Apollo's capture-only path. Produces a single hard-evidence artifact for a named metric (`memory` | `thermal` | `battery` | `cpu`) on a named cohort, then exits — **no fix recommendation, no patch dispatch, no re-measure loop**. Companion to the diagnostic mode packs.
+Apollo's capture-only path. Produces a single hard-evidence artifact for a named metric (`memory` | `thermal` | `battery` | `cpu` | `network`) on a named cohort, then exits — **no fix recommendation, no patch dispatch, no re-measure loop**. Companion to the diagnostic mode packs.
 
 ## When to use
 
@@ -42,6 +42,7 @@ Not for: open-ended "what's slow?" investigation. Use the diagnostic mode packs 
 /apollo measure thermal --cohort iPhone-16-Pro-iOS-19 --workload export-1080p
 /apollo measure battery --capture-only       # explicit capture-only flag (alias)
 /apollo measure cpu --workload scroll-feed
+/apollo measure network --workload feed-refresh
 /apollo measure cpu --scenario feed-scroll-cpu
 /apollo memory --capture-only                # equivalent: enter memory mode, exit after capture
 ```
@@ -50,15 +51,15 @@ Not for: open-ended "what's slow?" investigation. Use the diagnostic mode packs 
 
 ## Pre-conditions
 
-- Host capability — `host-capabilities.yaml` must declare the capture surface required for the metric (XcodeBuildMCP + Instruments for memory/thermal; xctrace + Energy Log for battery; MXMetricPayload requires a TestFlight build registered with the device). Refuse with `host-incapable` if the surface is not available.
+- Host capability — `host-capabilities.yaml` must declare the capture surface required for the metric (XcodeBuildMCP + Instruments for memory/thermal; xctrace + Energy Log for battery; xctrace Network / MetricKit / ASC for network; MXMetricPayload requires a TestFlight build registered with the device). Refuse with `host-incapable` if the surface is not available.
 - Cohort declared — explicit `--cohort` flag OR an active baseline whose cohort is reused. Never silently pick a cohort; cohort drift is the #1 cause of strict-9 refusals downstream.
-- Workload declared — explicit `--workload` flag OR a default declared by the metric's mode pack (memory: 60-second app-foreground idle; thermal: 5-minute export loop; battery: 30-minute Energy Log session). Document the workload on the artifact's sidecar so re-capture is reproducible.
+- Workload declared — explicit `--workload` flag OR a default declared by the metric's mode pack (memory: 60-second app-foreground idle; thermal: 5-minute export loop; battery: 30-minute Energy Log session; network: no default, `--workload` or `--scenario` required). Document the workload on the artifact's sidecar so re-capture is reproducible.
 
 ## Steps
 
 ### Step 1 — Resolve metric + cohort + workload
 
-Parse the invocation. Resolve metric to one of `memory | thermal | battery | cpu`. If `--scenario <id-or-path>` is present, validate it with `scripts/validate-contract.sh apollo-scenario <scenario.yaml>` and resolve cohort, workload, signposts, duration, dwell, expected artifacts, and compare axes from `apollo/_shared/primitives/scenarios.md`. Otherwise resolve cohort from `--cohort` or `<project>/apollo/baselines/<baseline_ref>.json`, and workload from `--workload` or the metric's mode-pack default.
+Parse the invocation. Resolve metric to one of `memory | thermal | battery | cpu | network`. If `--scenario <id-or-path>` is present, validate it with `scripts/validate-contract.sh apollo-scenario <scenario.yaml>` and resolve cohort, workload, signposts, duration, dwell, expected artifacts, and compare axes from `apollo/_shared/primitives/scenarios.md`. Otherwise resolve cohort from `--cohort` or `<project>/apollo/baselines/<baseline_ref>.json`, and workload from `--workload` or the metric's mode-pack default.
 
 If any of the three are unresolved, refuse with `missing-input` and list which fields are unset. Do not guess.
 
@@ -74,6 +75,7 @@ Per the metric's `apollo/_shared/primitives/execution-surface.md` recipe:
 - **thermal** — XcodeBuildMCP boot on a real device (simulator thermal data is not strict-9) → AXe automate workload loop → `xctrace record --template "Thermal State"` → stop on time budget. Output: `.trace` + ASC Performance Metrics polling URL.
 - **battery** — Real device, unplugged, full charge → automate workload via TestFlight build → `xcrun simctl spawn` is not valid here → Energy Log download via Settings → Developer → Logs. Output: Energy Log `.logarchive` + Battery Usage screenshot.
 - **cpu** — XcodeBuildMCP build → AXe or XCTest drives the declared workload → `xctrace record --template "CPU Profiler"` or Time Profiler fallback, with CPU Counters / Processor Trace / System Trace selected by `apollo/modes/cpu.md`. Output: `.trace` or `.xcresult`.
+- **network** — Declared workload or scenario required → `xctrace record --template "Network"` under the signposted flow; add System Trace, paired Power Profiler, `URLSessionTaskMetrics`, MetricKit, or ASC paths per `apollo/modes/network.md`. Output: `.trace`, task-metrics JSON, MetricKit payload, or ASC response artifact.
 
 Emit `apollo_capture_started` at step entry; `apollo_capture_completed` at clean exit; `apollo_capture_deferred` when the capture cannot complete in the session budget (long battery captures often defer).
 
@@ -119,7 +121,7 @@ Single-block report to the user:
 
 ```
 Captured: <capture-id>
-Metric: <memory|thermal|battery|cpu>
+Metric: <memory|thermal|battery|cpu|network>
 Cohort: <device> <os> <build>
 Workload: <name> (<duration>s)
 Artifact: ~/.dev-studio/<project>/apollo/captures/<capture-id>/<artifact-path>
@@ -153,3 +155,4 @@ All refusals emit `apollo_refused` with the reason code. Capture-mode refusals n
 - `apollo/_shared/primitives/perf-merge-loop.md` — what consumes the captured artifact downstream.
 - `_shared/schemas/brief.md` — `evidence.artifacts[]` field this mode populates.
 - `apollo/modes/{memory,thermal,battery,cpu}.md` — diagnostic mode packs that capture-then-recommend.
+- `apollo/modes/network.md` — network-efficiency mode pack that consumes network capture artifacts.
