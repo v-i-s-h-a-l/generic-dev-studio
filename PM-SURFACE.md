@@ -56,3 +56,10 @@ and items. In this run, GitHub's exposed GraphQL mutation schema included
 project, field, item, and repository-link mutations, but no view creation or
 view update mutation. If the Board or Roadmap tabs are absent in the GitHub UI,
 create them manually from the project page using the names above.
+
+## Native Dependencies
+
+Use `scripts/studio-dependency-export.sh --issue <number>` to render the
+GitHub-native `blocked_by` graph for an epic as Mermaid. The exporter reads the
+`/issues/<n>/dependencies/blocked_by` API and intentionally ignores issue-body
+checkboxes or prose dependency lists.
