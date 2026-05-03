@@ -260,6 +260,30 @@ check_docs_guidance() {
   done
 }
 
+check_context_budget_manifest() {
+  local manifest="core/v2/context-budget/manifest.json"
+  local schema="core/v2/schemas/context-budget.schema.json"
+  local resolver="scripts/v2-context-budget.sh"
+
+  [ -f "$REPO_ROOT/$manifest" ] || return 0
+
+  [ -f "$REPO_ROOT/$schema" ] || {
+    emit_error "E_V2_CONTEXT_BUDGET_SCHEMA:$schema | context-budget manifests need a schema"
+    return 0
+  }
+  [ -x "$REPO_ROOT/$resolver" ] || {
+    emit_error "E_V2_CONTEXT_BUDGET_RESOLVER:$resolver | context-budget manifests need an executable resolver"
+    return 0
+  }
+
+  local out rc
+  out=$("$REPO_ROOT/$resolver" --manifest "$REPO_ROOT/$manifest" --validate 2>&1)
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    emit_error "E_V2_CONTEXT_BUDGET:$manifest | resolver validation failed: $out"
+  fi
+}
+
 collect_subprocess_errors() {
   while IFS= read -r line; do
     [ -n "$line" ] && emit_error "$line"
@@ -288,6 +312,7 @@ check_subscriber_checkpoints
 collect_subprocess_errors < <(check_router_constraints)
 collect_subprocess_errors < <(check_profile_boundaries)
 collect_subprocess_errors < <(check_docs_guidance)
+check_context_budget_manifest
 
 if [ -x "$SCRIPT_DIR/lint-field-review-surfaces.sh" ] && { [ -d "$REPO_ROOT/core/v2" ] || [ -d "$REPO_ROOT/profiles" ]; }; then
   field_review_out=$("$SCRIPT_DIR/lint-field-review-surfaces.sh" "$REPO_ROOT/core/v2" "$REPO_ROOT/profiles" 2>&1)

@@ -1,0 +1,163 @@
+{
+  "schema_version": {
+    "name": "context-budget",
+    "version": "1.0.0",
+    "min_reader": "1.0.0",
+    "deprecated_at": null
+  },
+  "kind": "studio-v2-context-budget",
+  "description": "Unified context-budget policy for Studio v2 role, skill, and invocation loading.",
+  "defaults": {
+    "max_context_tokens": 200000,
+    "warning_ratio": 0.8,
+    "exceeded_ratio": 1.0
+  },
+  "resolution": {
+    "rule": "The effective budget is the lowest matching ceiling from defaults, role, skill, and invocation dimensions.",
+    "dimensions": ["role", "skill", "invocation"],
+    "unknown_skill_policy": "use-default",
+    "unknown_invocation_policy": "use-default",
+    "unknown_role_policy": "reject"
+  },
+  "roles": [
+    {
+      "role": "manager",
+      "max_context_tokens": 120000,
+      "required_declared_reads": true,
+      "telemetry_scope": "role"
+    },
+    {
+      "role": "planner",
+      "max_context_tokens": 100000,
+      "required_declared_reads": true,
+      "telemetry_scope": "role"
+    },
+    {
+      "role": "worker",
+      "max_context_tokens": 110000,
+      "required_declared_reads": true,
+      "telemetry_scope": "role"
+    },
+    {
+      "role": "reviewer",
+      "max_context_tokens": 90000,
+      "required_declared_reads": true,
+      "telemetry_scope": "role"
+    },
+    {
+      "role": "qa-engineer",
+      "max_context_tokens": 90000,
+      "required_declared_reads": true,
+      "telemetry_scope": "role"
+    },
+    {
+      "role": "flow-tester",
+      "max_context_tokens": 70000,
+      "required_declared_reads": true,
+      "telemetry_scope": "role"
+    },
+    {
+      "role": "perf",
+      "max_context_tokens": 90000,
+      "required_declared_reads": true,
+      "telemetry_scope": "role"
+    },
+    {
+      "role": "release-manager",
+      "max_context_tokens": 90000,
+      "required_declared_reads": true,
+      "telemetry_scope": "role"
+    },
+    {
+      "role": "host-adapter",
+      "max_context_tokens": 70000,
+      "required_declared_reads": true,
+      "telemetry_scope": "role"
+    }
+  ],
+  "skills": [
+    {
+      "skill": "swift-api-design-guidelines-skill",
+      "source": "skills/vendored/Erikote04/swift-api-design-guidelines-skill/SKILL.md",
+      "max_context_tokens": 14000,
+      "load_policy": "on-demand"
+    },
+    {
+      "skill": "swift-architecture-skill",
+      "source": "skills/vendored/efremidze/swift-architecture-skill/SKILL.md",
+      "max_context_tokens": 18000,
+      "load_policy": "on-demand"
+    },
+    {
+      "skill": "swift-concurrency-pro",
+      "source": "skills/vendored/twostraws/swift-concurrency-pro/SKILL.md",
+      "max_context_tokens": 16000,
+      "load_policy": "on-demand"
+    },
+    {
+      "skill": "swift-testing-pro",
+      "source": "skills/vendored/twostraws/swift-testing-pro/SKILL.md",
+      "max_context_tokens": 14000,
+      "load_policy": "on-demand"
+    },
+    {
+      "skill": "swiftui-liquid-glass",
+      "source": "skills/vendored/Dimillian/swiftui-liquid-glass/SKILL.md",
+      "max_context_tokens": 14000,
+      "load_policy": "on-demand"
+    },
+    {
+      "skill": "swiftui-performance-audit",
+      "source": "skills/vendored/Dimillian/swiftui-performance-audit/SKILL.md",
+      "max_context_tokens": 18000,
+      "load_policy": "on-demand"
+    },
+    {
+      "skill": "swiftui-pro",
+      "source": "skills/vendored/twostraws/swiftui-pro/SKILL.md",
+      "max_context_tokens": 18000,
+      "load_policy": "on-demand"
+    },
+    {
+      "skill": "swiftui-view-refactor",
+      "source": "skills/vendored/Dimillian/swiftui-view-refactor/SKILL.md",
+      "max_context_tokens": 14000,
+      "load_policy": "on-demand"
+    }
+  ],
+  "invocations": [
+    {
+      "invocation": "chain-worker",
+      "max_context_tokens": 100000,
+      "telemetry_event": "context_budget_resolved"
+    },
+    {
+      "invocation": "phase-review",
+      "max_context_tokens": 90000,
+      "telemetry_event": "context_budget_resolved"
+    },
+    {
+      "invocation": "mode-dispatch",
+      "max_context_tokens": 70000,
+      "telemetry_event": "context_budget_resolved"
+    },
+    {
+      "invocation": "skill-routing",
+      "max_context_tokens": 50000,
+      "telemetry_event": "context_budget_resolved"
+    }
+  ],
+  "telemetry": {
+    "resolved_event": "context_budget_resolved",
+    "exceeded_event": "context_budget_exceeded",
+    "required_fields": [
+      "role",
+      "skill",
+      "invocation",
+      "effective_budget_tokens",
+      "estimated_tokens",
+      "status",
+      "ratio"
+    ]
+  }
+}
