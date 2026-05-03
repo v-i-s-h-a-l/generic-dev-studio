@@ -43,6 +43,10 @@ Current substrate artifacts:
   the first profile is `profiles/ios-turnip/`.
 - `MESSAGES.md` defines A11 build/release message shape. Validate same-draft
   duplicates with `scripts/lint-build-release-message.sh`.
+- `manager/proof-of-life.yaml` defines the A7 manager proof-of-life contract.
+  Exercise it with `scripts/v2-manager.sh proof-of-life --subject-ref <ref>
+  --dry-run` or provide `--runtime-root` to write the private runtime artifact
+  and append the registered `manager_proof_of_life` event.
 
 Runtime event-log behavior is implemented by `scripts/v2-event-log.sh`:
 

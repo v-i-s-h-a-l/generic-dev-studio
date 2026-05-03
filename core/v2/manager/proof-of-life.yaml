@@ -1,0 +1,49 @@
+schema_version: 1
+kind: studio-v2-manager-proof-of-life-contract
+parent_issue: 444
+leaf_issue: 525
+status: active
+role: manager
+compatibility_aliases:
+  - chanakya
+script: scripts/v2-manager.sh
+schema_file: core/v2/schemas/manager-proof-of-life.schema.json
+authority_file: scripts/v2-manager.sh.authority.yaml
+runtime_artifact_dir: ".runtime/v2/manager/proof-of-life"
+event_name: manager_proof_of_life
+contract:
+  purpose: "Prove manager v2 can execute through v2 role, budget, artifact, authority, and event-log contracts without switching v1 traffic."
+  inputs:
+    - subject_ref
+    - role_or_alias
+    - host
+    - runtime_root
+    - estimated_tokens
+  outputs:
+    - manager proof-of-life JSON status artifact
+    - optional durable event-log entry when runtime_root is supplied
+  reads:
+    - core/v2/registry/roles.json
+    - core/v2/context-budget/manifest.json
+    - core/v2/manager/proof-of-life.yaml
+    - core/v2/schemas/manager-proof-of-life.schema.json
+  writes:
+    - "<runtime-root>/.runtime/v2/manager/proof-of-life/*.json"
+    - "<runtime-root>/events/YYYY-MM-DD.jsonl"
+  idempotency_key: "manager-proof-of-life:<subject_ref>"
+  decision_rights: "manager reports readiness only; operator owns traffic switch and broader migration acceptance."
+  escalation_triggers:
+    - unknown role or alias
+    - missing runtime root for write mode
+    - context budget exceeded
+    - event append failure
+  failure_semantics:
+    - explicit non-zero exit with actionable stderr
+    - dry-run has no filesystem writes
+  verification_floor:
+    - scripts/test-fixtures/525-manager-proof-of-life/test-v2-manager.sh
+non_goals:
+  - v1 Chanakya traffic switch
+  - worker/reviewer/perf v2 migration
+  - new handoff artifact kind
+  - edits to reserved non-manager /dev-studio dispatch rows

@@ -2,3 +2,4 @@ events:
   - v2_subscriber_lag
   - v2_event_dead_letter
   - v2_subscriber_recovery
+  - manager_proof_of_life
