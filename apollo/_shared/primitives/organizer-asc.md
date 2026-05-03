@@ -56,6 +56,7 @@ The Performance / Power Metrics flow returns categories that align with MetricKi
 | Battery | derived from `MXAppRunTimeMetric.cumulativeForegroundEnergy` ÷ `cumulativeForegroundTime` | mWh / hour |
 | Scroll Hitches | `MXAnimationMetric.scrollHitchTimeRatio` | ratio p50 / p95 |
 | Peak Memory | `MXMemoryMetric.peakMemoryUsage` p99 | OOM proximity |
+| Network-attributed power or transfer row, when present in the ASC response | shared network catalogue plus the backing MetricKit / power metric named by the response | only cite when the exported response names the network metric/category, cohort, build, window, aggregate or percentile, and baseline |
 
 Each row carries: `metric`, `goal` (Apple's recommended target), `value`, `unit`, `device`, `osVersion`, `percentile`, `buildVersion`. Apollo persists the full row, not just the value, so cohort drift later doesn't invalidate the citation.
 
@@ -94,6 +95,7 @@ Mode packs cite production-fleet evidence in this shape:
 |---|
 | ASC `<metric>` p95 `<x><unit>` for build `<version>`, cohort `<modelCode>/<osMajor>`, distribution `<TestFlight|App Store>`, window `<start..end>` |
 | Organizer `<report>` build `<version>` cohort `<modelCode>/<osMajor>` — top-1 stack `<symbol>` `<percent>%` |
+| ASC network-attributed `<metric/category>` `<aggregate-or-percentile>` for build `<version>`, cohort `<modelCode>/<osMajor>`, network `<wifi|cellular|mixed>/<carrier-class-or-condition>`, window `<start..end>`, baseline `<build/window>` |
 
 Either form satisfies the strict-9 gate. The mandatory tags are: metric, build, cohort, distribution, window.
 
