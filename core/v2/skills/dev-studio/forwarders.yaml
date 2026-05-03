@@ -10,8 +10,8 @@ umbrella:
   role_registry: core/v2/registry/roles.json
 transition:
   v1_studio_router: .claude/skills/studio/SKILL.md
-  v1_status: "unchanged; /studio remains the v1 Forge router until A9 traffic switch"
-  cutover_status: not-cut-over
+  v1_status: "archived by A9 manifest; compatibility traffic routes to the v2 /dev-studio surface with v1 rollback preserved until A10"
+  cutover_status: cut-over
 dispatch:
   - canonical_role: manager
     invocation: /dev-studio manager
@@ -84,19 +84,19 @@ forwarders:
     canonical_role: manager
     v2_invocation: /dev-studio manager
     v1_skill: chanakya/SKILL.md
-    runtime_cutover: false
+    runtime_cutover: true
   - legacy_invocation: /achilles
     canonical_role: worker
     v2_invocation: /dev-studio worker
     v1_skill: achilles/SKILL.md
-    runtime_cutover: false
+    runtime_cutover: true
   - legacy_invocation: /argus
     canonical_role: reviewer
     v2_invocation: /dev-studio reviewer
     v1_skill: argus/SKILL.md
-    runtime_cutover: false
+    runtime_cutover: true
   - legacy_invocation: /apollo
     canonical_role: perf
     v2_invocation: /dev-studio perf
     v1_skill: apollo/SKILL.md
-    runtime_cutover: false
+    runtime_cutover: true

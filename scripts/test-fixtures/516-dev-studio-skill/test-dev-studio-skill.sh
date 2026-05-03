@@ -70,7 +70,7 @@ assert_forwarder /achilles worker achilles/SKILL.md
 assert_forwarder /argus reviewer argus/SKILL.md
 assert_forwarder /apollo perf apollo/SKILL.md
 
-[ "$(yq -r '.transition.cutover_status' "$FORWARDERS")" = "not-cut-over" ] || fail "runtime cutover should not happen in A2"
-grep -Fq '/studio` command remain authoritative' "$SKILL_DIR/SKILL.md" || fail "v1 /studio boundary not documented"
+[ "$(yq -r '.transition.cutover_status' "$FORWARDERS")" = "cut-over" ] || fail "runtime cutover should be recorded after A9"
+grep -Fq 'primary traffic surface' "$SKILL_DIR/SKILL.md" || fail "A9 traffic boundary not documented"
 
 printf 'PASS: dev-studio umbrella skill and forwarders\n'
