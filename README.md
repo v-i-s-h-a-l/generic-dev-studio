@@ -75,6 +75,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /studio work chain v2-transition                      # canonical phasewise Studio v2 transition chain
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
+scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
 STUDIO_TRACK=<track>             # session-start shortcut for /studio work <track>
 /studio nodes                    # day-2 fleet management — status, add, remove, health, sync, schedule
 /studio tf-push --background     # start TF archive/upload and keep session free for Slack drafting
@@ -229,6 +230,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
   studio-chain-runner.sh   # plan/execute/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, locks, and private run reports
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
+  studio-staleness-triage.sh # scheduled GitHub issue staleness labels + escalation comments for the PM surface
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
   studio-gh.sh          # GitHub CLI wrapper for assistant/interactive calls; normalizes synthetic Codex HOME
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues

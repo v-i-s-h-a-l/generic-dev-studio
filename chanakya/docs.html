@@ -1025,6 +1025,12 @@ scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --appl
   <p>Render GitHub-native issue dependencies as Mermaid for PM-surface review. The exporter reads the <code>blocked_by</code> API and does not parse issue bodies.</p>
   <pre><code>scripts/studio-dependency-export.sh --issue 443</code></pre>
 
+  <h3 style="margin-top: 32px;">PM-surface staleness triage</h3>
+  <p>Preview or apply GitHub issue staleness labels for the studio PM surface. The script adds stale, escalation, and archive-candidate labels at configurable inactivity thresholds; live mutation stays behind <code>--apply</code>.</p>
+  <pre><code>scripts/studio-staleness-triage.sh --json
+scripts/studio-staleness-triage.sh --apply</code></pre>
+  <p>The scheduled GitHub Action runs weekly with <code>permissions: issues: write</code>. Comments are marker-based so escalation prompts are idempotent.</p>
+
   <h3 style="margin-top: 32px;">Orphan-debrief backfill</h3>
   <p>Recover tasks that completed and emitted a debrief but never landed a row in the master plan — a "silent double-miss" where prior sweeps flipped <code>state: emitted → done</code> without updating the plan, then subsequent sweeps skipped the already-done debrief permanently.</p>
   <pre><code>scripts/backfill-orphan-debriefs.sh           # dry-run: preview what would be back-filled

@@ -78,6 +78,7 @@ scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote 
 scripts/studio-gh.sh issue list --state open          # gh wrapper for assistant/interactive calls; normalizes synthetic Codex HOME to login HOME
 scripts/studio-dependency-export.sh --issue 443       # Mermaid graph from native GitHub blocked_by dependencies; no body parsing
 scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply; STUDIO_BYPASS_ISSUE_BODY_GUARD=1 is user-controlled emergency/debug bypass
+scripts/studio-staleness-triage.sh --json             # dry-run PM issue staleness plan; --apply labels stale/escalated/archive-candidate issues and posts idempotent comments
 
 # Parent-side GitHub auth:
 # assistant-initiated calls use scripts/studio-gh.sh; scripts that own gh/PR/issue mutations call with_login_home_for_github
