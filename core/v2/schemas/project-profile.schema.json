@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "kind", "profile", "operations", "rules"],
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "kind": { "const": "studio-v2-project-profile" },
+    "profile": { "type": "string", "minLength": 1 },
+    "display_name": { "type": "string" },
+    "stack": { "type": "string", "minLength": 1 },
+    "project_detection": { "type": "object" },
+    "operations": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["command", "authority", "headless_safe"],
+        "properties": {
+          "description": { "type": "string" },
+          "command": { "type": "string", "minLength": 1 },
+          "args": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "authority": { "type": "string", "minLength": 1 },
+          "headless_safe": { "type": "boolean" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "severity", "description"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "severity": { "enum": ["block", "warn", "info"] },
+          "description": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
+      }
+    },
+    "plugin_escape_hatches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "authority", "commands", "generated_artifacts", "failure_behavior"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "authority": { "type": "string", "minLength": 1 },
+          "commands": { "type": "array", "items": { "type": "string" } },
+          "generated_artifacts": { "type": "array", "items": { "type": "string" } },
+          "failure_behavior": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

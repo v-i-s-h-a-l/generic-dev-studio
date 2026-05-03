@@ -161,6 +161,7 @@ scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --appl
 scripts/pre-commit-review.sh                                # manual no-secret reviewer gate for risky staged diffs
 scripts/v2-role-resolve.sh chanakya                         # resolve Studio v2 compatibility aliases to canonical role names
 scripts/lint-v2-enforcement.sh --staged                     # A0.6 Studio v2 SPEC-derived substrate/profile gates
+scripts/v2-profile.sh --profile ios-turnip --list           # A6 project-profile operation resolver
 scripts/pr-headless-review.sh <pr>                          # run smoke-eligible no-secret reviewer gate, then merge if non-blocked
 scripts/pr-headless-review.sh <pr> --no-require-cross-host   # opt out of the default independent-provider reviewer requirement
 scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-host claude-code  # resolve reviewer model from policy
@@ -255,6 +256,7 @@ scripts/                # multi-worker fleet (BETA)
   lint-project-skill-links.sh # blocks missing repo-local project skill discovery links
   v2-role-resolve.sh    # Studio v2 canonical role + compatibility alias resolver
   lint-v2-enforcement.sh # A0.6 Studio v2 SPEC-derived substrate/profile gates
+  v2-profile.sh          # A6 resolver/runner for profile-owned build/test/lint/release operations
   test-mode-pack.sh     # skill-testing driver — runs fixtures against mode packs (on-demand, spawns claude -p)
   lint-field-review-surfaces.sh # blocks raw cross-host review snippets outside phase-review wrappers
   lint-v2-bootstrap.sh  # A0.4 substrate bootstrap gate before A0.5 SPEC sign-off

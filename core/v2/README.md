@@ -38,6 +38,9 @@ Current substrate artifacts:
 - `schemas/dead-letter.schema.json` defines malformed/partial-line dead letters.
 - `events/registry.yaml` is the v2 event-name registry seed for subscriber
   operational events.
+- `schemas/project-profile.schema.json` defines profile-owned operation
+  mappings. Resolve and validate profile commands with `scripts/v2-profile.sh`;
+  the first profile is `profiles/ios-turnip/`.
 
 Runtime event-log behavior is implemented by `scripts/v2-event-log.sh`:
 
