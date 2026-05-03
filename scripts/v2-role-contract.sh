@@ -42,6 +42,9 @@ expected_leaf_issue_for_role() {
   case "$1" in
     worker|reviewer|perf) printf '526\n' ;;
     planner) printf '540\n' ;;
+    qa-engineer) printf '541\n' ;;
+    flow-tester) printf '542\n' ;;
+    release-manager) printf '543\n' ;;
     *) return 1 ;;
   esac
 }
@@ -108,7 +111,7 @@ validate_contracts() {
     roles="${roles}${role}"$'\n'
   done < <(contract_files)
 
-  for role in planner worker reviewer perf; do
+  for role in planner worker reviewer qa-engineer flow-tester perf release-manager; do
     printf '%s' "$roles" | grep -Fxq "$role" || {
       printf 'v2-role-contract: missing migrated role contract: %s\n' "$role" >&2
       exit 3

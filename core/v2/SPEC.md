@@ -175,6 +175,10 @@ verification floor. Extracted helpers follow the same minimum before code moves.
 Planner owns scope shaping, reusable API discovery, task decomposition, and
 acceptance criteria for shaped work; irreducible conflicts over scope, priority,
 authority, or user-visible tradeoffs escalate back to manager before dispatch.
+QA engineer owns automated test contracts with partial multi-spawn completion
+semantics; flow tester owns scenario-level user-flow evidence and severity
+thresholds; release manager owns release readiness packets and blocks external
+release actions until operator approval exists.
 
 Handoff artifacts use this shared envelope:
 
@@ -199,14 +203,14 @@ Required handoff families:
   ask for an epic, phase, or batch.
 - `worker-contract`: issue/task reference, ownership, allowed files, checks,
   stop conditions, and summary artifact path.
-- `qa-contract`: test objective, target build or worktree, scenarios,
-  environment, expected evidence, and pass/fail semantics.
+- `qa-contract`: task contract reference, test strategy, QA targets, required
+  checks, partial completion rule, and escalation state.
 - `reviewer-verdict`: blocking findings, warnings, evidence reviewed, and
   explicit `nothing_fatal` status when clean.
-- `flow-test-checklist`: manual flow checklist tied to a build or release
-  packet with result capture fields.
-- `release-packet`: beta/prod release bundle with commits, issues, verification,
-  notes draft, rollback notes, approvals, tag, and build metadata.
+- `flow-test-checklist`: scenario IDs, severity, pass/fail/blocked state,
+  evidence refs, distinction from QA/reviewer, and merge-block rule.
+- `release-packet`: release scope, anchor issues, notes state, build/release
+  message state, tag/GitHub release/TestFlight/App Store states, and blockers.
 
 Routing intelligence is advisory unless a contract grants authority. Novelty,
 architectural concern, or model-role recommendations produce suggestions or

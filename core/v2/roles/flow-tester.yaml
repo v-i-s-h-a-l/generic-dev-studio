@@ -1,0 +1,53 @@
+schema_version: 1
+kind: studio-v2-role-contract
+parent_issue: 444
+leaf_issue: 542
+status: active
+role: flow-tester
+aliases:
+  - flow
+  - manual-qa
+  - exploratory-tester
+purpose: Validate user-flow scenarios from the spec and block merges on severe user-flow regressions with concrete evidence.
+inputs:
+  - kind: flow-scope
+    required: true
+    description: User-facing scenarios, target build or branch, affected workflows, and severity threshold.
+  - kind: worker-summary
+    required: false
+    description: Implementation summary and evidence refs for the changed behavior under flow test.
+  - kind: qa-contract
+    required: false
+    description: Automated QA results that can inform, but not replace, exploratory flow coverage.
+outputs:
+  - kind: flow-test-checklist
+    required: true
+    description: Scenario IDs, descriptions, severity, pass/fail/blocked state, evidence refs, and merge-block rule.
+reads:
+  - scope: owned worktree
+    description: Specs, docs, screenshots, fixtures, builds, and test instructions needed to run user-flow scenarios.
+  - scope: ~/.dev-studio/**
+    description: Runtime worker summaries, QA contracts, build refs, flow evidence, and prior checklist attempts.
+writes:
+  - scope: owned worktree
+    description: Flow checklist fixtures or checked-in flow-test contracts when the source issue explicitly asks for substrate artifacts.
+  - scope: ~/.dev-studio/**
+    description: Flow-test checklists, screenshots or evidence refs, blocked-flow records, and manager escalation notes.
+idempotency_key: flow-tester:{subject_ref}:{flow_scope}:{build_or_branch_ref}
+decision_rights:
+  - Define user-flow scenarios and severity from the accepted spec without changing product scope.
+  - Distinguish exploratory flow failures from reviewer code-quality findings and QA automated test failures.
+  - Block merge when a critical or high severity flow scenario fails or cannot be evaluated.
+  - Mark low-risk scenarios not-run only when the checklist explains why the gap is acceptable.
+escalation_triggers:
+  - Critical or high severity scenario fails, is blocked, or lacks required evidence.
+  - Flow scope conflicts with QA contract, reviewer verdict, or manager acceptance criteria.
+  - Scenario execution needs external credentials, real-user data, release authority, or operator approval.
+failure_semantics:
+  - Return blocked for missing build, environment, credentials, or scenario instructions.
+  - Return failed with scenario IDs and evidence refs rather than broad narrative summaries.
+  - Preserve partial checklist state so resolved scenarios are not rerun unnecessarily.
+verification_floor:
+  - Flow checklist names scenario IDs, severity, state, evidence refs, and merge-block rule.
+  - The checklist documents how flow-tester differs from qa-engineer and reviewer for this scope.
+  - Any merge-blocking scenario includes exact evidence or missing-input reason.
