@@ -1,12 +1,10 @@
 # Studio v2 Substrate
 
-This directory is the parallel v2 substrate root for #444.
+This directory is the parallel v2 substrate root for #444. `SPEC.md` is signed
+off for post-bootstrap implementation; new v2 leaf work should land here with
+schemas, tests, and a shell-reachable primitive when behavior is executable.
 
-A0.4 is intentionally narrow. It ships only bootstrap metadata, schema anchors,
-and pre-commit gate scaffolding so later substrate work cannot grow without the
-A0.5 SPEC sign-off.
-
-Current bootstrap artifacts:
+Current substrate artifacts:
 
 - `bootstrap.yaml` declares the A0.4 gate surface.
 - `BOOTSTRAP.md` names the required human-readable anchors.
@@ -34,8 +32,22 @@ Current bootstrap artifacts:
 - `context-budget/manifest.json` is the A5 unified context-budget policy for
   role, skill, and invocation ceilings. Resolve and check effective budgets with
   `scripts/v2-context-budget.sh`.
+- `schemas/durable-event.schema.json` defines the bounded JSONL event envelope.
+- `schemas/subscriber-checkpoint.schema.json` defines durable replay coordinates.
+- `schemas/subscriber-lag.schema.json` defines subscriber lag status artifacts.
+- `schemas/dead-letter.schema.json` defines malformed/partial-line dead letters.
+- `events/registry.yaml` is the v2 event-name registry seed for subscriber
+  operational events.
 
-Until `SPEC.md` carries `<!-- v2-bootstrap:a0.5-sign-off:complete -->`, the gate
-allows substrate docs, metadata, schemas, and this bootstrap hook only. It blocks
-code under `core/` and `profiles/` so A0.6-style implementation rules do not land
-early.
+Runtime event-log behavior is implemented by `scripts/v2-event-log.sh`:
+
+```bash
+scripts/v2-event-log.sh append --runtime-root ~/.dev-studio/<project> --event-json '<json>'
+scripts/v2-event-log.sh replay --runtime-root ~/.dev-studio/<project> --subscriber <name>
+scripts/v2-event-log.sh lag --runtime-root ~/.dev-studio/<project> --subscriber <name> --write-status
+```
+
+The primitive appends bounded one-line JSON events to
+`events/YYYY-MM-DD.jsonl`, replays from per-subscriber checkpoints, dedupes
+keyed events by `(producer.agent, idempotency_key)`, writes malformed input to a
+dead-letter directory when requested, and reports lag without blocking producers.

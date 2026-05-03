@@ -332,7 +332,9 @@ warning-tier review feedback into hidden implementation behavior.
 - A3 ships vendored skill loading and pin validation via
   `scripts/v2-skill-load.sh`; A3b/A3c add routing intelligence and the iOS skill
   catalog.
-- A4/A4a implement durable subscribers, telemetry, and weekly metrics.
+- A4 implements durable event append, replay checkpoints, subscriber dedupe,
+  dead-letter artifacts, and lag status via `scripts/v2-event-log.sh`. A4a
+  still owns broader telemetry and weekly metrics.
 - A5 implements context-budget enforcement through the shared manifest and
   resolver.
 - A6 implements project profiles and iOS profile behavior.

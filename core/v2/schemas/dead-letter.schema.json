@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/core/v2/schemas/dead-letter.schema.json",
+  "title": "Studio v2 event dead letter",
+  "type": "object",
+  "required": ["schema_version", "subscriber", "shard", "byte_offset", "reason", "line_excerpt", "created_at"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "subscriber": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "shard": { "type": "string" },
+    "byte_offset": { "type": "integer", "minimum": 0 },
+    "reason": { "enum": ["malformed_json", "partial_final_line"] },
+    "line_excerpt": { "type": "string", "maxLength": 500 },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}
