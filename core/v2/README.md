@@ -13,6 +13,8 @@ Current bootstrap artifacts:
 - `schemas/bootstrap.schema.json` defines the bootstrap manifest shape.
 - `hooks/pre-commit` is the v2-local hook entry point; the repo hook delegates
   to `scripts/lint-v2-bootstrap.sh`.
+- `registry/roles.json` is the A1 canonical role registry. Resolve canonical
+  names and compatibility aliases with `scripts/v2-role-resolve.sh`.
 
 Until `SPEC.md` carries `<!-- v2-bootstrap:a0.5-sign-off:complete -->`, the gate
 allows substrate docs, metadata, schemas, and this bootstrap hook only. It blocks

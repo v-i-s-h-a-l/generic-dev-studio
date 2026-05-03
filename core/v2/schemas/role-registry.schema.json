@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "role-registry.schema.json",
+  "title": "Studio v2 role registry",
+  "description": "Canonical Studio v2 role names and compatibility aliases for A1 alias resolution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "parent_issue",
+    "leaf_issue",
+    "status",
+    "alias_policy",
+    "roles"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "studio-v2-role-registry"
+    },
+    "parent_issue": {
+      "const": 444
+    },
+    "leaf_issue": {
+      "const": 515
+    },
+    "status": {
+      "enum": ["active", "retired"]
+    },
+    "alias_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["normalization", "unknown_role", "conflict"],
+      "properties": {
+        "normalization": {
+          "const": "case-insensitive; underscores and spaces normalize to hyphens"
+        },
+        "unknown_role": {
+          "const": "resolver exits non-zero"
+        },
+        "conflict": {
+          "const": "aliases must resolve to exactly one canonical role"
+        }
+      }
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "purpose", "aliases", "source"],
+        "properties": {
+          "name": {
+            "enum": [
+              "manager",
+              "planner",
+              "worker",
+              "reviewer",
+              "qa-engineer",
+              "flow-tester",
+              "perf",
+              "release-manager",
+              "host-adapter",
+              "operator"
+            ]
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1
+          },
+          "aliases": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9 _-]*$"
+            }
+          },
+          "source": {
+            "const": "A0d-role-topology-rfc"
+          }
+        }
+      }
+    }
+  }
+}

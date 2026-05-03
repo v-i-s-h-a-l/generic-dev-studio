@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "kind": "studio-v2-role-registry",
+  "parent_issue": 444,
+  "leaf_issue": 515,
+  "status": "active",
+  "alias_policy": {
+    "normalization": "case-insensitive; underscores and spaces normalize to hyphens",
+    "unknown_role": "resolver exits non-zero",
+    "conflict": "aliases must resolve to exactly one canonical role"
+  },
+  "roles": [
+    {
+      "name": "manager",
+      "purpose": "Own intake, prioritization, lifecycle state, dispatch, status, user escalation, and final acceptance routing.",
+      "aliases": ["chanakya", "coordinator", "orchestrator"],
+      "source": "A0d-role-topology-rfc"
+    },
+    {
+      "name": "planner",
+      "purpose": "Convert shaped intent into executable plans, dependency graphs, acceptance criteria, and worker contracts.",
+      "aliases": ["architect", "luban", "lu-ban"],
+      "source": "A0d-role-topology-rfc"
+    },
+    {
+      "name": "worker",
+      "purpose": "Implement one bounded task contract in an isolated worktree.",
+      "aliases": ["achilles", "implementer"],
+      "source": "A0d-role-topology-rfc"
+    },
+    {
+      "name": "reviewer",
+      "purpose": "Verify plan or spec compliance, code quality, safety gates, and contract adherence.",
+      "aliases": ["argus", "verifier"],
+      "source": "A0d-role-topology-rfc"
+    },
+    {
+      "name": "qa-engineer",
+      "purpose": "Produce and execute automated test contracts beyond the worker's local checks.",
+      "aliases": ["qa", "chiron", "synthetic-qa"],
+      "source": "A0d-role-topology-rfc"
+    },
+    {
+      "name": "flow-tester",
+      "purpose": "Produce human or manual exploratory flow checklists tied to builds and releases.",
+      "aliases": ["flow", "manual-qa", "exploratory-tester"],
+      "source": "A0d-role-topology-rfc"
+    },
+    {
+      "name": "perf",
+      "purpose": "Investigate performance, battery, memory, thermal, and instrumentation evidence.",
+      "aliases": ["apollo", "performance", "performance-engineer"],
+      "source": "A0d-role-topology-rfc"
+    },
+    {
+      "name": "release-manager",
+      "purpose": "Assemble beta and production release packets, verify prerequisites, and draft release notes.",
+      "aliases": ["release", "shipper"],
+      "source": "A0d-role-topology-rfc"
+    },
+    {
+      "name": "host-adapter",
+      "purpose": "Expose host capabilities as data and execute portable role invocations.",
+      "aliases": ["adapter", "host"],
+      "source": "A0d-role-topology-rfc"
+    },
+    {
+      "name": "operator",
+      "purpose": "Hold human authority for irreversible, ambiguous, or externally visible decisions.",
+      "aliases": ["user", "human", "owner"],
+      "source": "A0d-role-topology-rfc"
+    }
+  ]
+}
