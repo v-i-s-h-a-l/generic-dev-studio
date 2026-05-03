@@ -35,10 +35,11 @@ Required fields:
 | `expected_summary_artifact` | Exact `.studio/chain-worker-summary.json` path the worker must write. |
 | `required_checks` | String array seeded from runner-known requirements. |
 | `allowed_assumptions` | String array of assumptions the child may rely on without reopening parent context. |
+| `phase_review_context` | Optional compact private warnings, recommendations, and accepted plan adjustments forwarded from prior clean outcome reviews. |
 | `stop_conditions` | String array describing when the child must stop and write a blocked completion envelope. |
 | `privacy` | `{classification:"private-runtime",rules:[...]}`. |
 
-The start envelope is a private runtime artifact. It stays under `.studio` in the issue worktree and is removed by the chain runner during cleanup.
+The start envelope is a private runtime artifact. It stays under `.studio` in the issue worktree and is removed by the chain runner during cleanup. `phase_review_context` is not human acceptance and must not include raw reviewer prose; it is only the compact subset needed to prevent stale assumptions in the next issue phase.
 
 ## Completion Envelope
 

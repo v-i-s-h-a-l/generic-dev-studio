@@ -42,6 +42,7 @@ chains:
     base: main
     branch: feature/control-a
     host: codex
+    phase_review: required
     issues: [395]
 YAML
 
@@ -73,6 +74,7 @@ jq -e '
   .schema_version == 1 and
   .status == "planned" and
   (.chains | length) == 1 and
+  .chains[0].phase_review == "required" and
   .chains[0].chain_run_id != null and
   .chains[0].issues[0].issue_run_id != null and
   .chains[0].issues[0].status == "pending"
@@ -110,6 +112,29 @@ fi
 grep -q 'duplicate issue IDs across chains: 395' "$TMPROOT/dup.out" || {
   printf 'duplicate issue failure was not explained\n' >&2
   cat "$TMPROOT/dup.out" >&2
+  exit 1
+}
+
+bad_phase_manifest="$TMPROOT/bad-phase-review.yaml"
+cat > "$bad_phase_manifest" <<'YAML'
+schema_version: 1
+chains:
+  - name: control-bad-phase
+    base: main
+    branch: feature/control-bad-phase
+    host: codex
+    phase_review: sometimes
+    issues: [395]
+YAML
+
+if PATH="$BIN:$PATH" HOME="$HOME_DIR" "$ROOT/scripts/studio-chain-runner.sh" "$bad_phase_manifest" --dry-run > "$TMPROOT/bad-phase.out" 2>&1; then
+  printf 'bad phase_review manifest unexpectedly passed\n' >&2
+  cat "$TMPROOT/bad-phase.out" >&2
+  exit 1
+fi
+grep -q 'phase_review must be required, auto, or off' "$TMPROOT/bad-phase.out" || {
+  printf 'bad phase_review failure was not explained\n' >&2
+  cat "$TMPROOT/bad-phase.out" >&2
   exit 1
 }
 

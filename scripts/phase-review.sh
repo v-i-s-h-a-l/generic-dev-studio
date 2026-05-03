@@ -38,6 +38,24 @@ first_line() {
   sed -n '1p' "$1" 2>/dev/null | tr '\n' ' ' | cut -c 1-240
 }
 
+phase_review_verdict() {
+  local review_file="$1" verdict
+  verdict=$(sed -n -E 's/^[[:space:]]*(PHASE_REVIEW_VERDICT|STUDIO_REVIEW_VERDICT)[[:space:]]*[:=][[:space:]]*(clean|blocked|ambiguous)[[:space:]]*$/\2/ip' "$review_file" | tail -1 | tr '[:upper:]' '[:lower:]')
+  if [ -n "$verdict" ]; then
+    printf '%s\n' "$verdict"
+    return 0
+  fi
+  if grep -Eiq 'fatal blockers[[:space:]]*:?[[:space:]]*(present|yes)|verdict[^[:cntrl:]]*(blocked|do not proceed|stop)' "$review_file"; then
+    printf 'blocked\n'
+    return 0
+  fi
+  if grep -Eiq 'nothing fatal|no fatal blockers|fatal blockers[[:space:]]*:?[[:space:]]*(none|no)|verdict[^[:cntrl:]]*(clean|proceed)' "$review_file"; then
+    printf 'clean\n'
+    return 0
+  fi
+  printf 'ambiguous\n'
+}
+
 review_host=""
 input=""
 output=""
@@ -81,10 +99,22 @@ if [ -z "$review_host" ]; then
   esac
 fi
 
-eligibility=$("$SCRIPT_DIR/pr-reviewer-eligibility.sh" "$review_host") || {
-  printf '%s\n' "$eligibility" >&2
-  fail "reviewer host is not eligible: $review_host"
-}
+eligibility_cache_dir="${STUDIO_PHASE_REVIEW_ELIGIBILITY_CACHE_DIR:-}"
+eligibility_cache_file=""
+if [ -n "$eligibility_cache_dir" ]; then
+  mkdir -p "$eligibility_cache_dir" || fail "failed to create eligibility cache: $eligibility_cache_dir"
+  eligibility_cache_file="$eligibility_cache_dir/$review_host.env"
+fi
+
+if [ -n "$eligibility_cache_file" ] && [ -s "$eligibility_cache_file" ]; then
+  eligibility=$(cat "$eligibility_cache_file")
+else
+  eligibility=$("$SCRIPT_DIR/pr-reviewer-eligibility.sh" "$review_host") || {
+    printf '%s\n' "$eligibility" >&2
+    fail "reviewer host is not eligible: $review_host"
+  }
+  [ -z "$eligibility_cache_file" ] || printf '%s\n' "$eligibility" > "$eligibility_cache_file"
+fi
 
 spawn_command=$(printf '%s\n' "$eligibility" | sed -n 's/^SPAWN_COMMAND=//p' | head -1)
 [ -n "$spawn_command" ] || fail "missing spawn command for $review_host"
@@ -138,8 +168,17 @@ $input_content
 ----- END PHASE ARTIFACT -----
 
 Assess whether the execution may proceed. Be direct: list fatal blockers first,
-then warnings, then a clear verdict. If nothing blocks execution, include the
-phrase "nothing fatal" or "clean" in the verdict.
+then warnings, then recommendations or plan adjustments.
+
+End with exactly one stable verdict line:
+
+PHASE_REVIEW_VERDICT=clean
+
+Use:
+- PHASE_REVIEW_VERDICT=clean when nothing fatal blocks execution.
+- PHASE_REVIEW_VERDICT=blocked when a fatal blocker must be resolved by another
+  review round before continuing.
+- PHASE_REVIEW_VERDICT=ambiguous when the artifact is too unclear to classify.
 EOF
 )
 
@@ -184,6 +223,8 @@ fi
 
 [ -s "$output" ] || fail "reviewer produced empty output: $output"
 
+verdict=$(phase_review_verdict "$output")
 printf 'PHASE_REVIEW_HOST=%s\n' "$review_host"
 printf 'PHASE_REVIEW_OUTPUT=%s\n' "$output"
 printf 'PHASE_REVIEW_ERR=%s\n' "$err_output"
+printf 'PHASE_REVIEW_VERDICT=%s\n' "$verdict"
