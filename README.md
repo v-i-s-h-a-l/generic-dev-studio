@@ -72,6 +72,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /studio-help                     # slash-command shortcut for /studio help
 /studio work <track>             # claim track issues, then final reviewed PR + cleanup + summary
 /studio work chain workflow-measurement-improvements  # plan/resume issue chains: fresh sessions, UUID telemetry, reviewed PRs, cleanup
+/studio work chain v2-transition                      # canonical phasewise Studio v2 transition chain
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
 STUDIO_TRACK=<track>             # session-start shortcut for /studio work <track>
@@ -146,9 +147,8 @@ scripts/field-workflow-report.sh --days 14                  # Field loop timing,
 scripts/studio-pr-baseline-report.sh 366                    # PR-level timing, churn, gate, and generated-file baselines
 scripts/host-preflight.sh codex /repo                       # prove gh + git credential access before host task work
 scripts/studio-gh.sh issue list --state open                # assistant-safe GitHub CLI wrapper; normalizes synthetic Codex HOME
-scripts/studio-chain-reviewed.sh apollo-network-efficiency --host codex --review-host claude-reviewer  # pre-run plan review + reviewed chain PR merges
+scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run plan review + reviewed chain PR merges
 # Chain manifests may set phase_review: required|auto|off; required/auto gates issue phases through scripts/phase-review.sh and forwards compact clean outcome feedback privately.
-scripts/run-apollo-network-reviewed-chain.sh                # fire-and-sleep Apollo network chain launcher; prints PID + log path
 scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply
 scripts/pre-commit-review.sh                                # manual no-secret reviewer gate for risky staged diffs
 scripts/pr-headless-review.sh <pr>                          # run smoke-eligible no-secret reviewer gate, then merge if non-blocked

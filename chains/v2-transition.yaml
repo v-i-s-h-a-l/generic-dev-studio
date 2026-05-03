@@ -1,0 +1,27 @@
+# Canonical chain manifest for the Studio v2 transition.
+#
+# Manifest name:
+#   /studio work chain v2-transition
+#
+# Supervisor checks:
+#   scripts/studio-chain-runner.sh --explain-next v2-transition
+#   scripts/studio-chain-runner.sh --auto v2-transition
+#
+# Safety rule: add only runnable leaf issues here. Do not add umbrella issues
+# such as #442, #443, #444, or #445; the chain runner closes executed issues
+# after the reviewed PR merges.
+#
+# Phase schedule:
+# - B5 native sub-issue migration starts the chain because the v2 umbrellas
+#   need GitHub-native leaf issues before substrate work can be safely queued.
+# - Add later phase chains only after their leaf issues exist and their phase
+#   plan review is clean.
+
+schema_version: 1
+chains:
+  - name: v2-b5-native-subissues
+    base: main
+    branch: feature/v2-b5-native-subissues
+    host: auto
+    phase_review: required
+    issues: [495]
