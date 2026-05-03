@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "v2-handoff.schema.json",
+  "title": "Studio v2 handoff artifact",
+  "description": "Shared Studio v2 handoff envelope with role-specific payload validation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_kind",
+    "artifact_id",
+    "created_at",
+    "producer_role",
+    "consumer_role",
+    "subject_ref",
+    "idempotency_key",
+    "payload",
+    "evidence_refs",
+    "privacy_classification",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "artifact_kind": {
+      "enum": [
+        "planner-output",
+        "worker-contract",
+        "qa-contract",
+        "reviewer-verdict",
+        "flow-test-checklist",
+        "release-packet"
+      ]
+    },
+    "artifact_id": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "format": "date-time"},
+    "producer_role": {"$ref": "#/$defs/role"},
+    "consumer_role": {"$ref": "#/$defs/role"},
+    "subject_ref": {"type": "string", "minLength": 1},
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "payload": {"type": "object"},
+    "evidence_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "privacy_classification": {"enum": ["public", "private-runtime", "secret"]},
+    "status": {"enum": ["draft", "ready", "blocked", "approved", "rejected", "completed", "partial"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"artifact_kind": {"const": "planner-output"}}, "required": ["artifact_kind"]},
+      "then": {
+        "properties": {
+          "producer_role": {"const": "planner"},
+          "consumer_role": {"enum": ["manager", "reviewer"]},
+          "payload": {"$ref": "#/$defs/plannerOutputPayload"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"artifact_kind": {"const": "qa-contract"}}, "required": ["artifact_kind"]},
+      "then": {
+        "properties": {
+          "producer_role": {"const": "qa-engineer"},
+          "consumer_role": {"enum": ["manager", "worker", "reviewer"]},
+          "payload": {"$ref": "#/$defs/qaContractPayload"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"artifact_kind": {"const": "flow-test-checklist"}}, "required": ["artifact_kind"]},
+      "then": {
+        "properties": {
+          "producer_role": {"const": "flow-tester"},
+          "consumer_role": {"enum": ["manager", "reviewer", "release-manager"]},
+          "payload": {"$ref": "#/$defs/flowTestChecklistPayload"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"artifact_kind": {"const": "release-packet"}}, "required": ["artifact_kind"]},
+      "then": {
+        "properties": {
+          "producer_role": {"const": "release-manager"},
+          "consumer_role": {"enum": ["manager", "operator"]},
+          "payload": {"$ref": "#/$defs/releasePacketPayload"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "role": {
+      "enum": [
+        "manager",
+        "planner",
+        "worker",
+        "reviewer",
+        "qa-engineer",
+        "flow-tester",
+        "perf",
+        "release-manager",
+        "host-adapter",
+        "operator"
+      ]
+    },
+    "textArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "optionalTextArray": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "evidenceState": {
+      "enum": ["pending", "passed", "failed", "blocked", "partial", "not-applicable"]
+    },
+    "escalation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "reason", "manager_decision_needed"],
+      "properties": {
+        "required": {"type": "boolean"},
+        "reason": {"type": "string"},
+        "manager_decision_needed": {"type": "string"}
+      }
+    },
+    "taskContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_id",
+        "summary",
+        "owner_role",
+        "allowed_paths",
+        "required_checks",
+        "stop_conditions",
+        "summary_artifact"
+      ],
+      "properties": {
+        "contract_id": {"type": "string", "minLength": 1},
+        "summary": {"type": "string", "minLength": 1},
+        "owner_role": {"const": "worker"},
+        "allowed_paths": {"$ref": "#/$defs/textArray"},
+        "required_checks": {"$ref": "#/$defs/textArray"},
+        "stop_conditions": {"$ref": "#/$defs/textArray"},
+        "summary_artifact": {"type": "string", "minLength": 1}
+      }
+    },
+    "qaTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_id", "scope", "required_checks", "status"],
+      "properties": {
+        "target_id": {"type": "string", "minLength": 1},
+        "scope": {"type": "string", "minLength": 1},
+        "required_checks": {"$ref": "#/$defs/textArray"},
+        "status": {"$ref": "#/$defs/evidenceState"}
+      }
+    },
+    "flowScenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenario_id", "description", "severity", "status", "evidence_refs"],
+      "properties": {
+        "scenario_id": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "severity": {"enum": ["critical", "high", "medium", "low"]},
+        "status": {"enum": ["pass", "fail", "blocked", "not-run"]},
+        "evidence_refs": {"$ref": "#/$defs/optionalTextArray"}
+      }
+    },
+    "plannerOutputPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "non_goals",
+        "dependencies",
+        "reusable_api_findings",
+        "risks",
+        "acceptance_criteria",
+        "decomposition",
+        "review_ask",
+        "escalation"
+      ],
+      "properties": {
+        "scope": {"$ref": "#/$defs/textArray"},
+        "non_goals": {"$ref": "#/$defs/optionalTextArray"},
+        "dependencies": {"$ref": "#/$defs/optionalTextArray"},
+        "reusable_api_findings": {"$ref": "#/$defs/textArray"},
+        "risks": {"$ref": "#/$defs/optionalTextArray"},
+        "acceptance_criteria": {"$ref": "#/$defs/textArray"},
+        "decomposition": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/taskContract"}
+        },
+        "review_ask": {"type": "string", "minLength": 1},
+        "escalation": {"$ref": "#/$defs/escalation"}
+      }
+    },
+    "qaContractPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_contract_ref", "test_strategy", "qa_targets", "parallel_completion", "escalation"],
+      "properties": {
+        "task_contract_ref": {"type": "string", "minLength": 1},
+        "test_strategy": {"$ref": "#/$defs/textArray"},
+        "qa_targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/qaTarget"}
+        },
+        "parallel_completion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["partial_allowed", "completion_rule"],
+          "properties": {
+            "partial_allowed": {"type": "boolean"},
+            "completion_rule": {"type": "string", "minLength": 1}
+          }
+        },
+        "escalation": {"$ref": "#/$defs/escalation"}
+      }
+    },
+    "flowTestChecklistPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["flow_scope", "distinction", "scenarios", "merge_block_rule", "escalation"],
+      "properties": {
+        "flow_scope": {"$ref": "#/$defs/textArray"},
+        "distinction": {"type": "string", "minLength": 1},
+        "scenarios": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/flowScenario"}
+        },
+        "merge_block_rule": {"type": "string", "minLength": 1},
+        "escalation": {"$ref": "#/$defs/escalation"}
+      }
+    },
+    "releasePacketPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_scope",
+        "anchor_issues",
+        "release_notes",
+        "build_release_message",
+        "tags",
+        "github_release",
+        "testflight",
+        "app_store",
+        "blockers"
+      ],
+      "properties": {
+        "release_scope": {"$ref": "#/$defs/textArray"},
+        "anchor_issues": {"$ref": "#/$defs/textArray"},
+        "release_notes": {"$ref": "#/$defs/optionalTextArray"},
+        "build_release_message": {"$ref": "#/$defs/evidenceState"},
+        "tags": {"$ref": "#/$defs/evidenceState"},
+        "github_release": {"$ref": "#/$defs/evidenceState"},
+        "testflight": {"$ref": "#/$defs/evidenceState"},
+        "app_store": {"$ref": "#/$defs/evidenceState"},
+        "blockers": {"$ref": "#/$defs/optionalTextArray"}
+      }
+    }
+  }
+}

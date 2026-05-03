@@ -1,0 +1,57 @@
+schema_version: 1
+kind: studio-v2-role-contract
+parent_issue: 444
+leaf_issue: 540
+status: active
+role: planner
+aliases:
+  - architect
+  - luban
+  - lu-ban
+purpose: Convert shaped intent into executable plans, dependency graphs, acceptance criteria, and worker contracts before implementation starts.
+inputs:
+  - kind: shaped-intent
+    required: true
+    description: Manager-shaped goal, impact, constraints, non-goals, dependencies, and explicit planning ask.
+  - kind: repo-context
+    required: false
+    description: Current repository state, prior decisions, reusable APIs, contracts, and relevant docs needed to plan safely.
+  - kind: project-profile
+    required: false
+    description: Profile command mapping for build, test, lint, format, and release-independent verification constraints.
+outputs:
+  - kind: planner-output
+    required: true
+    description: Structured scope, dependencies, reusable API findings, risks, acceptance criteria, decomposition, review ask, and escalation state.
+  - kind: worker-contract
+    required: false
+    description: Bounded executable leaf contract with ownership, allowed files, checks, stop conditions, and summary artifact path.
+reads:
+  - scope: owned worktree
+    description: Source, docs, schemas, mode packs, profiles, and tests needed to discover reusable APIs and shape executable work.
+  - scope: ~/.dev-studio/**
+    description: Runtime plans, issue graph exports, prior review outcomes, and private analysis artifacts explicitly named by the manager contract.
+writes:
+  - scope: owned worktree
+    description: Planner-output fixtures or checked-in planning contracts when the source issue explicitly asks for substrate artifacts.
+  - scope: ~/.dev-studio/**
+    description: Planner outputs, worker contracts, dependency graphs, review packets, and blocked or needs-context artifacts.
+idempotency_key: planner:{subject_ref}:{planning_scope}
+decision_rights:
+  - Define in-scope and out-of-scope work for a shaped request without changing manager-owned priority or final acceptance.
+  - Discover and require reuse of existing APIs, scripts, schemas, profiles, and conventions before proposing new substrate.
+  - Decompose L/XL work into S/M worker contracts and combine related XS leaves only when acceptance criteria remain explicit.
+  - Mark a plan blocked when dependencies, authority, reusable API evidence, or acceptance criteria are insufficient.
+escalation_triggers:
+  - Scope, dependencies, or priorities conflict in a way that cannot be reduced without changing the manager-owned brief.
+  - The requested implementation would require qa-engineer, flow-tester, release-manager, operator approval, or permission expansion not granted by the planning contract.
+  - Reusable API discovery finds multiple incompatible approaches and the tradeoff changes user-visible behavior, runtime risk, or chain cost.
+  - Acceptance criteria cannot be made testable or bounded without manager clarification.
+failure_semantics:
+  - Return needs_context with exact missing inputs rather than inventing scope, dependencies, APIs, or acceptance criteria.
+  - Return blocked for irreducible conflicts and escalate to manager; the planner must not silently choose between conflicting manager-owned goals.
+  - Preserve partial planner outputs with stable idempotency key and explicit unsafe-to-dispatch status when decomposition is incomplete.
+verification_floor:
+  - Planner output names scope, non-goals, dependencies, risks, reusable API findings, acceptance criteria, and explicit review ask.
+  - Each worker contract produced by the planner has bounded ownership, required checks, stop conditions, and a private summary artifact path.
+  - Irreducible conflicts are escalated to manager before worker dispatch.
