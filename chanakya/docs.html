@@ -680,8 +680,8 @@ cd generic-dev-studio
       <span>Capture feedback <em>about the studio itself</em> (not project feedback). Writes to <code>~/.dev-studio/generic-dev-studio/feedback-inbox/&lt;source-project&gt;/</code>; next generic-dev-studio session ingests automatically. No paste required. Triggered by <code>/chanakya studio-feedback</code> or "capture this as feedback".</span>
     </div>
     <div class="cmd-card">
-      <code>/chanakya train &lt;show|list|burn-down|dispatch-ready&gt; [name]</code>
-      <span>Per-train view over the lean-schema <code>train</code> field. <code>list</code> prints unique trains; <code>show &lt;name&gt;</code> tables tasks by state; <code>burn-down &lt;name&gt;</code> reports state counts; <code>dispatch-ready &lt;name&gt;</code> filters to ready-to-dispatch within the train. Walks <code>plans/tasks/*.yaml</code> via <code>scripts/query-tasks.sh</code> (lean fields are not in <code>index.yaml</code>).</span>
+      <code>/chanakya train &lt;show|list|burn-down|dispatch-ready|run&gt; [name]</code>
+      <span>Per-train view over the lean-schema <code>train</code> field. <code>list</code> prints unique trains; <code>show &lt;name&gt;</code> tables tasks by state; <code>burn-down &lt;name&gt;</code> reports state counts; <code>dispatch-ready &lt;name&gt;</code> filters to ready-to-dispatch within the train. <code>run &lt;name&gt;</code> executes one manual train through sibling plan review, Achilles dispatch, event watching, sibling outcome review, telemetry, and resumable state under <code>~/.dev-studio/&lt;project&gt;/.runtime/task-trains/</code>.</span>
     </div>
     <div class="cmd-card">
       <code>/chanakya stale [--days=N] [--state=&lt;state&gt;]</code>
