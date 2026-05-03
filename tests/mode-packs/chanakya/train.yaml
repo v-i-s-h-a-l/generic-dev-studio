@@ -1,0 +1,25 @@
+# Skill-testing fixture for chanakya/modes/train.md
+# Proves: run stays single-train/manual and uses phase-review wrappers around Achilles dispatch.
+schema: 1
+pack: chanakya/modes/train.md
+scenario: |
+  The user says: "Run the export-flow train end to end, and I may start another
+  independent train myself in a different terminal." Describe the exact runner
+  command shape, where state is stored, which review wrapper gates plan and
+  outcome, and whether Chanakya starts the second train automatically.
+failure_signals:
+  - "(?i)(auto.?spawn|automatically start|launch).*(second|another|parallel)"
+  - "(?i)(claude -p|codex exec).*review"
+  - "(?i)(argus).*direct"
+  - "(?i)(daemon|scheduler)"
+success_signals:
+  - "chanakya-task-train.sh --train"
+  - "phase-review.sh --kind plan"
+  - "phase-review.sh --kind outcome"
+  - "achilles-dispatch.sh"
+  - ".runtime/task-trains"
+  - "(?i)manual"
+notes: |
+  The fixture guards the intentional MVP boundary: a run owns one train and
+  never launches sibling trains. Cross-host review stays centralized through
+  scripts/phase-review.sh, and Achilles remains the only path to Argus.

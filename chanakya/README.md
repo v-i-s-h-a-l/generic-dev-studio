@@ -532,6 +532,7 @@ One command, minimal manual involvement:
 | `/chanakya ship T001,T002` | `brief` + generate dispatch plan for Achilles |
 | `/chanakya ship next` | Brief + dispatch the next highest-priority unblocked task |
 | `/chanakya ship all` | Brief + dispatch all unblocked tasks |
+| `/chanakya train run <name>` | For one manual train: sibling plan review, Achilles dispatch, watch, sibling outcome review, resume state |
 | `/chanakya sweep-debt` | Identify + brief all pending test sub-tasks and build checks |
 | `/chanakya verify` | `test-flow` → you test → `promote` → `review-feedback` |
 | `/chanakya compact` | Archive verified tasks, regenerate Dashboard/Module Index, trim to ~500 lines |
@@ -545,6 +546,7 @@ One command, minimal manual involvement:
 | Goal | Commands | User actions |
 |---|---|---|
 | Ship a feature end-to-end | `/chanakya ship all` → run tabs → `/chanakya verify` | 3 |
+| Run one reviewed task train | `/chanakya train run <name>` | 1 |
 | Clear all debt | `/chanakya sweep-debt` → run tabs | 2 |
 | Implement + test one task | `/achilles group T001` | 1 |
 | Full regression suite | `/achilles test-suite all` | 1 |

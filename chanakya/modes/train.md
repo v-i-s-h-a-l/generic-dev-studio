@@ -1,18 +1,21 @@
 ---
 name: Chanakya Train
-description: Per-train view of tasks via the lean-schema `train` field. Sub-modes — list (unique trains), show (tasks by state), dispatch-ready (train-scoped), burn-down (state counts).
+description: Per-train task queries and the manual single-train runner. Sub-modes — list, show, dispatch-ready, burn-down, run.
 type: mode-pack
 schema_version: 1
-budget_tokens: 800
+budget_tokens: 1200
 snapshots: []
 reads:
   - plans/tasks/*.yaml                             # train + predecessors + history live in per-task files (not index)
-writes: []
+  - plans/briefs/*.yaml                            # run reviews the selected brief before dispatch
+writes:
+  - ~/.dev-studio/<project>/.runtime/task-trains/  # run state, private review artifacts, local telemetry
+  - events/<date>.jsonl                            # task_train_* telemetry via scripts/chanakya-task-train.sh
 ---
 
-# Mode: Train (`/chanakya train <show|list|burn-down|dispatch-ready> [name]`)
+# Mode: Train (`/chanakya train <show|list|burn-down|dispatch-ready|run> [name]`)
 
-Query layer over the per-task `train` field (lean schema 1.1.0). Index.yaml does not carry `train`, so every sub-command walks `plans/tasks/*.yaml` via `scripts/query-tasks.sh`.
+Query layer and single-train execution coordinator over the per-task `train` field (lean schema 1.1.0). Index.yaml does not carry `train`, so read-only sub-commands walk `plans/tasks/*.yaml` via `scripts/query-tasks.sh`.
 
 ## Sub-commands
 
@@ -49,13 +52,54 @@ scripts/query-tasks.sh --train="$NAME" --format=json \
 
 One-line summary: `<train>: 3 briefed, 2 in-progress, 5 merged, 4 verified (14 total)`.
 
+### `run <name>` — reviewed, resumable single-train dispatch
+
+Before:
+- Run the normal Step 0 inbox sweep unless the user explicitly requested read-only output.
+- Brief or refresh the next unblocked items in the train before dispatch. The shell runner operates only on already-briefed dispatch-ready tasks.
+
+Run:
+
+```bash
+scripts/chanakya-task-train.sh --train "$NAME" --dry-run
+scripts/chanakya-task-train.sh --train "$NAME" --limit 1 --yes
+```
+
+For manual parallel trains, use one shell/session per independent train and distinct train names:
+
+```bash
+scripts/chanakya-task-train.sh --train "$TRAIN_A" --name "$TRAIN_A" --yes
+scripts/chanakya-task-train.sh --train "$TRAIN_B" --name "$TRAIN_B" --yes
+```
+
+The runner:
+- creates private state under `~/.dev-studio/<project>/.runtime/task-trains/<name>/`;
+- writes one plan artifact and runs `scripts/phase-review.sh --kind plan` before each dispatch;
+- emits `task_dispatched` plus `task_train_*` telemetry;
+- dispatches only through `scripts/achilles-dispatch.sh`;
+- watches canonical events and task YAML for completion;
+- writes one outcome artifact and runs `scripts/phase-review.sh --kind outcome` before continuing;
+- resumes from `state.json` when re-run with the same `--name`/`--state-dir`.
+
+Stop conditions:
+- blocked or ambiguous plan/outcome review;
+- no dispatch-ready brief;
+- no alive Achilles worker;
+- unresolved predecessor;
+- worker/user blocker (`task_awaiting_user`, `task_rescued`);
+- Argus block, merge conflict, failed build/test signal, or timeout.
+
+After:
+- Print the state path and next resume command when the run stops or dispatches with `--no-watch`.
+- Surface only real human blockers. Do not spawn another train automatically.
+
 ## Default sub-command
 
 If no sub-command is supplied, dispatch to `show` when a name is given, else `list`.
 
 ## Output discipline
 
-Pipeable. No banners. The default Step 0 inbox sweep does NOT run for this mode — it is a read-only query over plans/, not a triage pass.
+Read-only sub-commands are pipeable and skip Step 0. `run` is a write mode and uses the normal Chanakya pre-dispatch sweep.
 
 ## Cross-links
 

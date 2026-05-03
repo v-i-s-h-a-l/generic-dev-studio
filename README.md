@@ -109,6 +109,7 @@ STUDIO_TRACK=<track>             # session-start shortcut for /studio work <trac
 /chanakya train list             # query layer over lean schema: list trains
 /chanakya train show <name>      # tasks in a train, grouped by state
 /chanakya train burn-down <name> # state-count summary for a train
+/chanakya train run <name>       # reviewed single-train loop: plan review → Achilles → outcome review
 /chanakya stale [--days=N]       # tasks stuck in their state > N days (default 7)
 /chanakya blocked-by <task-id>   # reverse predecessors lookup — what does shipping this unblock
 /chanakya dispatch-ready         # briefed tasks whose predecessors are merged/verified/archived or duplicates
@@ -153,6 +154,8 @@ scripts/studio-gh.sh issue list --state open                # assistant-safe Git
 scripts/studio-dependency-export.sh --issue 443             # Mermaid graph from native GitHub blocked_by dependencies
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run plan review + reviewed chain PR merges
 # Chain manifests may set phase_review: required|auto|off; required/auto gates issue phases through scripts/phase-review.sh and forwards compact clean outcome feedback privately.
+scripts/chanakya-task-train.sh --train export-flow --dry-run # preview one manual train before dispatch
+scripts/chanakya-task-train.sh --train export-flow --yes     # serial plan-review → Achilles → outcome-review train with resume state
 scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply
 scripts/pre-commit-review.sh                                # manual no-secret reviewer gate for risky staged diffs
 scripts/v2-role-resolve.sh chanakya                         # resolve Studio v2 compatibility aliases to canonical role names
@@ -225,6 +228,7 @@ scripts/                # multi-worker fleet (BETA)
   achilles-worker.sh    # long-running worker pane; atomic slot claim via mkdir+PID-token
   achilles-dispatch.sh  # write task file to least-loaded (or pinned) worker inbox
   achilles-queue.sh     # work-stealing dispatch queue — enqueue/drain/list/depth/clear
+  chanakya-task-train.sh # manual single-train runner with sibling plan/outcome reviews and resume state
   analyze-collect.sh    # mechanical stats for usage-analysis passes (see ANALYSIS.md)
   forge-latency-report.sh  # stage-level task latency + review-gate comparison from event logs
   field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
