@@ -53,6 +53,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
 fi
 log_file="$log_dir/apollo-network-efficiency-$suffix-$stamp.log"
 latest_log="$log_dir/apollo-network-efficiency-$suffix.latest.log"
+run_script="$log_dir/apollo-network-efficiency-$suffix-$stamp.run.sh"
 
 cmd=("$SCRIPT_DIR/studio-chain-reviewed.sh" apollo-network-efficiency --host codex --review-host claude-reviewer)
 if [ "$DRY_RUN" -eq 1 ]; then
@@ -75,12 +76,25 @@ if [ "$FOREGROUND" -eq 1 ]; then
   exit "$rc"
 fi
 
-nohup bash -lc 'cd "$1" && shift && exec env HOME="$1" "${@:2}"' \
-  bash "$REPO_ROOT" "$LOGIN_HOME" "${cmd[@]}" \
-  > "$log_file" 2>&1 &
-pid=$!
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'set -euo pipefail\n'
+  printf 'cd %q\n' "$REPO_ROOT"
+  printf 'exec env HOME=%q' "$LOGIN_HOME"
+  printf ' %q' "${cmd[@]}"
+  printf ' >> %q 2>&1\n' "$log_file"
+} > "$run_script"
+chmod +x "$run_script"
 
-printf 'APOLLO_NETWORK_CHAIN_PID=%s\n' "$pid"
+session_name="apollo-network-${suffix}-${stamp}"
+if command -v screen >/dev/null 2>&1; then
+  screen -dmS "$session_name" bash "$run_script"
+  printf 'APOLLO_NETWORK_CHAIN_SESSION=%s\n' "$session_name"
+  printf 'screen -r %q\n' "$session_name"
+else
+  nohup bash "$run_script" >/dev/null 2>&1 &
+  printf 'APOLLO_NETWORK_CHAIN_PID=%s\n' "$!"
+fi
 printf 'APOLLO_NETWORK_CHAIN_LOG=%s\n' "$log_file"
 printf 'APOLLO_NETWORK_CHAIN_LATEST_LOG=%s\n' "$latest_log"
 printf 'tail -f %q\n' "$latest_log"
