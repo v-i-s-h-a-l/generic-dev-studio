@@ -113,6 +113,10 @@ Iterating on extraction is harder than adding inline; default to inline until pa
 
 **Explicitly not adopted.** LiteLLM-style universal model routers (hosts own inference). MCP as the worker tool transport (file I/O + shell already works). Framework adoption (AutoGen / LangGraph / CrewAI) — we steal patterns, not dependencies. Marketplace publishing per host (we're not shipping to marketplaces; conformance testing replaces it).
 
+### Studio v2 role topology and handoff contract
+
+The normative A0d source of truth is [`_shared/contracts/role-topology-handoff-rfc.md`](_shared/contracts/role-topology-handoff-rfc.md). A0.5 `SPEC.md` consumes that RFC for canonical role contracts, handoff artifact families, decision rights, and contract-level failure semantics; A0.6 turns the resulting SPEC requirements into schemas and gates.
+
 ### Host-agnostic Chanakya v2 plan (#141)
 
 **Decision.** Chanakya v2 is not a straight "make the whole singleton portable" rewrite. The target shape is a smaller, session-bound coordinator with extracted helpers for repeatable jobs. The remaining Chanakya load-bearing paths must still meet the host-agnostic contract: file I/O, shell, one model session, explicit schemas, and conformance coverage. This keeps the human-facing planning loop live while preventing Chanakya from becoming the long-term home for every cross-cutting responsibility.
