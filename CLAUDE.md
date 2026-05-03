@@ -47,24 +47,24 @@ git worktree remove /tmp/studio-<slug>     # clean up when done
 
 ## Studio router (systematic triggers)
 
-The `studio` skill is a **project-scoped vendor skill** shipped at `.claude/skills/studio/`. It is the cross-agent router for studio-level operations. Its Tier 1 modes cover the six most common studio-scoped user intents. When any of the phrases below fire, dispatch into the matching mode (slash commands are thin wrappers — the mode pack is authoritative):
+The `dev-studio` skill is a **project-scoped v2 skill** shipped at `core/v2/skills/dev-studio/`. It is the canonical role router for studio-level operations after A10 removed the v1 top-level router surfaces. When any of the phrases below fire, route through `/dev-studio manager ...` unless a more specific canonical role is explicit:
 
 | User intent | Trigger phrases | Dispatch |
 |---|---|---|
-| Resume in-flight arc / "where were we" | "where were we", "pick up from", "resume", `/resume-plan` | `.claude/skills/studio/modes/resume-plan.md` |
-| Review a studio-repo diff | "review this", "check this", "any issues", "self-review", `/simplify` *on a studio-repo diff* | `.claude/skills/studio/modes/review.md` |
-| Draft release notes / evaluate tagging | "what's new", "draft release notes", "should we tag", "release" | `.claude/skills/studio/modes/release.md` |
-| Studio-level capture (patterns, analysis, parking-lot, rule tweaks) | "add to parking lot", "file a pattern", "capture this for the studio" | `.claude/skills/studio/modes/ingest.md` |
-| Arc-coherence audit (plan ↔ memory ↔ commits drift) | `/studio audit`, "audit the arc", "check plan drift" — also auto-runs silently on SessionStart | `.claude/skills/studio/modes/audit.md` |
-| Pre-work guard (already-shipped / already-tried / already-in-backlog) | `/studio guard <topic>`, "has this been done?", "are we repeating work?" | `.claude/skills/studio/modes/guard.md` |
-| Add a skill from a git URL | `/studio add <url>`, "add this skill", "install this skill", "vendor this" | `.claude/skills/studio/modes/add.md` |
-| Sync skills to all hosts | `/studio sync`, "sync skills", "refresh host skills" | `.claude/skills/studio/modes/sync.md` |
+| Resume in-flight arc / "where were we" | "where were we", "pick up from", "resume", `/resume-plan` | `/dev-studio manager resume-plan` |
+| Review a studio-repo diff | "review this", "check this", "any issues", "self-review", `/simplify` *on a studio-repo diff* | `/dev-studio reviewer review` plus `REVIEW.md` |
+| Draft release notes / evaluate tagging | "what's new", "draft release notes", "should we tag", "release" | `/dev-studio release-manager` plus `RELEASES.md` |
+| Studio-level capture (patterns, analysis, parking-lot, rule tweaks) | "add to parking lot", "file a pattern", "capture this for the studio" | `/dev-studio manager ingest` |
+| Arc-coherence audit (plan ↔ memory ↔ commits drift) | `/studio audit`, "audit the arc", "check plan drift" — also auto-runs silently on SessionStart | `/dev-studio manager audit` |
+| Pre-work guard (already-shipped / already-tried / already-in-backlog) | `/studio guard <topic>`, "has this been done?", "are we repeating work?" | `/dev-studio manager guard` |
+| Add a skill from a git URL | `/studio add <url>`, "add this skill", "install this skill", "vendor this" | `/dev-studio manager add` |
+| Sync skills to all hosts | `/studio sync`, "sync skills", "refresh host skills" | `/dev-studio host-adapter sync` |
 
-**Do not dispatch through studio for user-project task work.** Task-level intents (implement X, fix bug Y, review Turnip diff) route to `/chanakya`, `/achilles`, `/argus` directly. The studio router is deliberately scoped to operations that concern the studio itself or cut across agents.
+**Do not dispatch through studio for user-project task work.** Task-level intents (implement X, fix bug Y, review Turnip diff) route to the corresponding `/dev-studio worker`, `/dev-studio reviewer`, or project-specific workflow. The studio router is deliberately scoped to operations that concern the studio itself or cut across agents.
 
 Tier 2 modes (`backlog`, `scaffold`) are not shipped today; if a user intent suggests one, note the gap and route to the closest Tier 1 mode.
 
-The rulebook sections below (**Reviews**, **Releases**, **Docs sync**, **Backlog**) remain authoritative for the *content* of each mode — the studio router is just the dispatch surface.
+The rulebook sections below (**Reviews**, **Releases**, **Docs sync**, **Backlog**) remain authoritative for the *content* of each workflow — the v2 router is just the dispatch surface.
 
 ## Reviews
 
@@ -86,23 +86,22 @@ When a release ships, update the **Mermaid timeline + "Story so far"** section n
 
 ## Docs sync (auto-apply)
 
-Whenever a change adds, removes, or renames a user-visible sub-command, flag, or session mode across `chanakya/SKILL.md`, `achilles/SKILL.md`, `argus/SKILL.md`, or any `scripts/*.sh` entry point — **sync the three doc surfaces in the same change, without asking**:
+Whenever a change adds, removes, or renames a user-visible sub-command, flag, session mode, or any `scripts/*.sh` entry point — **sync the active doc surfaces in the same change, without asking**:
 
-1. `chanakya/docs.html` — add/update the matching card in Quick Reference, Composites, or Fleet sections.
-2. `README.md` — TL;DR code block + the relevant `# comment` roster under "What's in the Repo".
-3. `chanakya/README.md` — if the long-form walkthrough touches the affected mode.
+1. `README.md` — TL;DR code block + the relevant `# comment` roster under "What's in the Repo".
+2. `core/v2/skills/dev-studio/SKILL.md` / `routing.yaml` — if the router surface changes.
+3. Any dedicated docs page that exists for the touched surface.
 
-After updating HTML, open it in Safari once (`open -a Safari "file://…/chanakya/docs.html"`) and print the URL. No need to ask. Skip the open step if the diff was doc-only wording (no new cards).
+After updating HTML, open it in Safari once and print the URL. Skip the open step if the diff was doc-only wording or no active HTML doc exists for the touched surface.
 
 Pure rule/doc edits (REVIEW.md, RELEASES.md, CLAUDE.md, THEMES.md, ARCHITECTURE.md) do **not** trigger this — they have no user-facing command surface.
 
 ### Layer-separation rule (no cross-pollution)
 
-The **agent layer** (`chanakya/`, `achilles/`, `argus/` — their SKILL.md, docs.html, README, mode packs) and the **studio layer** (`.claude/skills/studio/` — its SKILL.md, docs.html, mode packs) are separate user-facing surfaces. Keep their reference content disjoint:
+The v2 role layer (`core/v2/skills/dev-studio/`, `core/v2/roles/`, `core/v2/handoffs/`) and any project-specific task workflow docs are separate user-facing surfaces. Keep their reference content disjoint:
 
-- **Never** add `/studio*` command reference cards or sub-command tables to chanakya/achilles/argus docs, SKILL.md, or mode packs. And vice versa — **never** add `/chanakya*`, `/achilles*`, `/argus*` reference cards to studio docs/SKILL/modes.
-- **Do** use one-line *scope pointers* ("for X, route to /other-layer") when the user might mis-route — these prevent lost intent, they don't duplicate surface. Example that's fine: studio/SKILL.md says "task-level work goes to /chanakya etc." A pointer, not a table.
-- Cross-links between the two docs.html pages are fine (`<a href="../../../chanakya/docs.html">`). Duplicating the *contents* of those pages is not.
+- **Never** duplicate `/dev-studio*` role tables into unrelated project docs. And vice versa — do not copy project-specific task workflow tables into the v2 role router.
+- **Do** use one-line scope pointers when the user might mis-route. A pointer prevents lost intent; it is not a copied command table.
 
 **Why:** cards grow out of sync, command enum drift introduces broken references, and users who land on one page expect the commands listed there to actually route through that layer. Mixing surfaces makes every future dispatch-table edit a multi-file coordination problem it doesn't need to be.
 

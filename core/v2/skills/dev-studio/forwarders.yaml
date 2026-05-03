@@ -10,8 +10,8 @@ umbrella:
   role_registry: core/v2/registry/roles.json
 transition:
   v1_studio_router: .claude/skills/studio/SKILL.md
-  v1_status: "archived by A9 manifest; compatibility traffic routes to the v2 /dev-studio surface with v1 rollback preserved until A10"
-  cutover_status: cut-over
+  v1_status: "deleted by A10 operator override; compatibility aliases now resolve through the v2 /dev-studio role registry, with rollback available from git history"
+  cutover_status: v1-deleted
 dispatch:
   - canonical_role: manager
     invocation: /dev-studio manager
@@ -19,26 +19,26 @@ dispatch:
       - chanakya
       - coordinator
       - orchestrator
-    status: v1-forwarder-present
+    status: v1-deleted
   - canonical_role: worker
     invocation: /dev-studio worker
     compatibility_aliases:
       - achilles
       - implementer
-    status: v1-forwarder-present
+    status: v1-deleted
   - canonical_role: reviewer
     invocation: /dev-studio reviewer
     compatibility_aliases:
       - argus
       - verifier
-    status: v1-forwarder-present
+    status: v1-deleted
   - canonical_role: perf
     invocation: /dev-studio perf
     compatibility_aliases:
       - apollo
       - performance
       - performance-engineer
-    status: v1-forwarder-present
+    status: v1-deleted
   - canonical_role: planner
     invocation: /dev-studio planner
     compatibility_aliases:
@@ -79,24 +79,4 @@ dispatch:
       - human
       - owner
     status: reserved-non-routable
-forwarders:
-  - legacy_invocation: /chanakya
-    canonical_role: manager
-    v2_invocation: /dev-studio manager
-    v1_skill: chanakya/SKILL.md
-    runtime_cutover: true
-  - legacy_invocation: /achilles
-    canonical_role: worker
-    v2_invocation: /dev-studio worker
-    v1_skill: achilles/SKILL.md
-    runtime_cutover: true
-  - legacy_invocation: /argus
-    canonical_role: reviewer
-    v2_invocation: /dev-studio reviewer
-    v1_skill: argus/SKILL.md
-    runtime_cutover: true
-  - legacy_invocation: /apollo
-    canonical_role: perf
-    v2_invocation: /dev-studio perf
-    v1_skill: apollo/SKILL.md
-    runtime_cutover: true
+forwarders: []

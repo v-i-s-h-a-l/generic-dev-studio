@@ -21,9 +21,8 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 CLAUDE_SKILLS="$HOME/.claude/skills"
 CLAUDE_CMDS="$HOME/.claude/commands"
 
-AGENTS=(chanakya achilles argus _shared scripts hosts)
+AGENTS=(_shared scripts hosts)
 COMMANDS=(
-  chanakya-help.md
   pushTFBuild.md
   fullSendToAppStore.md
 )

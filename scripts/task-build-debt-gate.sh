@@ -53,7 +53,7 @@ data=$(printf '{"counter":%s,"override_attempted":false}' "$counter")
 emit_event_keyed achilles task build_debt_blocked "" "$data" >/dev/null 2>&1 || true
 cat >&2 <<EOF
 error: build-debt-blocked flag set at $FLAG.
-  Run \`/chanakya sweep-debt\` to work down the counter, or re-invoke with
+  Run \`/dev-studio manager sweep-debt\` to work down the counter, or re-invoke with
   \`--ignore-build-debt\` to override this one task.
 EOF
 exit 2

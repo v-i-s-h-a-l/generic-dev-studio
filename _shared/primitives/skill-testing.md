@@ -96,7 +96,7 @@ Phase 2.6.5 extracted 5 mode packs without baselines. Phase 2.6.6 retrofits them
 | Pack | Fixture | What it proves |
 |---|---|---|
 | `chanakya/modes/status.md` | `tests/mode-packs/chanakya/status.yaml` | Snapshot-first discipline, fallback loaders, fresh-event citation |
-| `argus/SKILL.md` | `tests/mode-packs/argus/SKILL.yaml` | Scope caps honored, week-1 block-vs-flag posture, base-staleness check |
+| v1 `argus/SKILL.md` | `tests/mode-packs/argus/SKILL.yaml` | Historical baseline before A10 deletion |
 | `chanakya/modes/inbox-sweep.md` | `tests/mode-packs/chanakya/inbox-sweep.yaml` | Step 0A–0G enumeration, debrief ingest, no-skip on empty |
 | `chanakya/modes/tests.md` | `tests/mode-packs/chanakya/tests.yaml` | Dirty-state guard, candidate scan, round linkage |
 | `achilles/modes/task.md` | `tests/mode-packs/achilles/task.yaml` | Size-driven build gate, Argus pre-merge, merge-lock, debrief dual-write |

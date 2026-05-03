@@ -141,7 +141,7 @@ releases_status() {
   fi
 
   if [ "$merged_since" -gt 0 ]; then
-    msg="$msg $merged_since task(s) merged since last TestFlight — consider /achilles push-tf."
+    msg="$msg $merged_since task(s) merged since last TestFlight — consider /dev-studio release-manager tf-push."
   fi
 
   printf '%s\n' "$msg"

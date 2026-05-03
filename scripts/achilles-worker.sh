@@ -3,7 +3,7 @@
 #
 # Long-running worker pane. Watches the current project's fleet inbox at
 # ~/.dev-studio/<project>/.runtime/achilles-inbox/worker-<N>/inbox/ for *.task
-# files and spawns `claude -p "/achilles <task-id> <flags>"` per task.
+# files and spawns `claude -p "/dev-studio worker <task-id> <flags>"` per task.
 #
 # Project resolved via lib-paths.sh: ACHILLES_PROJECT env > git toplevel basename.
 # Cross-project: ACHILLES_PROJECT=<slug> achilles-worker.sh
@@ -155,15 +155,15 @@ process_task() {
   echo "$task_id" > "$DIR/busy"
   log "start $task_id (flags='$flags')"
 
-  # ACHILLES_AUTONOMOUS=1 tells Achilles this invocation has no user to answer
+  # ACHILLES_AUTONOMOUS=1 tells the worker this invocation has no user to answer
   # questions (one-shot claude -p). Pair with the silent-stuck detector below:
   # autonomous reduces how often a task exits without a debrief in the first
   # place; the detector is the backstop for when a default truly can't be chosen.
   if [ -n "$TIMEOUT_BIN" ] && [ "$TIMEOUT_SEC" -gt 0 ]; then
-    ACHILLES_AUTONOMOUS=1 "$TIMEOUT_BIN" "$TIMEOUT_SEC" claude -p "/achilles $task_id $flags" $PERM_FLAG >> "$LOG" 2>&1
+    ACHILLES_AUTONOMOUS=1 "$TIMEOUT_BIN" "$TIMEOUT_SEC" claude -p "/dev-studio worker $task_id $flags" $PERM_FLAG >> "$LOG" 2>&1
     rc=$?
   else
-    ACHILLES_AUTONOMOUS=1 claude -p "/achilles $task_id $flags" $PERM_FLAG >> "$LOG" 2>&1
+    ACHILLES_AUTONOMOUS=1 claude -p "/dev-studio worker $task_id $flags" $PERM_FLAG >> "$LOG" 2>&1
     rc=$?
   fi
   rm -f "$DIR/busy"

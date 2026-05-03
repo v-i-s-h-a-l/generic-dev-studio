@@ -15,10 +15,6 @@
           {
             "type": "command",
             "command": "bash scripts/ingest-feedback.sh --quiet || true"
-          },
-          {
-            "type": "command",
-            "command": "bash scripts/chanakya-snap-prewarm.sh || true"
           }
         ]
       }

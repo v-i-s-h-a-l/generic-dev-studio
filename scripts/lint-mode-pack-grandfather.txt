@@ -16,33 +16,6 @@
 # Lines starting with `#` are comments. Blank lines are ignored.
 
 # --- Mode pack token-budget overruns (MP1) ---
-achilles/modes/app-store.md          bloat-pre-227  2026-06-30
-achilles/modes/push-tf.md            bloat-pre-227  2026-06-30
-achilles/modes/task.md               bloat-pre-227  2026-06-30
-apollo/modes/battery.md              bloat-pre-227  2026-06-30
-apollo/modes/memory.md               bloat-pre-227  2026-06-30
-apollo/modes/thermal.md              bloat-pre-227  2026-06-30
-argus/modes/code-quality.md          bloat-pre-227  2026-06-30
-argus/modes/spec-compliance.md       bloat-pre-227  2026-06-30
-chanakya/modes/blocked-by.md         bloat-pre-227  2026-06-30
-chanakya/modes/brief-review.md       bloat-pre-227  2026-06-30
-chanakya/modes/inbox-sweep.md        bloat-pre-227  2026-06-30
-chanakya/modes/janitor.md            bloat-pre-227  2026-06-30
-chanakya/modes/reopen.md             bloat-pre-227  2026-06-30
-chanakya/modes/status.md             bloat-pre-227  2026-06-30
-chanakya/modes/tests.md              bloat-pre-227  2026-06-30
-.claude/skills/studio/modes/add.md           bloat-pre-227  2026-06-30
-.claude/skills/studio/modes/analyze.md       bloat-pre-227  2026-06-30
-.claude/skills/studio/modes/audit.md         bloat-pre-227  2026-06-30
-.claude/skills/studio/modes/guard.md         bloat-pre-227  2026-06-30
-.claude/skills/studio/modes/help.md          bloat-pre-227  2026-06-30
-.claude/skills/studio/modes/ingest.md        bloat-pre-227  2026-06-30
-.claude/skills/studio/modes/janitor.md       bloat-pre-227  2026-06-30
-.claude/skills/studio/modes/nodes.md         bloat-pre-227  2026-06-30
-.claude/skills/studio/modes/resume-plan.md   bloat-pre-227  2026-06-30
-.claude/skills/studio/modes/sync.md          bloat-pre-227  2026-06-30
-.claude/skills/studio/modes/tf-push.md       bloat-pre-227  2026-06-30
-.claude/skills/studio/modes/work.md          bloat-pre-227  2026-06-30
 
 # --- Router cap overruns (MP3) ---
 # (None at the time the rule landed — all routers are under the 80-line cap

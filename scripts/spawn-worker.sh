@@ -19,7 +19,7 @@
 #   3. Reference host: exec achilles-worker.sh directly (no fresh session) —
 #      preserves byte-identical behaviour for STUDIO_HOST=claude-code, which
 #      H10 conformance checks against a recorded baseline.
-#   4. Other hosts: exec the host's spawn_command with `/achilles <brief>` as
+#   4. Other hosts: exec the host's spawn_command with `/dev-studio worker <brief>` as
 #      the prompt. The host adapter is responsible for loading the achilles
 #      skill in the spawned session.
 
@@ -73,31 +73,30 @@ case "$SANDBOX_PROFILE" in
     ;;
   host-native)
     if [ "$HOST" != "claude-code" ]; then
-      printf 'spawn-worker: refuse — host=%s declares sandbox_profile=host-native; Achilles requires workspace-write or full on non-reference hosts (see hosts/ADAPTER-SPEC.md §Achilles security floor).\n' "$HOST" >&2
+      printf 'spawn-worker: refuse — host=%s declares sandbox_profile=host-native; worker requires workspace-write or full on non-reference hosts (see hosts/ADAPTER-SPEC.md §worker security floor).\n' "$HOST" >&2
       exit 1
     fi
     ;;
   *)
-    printf 'spawn-worker: refuse — host=%s declares sandbox_profile=%s; does not satisfy Achilles security floor (workspace-write or full required).\n' \
+    printf 'spawn-worker: refuse — host=%s declares sandbox_profile=%s; does not satisfy worker security floor (workspace-write or full required).\n' \
       "$HOST" "$SANDBOX_PROFILE" >&2
     exit 1
     ;;
 esac
 
-# Reference host: preserve byte-identical legacy path.
+# Reference host: use the local worker loop.
 if [ "$HOST" = "claude-code" ] && [ -x "$SCRIPT_DIR/achilles-worker.sh" ]; then
   exec "$SCRIPT_DIR/achilles-worker.sh" "$BRIEF_ID" "${FORWARD_ARGS[@]}"
 fi
 
 # Non-reference host: spawn fresh session. spawn_command is whitespace-split
-# into argv; the prompt is the achilles slash-command (the host's adapter
-# loads the achilles skill in the new session).
+# into argv; the prompt routes through the v2 worker role.
 # shellcheck disable=SC2206
 spawn_argv=( $SPAWN_COMMAND )
 
-# Concatenate flags into a single prompt string. The receiving Achilles
-# router parses them per its existing dispatch table.
-prompt="/achilles $BRIEF_ID"
+# Concatenate flags into a single prompt string. The receiving v2 router
+# resolves the worker role contract.
+prompt="/dev-studio worker $BRIEF_ID"
 for a in "${FORWARD_ARGS[@]+"${FORWARD_ARGS[@]}"}"; do
   prompt="$prompt $a"
 done

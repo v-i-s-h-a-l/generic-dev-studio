@@ -2,7 +2,7 @@
 # lint-host-agnostic.sh — enforce host-agnostic adapter invariants.
 #
 # Four checks:
-#   1. Claude-Code-specific prose in load-bearing paths (achilles/, argus/, _shared/)
+#   1. Claude-Code-specific prose in load-bearing paths (core/v2 roles/reviewer, _shared/)
 #   2. Per-host template forks must be symlinks, not regular files
 #   3. Capability-manifest security floor (sandbox_profile + secret_scope rules)
 #   4. Zero third-party runtime deps in worker paths
@@ -15,8 +15,8 @@
 # Error format: <CODE>:<file>[:<line>]:<detail>
 #
 # Note on check 1 severity: pre-sweep state (before H7) has known prose in
-# achilles/modes/task.md. In standalone mode, prose hits are WARNs so the
-# tree stays green while H7 is pending. In --staged mode, they are BLOCKs
+# historical worker payloads. In standalone mode, prose hits are WARNs so the
+# tree stays green during migrations. In --staged mode, they are BLOCKs
 # so new violations don't slip in via future commits.
 
 set -u
@@ -65,8 +65,8 @@ check_prose_portability() {
   )
 
   local search_paths=()
-  [ -d "$REPO_ROOT/achilles" ] && search_paths+=("$REPO_ROOT/achilles")
-  [ -d "$REPO_ROOT/argus" ]    && search_paths+=("$REPO_ROOT/argus")
+  [ -d "$REPO_ROOT/core/v2/roles" ] && search_paths+=("$REPO_ROOT/core/v2/roles")
+  [ -d "$REPO_ROOT/core/v2/reviewer" ] && search_paths+=("$REPO_ROOT/core/v2/reviewer")
   [ -d "$REPO_ROOT/_shared" ]  && search_paths+=("$REPO_ROOT/_shared")
 
   [ "${#search_paths[@]}" -eq 0 ] && return 0
@@ -90,7 +90,7 @@ check_prose_portability() {
 # -----------------------------------------------------------------------
 # Check 2 — Per-host prompt-template forks must be symlinks
 # Any file in .codex/ or .claude-plugin/ that shares a basename with a
-# file in achilles/**/*.md or argus/**/*.md must be a symlink, not a
+# file in the canonical v2 role/reviewer payloads must be a symlink, not a
 # regular file (to ensure canonical content is not forked).
 # -----------------------------------------------------------------------
 check_no_template_forks() {
@@ -102,20 +102,20 @@ check_no_template_forks() {
     _d="${_d#"$REPO_ROOT/"}"
     host_dirs+=("$_d")
   done < <(yq -r 'keys | .[]' "$REGISTRY" 2>/dev/null)
-  local agent_dirs=("achilles" "argus")
-  local host_dir agent_dir basename host_file
+  local canonical_dirs=("core/v2/roles" "core/v2/reviewer")
+  local host_dir canonical_dir basename host_file
   for host_dir in "${host_dirs[@]+"${host_dirs[@]}"}"; do
     [ -d "$REPO_ROOT/$host_dir" ] || continue
-    for agent_dir in "${agent_dirs[@]}"; do
-      [ -d "$REPO_ROOT/$agent_dir" ] || continue
-      while IFS= read -r agent_file; do
-        [ -f "$agent_file" ] || continue
-        basename=$(basename "$agent_file")
+    for canonical_dir in "${canonical_dirs[@]}"; do
+      [ -d "$REPO_ROOT/$canonical_dir" ] || continue
+      while IFS= read -r canonical_file; do
+        [ -f "$canonical_file" ] || continue
+        basename=$(basename "$canonical_file")
         host_file="$REPO_ROOT/$host_dir/$basename"
         if [ -e "$host_file" ] && [ ! -L "$host_file" ]; then
-          emit_error "E_TEMPLATE_FORK:$host_dir/$basename | must be a symlink to canonical $agent_dir/**, not a regular file"
+          emit_error "E_TEMPLATE_FORK:$host_dir/$basename | must be a symlink to canonical $canonical_dir/**, not a regular file"
         fi
-      done < <(find "$REPO_ROOT/$agent_dir" -type f -name '*.md' 2>/dev/null)
+      done < <(find "$REPO_ROOT/$canonical_dir" -type f \( -name '*.md' -o -name '*.yaml' \) 2>/dev/null)
     done
   done
 }
@@ -186,15 +186,15 @@ check_capability_security_floor() {
 
 # -----------------------------------------------------------------------
 # Check 4 — Zero third-party runtime deps in worker paths
-# Greps for package manager invocations in worker code (achilles/, argus/).
+# Greps for package manager invocations in worker/reviewer role payloads.
 # scripts/ is excluded — infrastructure scripts legitimately include install
 # instructions in error messages and README prose, which are not runtime deps.
 # -----------------------------------------------------------------------
 check_no_runtime_deps() {
   local dep_pats=("npm install" "pip install" "brew install" "gem install")
   local search_paths=()
-  [ -d "$REPO_ROOT/achilles" ] && search_paths+=("$REPO_ROOT/achilles")
-  [ -d "$REPO_ROOT/argus" ]    && search_paths+=("$REPO_ROOT/argus")
+  [ -d "$REPO_ROOT/core/v2/roles" ] && search_paths+=("$REPO_ROOT/core/v2/roles")
+  [ -d "$REPO_ROOT/core/v2/reviewer" ] && search_paths+=("$REPO_ROOT/core/v2/reviewer")
 
   [ "${#search_paths[@]}" -eq 0 ] && return 0
 

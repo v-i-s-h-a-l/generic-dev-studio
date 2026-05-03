@@ -102,9 +102,9 @@ are centralized. Emergency/debug-only override is
 recorded in the review artifact. See `CLAUDE.md` §Cross-host phase review for
 the workflow rule that consumes this adapter contract.
 
-### Env-scrub at Argus dispatch
+### Env-scrub at reviewer dispatch
 
-`scripts/dispatch-review.sh` enforces the Argus floor at spawn time by env-scrubbing the subprocess. Only PATH/HOME/LANG/USER, the host plugin-root, and explicit task-context vars cross the boundary; `ANTHROPIC_API_KEY`, `GH_TOKEN`/`GITHUB_TOKEN`, and arbitrary inherited env are dropped. The host CLI re-authenticates from its own keychain inside the spawned session.
+`scripts/dispatch-review.sh` enforces the reviewer floor at spawn time by env-scrubbing the subprocess. Only PATH/HOME/LANG/USER, the host plugin-root, and explicit task-context vars cross the boundary; `ANTHROPIC_API_KEY`, `GH_TOKEN`/`GITHUB_TOKEN`, and arbitrary inherited env are dropped. The host CLI re-authenticates from its own keychain inside the spawned session.
 
 ```bash
 env -i \
@@ -117,14 +117,14 @@ env -i \
   ACHILLES_WORKTREE="$WORKTREE" \
   ACHILLES_BASE_BRANCH="$BASE_BRANCH" \
   TASK_SIZE="$SIZE" \
-  "${spawn_argv[@]}" "/argus $STAGE $TASK_ID"
+  "${spawn_argv[@]}" "/dev-studio reviewer $STAGE $TASK_ID"
 ```
 
 `.netrc` is filesystem-resident, not env-resident, so env-scrub alone doesn't isolate it — the adapter's `sandbox_profile` is responsible for that boundary (Codex's `workspace-write` keeps `~/.netrc` out of the worker's view; Claude Code's `host-native` relies on the documented reference-host exemption).
 
 ### Claude Code reference host
 
-Claude Code (`.claude-plugin/capabilities.yaml`) declares `host-native` + `inherit-env`. This violates the Achilles security floor. The reference host is explicitly exempted because it is the primary development environment where the security constraints are enforced by human oversight rather than mechanical isolation. **Do not use the reference host's values as a template for new adapters.**
+Claude Code (`.claude-plugin/capabilities.yaml`) declares `host-native` + `inherit-env`. This violates the worker security floor. The reference host is explicitly exempted because it is the primary development environment where the security constraints are enforced by human oversight rather than mechanical isolation. **Do not use the reference host's values as a template for new adapters.**
 
 ## Host preflight
 

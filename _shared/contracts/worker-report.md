@@ -1,21 +1,21 @@
 ---
 name: Worker Report Contract
-description: Four-state enum Achilles emits on every debrief so Chanakya routes deterministically instead of parsing prose. Extends `schemas/debrief.md` with an optional `report_state` field (default inferred back-compat). Drawn from obra/superpowers/subagent-driven-development.
+description: Four-state enum workers emit on every debrief so the manager routes deterministically instead of parsing prose. Extends `schemas/debrief.md` with an optional `report_state` field (default inferred back-compat).
 type: contract
 ---
 
 # Worker Report Contract (`report_state`)
 
-Every debrief Achilles writes carries a `report_state` — the worker's structured answer to "what just happened and what should Chanakya do next?". Replaces prose-parsing inside the inbox sweep.
+Every debrief a worker writes carries a `report_state` — the worker's structured answer to "what just happened and what should the manager do next?". Replaces prose-parsing inside the inbox sweep.
 
 ## The four states
 
 | State | Meaning | Chanakya routing |
 |---|---|---|
 | `done` | Task complete, all verification green, nothing outstanding. | Mark task `done`; no follow-up. Normal close. |
-| `done_with_concerns` | Task merged, but with caveats the user should see — build debt, skipped tests, deferred edge cases, Argus flags addressed but left residue. | Mark task `done`; surface concerns in `/chanakya status` dashboard; mint follow-ups from `follow_ups:` per normal. |
-| `blocked` | Achilles could not merge. Requires user input, external dependency, or escalation. No merge occurred; no commits on base. | Mark task `blocked`; push to user (push-queue + /chanakya status banner); do not re-dispatch automatically. |
-| `needs_context` | The brief was incomplete — a reference, spec, or decision Achilles needed was missing. Re-dispatch after Chanakya regenerates the brief with the missing info. | Mark task `needs_brief_rework`; Chanakya regenerates brief filling the gap; automatic re-dispatch once brief state returns to `ready`. |
+| `done_with_concerns` | Task merged, but with caveats the user should see — build debt, skipped tests, deferred edge cases, reviewer flags addressed but left residue. | Mark task `done`; surface concerns in manager status; mint follow-ups from `follow_ups:` per normal. |
+| `blocked` | The worker could not merge. Requires user input, external dependency, or escalation. No merge occurred; no commits on base. | Mark task `blocked`; push to user; do not re-dispatch automatically. |
+| `needs_context` | The brief was incomplete — a reference, spec, or decision the worker needed was missing. Re-dispatch after the manager regenerates the brief with the missing info. | Mark task `needs_brief_rework`; the manager regenerates the brief filling the gap; automatic re-dispatch once brief state returns to `ready`. |
 
 ## Schema
 
@@ -42,9 +42,9 @@ Each state constrains which other debrief fields must be populated — Chanakya 
 
 Validator warns on mismatch; block-tier reserved for clear contradictions (e.g., `state: done` + no merge_sha).
 
-## Achilles emission
+## Worker emission
 
-At Step 11 of `achilles/modes/task.md`, Achilles picks the state before writing the debrief:
+Before writing the debrief, the worker picks the state:
 
 ```
 report_state=$(
@@ -61,11 +61,11 @@ report_state=$(
 scripts/lib-ledger.sh ... report_state=$report_state ...
 ```
 
-Achilles must NEVER choose `done` to make a red build look green — R10 (REVIEW.md) catches that failure mode at the evidence layer. The worker-report contract catches it at the structural layer. Both fire independently.
+Workers must NEVER choose `done` to make a red build look green — R10 (REVIEW.md) catches that failure mode at the evidence layer. The worker-report contract catches it at the structural layer. Both fire independently.
 
-## Chanakya ingestion
+## Manager ingestion
 
-`chanakya/modes/inbox-sweep.md` sub-step 0A reads `report_state` and branches:
+The manager inbox sweep reads `report_state` and branches:
 
 - `done` → `task → done`; continue sweep.
 - `done_with_concerns` → `task → done` + concerns appended to status dashboard + push-queue entry if debt crosses threshold.

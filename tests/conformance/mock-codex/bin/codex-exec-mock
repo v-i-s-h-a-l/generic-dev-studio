@@ -2,7 +2,7 @@
 # codex-exec-mock — deterministic shim for the H10 conformance harness.
 #
 # Stands in for `codex exec` in CI. When invoked, it parses the prompt
-# (`/achilles <id>` or `/argus <id> <stage>`) and emits the corresponding
+# (`/dev-studio worker <id>` or `/dev-studio reviewer <id> <stage>`) and emits the corresponding
 # event-log entry the real session would have produced — without spawning
 # anything heavy. dispatch-review.sh and spawn-worker.sh treat this shim
 # the same as a real Codex CLI.
@@ -31,15 +31,15 @@ mkdir -p "$(dirname "$log")"
 ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 case "$prompt" in
-  /argus*spec*)
+  /dev-studio*reviewer*spec*)
     printf '{"ts":"%s","agent":"argus","event":"review_%s","task":"%s","data":{"stage":"spec","mock":true}}\n' \
       "$ts" "$verdict" "$task" >> "$log"
     ;;
-  /argus*quality*)
+  /dev-studio*reviewer*quality*)
     printf '{"ts":"%s","agent":"argus","event":"review_%s","task":"%s","data":{"stage":"quality","mock":true}}\n' \
       "$ts" "$verdict" "$task" >> "$log"
     ;;
-  /achilles*)
+  /dev-studio*worker*)
     printf '{"ts":"%s","agent":"achilles","event":"agent_boot","task":"%s","data":{"mock":true}}\n' \
       "$ts" "$task" >> "$log"
     printf '{"ts":"%s","agent":"achilles","event":"agent_session_completed","task":"%s","data":{"mock":true}}\n' \

@@ -10,7 +10,7 @@ trap 'rm -rf "$TMPROOT"' EXIT
 
 CLASSIFY="$ROOT/scripts/argus-classify-diff.sh"
 SELECT="$ROOT/scripts/argus-select-rules.sh"
-RULES="$ROOT/argus/rules"
+RULES="$ROOT/core/v2/reviewer/rules"
 
 assertions=0
 fail() {

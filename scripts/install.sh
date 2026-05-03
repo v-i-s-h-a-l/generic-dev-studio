@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# install.sh — idempotent installer for globally-installed agents + slash commands.
+# install.sh — idempotent installer for shared studio companions + slash commands.
 #
 # Creates symlinks from this repo into ~/.claude/skills/ and ~/.claude/commands/
-# so /chanakya, /achilles, /argus are reachable anywhere (typically your iOS
-# project), and the corresponding slash commands work anywhere.
+# for shared companions and remaining Claude slash-command wrappers.
 #
 # After Claude Code-specific setup, runs sync-host-skills.sh --all to fan out
 # skills to every detected host (Codex, Gemini, Cursor, etc.) whose binary is
 # on PATH. New hosts added to hosts/registry.yaml are picked up automatically.
 #
-# The `studio` skill is deliberately NOT installed globally — it lives at
-# .claude/skills/studio/ inside this repo and auto-loads only when your cwd
-# is inside generic-dev-studio. Installing it globally would cause studio
-# ops to misfire from unrelated projects.
+# The `dev-studio` skill is deliberately NOT installed globally — it lives at
+# core/v2/skills/dev-studio/ and sync-host-skills.sh links it into repo-local
+# project skill directories.
 #
 # Usage:
 #   scripts/install.sh            # apply, print summary
@@ -33,14 +31,13 @@ CLAUDE_CMDS="$HOME/.claude/commands"
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
-# Agents globally installed as skill roots. `studio` is omitted on purpose —
-# it is project-scoped via .claude/skills/studio/.
-AGENTS=(chanakya achilles argus _shared scripts hosts)
+# Shared companion roots. A10 removed the v1 top-level agent skills; v2 skill
+# discovery is handled by sync-host-skills.sh from core/v2/skills.
+AGENTS=(_shared scripts hosts)
 
 # Commands globally installed. `studio-help` is omitted on purpose — it lives
 # at .claude/commands/studio-help.md and only fires in this repo.
 COMMANDS=(
-  chanakya-help.md
   pushTFBuild.md
   fullSendToAppStore.md
 )

@@ -48,29 +48,21 @@ for role in manager planner worker reviewer qa-engineer flow-tester perf release
   yq -e ".dispatch[] | select(.canonical_role == \"$role\")" "$FORWARDERS" >/dev/null || fail "missing dispatch row: $role"
 done
 
-assert_forwarder() {
-  legacy="$1"
+assert_alias() {
+  alias="$1"
   expected_role="$2"
-  expected_skill="$3"
-  alias="${legacy#/}"
-
-  actual_role=$(yq -r ".forwarders[] | select(.legacy_invocation == \"$legacy\") | .canonical_role" "$FORWARDERS")
-  [ "$actual_role" = "$expected_role" ] || fail "$legacy maps to $actual_role, expected $expected_role"
-
-  actual_skill=$(yq -r ".forwarders[] | select(.legacy_invocation == \"$legacy\") | .v1_skill" "$FORWARDERS")
-  [ "$actual_skill" = "$expected_skill" ] || fail "$legacy preserves $actual_skill, expected $expected_skill"
-  [ -f "$ROOT/$actual_skill" ] || fail "missing preserved v1 skill: $actual_skill"
 
   [ "$("$RESOLVE" "$alias")" = "$expected_role" ] || fail "$alias alias does not resolve to $expected_role"
   yq -e ".dispatch[] | select(.canonical_role == \"$expected_role\") | .compatibility_aliases[] | select(. == \"$alias\")" "$FORWARDERS" >/dev/null || fail "$alias missing from dispatch aliases"
 }
 
-assert_forwarder /chanakya manager chanakya/SKILL.md
-assert_forwarder /achilles worker achilles/SKILL.md
-assert_forwarder /argus reviewer argus/SKILL.md
-assert_forwarder /apollo perf apollo/SKILL.md
+assert_alias chanakya manager
+assert_alias achilles worker
+assert_alias argus reviewer
+assert_alias apollo perf
 
-[ "$(yq -r '.transition.cutover_status' "$FORWARDERS")" = "cut-over" ] || fail "runtime cutover should be recorded after A9"
-grep -Fq 'primary traffic surface' "$SKILL_DIR/SKILL.md" || fail "A9 traffic boundary not documented"
+[ "$(yq -r '.transition.cutover_status' "$FORWARDERS")" = "v1-deleted" ] || fail "A10 deletion should be recorded"
+[ "$(yq -r '.forwarders | length' "$FORWARDERS")" = "0" ] || fail "A10 should not preserve v1 forwarder rows"
+grep -Fq 'primary traffic surface' "$SKILL_DIR/SKILL.md" || fail "traffic boundary not documented"
 
 printf 'PASS: dev-studio umbrella skill and forwarders\n'

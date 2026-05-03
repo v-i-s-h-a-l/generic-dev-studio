@@ -1,12 +1,12 @@
 ---
 name: Event Emission Contract
-description: Rules every event producer follows — producer tagging, idempotency key on every event, catalog lookup, atomic append. Extracted from chanakya-principles.md so every agent can reference it.
+description: Rules every event producer follows — producer tagging, idempotency key on every event, catalog lookup, atomic append. Shared by v2 roles.
 type: reference
 ---
 
 # Event Emission Contract
 
-Every agent — Chanakya, Achilles, Argus, and anything later — emits events to the shared log. This file is the authoritative emitter-side contract. The event schema + catalog live in `events.md`; consumer-side offset handling lives there too.
+Every role emits events to the shared log. This file is the authoritative emitter-side contract. The event schema + catalog live in `events.md`; consumer-side offset handling lives there too.
 
 ## Rules
 
@@ -23,12 +23,12 @@ Every agent — Chanakya, Achilles, Argus, and anything later — emits events t
 ```json
 {
   "ts": "2026-04-22T14:32:01Z",
-  "agent": "achilles",
+  "agent": "worker",
   "event": "task_completed",
   "task": "T001",
   "data": {},
-  "producer": {"agent": "achilles", "mode": "task", "instance_id": "worker-2"},
-  "idempotency_key": "achilles:task:T001:e5f6a7b8"
+  "producer": {"agent": "worker", "mode": "task", "instance_id": "worker-2"},
+  "idempotency_key": "worker:task:T001:e5f6a7b8"
 }
 ```
 
@@ -36,11 +36,11 @@ Fields `ts` / `agent` / `event` / `task` / `data` are the pre-existing `events.m
 
 ### Synthetic task ids for sessionless work
 
-Events produced by work that has no owning task-UUID — currently `debrief_emitted` from `/achilles debrief` (direct-debrief mode) — carry a synthetic `task` of the form `direct:<debrief-uuid>` rather than the empty string. The slug after `direct:` is the debrief UUIDv7 (same id that appears in the debrief filename `plans/debriefs/<debrief-id>.yaml`). This keeps every `debrief_emitted` row joinable on `task` across task-mode and direct-debrief-mode without consumers needing a mode-specific branch. Any future sessionless event should follow the same `<origin>:<stable-slug>` convention.
+Events produced by work that has no owning task-UUID carry a synthetic `task` of the form `direct:<debrief-uuid>` rather than the empty string. The slug after `direct:` is the debrief UUIDv7 (same id that appears in the debrief filename `plans/debriefs/<debrief-id>.yaml`). This keeps every `debrief_emitted` row joinable on `task` across task-mode and direct-debrief-mode without consumers needing a mode-specific branch. Any future sessionless event should follow the same `<origin>:<stable-slug>` convention.
 
 ## What this replaces
 
-- Implicit producer identity (previously inferred from `agent` field — fine until two Achilles workers emitted identical events and reader couldn't tell them apart).
+- Implicit producer identity (previously inferred from `agent` field — fine until two workers emitted identical events and reader couldn't tell them apart).
 - Silent duplicates — prior contract was "best-effort, do not worry"; this one says "best-effort at write time, dedupable at read time".
 
 ## Non-goals
@@ -57,4 +57,4 @@ Where an event's `data` field carries an outcome enum (e.g. `brief_completed.gat
 - `events.md` — schema, atomicity, offset, event catalog.
 - `idempotency.md` — key construction.
 - `message-contract.md` — event is a specialization of the envelope with `intent: event`.
-- `chanakya-principles.md` — no longer restates this; references here instead.
+- `_shared/patterns/chanakya-principles.md` — historical pattern context; active event rules live here.

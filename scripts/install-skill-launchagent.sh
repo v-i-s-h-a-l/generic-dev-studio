@@ -67,7 +67,7 @@ build_watch_paths() {
   local dirs
   dirs=$(
     cd "$REPO_ROOT" && \
-    find achilles argus chanakya .claude/skills skills/owned skills/vendored \
+    find core/v2/skills skills/owned skills/vendored \
          -maxdepth 4 \
          \( -name 'SKILL.md' -o -name 'portability.yaml' -o -name 'routing.yaml' \) \
          -type f 2>/dev/null \

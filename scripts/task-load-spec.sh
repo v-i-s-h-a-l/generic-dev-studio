@@ -105,7 +105,7 @@ _try_brief_candidate() {
     if [ "$strict" = "1" ]; then
       cat >&2 <<EOF
 error: brief for task-id '$TASK_ID' is state '$state', not ready — refusing dispatch.
-  Run \`/chanakya brief $TASK_ID\` or the relevant authoring step to mark it
+  Run \`/dev-studio manager brief $TASK_ID\` or the relevant authoring step to mark it
   ready. Set ACHILLES_ALLOW_NON_READY_BRIEF=1 only for intentional recovery.
 EOF
       exit 6
@@ -159,8 +159,8 @@ done < <(find "$tasks_dir" -maxdepth 1 -type f -name '*.yaml' -print 2>/dev/null
 if [ "$task_match_count" -eq 0 ]; then
   cat >&2 <<EOF
 error: no canonical task YAML found for task-id '$TASK_ID'.
-  Run \`/chanakya brief $TASK_ID\` to author one, or invoke \`/achilles\` (no
-  task-id) for direct mode.
+  Run \`/dev-studio manager brief $TASK_ID\` to author one, or invoke
+  \`/dev-studio worker\` without a task-id for direct mode.
 EOF
   emit_legacy_markdown_diagnostic "no_task_yaml_for_legacy_id" || true
   exit 2
@@ -233,8 +233,8 @@ _try_brief_candidate "$candidate" 1
 if [ -z "$BRIEF_PATH" ]; then
   cat >&2 <<EOF
 error: no dispatchable canonical brief found for task-id '$TASK_ID'.
-  Run \`/chanakya brief $TASK_ID\` to author one, or invoke \`/achilles\` (no
-  task-id) for direct mode.
+  Run \`/dev-studio manager brief $TASK_ID\` to author one, or invoke
+  \`/dev-studio worker\` without a task-id for direct mode.
 EOF
   exit 2
 fi
@@ -246,7 +246,7 @@ fi
 # action. Read the resolved task YAML and refuse when terminal.
 # ACHILLES_REOPEN=1 is the explicit user override —
 # legacy escape hatch that mints a follow-up debrief on the existing task
-# without recording reopen lineage. The formal path is `/chanakya reopen`
+# without recording reopen lineage. The formal path is `/dev-studio manager reopen`
 # (#252), which transitions the task to `reopened`, stamps reopen_reason,
 # appends the prior debrief id to reopen_chain, and emits task_reopened so
 # the next brief carries the round-2 context. Prefer the formal path when
@@ -260,7 +260,7 @@ if [ -z "${ACHILLES_REOPEN:-}" ] && command -v yq >/dev/null 2>&1; then
 error: task '$TASK_ID' is in terminal state '$task_state' — refusing to dispatch.
   A second dispatch on a completed task creates a duplicate worktree and a
   second debrief; in build / push-tf modes it can re-run a release action.
-  Run \`/chanakya reopen $TASK_ID --reason="<text>"\` for a formal
+  Run \`/dev-studio manager reopen $TASK_ID --reason="<text>"\` for a formal
   state-machine reopen (records reason, appends prior debrief to
   reopen_chain, emits task_reopened). Set ACHILLES_REOPEN=1 for the legacy
   override that mints a follow-up debrief without lineage — prefer the

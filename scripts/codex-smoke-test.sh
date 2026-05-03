@@ -74,7 +74,7 @@ printf '\n=== conformance matrix vs REAL codex (STUDIO_CODEX_BIN=%s) ===\n\n' \
 if "$SCRIPT_DIR/test-host.sh" codex "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; then
   printf '\ncodex-smoke-test: PASS — every conformance task passed against real codex.\n' >&2
   printf '  #166 live-task dispatch is unblocked. Next step: pick a real XS/S task,\n' >&2
-  printf '  set STUDIO_HOST=codex, run /achilles <task-id>, and verify the debrief\n' >&2
+  printf '  set STUDIO_HOST=codex, run /dev-studio worker <task-id>, and verify the debrief\n' >&2
   printf '  carries gen_ai.system=codex.\n' >&2
   exit 0
 else

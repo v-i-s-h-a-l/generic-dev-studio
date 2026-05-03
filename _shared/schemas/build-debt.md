@@ -6,9 +6,9 @@ type: reference
 
 # Shared: Build Debt Schema
 
-The build-debt counter governs when Chanakya mints a TBUILD verification task (warn threshold) or sets the project-wide block flag (block threshold). Pre-#273 the counter lived only inside `plans/chanakya-master.md`. Post-#273 it lives at `plans/build-debt.yaml` as the canonical source; the `## Build Debt` section in `chanakya-master.md` is a render projection produced by `scripts/render-master-plan.sh`.
+The build-debt counter governs when the manager mints a TBUILD verification task (warn threshold) or sets the project-wide block flag (block threshold). Pre-#273 the counter lived only inside `plans/chanakya-master.md`. Post-#273 it lives at `plans/build-debt.yaml` as the canonical source; the `## Build Debt` section in `chanakya-master.md` is a render projection produced by `scripts/render-master-plan.sh`.
 
-Chanakya owns all writes; Achilles only reads.
+The manager owns all writes; workers only read.
 
 ## Path
 
@@ -68,18 +68,18 @@ updated_at: 2026-04-27T08:13:00Z
 
 Default thresholds: `warn_at: 6`, `block_at: 12`. Override per-project by hand-editing the YAML.
 
-## Achilles: Build Debt Gate (Step 1.5)
+## Worker: Build Debt Gate
 
 Read `plans/build-debt.yaml` (or fall back to the projected `## Build Debt` block in master-plan if YAML absent — pre-#273 projects) before starting any task:
 
 - **`counter ≤ warn_at-1`:** proceed silently.
 - **`counter ∈ [warn_at, block_at-1]` (warn):** print one-line banner, proceed.
-  > "⚠️ Build debt: 8 tasks merged without a full build. Run `/achilles build` when convenient. (Block at 12 — 4 more until new work refused.)"
+  > "⚠️ Build debt: 8 tasks merged without a full build. Run `/dev-studio worker build` when convenient. (Block at 12 — 4 more until new work refused.)"
 - **`counter ≥ block_at` (block):**
   - If task has `source: build-debt` in its task YAML (it's a TBUILD): proceed — exempt.
   - If `--ignore-build-debt` passed: print override banner and proceed. Record `build_debt_override: true` in debrief.
   - Otherwise: print block banner and exit without claiming.
-    > "⛔ Build debt blocked at 12. Run `/achilles build` before starting new work. Override (not recommended): `/achilles <task-id> --ignore-build-debt`."
+    > "⛔ Build debt blocked at 12. Run `/dev-studio worker build` before starting new work. Override (not recommended): `/dev-studio worker <task-id> --ignore-build-debt`."
 
 Never write to `plans/build-debt.yaml` from the gate — read-only.
 

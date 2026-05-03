@@ -44,20 +44,16 @@ require() {
 # Enumerate every mode pack in the repo. Mirrors lint-architecture.sh's
 # collect_candidates but scoped to modes/*.md (SKILL.md covered separately).
 enumerate_packs() {
-  find "$REPO_ROOT" -mindepth 3 -maxdepth 3 -type f -path '*/modes/*.md' 2>/dev/null
-  find "$REPO_ROOT" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' 2>/dev/null \
+  find "$REPO_ROOT/core/v2/skills" "$REPO_ROOT/skills/owned" "$REPO_ROOT/skills/vendored" \
+    -type f -path '*/modes/*.md' 2>/dev/null
+  find "$REPO_ROOT/core/v2/skills" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' 2>/dev/null \
     | while IFS= read -r f; do
-        # Only agent SKILL.md files count (must have sibling modes/ dir OR be a
-        # single-file agent like argus/SKILL.md).
-        case "$f" in
-          */chanakya/SKILL.md|*/achilles/SKILL.md|*/argus/SKILL.md) printf '%s\n' "$f" ;;
-        esac
+        [ -d "$(dirname "$f")/modes" ] && printf '%s\n' "$f"
       done
 }
 
 # Given a pack path (repo-relative OR absolute), return the fixture path.
-# chanakya/modes/status.md → tests/mode-packs/chanakya/status.yaml
-# argus/SKILL.md           → tests/mode-packs/argus/SKILL.yaml
+# core/v2/skills/dev-studio/modes/status.md → tests/mode-packs/dev-studio/status.yaml
 fixture_path_for() {
   local pack="$1" rel agent mode
   rel="${pack#"$REPO_ROOT/"}"
@@ -134,8 +130,8 @@ cmd_validate() {
 # ---------- scaffold ----------
 cmd_scaffold() {
   local target="${1:-}" f pack_rel
-  [ -n "$target" ] || die "scaffold: need <agent>/<mode> (e.g. chanakya/status)" 3
-  # Accept either "chanakya/status" or "chanakya/modes/status.md"
+  [ -n "$target" ] || die "scaffold: need <agent>/<mode> (e.g. dev-studio/status)" 3
+  # Accept either "dev-studio/status" or "core/v2/skills/dev-studio/modes/status.md"
   case "$target" in
     */modes/*) pack_rel="$target" ;;
     */SKILL)   pack_rel="${target%/SKILL}/SKILL.md" ;;
@@ -332,7 +328,7 @@ run_fixture() {
 
 cmd_run() {
   local target="${1:-}" f
-  [ -n "$target" ] || die "run: need <pack> (e.g. chanakya/status or chanakya/modes/status.md)" 3
+  [ -n "$target" ] || die "run: need <pack> (e.g. dev-studio/status or core/v2/skills/dev-studio/modes/status.md)" 3
   case "$target" in
     */modes/*.md|*/SKILL.md)
       f=$(fixture_path_for "$REPO_ROOT/$target")
