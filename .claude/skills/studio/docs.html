@@ -426,6 +426,11 @@ scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude
         <div class="what">Before proposing new work, searches three channels. <strong>G1</strong> git log + tags (already shipped). <strong>G2</strong> memory files (already tried / prior decisions). <strong>G3</strong> <code>gh issue list --state all</code> (already in backlog). Surfaces hits separately; user decides continue / merge / drop. Refuses vague single-word queries.</div>
       </div>
       <div class="mode-card">
+        <code>scripts/studio-staleness-triage.sh</code>
+        <div class="triggers">weekly PM-surface issue aging</div>
+        <div class="what">Dry-run first GitHub issue aging pass for the studio PM surface. <code>--json</code> prints the planned label/comment mutations; <code>--apply</code> creates missing labels, applies stale/escalated/archive-candidate labels, removes stale labels from refreshed issues, and posts marker-based escalation comments. The scheduled workflow runs Mondays with <code>permissions: issues: write</code>; thresholds are configurable through <code>STUDIO_STALE_DAYS</code>, <code>STUDIO_ESCALATE_DAYS</code>, and <code>STUDIO_ARCHIVE_DAYS</code>.</div>
+      </div>
+      <div class="mode-card">
         <code>/studio janitor [--yes]</code>
         <div class="triggers">"clean up the studio", "what's reclaimable across projects?", "sweep all projects"</div>
         <div class="what">Cross-project sweep of stale artifacts. Fans <code>scripts/sweep-janitor.sh --all-projects all</code> + <code>scripts/fleet-cleanup.sh --all-projects</code> across every project under <code>~/.dev-studio/</code>. Default is dry-run; <code>--yes</code> applies. Aggregates per-project counts and freed bytes; calls out hot spots > 1 GB. Includes the gap-#31 <code>local-debt</code> pass: merged worktrees, orphan DerivedData, dead-pid <code>xcodebuild.lock</code>. For single-project sweeps, route to <code>/chanakya janitor</code>. Node-side counterpart tracked under #152 (<code>phase-2.7-epic</code>).</div>

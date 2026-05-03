@@ -82,3 +82,9 @@ scripts/studio-weekly.sh --json
 `scripts/studio-weekly.sh --post`, which creates or reuses the
 `Weekly Studio Digest` issue, pins it, and appends the weekly digest as a
 comment.
+
+## Automation
+
+| Script / Workflow | Purpose |
+|---|---|
+| `scripts/studio-staleness-triage.sh` / `.github/workflows/staleness-triage.yml` | Weekly GitHub issue staleness triage. Labels inactive issues after configurable `stale`, `escalate`, and `archive-candidate` thresholds; live mutation requires `--apply` and runs with `permissions: issues: write`. |
