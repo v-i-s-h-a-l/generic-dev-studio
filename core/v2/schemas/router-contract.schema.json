@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "router-contract.schema.json",
+  "title": "Studio v2 modular router contract",
+  "description": "A2a contract for Studio v2 router manifests and lint thresholds.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "parent_issue",
+    "leaf_issue",
+    "status",
+    "scope",
+    "router_files",
+    "dispatch_contract",
+    "complexity",
+    "business_logic_boundary",
+    "lint"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "studio-v2-router-contract"
+    },
+    "parent_issue": {
+      "const": 444
+    },
+    "leaf_issue": {
+      "const": 517
+    },
+    "status": {
+      "enum": ["active", "retired"]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applies_to", "not_cut_over"],
+      "properties": {
+        "applies_to": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^core/v2/routers/"
+          }
+        },
+        "not_cut_over": {
+          "const": true
+        }
+      }
+    },
+    "router_files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["glob", "portable_runtime"],
+      "properties": {
+        "glob": {
+          "const": "core/v2/routers/*.sh"
+        },
+        "portable_runtime": {
+          "const": "posix-shell"
+        }
+      }
+    },
+    "dispatch_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["router_responsibilities", "mode_pack_responsibilities", "unknown_invocation"],
+      "properties": {
+        "router_responsibilities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "mode_pack_responsibilities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "unknown_invocation": {
+          "const": "exit-nonzero"
+        }
+      }
+    },
+    "complexity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["counting_rule", "soft_warn_non_comment_lines", "hard_max_non_comment_lines"],
+      "properties": {
+        "counting_rule": {
+          "const": "nonblank-noncomment-lines"
+        },
+        "soft_warn_non_comment_lines": {
+          "const": 80
+        },
+        "hard_max_non_comment_lines": {
+          "const": 100
+        }
+      }
+    },
+    "business_logic_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["forbidden_patterns", "allowed_actions"],
+      "properties": {
+        "forbidden_patterns": {
+          "type": "array",
+          "minItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "xcodebuild",
+              "swift test",
+              "gh issue|pr|release",
+              "git push"
+            ]
+          },
+          "contains": {
+            "const": "xcodebuild"
+          }
+        },
+        "allowed_actions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "lint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["script", "error_codes", "warning_codes"],
+      "properties": {
+        "script": {
+          "const": "scripts/v2-router-lint.sh"
+        },
+        "error_codes": {
+          "type": "array",
+          "minItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "E_V2_ROUTER_CONTRACT",
+              "E_V2_ROUTER_CONTRACT_FIELD",
+              "E_V2_ROUTER_SIZE",
+              "E_V2_ROUTER_LOGIC"
+            ]
+          }
+        },
+        "warning_codes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["W_V2_ROUTER_SIZE"]
+          }
+        }
+      }
+    }
+  }
+}

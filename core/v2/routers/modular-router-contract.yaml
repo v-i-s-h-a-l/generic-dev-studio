@@ -1,0 +1,46 @@
+schema_version: 1
+kind: studio-v2-router-contract
+parent_issue: 444
+leaf_issue: 517
+status: active
+scope:
+  applies_to:
+    - core/v2/routers/
+  not_cut_over: true
+router_files:
+  glob: core/v2/routers/*.sh
+  portable_runtime: posix-shell
+dispatch_contract:
+  router_responsibilities:
+    - normalize invocation names
+    - select a mode pack or helper contract
+    - return explicit errors for unknown invocations
+  mode_pack_responsibilities:
+    - own procedure steps
+    - own domain-specific reads and writes
+    - own build test release and GitHub workflow behavior
+  unknown_invocation: exit-nonzero
+complexity:
+  counting_rule: nonblank-noncomment-lines
+  soft_warn_non_comment_lines: 80
+  hard_max_non_comment_lines: 100
+business_logic_boundary:
+  forbidden_patterns:
+    - xcodebuild
+    - swift test
+    - gh issue|pr|release
+    - git push
+  allowed_actions:
+    - case dispatch
+    - exec delegated command
+    - print usage
+    - exit with explicit status
+lint:
+  script: scripts/v2-router-lint.sh
+  error_codes:
+    - E_V2_ROUTER_CONTRACT
+    - E_V2_ROUTER_CONTRACT_FIELD
+    - E_V2_ROUTER_SIZE
+    - E_V2_ROUTER_LOGIC
+  warning_codes:
+    - W_V2_ROUTER_SIZE
