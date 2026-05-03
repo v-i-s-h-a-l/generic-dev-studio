@@ -52,6 +52,46 @@ Required custom fields:
 Built-in fields such as `Parent issue`, `Sub-issues progress`, `Repository`,
 `Labels`, and `Milestone` remain available for GitHub-native tracking.
 
+## Source-Of-Truth Map
+
+B11 contract: every planning datum has exactly one canonical GitHub home.
+Agents may copy a short pointer elsewhere for readability, but they must update
+the canonical home first and must not keep a second editable version in sync by
+hand.
+
+| Datum | Canonical home | Agent rule |
+|---|---|---|
+| Work title | Issue title | Keep concise and outcome-oriented. Do not duplicate in Project fields. |
+| Goal, impact, acceptance criteria, non-goals | Issue body | The body is the durable spec. Comments may discuss changes, but accepted scope changes are edited back into the body. |
+| Request type and taxonomy | Labels | Use labels for stable filtering and automation (`enhancement`, `bug`, `theme/*`, `track:*`). Do not encode these in titles or Project fields. |
+| Active PM state | Project `Status` field | Read v2 execution state from the board. Issue open/closed state remains GitHub's archival state, not the kanban lane. |
+| Track / workstream | Project `Track` field | Use `track:*` labels for issue-list filtering only; the board field owns PM grouping. |
+| Phase / batch | Project `Phase` field | Use the field for phase ordering. Mention phase in the body only when it clarifies acceptance criteria or dependencies. |
+| Size / planning estimate | Project `Size` field | Do not put estimates in labels or titles. |
+| Sibling-host review gate | Project `Sibling host reviewed` field | The field owns the current gate state. Phase-review artifacts under `~/.dev-studio/**` remain private evidence, not public issue state. |
+| Parent / child hierarchy | Native sub-issues / parent issue links | Prefer GitHub's hierarchy over body checklists. Body checklists are transitional notes only. |
+| Blocking dependencies | Native issue dependencies | Use GitHub dependencies for machine-readable ordering. Body text may explain why a dependency exists. |
+| Release target | Milestone | Milestones map to `RELEASES.md` cadence. Do not use labels or Project fields for release buckets. |
+| Discussion, decisions, and handoff notes | Issue comments | Comments are the conversation log. If a comment changes scope, copy the accepted result into the issue body or the relevant field. |
+| Runtime execution state | `~/.dev-studio/**` artifacts | GitHub is the PM surface only. Worker summaries, reviews, events, and private analysis stay in runtime storage. |
+
+### Reader Precedence
+
+When fields disagree, agents resolve in this order:
+
+1. Runtime truth for execution details: `~/.dev-studio/**`.
+2. GitHub native structure for planning state: Project fields, sub-issues,
+   dependencies, milestones, labels.
+3. Issue body for durable human-readable scope.
+4. Issue comments for discussion history.
+5. Derived docs such as `ROADMAP.md`, `TRACKS.md`, and README summaries.
+
+For v2 PM automation, Project state is canonical only for issues present on the
+`Studio v2 transition` board. Guards that search for duplicate or prior work
+must still include repository-wide issues when the question is "has this been
+done or discussed before?", because legacy and ad-hoc issues may not be on the
+board.
+
 ## Current Arc Rows
 
 The current open v2 arcs are present on the board:
