@@ -30,7 +30,7 @@ These scripts may mention legacy debrief paths, but they must not create active 
 | `scripts/backfill-legacy-yaml.sh` | migration-only legacy | Recovers YAML from archived legacy material. |
 | `scripts/detect-edits.sh` | diagnostic-only legacy | Detects edits to processed legacy debriefs. |
 | `scripts/analyze-collect.sh` | analysis-only legacy | Counts historical legacy debriefs for private reports. |
-| `scripts/tests-pull-cases.sh` | fallback reader | Reads historical standalone and processed markdown test cases only when canonical YAML has no cases. |
+| `scripts/tests-pull-cases.sh` | canonical reader | Reads test cases from the linked debrief YAML only (`tests.added` + `tests.modified`); legacy markdown test artifacts are human-facing projections/import history, not fallback authority. |
 | `scripts/verify-ledger.sh` | diagnostic-only legacy | Checks migration consistency against archived legacy files. |
 
 ## Regression Guard

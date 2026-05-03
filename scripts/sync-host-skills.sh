@@ -84,9 +84,12 @@ if [ "$ALL" -eq 0 ] && [ -z "$HOST" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Companion content — sibling dirs that skills reference via relative paths.
-# These are always linked into a host's skill_dir regardless of portability.
-# Keep this list small; it's the boundary between content and code.
+# Companion content — sibling dirs that skills and dispatch scripts reference
+# via relative paths. These are always linked into a host's skill_dir regardless
+# of portability. Keep this list small; it's the boundary between content and
+# code. `hosts/` is load-bearing for dispatched review sessions because
+# scripts/dispatch-review.sh resolves host capabilities from hosts/registry.yaml
+# relative to the deployed skills root.
 # ---------------------------------------------------------------------------
 COMPANIONS=(_shared scripts hosts)
 

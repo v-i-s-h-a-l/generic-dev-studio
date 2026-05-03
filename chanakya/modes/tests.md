@@ -1,6 +1,6 @@
 ---
 name: Chanakya Tests
-description: Test-manifest and test-flow generation from canonical debrief YAML, with historical sidecar fallback for old tasks.
+description: Test-manifest (per-task checklist) + test-flow (journey-ordered walkthrough, with promote + diff modes). The two test-planning sub-commands are grouped because they are consulted together and share reads against processed debriefs and per-task test artifacts.
 type: mode-pack
 schema_version: 1
 transition_notes: _shared/patterns/dual-write-transition.md
@@ -38,7 +38,7 @@ Run `scripts/tests-scan-candidates.sh`. One candidate id per line. Reads the ind
 
 ## Step 3 — Pull test cases
 
-For each candidate id, run `scripts/tests-pull-cases.sh <task-id>`. Yields a YAML `cases:` block (title + preconditions + steps + expected) sourced from the debrief's `tests.added`/`tests.modified`. Historical fallback may import `<task-id>-tests.md` or the processed debrief's `## Test Cases` section when YAML has no cases; no active writer targets those legacy files. Empty output → record the task with a single "No test cases written — please inspect the debrief" placeholder.
+For each candidate id, run `scripts/tests-pull-cases.sh <task-id>`. Yields a YAML `cases:` block (title + preconditions + steps + expected) sourced only from the linked debrief YAML's `tests.added`/`tests.modified`. Empty output → record the task with a single "No test cases written — please inspect the debrief" placeholder.
 
 ## Step 4 — Write the manifest
 

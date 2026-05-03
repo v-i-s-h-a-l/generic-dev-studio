@@ -7,10 +7,10 @@
 #
 # Why these tasks were skipped by migrate-ledger.sh: they pre-date the 2026-04-17
 # dual-write fix, so no paired YAML exists. Every /achilles <task-id> dispatch on
-# them trips task-load-spec.sh's legacy fallback and emits legacy_artifact_read.
-# After backfill, task-load-spec.sh finds the YAML brief (state=draft) before
-# reaching the legacy path, so no event fires. The terminal-state guard then
-# blocks re-dispatch because the task state is archived.
+# them trips task-load-spec.sh's diagnostic legacy path (when explicitly enabled)
+# and emits legacy_artifact_read. After backfill, task-load-spec.sh finds the YAML
+# brief (state=draft) before any legacy inspection is needed. The terminal-state
+# guard then blocks re-dispatch because the task state is archived.
 #
 # Conservative: if no debrief exists for a task, skip it (may be in-flight).
 # Idempotent:   if a YAML task or brief with matching legacy_task_id exists, skip.
@@ -250,7 +250,8 @@ for brief_md in "$LEGACY_TASKS_DIR"/*.md; do
     fi
 
     # Idempotency: skip if a YAML brief already carries this legacy ID.
-    # A brief alone already stops task-load-spec.sh from hitting the legacy fallback.
+    # A brief alone already stops task-load-spec.sh from reaching the
+    # diagnostic legacy path.
     if [ -d "$BRIEFS_DIR" ] \
         && ls "$BRIEFS_DIR"/*.yaml 2>/dev/null | head -1 | grep -q . \
         && grep -l "^legacy_task_id: \"${tid}\"$" "$BRIEFS_DIR"/*.yaml 2>/dev/null \

@@ -286,7 +286,7 @@ _shared/                # reusable primitives (symlinked from ~/.claude/skills/_
 ./scripts/verify-install.sh   # reports any drift between repo and ~/.claude/
 ```
 
-`install.sh` symlinks the **globally-installed** agents (`chanakya`, `achilles`, `argus`, `_shared`, `scripts`) into `~/.claude/skills/` and the corresponding slash commands into `~/.claude/commands/`. These reach you from anywhere — including your iOS project — because that is where you use them.
+`install.sh` symlinks the **globally-installed** agents (`chanakya`, `achilles`, `argus`, `_shared`, `scripts`, `hosts`) into `~/.claude/skills/` and the corresponding slash commands into `~/.claude/commands/`. These reach you from anywhere — including your iOS project — because that is where you use them.
 
 The `studio` skill is **not** installed globally. It lives at `.claude/skills/studio/` inside this repo and auto-loads only when your working directory is inside `generic-dev-studio`. Studio ops act on the studio itself; firing them outside this repo would be a misfire.
 
