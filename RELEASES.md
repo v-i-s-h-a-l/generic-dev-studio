@@ -27,6 +27,14 @@ Not every commit deserves a tag. Not every month deserves a tag. Cut a release w
 
 A rough feel (not a rule): if ≥3 tag-worthy commits have accumulated on main, or it's been ≥14 days since the last tag *and* there's at least one tag-worthy commit, surface it. Don't tag just because time passed — tag because the user will notice something.
 
+### GitHub milestones
+
+Use milestones for active release-worthy arcs, not for every possible future tag. Open one when an arc has a clear user-visible outcome, a hard planning gate, or enough scoped work that GitHub needs a native target. Leave `due_on` empty unless there is a real external deadline.
+
+Name the milestone after the expected release and outcome, for example `v0.10.0 — PM surface readiness`, but treat the version as a planning label until the tag is cut. If a patch release ships first, the headline changes, or the arc splits, rename or split the milestone before release notes are drafted.
+
+Assign only issues that clearly belong to that release target. Blocked follow-on arcs, ledgers, and unrelated hardening issues stay unassigned until their own release-worthy shape is active. Close the milestone after the GitHub release ships.
+
 ### How to suggest
 
 When you (human or agent) notice the repo has crossed a tag-worthy threshold, surface one sentence:

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-03T02:44:57Z",
+  "generated_at": "2026-05-03T03:03:40Z",
   "schema": 1,
   "commands": [
     {"name": "chanakya-help", "source": "commands/chanakya-help.md", "description": "", "agent": null, "scope": "global"},
