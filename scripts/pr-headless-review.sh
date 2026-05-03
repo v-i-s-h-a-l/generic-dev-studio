@@ -30,7 +30,7 @@ PR_REVIEW_VERDICT_FOR_EVENT=""
 PR_REVIEW_TOKENS_JSON="null"
 TMPDIR_TO_CLEAN=""
 REVIEW_SESSION_SCAN_STARTED_AT=$(date +%s)
-PARENT_HOST="${STUDIO_PARENT_HOST:-${STUDIO_HOST:-unknown}}"
+PARENT_HOST=""
 ELIGIBLE_REVIEW_HOSTS_CSV=""
 CROSS_HOST_FOR_EVENT="false"
 FALLBACK_FROM_CSV=""
@@ -89,6 +89,7 @@ AUTOPILOT="${PR_HEADLESS_REVIEW_AUTOPILOT:-$SCRIPT_DIR/pr-autopilot.sh}"
 . "$SCRIPT_DIR/lib-ledger.sh" 2>/dev/null || true
 
 LOGIN_HOME=$(resolve_user_login_home 2>/dev/null || true)
+PARENT_HOST=$(resolve_current_studio_host unknown)
 
 emit_pr_review_duration() {
   set +e
@@ -282,7 +283,7 @@ eligible_hosts() {
   rm -f "$hosts_file"
 }
 
-pr_json=$(gh pr view "$PR" --json number,title,url,baseRefName,headRefName,headRefOid,author,commits) \
+pr_json=$(with_login_home_for_github gh pr view "$PR" --json number,title,url,baseRefName,headRefName,headRefOid,author,commits) \
   || { printf 'pr-headless-review: failed to read PR %s\n' "$PR" >&2; exit 1; }
 pr_num=$(printf '%s' "$pr_json" | jq -r '.number')
 pr_url=$(printf '%s' "$pr_json" | jq -r '.url')
@@ -390,7 +391,7 @@ fix is narrow and confined to the PR branch; summarize any fixes.
 
 PROMPT
   printf '\nPR diff:\n\n```diff\n'
-  gh pr diff "$PR" --patch
+  with_login_home_for_github gh pr diff "$PR" --patch
   printf '\n```\n'
 } > "$payload"
 

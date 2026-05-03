@@ -13,13 +13,16 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 CATALOG="$REPO_ROOT/_shared/schemas/model-catalog.yaml"
 POLICY="$REPO_ROOT/_shared/rules/model-policy.yaml"
 
+# shellcheck source=lib-paths.sh
+. "$SCRIPT_DIR/lib-paths.sh"
+
 usage() {
   sed -n '3,/^$/p' "$0" | sed 's/^# \{0,1\}//'
   exit 2
 }
 
 REVIEW_HOST=""
-IMPLEMENTATION_HOST="${STUDIO_PARENT_HOST:-${STUDIO_HOST:-unknown}}"
+IMPLEMENTATION_HOST="$(resolve_current_studio_host unknown)"
 ROLE="reviewer.heavyweight"
 ALLOW_SAME_FAMILY=0
 

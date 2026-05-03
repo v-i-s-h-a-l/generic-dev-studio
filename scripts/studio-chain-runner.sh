@@ -73,7 +73,8 @@ RUN_STARTED_TS=$(iso_ts_now)
 RUN_STATUS="completed"
 RUN_FAILURE_REASON=""
 RUN_FINISHED=0
-STUDIO_PROJECT_ROOT=$(resolve_project_root_for generic-dev-studio)
+PARENT_HOME_FOR_GITHUB=$(resolve_parent_home_for_github)
+STUDIO_PROJECT_ROOT=$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_project_root_for generic-dev-studio)
 CHAIN_RUN_ROOT="$STUDIO_PROJECT_ROOT/chain-runs/$RUN_ID"
 SUMMARY_ROOT="$CHAIN_RUN_ROOT/worker-summaries"
 EVENTS_JSONL="$CHAIN_RUN_ROOT/events.jsonl"
@@ -561,7 +562,7 @@ execute_issue_session() {
   local -a spawn_argv
   local launch_home=""
 
-  issue_json=$(gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,body,url,state)
+  issue_json=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,body,url,state)
   issue_title=$(printf '%s' "$issue_json" | jq -r '.title')
   issue_body=$(printf '%s' "$issue_json" | jq -r '.body // ""')
   summary_path="$worktree/.studio/chain-worker-summary.json"
@@ -639,13 +640,14 @@ EOF
 }
 
 finalize_chain_pr() {
-  local chain_name="$1" chain_branch="$2" chain_worktree="$3" base="$4" chain_run_id="$5"
+  local chain_name="$1" chain_branch="$2" chain_worktree="$3" base="$4" chain_run_id="$5" implementation_host="${6:-}"
   local pr_url pr_number review_started_at review_rc review_duration
+  [ -n "$implementation_host" ] || implementation_host=$(resolve_current_studio_host unknown)
 
   log "rebasing $chain_branch on origin/$base"
-  run git -C "$chain_worktree" fetch origin --prune
+  run with_login_home_for_github git -C "$chain_worktree" fetch origin --prune
   run git -C "$chain_worktree" rebase "origin/$base"
-  run git -C "$chain_worktree" push -u origin "$chain_branch"
+  run with_login_home_for_github git -C "$chain_worktree" push -u origin "$chain_branch"
 
   if [ "$DRY_RUN" -eq 1 ]; then
     FINAL_PR_URL="<dry-run-pr-url>"
@@ -654,7 +656,7 @@ finalize_chain_pr() {
     return 0
   fi
 
-  pr_url=$(gh pr create \
+  pr_url=$(with_login_home_for_github gh pr create \
     --repo "$REPO_SLUG" \
     --base "$base" \
     --head "$chain_branch" \
@@ -673,7 +675,7 @@ Review gate: \`scripts/pr-headless-review.sh <pr> --method auto\`.")
   log "opened PR $pr_url"
   emit_chain_event chain_pr_opened "$pr_number" "$RUN_ID" "$chain_run_id" "" completed 0 \
     "$(jq -cn --arg pr_url "$pr_url" --arg pr_number "$pr_number" --arg branch "$chain_branch" '{pr_url:$pr_url, pr_number:$pr_number, branch:$branch}')"
-  if ! gh pr comment "$pr_number" --repo "$REPO_SLUG" --body "Chain run: \`$RUN_ID\`
+  if ! with_login_home_for_github gh pr comment "$pr_number" --repo "$REPO_SLUG" --body "Chain run: \`$RUN_ID\`
 
 Private telemetry report: local only; resolve by run ID on the machine that ran the chain.
 
@@ -683,7 +685,7 @@ Public-safe telemetry: run/chain UUIDs and abstract gap names only."; then
 
   review_started_at=$(now_epoch)
   set +e
-  "$SCRIPT_DIR/pr-headless-review.sh" "$pr_number" --method auto
+  STUDIO_PARENT_HOST="${STUDIO_PARENT_HOST:-$implementation_host}" "$SCRIPT_DIR/pr-headless-review.sh" "$pr_number" --method auto
   review_rc=$?
   set -e
   review_duration=$(duration_since "$review_started_at")
@@ -835,7 +837,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
   emit_chain_event chain_started "" "$RUN_ID" "$chain_run_id" "" running 0 \
     "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, host:$host, issue_count:$issue_count, worker_pool:$worker_pool}')"
   host_preflight "$host" "$REPO_ROOT" || abort_run "host preflight failed for $host"
-  run git -C "$REPO_ROOT" fetch origin --prune
+  run with_login_home_for_github git -C "$REPO_ROOT" fetch origin --prune
   if [ "$DRY_RUN" -eq 0 ]; then
     mkdir -p "$chain_results_dir"
     if [ ! -d "$chain_worktree/.git" ]; then
@@ -896,7 +898,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
     fi
   done
 
-  finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id"
+  finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id" "$host"
   chain_duration=$(duration_since "$chain_started_at")
   emit_chain_event chain_completed "" "$RUN_ID" "$chain_run_id" "" completed "$chain_duration" \
     "$(jq -cn --arg name "$name" --arg pr_url "$FINAL_PR_URL" '{chain:$name, pr_url:(if $pr_url == "" then null else $pr_url end)}')"
@@ -904,10 +906,10 @@ for ((idx = 0; idx < chain_count; idx++)); do
   for ((i = 0; i < issue_count; i++)); do
     issue=$(yq -r ".chains[$idx].issues[$i]" "$MANIFEST")
     if [ "$DRY_RUN" -eq 0 ]; then
-      gh issue close "$issue" --repo "$REPO_SLUG" --comment "Merged through chain PR: ${FINAL_PR_URL:-$branch}
+      with_login_home_for_github gh issue close "$issue" --repo "$REPO_SLUG" --comment "Merged through chain PR: ${FINAL_PR_URL:-$branch}
 
 Chain run: $RUN_ID" \
-        || gh issue comment "$issue" --repo "$REPO_SLUG" --body "Merged through chain PR: ${FINAL_PR_URL:-$branch}
+        || with_login_home_for_github gh issue comment "$issue" --repo "$REPO_SLUG" --body "Merged through chain PR: ${FINAL_PR_URL:-$branch}
 
 Chain run: $RUN_ID"
     else
@@ -916,7 +918,7 @@ Chain run: $RUN_ID"
   done
 
   if [ "$DRY_RUN" -eq 0 ]; then
-    git -C "$REPO_ROOT" fetch origin --prune
+    with_login_home_for_github git -C "$REPO_ROOT" fetch origin --prune
     git -C "$REPO_ROOT" worktree remove "$chain_worktree" || true
     git -C "$REPO_ROOT" branch -D "$branch" 2>/dev/null || true
   else
