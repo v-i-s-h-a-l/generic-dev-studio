@@ -136,6 +136,8 @@ PARENT_HOME_FOR_GITHUB=$(resolve_parent_home_for_github)
 STUDIO_PROJECT_ROOT=$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_project_root_for generic-dev-studio)
 CHAIN_RUN_ROOT="$STUDIO_PROJECT_ROOT/chain-runs/$RUN_ID"
 SUMMARY_ROOT="$CHAIN_RUN_ROOT/worker-summaries"
+HALT_ROOT="$CHAIN_RUN_ROOT/halt-records"
+ESCROW_ROOT="$CHAIN_RUN_ROOT/decision-escrows"
 EVENTS_JSONL="$CHAIN_RUN_ROOT/events.jsonl"
 RUN_STATE_JSON="$CHAIN_RUN_ROOT/state.json"
 RUN_REPORT="$CHAIN_RUN_ROOT/report.md"
@@ -148,7 +150,7 @@ if [ -n "$RESUME_ID" ] && [ ! -f "$RUN_STATE_JSON" ]; then
   exit 2
 fi
 if [ "$DRY_RUN" -eq 0 ] || [ -n "$RESUME_ID" ]; then
-  mkdir -p "$SUMMARY_ROOT"
+  mkdir -p "$SUMMARY_ROOT" "$HALT_ROOT" "$ESCROW_ROOT"
 else
   EVENTS_JSONL="/dev/null"
 fi
@@ -202,9 +204,11 @@ emit_chain_event() {
 
 write_run_state() {
   local status="$1" failure_reason="${2:-}"
-  local chains_json="[]"
+  local chains_json="[]" halt_records_json="[]" decision_escrows_json="[]"
   if [ -f "$RUN_STATE_JSON" ]; then
     chains_json=$(jq -c '.chains // []' "$RUN_STATE_JSON")
+    halt_records_json=$(jq -c '.halt_records // []' "$RUN_STATE_JSON")
+    decision_escrows_json=$(jq -c '.decision_escrows // []' "$RUN_STATE_JSON")
   elif [ -f "$PLAN_JSON" ]; then
     chains_json=$(jq -c '.chains // []' "$PLAN_JSON")
   fi
@@ -219,6 +223,8 @@ write_run_state() {
     --arg parallel_chains "$PARALLEL_CHAINS" \
     --arg failure_reason "$failure_reason" \
     --argjson chains "$chains_json" \
+    --argjson halt_records "$halt_records_json" \
+    --argjson decision_escrows "$decision_escrows_json" \
     '{
       schema_version: 1,
       run_id: $run_id,
@@ -230,6 +236,8 @@ write_run_state() {
       plan: $plan,
       parallel_chains: $parallel_chains,
       chains: $chains,
+      halt_records: $halt_records,
+      decision_escrows: $decision_escrows,
       failure_reason: (if $failure_reason == "" then null else $failure_reason end)
     }' > "$RUN_STATE_JSON"
 }
@@ -269,6 +277,195 @@ mark_issue_state() {
      | if $after == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .commit_after) = $after end
      | if $summary == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .summary) = $summary end
      | if $reason == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .failure_reason) = $reason end'
+}
+
+halt_class_for_reason() {
+  case "$1" in
+    github_auth_unavailable|github_home_mismatch|github_rate_limited|network_partition|child_timeout|disk_runtime_pressure)
+      printf 'retryable\n' ;;
+    parent_host_unknown|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_crash|issue_body_changed|partial_github_operation|test_build_infra_unavailable|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|implementation_scope_blocked)
+      printf 'recoverable\n' ;;
+    reviewer_blocked|reviewer_ambiguous)
+      printf 'review-needed\n' ;;
+    reviewer_host_ineligible|model_tool_permission_prompt|context_output_overflow)
+      printf 'human-needed\n' ;;
+    required_review_failed|secret_detected|destructive_change_required|permission_expansion_required|unsafe_external_state)
+      printf 'fatal\n' ;;
+    *)
+      printf 'recoverable\n' ;;
+  esac
+}
+
+halt_reason_for_text() {
+  case "$1" in
+    *GitHub*auth*|*github*auth*) printf 'github_auth_unavailable\n' ;;
+    *reviewer\ host*|*reviewer\ host\ unavailable*|*reviewer\ host\ ineligible*) printf 'reviewer_host_ineligible\n' ;;
+    *review\ failed*|*PR\ review\ failed*|*required\ review*) printf 'required_review_failed\n' ;;
+    *branch\ already\ exists*|*worktree*conflict*) printf 'branch_worktree_conflict\n' ;;
+    *rebase*|*base\ branch*) printf 'base_branch_advanced\n' ;;
+    *worker_summary_missing*|*summary*missing*|*produced\ no\ runner\ result*) printf 'missing_child_summary\n' ;;
+    *worker\ exited*|*unexpected_exit*) printf 'child_crash\n' ;;
+    *gh\ issue\ close*|*PR\ telemetry\ comment*|*GitHub\ operation*) printf 'partial_github_operation\n' ;;
+    *host\ preflight*|*test*infra*|*build*infra*) printf 'test_build_infra_unavailable\n' ;;
+    *permission*) printf 'model_tool_permission_prompt\n' ;;
+    *context*|*overflow*) printf 'context_output_overflow\n' ;;
+    *secret*) printf 'secret_detected\n' ;;
+    *destructive*) printf 'destructive_change_required\n' ;;
+    *) printf 'implementation_scope_blocked\n' ;;
+  esac
+}
+
+write_halt_record() {
+  local reason_id="$1" summary="$2" chain_run_id="${3:-}" issue_run_id="${4:-}" chain="${5:-}" issue_number="${6:-}" writer="${7:-parent-runner}"
+  [ "$DRY_RUN" -eq 0 ] || return 0
+  mkdir -p "$HALT_ROOT"
+
+  local halt_class hard_stop status next_command file rel_file created_at
+  halt_class=$(halt_class_for_reason "$reason_id")
+  hard_stop=false
+  status=paused
+  next_command="$SCRIPT_DIR/studio-chain-runner.sh --resume $RUN_ID --yes"
+  if [ "$halt_class" = "fatal" ]; then
+    hard_stop=true
+    status=terminated
+    next_command=""
+  fi
+  created_at=$(iso_ts_now)
+  file="$HALT_ROOT/$created_at-$reason_id.json"
+  rel_file="$file"
+
+  jq -n \
+    --arg created_at "$created_at" \
+    --arg run_id "$RUN_ID" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg chain "$chain" \
+    --arg issue_number "$issue_number" \
+    --arg status "$status" \
+    --arg reason_id "$reason_id" \
+    --arg halt_class "$halt_class" \
+    --arg writer "$writer" \
+    --arg summary "$summary" \
+    --arg next_command "$next_command" \
+    --argjson true_hard_stop "$hard_stop" \
+    --arg run_state "$RUN_STATE_JSON" \
+    --arg report "$RUN_REPORT" \
+    '{
+      schema_version: 1,
+      kind: "chain-halt-record",
+      created_at: $created_at,
+      run_id: $run_id,
+      chain_run_id: (if $chain_run_id == "" then null else $chain_run_id end),
+      issue_run_id: (if $issue_run_id == "" then null else $issue_run_id end),
+      chain: (if $chain == "" then null else $chain end),
+      issue_number: (if $issue_number == "" then null else ($issue_number | tonumber) end),
+      status: $status,
+      reason_id: $reason_id,
+      halt_class: $halt_class,
+      writer: $writer,
+      summary: $summary,
+      resumable_state: {
+        run_state: $run_state,
+        report: $report,
+        run_id: $run_id,
+        chain_run_id: (if $chain_run_id == "" then null else $chain_run_id end),
+        issue_run_id: (if $issue_run_id == "" then null else $issue_run_id end)
+      },
+      next_command: (if $next_command == "" then null else $next_command end),
+      affected_artifacts: [$run_state, $report],
+      rollback_path: "Inspect the halt record and resume with the next_command after correcting the cause; fatal records require a fresh human-authored plan.",
+      true_hard_stop: $true_hard_stop,
+      human_action_required: ($halt_class == "human-needed" or $halt_class == "fatal"),
+      privacy: {classification: "private-runtime"}
+    }' > "$file"
+
+  "$SCRIPT_DIR/validate-contract.sh" chain-halt-record "$file" >/dev/null
+
+  if [ -f "$RUN_STATE_JSON" ]; then
+    update_state_jq \
+      --arg file "$rel_file" \
+      --arg reason_id "$reason_id" \
+      --arg halt_class "$halt_class" \
+      --arg status "$status" \
+      --arg next_command "$next_command" \
+      '(.halt_records //= []) |
+       .halt_records += [{path:$file, reason_id:$reason_id, halt_class:$halt_class, status:$status, next_command:(if $next_command == "" then null else $next_command end)}]'
+  fi
+  printf '%s\n' "$file"
+}
+
+default_review_deadline() {
+  local epoch
+  epoch=$(( $(now_epoch) + 604800 ))
+  date -u -r "$epoch" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$epoch" '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+write_decision_escrows_from_summary() {
+  local summary_file="$1" review_deadline records count idx file created_at decision_id
+  [ "$DRY_RUN" -eq 0 ] || return 0
+  [ -f "$summary_file" ] || return 0
+  mkdir -p "$ESCROW_ROOT"
+  review_deadline=$(default_review_deadline)
+  records=$(jq -c --arg review_deadline "$review_deadline" '
+    def items($v):
+      if $v == null then []
+      elif ($v | type) == "array" then [$v[] | select(type == "object")]
+      elif ($v | type) == "object" then [$v]
+      else []
+      end;
+    (items(.assumptions_escrowed) + items(.decisions_made))
+    as $escrows
+    | . as $summary
+    | $escrows
+    | map(select((.decision // "") != "" and (.default_chosen // "") != ""))
+    | map({
+        schema_version: 1,
+        kind: "chain-decision-escrow",
+        created_at: "1970-01-01T00:00:00Z",
+        run_id: "00000000-0000-7000-8000-000000000000",
+        chain_run_id: (.chain_run_id // $summary.chain_run_id // null),
+        issue_run_id: (.issue_run_id // $summary.issue_run_id // null),
+        decision_id: (.decision_id // .id // ""),
+        decision: .decision,
+        default_chosen: .default_chosen,
+        rationale: (.rationale // "Worker continued with an escrowed default."),
+        risk_class: (.risk_class // "low-risk"),
+        status: (.status // "continued"),
+        affected_artifacts: (.affected_artifacts // []),
+        rollback_path: (.rollback_path // "Review the worker summary and amend the follow-up commit if the default was wrong."),
+        review_deadline: (.review_deadline // $review_deadline),
+        override_command: (.override_command // null),
+        privacy: {classification: "private-runtime"}
+      })
+  ' "$summary_file")
+  count=$(printf '%s' "$records" | jq 'length')
+  [ "$count" -gt 0 ] || return 0
+  for ((idx = 0; idx < count; idx++)); do
+    created_at=$(iso_ts_now)
+    decision_id=$(printf '%s' "$records" | jq -r --argjson idx "$idx" '.[$idx].decision_id')
+    [ -n "$decision_id" ] || decision_id="escrow-$idx"
+    decision_id=$(slugify "$decision_id")
+    [ -n "$decision_id" ] || decision_id="escrow-$idx"
+    file="$ESCROW_ROOT/$created_at-$decision_id.json"
+    printf '%s' "$records" | jq \
+      --argjson idx "$idx" \
+      --arg created_at "$created_at" \
+      --arg run_id "$RUN_ID" \
+      --arg decision_id "$decision_id" \
+      '.[$idx]
+       | .created_at = $created_at
+       | .run_id = $run_id
+       | .decision_id = $decision_id
+       | .chain_run_id = (.chain_run_id // null)
+       | .issue_run_id = (.issue_run_id // null)' > "$file"
+    "$SCRIPT_DIR/validate-contract.sh" chain-decision-escrow "$file" >/dev/null
+    if [ -f "$RUN_STATE_JSON" ]; then
+      update_state_jq \
+        --arg file "$file" \
+        --arg decision_id "$decision_id" \
+        '(.decision_escrows //= []) | .decision_escrows += [{path:$file, decision_id:$decision_id}]'
+    fi
+  done
 }
 
 generated_file_count_between() {
@@ -418,6 +615,12 @@ ingest_worker_summary() {
         telemetry_gaps: (.telemetry_gaps // [])
       }' "$summary_path" > "$dest"
   else
+    local summary_gap
+    if [ -f "$summary_path" ]; then
+      summary_gap="telemetry_artifact_malformed"
+    else
+      summary_gap="worker_summary_missing"
+    fi
     jq -n \
       --arg run_id "$RUN_ID" \
       --arg chain_run_id "$chain_run_id" \
@@ -432,6 +635,7 @@ ingest_worker_summary() {
       --argjson duration_s "$duration_s" \
       --argjson stats "$stats" \
       --argjson changed_artifacts "$changed_artifacts" \
+      --arg summary_gap "$summary_gap" \
       '{
         schema_version: 1,
         kind: "completion",
@@ -462,7 +666,7 @@ ingest_worker_summary() {
         functionality_delivered: null,
         carryover: null,
         lessons: null,
-        telemetry_gaps: ["worker_summary_missing", "model", "tokens", "tests_lints_builds"]
+        telemetry_gaps: [$summary_gap, "model", "tokens", "tests_lints_builds"]
       }' > "$dest"
   fi
 
@@ -475,11 +679,12 @@ worker_summary_tracked() {
 }
 
 generate_run_report() {
-  local status="$1" failure_reason="${2:-}" ended_ts ended_epoch duration_s summary_count
+  local status="$1" failure_reason="${2:-}" ended_ts ended_epoch duration_s summary_count halt_count halt_dir
   ended_ts=$(iso_ts_now)
   ended_epoch=$(now_epoch)
   duration_s=$(duration_since "$RUN_STARTED_AT" "$ended_epoch")
   summary_count=$(find "$SUMMARY_ROOT" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+  halt_dir="${HALT_ROOT:-}"
 
   {
     printf '# Studio Chain Run Report\n\n'
@@ -611,6 +816,35 @@ generate_run_report() {
     else
       printf -- '- PR URL: not opened\n'
     fi
+    printf '\n## Halt Records\n\n'
+    halt_count=0
+    [ -n "$halt_dir" ] && halt_count=$(find "$halt_dir" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$halt_count" -gt 0 ]; then
+      jq -r -s '
+        ["| Reason | Class | Status | Next Command | Summary |",
+         "|---|---|---|---|---|"],
+        (.[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(.next_command // "hard stop") | \(.summary | gsub("\\|"; "\\|")) |")
+      ' "$halt_dir"/*.json
+    else
+      printf 'No halt records were written.\n'
+    fi
+    printf '\n## Decision Escrow\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        def escrow_lines($v):
+          if $v == null then []
+          elif ($v | type) == "array" then [$v[] | if type == "object" then (.decision // .summary // .id // tojson) else tostring end]
+          elif ($v | type) == "object" then [($v.decision // $v.summary // ($v | tojson))]
+          else [$v | tostring]
+          end;
+        [ .[] | {issue:(.issue_number // "unknown"), lines:(escrow_lines(.assumptions_escrowed) + escrow_lines(.decisions_made))} | select(.lines | length > 0) ] as $items |
+        if ($items | length) == 0 then "No escrowed decisions were supplied by worker summaries."
+        else $items[] | . as $item | $item.lines[] | "- #\($item.issue): \(.)"
+        end
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf 'No decision escrow was ingested.\n'
+    fi
     printf '\n## Telemetry Gaps\n\n'
     if [ "$summary_count" -gt 0 ]; then
       jq -r -s '
@@ -659,6 +893,7 @@ finish_run() {
 
 abort_run() {
   local reason="${1:-failed}"
+  write_halt_record "$(halt_reason_for_text "$reason")" "$reason" >/dev/null || log "halt record write failed for: $reason"
   finish_run failed "$reason"
   exit 1
 }
@@ -666,6 +901,7 @@ abort_run() {
 finish_unexpected_exit() {
   local rc=$?
   if [ "$rc" -ne 0 ] && [ "${RUN_FINISHED:-0}" != "1" ] && [ "${DRY_RUN:-0}" -eq 0 ]; then
+    write_halt_record "$(halt_reason_for_text "unexpected_exit_$rc")" "unexpected exit $rc" >/dev/null || log "halt record write failed for unexpected exit $rc"
     finish_run failed "unexpected_exit_$rc"
   fi
 }
@@ -1237,7 +1473,7 @@ Public-safe telemetry: run/chain UUIDs and abstract gap names only."; then
 
 run_issue_job() {
   local name="$1" branch="$2" issue="$3" host="$4" issue_worktree="$5" issue_branch="$6" chain_run_id="$7" issue_run_id="$8" result_file="$9"
-  local before after worker_rc summary_file issue_duration summary_payload issue_started_at
+  local before after worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason
   issue_started_at=$(now_epoch)
 
   log "issue #$issue -> $issue_branch"
@@ -1270,6 +1506,7 @@ run_issue_job() {
 
   after=$(git -C "$issue_worktree" rev-parse HEAD)
   summary_file=$(ingest_worker_summary "$name" "$issue" "$host" "$issue_worktree" "$before" "$after" "$worker_rc" "$issue_started_at" "$chain_run_id" "$issue_run_id")
+  write_decision_escrows_from_summary "$summary_file" || log "decision escrow extraction failed for $summary_file"
   issue_duration=$(duration_since "$issue_started_at")
   summary_payload=$(jq -c --arg summary "$summary_file" --arg after "$after" --argjson exit_code "$worker_rc" --argjson duration_s "$issue_duration" \
     '{summary:$summary, commit_after:$after, exit_code:$exit_code, worker_duration_s:$duration_s, telemetry_gaps:(.telemetry_gaps // [])}' "$summary_file")
@@ -1285,6 +1522,12 @@ run_issue_job() {
 
   rm -rf "$issue_worktree/.studio"
   if [ "$worker_rc" -ne 0 ]; then
+    child_reason_id=$(jq -r '.halt_reason_id // empty' "$summary_file")
+    if [ -z "$child_reason_id" ]; then
+      child_blocked_reason=$(jq -r '.blocked_reason // empty' "$summary_file")
+      child_reason_id=$(halt_reason_for_text "${child_blocked_reason:-worker exited $worker_rc}")
+    fi
+    write_halt_record "$child_reason_id" "issue #$issue worker exited $worker_rc" "$chain_run_id" "$issue_run_id" "$name" "$issue" "child-worker" >/dev/null || log "halt record write failed for issue #$issue"
     emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" "$summary_payload"
     mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "worker_exited_$worker_rc"
     jq -n --arg issue "$issue" --argjson rc "$worker_rc" --arg reason "issue #$issue worker exited $worker_rc" \

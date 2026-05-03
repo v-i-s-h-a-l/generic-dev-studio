@@ -299,10 +299,10 @@
           "$ref": "#/$defs/narrative"
         },
         "decisions_made": {
-          "$ref": "#/$defs/narrative"
+          "$ref": "#/$defs/narrativeOrRecords"
         },
         "assumptions_escrowed": {
-          "$ref": "#/$defs/narrative"
+          "$ref": "#/$defs/narrativeOrRecords"
         },
         "carryover": {
           "$ref": "#/$defs/narrative"
@@ -353,6 +353,19 @@
         },
         {
           "type": "null"
+        }
+      ]
+    },
+    "narrativeOrRecords": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/narrative"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
         }
       ]
     },
