@@ -3,6 +3,8 @@
 #
 # Usage:
 #   scripts/studio-chain-runner.sh <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--yes] [--parallel-chains <n|auto|1>]
+#   scripts/studio-chain-runner.sh --auto <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run]
+#   scripts/studio-chain-runner.sh --explain-next <manifest|chain-name> [--only <chain>]
 #   scripts/studio-chain-runner.sh --resume <run_id> [--yes]
 #   scripts/studio-chain-runner.sh --list
 #
@@ -40,10 +42,18 @@ RESUME_ID=""
 ALLOW_CLOSED_ISSUES=0
 PARALLEL_CHAINS="auto"
 LIST_RUNS=0
+AUTO_MODE=0
+EXPLAIN_NEXT=0
+SUPERVISOR_LOCK=""
+SUPERVISOR_LOCK_ACQUIRED=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --list) LIST_RUNS=1; shift ;;
+    --auto) AUTO_MODE=1; MANIFEST="${2:?--auto requires a manifest or chain name}"; shift 2 ;;
+    --auto=*) AUTO_MODE=1; MANIFEST="${1#--auto=}"; shift ;;
+    --explain-next) EXPLAIN_NEXT=1; MANIFEST="${2:?--explain-next requires a manifest or chain name}"; shift 2 ;;
+    --explain-next=*) EXPLAIN_NEXT=1; MANIFEST="${1#--explain-next=}"; shift ;;
     --only) ONLY_CHAIN="${2:?--only requires a chain name}"; shift 2 ;;
     --only=*) ONLY_CHAIN="${1#--only=}"; shift ;;
     --host) HOST_OVERRIDE="${2:?--host requires a host name}"; shift 2 ;;
@@ -70,6 +80,16 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+if [ "$AUTO_MODE" -eq 1 ] && [ "$EXPLAIN_NEXT" -eq 1 ]; then
+  printf 'studio-chain-runner: --auto and --explain-next are mutually exclusive\n' >&2
+  usage
+fi
+
+if { [ "$AUTO_MODE" -eq 1 ] || [ "$EXPLAIN_NEXT" -eq 1 ]; } && [ -n "$RESUME_ID" ]; then
+  printf 'studio-chain-runner: supervisor flags cannot be combined with --resume; use --resume <run_id> --yes as the manual override path\n' >&2
+  usage
+fi
 
 list_persisted_runs() {
   command -v jq >/dev/null 2>&1 || { printf 'studio-chain-runner: jq required\n' >&2; exit 2; }
@@ -136,26 +156,36 @@ RUN_FINISHED=0
 PARENT_HOME_FOR_GITHUB=$(resolve_parent_home_for_github)
 PARENT_STUDIO_HOST=$(resolve_current_studio_host unknown)
 STUDIO_PROJECT_ROOT=$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_project_root_for generic-dev-studio)
-CHAIN_RUN_ROOT="$STUDIO_PROJECT_ROOT/chain-runs/$RUN_ID"
-SUMMARY_ROOT="$CHAIN_RUN_ROOT/worker-summaries"
-HALT_ROOT="$CHAIN_RUN_ROOT/halt-records"
-ESCROW_ROOT="$CHAIN_RUN_ROOT/decision-escrows"
-EVENTS_JSONL="$CHAIN_RUN_ROOT/events.jsonl"
-RUN_STATE_JSON="$CHAIN_RUN_ROOT/state.json"
-RUN_REPORT="$CHAIN_RUN_ROOT/report.md"
-PLAN_JSON="$CHAIN_RUN_ROOT/plan.json"
-if [ "$DRY_RUN" -eq 1 ] && [ -z "$RESUME_ID" ]; then
-  PLAN_JSON="$RUN_ROOT/$RUN_ID-plan.json"
-fi
-if [ -n "$RESUME_ID" ] && [ ! -f "$RUN_STATE_JSON" ]; then
-  printf 'studio-chain-runner: resume state not found: %s\n' "$RUN_STATE_JSON" >&2
-  exit 2
-fi
-if [ "$DRY_RUN" -eq 0 ] || [ -n "$RESUME_ID" ]; then
-  mkdir -p "$SUMMARY_ROOT" "$HALT_ROOT" "$ESCROW_ROOT"
-else
-  EVENTS_JSONL="/dev/null"
-fi
+CHAIN_RUNS_ROOT="$STUDIO_PROJECT_ROOT/chain-runs"
+CHAIN_RUN_ROOT=""
+SUMMARY_ROOT=""
+HALT_ROOT=""
+ESCROW_ROOT=""
+EVENTS_JSONL="/dev/null"
+RUN_STATE_JSON=""
+RUN_REPORT=""
+PLAN_JSON=""
+
+configure_run_paths() {
+  CHAIN_RUN_ROOT="$CHAIN_RUNS_ROOT/$RUN_ID"
+  SUMMARY_ROOT="$CHAIN_RUN_ROOT/worker-summaries"
+  HALT_ROOT="$CHAIN_RUN_ROOT/halt-records"
+  ESCROW_ROOT="$CHAIN_RUN_ROOT/decision-escrows"
+  EVENTS_JSONL="$CHAIN_RUN_ROOT/events.jsonl"
+  RUN_STATE_JSON="$CHAIN_RUN_ROOT/state.json"
+  RUN_REPORT="$CHAIN_RUN_ROOT/report.md"
+  PLAN_JSON="$CHAIN_RUN_ROOT/plan.json"
+  if [ "$DRY_RUN" -eq 1 ] && [ -z "$RESUME_ID" ]; then
+    PLAN_JSON="$RUN_ROOT/$RUN_ID-plan.json"
+  fi
+  if { [ "$DRY_RUN" -eq 0 ] || [ -n "$RESUME_ID" ]; } && [ "$EXPLAIN_NEXT" -eq 0 ]; then
+    mkdir -p "$SUMMARY_ROOT" "$HALT_ROOT" "$ESCROW_ROOT"
+  else
+    EVENTS_JSONL="/dev/null"
+  fi
+}
+
+configure_run_paths
 
 log() {
   printf 'studio-chain-runner: %s\n' "$*" >&2
@@ -201,7 +231,7 @@ event_stage() {
     chain_pr_opened|chain_review_completed) printf 'review\n' ;;
     chain_completed|chain_issue_merged) printf 'merge\n' ;;
     chain_issue_closed) printf 'close\n' ;;
-    chain_resume_attempt_*) printf 'resume\n' ;;
+    chain_resume_attempt_*|chain_supervisor_decision) printf 'resume\n' ;;
     chain_halt_recorded|chain_decision_escrow_*|chain_run_completed) printf 'finalize\n' ;;
     *) printf 'execute\n' ;;
   esac
@@ -1047,6 +1077,7 @@ finish_unexpected_exit() {
     write_halt_record "$(halt_reason_for_text "unexpected_exit_$rc")" "unexpected exit $rc" >/dev/null || log "halt record write failed for unexpected exit $rc"
     finish_run failed "unexpected_exit_$rc"
   fi
+  release_state_lock
 }
 
 slugify() {
@@ -1075,6 +1106,239 @@ resolve_manifest() {
   printf 'studio-chain-runner: manifest not found: %s\n' "$input" >&2
   printf 'studio-chain-runner: tried %s and %s\n' "$REPO_ROOT/chains/$input.yaml" "$REPO_ROOT/chains/$input.yml" >&2
   exit 2
+}
+
+canonical_path() {
+  local path="$1" dir base
+  if [ -z "$path" ]; then
+    return 1
+  fi
+  if [ -e "$path" ]; then
+    dir=$(cd "$(dirname "$path")" && pwd -P)
+    base=$(basename "$path")
+    printf '%s/%s\n' "$dir" "$base"
+    return 0
+  fi
+  if [ -e "$REPO_ROOT/$path" ]; then
+    dir=$(cd "$(dirname "$REPO_ROOT/$path")" && pwd -P)
+    base=$(basename "$path")
+    printf '%s/%s\n' "$dir" "$base"
+    return 0
+  fi
+  printf '%s\n' "$path"
+}
+
+state_manifest_matches() {
+  local state="$1" manifest="$2" state_manifest
+  state_manifest=$(jq -r '.manifest // empty' "$state" 2>/dev/null || true)
+  [ -n "$state_manifest" ] || return 1
+  [ "$(canonical_path "$state_manifest")" = "$manifest" ]
+}
+
+state_has_true_hard_stop() {
+  local state="$1" path halt_class
+  halt_class=$(jq -r '(.halt_records // [])[]? | select((.halt_class // "") == "fatal") | .halt_class' "$state" 2>/dev/null | head -1)
+  [ -z "$halt_class" ] || return 0
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    if [ -r "$path" ] && jq -e '.true_hard_stop == true' "$path" >/dev/null 2>&1; then
+      return 0
+    fi
+  done <<EOF
+$(jq -r '(.halt_records // [])[]? | .path // empty' "$state" 2>/dev/null || true)
+EOF
+  return 1
+}
+
+state_has_open_decision_escrow() {
+  local state="$1"
+  jq -e '((.decision_escrows // []) | length) > 0' "$state" >/dev/null 2>&1
+}
+
+supervisor_matching_states() {
+  local manifest="$1" state
+  [ -d "$CHAIN_RUNS_ROOT" ] || return 0
+  find "$CHAIN_RUNS_ROOT" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null | sort | while IFS= read -r state; do
+    if state_manifest_matches "$state" "$manifest"; then
+      printf '%s\n' "$state"
+    fi
+  done
+}
+
+supervisor_state_run_id() {
+  jq -r '.run_id // empty' "$1"
+}
+
+emit_supervisor_decision() {
+  local action="$1" reason_id="${2:-}" selected_run_id="${3:-}" candidates_json="${4:-[]}" lock_path="${5:-}"
+  [ "$EXPLAIN_NEXT" -eq 0 ] || return 0
+  [ "$DRY_RUN" -eq 0 ] || return 0
+  mkdir -p "$CHAIN_RUN_ROOT"
+  emit_chain_event chain_supervisor_decision "" "$RUN_ID" "" "" "$action" 0 \
+    "$(jq -cn \
+      --arg action "$action" \
+      --arg reason_id "$reason_id" \
+      --arg selected_run_id "$selected_run_id" \
+      --arg manifest "$MANIFEST" \
+      --arg lock_path "$lock_path" \
+      --argjson candidate_run_ids "$candidates_json" \
+      '{action:$action, reason_id:(if $reason_id == "" then null else $reason_id end), selected_run_id:(if $selected_run_id == "" then null else $selected_run_id end), candidate_run_ids:$candidate_run_ids, manifest:$manifest, lock_path:(if $lock_path == "" then null else $lock_path end)}')"
+}
+
+print_supervisor_decision() {
+  local action="$1" reason_id="${2:-}" selected_run_id="${3:-}" candidates_json="${4:-[]}" lock_path="${5:-}"
+  printf '# Studio Chain Supervisor Decision\n\n'
+  printf -- '- Manifest: `%s`\n' "$MANIFEST"
+  printf -- '- Action: `%s`\n' "$action"
+  [ -z "$selected_run_id" ] || printf -- '- Selected run: `%s`\n' "$selected_run_id"
+  [ -z "$reason_id" ] || printf -- '- Reason: `%s`\n' "$reason_id"
+  if [ "$candidates_json" != "[]" ]; then
+    printf -- '- Candidate runs: `%s`\n' "$(printf '%s' "$candidates_json" | jq -r 'join(", ")')"
+  fi
+  [ -z "$lock_path" ] || printf -- '- Lock: `%s`\n' "$lock_path"
+  if [ "$action" = "refused_ambiguous" ]; then
+    printf -- '- Manual selector: `scripts/studio-chain-runner.sh --resume <run_id> --yes`\n'
+  fi
+  printf '\n'
+  jq -cn \
+    --arg action "$action" \
+    --arg reason_id "$reason_id" \
+    --arg selected_run_id "$selected_run_id" \
+    --arg manifest "$MANIFEST" \
+    --arg state "$RUN_STATE_JSON" \
+    --arg lock_path "$lock_path" \
+    --argjson candidate_run_ids "$candidates_json" \
+    '{schema_version:1, kind:"chain-supervisor-decision", action:$action, reason_id:(if $reason_id == "" then null else $reason_id end), selected_run_id:(if $selected_run_id == "" then null else $selected_run_id end), candidate_run_ids:$candidate_run_ids, manifest:$manifest, state:(if $state == "" then null else $state end), lock_path:(if $lock_path == "" then null else $lock_path end)}'
+}
+
+release_state_lock() {
+  if [ "${SUPERVISOR_LOCK_ACQUIRED:-0}" -eq 1 ] && [ -n "${SUPERVISOR_LOCK:-}" ]; then
+    rm -rf "$SUPERVISOR_LOCK"
+    SUPERVISOR_LOCK_ACQUIRED=0
+  fi
+}
+
+lock_is_stale() {
+  local lock="$1" pid
+  [ -f "$lock/pid" ] || return 0
+  pid=$(cat "$lock/pid" 2>/dev/null || true)
+  case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+  kill -0 "$pid" 2>/dev/null && return 1
+  return 0
+}
+
+acquire_state_lock() {
+  local lock="$RUN_STATE_JSON.lock"
+  [ "${SUPERVISOR_LOCK_ACQUIRED:-0}" -eq 0 ] || return 0
+  [ "$DRY_RUN" -eq 0 ] || return 0
+  mkdir -p "$(dirname "$lock")"
+  if mkdir "$lock" 2>/dev/null; then
+    SUPERVISOR_LOCK="$lock"
+    SUPERVISOR_LOCK_ACQUIRED=1
+    printf '%s\n' "$$" > "$lock/pid"
+    printf '%s\n' "$(iso_ts_now)" > "$lock/created_at"
+    return 0
+  fi
+  if lock_is_stale "$lock"; then
+    rm -rf "$lock"
+    if mkdir "$lock" 2>/dev/null; then
+      SUPERVISOR_LOCK="$lock"
+      SUPERVISOR_LOCK_ACQUIRED=1
+      printf '%s\n' "$$" > "$lock/pid"
+      printf '%s\n' "$(iso_ts_now)" > "$lock/created_at"
+      return 0
+    fi
+  fi
+  emit_supervisor_decision refused_lock state_lock_held "$RUN_ID" '[]' "$lock"
+  print_supervisor_decision refused_lock state_lock_held "$RUN_ID" '[]' "$lock" >&2
+  exit 2
+}
+
+supervisor_decide_next() {
+  local manifest="$1" mode="$2" states completed=0 eligible=0 hard_stop=0 escrow=0
+  local state run_id selected_state="" selected_run_id="" candidates_json action reason_id
+  MANIFEST=$(canonical_path "$(resolve_manifest "$manifest")")
+  states=$(supervisor_matching_states "$MANIFEST" || true)
+  candidates_json='[]'
+  while IFS= read -r state; do
+    [ -n "$state" ] || continue
+    run_id=$(supervisor_state_run_id "$state")
+    [ -n "$run_id" ] || continue
+    if [ "$(jq -r '.status // "unknown"' "$state")" = "completed" ]; then
+      completed=$((completed + 1))
+      continue
+    fi
+    if state_has_true_hard_stop "$state"; then
+      hard_stop=$((hard_stop + 1))
+      candidates_json=$(printf '%s' "$candidates_json" | jq --arg run_id "$run_id" '. + [$run_id]')
+      continue
+    fi
+    if state_has_open_decision_escrow "$state"; then
+      escrow=$((escrow + 1))
+      candidates_json=$(printf '%s' "$candidates_json" | jq --arg run_id "$run_id" '. + [$run_id]')
+      continue
+    fi
+    eligible=$((eligible + 1))
+    selected_state="$state"
+    selected_run_id="$run_id"
+    candidates_json=$(printf '%s' "$candidates_json" | jq --arg run_id "$run_id" '. + [$run_id]')
+  done <<EOF
+$states
+EOF
+
+  if [ "$eligible" -gt 1 ]; then
+    action="refused_ambiguous"
+    reason_id="multiple_resumable_runs"
+  elif [ "$eligible" -eq 1 ]; then
+    action="resume"
+  elif [ "$hard_stop" -gt 0 ]; then
+    action="refused_hard_stop"
+    reason_id="true_hard_stop"
+  elif [ "$escrow" -gt 0 ]; then
+    action="refused_escrow"
+    reason_id="open_decision_escrow"
+  elif [ "$completed" -gt 0 ]; then
+    action="already_complete"
+  else
+    action="start"
+    selected_run_id="$RUN_ID"
+  fi
+
+  if [ "$action" = "resume" ]; then
+    RESUME_ID="$selected_run_id"
+    RUN_ID="$selected_run_id"
+    configure_run_paths
+  elif [ "$action" = "start" ]; then
+    RESUME_ID=""
+    configure_run_paths
+  fi
+
+  if [ "$mode" = "explain" ]; then
+    print_supervisor_decision "$action" "$reason_id" "$selected_run_id" "$candidates_json"
+    exit 0
+  fi
+
+  emit_supervisor_decision "$action" "$reason_id" "$selected_run_id" "$candidates_json"
+  case "$action" in
+    start)
+      YES=1
+      acquire_state_lock
+      print_supervisor_decision "$action" "$reason_id" "$selected_run_id" "$candidates_json"
+      ;;
+    resume)
+      YES=1
+      acquire_state_lock
+      print_supervisor_decision "$action" "$reason_id" "$selected_run_id" "$candidates_json"
+      ;;
+    already_complete)
+      print_supervisor_decision "$action" "$reason_id" "$selected_run_id" "$candidates_json"
+      exit 0
+      ;;
+    refused_*)
+      print_supervisor_decision "$action" "$reason_id" "$selected_run_id" "$candidates_json" >&2
+      exit 2
+      ;;
+  esac
 }
 
 run() {
@@ -1434,6 +1698,7 @@ prepare_plan() {
     cp "$RUN_STATE_JSON" "$PLAN_JSON"
   else
     MANIFEST=$(resolve_manifest "$MANIFEST")
+    MANIFEST=$(canonical_path "$MANIFEST")
     build_plan_json "$PLAN_JSON"
     if [ "$DRY_RUN" -eq 0 ]; then
       write_run_state planned ""
@@ -1441,6 +1706,30 @@ prepare_plan() {
   fi
   validate_execution_graph "$PLAN_JSON"
 }
+
+trap finish_unexpected_exit EXIT
+
+if [ "$EXPLAIN_NEXT" -eq 1 ]; then
+  supervisor_decide_next "$MANIFEST" explain
+fi
+
+if [ "$AUTO_MODE" -eq 1 ]; then
+  supervisor_decide_next "$MANIFEST" auto
+fi
+
+if [ -n "$RESUME_ID" ]; then
+  RUN_ID="$RESUME_ID"
+  configure_run_paths
+  if [ ! -f "$RUN_STATE_JSON" ]; then
+    printf 'studio-chain-runner: resume state not found: %s\n' "$RUN_STATE_JSON" >&2
+    exit 2
+  fi
+  if [ "$YES" -eq 1 ]; then
+    acquire_state_lock
+  fi
+elif [ "$YES" -eq 1 ]; then
+  acquire_state_lock
+fi
 
 prepare_plan
 explain_plan "$PLAN_JSON"
@@ -1461,7 +1750,6 @@ if [ -n "$RESUME_ID" ]; then
   emit_chain_event chain_resume_attempt_started "" "$RUN_ID" "" "" running 0 \
     "$(jq -cn --arg attempt_id "$ATTEMPT_ID" '{attempt_id:$attempt_id}')"
 fi
-trap finish_unexpected_exit EXIT
 
 chain_count=$(jq '.chains | length' "$PLAN_JSON")
 

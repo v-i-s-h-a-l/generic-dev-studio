@@ -38,6 +38,8 @@ Run:
 
 ```bash
 scripts/studio-chain-runner.sh <manifest-or-name> [--only <chain>] [--host codex|claude-code] [--dry-run] [--yes]
+scripts/studio-chain-runner.sh --auto <manifest-or-name> [--only <chain>] [--host codex|claude-code] [--dry-run]
+scripts/studio-chain-runner.sh --explain-next <manifest-or-name> [--only <chain>]
 scripts/studio-chain-runner.sh --resume <run_id> [--yes]
 scripts/studio-chain-runner.sh --list
 ```
@@ -80,7 +82,7 @@ Chain behavior:
 1. Fetch latest `origin/<base>`.
 2. Create one chain feature branch/worktree from latest base.
 3. Print the resolved execution plan by default: chain order, issue titles/states, branches, worktrees, host policy, risk notes, planned PRs, and the private state path. The runner exits after this plan unless `--yes` / `--no-confirm` is present; `--dry-run` prints the same graph and then non-mutating commands.
-4. Persist run state under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/state.json`. List persisted runs with `scripts/studio-chain-runner.sh --list`. Resume a blocked/crashed run with `scripts/studio-chain-runner.sh --resume <run_id> --yes`; completed chains/issues are skipped or re-integrated from their recorded branches.
+4. Persist run state under `~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/state.json`. List persisted runs with `scripts/studio-chain-runner.sh --list`. Resume a blocked/crashed run manually with `scripts/studio-chain-runner.sh --resume <run_id> --yes`; completed chains/issues are skipped or re-integrated from their recorded branches. For unattended continuation, use `scripts/studio-chain-runner.sh --auto <manifest-or-name>`; it canonicalizes the manifest path, starts a new run only when no matching persisted run exists, resumes exactly one safe non-completed run, and refuses if matching runs are ambiguous, locked, completed, true-hard-stopped, or carrying decision escrow. `scripts/studio-chain-runner.sh --explain-next <manifest-or-name>` prints the same supervisor decision without mutating state or taking the lock.
 5. Validate the graph before live execution: issue IDs must be unique across chains, issues must be open unless `--allow-closed-issues` is present, branch refs must be safe and non-colliding, GitHub auth must work, the reviewer host must be available, and base refs must be reachable.
 6. Size the fresh-session pool from healthy registered `xcodebuild` offload nodes: local-only stays at 1; N healthy offload nodes yields N+1 sessions, capped by available RAM. Override only for emergencies with `STUDIO_CHAIN_WORKER_POOL`, or clamp with `STUDIO_CHAIN_MAX_WORKERS`.
 7. For each issue, create `<chain-branch>-issue-<N>` in a separate `/tmp/studio-chain-runner/...` worktree. Issue execution is sequential within a chain; `--parallel-chains <n|auto|1>` records the requested chain scheduling policy, while the current runner serializes chain PR/review/issue-closure mutation unless a later scheduler proves safe concurrency.
@@ -95,7 +97,7 @@ Chain behavior:
 
 Telemetry:
 
-- Runner-owned lifecycle events: `chain_run_started`, `chain_started`, `chain_issue_started`, `chain_issue_completed`, `chain_pr_opened`, `chain_review_completed`, `chain_completed`, `chain_run_completed`.
+- Runner-owned lifecycle events: `chain_supervisor_decision`, `chain_run_started`, `chain_started`, `chain_issue_started`, `chain_issue_completed`, `chain_pr_opened`, `chain_review_completed`, `chain_completed`, `chain_run_completed`.
 - Join keys are `run_id`, `chain_run_id`, and `issue_run_id`; the same keys appear in events, prompts, PR comments, issue comments, worker summaries, and private reports.
 - Worker summaries capture model/token/test data when available and list missing fields in `telemetry_gaps`.
 
