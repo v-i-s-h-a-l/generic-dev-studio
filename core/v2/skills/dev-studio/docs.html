@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>/dev-studio v2 Router</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8f5;
+      --ink: #1f2623;
+      --muted: #59645f;
+      --line: #cdd5cd;
+      --panel: #ffffff;
+      --accent: #0f6b64;
+      --accent-2: #7a4f13;
+      --accent-3: #315f9f;
+      --code: #10211e;
+      --code-bg: #e9efec;
+      --warn-bg: #fff6df;
+      --warn-line: #dfbd65;
+      --ok-bg: #e7f4ef;
+      --ok-line: #9ecfbd;
+      --radius: 8px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    code {
+      padding: 0.12rem 0.28rem;
+      border-radius: 5px;
+      background: var(--code-bg);
+      color: var(--code);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.93em;
+    }
+
+    .shell {
+      display: block;
+      overflow-x: auto;
+      padding: 0.85rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #17211f;
+      color: #eef7f2;
+      white-space: pre;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfa;
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .masthead {
+      display: grid;
+      gap: 1rem;
+      padding: 2rem 0 1.5rem;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--accent);
+      font-size: 0.76rem;
+      font-weight: 760;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 0;
+      font-size: clamp(2rem, 5vw, 4rem);
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 780px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.06rem;
+    }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      padding: 0 0 1.2rem;
+    }
+
+    nav a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0.35rem 0.62rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--ink);
+      font-size: 0.88rem;
+      text-decoration: none;
+    }
+
+    main {
+      padding: 1.4rem 0 3rem;
+    }
+
+    section {
+      padding: 1.6rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    section:last-child {
+      border-bottom: 0;
+    }
+
+    h2 {
+      margin-bottom: 0.7rem;
+      font-size: 1.45rem;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin-bottom: 0.35rem;
+      font-size: 1rem;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+      gap: 1rem;
+      align-items: start;
+    }
+
+    .notice {
+      padding: 0.9rem 1rem;
+      border: 1px solid var(--ok-line);
+      border-radius: var(--radius);
+      background: var(--ok-bg);
+    }
+
+    .notice.warning {
+      border-color: var(--warn-line);
+      background: var(--warn-bg);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.8rem;
+    }
+
+    .role {
+      min-width: 0;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+
+    .role p {
+      margin-bottom: 0.6rem;
+      color: var(--muted);
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      align-items: center;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      min-height: 25px;
+      padding: 0.18rem 0.48rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f6f8f6;
+      color: var(--muted);
+      font-size: 0.8rem;
+      overflow-wrap: anywhere;
+    }
+
+    .status-live {
+      border-color: var(--ok-line);
+      background: var(--ok-bg);
+      color: #255947;
+    }
+
+    .status-reserved {
+      border-color: var(--warn-line);
+      background: var(--warn-bg);
+      color: #765716;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th,
+    td {
+      padding: 0.72rem 0.78rem;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eef2ef;
+      font-size: 0.78rem;
+      color: var(--muted);
+      font-weight: 760;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    ol,
+    ul {
+      padding-left: 1.25rem;
+    }
+
+    li + li {
+      margin-top: 0.35rem;
+    }
+
+    .links {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.7rem;
+    }
+
+    .link-row {
+      padding: 0.85rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+
+    .link-row p {
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    footer {
+      padding: 1.5rem 0 2.5rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 760px) {
+      .wrap {
+        width: min(100% - 24px, 1120px);
+      }
+
+      .split,
+      .grid,
+      .links {
+        grid-template-columns: 1fr;
+      }
+
+      .masthead {
+        padding-top: 1.4rem;
+      }
+
+      nav {
+        gap: 0.4rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div class="masthead">
+        <p class="eyebrow">Studio v2 umbrella command</p>
+        <h1>/dev-studio</h1>
+        <p class="lead">
+          Canonical entrypoint for Studio v2 role dispatch. The router resolves
+          a role, applies compatibility aliases from the deleted v1 surfaces,
+          and then hands execution to the role contract.
+        </p>
+      </div>
+      <nav aria-label="Page sections">
+        <a href="#quick-start">Quick Start</a>
+        <a href="#roles">Roles</a>
+        <a href="#resolution">Resolution</a>
+        <a href="#cutover">Cutover</a>
+        <a href="#boundaries">Boundaries</a>
+        <a href="#evidence">Evidence</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="quick-start">
+      <div class="split">
+        <div>
+          <h2>Quick Start</h2>
+          <p>
+            Put the role after <code>/dev-studio</code>. If no role token is
+            present, the invocation defaults to <code>manager</code> for
+            conversational shaping and status.
+          </p>
+          <code class="shell">/dev-studio manager resume-plan
+/dev-studio worker &lt;contract&gt;
+/dev-studio reviewer review
+/dev-studio perf profile
+/dev-studio release-manager</code>
+        </div>
+        <aside class="notice">
+          <h3>Current traffic surface</h3>
+          <p>
+            A10 records v2 as the active surface. Former top-level names now
+            work only as compatibility role aliases under
+            <code>/dev-studio</code>.
+          </p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="roles">
+      <h2>Canonical Roles</h2>
+      <div class="grid">
+        <article class="role">
+          <h3>manager</h3>
+          <p>Owns intake, prioritization, lifecycle state, dispatch, status, user escalation, and final acceptance routing.</p>
+          <div class="meta"><span class="pill status-live">active</span><span class="pill">aliases: chanakya, coordinator, orchestrator</span></div>
+        </article>
+        <article class="role">
+          <h3>worker</h3>
+          <p>Implements one bounded task contract in an isolated worktree.</p>
+          <div class="meta"><span class="pill status-live">active</span><span class="pill">aliases: achilles, implementer</span></div>
+        </article>
+        <article class="role">
+          <h3>reviewer</h3>
+          <p>Verifies plan or spec compliance, code quality, safety gates, and contract adherence.</p>
+          <div class="meta"><span class="pill status-live">active</span><span class="pill">aliases: argus, verifier</span></div>
+        </article>
+        <article class="role">
+          <h3>perf</h3>
+          <p>Investigates performance, battery, memory, thermal, and instrumentation evidence.</p>
+          <div class="meta"><span class="pill status-live">active</span><span class="pill">aliases: apollo, performance, performance-engineer</span></div>
+        </article>
+        <article class="role">
+          <h3>planner</h3>
+          <p>Converts shaped intent into executable plans, dependency graphs, acceptance criteria, and worker contracts.</p>
+          <div class="meta"><span class="pill status-reserved">reserved</span><span class="pill">aliases: architect, luban, lu-ban</span></div>
+        </article>
+        <article class="role">
+          <h3>qa-engineer</h3>
+          <p>Produces and executes automated test contracts beyond the worker's local checks.</p>
+          <div class="meta"><span class="pill status-reserved">reserved</span><span class="pill">aliases: qa, chiron, synthetic-qa</span></div>
+        </article>
+        <article class="role">
+          <h3>flow-tester</h3>
+          <p>Produces human or manual exploratory flow checklists tied to builds and releases.</p>
+          <div class="meta"><span class="pill status-reserved">reserved</span><span class="pill">aliases: flow, manual-qa, exploratory-tester</span></div>
+        </article>
+        <article class="role">
+          <h3>release-manager</h3>
+          <p>Assembles beta and production release packets, verifies prerequisites, and drafts release notes.</p>
+          <div class="meta"><span class="pill status-reserved">reserved</span><span class="pill">aliases: release, shipper</span></div>
+        </article>
+        <article class="role">
+          <h3>host-adapter</h3>
+          <p>Exposes host capabilities as data and executes portable role invocations.</p>
+          <div class="meta"><span class="pill status-reserved">reserved</span><span class="pill">aliases: adapter, host</span></div>
+        </article>
+        <article class="role">
+          <h3>operator</h3>
+          <p>Holds human authority for irreversible, ambiguous, or externally visible decisions.</p>
+          <div class="meta"><span class="pill status-reserved">non-routable</span><span class="pill">aliases: user, human, owner</span></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="resolution">
+      <div class="split">
+        <div>
+          <h2>Resolution Order</h2>
+          <ol>
+            <li>Explicit canonical role routes directly, such as <code>/dev-studio worker &lt;contract&gt;</code>.</li>
+            <li>Compatibility alias resolves through <code>scripts/v2-role-resolve.sh</code>, such as <code>/dev-studio achilles &lt;contract&gt;</code>.</li>
+            <li>Former top-level names remain aliases only when placed under <code>/dev-studio</code>.</li>
+            <li>No role token routes to <code>manager</code>.</li>
+          </ol>
+        </div>
+        <aside class="notice warning">
+          <h3>Unknown roles fail closed</h3>
+          <p>
+            Unknown role tokens exit before side effects. Alias normalization is
+            case-insensitive and treats underscores or spaces as hyphens.
+          </p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="cutover">
+      <h2>Cutover State</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Surface</th>
+              <th>Current state</th>
+              <th>Where compatibility lives</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>/dev-studio</code></td>
+              <td>Primary v2 traffic surface</td>
+              <td><code>core/v2/skills/dev-studio/</code></td>
+            </tr>
+            <tr>
+              <td>Former v1 top-level names</td>
+              <td>Deleted by A10 operator override</td>
+              <td><code>core/v2/registry/roles.json</code> aliases</td>
+            </tr>
+            <tr>
+              <td>Runtime forwarders</td>
+              <td><code>forwarders: []</code></td>
+              <td><code>core/v2/skills/dev-studio/forwarders.yaml</code></td>
+            </tr>
+            <tr>
+              <td>Rollback</td>
+              <td>Git-history based; no in-tree legacy archive</td>
+              <td><code>core/v2/cutover/ROLLBACK.md</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="boundaries">
+      <h2>Router Boundaries</h2>
+      <p>
+        The umbrella router chooses a role contract. Mode procedure, authority
+        checks, handoff validation, event emission, and project-profile commands
+        are owned by the selected role or downstream primitive.
+      </p>
+      <p>
+        This page is the studio-layer command surface. It intentionally does not
+        duplicate deleted v1 agent manuals or task-layer command tables.
+      </p>
+    </section>
+
+    <section id="evidence">
+      <h2>Source Files</h2>
+      <div class="links">
+        <div class="link-row">
+          <h3><a href="./SKILL.md">SKILL.md</a></h3>
+          <p>Umbrella router scope, dispatch table, and intent priority.</p>
+        </div>
+        <div class="link-row">
+          <h3><a href="../../registry/roles.json">roles.json</a></h3>
+          <p>Canonical role registry and alias policy.</p>
+        </div>
+        <div class="link-row">
+          <h3><a href="./forwarders.yaml">forwarders.yaml</a></h3>
+          <p>Post-A10 compatibility-forwarder state.</p>
+        </div>
+        <div class="link-row">
+          <h3><a href="../../cutover/manifest.yaml">manifest.yaml</a></h3>
+          <p>Cutover status, parity checks, and rollback notes.</p>
+        </div>
+        <div class="link-row">
+          <h3><a href="../../SPEC.md">SPEC.md</a></h3>
+          <p>v2 substrate contract for roles, handoffs, and router behavior.</p>
+        </div>
+        <div class="link-row">
+          <h3><a href="../../roles/">roles/</a></h3>
+          <p>Executable role contracts selected after router resolution.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <p>Generic Dev Studio v2. Keep workflow rules in repo files; keep runtime artifacts under <code>~/.dev-studio/&lt;project&gt;/</code>.</p>
+  </footer>
+</body>
+</html>

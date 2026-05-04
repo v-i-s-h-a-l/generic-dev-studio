@@ -66,7 +66,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio release-manager      # draft release notes per RELEASES.md (never auto-tags)
 /dev-studio manager ingest       # capture a single studio-level pattern / rule-tweak proposal
 /dev-studio manager analyze      # sweep studio-feedback inbox + event logs for a project
-/studio-help                     # open the v2 router source
+/studio-help                     # open the v2 router docs
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
 scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters from private chain-run telemetry
@@ -80,7 +80,7 @@ STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
 /studio-setup --worker           # zero-prompt worker (id = hostname; --id X to override)
 /studio-setup --dual             # both roles on one machine
 /studio-setup --interactive      # legacy: prompt at every step
-/studio-setup --help             # open the v2 router source + usage summary
+/studio-setup --help             # open the v2 router docs + usage summary
 
 /dev-studio manager              # conversational shaping and status
 /dev-studio worker <contract>    # worker role execution contract
@@ -138,6 +138,7 @@ scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-s
 ```
 core/v2/skills/dev-studio/
   SKILL.md         # v2 umbrella role router
+  docs.html        # self-contained /dev-studio docs page
   routing.yaml     # /dev-studio invocation metadata
   forwarders.yaml  # post-A10 compatibility-alias state
 
@@ -149,7 +150,7 @@ core/v2/handoffs/
   *.yaml           # typed handoff fixtures shared across roles
 
 .claude/commands/       # project-scoped slash commands (fire only when cwd is this repo)
-  studio-help.md        # /studio-help — opens the v2 router source
+  studio-help.md        # /studio-help — opens the v2 router docs
   studio-setup.md       # /studio-setup — onboard THIS machine (--manager/--worker/--dual; no args = auto-pilot prompting only for role)
   resume-plan.md        # /resume-plan — routes through /dev-studio manager
   capture.md            # /capture — retrospective session scan → IDEAS.md
@@ -369,7 +370,7 @@ See `scripts/README.md` for the full on-disk layout, env vars (`ACHILLES_PROJECT
 
 ## Docs
 
-**Studio v2 router**: [`core/v2/skills/dev-studio/SKILL.md`](core/v2/skills/dev-studio/SKILL.md) — or run `/studio-help` from inside Claude Code.
+**Studio v2 router**: [`core/v2/skills/dev-studio/docs.html`](core/v2/skills/dev-studio/docs.html) — or run `/studio-help` from inside Claude Code. Router source lives at [`core/v2/skills/dev-studio/SKILL.md`](core/v2/skills/dev-studio/SKILL.md).
 
 **Role contracts**: [`core/v2/roles/`](core/v2/roles/).
 
