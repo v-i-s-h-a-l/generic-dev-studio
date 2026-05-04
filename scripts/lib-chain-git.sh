@@ -68,7 +68,7 @@ chain_git_parent_finalize_summary_eligible() {
     def checks: ((.tests // []) + (.lints // []) + (.builds // []));
     def clean_outcome($v):
       (($v.outcome // $v.status // "") | ascii_downcase)
-      | test("^(pass|passed|passed_with_warning|ok|success|succeeded|skipped)$");
+      | test("^(pass|passed|passed_with_warning|passed_before_alternate_commit|ok|success|succeeded|skipped)$");
     def unsafe_parent_finalize_note:
       ascii_downcase as $line
       | (($line | test("destructive|unrelated issue|scope cannot|review failed"))
