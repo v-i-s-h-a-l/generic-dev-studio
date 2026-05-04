@@ -91,6 +91,17 @@ chain_git_parent_finalize_summary_reports_failure "$REPO/.studio/chain-worker-su
 cat "$REPO/.studio/chain-worker-summary.json" | jq '.exit_code = 0' > "$TMPROOT/status-only-summary.json"
 [ "$(chain_git_parent_finalize_effective_worker_rc 0 "$TMPROOT/status-only-summary.json")" = "1" ] \
   || fail "blocked status did not override zero host rc"
+cat "$REPO/.studio/chain-worker-summary.json" | jq '
+  .commit_after = "alternate-meta-commit"
+  | .commit_or_pr_references = {commit_after: .commit_before}
+  | .blocked_reason = "Committed to .git.codex-meta, but primary .git HEAD remains at commit_before because primary metadata is not writable."
+' > "$TMPROOT/alternate-meta-summary.json"
+chain_git_parent_finalize_summary_eligible "$TMPROOT/alternate-meta-summary.json" \
+  || fail "alternate metadata commit summary was not eligible"
+cat "$TMPROOT/alternate-meta-summary.json" | jq '.commit_or_pr_references.commit_after = "primary-advanced"' > "$TMPROOT/primary-advanced-summary.json"
+if chain_git_parent_finalize_summary_eligible "$TMPROOT/primary-advanced-summary.json"; then
+  fail "primary-advanced alternate metadata summary was eligible"
+fi
 chain_git_parent_finalize_has_public_diff "$REPO" \
   || fail "public diff was not detected"
 chain_git_parent_finalize_issue_commit "$REPO" 584 "$REPO/.studio/chain-worker-summary.json" \
