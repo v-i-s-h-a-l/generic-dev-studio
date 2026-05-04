@@ -118,6 +118,9 @@ skill_declares_host() {
     [ "$host" = "claude-code" ] && return 0   # default for unmigrated skills
     return 1
   fi
+  if yq -r '.exclude_hosts[]?' "$portability" 2>/dev/null | grep -Fxq "$host"; then
+    return 1
+  fi
   yq -r '.hosts[]' "$portability" 2>/dev/null | grep -Fxq -e "$host" -e "all"
 }
 

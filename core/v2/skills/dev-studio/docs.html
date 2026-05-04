@@ -537,22 +537,22 @@ scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt;</code>
       <summary>
         <span>
           <h2>Host Availability</h2>
-          <p class="summary-copy">Where `/dev-studio` and `$dev-studio` come from in Claude and Codex sessions.</p>
+          <p class="summary-copy">Where `/dev-studio` comes from in Claude and how Codex loads the router skill.</p>
         </span>
       </summary>
       <div class="section-body">
         <div class="grid">
           <article class="role">
             <h3>Claude Code</h3>
-            <p>The visible slash command is globally installed at <code>~/.claude/commands/dev-studio.md</code>. Invoke it from the project you are working on; it reads the studio router and dispatches to the selected role contract.</p>
+            <p>The visible slash command is globally installed at <code>~/.claude/commands/dev-studio.md</code>. Claude Code does not install the router as a global skill, so the picker has one canonical <code>/dev-studio</code> row.</p>
             <code class="shell">/dev-studio manager resume-plan
 /dev-studio reviewer review</code>
           </article>
           <article class="role">
             <h3>Codex</h3>
-            <p>The router skill is globally linked at <code>~/.codex/skills/dev-studio</code>. In Codex sessions, use <code>$dev-studio</code> when the host exposes skill invocation.</p>
-            <code class="shell">$dev-studio manager resume-plan
-$dev-studio worker T123</code>
+            <p>The router skill is globally linked at <code>~/.codex/skills/dev-studio</code>. Codex hosts may not expose skills in the <code>$</code> picker; invoke it by naming the skill and role in the request.</p>
+            <code class="shell">Use dev-studio manager to resume the plan.
+Use dev-studio perf to profile the urgent task.</code>
           </article>
           <article class="role">
             <h3>Sync</h3>

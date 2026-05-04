@@ -1156,7 +1156,7 @@ check_step() {
 }
 
 if [ "$ROLE" = "manager" ] || [ "$ROLE" = "dual" ]; then
-  check_step skill_dev_studio "repo-local dev-studio skill linked"  test -L "$STUDIO_REPO_DIR/.claude/skills/dev-studio"
+  check_step command_dev_studio "global /dev-studio command linked"  test -L "$HOME/.claude/commands/dev-studio.md"
   check_step jq              "jq present"                           command -v jq
   check_step git_user_email  "git user.email set"                   bash -c 'test -n "$(git config --global user.email)"'
   [ -n "$STUDIO_REPO_DIR" ] && check_step verify_install "verify-install passes" "$STUDIO_REPO_DIR/scripts/verify-install.sh"
@@ -1183,7 +1183,7 @@ if [ "$FAIL" -gt 0 ]; then
     id="${entry%%:*}"
     label="${entry#*:}"
     case "$id" in
-      skill_dev_studio|verify_install)
+      command_dev_studio|verify_install)
         printf '  %s✗%s %s\n' "$c_red" "$c_reset" "$label"
         printf '       fix: cd %s && scripts/install.sh\n' "${STUDIO_REPO_DIR:-<studio-repo>}"
         ;;
