@@ -71,6 +71,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
 scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters from private chain-run telemetry
+scripts/studio-checkpoint.sh resume --latest --role worker # compact session resume; reads manifest.json + context.md before lazy drift checks
 scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
 STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
 /dev-studio host-adapter nodes   # day-2 fleet management — status, add, remove, health, sync, schedule
@@ -175,6 +176,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
   studio-chain-runner.sh   # plan/execute/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, locks, and private run reports
   studio-chain-telemetry-digest.sh # v1 counters and weekly digest from private chain-run reports/events
+  studio-checkpoint.sh # compact create/update/resume checkpoints under per-project .runtime/v2/checkpoints
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   studio-staleness-triage.sh # scheduled GitHub issue staleness labels + escalation comments for the PM surface
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access

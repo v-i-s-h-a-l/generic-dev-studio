@@ -63,7 +63,9 @@ Current substrate artifacts:
 - `checkpoints/CONTRACT.md` defines the compact session checkpoint artifact
   contract. Fixtures under `checkpoints/fixtures/compact-default/` prove the
   lazy resume shape: readers load only `manifest.json` and `context.md` before
-  optional role-owned artifacts.
+  optional role-owned artifacts. This is session resume state, while
+  `schemas/subscriber-checkpoint.schema.json` is the durable event replay cursor
+  for event subscribers.
 - `MESSAGES.md` defines A11 build/release message shape. Validate same-draft
   duplicates with `scripts/lint-build-release-message.sh`.
 - `manager/proof-of-life.yaml` defines the A7 manager proof-of-life contract.
