@@ -2394,9 +2394,7 @@ run_issue_job() {
     fi
   fi
 
-  if [ "$worker_rc" -eq 0 ] && [ "$effective_worker_rc" -ne 0 ]; then
-    worker_rc="$effective_worker_rc"
-  fi
+  worker_rc=$(chain_git_parent_finalize_reconciled_worker_rc "$worker_rc" "$effective_worker_rc" "$parent_finalized")
 
   summary_payload=$(jq -c \
     --arg summary "$summary_file" \

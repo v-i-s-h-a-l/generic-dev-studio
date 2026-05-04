@@ -113,6 +113,21 @@ chain_git_parent_finalize_effective_worker_rc() {
   printf '0\n'
 }
 
+chain_git_parent_finalize_reconciled_worker_rc() {
+  local worker_rc="${1:?usage: chain_git_parent_finalize_reconciled_worker_rc <worker-rc> <effective-worker-rc> <parent-finalized>}"
+  local effective_worker_rc="${2:?effective worker rc required}"
+  local parent_finalized="${3:-false}"
+  if [ "$parent_finalized" = true ]; then
+    printf '0\n'
+    return 0
+  fi
+  if [ "$worker_rc" -eq 0 ] && [ "$effective_worker_rc" -ne 0 ]; then
+    printf '%s\n' "$effective_worker_rc"
+    return 0
+  fi
+  printf '%s\n' "$worker_rc"
+}
+
 chain_git_parent_finalize_has_public_diff() {
   local issue_worktree="${1:?usage: chain_git_parent_finalize_has_public_diff <issue-worktree>}"
   git -C "$issue_worktree" status --porcelain --untracked-files=all -- \
