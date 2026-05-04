@@ -36,8 +36,21 @@ cat > "$REPO/.studio/chain-worker-summary.json" <<'JSON'
   "commit_after": null,
   "blocked_reason": "Unable to stage or commit: filesystem denies writes inside .git creating .git/index.lock with Operation not permitted.",
   "tests": [{"command": "fixture", "outcome": "passed"}],
-  "lints": [{"command": "git diff --check", "outcome": "passed_with_warning"}],
-  "builds": []
+  "lints": [
+    {"command": "git diff --check", "outcome": "passed_with_warning"},
+    {
+      "command": "scripts/lint-host-agnostic.sh",
+      "outcome": "passed_with_warning",
+      "warning": "W_ARGUS_SECRET_SCOPE:.codex/capabilities.yaml:secret_scope=cwd-only"
+    }
+  ],
+  "builds": [],
+  "carryover": [
+    "Existing W_ARGUS_SECRET_SCOPE lint warning was captured; no implementation scope blocker."
+  ],
+  "lessons": [
+    "A benign secret-scope lint warning must not block parent finalization by itself."
+  ]
 }
 JSON
 printf 'base\nchange\n' > "$REPO/README.md"
@@ -97,6 +110,21 @@ cat > "$TMPROOT/failing/.studio/chain-worker-summary.json" <<'JSON'
 JSON
 if chain_git_parent_finalize_summary_eligible "$TMPROOT/failing/.studio/chain-worker-summary.json"; then
   fail "failing checks were eligible"
+fi
+
+mkdir -p "$TMPROOT/secret/.studio"
+cat > "$TMPROOT/secret/.studio/chain-worker-summary.json" <<'JSON'
+{
+  "schema_version": 1,
+  "kind": "completion",
+  "status": "blocked",
+  "blocked_reason": "Unable to stage or commit: .git/index.lock Operation not permitted.",
+  "tests": [{"command": "fixture", "outcome": "passed"}],
+  "carryover": ["Potential secret exposure needs review before commit."]
+}
+JSON
+if chain_git_parent_finalize_summary_eligible "$TMPROOT/secret/.studio/chain-worker-summary.json"; then
+  fail "real secret blocker was eligible"
 fi
 
 printf 'PASS: chain parent-finalize commit fallback\n'
