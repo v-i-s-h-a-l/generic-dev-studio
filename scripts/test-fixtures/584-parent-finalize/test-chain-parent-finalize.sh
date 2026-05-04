@@ -15,6 +15,22 @@ command -v jq >/dev/null 2>&1 || fail "jq is required"
 # shellcheck source=../../../lib-chain-git.sh
 . "$ROOT/scripts/lib-chain-git.sh"
 
+PRIVATE_REPO="$TMPROOT/private-only"
+mkdir -p "$PRIVATE_REPO"
+git -C "$PRIVATE_REPO" init -q
+git -C "$PRIVATE_REPO" config user.email studio@example.invalid
+git -C "$PRIVATE_REPO" config user.name "Studio Test"
+printf 'base\n' > "$PRIVATE_REPO/README.md"
+git -C "$PRIVATE_REPO" add README.md
+git -C "$PRIVATE_REPO" commit -q -m "base"
+mkdir -p "$PRIVATE_REPO/.studio" "$PRIVATE_REPO/.git2" "$PRIVATE_REPO/.git-protected"
+printf '{}\n' > "$PRIVATE_REPO/.studio/chain-worker-summary.json"
+printf '[core]\n' > "$PRIVATE_REPO/.git2/config"
+printf 'ref: refs/heads/main\n' > "$PRIVATE_REPO/.git-protected/HEAD"
+if chain_git_parent_finalize_has_public_diff "$PRIVATE_REPO"; then
+  fail "private checkpoint and git metadata dirs counted as public diff"
+fi
+
 REPO="$TMPROOT/repo"
 mkdir -p "$REPO"
 git -C "$REPO" init -q
@@ -55,6 +71,10 @@ cat > "$REPO/.studio/chain-worker-summary.json" <<'JSON'
 JSON
 printf 'base\nchange\n' > "$REPO/README.md"
 printf 'new\n' > "$REPO/runtime.sh"
+mkdir -p "$REPO/.git2" "$REPO/.git-protected"
+printf '[core]\n' > "$REPO/.git2/config"
+printf 'ref: refs/heads/main\n' > "$REPO/.git-protected/HEAD"
+printf 'node_modules/\n' > "$REPO/.gitignore"
 
 chain_git_parent_finalize_summary_eligible "$REPO/.studio/chain-worker-summary.json" \
   || fail "git metadata summary was not eligible"
@@ -71,8 +91,13 @@ git -C "$REPO" diff-tree --no-commit-id --name-only -r HEAD | grep -qx 'README.m
   || fail "README diff missing from parent commit"
 git -C "$REPO" diff-tree --no-commit-id --name-only -r HEAD | grep -qx 'runtime.sh' \
   || fail "new file missing from parent commit"
+git -C "$REPO" diff-tree --no-commit-id --name-only -r HEAD | grep -qx '.gitignore' \
+  || fail ".gitignore diff missing from parent commit"
 if git -C "$REPO" diff-tree --no-commit-id --name-only -r HEAD | grep -q '^.studio/'; then
   fail "private .studio artifact was committed"
+fi
+if git -C "$REPO" diff-tree --no-commit-id --name-only -r HEAD | grep -Eq '^\.git(2|-protected)/'; then
+  fail "private git metadata dir was committed"
 fi
 
 PAYLOAD=$(chain_git_parent_finalize_event_payload "$REPO/.studio/chain-worker-summary.json" base "$(git -C "$REPO" rev-parse HEAD)" codex)
