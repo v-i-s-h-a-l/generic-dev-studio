@@ -135,7 +135,7 @@ yaml_field() {
 }
 
 check_capability_security_floor() {
-  local manifest host_dir sandbox secret
+  local manifest host_dir sandbox secret spawn wrapper_path
   # LINT_HOST_AGNOSTIC_EXTRA_DIR: optional comma-separated list of additional
   # adapter dirs to scan (used by tests/conformance harness).
   local extra_dirs=()
@@ -152,6 +152,7 @@ check_capability_security_floor() {
 
     sandbox=$(yaml_field "$manifest" sandbox_profile)
     secret=$(yaml_field "$manifest" secret_scope)
+    spawn=$(yaml_field "$manifest" spawn_command)
 
     # sandbox_profile: none is always a block (no isolation whatsoever).
     if [ "$sandbox" = "none" ]; then
@@ -169,6 +170,26 @@ check_capability_security_floor() {
     # a dedicated Argus-specific manifest or run Argus on a none-scoped host.
     if [ "$secret" = "cwd-only" ]; then
       emit_warn "W_ARGUS_SECRET_SCOPE:$host_dir/capabilities.yaml:secret_scope=cwd-only | Argus dispatch on this host requires secret_scope: none; add a dedicated Argus adapter or route Argus to a none-scoped host"
+    fi
+
+    if [ "$host_dir" = ".codex" ]; then
+      wrapper_path="$REPO_ROOT/$spawn"
+      if [ "$spawn" = "codex exec" ]; then
+        emit_error "E_EFFECTIVE_CAPABILITY:$host_dir/capabilities.yaml:spawn_command | Codex worker spawn must not rely on plain codex exec defaults"
+      elif [ ! -x "$wrapper_path" ]; then
+        emit_error "E_EFFECTIVE_CAPABILITY:$host_dir/capabilities.yaml:spawn_command | Codex worker spawn wrapper is missing or not executable: $spawn"
+      else
+        grep -q -- '--sandbox workspace-write' "$wrapper_path" \
+          || emit_error "E_EFFECTIVE_CAPABILITY:$spawn | Codex worker wrapper must pass --sandbox workspace-write"
+        grep -q -- '--ephemeral' "$wrapper_path" \
+          || emit_error "E_EFFECTIVE_CAPABILITY:$spawn | Codex worker wrapper must pass --ephemeral"
+        grep -q -- 'approval_policy=never' "$wrapper_path" \
+          || emit_error "E_EFFECTIVE_CAPABILITY:$spawn | Codex worker wrapper must force approval_policy=never"
+        grep -q -- '--add-dir' "$wrapper_path" \
+          || emit_error "E_EFFECTIVE_CAPABILITY:$spawn | Codex worker wrapper must add the resolved ~/.dev-studio writable root"
+        grep -Eq -- 'dangerously-bypass-approvals-and-sandbox|dangerously-skip-permissions' "$wrapper_path" \
+          && emit_error "E_EFFECTIVE_CAPABILITY:$spawn | Codex worker wrapper must not use dangerous sandbox bypass flags"
+      fi
     fi
   done < <(
     # Discover adapter dirs from registry instead of hardcoding paths.

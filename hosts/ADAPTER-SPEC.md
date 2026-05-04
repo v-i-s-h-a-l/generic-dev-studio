@@ -35,7 +35,9 @@ secret_scope: <str>              # Secret visibility: "inherit-env" | "cwd-only"
 
 ### Field semantics
 
-**`sandbox_profile`** — levels form an ordered scale from least to most restrictive:
+**`sandbox_profile`** — levels form an ordered scale from least to most restrictive.
+The declared value is not enough: the adapter's effective `spawn_command` must
+materialize the matching host CLI flags or wrapper behavior.
 
 | Value | Meaning |
 |---|---|
@@ -51,6 +53,15 @@ secret_scope: <str>              # Secret visibility: "inherit-env" | "cwd-only"
 | `inherit-env` | Worker inherits the caller's full environment (including `ANTHROPIC_API_KEY`, etc.). |
 | `cwd-only` | Only secrets declared in `.env` or equivalent CWD-scoped files. |
 | `none` | No secrets injected; worker must not need them. |
+
+**`spawn_command`** — must be the source of truth for effective behavior, not a
+placeholder that relies on a user's local CLI defaults. For worker profiles,
+the command must force noninteractive execution, materialize the declared
+sandbox profile, and disable transcript/session persistence when the host CLI
+supports that mode. For Codex workers, this is handled by
+`scripts/codex-worker-exec.sh`, which passes `--sandbox workspace-write`,
+`--add-dir "$HOME/.dev-studio"`, `--ephemeral`, and
+`approval_policy=never`.
 
 ## Security floor
 
@@ -172,6 +183,11 @@ per-issue local clone made from the chain worktree; the parent runner fetches
 the resulting issue branch back into the chain worktree after the worker
 commits. Do not fix sandboxed workers by widening write access to the main
 checkout's `.git/worktrees/*` metadata or unrelated issue gitdirs.
+
+The git metadata strategy only solves where Git writes. It does not prove that
+the child host actually launched writable. The host adapter must separately
+prove that its effective spawn command materializes the declared sandbox and
+session-persistence policy.
 
 ## Conformance test
 
