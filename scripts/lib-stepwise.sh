@@ -207,7 +207,7 @@ except Exception: pass' 2>/dev/null || true)
 stepwise_validate() {
   local id="${1:?step-id required}"
   case "$id" in
-    skill_dev_studio)      test -L "$_LSW_REPO_ROOT/.claude/skills/dev-studio" ;;
+    command_dev_studio)    test -L "$HOME/.claude/commands/dev-studio.md" ;;
     brew)                  command -v brew >/dev/null 2>&1 || [ -x /opt/homebrew/bin/brew ] || [ -x /usr/local/bin/brew ] ;;
     jq)                    command -v jq >/dev/null 2>&1 ;;
     rsync)                 command -v rsync >/dev/null 2>&1 ;;
@@ -235,7 +235,7 @@ stepwise_recheck_all() {
   local -a steps=()
   case "$role" in
     manager|dual)
-      steps+=(skill_dev_studio brew jq yq coreutils fswatch git git_user_email nodes_json)
+      steps+=(command_dev_studio brew jq yq coreutils fswatch git git_user_email nodes_json)
       ;;
   esac
   case "$role" in

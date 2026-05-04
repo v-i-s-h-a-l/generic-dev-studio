@@ -8,8 +8,10 @@
 # skills to every detected host (Codex, Gemini, Cursor, etc.) whose binary is
 # on PATH. New hosts added to hosts/registry.yaml are picked up automatically.
 #
-# The `dev-studio` skill is installed globally by sync-host-skills.sh so users
-# can invoke the studio from the project they are actually working on.
+# The `dev-studio` command is installed globally for Claude Code. The
+# `dev-studio` skill is installed globally for non-Claude hosts by
+# sync-host-skills.sh so users can invoke the studio from the project they are
+# actually working on without duplicate Claude slash-command picker rows.
 #
 # Usage:
 #   scripts/install.sh            # apply, print summary

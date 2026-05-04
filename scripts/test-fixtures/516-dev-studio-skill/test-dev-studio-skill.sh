@@ -33,7 +33,9 @@ grep -Fq '<!-- v2-dev-studio:dispatch -->' "$SKILL_DIR/SKILL.md" || fail "missin
 grep -Fq '<!-- v2-dev-studio:forwarders -->' "$SKILL_DIR/SKILL.md" || fail "missing forwarders anchor"
 
 [ "$(yq -r '.invocation.slash_command' "$SKILL_DIR/routing.yaml")" = "/dev-studio" ] || fail "routing slash command mismatch"
-[ "$(yq -r '.scope' "$SKILL_DIR/portability.yaml")" = "project" ] || fail "dev-studio portability scope must be project"
+[ "$(yq -r '.scope' "$SKILL_DIR/portability.yaml")" = "global" ] || fail "dev-studio portability scope must be global"
+yq -e '.hosts[] | select(. == "all")' "$SKILL_DIR/portability.yaml" >/dev/null || fail "dev-studio must declare global host fan-out"
+yq -e '.exclude_hosts[] | select(. == "claude-code")' "$SKILL_DIR/portability.yaml" >/dev/null || fail "dev-studio must avoid duplicate Claude Code command discovery"
 
 yq -o=json "$FORWARDERS" > "$TMPROOT/forwarders.json"
 jq -e '.schema_version == 1 and .kind == "studio-v2-dev-studio-forwarders" and .leaf_issue == 516' "$TMPROOT/forwarders.json" >/dev/null || fail "forwarder envelope invalid"

@@ -1,9 +1,13 @@
 schema_version: 1
 hosts:
   - all
+exclude_hosts:
+  - claude-code
 scope: global
 notes: |
   The v2 umbrella router uses only markdown, YAML, and the role-registry
-  resolver contract. It is globally discoverable so sessions can invoke the
-  studio from the project they are actually working on while the repo artifact
-  remains the source of truth.
+  resolver contract. Claude Code exposes the router through the global
+  commands/dev-studio.md wrapper to avoid duplicate slash-command picker rows.
+  Other hosts receive the skill globally so sessions can invoke the studio from
+  the project they are actually working on while the repo artifact remains the
+  source of truth.
