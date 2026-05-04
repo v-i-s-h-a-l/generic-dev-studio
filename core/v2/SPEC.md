@@ -263,8 +263,9 @@ select skills only; they do not mutate host registries or embed skill guidance.
 Context-budget enforcement is a shared subsystem, not duplicated prose inside
 each role. A5 defines budgets and telemetry in
 `core/v2/context-budget/manifest.json`; `scripts/v2-context-budget.sh` resolves
-the effective role + skill + invocation ceiling for a contract. A0.6 ensures new
-role contracts declare what they read before relying on it.
+the effective role + skill + invocation ceiling for a contract and can emit a
+static role-surface report with `--report`. A0.6 ensures new role contracts
+declare what they read before relying on it.
 
 <!-- v2-spec:testing-release -->
 ## Testing, Review, and Release Workflow
