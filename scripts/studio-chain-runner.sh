@@ -2442,6 +2442,60 @@ wait_for_all_issue_jobs() {
   ISSUE_PIDS=()
 }
 
+integrate_issue_result() {
+  local chain_name="$1" branch="$2" chain_worktree="$3" issue="$4" git_metadata_strategy="$5" result_file="$6" chain_run_id="$7" issue_run_id="$8"
+  local issue_branch issue_worktree result_commit_after
+
+  issue_branch=$(jq -r '.issue_branch' "$result_file")
+  issue_worktree=$(jq -r '.issue_worktree' "$result_file")
+  result_commit_after=$(jq -r '.commit_after // ""' "$result_file")
+
+  if [ "$DRY_RUN" -eq 0 ]; then
+    if [ "$(jq -r '.resumed // false' "$result_file")" = "true" ]; then
+      case "$git_metadata_strategy" in
+        linked-worktree)
+          if ! git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/$issue_branch"; then
+            log "resume assumes completed issue #$issue already integrated; issue branch missing"
+            return 0
+          fi
+          ;;
+        local-clone)
+          if [ ! -d "$issue_worktree/.git" ]; then
+            if [ -n "$result_commit_after" ] \
+              && git -C "$chain_worktree" cat-file -e "$result_commit_after^{commit}" 2>/dev/null \
+              && git -C "$chain_worktree" merge-base --is-ancestor "$result_commit_after" HEAD 2>/dev/null; then
+              log "resume confirms completed issue #$issue already integrated"
+              return 0
+            fi
+            abort_run "completed issue #$issue local clone missing before integration"
+          fi
+          ;;
+      esac
+    fi
+    git -C "$chain_worktree" checkout "$branch"
+    chain_git_integrate_issue_workspace "$REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy"
+    emit_chain_event chain_issue_merged "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed 0 \
+      "$(jq -cn --arg chain "$chain_name" --arg branch "$branch" --arg issue_branch "$issue_branch" --arg commit_after "$result_commit_after" '{chain:$chain, branch:$branch, issue_branch:$issue_branch, commit_after:(if $commit_after == "" then null else $commit_after end)}')"
+  else
+    printf 'DRY-RUN git -C %q checkout %q\n' "$chain_worktree" "$branch"
+    case "$git_metadata_strategy" in
+      linked-worktree)
+        printf 'DRY-RUN git -C %q rebase %q\n' "$issue_worktree" "$branch"
+        printf 'DRY-RUN git -C %q merge --ff-only %q\n' "$chain_worktree" "$issue_branch"
+        printf 'DRY-RUN git -C %q worktree remove %q\n' "$REPO_ROOT" "$issue_worktree"
+        printf 'DRY-RUN git -C %q branch -D %q\n' "$REPO_ROOT" "$issue_branch"
+        ;;
+      local-clone)
+        printf 'DRY-RUN git -C %q fetch %q %q\n' "$issue_worktree" "$chain_worktree" "$branch"
+        printf 'DRY-RUN git -C %q rebase FETCH_HEAD\n' "$issue_worktree"
+        printf 'DRY-RUN git -C %q fetch %q %q\n' "$chain_worktree" "$issue_worktree" "$issue_branch"
+        printf 'DRY-RUN git -C %q merge --ff-only FETCH_HEAD\n' "$chain_worktree"
+        printf 'DRY-RUN rm -rf %q\n' "$issue_worktree"
+        ;;
+    esac
+  fi
+}
+
 for ((idx = 0; idx < chain_count; idx++)); do
   name=$(jq -r ".chains[$idx].name" "$PLAN_JSON")
   base=$(jq -r ".chains[$idx].base" "$PLAN_JSON")
@@ -2505,6 +2559,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
         --arg worktree "$issue_worktree" \
         --arg commit_after "$issue_commit_after" \
         '{status:"completed", issue:($issue|tonumber), issue_branch:$branch, issue_worktree:$worktree, commit_after:(if $commit_after == "" then null else $commit_after end), resumed:true}' > "$result_file"
+      integrate_issue_result "$name" "$branch" "$chain_worktree" "$issue" "$git_metadata_strategy" "$result_file" "$chain_run_id" "$issue_run_id"
       continue
     fi
 
@@ -2514,64 +2569,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
       result_reason=$(jq -r '.reason // "issue failed"' "$result_file")
       abort_run "$result_reason"
     fi
-  done
-
-  for ((i = 0; i < issue_count; i++)); do
-    issue=$(jq -r ".chains[$idx].issues[$i].number" "$PLAN_JSON")
-    result_file=$(find "$chain_results_dir" -maxdepth 1 -name "issue-$issue-*.json" -print -quit 2>/dev/null || true)
-    if [ -z "$result_file" ] || [ ! -r "$result_file" ]; then
-      abort_run "issue #$issue produced no runner result"
-    fi
-    result_status=$(jq -r '.status // "failed"' "$result_file")
-    if [ "$result_status" != "completed" ]; then
-      result_reason=$(jq -r '.reason // "issue failed"' "$result_file")
-      abort_run "$result_reason"
-    fi
-    issue_branch=$(jq -r '.issue_branch' "$result_file")
-    issue_worktree=$(jq -r '.issue_worktree' "$result_file")
-    result_commit_after=$(jq -r '.commit_after // ""' "$result_file")
-    if [ "$DRY_RUN" -eq 0 ]; then
-      if [ "$(jq -r '.resumed // false' "$result_file")" = "true" ]; then
-        case "$git_metadata_strategy" in
-          linked-worktree)
-            if ! git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/$issue_branch"; then
-              log "resume assumes completed issue #$issue already integrated; issue branch missing"
-              continue
-            fi
-            ;;
-          local-clone)
-            if [ ! -d "$issue_worktree/.git" ]; then
-              if [ -n "$result_commit_after" ] \
-                && git -C "$chain_worktree" cat-file -e "$result_commit_after^{commit}" 2>/dev/null \
-                && git -C "$chain_worktree" merge-base --is-ancestor "$result_commit_after" HEAD 2>/dev/null; then
-                log "resume confirms completed issue #$issue already integrated"
-                continue
-              fi
-              abort_run "completed issue #$issue local clone missing before integration"
-            fi
-            ;;
-        esac
-      fi
-      git -C "$chain_worktree" checkout "$branch"
-      chain_git_integrate_issue_workspace "$REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy"
-    else
-      printf 'DRY-RUN git -C %q checkout %q\n' "$chain_worktree" "$branch"
-      case "$git_metadata_strategy" in
-        linked-worktree)
-          printf 'DRY-RUN git -C %q rebase %q\n' "$issue_worktree" "$branch"
-          printf 'DRY-RUN git -C %q merge --ff-only %q\n' "$chain_worktree" "$issue_branch"
-          printf 'DRY-RUN git -C %q worktree remove %q\n' "$REPO_ROOT" "$issue_worktree"
-          printf 'DRY-RUN git -C %q branch -D %q\n' "$REPO_ROOT" "$issue_branch"
-          ;;
-        local-clone)
-          printf 'DRY-RUN git -C %q fetch %q %q\n' "$issue_worktree" "$chain_worktree" "$branch"
-          printf 'DRY-RUN git -C %q rebase FETCH_HEAD\n' "$issue_worktree"
-          printf 'DRY-RUN git -C %q fetch %q %q\n' "$chain_worktree" "$issue_worktree" "$issue_branch"
-          printf 'DRY-RUN git -C %q merge --ff-only FETCH_HEAD\n' "$chain_worktree"
-          printf 'DRY-RUN rm -rf %q\n' "$issue_worktree"
-          ;;
-      esac
-    fi
+    integrate_issue_result "$name" "$branch" "$chain_worktree" "$issue" "$git_metadata_strategy" "$result_file" "$chain_run_id" "$issue_run_id"
   done
 
   finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id" "$host"
