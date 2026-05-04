@@ -31,6 +31,15 @@ for role in manager planner worker reviewer qa-engineer flow-tester perf release
   fi
 done
 
+for role in manager worker reviewer qa-engineer flow-tester perf release-manager; do
+  grep -Fq 'checkpoint-artifact' "$ROOT/core/v2/roles/$role.yaml" || fail "missing checkpoint output for role: $role"
+  grep -Fq 'Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.' "$ROOT/core/v2/roles/$role.yaml" \
+    || fail "missing checkpoint non-replacement rule for role: $role"
+done
+
+grep -Fq 'For bare checkpoint or resume-checkpoint invocations' "$ROOT/core/v2/roles/manager.yaml" || fail "manager does not own bare checkpoint shaping"
+grep -Fq 'Worker checkpoint use is optional' "$ROOT/core/v2/roles/worker.yaml" || fail "worker checkpoint optionality not documented"
+
 [ "$("$CMD" --resolve --role chanakya)" = "core/v2/roles/manager.yaml" ] || fail "chanakya alias did not resolve to manager contract"
 [ "$("$CMD" --resolve --role architect)" = "core/v2/roles/planner.yaml" ] || fail "architect alias did not resolve to planner contract"
 [ "$("$CMD" --resolve --role achilles)" = "core/v2/roles/worker.yaml" ] || fail "achilles alias did not resolve to worker contract"

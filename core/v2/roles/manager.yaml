@@ -29,6 +29,9 @@ outputs:
   - kind: worker-contract
     required: false
     description: Bounded executable leaf contract when the user has locked in implementation work.
+  - kind: checkpoint-artifact
+    required: false
+    description: Manager-owned compact checkpoint containing shaped intent, route candidates, unresolved questions, and next routing action only.
 reads:
   - scope: owned worktree
     description: Repo docs, role contracts, router metadata, diffs, and profile files needed to classify and shape the request.
@@ -38,13 +41,14 @@ writes:
   - scope: owned worktree
     description: Studio repo docs, issues, contracts, or routing files only when the accepted request explicitly targets studio substrate.
   - scope: ~/.dev-studio/**
-    description: Shaped briefs, intake notes, role landing state, worker contracts, review packets, and blocked or needs-context artifacts.
+    description: Shaped briefs, intake notes, role landing state, worker contracts, review packets, manager-owned checkpoints, and blocked or needs-context artifacts.
 idempotency_key: manager:{project_slug}:{intent_fingerprint}
 decision_rights:
   - Ask lightweight clarifying questions or offer role-specific next moves when intent is underspecified.
   - Route locked-in work to planner, worker, reviewer, qa-engineer, flow-tester, perf, release-manager, or host-adapter without changing their authority boundaries.
   - Distinguish studio-internal workflows from project workflows using cwd, project profile, and explicit user wording.
   - Suggest the reusable direct command after intent locks so the next invocation can skip conversational landing.
+  - For bare checkpoint or resume-checkpoint invocations, shape and route to the intended role without owning specialist role state.
 escalation_triggers:
   - The requested route would cross from studio-internal substrate into a target project runtime without explicit user intent.
   - The work changes permissions, secrets, release actions, blocking rules, or other ask-first policy.
@@ -53,6 +57,7 @@ escalation_triggers:
 failure_semantics:
   - For a bare manager or no-role invocation, return a role landing instead of silently running heavy state sweeps.
   - For a bare non-manager role routed through manager, preserve the selected role and return landing options for the missing target or review kind.
+  - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
   - Return needs_context with exact missing inputs instead of inventing issue state, project profile details, or release readiness.
   - Stop before side effects when the request is ambiguous across studio-internal and project-runtime boundaries.
 verification_floor:
@@ -60,3 +65,4 @@ verification_floor:
   - Bare-role landings list only lightweight next moves and defer heavy docs, logs, traces, or issue sweeps until the user chooses a path.
   - Studio-internal suggestions are shown only for the studio repo or when the user explicitly asks for studio operations.
   - Locked-in workflows report the direct command or phrasing the user can use next time.
+  - Manager checkpoints contain only routing context; explicit role checkpoint content remains role-owned.

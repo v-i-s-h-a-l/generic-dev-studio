@@ -68,6 +68,11 @@ assert_alias apollo perf
 [ "$(yq -r '.forwarders | length' "$FORWARDERS")" = "0" ] || fail "A10 should not preserve v1 forwarder rows"
 grep -Fq 'primary traffic surface' "$SKILL_DIR/SKILL.md" || fail "traffic boundary not documented"
 grep -Fq 'Bare Role Landing' "$SKILL_DIR/SKILL.md" || fail "bare role landing not documented"
+grep -Fq 'Lifecycle Actions' "$SKILL_DIR/SKILL.md" || fail "lifecycle actions not documented"
+grep -Fq '/dev-studio <role> checkpoint' "$SKILL_DIR/SKILL.md" || fail "explicit role checkpoint route not documented"
+grep -Fq '/dev-studio checkpoint' "$SKILL_DIR/SKILL.md" || fail "bare checkpoint manager route not documented"
 grep -Fq 'direct one-line invocation' "$SKILL_DIR/SKILL.md" || fail "direct command suggestion not documented"
+yq -e '.invocation.triggers[] | select(. == "/dev-studio checkpoint")' "$SKILL_DIR/routing.yaml" >/dev/null || fail "checkpoint trigger metadata missing"
+yq -e '.invocation.triggers[] | select(. == "/dev-studio resume-checkpoint")' "$SKILL_DIR/routing.yaml" >/dev/null || fail "resume-checkpoint trigger metadata missing"
 
 printf 'PASS: dev-studio umbrella skill and forwarders\n'

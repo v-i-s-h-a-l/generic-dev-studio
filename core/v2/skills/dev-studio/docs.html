@@ -463,6 +463,9 @@
 /dev-studio release-manager
 /dev-studio manager resume-plan
 /dev-studio worker &lt;contract&gt;
+/dev-studio checkpoint
+/dev-studio worker checkpoint
+/dev-studio worker resume-checkpoint
 /dev-studio reviewer review
 /dev-studio perf profile
 /dev-studio release-manager</code>
@@ -533,6 +536,13 @@ scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt;</code>
             <h3>Release Readiness</h3>
             <p>Use release-manager after implementation evidence exists. It can assemble blockers and notes; tagging, publishing, TestFlight, and App Store actions still need operator approval.</p>
             <code class="shell">/dev-studio release-manager prepare beta readiness for the latest merged fixes</code>
+          </article>
+          <article class="role">
+            <h3>Checkpoint Resume</h3>
+            <p>Use bare checkpoint only for manager-shaped routing. Put the role before checkpoint when the role already owns the state; checkpoint artifacts do not replace summaries, verdicts, packets, checklists, or event logs.</p>
+            <code class="shell">/dev-studio checkpoint
+/dev-studio worker checkpoint
+/dev-studio reviewer resume-checkpoint</code>
           </article>
         </div>
       </div>
@@ -948,6 +958,12 @@ scripts/host-preflight.sh codex /repo</code>
           are owned by the selected role or downstream primitive.
         </p>
         <p>
+          Checkpoint and resume-checkpoint are lifecycle actions. Bare
+          invocations land in manager for shaping; explicit role invocations keep
+          checkpoint content owned by that role and follow the compact shared
+          checkpoint contract.
+        </p>
+        <p>
           This page is the studio-layer command surface. It intentionally does not
           duplicate deleted v1 agent manuals or task-layer command tables.
         </p>
@@ -986,6 +1002,10 @@ scripts/host-preflight.sh codex /repo</code>
         <div class="link-row">
           <h3><a href="../../roles/">roles/</a></h3>
           <p>Executable role contracts selected after router resolution.</p>
+        </div>
+        <div class="link-row">
+          <h3><a href="../../checkpoints/CONTRACT.md">checkpoints/CONTRACT.md</a></h3>
+          <p>Compact checkpoint storage, lazy-load, budget, telemetry, and non-replacement rules.</p>
         </div>
         </div>
       </div>

@@ -67,6 +67,9 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio release-manager      # draft release notes per RELEASES.md (never auto-tags)
 /dev-studio manager ingest       # capture one idea in the current repo context; --scope studio crosses to Forge
 /dev-studio manager analyze      # sweep studio-feedback inbox + event logs for a project
+/dev-studio checkpoint           # manager-shaped checkpoint routing; explicit role owns content
+/dev-studio worker checkpoint    # worker-owned compact checkpoint; does not replace worker summary
+/dev-studio worker resume-checkpoint # resume worker checkpoint via manifest.json + context.md first
 /studio-help                     # open the v2 router docs
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
