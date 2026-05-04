@@ -65,6 +65,20 @@ Checkpoint artifacts preserve compact resume context. They do not replace
 worker summaries, reviewer verdicts, release packets, QA or flow checklists,
 perf verdicts, or durable event logs.
 
+<!-- v2-dev-studio:manager-analyze -->
+## Manager Analyze Feedback Routing
+
+`/dev-studio manager analyze` is a workflow manager for studio-scoped feedback,
+not a passive report generator. After writing the private analysis report, it
+runs `scripts/analyze-feedback-ingest.sh --apply` from the studio repo so each
+safe actionable feedback record reaches a durable issue destination.
+
+The manager must search existing GitHub issues before filing, comment or update
+a clearly covered issue, create one issue only for distinct work, and move a
+source record to `processed/` only after the destination exists. Unsafe public
+records stay in the inbox with a policy reason. Final output includes the
+remaining inbox count and the destination list.
+
 <!-- v2-dev-studio:landing -->
 ## Bare Role Landing
 

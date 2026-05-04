@@ -174,6 +174,7 @@ scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # 
 
 # Studio-feedback ingestion (auto-fires via SessionStart hook + manager sweep):
 scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
+scripts/analyze-feedback-ingest.sh --apply              # manager analyze durable routing: search/comment/create, then processed/
 
 # Studio PR autopilot primitives (#318):
 scripts/pr-reviewer-eligibility.sh codex-reviewer       # no-prompt/no-secret reviewer preflight + real verdict-emitting smoke gate
