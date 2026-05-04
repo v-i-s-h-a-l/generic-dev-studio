@@ -25,6 +25,8 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
+# shellcheck source=lib-chain-git.sh
+. "$SCRIPT_DIR/lib-chain-git.sh"
 
 usage() {
   sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' >&2
@@ -764,7 +766,7 @@ phase_review_required_for_issue() {
 }
 
 write_chain_task_start_envelope() {
-  local chain_name="$1" chain_branch="$2" issue_branch="$3" issue_json="$4" host="$5" worktree="$6" chain_run_id="$7" issue_run_id="$8" summary_path="$9" start_path="${10}" phase_review_context="${11:-[]}"
+  local chain_name="$1" chain_branch="$2" issue_branch="$3" issue_json="$4" host="$5" git_metadata_strategy="$6" worktree="$7" chain_run_id="$8" issue_run_id="$9" summary_path="${10}" start_path="${11}" phase_review_context="${12:-[]}"
   mkdir -p "$(dirname "$start_path")"
   jq -n \
     --argjson source_issue "$issue_json" \
@@ -777,6 +779,7 @@ write_chain_task_start_envelope() {
     --arg issue_branch "$issue_branch" \
     --arg worktree "$worktree" \
     --arg host "$host" \
+    --arg git_metadata_strategy "$git_metadata_strategy" \
     --arg summary_path "$summary_path" \
     --argjson phase_review_context "$phase_review_context" \
     '{
@@ -798,7 +801,8 @@ write_chain_task_start_envelope() {
         branch: $branch,
         issue_branch: $issue_branch,
         worktree: $worktree,
-        host: $host
+        host: $host,
+        git_metadata_strategy: $git_metadata_strategy
       },
       expected_summary_artifact: $summary_path,
       required_checks: [
@@ -1629,6 +1633,32 @@ host_spawn_command() {
   printf '%s\n' "$spawn"
 }
 
+yaml_field() {
+  yq -r ".${2} // \"\"" "$1" 2>/dev/null
+}
+
+host_sandbox_profile() {
+  local host="$1" manifest
+  manifest=$(resolve_capabilities_manifest "$host" "$REPO_ROOT") || {
+    printf 'studio-chain-runner: host "%s" has no capabilities manifest\n' "$host" >&2
+    return 1
+  }
+  yaml_field "$manifest" sandbox_profile
+}
+
+git_metadata_strategy_for_host() {
+  local host="$1" sandbox
+  sandbox=$(host_sandbox_profile "$host") || return 1
+  case "$sandbox" in
+    workspace-write|full) printf 'local-clone\n' ;;
+    host-native|none|"") printf 'linked-worktree\n' ;;
+    *)
+      printf 'studio-chain-runner: unknown sandbox_profile for %s: %s\n' "$host" "$sandbox" >&2
+      return 2
+      ;;
+  esac
+}
+
 host_launch_home() {
   resolve_user_login_home 2>/dev/null || true
 }
@@ -1744,7 +1774,7 @@ resolve_resume_state() {
 }
 
 build_plan_json() {
-  local out="$1" chain_count idx name base branch host phase_review_mode issue_count i issue issue_json issue_title issue_state
+  local out="$1" chain_count idx name base branch host phase_review_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state
   local chain_run_id issue_run_id issue_slug issue_branch issue_worktree chain_slug chain_worktree worker_pool
   local tmp chains_tmp issues_tmp
   tmp="$out.tmp.$$"
@@ -1769,6 +1799,7 @@ build_plan_json() {
     [ "$host" = "auto" ] && host="${HOST_OVERRIDE:-codex}"
     [ -n "$HOST_OVERRIDE" ] && host="$HOST_OVERRIDE"
     phase_review_mode=$(resolve_phase_review_mode "$idx")
+    git_metadata_strategy=$(git_metadata_strategy_for_host "$host")
     validate_chain_branch "$branch" "$base"
     issue_count=$(yq -r ".chains[$idx].issues | length" "$MANIFEST")
     case "$issue_count" in
@@ -1819,11 +1850,12 @@ build_plan_json() {
       --arg branch "$branch" \
       --arg host "$host" \
       --arg phase_review_mode "$phase_review_mode" \
+      --arg git_metadata_strategy "$git_metadata_strategy" \
       --arg chain_run_id "$chain_run_id" \
       --arg worktree "$chain_worktree" \
       --argjson worker_pool "$worker_pool" \
       --slurpfile issues "$issues_tmp" \
-      '. + [{name:$name,base:$base,branch:$branch,host:$host,phase_review:$phase_review_mode,chain_run_id:$chain_run_id,chain_worktree:$worktree,worker_pool:$worker_pool,status:"pending",issues:$issues[0]}]' \
+      '. + [{name:$name,base:$base,branch:$branch,host:$host,phase_review:$phase_review_mode,git_metadata_strategy:$git_metadata_strategy,chain_run_id:$chain_run_id,chain_worktree:$worktree,worker_pool:$worker_pool,status:"pending",issues:$issues[0]}]' \
       "$chains_tmp" > "$chains_tmp.next"
     mv "$chains_tmp.next" "$chains_tmp"
     rm -f "$issues_tmp"
@@ -1920,6 +1952,7 @@ explain_plan() {
     "- Branch: `\(.branch)`\n" +
     "- Worktree: `\(.chain_worktree)`\n" +
     "- Host: `\(.host)`\n" +
+    "- Git metadata strategy: `\(.git_metadata_strategy // "linked-worktree")`\n" +
     "- Phase review: `\(.phase_review // "auto")`\n" +
     "- Worker pool: `\(.worker_pool)`\n" +
     "- Planned PR: base `\(.base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
@@ -1991,7 +2024,7 @@ fi
 chain_count=$(jq '.chains | length' "$PLAN_JSON")
 
 execute_issue_session() {
-  local chain_name="$1" chain_branch="$2" issue="$3" host="$4" worktree="$5" issue_branch="$6" chain_run_id="$7" issue_run_id="$8" before="$9" phase_review_context="${10:-[]}"
+  local chain_name="$1" chain_branch="$2" issue="$3" host="$4" git_metadata_strategy="$5" worktree="$6" issue_branch="$7" chain_run_id="$8" issue_run_id="$9" before="${10}" phase_review_context="${11:-[]}"
   local issue_json issue_title issue_body spawn prompt summary_path start_path
   local -a spawn_argv
   local launch_home=""
@@ -2002,7 +2035,7 @@ execute_issue_session() {
   summary_path="$worktree/.studio/chain-worker-summary.json"
   start_path="$worktree/.studio/chain-task-start.json"
   if [ "$DRY_RUN" -eq 0 ]; then
-    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$issue_branch" "$issue_json" "$host" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context"
+    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$issue_branch" "$issue_json" "$host" "$git_metadata_strategy" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context"
   fi
 
   spawn=$(host_spawn_command "$host")
@@ -2023,6 +2056,7 @@ Chain: $chain_name
 Chain branch: $chain_branch
 Issue: #$issue - $issue_title
 Working directory: $worktree
+Git metadata strategy: $git_metadata_strategy
 Task start envelope: $start_path
 Required summary artifact: $summary_path
 
@@ -2229,23 +2263,35 @@ write_issue_phase_outcome_artifact() {
 }
 
 run_issue_job() {
-  local name="$1" branch="$2" issue="$3" host="$4" issue_worktree="$5" issue_branch="$6" chain_run_id="$7" issue_run_id="$8" result_file="$9" phase_review_mode="${10:-auto}" issue_count_for_review="${11:-1}"
+  local name="$1" branch="$2" chain_worktree="$3" issue="$4" host="$5" git_metadata_strategy="$6" issue_worktree="$7" issue_branch="$8" chain_run_id="$9" issue_run_id="${10}" result_file="${11}" phase_review_mode="${12:-auto}" issue_count_for_review="${13:-1}"
   local before after worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason
   local phase_context boundary_id phase_plan_artifact phase_outcome_artifact phase_review_rc phase_review_reason
   issue_started_at=$(now_epoch)
 
   log "issue #$issue -> $issue_branch"
   if [ "$DRY_RUN" -eq 0 ]; then
-    git -C "$REPO_ROOT" worktree remove --force "$issue_worktree" 2>/dev/null || rm -rf "$issue_worktree"
-    git -C "$REPO_ROOT" worktree add -B "$issue_branch" "$issue_worktree" "$branch"
+    chain_git_prepare_issue_workspace "$REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy"
     before=$(git -C "$issue_worktree" rev-parse HEAD)
   else
-    printf 'DRY-RUN git worktree add -B %q %q %q\n' "$issue_branch" "$issue_worktree" "$branch"
+    printf 'DRY-RUN git metadata strategy for host %q: %s\n' "$host" "$git_metadata_strategy"
+    case "$git_metadata_strategy" in
+      linked-worktree)
+        printf 'DRY-RUN git worktree add -B %q %q %q\n' "$issue_branch" "$issue_worktree" "$branch"
+        ;;
+      local-clone)
+        printf 'DRY-RUN git clone --no-local --branch %q %q %q\n' "$branch" "$chain_worktree" "$issue_worktree"
+        printf 'DRY-RUN git -C %q checkout -B %q %q\n' "$issue_worktree" "$issue_branch" "$branch"
+        ;;
+      *)
+        printf 'studio-chain-runner: unknown git metadata strategy: %s\n' "$git_metadata_strategy" >&2
+        exit 2
+        ;;
+    esac
     before="dry-run-before"
   fi
 
   emit_chain_event chain_issue_started "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" running 0 \
-    "$(jq -cn --arg chain "$name" --arg branch "$issue_branch" --arg host "$host" --arg before "$before" '{chain:$chain, issue_branch:$branch, host:$host, commit_before:$before}')"
+    "$(jq -cn --arg chain "$name" --arg branch "$issue_branch" --arg host "$host" --arg before "$before" --arg git_metadata_strategy "$git_metadata_strategy" '{chain:$chain, issue_branch:$branch, host:$host, commit_before:$before, git_metadata_strategy:$git_metadata_strategy}')"
   mark_issue_state "$issue_run_id" running "$before"
   phase_context=$(phase_review_feedback_for_issue_json "$issue_run_id")
   mark_phase_review_feedback_consumed "$issue_run_id"
@@ -2273,7 +2319,7 @@ run_issue_job() {
   fi
 
   set +e
-  execute_issue_session "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$before" "$phase_context"
+  execute_issue_session "$name" "$branch" "$issue" "$host" "$git_metadata_strategy" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$before" "$phase_context"
   worker_rc=$?
   set -e
 
@@ -2402,6 +2448,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
   branch=$(jq -r ".chains[$idx].branch" "$PLAN_JSON")
   host=$(jq -r ".chains[$idx].host" "$PLAN_JSON")
   phase_review_mode=$(jq -r ".chains[$idx].phase_review // \"auto\"" "$PLAN_JSON")
+  git_metadata_strategy=$(jq -r ".chains[$idx].git_metadata_strategy // \"linked-worktree\"" "$PLAN_JSON")
   issue_count=$(jq -r ".chains[$idx].issues | length" "$PLAN_JSON")
   chain_run_id=$(jq -r ".chains[$idx].chain_run_id" "$PLAN_JSON")
   chain_status=$(jq -r ".chains[$idx].status // \"pending\"" "$RUN_STATE_JSON" 2>/dev/null || printf 'pending')
@@ -2417,10 +2464,10 @@ for ((idx = 0; idx < chain_count; idx++)); do
   chain_results_dir="$RUN_ROOT/$chain_slug-results-$chain_run_id"
   CHAIN_WORKER_POOL=$(jq -r ".chains[$idx].worker_pool" "$PLAN_JSON")
 
-  log "starting chain $name on $branch from latest $base using host=$host worker_pool=$CHAIN_WORKER_POOL"
+  log "starting chain $name on $branch from latest $base using host=$host git_metadata_strategy=$git_metadata_strategy worker_pool=$CHAIN_WORKER_POOL"
   mark_chain_state "$chain_run_id" running
   emit_chain_event chain_started "" "$RUN_ID" "$chain_run_id" "" running 0 \
-    "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, host:$host, issue_count:$issue_count, worker_pool:$worker_pool}')"
+    "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --arg git_metadata_strategy "$git_metadata_strategy" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, host:$host, git_metadata_strategy:$git_metadata_strategy, issue_count:$issue_count, worker_pool:$worker_pool}')"
   host_preflight "$host" "$REPO_ROOT" || abort_run "host preflight failed for $host"
   run with_login_home_for_github git -C "$REPO_ROOT" fetch origin --prune
   if [ "$DRY_RUN" -eq 0 ]; then
@@ -2451,18 +2498,21 @@ for ((idx = 0; idx < chain_count; idx++)); do
 
     if [ "$issue_status" = "completed" ]; then
       log "resume skip completed issue #$issue"
+      issue_commit_after=$(jq -r --arg id "$issue_run_id" '.chains[].issues[] | select(.issue_run_id == $id) | .commit_after // ""' "$RUN_STATE_JSON" 2>/dev/null || true)
       jq -n \
         --arg issue "$issue" \
         --arg branch "$issue_branch" \
         --arg worktree "$issue_worktree" \
-        '{status:"completed", issue:($issue|tonumber), issue_branch:$branch, issue_worktree:$worktree, resumed:true}' > "$result_file"
+        --arg commit_after "$issue_commit_after" \
+        '{status:"completed", issue:($issue|tonumber), issue_branch:$branch, issue_worktree:$worktree, commit_after:(if $commit_after == "" then null else $commit_after end), resumed:true}' > "$result_file"
       continue
     fi
 
-    if [ "$DRY_RUN" -eq 1 ]; then
-      run_issue_job "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file" "$phase_review_mode" "$issue_count"
-    else
-      run_issue_job "$name" "$branch" "$issue" "$host" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file" "$phase_review_mode" "$issue_count"
+    run_issue_job "$name" "$branch" "$chain_worktree" "$issue" "$host" "$git_metadata_strategy" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file" "$phase_review_mode" "$issue_count"
+    result_status=$(jq -r '.status // "failed"' "$result_file")
+    if [ "$result_status" != "completed" ]; then
+      result_reason=$(jq -r '.reason // "issue failed"' "$result_file")
+      abort_run "$result_reason"
     fi
   done
 
@@ -2479,22 +2529,48 @@ for ((idx = 0; idx < chain_count; idx++)); do
     fi
     issue_branch=$(jq -r '.issue_branch' "$result_file")
     issue_worktree=$(jq -r '.issue_worktree' "$result_file")
+    result_commit_after=$(jq -r '.commit_after // ""' "$result_file")
     if [ "$DRY_RUN" -eq 0 ]; then
-      if [ "$(jq -r '.resumed // false' "$result_file")" = "true" ] && ! git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/$issue_branch"; then
-        log "resume assumes completed issue #$issue already integrated; issue branch missing"
-        continue
+      if [ "$(jq -r '.resumed // false' "$result_file")" = "true" ]; then
+        case "$git_metadata_strategy" in
+          linked-worktree)
+            if ! git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/$issue_branch"; then
+              log "resume assumes completed issue #$issue already integrated; issue branch missing"
+              continue
+            fi
+            ;;
+          local-clone)
+            if [ ! -d "$issue_worktree/.git" ]; then
+              if [ -n "$result_commit_after" ] \
+                && git -C "$chain_worktree" cat-file -e "$result_commit_after^{commit}" 2>/dev/null \
+                && git -C "$chain_worktree" merge-base --is-ancestor "$result_commit_after" HEAD 2>/dev/null; then
+                log "resume confirms completed issue #$issue already integrated"
+                continue
+              fi
+              abort_run "completed issue #$issue local clone missing before integration"
+            fi
+            ;;
+        esac
       fi
       git -C "$chain_worktree" checkout "$branch"
-      git -C "$issue_worktree" rebase "$branch"
-      git -C "$chain_worktree" merge --ff-only "$issue_branch"
-      git -C "$REPO_ROOT" worktree remove "$issue_worktree"
-      git -C "$REPO_ROOT" branch -D "$issue_branch"
+      chain_git_integrate_issue_workspace "$REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy"
     else
       printf 'DRY-RUN git -C %q checkout %q\n' "$chain_worktree" "$branch"
-      printf 'DRY-RUN git -C %q rebase %q\n' "$issue_worktree" "$branch"
-      printf 'DRY-RUN git -C %q merge --ff-only %q\n' "$chain_worktree" "$issue_branch"
-      printf 'DRY-RUN git -C %q worktree remove %q\n' "$REPO_ROOT" "$issue_worktree"
-      printf 'DRY-RUN git -C %q branch -D %q\n' "$REPO_ROOT" "$issue_branch"
+      case "$git_metadata_strategy" in
+        linked-worktree)
+          printf 'DRY-RUN git -C %q rebase %q\n' "$issue_worktree" "$branch"
+          printf 'DRY-RUN git -C %q merge --ff-only %q\n' "$chain_worktree" "$issue_branch"
+          printf 'DRY-RUN git -C %q worktree remove %q\n' "$REPO_ROOT" "$issue_worktree"
+          printf 'DRY-RUN git -C %q branch -D %q\n' "$REPO_ROOT" "$issue_branch"
+          ;;
+        local-clone)
+          printf 'DRY-RUN git -C %q fetch %q %q\n' "$issue_worktree" "$chain_worktree" "$branch"
+          printf 'DRY-RUN git -C %q rebase FETCH_HEAD\n' "$issue_worktree"
+          printf 'DRY-RUN git -C %q fetch %q %q\n' "$chain_worktree" "$issue_worktree" "$issue_branch"
+          printf 'DRY-RUN git -C %q merge --ff-only FETCH_HEAD\n' "$chain_worktree"
+          printf 'DRY-RUN rm -rf %q\n' "$issue_worktree"
+          ;;
+      esac
     fi
   done
 
