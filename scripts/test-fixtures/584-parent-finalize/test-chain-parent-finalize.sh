@@ -83,6 +83,12 @@ chain_git_parent_finalize_summary_reports_failure "$REPO/.studio/chain-worker-su
   || fail "blocked summary was not reported as failure"
 [ "$(chain_git_parent_finalize_effective_worker_rc 0 "$REPO/.studio/chain-worker-summary.json")" = "1" ] \
   || fail "summary-reported failure did not override zero host rc"
+[ "$(chain_git_parent_finalize_reconciled_worker_rc 0 1 false)" = "1" ] \
+  || fail "effective worker rc was not preserved before parent finalize"
+[ "$(chain_git_parent_finalize_reconciled_worker_rc 0 1 true)" = "0" ] \
+  || fail "effective worker rc was reapplied after parent finalize"
+[ "$(chain_git_parent_finalize_reconciled_worker_rc 1 1 true)" = "0" ] \
+  || fail "child worker rc was not cleared after parent finalize"
 cat "$REPO/.studio/chain-worker-summary.json" | jq '.exit_code = 0' > "$TMPROOT/status-only-summary.json"
 [ "$(chain_git_parent_finalize_effective_worker_rc 0 "$TMPROOT/status-only-summary.json")" = "1" ] \
   || fail "blocked status did not override zero host rc"
