@@ -150,13 +150,13 @@ core/v2/handoffs/
   *.yaml           # typed handoff fixtures shared across roles
 
 .claude/commands/       # project-scoped slash commands (fire only when cwd is this repo)
-  dev-studio.md         # /dev-studio — v2 umbrella role router
   studio-help.md        # /studio-help — opens the v2 router docs
   studio-setup.md       # /studio-setup — onboard THIS machine (--manager/--worker/--dual; no args = auto-pilot prompting only for role)
   resume-plan.md        # /resume-plan — routes through /dev-studio manager
   capture.md            # /capture — retrospective session scan → IDEAS.md
 
 commands/               # globally-installed slash commands (see scripts/install.sh)
+  dev-studio.md         # /dev-studio — v2 umbrella role router from any project
   pushTFBuild.md        # /pushTFBuild — archive + upload to TestFlight; --background keeps Slack drafting live
   fullSendToAppStore.md # /fullSendToAppStore — submit build to App Store review
 
@@ -236,16 +236,16 @@ _shared/                # reusable primitives (symlinked from ~/.claude/skills/_
 ./scripts/verify-install.sh   # reports any drift between repo and ~/.claude/
 ```
 
-`install.sh` symlinks shared companions (`_shared`, `scripts`, `hosts`) into `~/.claude/skills/` and the remaining global slash commands into `~/.claude/commands/`. Project-scoped v2 skills are fanned out by `scripts/sync-host-skills.sh` from `core/v2/skills`.
+`install.sh` symlinks shared companions (`_shared`, `scripts`, `hosts`) into `~/.claude/skills/` and global slash commands into `~/.claude/commands/`. Portable v2 skills are fanned out by `scripts/sync-host-skills.sh` from `core/v2/skills`.
 
-The `dev-studio` skill is project-scoped. It lives at `core/v2/skills/dev-studio/` and is linked into each host's repo-local project skill directory when `scripts/sync-host-skills.sh` runs.
+The `dev-studio` skill is globally discoverable. It lives at `core/v2/skills/dev-studio/` and is linked into each host's global skill directory when `scripts/sync-host-skills.sh` runs, so you can invoke the studio from the project you are actually working on.
 
 Fresh-clone workflow:
 
 ```bash
 git clone <this-repo> && cd generic-dev-studio
 ./scripts/install.sh
-# /dev-studio is linked repo-locally; v1 top-level agents are deleted after A10
+# /dev-studio is installed globally; v1 top-level agents are deleted after A10
 ```
 
 ### Fleet prerequisites (only if you'll use multi-worker mode)
