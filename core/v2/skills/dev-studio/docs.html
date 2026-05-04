@@ -109,6 +109,32 @@
       font-size: 1.06rem;
     }
 
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      align-items: center;
+      padding: 0 0 1rem;
+    }
+
+    button {
+      min-height: 34px;
+      padding: 0.36rem 0.68rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--ink);
+      font: inherit;
+      font-size: 0.88rem;
+      cursor: pointer;
+    }
+
+    button:hover,
+    nav a:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
     nav {
       display: flex;
       flex-wrap: wrap;
@@ -133,13 +159,60 @@
       padding: 1.4rem 0 3rem;
     }
 
-    section {
-      padding: 1.6rem 0;
+    details.section {
+      margin: 0 0 0.7rem;
       border-bottom: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.48);
     }
 
-    section:last-child {
+    details.section:last-child {
       border-bottom: 0;
+    }
+
+    details.section[open] {
+      background: transparent;
+    }
+
+    summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 1rem;
+      align-items: center;
+      padding: 1rem;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    summary::-webkit-details-marker {
+      display: none;
+    }
+
+    summary::after {
+      content: "+";
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--accent);
+      font-weight: 760;
+    }
+
+    details[open] summary::after {
+      content: "-";
+    }
+
+    .summary-copy {
+      margin: 0.18rem 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .section-body {
+      padding: 0 1rem 1.4rem;
     }
 
     h2 {
@@ -178,6 +251,12 @@
     .grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.8rem;
+    }
+
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 0.8rem;
     }
 
@@ -225,6 +304,18 @@
       border-color: var(--warn-line);
       background: var(--warn-bg);
       color: #765716;
+    }
+
+    .status-contract {
+      border-color: #adc4df;
+      background: #e8f1fb;
+      color: #234f83;
+    }
+
+    .status-registry {
+      border-color: var(--line);
+      background: #f3f4f1;
+      color: var(--muted);
     }
 
     .table-wrap {
@@ -302,6 +393,7 @@
 
       .split,
       .grid,
+      .workflow-grid,
       .links {
         grid-template-columns: 1fr;
       }
@@ -330,20 +422,31 @@
       </div>
       <nav aria-label="Page sections">
         <a href="#quick-start">Quick Start</a>
+        <a href="#usage">Usage</a>
         <a href="#roles">Roles</a>
         <a href="#resolution">Resolution</a>
         <a href="#cutover">Cutover</a>
         <a href="#boundaries">Boundaries</a>
         <a href="#evidence">Evidence</a>
       </nav>
+      <div class="toolbar" aria-label="Section controls">
+        <button type="button" data-action="expand">Expand all</button>
+        <button type="button" data-action="collapse">Collapse all</button>
+      </div>
     </div>
   </header>
 
   <main class="wrap">
-    <section id="quick-start">
-      <div class="split">
-        <div>
+    <details class="section" id="quick-start">
+      <summary>
+        <span>
           <h2>Quick Start</h2>
+          <p class="summary-copy">Smallest set of commands and current traffic state.</p>
+        </span>
+      </summary>
+      <div class="section-body">
+        <div class="split">
+          <div>
           <p>
             Put the role after <code>/dev-studio</code>. If no role token is
             present, the invocation defaults to <code>manager</code> for
@@ -362,70 +465,154 @@
             work only as compatibility role aliases under
             <code>/dev-studio</code>.
           </p>
-        </aside>
+          </aside>
+        </div>
       </div>
-    </section>
+    </details>
 
-    <section id="roles">
-      <h2>Canonical Roles</h2>
-      <div class="grid">
-        <article class="role">
-          <h3>manager</h3>
-          <p>Owns intake, prioritization, lifecycle state, dispatch, status, user escalation, and final acceptance routing.</p>
-          <div class="meta"><span class="pill status-live">active</span><span class="pill">aliases: chanakya, coordinator, orchestrator</span></div>
-        </article>
-        <article class="role">
-          <h3>worker</h3>
-          <p>Implements one bounded task contract in an isolated worktree.</p>
-          <div class="meta"><span class="pill status-live">active</span><span class="pill">aliases: achilles, implementer</span></div>
-        </article>
-        <article class="role">
-          <h3>reviewer</h3>
-          <p>Verifies plan or spec compliance, code quality, safety gates, and contract adherence.</p>
-          <div class="meta"><span class="pill status-live">active</span><span class="pill">aliases: argus, verifier</span></div>
-        </article>
-        <article class="role">
-          <h3>perf</h3>
-          <p>Investigates performance, battery, memory, thermal, and instrumentation evidence.</p>
-          <div class="meta"><span class="pill status-live">active</span><span class="pill">aliases: apollo, performance, performance-engineer</span></div>
-        </article>
-        <article class="role">
-          <h3>planner</h3>
-          <p>Converts shaped intent into executable plans, dependency graphs, acceptance criteria, and worker contracts.</p>
-          <div class="meta"><span class="pill status-reserved">reserved</span><span class="pill">aliases: architect, luban, lu-ban</span></div>
-        </article>
-        <article class="role">
-          <h3>qa-engineer</h3>
-          <p>Produces and executes automated test contracts beyond the worker's local checks.</p>
-          <div class="meta"><span class="pill status-reserved">reserved</span><span class="pill">aliases: qa, chiron, synthetic-qa</span></div>
-        </article>
-        <article class="role">
-          <h3>flow-tester</h3>
-          <p>Produces human or manual exploratory flow checklists tied to builds and releases.</p>
-          <div class="meta"><span class="pill status-reserved">reserved</span><span class="pill">aliases: flow, manual-qa, exploratory-tester</span></div>
-        </article>
-        <article class="role">
-          <h3>release-manager</h3>
-          <p>Assembles beta and production release packets, verifies prerequisites, and drafts release notes.</p>
-          <div class="meta"><span class="pill status-reserved">reserved</span><span class="pill">aliases: release, shipper</span></div>
-        </article>
-        <article class="role">
-          <h3>host-adapter</h3>
-          <p>Exposes host capabilities as data and executes portable role invocations.</p>
-          <div class="meta"><span class="pill status-reserved">reserved</span><span class="pill">aliases: adapter, host</span></div>
-        </article>
-        <article class="role">
-          <h3>operator</h3>
-          <p>Holds human authority for irreversible, ambiguous, or externally visible decisions.</p>
-          <div class="meta"><span class="pill status-reserved">non-routable</span><span class="pill">aliases: user, human, owner</span></div>
-        </article>
+    <details class="section" id="usage">
+      <summary>
+        <span>
+          <h2>Usage Workflows</h2>
+          <p class="summary-copy">What to type for common single-task, multi-task, hotfix, and release-followup loops.</p>
+        </span>
+      </summary>
+      <div class="section-body">
+        <div class="workflow-grid">
+          <article class="role">
+            <h3>Single Task</h3>
+            <p>Use the manager when the work still needs shaping. Expect a scoped plan, one worker contract, local checks, review, and a short summary.</p>
+            <code class="shell">/dev-studio manager fix the settings crash</code>
+          </article>
+          <article class="role">
+            <h3>Direct Worker Contract</h3>
+            <p>Use a worker directly only when the contract is already bounded and the files or acceptance criteria are clear.</p>
+            <code class="shell">/dev-studio worker T123</code>
+          </article>
+          <article class="role">
+            <h3>Review Before Merge</h3>
+            <p>Use the reviewer when you have a diff, PR, or phase outcome and want compliance, safety, and missed-test checks.</p>
+            <code class="shell">/dev-studio reviewer review</code>
+          </article>
+          <article class="role">
+            <h3>Parallel Independent Tasks</h3>
+            <p>Ask the manager to split independent work. Expect separate worktrees, separate PRs or summaries, and no shared-index edits.</p>
+            <code class="shell">/dev-studio manager split these three unrelated bugs into parallel worker contracts</code>
+          </article>
+          <article class="role">
+            <h3>Parallel Chains</h3>
+            <p>Use chain manifests when the repo already has an issue chain. Dry-run first, then launch one independent chain per shell session.</p>
+            <code class="shell">scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt; --dry-run
+scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt;</code>
+          </article>
+          <article class="role">
+            <h3>Hotfix Bug</h3>
+            <p>Tell the manager it is a hotfix and name the risk. Expect the smallest patch, the fastest relevant checks, review, and release-manager escalation if a build or public message is needed.</p>
+            <code class="shell">/dev-studio manager hotfix: fix the launch crash from the latest TestFlight build</code>
+          </article>
+          <article class="role">
+            <h3>General Bug After TestFlight</h3>
+            <p>Use this when the issue is real but not an emergency. Expect triage, reproduction notes, one or more worker contracts, QA or flow-test evidence if the surface is user-facing, then release readiness if needed.</p>
+            <code class="shell">/dev-studio manager bug: the new TestFlight feature loses state after relaunch</code>
+          </article>
+          <article class="role">
+            <h3>Performance Investigation</h3>
+            <p>Use perf when the problem is memory, CPU, thermal, battery, network, or instrumentation evidence rather than ordinary correctness.</p>
+            <code class="shell">/dev-studio perf profile the new editor flow</code>
+          </article>
+          <article class="role">
+            <h3>Release Readiness</h3>
+            <p>Use release-manager after implementation evidence exists. It can assemble blockers and notes; tagging, publishing, TestFlight, and App Store actions still need operator approval.</p>
+            <code class="shell">/dev-studio release-manager prepare beta readiness for the latest merged fixes</code>
+          </article>
+        </div>
       </div>
-    </section>
+    </details>
 
-    <section id="resolution">
-      <div class="split">
-        <div>
+    <details class="section" id="roles">
+      <summary>
+        <span>
+          <h2>Canonical Roles</h2>
+          <p class="summary-copy">Which roles are open for direct use, contracted but manager-mediated, or registry-only.</p>
+        </span>
+      </summary>
+      <div class="section-body">
+        <div class="notice warning">
+          <h3>What reserved means</h3>
+          <p>
+            Reserved does not mean the name is forgotten. It means the router
+            recognizes and protects that role or alias, but routine direct-user
+            workflows are not the default surface yet. Some reserved roles have
+            active contracts and are normally reached through manager-shaped
+            work; registry-only roles are authority or adapter concepts rather
+            than runnable task agents.
+          </p>
+        </div>
+        <div class="grid">
+          <article class="role">
+            <h3>manager</h3>
+            <p>Owns intake, prioritization, lifecycle state, dispatch, status, user escalation, and final acceptance routing.</p>
+            <div class="meta"><span class="pill status-live">direct use</span><span class="pill">aliases: chanakya, coordinator, orchestrator</span></div>
+          </article>
+          <article class="role">
+            <h3>worker</h3>
+            <p>Implements one bounded task contract in an isolated worktree.</p>
+            <div class="meta"><span class="pill status-live">direct use</span><span class="pill">aliases: achilles, implementer</span></div>
+          </article>
+          <article class="role">
+            <h3>reviewer</h3>
+            <p>Verifies plan or spec compliance, code quality, safety gates, and contract adherence.</p>
+            <div class="meta"><span class="pill status-live">direct use</span><span class="pill">aliases: argus, verifier</span></div>
+          </article>
+          <article class="role">
+            <h3>perf</h3>
+            <p>Investigates performance, battery, memory, thermal, and instrumentation evidence.</p>
+            <div class="meta"><span class="pill status-live">direct use</span><span class="pill">aliases: apollo, performance, performance-engineer</span></div>
+          </article>
+          <article class="role">
+            <h3>planner</h3>
+            <p>Active contract for executable plans, dependency graphs, acceptance criteria, and worker contracts.</p>
+            <div class="meta"><span class="pill status-contract">contracted, manager-mediated</span><span class="pill">aliases: architect, luban, lu-ban</span></div>
+          </article>
+          <article class="role">
+            <h3>qa-engineer</h3>
+            <p>Active contract for automated test strategy and stable QA targets beyond the worker's local checks.</p>
+            <div class="meta"><span class="pill status-contract">contracted, manager-mediated</span><span class="pill">aliases: qa, chiron, synthetic-qa</span></div>
+          </article>
+          <article class="role">
+            <h3>flow-tester</h3>
+            <p>Active contract for exploratory user-flow checklists tied to builds, branches, and evidence.</p>
+            <div class="meta"><span class="pill status-contract">contracted, manager-mediated</span><span class="pill">aliases: flow, manual-qa, exploratory-tester</span></div>
+          </article>
+          <article class="role">
+            <h3>release-manager</h3>
+            <p>Active contract for release packets, blocker state, notes, tags, TestFlight, and App Store readiness.</p>
+            <div class="meta"><span class="pill status-contract">contracted, approval-gated</span><span class="pill">aliases: release, shipper</span></div>
+          </article>
+          <article class="role">
+            <h3>host-adapter</h3>
+            <p>Registry role for host capability and adapter operations. It is not a general task agent.</p>
+            <div class="meta"><span class="pill status-registry">registry-only reserved</span><span class="pill">aliases: adapter, host</span></div>
+          </article>
+          <article class="role">
+            <h3>operator</h3>
+            <p>Human authority for irreversible, ambiguous, or externally visible decisions.</p>
+            <div class="meta"><span class="pill status-registry">non-routable</span><span class="pill">aliases: user, human, owner</span></div>
+          </article>
+        </div>
+      </div>
+    </details>
+
+    <details class="section" id="resolution">
+      <summary>
+        <span>
           <h2>Resolution Order</h2>
+          <p class="summary-copy">How canonical names, aliases, old names, and missing role tokens resolve.</p>
+        </span>
+      </summary>
+      <div class="section-body">
+        <div class="split">
+          <div>
           <ol>
             <li>Explicit canonical role routes directly, such as <code>/dev-studio worker &lt;contract&gt;</code>.</li>
             <li>Compatibility alias resolves through <code>scripts/v2-role-resolve.sh</code>, such as <code>/dev-studio achilles &lt;contract&gt;</code>.</li>
@@ -439,13 +626,20 @@
             Unknown role tokens exit before side effects. Alias normalization is
             case-insensitive and treats underscores or spaces as hyphens.
           </p>
-        </aside>
+          </aside>
+        </div>
       </div>
-    </section>
+    </details>
 
-    <section id="cutover">
-      <h2>Cutover State</h2>
-      <div class="table-wrap">
+    <details class="section" id="cutover">
+      <summary>
+        <span>
+          <h2>Cutover State</h2>
+          <p class="summary-copy">What happened to v1 surfaces and where rollback evidence lives.</p>
+        </span>
+      </summary>
+      <div class="section-body">
+        <div class="table-wrap">
         <table>
           <thead>
             <tr>
@@ -477,25 +671,39 @@
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
-    </section>
+    </details>
 
-    <section id="boundaries">
-      <h2>Router Boundaries</h2>
-      <p>
-        The umbrella router chooses a role contract. Mode procedure, authority
-        checks, handoff validation, event emission, and project-profile commands
-        are owned by the selected role or downstream primitive.
-      </p>
-      <p>
-        This page is the studio-layer command surface. It intentionally does not
-        duplicate deleted v1 agent manuals or task-layer command tables.
-      </p>
-    </section>
+    <details class="section" id="boundaries">
+      <summary>
+        <span>
+          <h2>Router Boundaries</h2>
+          <p class="summary-copy">What the umbrella command owns and what downstream roles own.</p>
+        </span>
+      </summary>
+      <div class="section-body">
+        <p>
+          The umbrella router chooses a role contract. Mode procedure, authority
+          checks, handoff validation, event emission, and project-profile commands
+          are owned by the selected role or downstream primitive.
+        </p>
+        <p>
+          This page is the studio-layer command surface. It intentionally does not
+          duplicate deleted v1 agent manuals or task-layer command tables.
+        </p>
+      </div>
+    </details>
 
-    <section id="evidence">
-      <h2>Source Files</h2>
-      <div class="links">
+    <details class="section" id="evidence">
+      <summary>
+        <span>
+          <h2>Source Files</h2>
+          <p class="summary-copy">Canonical files behind the router, roles, forwarders, and cutover state.</p>
+        </span>
+      </summary>
+      <div class="section-body">
+        <div class="links">
         <div class="link-row">
           <h3><a href="./SKILL.md">SKILL.md</a></h3>
           <p>Umbrella router scope, dispatch table, and intent priority.</p>
@@ -520,12 +728,32 @@
           <h3><a href="../../roles/">roles/</a></h3>
           <p>Executable role contracts selected after router resolution.</p>
         </div>
+        </div>
       </div>
-    </section>
+    </details>
   </main>
 
   <footer class="wrap">
     <p>Generic Dev Studio v2. Keep workflow rules in repo files; keep runtime artifacts under <code>~/.dev-studio/&lt;project&gt;/</code>.</p>
   </footer>
+  <script>
+    const sections = Array.from(document.querySelectorAll("details.section"));
+    const openHashTarget = () => {
+      const id = window.location.hash.slice(1);
+      if (!id) return;
+      const target = document.getElementById(id);
+      if (target && target.matches("details.section")) {
+        target.open = true;
+      }
+    };
+    document.querySelector('[data-action="expand"]').addEventListener("click", () => {
+      sections.forEach((section) => { section.open = true; });
+    });
+    document.querySelector('[data-action="collapse"]').addEventListener("click", () => {
+      sections.forEach((section) => { section.open = false; });
+    });
+    window.addEventListener("hashchange", openHashTarget);
+    openHashTarget();
+  </script>
 </body>
 </html>
