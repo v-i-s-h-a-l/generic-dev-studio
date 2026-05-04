@@ -1,0 +1,15 @@
+kind: studio-v2-multispawn-pilot-budgets
+schema_version:
+  name: multispawn-pilot-budgets
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+budget_kind: coordination_overhead_s
+expected_count: 2
+task_classes:
+  - task_class: xs
+    coordination_budget_s: 5
+  - task_class: s
+    coordination_budget_s: 10
+  - task_class: m
+    coordination_budget_s: 20
