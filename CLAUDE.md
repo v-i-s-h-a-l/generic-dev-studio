@@ -52,7 +52,7 @@ The `dev-studio` router is shipped at `core/v2/skills/dev-studio/` and exposed t
 | User intent | Trigger phrases | Dispatch |
 |---|---|---|
 | Resume in-flight arc / "where were we" | "where were we", "pick up from", "resume", `/resume-plan` | `/dev-studio manager resume-plan` |
-| Review a studio-repo diff | "review this", "check this", "any issues", "self-review", `/simplify` *on a studio-repo diff* | `/dev-studio reviewer review` plus `REVIEW.md` |
+| Review a studio-repo diff | "review this", "check this", "any issues", "self-review", `/simplify` *on a studio-repo diff* | Cross-host reviewer wrapper by default plus `REVIEW.md`; `/dev-studio reviewer review` only for conversational triage |
 | Draft release notes / evaluate tagging | "what's new", "draft release notes", "should we tag", "release" | `/dev-studio release-manager` plus `RELEASES.md` |
 | Studio-level capture (patterns, analysis, parking-lot, rule tweaks) | "add to parking lot", "file a pattern", "capture this for the studio" | `/dev-studio manager ingest` |
 | Arc-coherence audit (plan ↔ memory ↔ commits drift) | `/studio audit`, "audit the arc", "check plan drift" — also auto-runs silently on SessionStart | `/dev-studio manager audit` |
@@ -71,6 +71,17 @@ The rulebook sections below (**Reviews**, **Releases**, **Docs sync**, **Backlog
 When the user asks to review a diff (any phrasing — "review", "self-review", "check this", "any issues", or invoking `/simplify`), **read `REVIEW.md` at the repo root first** and walk its rules against the diff. Auto-fix the `block + auto-fix` tier silently; surface `ask` tier before changing; note `warn` tier either way.
 
 Do not wait for the user to name REVIEW.md. The file is authoritative for this repo.
+
+**Default to cross-host review.** For any non-trivial review target with a PR,
+diff, plan, outcome, or worker/perf artifact, invoke the smoke-gated
+cross-host reviewer wrapper rather than only switching the current session into
+`/dev-studio reviewer review`. Use `scripts/pr-headless-review.sh` for PRs,
+`scripts/phase-review.sh` for plan/outcome artifacts, and
+`scripts/task-invoke-argus.sh` for worker task diffs. The inline reviewer role
+is for lightweight conversational triage, explaining a wrapper verdict, or
+cases where no reviewable artifact exists yet. If the user asks for review from
+inside an existing worker or perf session, create or name the review artifact
+and run the wrapper unless they explicitly ask for inline-only feedback.
 
 Skip review for single-line doc fixes. Trigger it for: any `scripts/*.sh` change, any `SKILL.md` change, any `_shared/*` change, or diffs >100 lines.
 

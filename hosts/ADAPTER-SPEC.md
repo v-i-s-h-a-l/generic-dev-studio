@@ -102,6 +102,12 @@ are centralized. Emergency/debug-only override is
 recorded in the review artifact. See `CLAUDE.md` §Cross-host phase review for
 the workflow rule that consumes this adapter contract.
 
+Cross-host review is the default for non-trivial review requests from worker,
+perf, planner, QA, flow-test, release, and manager sessions whenever a PR,
+diff, plan, outcome, or role artifact exists. Inline reviewer-role discussion is
+reserved for triage, explaining a wrapper verdict, or shaping the artifact that
+the wrapper will review.
+
 ### Env-scrub at reviewer dispatch
 
 `scripts/dispatch-review.sh` enforces the reviewer floor at spawn time by env-scrubbing the subprocess. Only PATH/HOME/LANG/USER, the host plugin-root, and explicit task-context vars cross the boundary; `ANTHROPIC_API_KEY`, `GH_TOKEN`/`GITHUB_TOKEN`, and arbitrary inherited env are dropped. The host CLI re-authenticates from its own keychain inside the spawned session.
