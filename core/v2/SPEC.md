@@ -267,6 +267,11 @@ the effective role + skill + invocation ceiling for a contract and can emit a
 static role-surface report with `--report`. A0.6 ensures new role contracts
 declare what they read before relying on it.
 
+Sibling-review value is recorded as explicit manager/operator disposition data,
+not inferred from raw finding count. `core/v2/review/metrics.yaml` defines
+severity weights and dispositions; `scripts/v2-review-metrics.sh` emits private
+runtime events and reports accepted weighted score by phase and review host.
+
 <!-- v2-spec:testing-release -->
 ## Testing, Review, and Release Workflow
 

@@ -1,0 +1,26 @@
+kind: studio-v2-review-metrics
+schema_version:
+  name: review-metrics
+  version: 1.0.0
+  min_reader: 1.0.0
+  deprecated_at: null
+scoring:
+  rule: Only accepted findings contribute to accepted_weighted_score. Info findings carry weight 0 by design.
+ordering:
+  rule: Reports use last-write-wins by occurred_at for each review_ref/finding_id. Operator dispositions are expected to be sparse and monotonic; concurrent same-second re-dispositions should be avoided or re-emitted with distinct timestamps.
+severities:
+  - severity: critical
+    weight: 8
+  - severity: high
+    weight: 5
+  - severity: medium
+    weight: 3
+  - severity: low
+    weight: 1
+  - severity: info
+    weight: 0
+dispositions:
+  - accepted
+  - rejected
+  - disputed
+  - superseded
