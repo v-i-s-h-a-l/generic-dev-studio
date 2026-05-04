@@ -53,6 +53,9 @@ Current substrate artifacts:
   values. Record and report review finding value with
   `scripts/v2-review-metrics.sh emit ...` and
   `scripts/v2-review-metrics.sh report --format markdown|json`.
+- `pilots/multispawn-budgets.yaml` defines worker + qa-engineer coordination
+  budgets. Run the deterministic beta pilot with
+  `scripts/v2-multispawn-pilot.sh run ...`.
 - `schemas/project-profile.schema.json` defines profile-owned operation
   mappings. Resolve and validate profile commands with `scripts/v2-profile.sh`;
   the first profile is `profiles/ios-turnip/`.
