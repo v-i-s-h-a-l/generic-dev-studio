@@ -453,10 +453,15 @@
           <div>
           <p>
             Put the role after <code>/dev-studio</code>. If no role token is
-            present, the invocation defaults to <code>manager</code> for
-            conversational shaping and status.
+            present, the invocation opens the lightweight <code>manager</code>
+            landing for conversational shaping and status. A role with no
+            request, such as <code>/dev-studio reviewer</code>, opens that
+            role's landing instead of running a heavy default action.
           </p>
-          <code class="shell">/dev-studio manager resume-plan
+          <code class="shell">/dev-studio manager
+/dev-studio reviewer
+/dev-studio release-manager
+/dev-studio manager resume-plan
 /dev-studio worker &lt;contract&gt;
 /dev-studio reviewer review
 /dev-studio perf profile
@@ -697,8 +702,9 @@ scripts/worker-status.sh</code>
           <article class="role">
             <h3>manager</h3>
             <p>Shapes intent, resumes arcs, routes work, guards against repeats, captures patterns, and escalates operator decisions.</p>
-            <div class="meta"><span class="pill status-live">direct use</span><span class="pill">proof-of-life script</span></div>
-            <code class="shell">/dev-studio manager resume-plan
+            <div class="meta"><span class="pill status-live">direct use</span><span class="pill">contract-backed landing</span></div>
+            <code class="shell">/dev-studio manager
+/dev-studio manager resume-plan
 /dev-studio manager guard "has this shipped?"
 /dev-studio manager ingest "capture this pattern"</code>
           </article>
@@ -721,7 +727,8 @@ scripts/achilles-queue.sh drain</code>
             <h3>reviewer</h3>
             <p>Reviews plans, diffs, outcomes, PRs, and release packets for blockers, warnings, and missing evidence.</p>
             <div class="meta"><span class="pill status-live">direct use</span><span class="pill">headless review wrappers</span></div>
-            <code class="shell">/dev-studio reviewer review
+            <code class="shell">/dev-studio reviewer
+/dev-studio reviewer review
 scripts/phase-review.sh --kind plan --input phase-plan.md
 scripts/pr-headless-review.sh &lt;pr&gt;</code>
           </article>
@@ -750,7 +757,8 @@ scripts/v2-multispawn-pilot.sh run</code>
             <h3>release-manager</h3>
             <p>Assembles release readiness, blocker state, notes, tag state, TestFlight/App Store state, and approval gates.</p>
             <div class="meta"><span class="pill status-contract">approval-gated</span><span class="pill">handoff: release-packet</span></div>
-            <code class="shell">/dev-studio release-manager prepare beta readiness
+            <code class="shell">/dev-studio release-manager
+/dev-studio release-manager prepare beta readiness
 /dev-studio release-manager tf-push --background</code>
           </article>
           <article class="role">
@@ -852,14 +860,17 @@ scripts/host-preflight.sh codex /repo</code>
             <li>Explicit canonical role routes directly, such as <code>/dev-studio worker &lt;contract&gt;</code>.</li>
             <li>Compatibility alias resolves through <code>scripts/v2-role-resolve.sh</code>, such as <code>/dev-studio achilles &lt;contract&gt;</code>.</li>
             <li>Former top-level names remain aliases only when placed under <code>/dev-studio</code>.</li>
-            <li>No role token routes to <code>manager</code>.</li>
+            <li>A bare role token opens that role's lightweight landing.</li>
+            <li>No role token opens the <code>manager</code> landing.</li>
+            <li>Unknown role tokens fail before side effects.</li>
           </ol>
         </div>
         <aside class="notice warning">
-          <h3>Unknown roles fail closed</h3>
+          <h3>Landings stay lightweight</h3>
           <p>
-            Unknown role tokens exit before side effects. Alias normalization is
-            case-insensitive and treats underscores or spaces as hyphens.
+            Bare-role landings load role contracts and cheap cwd/profile
+            context only. They suggest next moves, then report the direct
+            command after the user locks in a workflow.
           </p>
           </aside>
         </div>

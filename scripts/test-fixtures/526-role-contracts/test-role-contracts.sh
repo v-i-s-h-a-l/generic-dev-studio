@@ -22,7 +22,7 @@ jq -e '.["$schema"] and .type == "object"' "$SCHEMA" >/dev/null || fail "schema 
 }
 grep -Fq 'v2-role-contract: ok' "$TMPROOT/validate.err" || fail "validation did not report success"
 
-for role in planner worker reviewer qa-engineer flow-tester perf release-manager; do
+for role in manager planner worker reviewer qa-engineer flow-tester perf release-manager; do
   "$CMD" --resolve --role "$role" | grep -Fxq "core/v2/roles/$role.yaml" || fail "canonical role did not resolve: $role"
   "$CMD" --resolve --role "$role" --format json | jq -e --arg role "$role" '.role == $role and .contract_file == ("core/v2/roles/" + $role + ".yaml")' >/dev/null || fail "json resolution invalid for $role"
   if command -v check-jsonschema >/dev/null 2>&1; then
@@ -31,6 +31,7 @@ for role in planner worker reviewer qa-engineer flow-tester perf release-manager
   fi
 done
 
+[ "$("$CMD" --resolve --role chanakya)" = "core/v2/roles/manager.yaml" ] || fail "chanakya alias did not resolve to manager contract"
 [ "$("$CMD" --resolve --role architect)" = "core/v2/roles/planner.yaml" ] || fail "architect alias did not resolve to planner contract"
 [ "$("$CMD" --resolve --role achilles)" = "core/v2/roles/worker.yaml" ] || fail "achilles alias did not resolve to worker contract"
 [ "$("$CMD" --resolve --role argus)" = "core/v2/roles/reviewer.yaml" ] || fail "argus alias did not resolve to reviewer contract"
@@ -39,13 +40,9 @@ done
 [ "$("$CMD" --resolve --role apollo)" = "core/v2/roles/perf.yaml" ] || fail "apollo alias did not resolve to perf contract"
 [ "$("$CMD" --resolve --role shipper)" = "core/v2/roles/release-manager.yaml" ] || fail "shipper alias did not resolve to release-manager contract"
 
-if "$CMD" --resolve --role manager >"$TMPROOT/manager.out" 2>"$TMPROOT/manager.err"; then
-  fail "manager unexpectedly resolved to a migrated contract"
-fi
-grep -Fq 'role has no migrated contract: manager' "$TMPROOT/manager.err" || fail "manager error was not explicit"
-
 BAD="$TMPROOT/bad-contracts"
 mkdir -p "$BAD"
+cp "$ROOT/core/v2/roles/manager.yaml" "$BAD/manager.yaml"
 cp "$ROOT/core/v2/roles/planner.yaml" "$BAD/planner.yaml"
 cp "$ROOT/core/v2/roles/worker.yaml" "$BAD/worker.yaml"
 cp "$ROOT/core/v2/roles/reviewer.yaml" "$BAD/reviewer.yaml"

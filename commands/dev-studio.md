@@ -34,15 +34,19 @@ supplies the task context and runtime slug.
 3. Read `$STUDIO_REPO/core/v2/skills/dev-studio/SKILL.md`.
 
 4. Parse `$ARGUMENTS`:
-   - Empty arguments route to `manager`.
+   - Empty arguments route to the lightweight `manager` landing.
    - A canonical role or compatibility alias in the first token routes through
      `$STUDIO_REPO/scripts/v2-role-resolve.sh`.
+   - A role token with no remaining request starts that role's lightweight
+     landing. Load the role contract, inspect only cheap cwd/profile context,
+     and offer next moves instead of running a heavy default action.
    - Unknown role tokens fail before side effects.
 
 5. Execute the matched role workflow by following the router and role contract:
-   - `manager` -> shaping, status, resume, ingest, guard, audit.
+   - `manager` -> shaping, status, resume, ingest, guard, audit, or a
+     cwd-aware landing when no subcommand/request is present.
    - `worker` -> bounded task contract in an isolated worktree.
-   - `reviewer` -> plan, outcome, diff, or PR review.
+   - `reviewer` -> plan, outcome, diff, PR, or release-packet review.
    - `perf` -> performance, battery, memory, thermal, network, or instrumentation evidence.
    - `planner`, `qa-engineer`, `flow-tester`, `release-manager` -> active role contracts, usually manager-mediated or approval-gated.
 
@@ -50,7 +54,18 @@ supplies the task context and runtime slug.
    explicitly names another project slug. Use studio scripts from
    `$STUDIO_REPO/scripts/`.
 
-7. If the user asks for help, open:
+7. For a bare-role landing:
+   - In `generic-dev-studio`, include studio-internal options such as
+     `resume-plan`, `ingest`, `guard`, `audit`, `sync`, and `nodes` when they
+     match the selected role.
+   - In project repos, bias suggestions toward project task shaping,
+     implementation, review, QA, flow testing, performance, and release
+     readiness.
+   - After the user locks in a workflow, continue without requiring them to
+     retype the command and report the reusable direct invocation for next
+     time.
+
+8. If the user asks for help, open:
 
    ```bash
    open "$STUDIO_REPO/core/v2/skills/dev-studio/docs.html"

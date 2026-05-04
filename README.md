@@ -61,6 +61,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 
 ```
 # Studio v2 router — canonical role dispatch
+/dev-studio manager              # bare role landing — suggests next moves, then reports the direct command
 /dev-studio manager resume-plan  # "where were we" — load ROADMAP + ARCHITECTURE + pending memory
 /dev-studio reviewer review      # walk REVIEW.md against the pending diff
 /dev-studio release-manager      # draft release notes per RELEASES.md (never auto-tags)
@@ -82,8 +83,9 @@ STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
 /studio-setup --interactive      # legacy: prompt at every step
 /studio-setup --help             # open the v2 router docs + usage summary
 
-/dev-studio manager              # conversational shaping and status
+/dev-studio manager              # conversational shaping and cwd-aware landing
 /dev-studio worker <contract>    # worker role execution contract
+/dev-studio reviewer             # reviewer landing for diff, plan, outcome, PR, or release packet
 /dev-studio reviewer review      # reviewer role contract
 /dev-studio perf profile         # performance role contract
 /dev-studio planner              # planning/architecture role contract
