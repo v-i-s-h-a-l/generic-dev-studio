@@ -69,12 +69,17 @@ chain_git_parent_finalize_summary_eligible() {
     def clean_outcome($v):
       (($v.outcome // $v.status // "") | ascii_downcase)
       | test("^(pass|passed|passed_with_warning|ok|success|succeeded|skipped)$");
+    def unsafe_parent_finalize_note:
+      ascii_downcase as $line
+      | (($line | test("destructive|unrelated issue|scope cannot|review failed"))
+         or (($line | test("secret"))
+             and (($line | test("w_argus_secret_scope|secret-scope|secret_scope")) | not)));
     (((.status // "") | ascii_downcase) | test("^(blocked|failed)$"))
     and ((.commit_after // null) == null or (.commit_after // "") == "" or (.commit_after == .commit_before))
     and ((.blocked_reason // "") | ascii_downcase
       | (test("git|\\.git|index\\.lock|stage|staging|commit")
          and test("operation not permitted|permission denied|unwritable|denies writes|cannot write|failed creating")))
-    and ((text(.carryover) + "\n" + text(.lessons)) | ascii_downcase | test("secret|destructive|unrelated issue|scope cannot|review failed") | not)
+    and all(((text(.carryover) + "\n" + text(.lessons)) | split("\n")[]?); (unsafe_parent_finalize_note | not))
     and ((checks | length) > 0)
     and all(checks[]; clean_outcome(.))
   ' "$summary_file" >/dev/null 2>&1
