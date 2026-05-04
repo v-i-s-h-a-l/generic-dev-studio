@@ -231,7 +231,7 @@ event_stage() {
   case "$1" in
     chain_run_started|chain_plan_prepared|chain_phase_review_completed) printf 'plan\n' ;;
     chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed) printf 'preflight\n' ;;
-    chain_started|chain_issue_started|chain_issue_completed|chain_issue_validated) printf 'execute\n' ;;
+    chain_started|chain_issue_started|chain_issue_completed|chain_issue_validated|chain_parent_commit_finalized) printf 'execute\n' ;;
     chain_worker_summary_ingested|chain_telemetry_gap) printf 'ingest\n' ;;
     chain_pr_opened|chain_review_completed) printf 'review\n' ;;
     chain_completed|chain_issue_merged) printf 'merge\n' ;;
@@ -851,6 +851,33 @@ diff_stats_json() {
 changed_artifacts_json() {
   local worktree="$1" before="$2" after="$3"
   git -C "$worktree" diff --name-only "$before" "$after" 2>/dev/null | jq -R -s -c 'split("\n")[:-1]'
+}
+
+refresh_summary_commit_metrics() {
+  local summary_file="$1" worktree="$2" before="$3" after="$4" parent_finalized="${5:-false}"
+  local stats changed_artifacts tmp
+  [ -f "$summary_file" ] || return 0
+  stats=$(diff_stats_json "$worktree" "$before" "$after")
+  changed_artifacts=$(changed_artifacts_json "$worktree" "$before" "$after")
+  tmp="$summary_file.tmp.$$"
+  jq \
+    --arg after "$after" \
+    --argjson stats "$stats" \
+    --argjson changed_artifacts "$changed_artifacts" \
+    --argjson parent_finalized "$parent_finalized" \
+    '.commit_after = $after
+     | .commit_or_pr_references.commit_after = $after
+     | .files_changed = $stats.files_changed
+     | .additions = $stats.additions
+     | .deletions = $stats.deletions
+     | .generated_file_count = $stats.generated_file_count
+     | .changed_artifacts = $changed_artifacts
+     | if $parent_finalized then
+         .parent_finalized_commit = true
+         | .parent_finalized_by = "parent-runner"
+       else . end' \
+    "$summary_file" > "$tmp"
+  mv "$tmp" "$summary_file"
 }
 
 emit_summary_telemetry_gaps() {
@@ -1953,6 +1980,7 @@ explain_plan() {
     "- Worktree: `\(.chain_worktree)`\n" +
     "- Host: `\(.host)`\n" +
     "- Git metadata strategy: `\(.git_metadata_strategy // "linked-worktree")`\n" +
+    "- Parent finalize: `git-metadata-only worker blocks can be committed by the parent runner after summary/check validation`\n" +
     "- Phase review: `\(.phase_review // "auto")`\n" +
     "- Worker pool: `\(.worker_pool)`\n" +
     "- Planned PR: base `\(.base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
@@ -2264,9 +2292,10 @@ write_issue_phase_outcome_artifact() {
 
 run_issue_job() {
   local name="$1" branch="$2" chain_worktree="$3" issue="$4" host="$5" git_metadata_strategy="$6" issue_worktree="$7" issue_branch="$8" chain_run_id="$9" issue_run_id="${10}" result_file="${11}" phase_review_mode="${12:-auto}" issue_count_for_review="${13:-1}"
-  local before after worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason
+  local before after worker_rc child_worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason parent_finalized
   local phase_context boundary_id phase_plan_artifact phase_outcome_artifact phase_review_rc phase_review_reason
   issue_started_at=$(now_epoch)
+  parent_finalized=false
 
   log "issue #$issue -> $issue_branch"
   if [ "$DRY_RUN" -eq 0 ]; then
@@ -2322,6 +2351,7 @@ run_issue_job() {
   execute_issue_session "$name" "$branch" "$issue" "$host" "$git_metadata_strategy" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$before" "$phase_context"
   worker_rc=$?
   set -e
+  child_worker_rc=$worker_rc
 
   if [ "$DRY_RUN" -eq 1 ]; then
     jq -n \
@@ -2336,8 +2366,6 @@ run_issue_job() {
   summary_file=$(ingest_worker_summary "$name" "$issue" "$host" "$issue_worktree" "$before" "$after" "$worker_rc" "$issue_started_at" "$chain_run_id" "$issue_run_id")
   write_decision_escrows_from_summary "$summary_file" || log "decision escrow extraction failed for $summary_file"
   issue_duration=$(duration_since "$issue_started_at")
-  summary_payload=$(jq -c --arg summary "$summary_file" --arg after "$after" --argjson exit_code "$worker_rc" --argjson duration_s "$issue_duration" \
-    '{summary:$summary, commit_after:$after, exit_code:$exit_code, worker_duration_s:$duration_s, telemetry_gaps:(.telemetry_gaps // [])}' "$summary_file")
 
   if worker_summary_tracked "$issue_worktree"; then
     emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" \
@@ -2349,6 +2377,31 @@ run_issue_job() {
   fi
 
   rm -rf "$issue_worktree/.studio"
+  if [ "$worker_rc" -ne 0 ] && [ "$after" = "$before" ] \
+    && chain_git_parent_finalize_summary_eligible "$summary_file" \
+    && chain_git_parent_finalize_has_public_diff "$issue_worktree"; then
+    log "issue #$issue worker could not write git metadata; parent finalizing commit"
+    if chain_git_parent_finalize_issue_commit "$issue_worktree" "$issue" "$summary_file"; then
+      after=$(git -C "$issue_worktree" rev-parse HEAD)
+      refresh_summary_commit_metrics "$summary_file" "$issue_worktree" "$before" "$after" true
+      parent_finalized=true
+      worker_rc=0
+      emit_chain_event chain_parent_commit_finalized "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed 0 \
+        "$(chain_git_parent_finalize_event_payload "$summary_file" "$before" "$after" "$host")"
+    else
+      log "issue #$issue parent finalize declined; preserving worker failure path"
+    fi
+  fi
+
+  summary_payload=$(jq -c \
+    --arg summary "$summary_file" \
+    --arg after "$after" \
+    --argjson exit_code "$worker_rc" \
+    --argjson child_exit_code "$child_worker_rc" \
+    --argjson duration_s "$issue_duration" \
+    --argjson parent_finalized "$parent_finalized" \
+    '{summary:$summary, commit_after:$after, exit_code:$exit_code, child_exit_code:$child_exit_code, worker_duration_s:$duration_s, parent_finalized:$parent_finalized, telemetry_gaps:(.telemetry_gaps // [])}' "$summary_file")
+
   if [ "$worker_rc" -ne 0 ]; then
     child_reason_id=$(jq -r '.halt_reason_id // empty' "$summary_file")
     if [ -z "$child_reason_id" ]; then
