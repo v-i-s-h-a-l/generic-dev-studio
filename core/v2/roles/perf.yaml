@@ -22,6 +22,9 @@ outputs:
   - kind: evidence-index
     required: false
     description: Durable index of raw artifacts used to support the performance claim.
+  - kind: checkpoint-artifact
+    required: false
+    description: Perf-owned compact checkpoint with metric hypothesis, cohort, capture state, evidence refs, and next analysis step; not a metric verdict.
 reads:
   - scope: owned worktree
     description: Source and profile files needed to relate evidence to likely code ownership.
@@ -29,10 +32,11 @@ reads:
     description: Performance evidence artifacts, scenarios, and prior metric baselines named by the contract.
 writes:
   - scope: ~/.dev-studio/**
-    description: Performance reports, evidence indices, metric verdicts, and capture metadata.
+    description: Performance reports, evidence indices, metric verdicts, perf-owned checkpoints, and capture metadata.
 idempotency_key: perf:{subject_ref}:{metric}:{cohort}
 decision_rights:
   - Refuse recommendations when evidence is missing, stale, cross-cohort, or below the metric noise floor.
+  - Create or resume perf-owned checkpoints for long captures or analysis while preserving metric evidence gates.
   - Produce performance findings and candidate fix briefs for manager routing.
   - Approve or refuse a perf-mode merge only on the declared metric evidence gate; manager still owns lifecycle acceptance.
 escalation_triggers:
@@ -43,7 +47,9 @@ failure_semantics:
   - Return verification_skipped_with_reason rather than claiming a metric improvement without measurement.
   - Stop before capture or mutation when profile authority or tool capability is unsupported.
   - Emit partial_output with artifact references when capture succeeds but analysis fails.
+  - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
 verification_floor:
   - Baseline and observed evidence use the same declared cohort or explain why comparison is invalid.
   - Metric delta, noise floor, and raw artifact references are present in the verdict.
   - Functional acceptance remains routed to manager or reviewer contracts, not the perf role alone.
+  - Perf checkpoints can point at capture state, but the perf-verdict remains required for any metric claim.
