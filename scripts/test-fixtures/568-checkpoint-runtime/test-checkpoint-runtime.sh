@@ -97,6 +97,32 @@ jq -e 'select(.event == "checkpoint_budget_warning")' "$budget_dir/telemetry.jso
 run_checkpoint usefulness --checkpoint-id ckpt-runtime-update --outcome helpful --notes "Resume context was useful"
 jq -e 'select(.event == "checkpoint_usefulness_recorded" and .usefulness.resume_outcome == "helpful")' "$updated_dir/telemetry.jsonl" >/dev/null \
   || fail "usefulness telemetry missing"
+
+git -C "$REPO" checkout -q -b feature/chain
+manager_chain_dir=$(run_checkpoint create \
+  --role manager \
+  --goal "Chain automation checkpoint" \
+  --completed "Manager checkpoint for the active chain branch" \
+  --next "Resume the chain branch" \
+  --checkpoint-id ckpt-manager-chain)
+run_checkpoint create \
+  --role worker \
+  --goal "Unrelated worker checkpoint" \
+  --completed "Worker checkpoint on same branch must not be loaded by manager resume" \
+  --checkpoint-id ckpt-worker-chain >/dev/null
+git -C "$REPO" checkout -q -b feature/other
+run_checkpoint create \
+  --role manager \
+  --goal "Unrelated manager checkpoint" \
+  --completed "Manager checkpoint on another branch must not be loaded by chain resume" \
+  --checkpoint-id ckpt-manager-other >/dev/null
+scoped_output=$(run_checkpoint resume --latest --role manager --branch feature/chain)
+printf '%s\n' "$scoped_output" | grep -Fq 'Checkpoint: `ckpt-manager-chain`' \
+  || fail "manager resume loaded unrelated role or branch checkpoint"
+jq -e '.checkpoint_id == "ckpt-manager-chain"' "$root/latest/manager/feature_chain.json" >/dev/null \
+  || fail "manager latest pointer for feature/chain missing"
+[ "$manager_chain_dir" = "$root/sessions/ckpt-manager-chain" ] \
+  || fail "manager checkpoint directory was not in private runtime storage"
 if command -v check-jsonschema >/dev/null 2>&1; then
   while IFS= read -r line; do
     [ -n "$line" ] || continue

@@ -45,6 +45,7 @@ Every line carries the same top-level envelope:
 | Reviewer: `chain_review_completed` | `pr_url`, `exit_code`, `verdict` when wrapper output supplied it, `model`/`effort` when available, `wrapper_output`. |
 | Gap: `chain_telemetry_gap` | `gap_kind`, `stage`, `reason`. Missing token/model/check data is a gap, never numeric zero. |
 | HOME/auth normalization: `chain_auth_normalized` | `home_source`, `github_auth`, `secrets`. Do not emit actual HOME paths or secret material. |
+| Automated checkpoints: `checkpoint_auto_created`, `checkpoint_auto_loaded`, `checkpoint_context_savings_estimated` | `checkpoint_id`, `role`, `branch`, compact size/token counters, drift status for loads, loaded file names, and private artifact pointers. Automated checkpoint events are private chain-run telemetry and do not replace worker summaries, phase reviews, PR reviews, halt records, decision escrows, event logs, or reports. |
 
 ## Public Surfaces
 
