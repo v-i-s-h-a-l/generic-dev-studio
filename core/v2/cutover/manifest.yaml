@@ -37,7 +37,7 @@ parity:
     - name: manager triage
       legacy_invocation: /studio resume-plan
       v2_invocation: /dev-studio manager resume-plan
-      evidence: core/v2/manager/proof-of-life.yaml
+      evidence: core/v2/roles/manager.yaml
     - name: worker implementation
       legacy_invocation: /achilles task
       v2_invocation: /dev-studio worker task
@@ -52,7 +52,7 @@ parity:
       evidence: core/v2/roles/perf.yaml
 rollback:
   trigger_events:
-    - v2 manager proof-of-life cannot produce a typed handoff artifact
+    - v2 manager contract cannot produce a typed handoff artifact
     - worker reviewer or perf role contract resolution fails
     - parity fixture fails on the chain branch after ordered integration
     - operator reports a v2 traffic regression after A10 deletion

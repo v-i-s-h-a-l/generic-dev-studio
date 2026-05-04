@@ -30,6 +30,7 @@ require yq
 grep -Fq 'name: dev-studio' "$SKILL_DIR/SKILL.md" || fail "SKILL.md frontmatter name mismatch"
 grep -Fq 'type: agent-router' "$SKILL_DIR/SKILL.md" || fail "dev-studio is not an agent-router"
 grep -Fq '<!-- v2-dev-studio:dispatch -->' "$SKILL_DIR/SKILL.md" || fail "missing dispatch anchor"
+grep -Fq '<!-- v2-dev-studio:landing -->' "$SKILL_DIR/SKILL.md" || fail "missing bare-role landing anchor"
 grep -Fq '<!-- v2-dev-studio:forwarders -->' "$SKILL_DIR/SKILL.md" || fail "missing forwarders anchor"
 
 [ "$(yq -r '.invocation.slash_command' "$SKILL_DIR/routing.yaml")" = "/dev-studio" ] || fail "routing slash command mismatch"
@@ -66,5 +67,7 @@ assert_alias apollo perf
 [ "$(yq -r '.transition.cutover_status' "$FORWARDERS")" = "v1-deleted" ] || fail "A10 deletion should be recorded"
 [ "$(yq -r '.forwarders | length' "$FORWARDERS")" = "0" ] || fail "A10 should not preserve v1 forwarder rows"
 grep -Fq 'primary traffic surface' "$SKILL_DIR/SKILL.md" || fail "traffic boundary not documented"
+grep -Fq 'Bare Role Landing' "$SKILL_DIR/SKILL.md" || fail "bare role landing not documented"
+grep -Fq 'direct one-line invocation' "$SKILL_DIR/SKILL.md" || fail "direct command suggestion not documented"
 
 printf 'PASS: dev-studio umbrella skill and forwarders\n'
