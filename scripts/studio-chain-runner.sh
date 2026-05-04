@@ -2292,7 +2292,7 @@ write_issue_phase_outcome_artifact() {
 
 run_issue_job() {
   local name="$1" branch="$2" chain_worktree="$3" issue="$4" host="$5" git_metadata_strategy="$6" issue_worktree="$7" issue_branch="$8" chain_run_id="$9" issue_run_id="${10}" result_file="${11}" phase_review_mode="${12:-auto}" issue_count_for_review="${13:-1}"
-  local before after worker_rc child_worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason parent_finalized
+  local before after worker_rc child_worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason parent_finalized effective_worker_rc
   local phase_context boundary_id phase_plan_artifact phase_outcome_artifact phase_review_rc phase_review_reason
   issue_started_at=$(now_epoch)
   parent_finalized=false
@@ -2364,6 +2364,7 @@ run_issue_job() {
 
   after=$(git -C "$issue_worktree" rev-parse HEAD)
   summary_file=$(ingest_worker_summary "$name" "$issue" "$host" "$issue_worktree" "$before" "$after" "$worker_rc" "$issue_started_at" "$chain_run_id" "$issue_run_id")
+  effective_worker_rc=$(chain_git_parent_finalize_effective_worker_rc "$worker_rc" "$summary_file")
   write_decision_escrows_from_summary "$summary_file" || log "decision escrow extraction failed for $summary_file"
   issue_duration=$(duration_since "$issue_started_at")
 
@@ -2377,7 +2378,7 @@ run_issue_job() {
   fi
 
   rm -rf "$issue_worktree/.studio"
-  if [ "$worker_rc" -ne 0 ] && [ "$after" = "$before" ] \
+  if [ "$effective_worker_rc" -ne 0 ] && [ "$after" = "$before" ] \
     && chain_git_parent_finalize_summary_eligible "$summary_file" \
     && chain_git_parent_finalize_has_public_diff "$issue_worktree"; then
     log "issue #$issue worker could not write git metadata; parent finalizing commit"
@@ -2391,6 +2392,10 @@ run_issue_job() {
     else
       log "issue #$issue parent finalize declined; preserving worker failure path"
     fi
+  fi
+
+  if [ "$worker_rc" -eq 0 ] && [ "$effective_worker_rc" -ne 0 ]; then
+    worker_rc="$effective_worker_rc"
   fi
 
   summary_payload=$(jq -c \

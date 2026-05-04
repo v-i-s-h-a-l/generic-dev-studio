@@ -85,6 +85,34 @@ chain_git_parent_finalize_summary_eligible() {
   ' "$summary_file" >/dev/null 2>&1
 }
 
+chain_git_parent_finalize_summary_reports_failure() {
+  local summary_file="${1:?usage: chain_git_parent_finalize_summary_reports_failure <summary-file>}"
+  [ -f "$summary_file" ] || return 1
+  jq -e '
+    (((.exit_code // 0) | tonumber? // 0) != 0)
+    or (((.status // "") | ascii_downcase) | test("^(blocked|failed)$"))
+  ' "$summary_file" >/dev/null 2>&1
+}
+
+chain_git_parent_finalize_effective_worker_rc() {
+  local worker_rc="${1:?usage: chain_git_parent_finalize_effective_worker_rc <worker-rc> <summary-file>}"
+  local summary_file="${2:?summary file required}" summary_rc
+  if [ "$worker_rc" -ne 0 ]; then
+    printf '%s\n' "$worker_rc"
+    return 0
+  fi
+  summary_rc=$(jq -r '((.exit_code // 0) | tonumber? // 0)' "$summary_file" 2>/dev/null || printf '0')
+  if [ "$summary_rc" -ne 0 ] 2>/dev/null; then
+    printf '%s\n' "$summary_rc"
+    return 0
+  fi
+  if chain_git_parent_finalize_summary_reports_failure "$summary_file"; then
+    printf '1\n'
+    return 0
+  fi
+  printf '0\n'
+}
+
 chain_git_parent_finalize_has_public_diff() {
   local issue_worktree="${1:?usage: chain_git_parent_finalize_has_public_diff <issue-worktree>}"
   git -C "$issue_worktree" status --porcelain --untracked-files=all -- \
