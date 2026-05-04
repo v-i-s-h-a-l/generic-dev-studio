@@ -2,8 +2,8 @@
 # studio-chain-runner.sh - execute issue chains with capacity-scaled fresh host sessions.
 #
 # Usage:
-#   scripts/studio-chain-runner.sh <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--yes] [--parallel-chains <n|auto|1>]
-#   scripts/studio-chain-runner.sh --auto <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run]
+#   scripts/studio-chain-runner.sh <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--yes] [--parallel-chains <n|auto|1>] [--checkpoint auto|off]
+#   scripts/studio-chain-runner.sh --auto <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--checkpoint auto|off]
 #   scripts/studio-chain-runner.sh --explain-next <manifest|chain-name> [--only <chain>]
 #   scripts/studio-chain-runner.sh --resume <run_id> [--yes]
 #   scripts/studio-chain-runner.sh --list
@@ -43,6 +43,7 @@ YES=0
 RESUME_ID=""
 ALLOW_CLOSED_ISSUES=0
 PARALLEL_CHAINS="auto"
+CHECKPOINT_OVERRIDE="${STUDIO_CHAIN_CHECKPOINT:-}"
 LIST_RUNS=0
 AUTO_MODE=0
 EXPLAIN_NEXT=0
@@ -64,6 +65,8 @@ while [ $# -gt 0 ]; do
     --resume=*) RESUME_ID="${1#--resume=}"; shift ;;
     --parallel-chains) PARALLEL_CHAINS="${2:?--parallel-chains requires n, auto, or 1}"; shift 2 ;;
     --parallel-chains=*) PARALLEL_CHAINS="${1#--parallel-chains=}"; shift ;;
+    --checkpoint) CHECKPOINT_OVERRIDE="${2:?--checkpoint requires auto or off}"; shift 2 ;;
+    --checkpoint=*) CHECKPOINT_OVERRIDE="${1#--checkpoint=}"; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --yes|--no-confirm) YES=1; shift ;;
     --allow-closed-issues) ALLOW_CLOSED_ISSUES=1; shift ;;
@@ -138,6 +141,10 @@ case "$PARALLEL_CHAINS" in
       exit 2
     fi
     ;;
+esac
+case "$CHECKPOINT_OVERRIDE" in
+  ""|auto|off) ;;
+  *) printf 'studio-chain-runner: --checkpoint must be auto or off\n' >&2; exit 2 ;;
 esac
 
 command -v yq >/dev/null 2>&1 || { printf 'studio-chain-runner: yq required\n' >&2; exit 2; }
@@ -232,7 +239,7 @@ event_stage() {
     chain_run_started|chain_plan_prepared|chain_phase_review_completed) printf 'plan\n' ;;
     chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed) printf 'preflight\n' ;;
     chain_started|chain_issue_started|chain_issue_completed|chain_issue_validated|chain_parent_commit_finalized) printf 'execute\n' ;;
-    chain_worker_summary_ingested|chain_telemetry_gap) printf 'ingest\n' ;;
+    chain_worker_summary_ingested|chain_telemetry_gap|checkpoint_auto_created|checkpoint_auto_loaded|checkpoint_context_savings_estimated) printf 'ingest\n' ;;
     chain_pr_opened|chain_review_completed) printf 'review\n' ;;
     chain_completed|chain_issue_merged) printf 'merge\n' ;;
     chain_issue_closed) printf 'close\n' ;;
@@ -281,13 +288,14 @@ emit_chain_event() {
 
 write_run_state() {
   local status="$1" failure_reason="${2:-}"
-  local chains_json="[]" halt_records_json="[]" decision_escrows_json="[]" phase_reviews_json="[]" phase_review_feedback_json="[]"
+  local chains_json="[]" halt_records_json="[]" decision_escrows_json="[]" phase_reviews_json="[]" phase_review_feedback_json="[]" checkpoints_json="[]"
   if [ -f "$RUN_STATE_JSON" ]; then
     chains_json=$(jq -c '.chains // []' "$RUN_STATE_JSON")
     halt_records_json=$(jq -c '.halt_records // []' "$RUN_STATE_JSON")
     decision_escrows_json=$(jq -c '.decision_escrows // []' "$RUN_STATE_JSON")
     phase_reviews_json=$(jq -c '.phase_reviews // []' "$RUN_STATE_JSON")
     phase_review_feedback_json=$(jq -c '.phase_review_feedback // []' "$RUN_STATE_JSON")
+    checkpoints_json=$(jq -c '.checkpoints // []' "$RUN_STATE_JSON")
   elif [ -f "$PLAN_JSON" ]; then
     chains_json=$(jq -c '.chains // []' "$PLAN_JSON")
   fi
@@ -306,6 +314,7 @@ write_run_state() {
     --argjson decision_escrows "$decision_escrows_json" \
     --argjson phase_reviews "$phase_reviews_json" \
     --argjson phase_review_feedback "$phase_review_feedback_json" \
+    --argjson checkpoints "$checkpoints_json" \
     '{
       schema_version: 1,
       run_id: $run_id,
@@ -321,6 +330,7 @@ write_run_state() {
       decision_escrows: $decision_escrows,
       phase_reviews: $phase_reviews,
       phase_review_feedback: $phase_review_feedback,
+      checkpoints: $checkpoints,
       failure_reason: (if $failure_reason == "" then null else $failure_reason end)
     }' > "$RUN_STATE_JSON"
 }
@@ -360,6 +370,160 @@ mark_issue_state() {
      | if $after == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .commit_after) = $after end
      | if $summary == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .summary) = $summary end
      | if $reason == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .failure_reason) = $reason end'
+}
+
+sanitize_checkpoint_component() {
+  printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_' | sed 's/^_*//; s/_*$//; s/__/_/g'
+}
+
+checkpoint_latest_pointer_path_for() {
+  local project="$1" role="$2" branch="$3" latest_dir safe_role safe_branch
+  latest_dir=$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_checkpoint_latest_dir_for "$project")
+  safe_role=$(sanitize_checkpoint_component "$role")
+  safe_branch=$(sanitize_checkpoint_component "$branch")
+  printf '%s/%s/%s.json\n' "$latest_dir" "$safe_role" "$safe_branch"
+}
+
+resolve_checkpoint_mode() {
+  local chain_idx="$1" mode
+  mode="$CHECKPOINT_OVERRIDE"
+  if [ -z "$mode" ]; then
+    mode=$(yq -r ".chains[$chain_idx].checkpoint // .checkpoint // \"off\"" "$MANIFEST")
+  fi
+  case "$mode" in
+    auto|off) printf '%s\n' "$mode" ;;
+    *)
+      printf 'studio-chain-runner: checkpoint must be auto or off: %s\n' "$mode" >&2
+      exit 2
+      ;;
+  esac
+}
+
+record_auto_checkpoint() {
+  local chain_run_id="$1" issue_run_id="$2" issue="$3" checkpoint_id="$4" checkpoint_dir="$5" branch="$6" head="$7"
+  local telemetry default_bytes total_bytes default_tokens total_tokens saved_tokens
+  telemetry=$(tail -n 1 "$checkpoint_dir/telemetry.jsonl" 2>/dev/null || printf '{}')
+  default_bytes=$(printf '%s\n' "$telemetry" | jq -r '.size.default_load_bytes // 0')
+  total_bytes=$(printf '%s\n' "$telemetry" | jq -r '.size.total_bytes // 0')
+  default_tokens=$(printf '%s\n' "$telemetry" | jq -r '.size.estimated_default_load_tokens // 0')
+  total_tokens=$(printf '%s\n' "$telemetry" | jq -r '.size.estimated_total_tokens // 0')
+  saved_tokens=$(( total_tokens - default_tokens ))
+  [ "$saved_tokens" -lt 0 ] && saved_tokens=0
+
+  update_state_jq \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg checkpoint_id "$checkpoint_id" \
+    --arg checkpoint_dir "$checkpoint_dir" \
+    --arg branch "$branch" \
+    --arg head "$head" \
+    --argjson default_bytes "$default_bytes" \
+    --argjson total_bytes "$total_bytes" \
+    --argjson default_tokens "$default_tokens" \
+    --argjson total_tokens "$total_tokens" \
+    '(.checkpoints //= [])
+     | .checkpoints += [{
+        checkpoint_id:$checkpoint_id,
+        checkpoint_dir:$checkpoint_dir,
+        role:"manager",
+        branch:$branch,
+        head:$head,
+        chain_run_id:$chain_run_id,
+        issue_run_id:$issue_run_id,
+        default_load_bytes:$default_bytes,
+        total_bytes:$total_bytes,
+        estimated_default_load_tokens:$default_tokens,
+        estimated_total_tokens:$total_tokens
+       }]
+     | (.chains[] | select(.chain_run_id == $chain_run_id) | .latest_checkpoint) = $checkpoint_id
+     | (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .checkpoint_id) = $checkpoint_id'
+
+  emit_chain_event checkpoint_auto_created "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed 0 \
+    "$(jq -cn --arg checkpoint_id "$checkpoint_id" --arg checkpoint_dir "$checkpoint_dir" --arg role manager --arg branch "$branch" --arg head "$head" --argjson default_bytes "$default_bytes" --argjson total_bytes "$total_bytes" --argjson default_tokens "$default_tokens" --argjson total_tokens "$total_tokens" '{checkpoint_id:$checkpoint_id, checkpoint_dir:$checkpoint_dir, role:$role, branch:$branch, head:$head, default_load_bytes:$default_bytes, total_bytes:$total_bytes, estimated_default_load_tokens:$default_tokens, estimated_total_tokens:$total_tokens}')"
+  emit_chain_event checkpoint_context_savings_estimated "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed 0 \
+    "$(jq -cn --arg checkpoint_id "$checkpoint_id" --argjson saved_tokens "$saved_tokens" --argjson default_tokens "$default_tokens" --argjson total_tokens "$total_tokens" '{checkpoint_id:$checkpoint_id, estimated_saved_tokens:$saved_tokens, estimated_default_load_tokens:$default_tokens, estimated_total_tokens:$total_tokens, method:"total_artifact_tokens_minus_default_load_tokens"}')"
+}
+
+create_auto_checkpoint_after_issue() {
+  local mode="$1" chain_name="$2" branch="$3" chain_worktree="$4" chain_run_id="$5" issue_run_id="$6" issue="$7" result_file="$8"
+  [ "$mode" = "auto" ] || return 0
+  local checkpoint_id checkpoint_dir head summary_path completed next
+  local -a checkpoint_cmd
+  checkpoint_id="chain-$(sanitize_checkpoint_component "$RUN_ID")-$(sanitize_checkpoint_component "$chain_run_id")-$(sanitize_checkpoint_component "$issue_run_id")"
+  head=$(git -C "$chain_worktree" rev-parse HEAD)
+  summary_path=$(jq -r --arg id "$issue_run_id" '.chains[].issues[] | select(.issue_run_id == $id) | .summary // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
+  completed="Issue #$issue completed and integrated into chain $chain_name at $head."
+  next="Resume chain runner from run state and continue the next pending issue or final PR/review step."
+  checkpoint_cmd=(
+    "$SCRIPT_DIR/studio-checkpoint.sh" create
+    --project generic-dev-studio
+    --role manager
+    --mode chain-auto
+    --host "$PARENT_STUDIO_HOST"
+    --goal "Resume Studio chain $chain_name from compact automated checkpoint."
+    --completed "$completed"
+    --next "$next"
+    --evidence "$RUN_STATE_JSON"
+    --evidence "$result_file"
+    --resume-command "scripts/studio-chain-runner.sh --resume $RUN_ID --yes --checkpoint auto"
+    --checkpoint-id "$checkpoint_id"
+    --branch "$branch"
+  )
+  [ -z "$summary_path" ] || checkpoint_cmd+=(--evidence "$summary_path")
+  checkpoint_dir=$(
+    cd "$chain_worktree" && HOME="$PARENT_HOME_FOR_GITHUB" "${checkpoint_cmd[@]}"
+  )
+  record_auto_checkpoint "$chain_run_id" "$issue_run_id" "$issue" "$checkpoint_id" "$checkpoint_dir" "$branch" "$head"
+}
+
+validate_auto_checkpoint_artifacts() {
+  local dir="$1" branch="$2" expected_checkpoint_id="$3" current_head="$4"
+  local state saved_branch saved_head ref missing=""
+  [ -d "$dir" ] || { printf 'checkpoint directory missing: %s\n' "$dir" >&2; return 1; }
+  [ -f "$dir/manifest.json" ] || { printf 'checkpoint manifest missing: %s\n' "$dir" >&2; return 1; }
+  [ -f "$dir/context.md" ] || { printf 'checkpoint context missing: %s\n' "$dir" >&2; return 1; }
+  [ -f "$dir/state.json" ] || { printf 'checkpoint state missing: %s\n' "$dir" >&2; return 1; }
+  jq -e --arg checkpoint_id "$expected_checkpoint_id" --arg role manager \
+    '.checkpoint_id == $checkpoint_id and .producer.role == $role and .default_load.files == ["manifest.json", "context.md"]' \
+    "$dir/manifest.json" >/dev/null || return 1
+  state=$(cat "$dir/state.json")
+  saved_branch=$(printf '%s\n' "$state" | jq -r '.working_tree.branch // ""')
+  saved_head=$(printf '%s\n' "$state" | jq -r '.working_tree.commit // ""')
+  [ "$saved_branch" = "$branch" ] || { printf 'checkpoint branch drift: %s != %s\n' "$saved_branch" "$branch" >&2; return 1; }
+  [ -z "$saved_head" ] || [ "$saved_head" = "$current_head" ] || { printf 'checkpoint head drift: %s != %s\n' "$saved_head" "$current_head" >&2; return 1; }
+  while IFS= read -r ref; do
+    [ -n "$ref" ] || continue
+    case "$ref" in
+      /*) [ -e "$ref" ] || missing="${missing:+$missing, }$ref" ;;
+    esac
+  done <<EOF
+$(jq -r '.evidence[]?.ref // empty' "$dir/evidence.json" 2>/dev/null || true)
+EOF
+  [ -z "$missing" ] || { printf 'checkpoint evidence refs missing: %s\n' "$missing" >&2; return 1; }
+}
+
+load_auto_checkpoint_for_chain() {
+  local mode="$1" chain_run_id="$2" branch="$3" chain_worktree="$4"
+  [ "$mode" = "auto" ] || return 0
+  [ -n "$RESUME_ID" ] || return 0
+  local checkpoint_id pointer_dir pointer_id checkpoint_dir current_head load_out drift loaded_files
+  checkpoint_id=$(jq -r --arg chain_run_id "$chain_run_id" '(.checkpoints // []) | map(select(.chain_run_id == $chain_run_id)) | last | .checkpoint_id // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
+  [ -n "$checkpoint_id" ] || return 0
+  pointer_dir=$(checkpoint_latest_pointer_path_for generic-dev-studio manager "$branch")
+  pointer_id=$(jq -r '.checkpoint_id // empty' "$pointer_dir" 2>/dev/null || true)
+  [ "$pointer_id" = "$checkpoint_id" ] || abort_run "checkpoint latest pointer drift for branch $branch"
+  checkpoint_dir=$(jq -r --arg chain_run_id "$chain_run_id" --arg checkpoint_id "$checkpoint_id" '(.checkpoints // []) | map(select(.chain_run_id == $chain_run_id and .checkpoint_id == $checkpoint_id)) | last | .checkpoint_dir // empty' "$RUN_STATE_JSON")
+  current_head=$(git -C "$chain_worktree" rev-parse HEAD)
+  validate_auto_checkpoint_artifacts "$checkpoint_dir" "$branch" "$checkpoint_id" "$current_head" || abort_run "checkpoint drift verification failed for $checkpoint_id"
+  load_out="$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.out"
+  HOME="$PARENT_HOME_FOR_GITHUB" STUDIO_CHECKPOINT_TRACE_READS="$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.reads" \
+    "$SCRIPT_DIR/studio-checkpoint.sh" resume --project generic-dev-studio --role manager --branch "$branch" --latest > "$load_out"
+  drift=$(sed -n 's/^Drift: //p' "$load_out" | tail -1)
+  [ "$drift" != "confirmed" ] || abort_run "checkpoint resume drift confirmed for $checkpoint_id"
+  loaded_files=$(tr '\n' ' ' < "$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.reads" 2>/dev/null | awk '{printf "[\""; for (i=1;i<=NF;i++){if(i>1)printf "\",\""; printf "%s",$i} printf "\"]"}')
+  [ -n "$loaded_files" ] || loaded_files='[]'
+  emit_chain_event checkpoint_auto_loaded "" "$RUN_ID" "$chain_run_id" "" completed 0 \
+    "$(jq -cn --arg checkpoint_id "$checkpoint_id" --arg checkpoint_dir "$checkpoint_dir" --arg branch "$branch" --arg drift "${drift:-unknown}" --arg load_output "$load_out" --argjson loaded_files "$loaded_files" '{checkpoint_id:$checkpoint_id, checkpoint_dir:$checkpoint_dir, role:"manager", branch:$branch, drift_status:$drift, loaded_files:$loaded_files, load_output:$load_output}')"
 }
 
 halt_class_for_reason() {
@@ -1801,7 +1965,7 @@ resolve_resume_state() {
 }
 
 build_plan_json() {
-  local out="$1" chain_count idx name base branch host phase_review_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state
+  local out="$1" chain_count idx name base branch host phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state
   local chain_run_id issue_run_id issue_slug issue_branch issue_worktree chain_slug chain_worktree worker_pool
   local tmp chains_tmp issues_tmp
   tmp="$out.tmp.$$"
@@ -1826,6 +1990,7 @@ build_plan_json() {
     [ "$host" = "auto" ] && host="${HOST_OVERRIDE:-codex}"
     [ -n "$HOST_OVERRIDE" ] && host="$HOST_OVERRIDE"
     phase_review_mode=$(resolve_phase_review_mode "$idx")
+    checkpoint_mode=$(resolve_checkpoint_mode "$idx")
     git_metadata_strategy=$(git_metadata_strategy_for_host "$host")
     validate_chain_branch "$branch" "$base"
     issue_count=$(yq -r ".chains[$idx].issues | length" "$MANIFEST")
@@ -1877,12 +2042,13 @@ build_plan_json() {
       --arg branch "$branch" \
       --arg host "$host" \
       --arg phase_review_mode "$phase_review_mode" \
+      --arg checkpoint_mode "$checkpoint_mode" \
       --arg git_metadata_strategy "$git_metadata_strategy" \
       --arg chain_run_id "$chain_run_id" \
       --arg worktree "$chain_worktree" \
       --argjson worker_pool "$worker_pool" \
       --slurpfile issues "$issues_tmp" \
-      '. + [{name:$name,base:$base,branch:$branch,host:$host,phase_review:$phase_review_mode,git_metadata_strategy:$git_metadata_strategy,chain_run_id:$chain_run_id,chain_worktree:$worktree,worker_pool:$worker_pool,status:"pending",issues:$issues[0]}]' \
+      '. + [{name:$name,base:$base,branch:$branch,host:$host,phase_review:$phase_review_mode,checkpoint:$checkpoint_mode,git_metadata_strategy:$git_metadata_strategy,chain_run_id:$chain_run_id,chain_worktree:$worktree,worker_pool:$worker_pool,status:"pending",issues:$issues[0]}]' \
       "$chains_tmp" > "$chains_tmp.next"
     mv "$chains_tmp.next" "$chains_tmp"
     rm -f "$issues_tmp"
@@ -1894,8 +2060,9 @@ build_plan_json() {
     --arg only_chain "$ONLY_CHAIN" \
     --arg host_override "$HOST_OVERRIDE" \
     --arg parallel_chains "$PARALLEL_CHAINS" \
+    --arg checkpoint_override "$CHECKPOINT_OVERRIDE" \
     --slurpfile chains "$chains_tmp" \
-    '{schema_version:1, run_id:$run_id, manifest:$manifest, only_chain:(if $only_chain == "" then null else $only_chain end), host_override:(if $host_override == "" then null else $host_override end), parallel_chains:$parallel_chains, chains:$chains[0]}' > "$tmp"
+    '{schema_version:1, run_id:$run_id, manifest:$manifest, only_chain:(if $only_chain == "" then null else $only_chain end), host_override:(if $host_override == "" then null else $host_override end), parallel_chains:$parallel_chains, checkpoint_override:(if $checkpoint_override == "" then null else $checkpoint_override end), chains:$chains[0]}' > "$tmp"
   mv "$tmp" "$out"
   rm -f "$chains_tmp"
 }
@@ -1982,6 +2149,7 @@ explain_plan() {
     "- Git metadata strategy: `\(.git_metadata_strategy // "linked-worktree")`\n" +
     "- Parent finalize: `git-metadata-only worker blocks can be committed by the parent runner after summary/check validation`\n" +
     "- Phase review: `\(.phase_review // "auto")`\n" +
+    "- Checkpoint automation: `\(.checkpoint // "off")`\n" +
     "- Worker pool: `\(.worker_pool)`\n" +
     "- Planned PR: base `\(.base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
     "| Issue | State | Status | Issue-run UUID | Branch | Worktree |\n|---:|---|---|---|---|---|\n" +
@@ -2563,6 +2731,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
   branch=$(jq -r ".chains[$idx].branch" "$PLAN_JSON")
   host=$(jq -r ".chains[$idx].host" "$PLAN_JSON")
   phase_review_mode=$(jq -r ".chains[$idx].phase_review // \"auto\"" "$PLAN_JSON")
+  checkpoint_mode=$(jq -r ".chains[$idx].checkpoint // \"off\"" "$PLAN_JSON")
   git_metadata_strategy=$(jq -r ".chains[$idx].git_metadata_strategy // \"linked-worktree\"" "$PLAN_JSON")
   issue_count=$(jq -r ".chains[$idx].issues | length" "$PLAN_JSON")
   chain_run_id=$(jq -r ".chains[$idx].chain_run_id" "$PLAN_JSON")
@@ -2579,7 +2748,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
   chain_results_dir="$RUN_ROOT/$chain_slug-results-$chain_run_id"
   CHAIN_WORKER_POOL=$(jq -r ".chains[$idx].worker_pool" "$PLAN_JSON")
 
-  log "starting chain $name on $branch from latest $base using host=$host git_metadata_strategy=$git_metadata_strategy worker_pool=$CHAIN_WORKER_POOL"
+  log "starting chain $name on $branch from latest $base using host=$host git_metadata_strategy=$git_metadata_strategy checkpoint=$checkpoint_mode worker_pool=$CHAIN_WORKER_POOL"
   mark_chain_state "$chain_run_id" running
   emit_chain_event chain_started "" "$RUN_ID" "$chain_run_id" "" running 0 \
     "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --arg git_metadata_strategy "$git_metadata_strategy" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, host:$host, git_metadata_strategy:$git_metadata_strategy, issue_count:$issue_count, worker_pool:$worker_pool}')"
@@ -2600,7 +2769,12 @@ for ((idx = 0; idx < chain_count; idx++)); do
   else
     mkdir -p "$chain_results_dir"
     printf 'DRY-RUN git worktree add -B %q %q origin/%q\n' "$branch" "$chain_worktree" "$base"
+    if [ "$checkpoint_mode" = "auto" ]; then
+      printf 'DRY-RUN scripts/studio-checkpoint.sh resume --project generic-dev-studio --role manager --branch %q --latest\n' "$branch"
+    fi
   fi
+
+  load_auto_checkpoint_for_chain "$checkpoint_mode" "$chain_run_id" "$branch" "$chain_worktree"
 
   ISSUE_PIDS=()
   for ((i = 0; i < issue_count; i++)); do
@@ -2621,6 +2795,14 @@ for ((idx = 0; idx < chain_count; idx++)); do
         --arg commit_after "$issue_commit_after" \
         '{status:"completed", issue:($issue|tonumber), issue_branch:$branch, issue_worktree:$worktree, commit_after:(if $commit_after == "" then null else $commit_after end), resumed:true}' > "$result_file"
       integrate_issue_result "$name" "$branch" "$chain_worktree" "$issue" "$git_metadata_strategy" "$result_file" "$chain_run_id" "$issue_run_id"
+      if [ "$checkpoint_mode" = "auto" ]; then
+        if [ "$DRY_RUN" -eq 0 ]; then
+          create_auto_checkpoint_after_issue "$checkpoint_mode" "$name" "$branch" "$chain_worktree" "$chain_run_id" "$issue_run_id" "$issue" "$result_file"
+        else
+          printf 'DRY-RUN cd %q && scripts/studio-checkpoint.sh create --project generic-dev-studio --role manager --mode chain-auto --branch %q --checkpoint-id chain-%s-%s-%s --resume-command %q\n' \
+            "$chain_worktree" "$branch" "$RUN_ID" "$chain_run_id" "$issue_run_id" "scripts/studio-chain-runner.sh --resume $RUN_ID --yes --checkpoint auto"
+        fi
+      fi
       continue
     fi
 
@@ -2631,6 +2813,14 @@ for ((idx = 0; idx < chain_count; idx++)); do
       abort_run "$result_reason"
     fi
     integrate_issue_result "$name" "$branch" "$chain_worktree" "$issue" "$git_metadata_strategy" "$result_file" "$chain_run_id" "$issue_run_id"
+    if [ "$checkpoint_mode" = "auto" ]; then
+      if [ "$DRY_RUN" -eq 0 ]; then
+        create_auto_checkpoint_after_issue "$checkpoint_mode" "$name" "$branch" "$chain_worktree" "$chain_run_id" "$issue_run_id" "$issue" "$result_file"
+      else
+        printf 'DRY-RUN cd %q && scripts/studio-checkpoint.sh create --project generic-dev-studio --role manager --mode chain-auto --branch %q --checkpoint-id chain-%s-%s-%s --resume-command %q\n' \
+          "$chain_worktree" "$branch" "$RUN_ID" "$chain_run_id" "$issue_run_id" "scripts/studio-chain-runner.sh --resume $RUN_ID --yes --checkpoint auto"
+      fi
+    fi
   done
 
   finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id" "$host"

@@ -67,10 +67,15 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio release-manager      # draft release notes per RELEASES.md (never auto-tags)
 /dev-studio manager ingest       # capture one idea in the current repo context; --scope studio crosses to Forge
 /dev-studio manager analyze      # sweep studio-feedback inbox + event logs for a project
+/dev-studio checkpoint           # manager-shaped checkpoint routing; explicit role owns content
+/dev-studio worker checkpoint    # worker-owned compact checkpoint; does not replace worker summary
+/dev-studio worker resume-checkpoint # resume worker checkpoint via manifest.json + context.md first
 /studio-help                     # open the v2 router docs
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
+scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview checkpoint-aware safe-boundary hooks
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
 scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters from private chain-run telemetry
+scripts/studio-checkpoint.sh resume --latest --role worker # compact session resume; reads manifest.json + context.md before lazy drift checks
 scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
 STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
 /dev-studio host-adapter nodes   # day-2 fleet management — status, add, remove, health, sync, schedule
@@ -173,8 +178,9 @@ scripts/                # multi-worker fleet (BETA)
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
   studio-dependency-export.sh # Mermaid graph from native GitHub blocked_by issue dependencies
   studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
-  studio-chain-runner.sh   # plan/execute/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, locks, and private run reports
+  studio-chain-runner.sh   # plan/execute/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, optional checkpoint hooks, locks, and private run reports
   studio-chain-telemetry-digest.sh # v1 counters and weekly digest from private chain-run reports/events
+  studio-checkpoint.sh # compact create/update/resume checkpoints under per-project .runtime/v2/checkpoints
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   studio-staleness-triage.sh # scheduled GitHub issue staleness labels + escalation comments for the PM surface
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
@@ -331,6 +337,9 @@ Studio chain issue sessions do not need write access to the main checkout's
 linked-worktree metadata. For `workspace-write` hosts, `studio-chain-runner`
 uses a per-issue local clone so normal `git add` and `git commit` write inside
 the issue working directory plus `~/.dev-studio`.
+When `--checkpoint auto` or manifest `checkpoint: auto` is enabled, chain
+checkpoints stay under the same private runtime root and resume only through
+the manager role plus the active chain branch after drift checks.
 
 For unattended worker sessions, combine the writable root with `--ask-for-approval never`.
 

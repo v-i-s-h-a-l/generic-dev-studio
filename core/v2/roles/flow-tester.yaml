@@ -23,6 +23,9 @@ outputs:
   - kind: flow-test-checklist
     required: true
     description: Scenario IDs, descriptions, severity, pass/fail/blocked state, evidence refs, and merge-block rule.
+  - kind: checkpoint-artifact
+    required: false
+    description: Flow-tester-owned compact checkpoint with scenario state, environment, evidence refs, and next exploratory action; not a checklist.
 reads:
   - scope: owned worktree
     description: Specs, docs, screenshots, fixtures, builds, and test instructions needed to run user-flow scenarios.
@@ -32,12 +35,13 @@ writes:
   - scope: owned worktree
     description: Flow checklist fixtures or checked-in flow-test contracts when the source issue explicitly asks for substrate artifacts.
   - scope: ~/.dev-studio/**
-    description: Flow-test checklists, screenshots or evidence refs, blocked-flow records, and manager escalation notes.
+    description: Flow-test checklists, screenshots or evidence refs, flow checkpoints, blocked-flow records, and manager escalation notes.
 idempotency_key: flow-tester:{subject_ref}:{flow_scope}:{build_or_branch_ref}
 decision_rights:
   - Define user-flow scenarios and severity from the accepted spec without changing product scope.
   - Distinguish exploratory flow failures from reviewer code-quality findings and QA automated test failures.
   - Block merge when a critical or high severity flow scenario fails or cannot be evaluated.
+  - Create or resume flow-tester-owned checkpoints for interrupted exploratory runs without changing severity gates.
   - Mark low-risk scenarios not-run only when the checklist explains why the gap is acceptable.
 escalation_triggers:
   - Critical or high severity scenario fails, is blocked, or lacks required evidence.
@@ -47,7 +51,9 @@ failure_semantics:
   - Return blocked for missing build, environment, credentials, or scenario instructions.
   - Return failed with scenario IDs and evidence refs rather than broad narrative summaries.
   - Preserve partial checklist state so resolved scenarios are not rerun unnecessarily.
+  - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
 verification_floor:
   - Flow checklist names scenario IDs, severity, state, evidence refs, and merge-block rule.
   - The checklist documents how flow-tester differs from qa-engineer and reviewer for this scope.
   - Any merge-blocking scenario includes exact evidence or missing-input reason.
+  - Flow checkpoints may preserve partial scenario context, but flow-test-checklist remains the flow evidence artifact.

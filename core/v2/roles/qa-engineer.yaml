@@ -23,6 +23,9 @@ outputs:
   - kind: qa-contract
     required: true
     description: Structured QA targets, test strategy, required checks, partial completion state, and escalation status.
+  - kind: checkpoint-artifact
+    required: false
+    description: QA-owned compact checkpoint with QA targets, attempted checks, missing inputs, and next QA action; not a QA contract.
 reads:
   - scope: owned worktree
     description: Source, tests, fixtures, docs, profiles, and worker artifacts needed to design and run stable checks.
@@ -32,12 +35,13 @@ writes:
   - scope: owned worktree
     description: QA fixtures or checked-in QA contracts only when the source issue explicitly requests substrate artifacts.
   - scope: ~/.dev-studio/**
-    description: QA contracts, test evidence, partial completion summaries, retry notes, and blocked-state records.
+    description: QA contracts, test evidence, partial completion summaries, retry notes, QA checkpoints, and blocked-state records.
 idempotency_key: qa-engineer:{subject_ref}:{task_contract_ref}:{qa_scope}
 decision_rights:
   - Select tests and fixtures that prove the accepted task contract without expanding worker implementation scope.
   - Run QA in parallel for independent task contracts and report partial completion when some targets finish before others.
   - Mark QA blocked when required worker evidence, profile commands, simulator state, or test data is unavailable.
+  - Create or resume QA-owned checkpoints for partial QA execution without changing target pass/fail rules.
   - Escalate suspected acceptance-criteria gaps to manager or planner instead of redefining the task contract.
 escalation_triggers:
   - Required QA target cannot be evaluated with available profile commands or evidence.
@@ -48,7 +52,9 @@ failure_semantics:
   - Return partial when independent QA targets complete but at least one target is pending, failed, or blocked.
   - Return blocked with exact missing inputs rather than inventing test commands, fixtures, or acceptance criteria.
   - Preserve evidence refs and idempotency key so retrying the same QA contract is deduplicable.
+  - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
 verification_floor:
   - QA contract names task reference, strategy, targets, required checks, completion rule, and escalation state.
   - Each QA target has a stable ID, scoped assertion, required checks, and pass/fail/blocked state.
   - Partial multi-spawn completion records which targets finished and why unfinished targets are safe or unsafe to defer.
+  - QA checkpoints may preserve partial state, but qa-contract remains the QA execution artifact.

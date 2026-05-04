@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "kind": "studio-v2-checkpoint-evidence",
+  "checkpoint_id": "ckpt-019df316-compact-default",
+  "evidence": [
+    {
+      "id": "contract-doc",
+      "type": "artifact",
+      "summary": "Human-readable checkpoint contract.",
+      "ref": "core/v2/checkpoints/CONTRACT.md",
+      "size_bytes": 0,
+      "inline_excerpt": "Default resume load is manifest.json plus context.md."
+    },
+    {
+      "id": "fixture-contract-test",
+      "type": "test",
+      "summary": "Shell fixture validates schemas and compact lazy-load shape.",
+      "ref": "scripts/test-fixtures/567-checkpoint-contract/test-checkpoint-contract.sh",
+      "size_bytes": 0,
+      "inline_excerpt": null
+    }
+  ]
+}

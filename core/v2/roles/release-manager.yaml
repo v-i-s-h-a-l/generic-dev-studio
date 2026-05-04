@@ -22,6 +22,9 @@ outputs:
   - kind: release-packet
     required: true
     description: Release notes, tag state, GitHub release state, TestFlight/App Store state, build/release message evidence, and blockers.
+  - kind: checkpoint-artifact
+    required: false
+    description: Release-manager-owned compact checkpoint with release scope, channel state, blockers, operator decisions, and next packet action; not a release packet.
 reads:
   - scope: owned worktree
     description: Release docs, changelog, build/release scripts, tags, issue references, and verification artifacts.
@@ -31,12 +34,13 @@ writes:
   - scope: owned worktree
     description: Release-packet fixtures or checked-in release contracts when the source issue explicitly asks for substrate artifacts.
   - scope: ~/.dev-studio/**
-    description: Release packets, blocker records, operator-decision escrows, and private release-readiness notes.
+    description: Release packets, blocker records, operator-decision escrows, release-manager checkpoints, and private release-readiness notes.
 idempotency_key: release-manager:{subject_ref}:{release_scope}:{channel}
 decision_rights:
   - Declare release readiness, release blockers, and required operator decisions from gathered verification evidence.
   - Reference issue #214 as the detailed release-manager anchor without closing or duplicating its implementation scope.
   - Require build/release message lint, tag, GitHub release, TestFlight, and App Store evidence before external release actions.
+  - Create or resume release-manager-owned checkpoints for long release preparation without granting external release authority.
   - Stop release preparation when the user has deferred release or when verification evidence is incomplete.
 escalation_triggers:
   - Tagging, GitHub release publication, TestFlight submission, App Store submission, or production messaging needs operator approval.
@@ -47,7 +51,9 @@ failure_semantics:
   - Return blocked when release evidence, operator approval, or channel credentials are missing.
   - Return partial when packet assembly is complete but any external channel remains pending or intentionally deferred.
   - Do not tag, publish, submit, or draft public release notes unless the operator explicitly authorizes that phase.
+  - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
 verification_floor:
   - Release packet names release scope, anchor issues including #214, notes state, tag state, GitHub release state, TestFlight/App Store state, and blockers.
   - Build/release message lint and external-channel states are represented as explicit evidence states.
   - Any release-blocking item names the missing evidence or required operator decision.
+  - Release-manager checkpoints may summarize packet progress, but release-packet remains the release readiness artifact.
