@@ -423,6 +423,9 @@
       <nav aria-label="Page sections">
         <a href="#quick-start">Quick Start</a>
         <a href="#usage">Usage</a>
+        <a href="#availability">Availability</a>
+        <a href="#state">State</a>
+        <a href="#automation">Automation</a>
         <a href="#roles">Roles</a>
         <a href="#resolution">Resolution</a>
         <a href="#cutover">Cutover</a>
@@ -524,6 +527,150 @@ scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt;</code>
             <h3>Release Readiness</h3>
             <p>Use release-manager after implementation evidence exists. It can assemble blockers and notes; tagging, publishing, TestFlight, and App Store actions still need operator approval.</p>
             <code class="shell">/dev-studio release-manager prepare beta readiness for the latest merged fixes</code>
+          </article>
+        </div>
+      </div>
+    </details>
+
+    <details class="section" id="availability">
+      <summary>
+        <span>
+          <h2>Host Availability</h2>
+          <p class="summary-copy">Where `/dev-studio` and `$dev-studio` come from in Claude and Codex sessions.</p>
+        </span>
+      </summary>
+      <div class="section-body">
+        <div class="grid">
+          <article class="role">
+            <h3>Claude Code</h3>
+            <p>The visible slash command is a project-scoped wrapper at <code>.claude/commands/dev-studio.md</code>. It reads this router and dispatches to the selected role contract.</p>
+            <code class="shell">/dev-studio manager resume-plan
+/dev-studio reviewer review</code>
+          </article>
+          <article class="role">
+            <h3>Codex</h3>
+            <p>The router is a project-scoped skill linked at <code>.codex/skills/dev-studio</code>. In Codex sessions, use the skill as <code>$dev-studio</code> when the host exposes skill invocation.</p>
+            <code class="shell">$dev-studio manager resume-plan
+$dev-studio worker T123</code>
+          </article>
+          <article class="role">
+            <h3>Sync</h3>
+            <p>After pulling changes, run install or host sync from this repo. It refreshes repo-local skill links and removes stale deleted v1 skill links.</p>
+            <code class="shell">scripts/install.sh
+scripts/sync-host-skills.sh --all</code>
+          </article>
+          <article class="role">
+            <h3>Scope</h3>
+            <p>The v2 router is project-scoped. It is available when the session is rooted in this repo or a host has loaded this repo's project skill links.</p>
+            <code class="shell">core/v2/skills/dev-studio/
+.claude/commands/dev-studio.md
+.codex/skills/dev-studio</code>
+          </article>
+        </div>
+      </div>
+    </details>
+
+    <details class="section" id="state">
+      <summary>
+        <span>
+          <h2>Existing State</h2>
+          <p class="summary-copy">What happens to old task IDs, Chanakya master-plan data, and runtime artifacts.</p>
+        </span>
+      </summary>
+      <div class="section-body">
+        <div class="split">
+          <div>
+            <p>
+              The v2 router changes the command surface, not the project ledger.
+              Existing task IDs, briefs, debriefs, reviews, event logs, chain
+              runs, worktrees, and rendered master plans stay under
+              <code>~/.dev-studio/&lt;project&gt;/</code>.
+            </p>
+            <p>
+              The master plan is a rendered projection. Structured task state
+              lives under <code>plans/tasks/*.yaml</code>; legacy markdown
+              surfaces are import or archive inputs where migration already
+              moved them.
+            </p>
+          </div>
+          <aside class="notice">
+            <h3>Expected continuity</h3>
+            <p>
+              A pre-v2 task ID remains the same task reference. The manager
+              should read the existing runtime state before minting or
+              dispatching new work.
+            </p>
+          </aside>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Artifact</th>
+                <th>Current role</th>
+                <th>Path</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Task state</td>
+                <td>Source of truth for task IDs and lifecycle fields</td>
+                <td><code>~/.dev-studio/&lt;project&gt;/plans/tasks/*.yaml</code></td>
+              </tr>
+              <tr>
+                <td>Master plan</td>
+                <td>Rendered view, not hand-edited state</td>
+                <td><code>~/.dev-studio/&lt;project&gt;/plans/chanakya-master.md</code></td>
+              </tr>
+              <tr>
+                <td>Briefs and debriefs</td>
+                <td>Worker inputs and completion evidence</td>
+                <td><code>~/.dev-studio/&lt;project&gt;/plans/briefs/</code>, <code>plans/debriefs/</code></td>
+              </tr>
+              <tr>
+                <td>Events</td>
+                <td>Append-only lifecycle and orchestration log</td>
+                <td><code>~/.dev-studio/&lt;project&gt;/events/YYYY-MM-DD.jsonl</code></td>
+              </tr>
+              <tr>
+                <td>Chain runs</td>
+                <td>Private reports, worker summaries, and phase-review evidence</td>
+                <td><code>~/.dev-studio/&lt;project&gt;/chain-runs/</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+
+    <details class="section" id="automation">
+      <summary>
+        <span>
+          <h2>Automation</h2>
+          <p class="summary-copy">Which parts are automated today and which still need an explicit user/session trigger.</p>
+        </span>
+      </summary>
+      <div class="section-body">
+        <div class="grid">
+          <article class="role">
+            <h3>Automated Today</h3>
+            <p>Worker queues, isolated task worktrees, chain-runner resume state, PR headless review, phase review wrappers, event logs, and generated master-plan views are implemented as scripts and runtime artifacts.</p>
+          </article>
+          <article class="role">
+            <h3>User-Started</h3>
+            <p>The studio does not run as an always-on autonomous daemon by default. A human starts a manager session, worker panes, chain runner, release flow, or scheduled helper.</p>
+          </article>
+          <article class="role">
+            <h3>Chain Runs</h3>
+            <p>Issue chains can run with persisted private reports and resume markers. Use dry-run first, then launch independent chains in separate shells when their write boundaries are disjoint.</p>
+            <code class="shell">scripts/studio-chain-runner.sh &lt;manifest&gt; --dry-run
+scripts/studio-chain-runner.sh &lt;manifest&gt; --auto</code>
+          </article>
+          <article class="role">
+            <h3>Fleet Work</h3>
+            <p>Multiple workers can watch a queue and claim tasks atomically. The manager dispatches; workers take isolated worktrees and report completion evidence.</p>
+            <code class="shell">/dev-studio worker
+scripts/worker-status.sh</code>
           </article>
         </div>
       </div>
