@@ -272,6 +272,12 @@ not inferred from raw finding count. `core/v2/review/metrics.yaml` defines
 severity weights and dispositions; `scripts/v2-review-metrics.sh` emits private
 runtime events and reports accepted weighted score by phase and review host.
 
+Worker + QA parallelism is piloted with deterministic lanes before model-host
+dogfooding. `core/v2/pilots/multispawn-budgets.yaml` defines coordination
+overhead budgets; `scripts/v2-multispawn-pilot.sh` records worker/qa-engineer
+start/end times, stable-contract state, terminal state, and topology failure
+events for partial completion or budget exhaustion.
+
 <!-- v2-spec:testing-release -->
 ## Testing, Review, and Release Workflow
 
