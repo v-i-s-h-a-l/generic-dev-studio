@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/core/v2/schemas/topology-runtime-event.schema.json",
+  "title": "Studio v2 topology runtime telemetry event",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "event",
+    "occurred_at",
+    "producer",
+    "subject",
+    "idempotency_key",
+    "writable_action",
+    "data"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "event": {
+      "enum": [
+        "topology_sibling_host_unavailable",
+        "topology_conflicting_reviews",
+        "topology_stale_plan",
+        "topology_worker_deadlock",
+        "topology_partial_multi_spawn",
+        "topology_budget_exhaustion"
+      ]
+    },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "producer": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["agent"],
+      "properties": {
+        "agent": {
+          "enum": [
+            "manager",
+            "planner",
+            "worker",
+            "reviewer",
+            "qa-engineer",
+            "flow-tester",
+            "perf",
+            "release-manager",
+            "host-adapter",
+            "operator"
+          ]
+        },
+        "mode": { "type": "string" },
+        "instance_id": { "type": "string" }
+      }
+    },
+    "subject": { "type": "string", "minLength": 1 },
+    "idempotency_key": { "type": "string", "minLength": 1 },
+    "writable_action": { "type": "boolean", "const": true },
+    "data": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "failure_mode",
+        "status",
+        "evidence_ref",
+        "severity_floor",
+        "privacy_classification"
+      ],
+      "properties": {
+        "failure_mode": {
+          "enum": [
+            "sibling_host_unavailable",
+            "conflicting_reviews",
+            "stale_plan",
+            "worker_deadlock",
+            "partial_multi_spawn",
+            "budget_exhaustion"
+          ]
+        },
+        "status": { "enum": ["observed", "blocked", "degraded", "recovered", "partial"] },
+        "evidence_ref": { "type": "string", "minLength": 1 },
+        "severity_floor": { "enum": ["info", "warning", "blocked"] },
+        "privacy_classification": { "const": "private-runtime" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "event": { "const": "topology_sibling_host_unavailable" } } },
+      "then": {
+        "properties": {
+          "data": {
+            "properties": { "failure_mode": { "const": "sibling_host_unavailable" } },
+            "required": ["review_host", "fallback_used"]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "topology_conflicting_reviews" } } },
+      "then": {
+        "properties": {
+          "data": {
+            "properties": { "failure_mode": { "const": "conflicting_reviews" } },
+            "required": ["review_refs", "escalation_ref"]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "topology_stale_plan" } } },
+      "then": {
+        "properties": {
+          "data": {
+            "properties": { "failure_mode": { "const": "stale_plan" } },
+            "required": ["plan_ref", "stale_since"]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "topology_worker_deadlock" } } },
+      "then": {
+        "properties": {
+          "data": {
+            "properties": { "failure_mode": { "const": "worker_deadlock" } },
+            "required": ["worker_ref", "timeout_s"]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "topology_partial_multi_spawn" } } },
+      "then": {
+        "properties": {
+          "data": {
+            "properties": { "failure_mode": { "const": "partial_multi_spawn" } },
+            "required": ["completed_count", "expected_count"]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "topology_budget_exhaustion" } } },
+      "then": {
+        "properties": {
+          "data": {
+            "properties": { "failure_mode": { "const": "budget_exhaustion" } },
+            "required": ["budget_kind", "budget_limit", "observed_value"]
+          }
+        }
+      }
+    }
+  ]
+}

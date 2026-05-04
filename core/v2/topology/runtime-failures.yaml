@@ -1,0 +1,67 @@
+schema_version: 1
+kind: studio-v2-topology-runtime-failure-registry
+parent_issue: 445
+leaf_issue: 550
+privacy_classification: private-runtime
+failure_modes:
+  - mode: sibling_host_unavailable
+    event: topology_sibling_host_unavailable
+    severity_floor: warning
+    required_data:
+      - failure_mode
+      - status
+      - evidence_ref
+      - review_host
+      - fallback_used
+    preserved_ac: "Sibling-host unavailable is observable instead of silently degrading."
+  - mode: conflicting_reviews
+    event: topology_conflicting_reviews
+    severity_floor: blocked
+    required_data:
+      - failure_mode
+      - status
+      - evidence_ref
+      - review_refs
+      - escalation_ref
+    preserved_ac: "Conflicting reviews carry explicit escalation telemetry."
+  - mode: stale_plan
+    event: topology_stale_plan
+    severity_floor: blocked
+    required_data:
+      - failure_mode
+      - status
+      - evidence_ref
+      - plan_ref
+      - stale_since
+    preserved_ac: "Post-pause stale plans are detectable before execution continues."
+  - mode: worker_deadlock
+    event: topology_worker_deadlock
+    severity_floor: blocked
+    required_data:
+      - failure_mode
+      - status
+      - evidence_ref
+      - worker_ref
+      - timeout_s
+    preserved_ac: "Worker deadlock and timeout states are explicit runtime facts."
+  - mode: partial_multi_spawn
+    event: topology_partial_multi_spawn
+    severity_floor: warning
+    required_data:
+      - failure_mode
+      - status
+      - evidence_ref
+      - completed_count
+      - expected_count
+    preserved_ac: "Partial multi-spawn completion is measurable at the handoff boundary."
+  - mode: budget_exhaustion
+    event: topology_budget_exhaustion
+    severity_floor: blocked
+    required_data:
+      - failure_mode
+      - status
+      - evidence_ref
+      - budget_kind
+      - budget_limit
+      - observed_value
+    preserved_ac: "Context, token, and wall-clock budget exhaustion are recorded as typed blockers."
