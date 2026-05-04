@@ -40,7 +40,8 @@ Current substrate artifacts:
   skill-routing rules and resolver behavior.
 - `context-budget/manifest.json` is the A5 unified context-budget policy for
   role, skill, and invocation ceilings. Resolve and check effective budgets with
-  `scripts/v2-context-budget.sh`.
+  `scripts/v2-context-budget.sh`; emit static role-surface evidence with
+  `scripts/v2-context-budget.sh --report`.
 - `schemas/durable-event.schema.json` defines the bounded JSONL event envelope.
 - `schemas/subscriber-checkpoint.schema.json` defines durable replay coordinates.
 - `schemas/subscriber-lag.schema.json` defines subscriber lag status artifacts.
