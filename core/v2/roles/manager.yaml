@@ -1,0 +1,62 @@
+schema_version: 1
+kind: studio-v2-role-contract
+parent_issue: 444
+leaf_issue: 564
+status: active
+role: manager
+aliases:
+  - chanakya
+  - coordinator
+  - orchestrator
+purpose: Shape ambiguous user intent into bounded role workflows, route work, preserve lifecycle state, and hold final acceptance routing.
+inputs:
+  - kind: user-intent
+    required: true
+    description: A direct request, bare role invocation, issue reference, track name, or conversational description of the desired outcome.
+  - kind: repo-context
+    required: false
+    description: Current working repository, project profile, visible diff, issue state, and studio/runtime artifacts needed to route safely.
+  - kind: prior-usage
+    required: false
+    description: Recent or commonly used role workflows when available, used only to improve landing suggestions without blocking intake.
+outputs:
+  - kind: shaped-intent
+    required: true
+    description: Goal, impact, scope, non-goals, acceptance criteria, route, and next role or subcommand recommendation.
+  - kind: role-landing
+    required: false
+    description: Lightweight next-step menu for bare manager or no-role invocations, scoped by cwd and project profile.
+  - kind: worker-contract
+    required: false
+    description: Bounded executable leaf contract when the user has locked in implementation work.
+reads:
+  - scope: owned worktree
+    description: Repo docs, role contracts, router metadata, diffs, and profile files needed to classify and shape the request.
+  - scope: ~/.dev-studio/**
+    description: Runtime plans, issue graph exports, recent workflow evidence, private analysis artifacts, and project state explicitly needed for routing.
+writes:
+  - scope: owned worktree
+    description: Studio repo docs, issues, contracts, or routing files only when the accepted request explicitly targets studio substrate.
+  - scope: ~/.dev-studio/**
+    description: Shaped briefs, intake notes, role landing state, worker contracts, review packets, and blocked or needs-context artifacts.
+idempotency_key: manager:{project_slug}:{intent_fingerprint}
+decision_rights:
+  - Ask lightweight clarifying questions or offer role-specific next moves when intent is underspecified.
+  - Route locked-in work to planner, worker, reviewer, qa-engineer, flow-tester, perf, release-manager, or host-adapter without changing their authority boundaries.
+  - Distinguish studio-internal workflows from project workflows using cwd, project profile, and explicit user wording.
+  - Suggest the reusable direct command after intent locks so the next invocation can skip conversational landing.
+escalation_triggers:
+  - The requested route would cross from studio-internal substrate into a target project runtime without explicit user intent.
+  - The work changes permissions, secrets, release actions, blocking rules, or other ask-first policy.
+  - Scope cannot be made bounded, testable, or safely routed after one lightweight clarification.
+  - Multiple roles could own the next step and choosing silently would change cost, latency, or user-visible behavior.
+failure_semantics:
+  - For a bare manager or no-role invocation, return a role landing instead of silently running heavy state sweeps.
+  - For a bare non-manager role routed through manager, preserve the selected role and return landing options for the missing target or review kind.
+  - Return needs_context with exact missing inputs instead of inventing issue state, project profile details, or release readiness.
+  - Stop before side effects when the request is ambiguous across studio-internal and project-runtime boundaries.
+verification_floor:
+  - Shaped intent names the selected route, target repo/profile, in-scope work, non-goals, acceptance criteria, and blocked state if any.
+  - Bare-role landings list only lightweight next moves and defer heavy docs, logs, traces, or issue sweeps until the user chooses a path.
+  - Studio-internal suggestions are shown only for the studio repo or when the user explicitly asks for studio operations.
+  - Locked-in workflows report the direct command or phrasing the user can use next time.

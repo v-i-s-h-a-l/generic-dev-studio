@@ -45,7 +45,7 @@ grep -Fq 'v2-cutover: ok' /tmp/v2-cutover-validate.err || fail "validation did n
 [ "$(yq -r '.traffic_switch.compatibility_forwarders | length' "$MANIFEST")" = "0" ] || fail "A10 should remove compatibility forwarders"
 [ "$(yq -r '[.archive.surfaces[] | select(.status != "deleted")] | length' "$MANIFEST")" = "0" ] || fail "A10 should mark every v1 surface deleted"
 
-for evidence in core/v2/manager/proof-of-life.yaml core/v2/roles/worker.yaml core/v2/roles/reviewer.yaml core/v2/roles/perf.yaml; do
+for evidence in core/v2/roles/manager.yaml core/v2/roles/worker.yaml core/v2/roles/reviewer.yaml core/v2/roles/perf.yaml; do
   yq -e ".parity.golden_scenarios[].evidence | select(. == \"$evidence\")" "$MANIFEST" >/dev/null || fail "missing parity evidence: $evidence"
 done
 

@@ -115,7 +115,7 @@ validate_cutover() {
   while IFS= read -r evidence; do
     [ -n "$evidence" ] || continue
     case "$evidence" in
-      core/v2/manager/proof-of-life.yaml|core/v2/roles/worker.yaml|core/v2/roles/reviewer.yaml|core/v2/roles/perf.yaml)
+      core/v2/manager/proof-of-life.yaml|core/v2/roles/manager.yaml|core/v2/roles/worker.yaml|core/v2/roles/reviewer.yaml|core/v2/roles/perf.yaml)
         ;;
       *) printf 'v2-cutover: unexpected parity evidence path: %s\n' "$evidence" >&2; return 1 ;;
     esac

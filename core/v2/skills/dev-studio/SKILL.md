@@ -46,6 +46,26 @@ preserved as `/dev-studio <alias>` role resolution and documented in
 | `/dev-studio host-adapter ...` | `host-adapter` | `adapter`, `host` | reserved for adapter operations |
 | `/dev-studio operator ...` | `operator` | `user`, `human`, `owner` | reserved, non-routable human authority |
 
+<!-- v2-dev-studio:landing -->
+## Bare Role Landing
+
+When the invocation names a role but no target or subcommand, start that role in
+a lightweight conversational landing instead of running a heavy default action.
+Load the role contract, identify the current repo/profile, and offer a short
+set of likely next moves. The user can then describe the desired work in plain
+language without retyping `/dev-studio`.
+
+After the user locks in a path, continue into the selected workflow and report
+the direct one-line invocation they can use next time. Existing explicit
+invocations keep routing directly and do not show the landing.
+
+Landing suggestions are cwd/profile-aware. Studio-internal options such as
+`ingest`, `audit`, `guard`, `sync`, `nodes`, and `resume-plan` target
+`generic-dev-studio` unless the user explicitly asks for studio operations from
+another project. Project repositories should bias suggestions toward project
+task shaping, implementation, review, QA, flow testing, performance, and
+release readiness.
+
 <!-- v2-dev-studio:intent -->
 ## Intent detection
 
@@ -57,8 +77,10 @@ Priority order:
    `achilles` through `scripts/v2-role-resolve.sh` and routes to `worker`.
 3. **Former top-level name** — `/dev-studio achilles <contract>` keeps the
    old role name available without restoring the deleted v1 router.
-4. **No role token** — route to `manager`; the manager owns conversational
-   shaping and status.
+4. **Bare role token** — `/dev-studio reviewer` or `/dev-studio
+   release-manager` starts that role's lightweight landing.
+5. **No role token** — route to the `manager` landing; the manager owns
+   conversational shaping and status.
 
 Unknown role tokens fail before side effects with the explicit resolver error.
 Routing intelligence remains advisory unless a role contract grants authority.
