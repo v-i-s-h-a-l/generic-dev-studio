@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/core/v2/schemas/checkpoint-index.schema.json",
+  "title": "Studio v2 checkpoint index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "project", "updated_at", "checkpoints"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "kind": { "const": "studio-v2-checkpoint-index" },
+    "project": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "checkpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "checkpoint_id",
+          "session_dir",
+          "created_at",
+          "producer_role",
+          "status",
+          "default_load_bytes",
+          "estimated_default_load_tokens"
+        ],
+        "properties": {
+          "checkpoint_id": { "type": "string", "minLength": 1 },
+          "session_dir": { "type": "string", "pattern": "^sessions/[A-Za-z0-9._-]+$" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "producer_role": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "status": { "enum": ["available", "superseded", "invalid"] },
+          "default_load_bytes": { "type": "integer", "minimum": 0 },
+          "estimated_default_load_tokens": { "type": "integer", "minimum": 0 },
+          "latest_drift_status": { "enum": ["unknown", "none", "possible", "confirmed"] },
+          "last_usefulness": { "enum": ["unknown", "helpful", "partial", "not-helpful"] }
+        }
+      }
+    }
+  }
+}

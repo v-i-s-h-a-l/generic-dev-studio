@@ -23,7 +23,8 @@ compatibility aliases: `core/v2/registry/roles.json`. Forwarder manifest:
 
 The router chooses the role contract for an invocation. Mode procedure,
 authority checks, handoff validation, event emission, and project-profile
-commands stay outside this router.
+commands stay outside this router. Checkpoint storage, schema details, budget
+telemetry, and resume lazy-load policy stay in `core/v2/checkpoints/CONTRACT.md`.
 
 Former top-level skills (`/chanakya`, `/achilles`, `/argus`, `/apollo`) are no
 longer repo-local router surfaces after A10. Their compatibility meaning is
@@ -45,6 +46,24 @@ preserved as `/dev-studio <alias>` role resolution and documented in
 | `/dev-studio release-manager ...` | `release-manager` | `release`, `shipper` | reserved for A7+ |
 | `/dev-studio host-adapter ...` | `host-adapter` | `adapter`, `host` | reserved for adapter operations |
 | `/dev-studio operator ...` | `operator` | `user`, `human`, `owner` | reserved, non-routable human authority |
+
+<!-- v2-dev-studio:lifecycle -->
+## Lifecycle Actions
+
+`checkpoint` and `resume-checkpoint` are cross-role lifecycle actions. The
+router resolves the role first and leaves checkpoint content to that role's
+contract:
+
+| Invocation | Route | Behavior |
+|---|---|---|
+| `/dev-studio checkpoint ...` | `manager` landing | Shape the request, identify the intended role, and suggest the explicit role command. |
+| `/dev-studio resume-checkpoint ...` | `manager` landing | Shape resume intent, find the likely role or checkpoint selector, and avoid loading specialist state until routed. |
+| `/dev-studio <role> checkpoint ...` | selected role | Create or update a role-owned compact checkpoint using the shared checkpoint contract. |
+| `/dev-studio <role> resume-checkpoint ...` | selected role | Load `manifest.json` and `context.md` first, then lazy-load role-owned state only as needed. |
+
+Checkpoint artifacts preserve compact resume context. They do not replace
+worker summaries, reviewer verdicts, release packets, QA or flow checklists,
+perf verdicts, or durable event logs.
 
 <!-- v2-dev-studio:landing -->
 ## Bare Role Landing

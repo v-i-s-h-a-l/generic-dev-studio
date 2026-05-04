@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "kind": "studio-v2-checkpoint-state",
+  "checkpoint_id": "ckpt-019df316-compact-default",
+  "updated_at": "2026-05-04T13:05:00Z",
+  "session": {
+    "role": "worker",
+    "status": "active",
+    "current_goal": "Define the checkpoint artifact contract and compact fixtures."
+  },
+  "working_tree": {
+    "repo": "generic-dev-studio",
+    "branch": "feature/checkpoint-workflow-issue-567",
+    "commit": "2a8685ed8e700c134d16556a8d5e668115af6522",
+    "dirty": true
+  },
+  "role_state": {
+    "owner_role": "worker",
+    "summary": "Contract and fixture work is in progress; runtime checkpoint command implementation is out of scope.",
+    "issue": 567
+  }
+}

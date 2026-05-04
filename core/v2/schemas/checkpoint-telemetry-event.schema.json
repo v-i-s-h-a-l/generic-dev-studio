@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/core/v2/schemas/checkpoint-telemetry-event.schema.json",
+  "title": "Studio v2 checkpoint telemetry event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event",
+    "occurred_at",
+    "checkpoint_id",
+    "producer",
+    "size",
+    "drift",
+    "usefulness",
+    "v1_tuning"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "event": {
+      "enum": [
+        "checkpoint_created",
+        "checkpoint_resumed",
+        "checkpoint_budget_warning",
+        "checkpoint_usefulness_recorded"
+      ]
+    },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "checkpoint_id": { "type": "string", "minLength": 1 },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "role"],
+      "properties": {
+        "host": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }
+      }
+    },
+    "size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_load_bytes", "total_bytes", "estimated_default_load_tokens", "estimated_total_tokens"],
+      "properties": {
+        "default_load_bytes": { "type": "integer", "minimum": 0 },
+        "total_bytes": { "type": "integer", "minimum": 0 },
+        "estimated_default_load_tokens": { "type": "integer", "minimum": 0 },
+        "estimated_total_tokens": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "drift": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "base_ref", "observed_ref"],
+      "properties": {
+        "status": { "enum": ["unknown", "none", "possible", "confirmed"] },
+        "base_ref": { "type": ["string", "null"] },
+        "observed_ref": { "type": ["string", "null"] },
+        "notes": { "type": ["string", "null"], "maxLength": 500 }
+      }
+    },
+    "usefulness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resume_outcome", "loaded_files", "notes"],
+      "properties": {
+        "resume_outcome": { "enum": ["unknown", "helpful", "partial", "not-helpful"] },
+        "loaded_files": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "notes": { "type": ["string", "null"], "maxLength": 500 }
+      }
+    },
+    "v1_tuning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compact_reason", "compaction_interval_turns", "resume_success"],
+      "properties": {
+        "compact_reason": { "type": ["string", "null"], "maxLength": 120 },
+        "compaction_interval_turns": { "type": ["integer", "null"], "minimum": 0 },
+        "resume_success": { "type": ["boolean", "null"] },
+        "prompt_cacheable_prefix_tokens": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    }
+  }
+}

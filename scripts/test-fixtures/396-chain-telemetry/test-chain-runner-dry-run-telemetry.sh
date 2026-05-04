@@ -42,6 +42,7 @@ chains:
     base: main
     branch: feature/telemetry-fixture
     host: codex
+    checkpoint: auto
     issues: [396]
 YAML
 
@@ -69,6 +70,21 @@ grep -q '.studio/chain-worker-summary.json' "$TMPROOT/out" || {
 }
 grep -q 'DRY-RUN scripts/pr-headless-review.sh <pr> --method auto' "$TMPROOT/out" || {
   printf 'missing dry-run review gate line\n' >&2
+  cat "$TMPROOT/out" >&2
+  exit 1
+}
+grep -q 'Checkpoint automation: `auto`' "$TMPROOT/out" || {
+  printf 'missing checkpoint automation plan line\n' >&2
+  cat "$TMPROOT/out" >&2
+  exit 1
+}
+grep -q 'DRY-RUN scripts/studio-checkpoint.sh resume --project generic-dev-studio --role manager --branch feature/telemetry-fixture --latest' "$TMPROOT/out" || {
+  printf 'missing checkpoint resume dry-run shape\n' >&2
+  cat "$TMPROOT/out" >&2
+  exit 1
+}
+grep -q 'DRY-RUN cd .*scripts/studio-checkpoint.sh create --project generic-dev-studio --role manager --mode chain-auto --branch feature/telemetry-fixture' "$TMPROOT/out" || {
+  printf 'missing checkpoint create dry-run shape\n' >&2
   cat "$TMPROOT/out" >&2
   exit 1
 }

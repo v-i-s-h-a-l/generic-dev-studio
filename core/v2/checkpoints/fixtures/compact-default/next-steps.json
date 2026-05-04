@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "kind": "studio-v2-checkpoint-next-steps",
+  "checkpoint_id": "ckpt-019df316-compact-default",
+  "items": [
+    {
+      "id": "validate-fixture",
+      "status": "pending",
+      "summary": "Validate manifest, state, next steps, evidence, and telemetry event schemas.",
+      "owner_role": "worker",
+      "blocking_reason": null,
+      "evidence_refs": ["fixture-contract-test"]
+    },
+    {
+      "id": "document-runtime-layout",
+      "status": "pending",
+      "summary": "Keep checkpoint runtime paths under the per-project .runtime/v2/checkpoints root.",
+      "owner_role": "worker",
+      "blocking_reason": null,
+      "evidence_refs": ["contract-doc"]
+    }
+  ]
+}

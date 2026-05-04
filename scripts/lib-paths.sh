@@ -31,6 +31,12 @@
 #   resolve_events_dir       events/ root for the current project
 #   resolve_events_dir_for   events/ root for a given slug
 #   resolve_event_log        today's events/<YYYY-MM-DD>.jsonl
+#   resolve_checkpoint_root  checkpoint runtime root for the current project
+#   resolve_checkpoint_root_for checkpoint runtime root for a given slug
+#   resolve_checkpoint_index checkpoint discovery index for the current project
+#   resolve_checkpoint_index_for checkpoint discovery index for a given slug
+#   resolve_checkpoint_latest_dir checkpoint latest-pointer dir for the current project
+#   resolve_checkpoint_latest_dir_for checkpoint latest-pointer dir for a given slug
 #   resolve_auto_sweep_state per-project auto-sweep backoff state file
 #   resolve_derived_data_for per-worktree Xcode DerivedData root (machine-global)
 #   resolve_waive_dir        review-waive state dir for the current project
@@ -337,6 +343,39 @@ resolve_plans_index_for()  { printf '%s\n' "$(resolve_plans_dir_for    "${1:?slu
 resolve_project_root_for() {
   local project="${1:?usage: resolve_project_root_for <slug>}"
   printf '%s\n' "$HOME/.dev-studio/$project"
+}
+
+resolve_checkpoint_root_for() {
+  local project="${1:?usage: resolve_checkpoint_root_for <slug>}"
+  printf '%s\n' "$(resolve_project_root_for "$project")/.runtime/v2/checkpoints"
+}
+
+resolve_checkpoint_root() {
+  local project
+  project=$(resolve_project) || return 1
+  resolve_checkpoint_root_for "$project"
+}
+
+resolve_checkpoint_index_for() {
+  local project="${1:?usage: resolve_checkpoint_index_for <slug>}"
+  printf '%s\n' "$(resolve_checkpoint_root_for "$project")/index.json"
+}
+
+resolve_checkpoint_index() {
+  local project
+  project=$(resolve_project) || return 1
+  resolve_checkpoint_index_for "$project"
+}
+
+resolve_checkpoint_latest_dir_for() {
+  local project="${1:?usage: resolve_checkpoint_latest_dir_for <slug>}"
+  printf '%s\n' "$(resolve_checkpoint_root_for "$project")/latest"
+}
+
+resolve_checkpoint_latest_dir() {
+  local project
+  project=$(resolve_project) || return 1
+  resolve_checkpoint_latest_dir_for "$project"
 }
 
 # Per-session start-timestamp scratch file. Stamped at session boot

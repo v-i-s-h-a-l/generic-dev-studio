@@ -69,12 +69,15 @@ scripts/studio-weekly.sh --post                                  # weekly GitHub
 scripts/studio-chain-runner.sh workflow-measurement-improvements            # default plan/explain + private resumable state
 scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # same resolved graph, then non-mutating command trace
 scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex --yes # execute after plan with node/RAM-sized session pool + private report
+scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview role/branch-scoped checkpoint hooks
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements     # unattended start/resume when state is safe and unambiguous
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show the supervisor's next action without mutating state
 scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from ~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/state.json
 scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
 scripts/studio-chain-telemetry-digest.sh --days 7                          # v1 counters + weekly digest from private chain-run telemetry
+scripts/studio-checkpoint.sh create --role worker --goal "..." --next "..." # compact private checkpoint under per-project .runtime/v2/checkpoints
+scripts/studio-checkpoint.sh resume --latest --role worker                  # load manifest.json + context.md first, then inspect drift lazily
 scripts/codex-worker-exec.sh "<prompt>"                                    # internal Codex worker launcher: workspace-write + ~/.dev-studio + ephemeral + no prompts
 # Chain dry-runs show the selected git metadata strategy; sandboxed hosts use issue-local clones so commits stay inside the worker root.
 # Chain reports include typed halt records and decision escrow when automation pauses or continues on a low-risk default.

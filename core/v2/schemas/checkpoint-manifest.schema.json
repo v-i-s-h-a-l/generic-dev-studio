@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/core/v2/schemas/checkpoint-manifest.schema.json",
+  "title": "Studio v2 checkpoint manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "checkpoint_id",
+    "created_at",
+    "project",
+    "producer",
+    "runtime_layout",
+    "budgets",
+    "default_load",
+    "artifacts",
+    "forbidden_content",
+    "ownership"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "min_reader", "deprecated_at"],
+      "properties": {
+        "name": { "const": "checkpoint-manifest" },
+        "version": { "type": "string", "pattern": "^[0-9]+[.][0-9]+[.][0-9]+$" },
+        "min_reader": { "type": "string", "pattern": "^[0-9]+[.][0-9]+[.][0-9]+$" },
+        "deprecated_at": { "type": ["string", "null"] }
+      }
+    },
+    "kind": { "const": "studio-v2-checkpoint-manifest" },
+    "checkpoint_id": { "type": "string", "minLength": 1 },
+    "session_id": { "type": ["string", "null"] },
+    "created_at": { "type": "string", "format": "date-time" },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug", "repo_root_hint"],
+      "properties": {
+        "slug": { "type": "string", "minLength": 1 },
+        "repo_root_hint": { "type": ["string", "null"] }
+      }
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "role", "mode"],
+      "properties": {
+        "host": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "mode": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] }
+      }
+    },
+    "runtime_layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "checkpoint_dir", "index_path", "telemetry_path"],
+      "properties": {
+        "root": { "const": "~/.dev-studio/<project>/.runtime/v2/checkpoints" },
+        "checkpoint_dir": { "type": "string", "pattern": "^sessions/[A-Za-z0-9._-]+$" },
+        "index_path": { "const": "index.json" },
+        "telemetry_path": { "const": "telemetry.jsonl" }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "default_load_max_bytes",
+        "default_load_max_estimated_tokens",
+        "warning_ratio",
+        "over_budget_behavior"
+      ],
+      "properties": {
+        "default_load_max_bytes": { "type": "integer", "minimum": 1 },
+        "default_load_max_estimated_tokens": { "type": "integer", "minimum": 1 },
+        "warning_ratio": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "over_budget_behavior": { "const": "emit-warning-telemetry" }
+      }
+    },
+    "default_load": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "must_measure_bytes", "must_measure_estimated_tokens"],
+      "properties": {
+        "files": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "manifest.json" },
+            { "const": "context.md" }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "must_measure_bytes": { "const": true },
+        "must_measure_estimated_tokens": { "const": true }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 5,
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "forbidden_content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transcripts", "large_embedded_command_output"],
+      "properties": {
+        "transcripts": { "const": "forbidden" },
+        "large_embedded_command_output": { "const": "forbidden" },
+        "max_inline_command_output_bytes": { "type": "integer", "minimum": 0, "maximum": 4096 }
+      }
+    },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shared_schema", "role_content"],
+      "properties": {
+        "shared_schema": {
+          "type": "array",
+          "items": { "enum": ["storage", "index", "telemetry", "budgets", "lazy-load"] },
+          "minItems": 5,
+          "uniqueItems": true
+        },
+        "role_content": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind", "load_policy", "required", "max_bytes", "estimated_tokens"],
+      "properties": {
+        "path": {
+          "enum": [
+            "manifest.json",
+            "context.md",
+            "state.json",
+            "next-steps.json",
+            "evidence.json",
+            "telemetry.jsonl"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "manifest",
+            "context",
+            "state",
+            "next-steps",
+            "evidence",
+            "telemetry"
+          ]
+        },
+        "load_policy": { "enum": ["initial", "lazy", "append-only"] },
+        "required": { "type": "boolean" },
+        "max_bytes": { "type": "integer", "minimum": 1 },
+        "estimated_tokens": { "type": "integer", "minimum": 0 },
+        "schema_ref": { "type": ["string", "null"] },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

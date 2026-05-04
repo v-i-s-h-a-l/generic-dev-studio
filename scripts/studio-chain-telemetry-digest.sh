@@ -153,6 +153,9 @@ jq -n \
   [ $selected_states[].chains[]?.issues[]? ] as $issues |
   [ $selected_events[] | select((.event // "") == "chain_review_completed") ] as $reviews |
   [ $selected_events[] | select((.event // "") == "chain_phase_review_completed") ] as $phase_reviews |
+  [ $selected_events[] | select((.event // "") == "checkpoint_auto_created") ] as $checkpoint_creates |
+  [ $selected_events[] | select((.event // "") == "checkpoint_auto_loaded") ] as $checkpoint_loads |
+  [ $selected_events[] | select((.event // "") == "checkpoint_context_savings_estimated") ] as $checkpoint_savings |
   [ $selected_summaries[] | token_total | select(. != null) ] as $tokens |
   [ $selected_summaries[].telemetry_gaps[]? ] as $summary_gaps |
   [ $selected_events[] | select((.event // "") == "chain_telemetry_gap") | (.data.gap_kind // .gap_kind // "unknown") ] as $event_gaps |
@@ -185,6 +188,10 @@ jq -n \
       review_passes: ([ $reviews[] | select((.status // .data.status // "") == "completed") ] | length),
       review_failures: ([ $reviews[] | select((.status // .data.status // "") != "completed") ] | length),
       phase_reviews_total: (($phase_reviews | length) + ([ $selected_states[].phase_reviews[]? ] | length)),
+      checkpoint_auto_created: ($checkpoint_creates | length),
+      checkpoint_auto_loaded: ($checkpoint_loads | length),
+      checkpoint_drift_confirmed: ([ $checkpoint_loads[] | select((.data.drift_status // "") == "confirmed") ] | length),
+      checkpoint_estimated_saved_tokens: ([ $checkpoint_savings[].data.estimated_saved_tokens? // empty ] | add // 0),
       tests_total: ($tests | length),
       tests_bad: ([ $tests[] | select(bad_outcome) ] | length),
       lints_total: ($lints | length),
@@ -230,6 +237,7 @@ jq -r '
   "- Worker summaries: \(.counters.worker_summaries_total)",
   "- Worker wall-clock: \(.counters.worker_duration_s)s",
   "- Reviews: \(.counters.review_passes) pass / \(.counters.review_failures) fail",
+  "- Checkpoints: \(.counters.checkpoint_auto_created) created / \(.counters.checkpoint_auto_loaded) loaded, \(.counters.checkpoint_drift_confirmed) confirmed drift, ~\(.counters.checkpoint_estimated_saved_tokens) tokens saved",
   "- Tests/lints/builds: \(.counters.tests_bad)/\(.counters.tests_total) bad tests, \(.counters.lints_bad)/\(.counters.lints_total) bad lints, \(.counters.builds_bad)/\(.counters.builds_total) bad builds",
   "- Tokens: \(if .counters.tokens_total == null then "missing" else (.counters.tokens_total | tostring) end) across \(.counters.token_reports) summaries",
   "- Churn: \(.counters.files_changed) files, +\(.counters.additions)/-\(.counters.deletions), generated \(.counters.generated_file_count)",
