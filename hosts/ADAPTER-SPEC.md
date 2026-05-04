@@ -151,6 +151,22 @@ user-controlled emergency bypass for the preflight gate is
 `STUDIO_BYPASS_GITHUB_AUTH_PREFLIGHT=1`; bypass use is loud and should be
 reserved for deliberate recovery.
 
+## Chain issue git metadata
+
+`scripts/studio-chain-runner.sh` selects the issue-session git metadata
+strategy from `sandbox_profile`:
+
+| `sandbox_profile` | Strategy | Reason |
+|---|---|---|
+| `workspace-write`, `full` | `local-clone` | The issue directory contains its own `.git/`, so `git add` and `git commit` only write inside the worker-owned root. |
+| `host-native`, `none` | `linked-worktree` | Reference-host sessions can use Git's linked-worktree metadata in the parent checkout. |
+
+The chain worktree remains parent-owned. Sandboxed issue sessions receive a
+per-issue local clone made from the chain worktree; the parent runner fetches
+the resulting issue branch back into the chain worktree after the worker
+commits. Do not fix sandboxed workers by widening write access to the main
+checkout's `.git/worktrees/*` metadata or unrelated issue gitdirs.
+
 ## Conformance test
 
 Every adapter must pass `scripts/test-host.sh <host-name>` before claiming support. The harness runs four tasks:
