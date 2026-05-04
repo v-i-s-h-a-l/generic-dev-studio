@@ -326,6 +326,11 @@ sandbox_mode = "workspace-write"
 writable_roots = ["/Users/<you>/.dev-studio"]
 ```
 
+Studio chain issue sessions do not need write access to the main checkout's
+linked-worktree metadata. For `workspace-write` hosts, `studio-chain-runner`
+uses a per-issue local clone so normal `git add` and `git commit` write inside
+the issue working directory plus `~/.dev-studio`.
+
 For unattended worker sessions, combine the writable root with `--ask-for-approval never`.
 
 ---
