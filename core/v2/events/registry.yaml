@@ -9,3 +9,4 @@ events:
   - topology_worker_deadlock
   - topology_partial_multi_spawn
   - topology_budget_exhaustion
+  - review_finding_disposition_recorded
