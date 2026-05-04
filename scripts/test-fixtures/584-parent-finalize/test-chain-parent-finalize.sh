@@ -57,8 +57,7 @@ cat > "$REPO/.studio/chain-worker-summary.json" <<'JSON'
     {"command": "git diff --cached --check in alternate git dir", "outcome": "passed_before_alternate_commit"},
     {
       "command": "scripts/lint-host-agnostic.sh",
-      "outcome": "passed_with_warning",
-      "warning": "W_ARGUS_SECRET_SCOPE:.codex/capabilities.yaml:secret_scope=cwd-only"
+      "outcome": "passed_with_warning: W_ARGUS_SECRET_SCOPE:.codex/capabilities.yaml:secret_scope=cwd-only | Argus dispatch on this host requires secret_scope: none"
     }
   ],
   "builds": [],
@@ -178,6 +177,21 @@ cat > "$TMPROOT/secret/.studio/chain-worker-summary.json" <<'JSON'
 JSON
 if chain_git_parent_finalize_summary_eligible "$TMPROOT/secret/.studio/chain-worker-summary.json"; then
   fail "real secret blocker was eligible"
+fi
+
+mkdir -p "$TMPROOT/secret-warning/.studio"
+cat > "$TMPROOT/secret-warning/.studio/chain-worker-summary.json" <<'JSON'
+{
+  "schema_version": 1,
+  "kind": "completion",
+  "status": "blocked",
+  "blocked_reason": "Unable to stage or commit: .git/index.lock Operation not permitted.",
+  "tests": [{"command": "fixture", "outcome": "passed"}],
+  "lints": [{"command": "secret scan", "outcome": "passed_with_warning: potential secret exposure needs review"}]
+}
+JSON
+if chain_git_parent_finalize_summary_eligible "$TMPROOT/secret-warning/.studio/chain-worker-summary.json"; then
+  fail "secret-looking warning outcome was eligible"
 fi
 
 printf 'PASS: chain parent-finalize commit fallback\n'
