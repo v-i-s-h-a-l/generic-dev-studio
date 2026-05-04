@@ -2442,6 +2442,11 @@ wait_for_all_issue_jobs() {
   ISSUE_PIDS=()
 }
 
+git_checkout_exists() {
+  local worktree="$1"
+  git -C "$worktree" rev-parse --is-inside-work-tree >/dev/null 2>&1
+}
+
 integrate_issue_result() {
   local chain_name="$1" branch="$2" chain_worktree="$3" issue="$4" git_metadata_strategy="$5" result_file="$6" chain_run_id="$7" issue_run_id="$8"
   local issue_branch issue_worktree result_commit_after
@@ -2526,9 +2531,9 @@ for ((idx = 0; idx < chain_count; idx++)); do
   run with_login_home_for_github git -C "$REPO_ROOT" fetch origin --prune
   if [ "$DRY_RUN" -eq 0 ]; then
     mkdir -p "$chain_results_dir"
-    if [ -n "$RESUME_ID" ] && [ -d "$chain_worktree/.git" ]; then
+    if [ -n "$RESUME_ID" ] && git_checkout_exists "$chain_worktree"; then
       git -C "$chain_worktree" checkout "$branch"
-    elif [ ! -d "$chain_worktree/.git" ]; then
+    elif ! git_checkout_exists "$chain_worktree"; then
       git -C "$REPO_ROOT" worktree add -B "$branch" "$chain_worktree" "origin/$base"
       git -C "$chain_worktree" checkout "$branch"
       git -C "$chain_worktree" reset --hard "origin/$base"
