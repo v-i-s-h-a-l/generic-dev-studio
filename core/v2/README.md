@@ -47,7 +47,12 @@ Current substrate artifacts:
 - `schemas/subscriber-lag.schema.json` defines subscriber lag status artifacts.
 - `schemas/dead-letter.schema.json` defines malformed/partial-line dead letters.
 - `events/registry.yaml` is the v2 event-name registry seed for subscriber
-  operational events.
+  operational events, topology runtime failures, and review finding disposition
+  metrics.
+- `review/metrics.yaml` defines sibling-review severity weights and disposition
+  values. Record and report review finding value with
+  `scripts/v2-review-metrics.sh emit ...` and
+  `scripts/v2-review-metrics.sh report --format markdown|json`.
 - `schemas/project-profile.schema.json` defines profile-owned operation
   mappings. Resolve and validate profile commands with `scripts/v2-profile.sh`;
   the first profile is `profiles/ios-turnip/`.

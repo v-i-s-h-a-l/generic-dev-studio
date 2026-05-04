@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/core/v2/schemas/review-finding-event.schema.json",
+  "title": "Studio v2 review finding disposition event",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "event",
+    "occurred_at",
+    "producer",
+    "subject",
+    "idempotency_key",
+    "writable_action",
+    "data"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "event": { "const": "review_finding_disposition_recorded" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "producer": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["agent", "mode"],
+      "properties": {
+        "agent": { "enum": ["manager", "operator"] },
+        "mode": { "const": "review-metrics" }
+      }
+    },
+    "subject": { "type": "string", "minLength": 1 },
+    "idempotency_key": { "type": "string", "minLength": 1 },
+    "writable_action": { "type": "boolean", "const": true },
+    "data": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "phase_ref",
+        "review_ref",
+        "review_host",
+        "review_kind",
+        "finding_id",
+        "severity",
+        "severity_weight",
+        "disposition",
+        "summary",
+        "privacy_classification"
+      ],
+      "properties": {
+        "phase_ref": { "type": "string", "minLength": 1 },
+        "review_ref": { "type": "string", "minLength": 1 },
+        "review_host": { "type": "string", "minLength": 1 },
+        "review_kind": { "enum": ["plan", "outcome", "pr", "pre-commit"] },
+        "finding_id": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["critical", "high", "medium", "low", "info"] },
+        "severity_weight": { "type": "integer", "minimum": 0 },
+        "disposition": { "enum": ["accepted", "rejected", "disputed", "superseded"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "prevented_defect_ref": { "type": "string", "minLength": 1 },
+        "follow_up_ref": { "type": "string", "minLength": 1 },
+        "superseded_by": { "type": "string", "minLength": 1 },
+        "privacy_classification": { "const": "private-runtime" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "data": {
+            "properties": {
+              "disposition": { "const": "superseded" }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "required": ["superseded_by"]
+          }
+        }
+      }
+    }
+  ]
+}
