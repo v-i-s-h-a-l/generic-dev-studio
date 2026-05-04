@@ -54,3 +54,78 @@ chain_git_integrate_issue_workspace() {
       ;;
   esac
 }
+
+chain_git_parent_finalize_summary_eligible() {
+  local summary_file="${1:?usage: chain_git_parent_finalize_summary_eligible <summary-file>}"
+  [ -f "$summary_file" ] || return 1
+  jq -e '
+    def text($v):
+      if $v == null then ""
+      elif ($v | type) == "array" then ($v | map(tostring) | join("\n"))
+      elif ($v | type) == "object" then ($v | tojson)
+      else ($v | tostring)
+      end;
+    def checks: ((.tests // []) + (.lints // []) + (.builds // []));
+    def clean_outcome($v):
+      (($v.outcome // $v.status // "") | ascii_downcase)
+      | test("^(pass|passed|passed_with_warning|ok|success|succeeded|skipped)$");
+    (((.status // "") | ascii_downcase) | test("^(blocked|failed)$"))
+    and ((.commit_after // null) == null or (.commit_after // "") == "" or (.commit_after == .commit_before))
+    and ((.blocked_reason // "") | ascii_downcase
+      | (test("git|\\.git|index\\.lock|stage|staging|commit")
+         and test("operation not permitted|permission denied|unwritable|denies writes|cannot write|failed creating")))
+    and ((text(.carryover) + "\n" + text(.lessons)) | ascii_downcase | test("secret|destructive|unrelated issue|scope cannot|review failed") | not)
+    and ((checks | length) > 0)
+    and all(checks[]; clean_outcome(.))
+  ' "$summary_file" >/dev/null 2>&1
+}
+
+chain_git_parent_finalize_has_public_diff() {
+  local issue_worktree="${1:?usage: chain_git_parent_finalize_has_public_diff <issue-worktree>}"
+  git -C "$issue_worktree" status --porcelain --untracked-files=all -- . ':!.studio' | grep -q .
+}
+
+chain_git_parent_finalize_issue_commit() {
+  local issue_worktree="${1:?usage: chain_git_parent_finalize_issue_commit <issue-worktree> <issue-number> <summary-file>}"
+  local issue="${2:?issue number required}"
+  local summary_file="${3:?summary file required}"
+  local issue_title subject
+
+  chain_git_parent_finalize_summary_eligible "$summary_file" || return 1
+  chain_git_parent_finalize_has_public_diff "$issue_worktree" || return 1
+  issue_title=$(jq -r '.issue_title // empty' "$summary_file" 2>/dev/null || true)
+
+  git -C "$issue_worktree" reset -q -- .studio 2>/dev/null || true
+  rm -rf "$issue_worktree/.studio"
+  git -C "$issue_worktree" add --all -- . ':!.studio'
+
+  if git -C "$issue_worktree" diff --cached --quiet --exit-code; then
+    return 1
+  fi
+  git -C "$issue_worktree" diff --cached --check
+  if git -C "$issue_worktree" diff --cached --name-only -- .studio | grep -q .; then
+    git -C "$issue_worktree" reset -q -- .studio 2>/dev/null || true
+    return 1
+  fi
+
+  if [ -n "$issue_title" ]; then
+    subject="$issue_title (#$issue)"
+  else
+    subject="Implement #$issue"
+  fi
+  git -C "$issue_worktree" commit -m "$subject" -m "Closes #$issue"
+}
+
+chain_git_parent_finalize_event_payload() {
+  local summary_file="${1:?usage: chain_git_parent_finalize_event_payload <summary> <before> <after> <host>}"
+  local before="${2:?before commit required}"
+  local after="${3:?after commit required}"
+  local host="${4:?host required}"
+  jq -cn \
+    --arg summary "$summary_file" \
+    --arg before "$before" \
+    --arg after "$after" \
+    --arg host "$host" \
+    --arg reason "worker_git_metadata_unwritable" \
+    '{summary:$summary, commit_before:$before, commit_after:$after, worker_host:$host, reason:$reason}'
+}
