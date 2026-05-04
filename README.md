@@ -150,6 +150,7 @@ core/v2/handoffs/
   *.yaml           # typed handoff fixtures shared across roles
 
 .claude/commands/       # project-scoped slash commands (fire only when cwd is this repo)
+  dev-studio.md         # /dev-studio — v2 umbrella role router
   studio-help.md        # /studio-help — opens the v2 router docs
   studio-setup.md       # /studio-setup — onboard THIS machine (--manager/--worker/--dual; no args = auto-pilot prompting only for role)
   resume-plan.md        # /resume-plan — routes through /dev-studio manager
