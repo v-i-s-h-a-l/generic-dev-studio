@@ -1,10 +1,10 @@
 # Codex adapter (OpenAI Codex CLI, v0.120+)
 #
-# Codex runs in a workspace-write sandbox with cwd-only secret scope,
-# satisfying the Achilles security floor defined in hosts/ADAPTER-SPEC.md.
+# Codex workers must materialize the declared workspace-write/no-persistence
+# contract through the wrapper, not by relying on user config defaults.
 # Hooks require Codex v0.120+.
 supports_hooks: true
-spawn_command: "codex exec"
+spawn_command: "scripts/codex-worker-exec.sh"
 block_for_event_strategy: tail
 tool_dialect: openai
 sandbox_profile: workspace-write

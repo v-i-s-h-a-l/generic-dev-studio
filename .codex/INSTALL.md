@@ -59,6 +59,12 @@ For unattended workers, also use the non-interactive approval policy:
 codex --sandbox workspace-write --add-dir ~/.dev-studio --ask-for-approval never
 ```
 
+Studio-launched Codex workers use `scripts/codex-worker-exec.sh` instead of
+plain `codex exec`. The wrapper resolves the login `HOME`, adds
+`$HOME/.dev-studio` as the runtime writable root, forces
+`--sandbox workspace-write`, disables transcript/session persistence with
+`--ephemeral`, and runs with `approval_policy=never`.
+
 ## GitHub Auth Parity
 
 Codex worker sessions must launch with the same login `HOME`, keychain, ssh-agent, and GitHub credential-helper surface that Claude-backed sessions use. The studio chain runner sets `HOME` to the login home before spawning Codex so `gh` and `git` see the user's normal credentials instead of a scratch home. Parent-side studio scripts that run under a synthetic Codex home also normalize GitHub operations to the login `HOME` per command; set `STUDIO_BYPASS_PARENT_HOME_FLIP=1` only when intentionally testing synthetic-home isolation.
