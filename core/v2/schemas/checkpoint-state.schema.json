@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/core/v2/schemas/checkpoint-state.schema.json",
+  "title": "Studio v2 checkpoint state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "checkpoint_id", "updated_at", "session", "working_tree", "role_state"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "kind": { "const": "studio-v2-checkpoint-state" },
+    "checkpoint_id": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "status", "current_goal"],
+      "properties": {
+        "role": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "status": { "enum": ["active", "paused", "blocked", "completed"] },
+        "current_goal": { "type": "string", "minLength": 1, "maxLength": 500 }
+      }
+    },
+    "working_tree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "branch", "commit", "dirty"],
+      "properties": {
+        "repo": { "type": "string", "minLength": 1 },
+        "branch": { "type": ["string", "null"] },
+        "commit": { "type": ["string", "null"] },
+        "dirty": { "type": "boolean" }
+      }
+    },
+    "role_state": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["owner_role", "summary"],
+      "properties": {
+        "owner_role": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2000 }
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/core/v2/schemas/checkpoint-evidence.schema.json",
+  "title": "Studio v2 checkpoint evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "checkpoint_id", "evidence"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "kind": { "const": "studio-v2-checkpoint-evidence" },
+    "checkpoint_id": { "type": "string", "minLength": 1 },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "summary", "ref", "size_bytes"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "type": { "enum": ["command", "diff", "test", "review", "issue", "artifact"] },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "ref": { "type": "string", "minLength": 1 },
+          "size_bytes": { "type": "integer", "minimum": 0 },
+          "inline_excerpt": { "type": ["string", "null"], "maxLength": 1000 }
+        }
+      }
+    }
+  }
+}
