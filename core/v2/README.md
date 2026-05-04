@@ -20,8 +20,9 @@ Current substrate artifacts:
   handoff validation fixtures for planner output, QA contracts, flow-test
   checklists, and release packets.
 - `skills/dev-studio/` is the A2 umbrella skill. It defines `/dev-studio`,
-  lists canonical role dispatch rows, and records v1 compatibility forwarders
-  for `/chanakya`, `/achilles`, `/argus`, and `/apollo`.
+  ships the self-contained HTML docs page at `skills/dev-studio/docs.html`,
+  lists canonical role dispatch rows, and records compatibility aliases for
+  the deleted v1 top-level names.
 - `cutover/manifest.yaml` and `cutover/ROLLBACK.md` are the A9 archive,
   traffic-switch, parity, and rollback playbook. Validate the cutover state
   with `scripts/v2-cutover.sh --validate`.

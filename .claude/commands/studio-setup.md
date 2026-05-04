@@ -40,7 +40,7 @@ REPO_ROOT="$(git -C "$(pwd)" rev-parse --show-toplevel 2>/dev/null)"
 ### 2. `--help` / `-h` short-circuit
 
 ```bash
-DOCS="$REPO_ROOT/core/v2/skills/dev-studio/SKILL.md"
+DOCS="$REPO_ROOT/core/v2/skills/dev-studio/docs.html"
 [ -f "$DOCS" ] && open "$DOCS"
 ```
 
@@ -54,10 +54,10 @@ Then print:
 /studio-setup --dual            both roles on one box (rare)
 /studio-setup --interactive     prompt at every step (legacy)
 /studio-setup --dry-run         preview without changing anything
-/studio-setup --help            this message + open the v2 router source
+/studio-setup --help            this message + open the v2 router docs
 ```
 
-Tell the user: "Studio v2 router opened. To run the wizard: `/studio-setup --manager` (or `--worker`, `--dual`)." Stop.
+Tell the user: "Studio v2 router docs opened. To run the wizard: `/studio-setup --manager` (or `--worker`, `--dual`)." Stop.
 
 ### 3. Build the bootstrap command
 
