@@ -54,6 +54,7 @@ cat > "$REPO/.studio/chain-worker-summary.json" <<'JSON'
   "tests": [{"command": "fixture", "outcome": "passed"}],
   "lints": [
     {"command": "git diff --check", "outcome": "passed_with_warning"},
+    {"command": "git diff --cached --check in alternate git dir", "outcome": "passed_before_alternate_commit"},
     {
       "command": "scripts/lint-host-agnostic.sh",
       "outcome": "passed_with_warning",
@@ -142,6 +143,20 @@ cat > "$TMPROOT/failing/.studio/chain-worker-summary.json" <<'JSON'
 JSON
 if chain_git_parent_finalize_summary_eligible "$TMPROOT/failing/.studio/chain-worker-summary.json"; then
   fail "failing checks were eligible"
+fi
+
+mkdir -p "$TMPROOT/unknown-outcome/.studio"
+cat > "$TMPROOT/unknown-outcome/.studio/chain-worker-summary.json" <<'JSON'
+{
+  "schema_version": 1,
+  "kind": "completion",
+  "status": "blocked",
+  "blocked_reason": "Unable to stage or commit: .git/index.lock Operation not permitted.",
+  "tests": [{"command": "fixture", "outcome": "passed_after_retry"}]
+}
+JSON
+if chain_git_parent_finalize_summary_eligible "$TMPROOT/unknown-outcome/.studio/chain-worker-summary.json"; then
+  fail "unknown passed_* outcome was eligible"
 fi
 
 mkdir -p "$TMPROOT/secret/.studio"
