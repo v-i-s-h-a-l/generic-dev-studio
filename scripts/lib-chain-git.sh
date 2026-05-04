@@ -68,7 +68,12 @@ chain_git_parent_finalize_summary_eligible() {
     def checks: ((.tests // []) + (.lints // []) + (.builds // []));
     def clean_outcome($v):
       (($v.outcome // $v.status // "") | ascii_downcase)
+      | sub(":.*$"; "")
       | test("^(pass|passed|passed_with_warning|passed_before_alternate_commit|ok|success|succeeded|skipped)$");
+    def check_note($v):
+      [($v.command // ""), ($v.outcome // $v.status // ""), ($v.warning // ""), ($v.notes // "")]
+      | map(tostring)
+      | join(" ");
     def unsafe_parent_finalize_note:
       ascii_downcase as $line
       | (($line | test("destructive|unrelated issue|scope cannot|review failed"))
@@ -79,7 +84,7 @@ chain_git_parent_finalize_summary_eligible() {
     and ((.blocked_reason // "") | ascii_downcase
       | (test("git|\\.git|index\\.lock|stage|staging|commit")
          and test("operation not permitted|permission denied|unwritable|denies writes|cannot write|failed creating")))
-    and all(((text(.carryover) + "\n" + text(.lessons)) | split("\n")[]?); (unsafe_parent_finalize_note | not))
+    and all((((text(.carryover) + "\n" + text(.lessons)) | split("\n")) + [checks[]? | check_note(.)])[]?; (unsafe_parent_finalize_note | not))
     and ((checks | length) > 0)
     and all(checks[]; clean_outcome(.))
   ' "$summary_file" >/dev/null 2>&1
