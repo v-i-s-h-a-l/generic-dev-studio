@@ -426,6 +426,7 @@
         <a href="#availability">Availability</a>
         <a href="#state">State</a>
         <a href="#automation">Automation</a>
+        <a href="#agent-surfaces">Agents</a>
         <a href="#roles">Roles</a>
         <a href="#resolution">Resolution</a>
         <a href="#cutover">Cutover</a>
@@ -671,6 +672,93 @@ scripts/studio-chain-runner.sh &lt;manifest&gt; --auto</code>
             <p>Multiple workers can watch a queue and claim tasks atomically. The manager dispatches; workers take isolated worktrees and report completion evidence.</p>
             <code class="shell">/dev-studio worker
 scripts/worker-status.sh</code>
+          </article>
+        </div>
+      </div>
+    </details>
+
+    <details class="section" id="agent-surfaces">
+      <summary>
+        <span>
+          <h2>Agent Surfaces</h2>
+          <p class="summary-copy">Available role entrypoints, mode-pack equivalents, and examples for each v2 agent.</p>
+        </span>
+      </summary>
+      <div class="section-body">
+        <div class="notice">
+          <h3>Mode-pack status</h3>
+          <p>
+            Studio v2 does not currently ship one <code>modes/</code> directory
+            per role. The mode-pack equivalent is the role contract plus any
+            script wrapper, handoff fixture, or command wrapper listed below.
+          </p>
+        </div>
+        <div class="workflow-grid">
+          <article class="role">
+            <h3>manager</h3>
+            <p>Shapes intent, resumes arcs, routes work, guards against repeats, captures patterns, and escalates operator decisions.</p>
+            <div class="meta"><span class="pill status-live">direct use</span><span class="pill">proof-of-life script</span></div>
+            <code class="shell">/dev-studio manager resume-plan
+/dev-studio manager guard "has this shipped?"
+/dev-studio manager ingest "capture this pattern"</code>
+          </article>
+          <article class="role">
+            <h3>planner</h3>
+            <p>Turns shaped work into executable scope, dependencies, acceptance criteria, and worker contracts.</p>
+            <div class="meta"><span class="pill status-contract">contract-backed</span><span class="pill">handoff: planner-output</span></div>
+            <code class="shell">/dev-studio planner plan issue 123
+/dev-studio planner split this feature into worker contracts</code>
+          </article>
+          <article class="role">
+            <h3>worker</h3>
+            <p>Implements one bounded contract in an isolated worktree and returns typed completion evidence.</p>
+            <div class="meta"><span class="pill status-live">direct use</span><span class="pill">fleet scripts</span></div>
+            <code class="shell">/dev-studio worker T123
+scripts/achilles-worker.sh
+scripts/achilles-queue.sh drain</code>
+          </article>
+          <article class="role">
+            <h3>reviewer</h3>
+            <p>Reviews plans, diffs, outcomes, PRs, and release packets for blockers, warnings, and missing evidence.</p>
+            <div class="meta"><span class="pill status-live">direct use</span><span class="pill">headless review wrappers</span></div>
+            <code class="shell">/dev-studio reviewer review
+scripts/phase-review.sh --kind plan --input phase-plan.md
+scripts/pr-headless-review.sh &lt;pr&gt;</code>
+          </article>
+          <article class="role">
+            <h3>qa-engineer</h3>
+            <p>Builds automated QA contracts and stable target checks beyond the worker's local verification.</p>
+            <div class="meta"><span class="pill status-contract">contract-backed</span><span class="pill">handoff: qa-contract</span></div>
+            <code class="shell">/dev-studio qa-engineer write QA targets for T123
+scripts/v2-multispawn-pilot.sh run</code>
+          </article>
+          <article class="role">
+            <h3>flow-tester</h3>
+            <p>Defines exploratory user-flow scenarios, severity thresholds, pass/fail state, and merge-block rules.</p>
+            <div class="meta"><span class="pill status-contract">contract-backed</span><span class="pill">handoff: flow-test-checklist</span></div>
+            <code class="shell">/dev-studio flow-tester check onboarding on build 456
+/dev-studio flow-tester write a release smoke checklist</code>
+          </article>
+          <article class="role">
+            <h3>perf</h3>
+            <p>Investigates memory, CPU, thermal, battery, network, signpost, and trace evidence without taking functional acceptance authority.</p>
+            <div class="meta"><span class="pill status-live">direct use</span><span class="pill">metric evidence gate</span></div>
+            <code class="shell">/dev-studio perf profile editor startup
+/dev-studio perf compare baseline and post-fix traces</code>
+          </article>
+          <article class="role">
+            <h3>release-manager</h3>
+            <p>Assembles release readiness, blocker state, notes, tag state, TestFlight/App Store state, and approval gates.</p>
+            <div class="meta"><span class="pill status-contract">approval-gated</span><span class="pill">handoff: release-packet</span></div>
+            <code class="shell">/dev-studio release-manager prepare beta readiness
+/dev-studio release-manager tf-push --background</code>
+          </article>
+          <article class="role">
+            <h3>host-adapter</h3>
+            <p>Represents host capability and sync operations. It is infrastructure, not a general implementation agent.</p>
+            <div class="meta"><span class="pill status-registry">registry-only</span><span class="pill">sync scripts</span></div>
+            <code class="shell">scripts/sync-host-skills.sh --all
+scripts/host-preflight.sh codex /repo</code>
           </article>
         </div>
       </div>
