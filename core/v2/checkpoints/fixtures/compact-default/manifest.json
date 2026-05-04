@@ -1,0 +1,110 @@
+{
+  "schema_version": {
+    "name": "checkpoint-manifest",
+    "version": "1.0.0",
+    "min_reader": "1.0.0",
+    "deprecated_at": null
+  },
+  "kind": "studio-v2-checkpoint-manifest",
+  "checkpoint_id": "ckpt-019df316-compact-default",
+  "session_id": "session-019df316",
+  "created_at": "2026-05-04T13:05:00Z",
+  "project": {
+    "slug": "generic-dev-studio",
+    "repo_root_hint": null
+  },
+  "producer": {
+    "host": "codex",
+    "role": "worker",
+    "mode": "chain-worker",
+    "model": null
+  },
+  "runtime_layout": {
+    "root": "~/.dev-studio/<project>/.runtime/v2/checkpoints",
+    "checkpoint_dir": "sessions/ckpt-019df316-compact-default",
+    "index_path": "index.json",
+    "telemetry_path": "telemetry.jsonl"
+  },
+  "budgets": {
+    "default_load_max_bytes": 8192,
+    "default_load_max_estimated_tokens": 1600,
+    "warning_ratio": 0.8,
+    "over_budget_behavior": "emit-warning-telemetry"
+  },
+  "default_load": {
+    "files": ["manifest.json", "context.md"],
+    "must_measure_bytes": true,
+    "must_measure_estimated_tokens": true
+  },
+  "artifacts": [
+    {
+      "path": "manifest.json",
+      "kind": "manifest",
+      "load_policy": "initial",
+      "required": true,
+      "max_bytes": 8192,
+      "estimated_tokens": 920,
+      "schema_ref": "core/v2/schemas/checkpoint-manifest.schema.json",
+      "description": "Storage, budget, ownership, and lazy-load declaration."
+    },
+    {
+      "path": "context.md",
+      "kind": "context",
+      "load_policy": "initial",
+      "required": true,
+      "max_bytes": 4096,
+      "estimated_tokens": 360,
+      "schema_ref": null,
+      "description": "Compact resume context with lazy-load hints."
+    },
+    {
+      "path": "state.json",
+      "kind": "state",
+      "load_policy": "lazy",
+      "required": true,
+      "max_bytes": 4096,
+      "estimated_tokens": 450,
+      "schema_ref": "core/v2/schemas/checkpoint-state.schema.json",
+      "description": "Role-owned structured state."
+    },
+    {
+      "path": "next-steps.json",
+      "kind": "next-steps",
+      "load_policy": "lazy",
+      "required": true,
+      "max_bytes": 4096,
+      "estimated_tokens": 300,
+      "schema_ref": "core/v2/schemas/checkpoint-next-steps.schema.json",
+      "description": "Pending action list."
+    },
+    {
+      "path": "evidence.json",
+      "kind": "evidence",
+      "load_policy": "lazy",
+      "required": true,
+      "max_bytes": 4096,
+      "estimated_tokens": 260,
+      "schema_ref": "core/v2/schemas/checkpoint-evidence.schema.json",
+      "description": "Evidence pointers and short excerpts."
+    },
+    {
+      "path": "telemetry.jsonl",
+      "kind": "telemetry",
+      "load_policy": "append-only",
+      "required": true,
+      "max_bytes": 4096,
+      "estimated_tokens": 240,
+      "schema_ref": "core/v2/schemas/checkpoint-telemetry-event.schema.json",
+      "description": "Append-only checkpoint telemetry events."
+    }
+  ],
+  "forbidden_content": {
+    "transcripts": "forbidden",
+    "large_embedded_command_output": "forbidden",
+    "max_inline_command_output_bytes": 1000
+  },
+  "ownership": {
+    "shared_schema": ["storage", "index", "telemetry", "budgets", "lazy-load"],
+    "role_content": ["manager", "planner", "worker", "reviewer", "qa-engineer", "flow-tester", "perf", "release-manager"]
+  }
+}

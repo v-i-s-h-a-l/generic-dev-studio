@@ -60,6 +60,10 @@ Current substrate artifacts:
 - `schemas/project-profile.schema.json` defines profile-owned operation
   mappings. Resolve and validate profile commands with `scripts/v2-profile.sh`;
   the first profile is `profiles/ios-turnip/`.
+- `checkpoints/CONTRACT.md` defines the compact session checkpoint artifact
+  contract. Fixtures under `checkpoints/fixtures/compact-default/` prove the
+  lazy resume shape: readers load only `manifest.json` and `context.md` before
+  optional role-owned artifacts.
 - `MESSAGES.md` defines A11 build/release message shape. Validate same-draft
   duplicates with `scripts/lint-build-release-message.sh`.
 - `manager/proof-of-life.yaml` defines the A7 manager proof-of-life contract.

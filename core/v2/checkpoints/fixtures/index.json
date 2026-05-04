@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "kind": "studio-v2-checkpoint-index",
+  "project": "generic-dev-studio",
+  "updated_at": "2026-05-04T13:05:00Z",
+  "checkpoints": [
+    {
+      "checkpoint_id": "ckpt-019df316-compact-default",
+      "session_dir": "sessions/ckpt-019df316-compact-default",
+      "created_at": "2026-05-04T13:05:00Z",
+      "producer_role": "worker",
+      "status": "available",
+      "default_load_bytes": 5200,
+      "estimated_default_load_tokens": 1280,
+      "latest_drift_status": "none",
+      "last_usefulness": "unknown"
+    }
+  ]
+}
