@@ -54,7 +54,7 @@ The `dev-studio` router is shipped at `core/v2/skills/dev-studio/` and exposed t
 | Resume in-flight arc / "where were we" | "where were we", "pick up from", "resume", `/resume-plan` | `/dev-studio manager resume-plan` |
 | Review a studio-repo diff | "review this", "check this", "any issues", "self-review", `/simplify` *on a studio-repo diff* | Cross-host reviewer wrapper by default plus `REVIEW.md`; `/dev-studio reviewer review` only for conversational triage |
 | Draft release notes / evaluate tagging | "what's new", "draft release notes", "should we tag", "release" | `/dev-studio release-manager` plus `RELEASES.md` |
-| Studio-level capture (patterns, analysis, parking-lot, rule tweaks) | "add to parking lot", "file a pattern", "capture this for the studio" | `/dev-studio manager ingest` |
+| Context-local capture (project ideas by default; Forge/Studio only when explicitly named) | "add to parking lot", "file a pattern", "capture this for the studio" | `/dev-studio manager ingest` via `scripts/dev-studio-ingest-resolve.sh` |
 | Arc-coherence audit (plan ↔ memory ↔ commits drift) | `/studio audit`, "audit the arc", "check plan drift" — also auto-runs silently on SessionStart | `/dev-studio manager audit` |
 | Pre-work guard (already-shipped / already-tried / already-in-backlog) | `/studio guard <topic>`, "has this been done?", "are we repeating work?" | `/dev-studio manager guard` |
 | Add a skill from a git URL | `/studio add <url>`, "add this skill", "install this skill", "vendor this" | `/dev-studio manager add` |

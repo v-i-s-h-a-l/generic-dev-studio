@@ -59,12 +59,14 @@ After the user locks in a path, continue into the selected workflow and report
 the direct one-line invocation they can use next time. Existing explicit
 invocations keep routing directly and do not show the landing.
 
-Landing suggestions are cwd/profile-aware. Studio-internal options such as
-`ingest`, `audit`, `guard`, `sync`, `nodes`, and `resume-plan` target
-`generic-dev-studio` unless the user explicitly asks for studio operations from
-another project. Project repositories should bias suggestions toward project
-task shaping, implementation, review, QA, flow testing, performance, and
-release readiness.
+Landing suggestions are cwd/profile-aware. Studio-internal options (`audit`,
+`guard`, `sync`, `nodes`, `resume-plan`) target `generic-dev-studio` unless the
+user explicitly asks for studio operations from another project. `manager
+ingest` calls `scripts/dev-studio-ingest-resolve.sh`; default ingest follows
+the current git repository, and Forge/Studio ingest requires explicit `--scope
+studio` or `--to generic-dev-studio`. Project repositories should bias
+suggestions toward project task shaping, implementation, review, QA, flow
+testing, performance, and release readiness.
 
 <!-- v2-dev-studio:intent -->
 ## Intent detection

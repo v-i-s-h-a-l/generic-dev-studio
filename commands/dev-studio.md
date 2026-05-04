@@ -51,8 +51,10 @@ supplies the task context and runtime slug.
    - `planner`, `qa-engineer`, `flow-tester`, `release-manager` -> active role contracts, usually manager-mediated or approval-gated.
 
 6. Keep project state under `~/.dev-studio/$PROJECT_SLUG/` unless the user
-   explicitly names another project slug. Use studio scripts from
-   `$STUDIO_REPO/scripts/`.
+   explicitly names another project slug. For `manager ingest`, call
+   `$STUDIO_REPO/scripts/dev-studio-ingest-resolve.sh --cwd "$PROJECT_ROOT"`
+   with any explicit `--scope` or `--to` arguments and follow its JSON route.
+   Use studio scripts from `$STUDIO_REPO/scripts/`.
 
 7. For a bare-role landing:
    - In `generic-dev-studio`, include studio-internal options such as
@@ -79,3 +81,9 @@ supplies the task context and runtime slug.
 Former top-level v1 names are aliases under this command, not restored v1
 surfaces. For example, `/dev-studio apollo profile` resolves to
 `/dev-studio perf profile`.
+
+`scripts/dev-studio-ingest-resolve.sh` owns ingest destination semantics. Its
+JSON includes `destination_project`, `scope`, `artifact_kind`, `artifact_root`,
+`public_issue_repo`, `requires_privacy_scrub`, and `local_ingest_policy`.
+Project profiles decide what a project-local ingest becomes after routing:
+private artifact, GitHub issue, task, or backlog entry.

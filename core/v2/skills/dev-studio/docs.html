@@ -608,6 +608,18 @@ core/v2/skills/dev-studio/
             </p>
           </aside>
         </div>
+        <div class="workflow-grid">
+          <section class="card">
+            <h3>Ingest Routing</h3>
+            <p>Ingest follows the current git repository by default. Cross-context Forge/Studio capture is explicit and resolved by <code>scripts/dev-studio-ingest-resolve.sh</code>.</p>
+            <code class="shell">scripts/dev-studio-ingest-resolve.sh --cwd "$PWD"
+scripts/dev-studio-ingest-resolve.sh --cwd "$PWD" --scope studio</code>
+          </section>
+          <section class="card">
+            <h3>Project Profiles</h3>
+            <p>After routing, project profiles decide whether local ingest becomes a private artifact, GitHub issue, task, or backlog entry.</p>
+          </section>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -706,7 +718,8 @@ scripts/worker-status.sh</code>
             <code class="shell">/dev-studio manager
 /dev-studio manager resume-plan
 /dev-studio manager guard "has this shipped?"
-/dev-studio manager ingest "capture this pattern"</code>
+/dev-studio manager ingest "capture this pattern"
+/dev-studio manager ingest --scope studio "capture this Forge workflow gap"</code>
           </article>
           <article class="role">
             <h3>planner</h3>
