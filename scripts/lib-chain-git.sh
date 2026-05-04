@@ -74,16 +74,25 @@ chain_git_parent_finalize_summary_eligible() {
       [($v.command // ""), ($v.outcome // $v.status // ""), ($v.warning // ""), ($v.notes // "")]
       | map(tostring)
       | join(" ");
+    def primary_commit_after:
+      (.commit_or_pr_references.commit_after // .primary_commit_after // .primary_git_commit_after // "");
+    def alternate_metadata_note:
+      (text(.blocked_reason) + "\n" + text(.carryover) + "\n" + text(.lessons))
+      | ascii_downcase
+      | test("alternate|copied git|writable copied|\\.git\\.codex|primary metadata|primary \\.git|original \\.git|primary.*head.*remain");
+    def no_primary_commit:
+      ((.commit_after // null) == null or (.commit_after // "") == "" or (.commit_after == .commit_before))
+      or (primary_commit_after == .commit_before and alternate_metadata_note);
     def unsafe_parent_finalize_note:
       ascii_downcase as $line
       | (($line | test("destructive|unrelated issue|scope cannot|review failed"))
          or (($line | test("secret"))
              and (($line | test("w_argus_secret_scope|secret-scope|secret_scope")) | not)));
     (((.status // "") | ascii_downcase) | test("^(blocked|failed)$"))
-    and ((.commit_after // null) == null or (.commit_after // "") == "" or (.commit_after == .commit_before))
+    and no_primary_commit
     and ((.blocked_reason // "") | ascii_downcase
       | (test("git|\\.git|index\\.lock|stage|staging|commit")
-         and test("operation not permitted|permission denied|unwritable|denies writes|cannot write|failed creating")))
+         and test("operation not permitted|permission denied|unwritable|not writable|denies writes|cannot write|failed creating")))
     and all((((text(.carryover) + "\n" + text(.lessons)) | split("\n")) + [checks[]? | check_note(.)])[]?; (unsafe_parent_finalize_note | not))
     and ((checks | length) > 0)
     and all(checks[]; clean_outcome(.))
