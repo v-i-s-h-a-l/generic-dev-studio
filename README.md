@@ -66,7 +66,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio reviewer review      # walk REVIEW.md against the pending diff
 /dev-studio release-manager      # draft release notes per RELEASES.md (never auto-tags)
 /dev-studio manager ingest       # capture one idea in the current repo context; --scope studio crosses to Forge
-/dev-studio manager analyze      # sweep studio-feedback inbox + event logs for a project
+/dev-studio manager analyze      # sweep analysis inputs, then route studio-feedback to durable issue destinations
 /dev-studio checkpoint           # manager-shaped checkpoint routing; explicit role owns content
 /dev-studio worker checkpoint    # worker-owned compact checkpoint; does not replace worker summary
 /dev-studio worker resume-checkpoint # resume worker checkpoint via manifest.json + context.md first
@@ -187,6 +187,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-gh.sh          # GitHub CLI wrapper for assistant/interactive calls; normalizes synthetic Codex HOME
   dev-studio-ingest-resolve.sh # resolves /dev-studio manager ingest destination as JSON
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
+  analyze-feedback-ingest.sh # manager analyze: consolidate feedback into existing/new GH issues before processed/
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   appstore-watch.sh     # polls ASC for pending submission; finalizes draft release + Slack on release
   backfill-orphan-debriefs.sh  # recover tasks that finished without landing in master plan (dry-run default)

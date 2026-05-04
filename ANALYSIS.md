@@ -23,6 +23,8 @@ How generic-dev-studio observes itself. Runs **from this repo**, never from the 
 
 Ingestion is automatic (`scripts/ingest-feedback.sh`, wired to SessionStart + Chanakya Step 0F). The inbox should therefore be **empty or near-empty** on any analysis pass — unprocessed records mean ingestion hasn't fired (missing hook, cross-project sessions only, sanitization bail-out on a leaky record). Treat a non-empty inbox as a finding in its own right; investigate before proceeding with the rest of the pass.
 
+When `/dev-studio manager analyze` finds studio-scoped feedback still in the inbox, it must finish the routing work instead of only listing candidate issues. Run `scripts/analyze-feedback-ingest.sh --apply` after the private report pass: search existing GitHub issues first, comment/update a clearly covered issue, create one new issue only for distinct work, move each source record to `processed/` only after the destination exists, and emit `feedback_ingested` with `source_file`, `destination_issue`, and `disposition`. If the record cannot be safely publicized, leave it in the inbox and name the policy reason. This supersedes the older #102-style candidate-only behavior when the user has already agreed the work should be tracked.
+
 Use `scripts/analyze-collect.sh <project-slug>` to gather mechanical stats in one shot (counts, duration medians, rule-hit frequencies). Manual reading of debriefs and reviews stays a human step — that's where the patterns live.
 
 ## Report template
@@ -49,8 +51,8 @@ Passes prior: <N>
 ## Patterns worth promoting
 <candidates for REVIEW.md rule tweaks, brief-template additions, skill-prose trims>
 
-## Public issues to file
-<one-line abstract-pattern summaries; each becomes a GitHub issue on generic-dev-studio>
+## Public issue destinations
+<destination issues/comments created or updated for actionable feedback; policy-held inbox records with reasons>
 
 ## Wished I had
 <events, data, or hooks that would have made this pass sharper — feeds #11 and future schema work>
@@ -73,5 +75,5 @@ See CLAUDE.md → "Analysis sessions and privacy" for the full split.
 Actions fall into three buckets after a pass:
 
 1. **Code/doc commits** — land on this repo (scoped rule edits, threshold tweaks, brief-template additions). Respect REVIEW.md tiers; auto-apply where allowed (CLAUDE.md "Auto-apply tiers").
-2. **GitHub issues** — for patterns that need planning or discussion. Label with the theme (see THEMES.md).
+2. **GitHub issues** — for patterns that need planning or discussion. Search existing issues first; consolidate into an existing issue when clearly covered; create a new issue only for distinct work. Label with the theme (see THEMES.md).
 3. **`## Wished I had` items** — feed the event-log blind-spot backlog (#11). Don't block the pass on wiring them; the capture is the point.
