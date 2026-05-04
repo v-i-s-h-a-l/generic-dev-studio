@@ -238,7 +238,7 @@ _shared/                # reusable primitives (symlinked from ~/.claude/skills/_
 
 `install.sh` symlinks shared companions (`_shared`, `scripts`, `hosts`) into `~/.claude/skills/` and global slash commands into `~/.claude/commands/`. Portable v2 skills are fanned out by `scripts/sync-host-skills.sh` from `core/v2/skills`.
 
-The `dev-studio` skill is globally discoverable. It lives at `core/v2/skills/dev-studio/` and is linked into each host's global skill directory when `scripts/sync-host-skills.sh` runs, so you can invoke the studio from the project you are actually working on.
+Claude Code uses the global `/dev-studio` command at `~/.claude/commands/dev-studio.md`. Other hosts load the router skill from their global skill directory, for example `~/.codex/skills/dev-studio`, so you can invoke the studio from the project you are actually working on.
 
 Fresh-clone workflow:
 

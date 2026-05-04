@@ -47,7 +47,7 @@ git worktree remove /tmp/studio-<slug>     # clean up when done
 
 ## Studio router (systematic triggers)
 
-The `dev-studio` skill is a **project-scoped v2 skill** shipped at `core/v2/skills/dev-studio/`. It is the canonical role router for studio-level operations after A10 removed the v1 top-level router surfaces. When any of the phrases below fire, route through `/dev-studio manager ...` unless a more specific canonical role is explicit:
+The `dev-studio` router is shipped at `core/v2/skills/dev-studio/` and exposed to Claude Code through the global `/dev-studio` command wrapper. It is the canonical role router for studio-level operations after A10 removed the v1 top-level router surfaces. When any of the phrases below fire, route through `/dev-studio manager ...` unless a more specific canonical role is explicit:
 
 | User intent | Trigger phrases | Dispatch |
 |---|---|---|

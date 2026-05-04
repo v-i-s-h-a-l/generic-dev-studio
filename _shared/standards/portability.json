@@ -18,10 +18,19 @@
       },
       "description": "Host slugs from hosts/registry.yaml that this skill runs on, or the literal all wildcard for every registered host."
     },
+    "exclude_hosts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]*$"
+      },
+      "description": "Host slugs excluded after hosts/all expansion. Use sparingly when a host has a native command surface that would duplicate skill discovery."
+    },
     "scope": {
       "enum": ["global", "project"],
       "default": "global",
-      "description": "Where the symlink farm places this skill. `global` links to the host's global_skill_dir (~/.<host>/skills/<name>); `project` links to the host's project_skill_dir (<repo>/.<host>/skills/<name>) — used for project-scoped vendor skills like the studio router that should auto-load only inside the studio repo."
+      "description": "Where the symlink farm places this skill. `global` links to the host's global_skill_dir (~/.<host>/skills/<name>); `project` links to the host's project_skill_dir (<repo>/.<host>/skills/<name>)."
     },
     "incompatible": {
       "type": "object",
