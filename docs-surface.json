@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-03T23:32:56Z",
+  "generated_at": "2026-05-04T03:42:58Z",
   "schema": 1,
   "commands": [
     {"name": "fullSendToAppStore", "source": "commands/fullSendToAppStore.md", "description": "Tag current commit, draft GitHub release, and submit build to App Store review", "agent": null, "scope": "global"},

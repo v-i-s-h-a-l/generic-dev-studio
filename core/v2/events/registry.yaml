@@ -3,3 +3,9 @@ events:
   - v2_event_dead_letter
   - v2_subscriber_recovery
   - manager_proof_of_life
+  - topology_sibling_host_unavailable
+  - topology_conflicting_reviews
+  - topology_stale_plan
+  - topology_worker_deadlock
+  - topology_partial_multi_spawn
+  - topology_budget_exhaustion
