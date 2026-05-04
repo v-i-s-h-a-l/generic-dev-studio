@@ -65,7 +65,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio manager resume-plan  # "where were we" — load ROADMAP + ARCHITECTURE + pending memory
 /dev-studio reviewer review      # walk REVIEW.md against the pending diff
 /dev-studio release-manager      # draft release notes per RELEASES.md (never auto-tags)
-/dev-studio manager ingest       # capture a single studio-level pattern / rule-tweak proposal
+/dev-studio manager ingest       # capture one idea in the current repo context; --scope studio crosses to Forge
 /dev-studio manager analyze      # sweep studio-feedback inbox + event logs for a project
 /studio-help                     # open the v2 router docs
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
@@ -179,6 +179,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-staleness-triage.sh # scheduled GitHub issue staleness labels + escalation comments for the PM surface
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
   studio-gh.sh          # GitHub CLI wrapper for assistant/interactive calls; normalizes synthetic Codex HOME
+  dev-studio-ingest-resolve.sh # resolves /dev-studio manager ingest destination as JSON
   ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   appstore-watch.sh     # polls ASC for pending submission; finalizes draft release + Slack on release
