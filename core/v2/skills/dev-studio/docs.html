@@ -544,28 +544,28 @@ scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt;</code>
         <div class="grid">
           <article class="role">
             <h3>Claude Code</h3>
-            <p>The visible slash command is a project-scoped wrapper at <code>.claude/commands/dev-studio.md</code>. It reads this router and dispatches to the selected role contract.</p>
+            <p>The visible slash command is globally installed at <code>~/.claude/commands/dev-studio.md</code>. Invoke it from the project you are working on; it reads the studio router and dispatches to the selected role contract.</p>
             <code class="shell">/dev-studio manager resume-plan
 /dev-studio reviewer review</code>
           </article>
           <article class="role">
             <h3>Codex</h3>
-            <p>The router is a project-scoped skill linked at <code>.codex/skills/dev-studio</code>. In Codex sessions, use the skill as <code>$dev-studio</code> when the host exposes skill invocation.</p>
+            <p>The router skill is globally linked at <code>~/.codex/skills/dev-studio</code>. In Codex sessions, use <code>$dev-studio</code> when the host exposes skill invocation.</p>
             <code class="shell">$dev-studio manager resume-plan
 $dev-studio worker T123</code>
           </article>
           <article class="role">
             <h3>Sync</h3>
-            <p>After pulling changes, run install or host sync from this repo. It refreshes repo-local skill links and removes stale deleted v1 skill links.</p>
+            <p>After pulling changes, run install or host sync from this repo. It refreshes global command and skill links and removes stale deleted v1 skill links.</p>
             <code class="shell">scripts/install.sh
 scripts/sync-host-skills.sh --all</code>
           </article>
           <article class="role">
             <h3>Scope</h3>
-            <p>The v2 router is project-scoped. It is available when the session is rooted in this repo or a host has loaded this repo's project skill links.</p>
-            <code class="shell">core/v2/skills/dev-studio/
-.claude/commands/dev-studio.md
-.codex/skills/dev-studio</code>
+            <p>The v2 router is globally discoverable but project-aware. The current working project supplies task context; the studio repo supplies role contracts and orchestration scripts.</p>
+            <code class="shell">commands/dev-studio.md
+core/v2/skills/dev-studio/
+~/.codex/skills/dev-studio</code>
           </article>
         </div>
       </div>

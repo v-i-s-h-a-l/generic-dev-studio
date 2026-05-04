@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-05-04T06:33:52Z",
+  "generated_at": "2026-05-04T06:42:39Z",
   "schema": 1,
   "commands": [
+    {"name": "dev-studio", "source": "commands/dev-studio.md", "description": "Studio v2 umbrella router. Dispatches by canonical role from any project: manager, worker, reviewer, perf, planner, qa-engineer, flow-tester, release-manager.", "agent": null, "scope": "global"},
     {"name": "fullSendToAppStore", "source": "commands/fullSendToAppStore.md", "description": "Tag current commit, draft GitHub release, and submit build to App Store review", "agent": null, "scope": "global"},
     {"name": "postSlackTesting", "source": "commands/postSlackTesting.md", "description": "Post an iOS TestFlight build notification to the #testing Slack channel", "agent": null, "scope": "global"},
     {"name": "pushTFBuild", "source": "commands/pushTFBuild.md", "description": "Bump build number/version, archive, and push to TestFlight via App Store Connect", "agent": null, "scope": "global"},
     {"name": "capture", "source": ".claude/commands/capture.md", "description": "Retrospectively scan the current session for idea-worthy content and update IDEAS.md with dedup", "agent": null, "scope": "project"},
-    {"name": "dev-studio", "source": ".claude/commands/dev-studio.md", "description": "Studio v2 umbrella router. Dispatches by canonical role: manager, worker, reviewer, perf, planner, qa-engineer, flow-tester, release-manager.", "agent": null, "scope": "project"},
     {"name": "resume-plan", "source": ".claude/commands/resume-plan.md", "description": "Resume the architecture refactor — read roadmap + memory, report current state, ask pending questions", "agent": null, "scope": "project"},
     {"name": "studio-help", "source": ".claude/commands/studio-help.md", "description": "", "agent": null, "scope": "project"},
     {"name": "studio-setup", "source": ".claude/commands/studio-setup.md", "description": "Onboard the current machine via scripts/bootstrap.sh. Auto-pilot by default — only prompts for role if not given. Flags: --manager, --worker, --dual, --interactive, --dry-run, --help.", "agent": null, "scope": "project"}

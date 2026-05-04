@@ -8,9 +8,8 @@
 # skills to every detected host (Codex, Gemini, Cursor, etc.) whose binary is
 # on PATH. New hosts added to hosts/registry.yaml are picked up automatically.
 #
-# The `dev-studio` skill is deliberately NOT installed globally — it lives at
-# core/v2/skills/dev-studio/ and sync-host-skills.sh links it into repo-local
-# project skill directories.
+# The `dev-studio` skill is installed globally by sync-host-skills.sh so users
+# can invoke the studio from the project they are actually working on.
 #
 # Usage:
 #   scripts/install.sh            # apply, print summary
@@ -35,9 +34,10 @@ DRY_RUN=0
 # discovery is handled by sync-host-skills.sh from core/v2/skills.
 AGENTS=(_shared scripts hosts)
 
-# Commands globally installed. `studio-help` is omitted on purpose — it lives
-# at .claude/commands/studio-help.md and only fires in this repo.
+# Commands globally installed. `dev-studio` is global; `studio-help` stays
+# repo-local because it only opens this repo's docs page.
 COMMANDS=(
+  dev-studio.md
   pushTFBuild.md
   fullSendToAppStore.md
 )
