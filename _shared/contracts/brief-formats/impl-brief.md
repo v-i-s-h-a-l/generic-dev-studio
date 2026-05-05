@@ -108,6 +108,12 @@ Before starting, load these skills for guidance:
 - Inspect each unit against the same acceptance criteria and record findings in one structured report shape.
 - Keep the execution in one worker session; if the scope is too large, split the work into child executable tasks before dispatch.
 
+### Investigation-Shaped Task Recipe
+<!-- Optional. Include when the observed evidence is compatible with multiple causes. -->
+- Before committing to one diagnosis, enumerate at least two independent mechanisms that could produce the observed evidence.
+- For each mechanism, name one distinguishing evidence check that would separate it from the others.
+- Run or document the cheapest distinguishing check before editing; if it cannot be run, keep the diagnosis provisional in the debrief.
+
 ## Testability Requirements
 
 ### Architecture & SOLID
