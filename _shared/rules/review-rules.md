@@ -26,7 +26,7 @@ Argus's narrow v1 review catalog. These are the checks Achilles cannot do well f
 | Verdict | Meaning | Action |
 |---|---|---|
 | **Block** | Cannot merge safely | Argus returns `blocked`; Achilles loops back to revise |
-| **Flag** | Suboptimal; mergeable with user approval | Argus records findings in `review_<task-id>.md`; autonomous Achilles defers merge until the user fixes first or explicitly overrides |
+| **Flag** | Suboptimal; mergeable with user approval | Argus records findings in `plans/reviews/<review-id>.yaml`; autonomous Achilles defers merge until the user fixes first or explicitly overrides |
 | **Approve** | Nothing notable | Silent; merge proceeds |
 
 ---
@@ -235,13 +235,44 @@ When the task brief has `Type: test-tdd`:
 
 ## Review File Format
 
-Argus writes findings to `<project-memory>/reviews/review_<task-id>.md`:
+Argus writes the source-of-truth review artifact to
+`~/.dev-studio/<project>/plans/reviews/<review-id>.yaml`. The canonical verdict
+line is the lowercase YAML field `verdict: <approved|flagged|blocked>`. Legacy
+compatibility markdown, when dual-written, must place the same lowercase field
+in YAML frontmatter; a human-readable bold verdict in the body is optional and
+never authoritative.
+
+```yaml
+schema_version: {name: review, version: 1.3.0, min_reader: 1.0.0, deprecated_at: null}
+id: <review-id>
+subject: {kind: task, id: <task-uuid>}
+reviewer: argus
+stage: spec | quality
+state: approved | flagged | blocked
+requested_at: <ISO8601 timestamp>
+completed_at: <ISO8601 timestamp>
+verdict: approved | flagged | blocked
+findings:
+  - rule: <rule-id>
+    tier: block | auto-fix | ask | warn
+    message: <finding summary>
+checks_run: []
+scope: {context_scopes: [diff-only], diff_size: <lines>, file_count: <count>, caps_triggered: []}
+idempotency_key: <key>
+```
+
+Optional legacy markdown uses the same verdict key:
 
 ```markdown
-# Argus Review: <task-id>
+---
+review_id: <review-id>
+stage: spec | quality
+verdict: approved | flagged | blocked
+review_artifact: plans/reviews/<review-id>.yaml
+---
+
+# Argus Review (<stage>): <task-id>
 Reviewed: <ISO8601 timestamp>
-Task size: <XS|S|M|L>
-Verdict: approved | flagged | blocked
 Block reason: <if blocked>
 
 ## Checks Run

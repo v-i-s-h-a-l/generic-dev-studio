@@ -240,11 +240,10 @@ count_verdict_events() {
        | wc -l | tr -d ' '
 }
 
-# File-scan cross-check. Hardened regex accepts plain `Verdict: x`, bold
-# `**Verdict:** x`, and lowercase variants (#21). Approved files are usually
-# absent (argus skips them), so the approved cross-check is expected to lag.
-# Two anchored alternatives rather than one loose pattern — keeps the match
-# tight (requires a colon) while accepting both styles we see in practice.
+# File-scan cross-check. New Argus markdown uses lowercase YAML frontmatter
+# (`verdict: x`) as the canonical line; the bold/plain alternatives are
+# historical compatibility from #21. Approved files are usually absent (argus
+# skips them), so the approved cross-check is expected to lag.
 count_verdict_files() {
   local verdict="$1"
   [ -d "$REVIEW_DIR" ] || { echo 0; return; }
