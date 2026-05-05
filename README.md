@@ -186,7 +186,7 @@ scripts/                # multi-worker fleet (BETA)
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
   studio-gh.sh          # GitHub CLI wrapper for assistant/interactive calls; normalizes synthetic Codex HOME
   dev-studio-ingest-resolve.sh # resolves /dev-studio manager ingest destination as JSON
-  ingest-feedback.sh    # auto-ingests studio-feedback records into analysis + GH issues
+  ingest-feedback.sh    # routes studio-feedback records to analysis + GH issue create/comment/defer
   analyze-feedback-ingest.sh # manager analyze: consolidate feedback into existing/new GH issues before processed/
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   appstore-watch.sh     # polls ASC for pending submission; finalizes draft release + Slack on release
