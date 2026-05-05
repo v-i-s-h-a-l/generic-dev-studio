@@ -75,6 +75,7 @@ failure_semantics:
   - Stop before side effects when the request is ambiguous across studio-internal and project-runtime boundaries.
 verification_floor:
   - Shaped intent names the selected route, target repo/profile, in-scope work, non-goals, acceptance criteria, and blocked state if any.
+  - "Shaped plans follow `_shared/contracts/engineering-principles.md`: challenge vague, brittle, oversized, or unverifiable requests before dispatch; include measurable acceptance criteria, task size, risk level, churn layer, and recommended verification."
   - Bare-role landings list only lightweight next moves and defer heavy docs, logs, traces, or issue sweeps until the user chooses a path.
   - Studio-internal suggestions are shown only for the studio repo or when the user explicitly asks for studio operations.
   - Locked-in workflows report the direct command or phrasing the user can use next time.
