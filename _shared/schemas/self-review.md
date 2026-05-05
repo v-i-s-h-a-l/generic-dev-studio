@@ -44,3 +44,7 @@ coverage_delta_found: true     # true if ≥1 test file changed or added
 ## Read by
 
 Argus Stage 2 (`argus/modes/review.md`): reads `skill_verdicts` and `findings` via `yq` to cross-check without re-parsing debrief prose. A missing file is treated as "no prior self-review" (backward-compatible with tasks predating this schema).
+
+## Interaction with external reviews
+
+Self-review is not a substitute for structured reviewer findings. When same-host self-review overlaps with external review (#605), the worker still records external reviewer finding dispositions in `contracts/worker-report.md` / `schemas/debrief.md`. Use self-review to expose local skill verdicts; use review verdict metadata (#537 context scope, #604 test/runtime evidence, #606 finding rubric) to decide whether to fix, modify, reject, escalate, or defer external findings.

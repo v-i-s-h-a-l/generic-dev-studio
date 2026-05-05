@@ -323,6 +323,15 @@
     },
     "report_state": {
       "$ref": "worker-report.schema.json#/$defs/reportState"
+    },
+    "review_loop": {
+      "$ref": "worker-report.schema.json#/$defs/reviewLoop"
+    },
+    "review_responses": {
+      "type": "array",
+      "items": {
+        "$ref": "worker-report.schema.json#/$defs/reviewResponse"
+      }
     }
   },
   "allOf": [

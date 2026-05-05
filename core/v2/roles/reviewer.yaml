@@ -18,7 +18,7 @@ inputs:
 outputs:
   - kind: reviewer-verdict
     required: true
-    description: Typed verdict with blocking findings, warnings, evidence reviewed, and explicit nothing_fatal status when clean.
+    description: Typed verdict with context scope, structured finding risk metadata, blocking findings, warnings, evidence reviewed, and explicit nothing_fatal status when clean.
   - kind: event-log-entry
     required: false
     description: Review lifecycle event emitted by the review wrapper or v2 successor.
@@ -37,6 +37,7 @@ idempotency_key: reviewer:{subject_ref}:{review_kind}:{review_host}
 decision_rights:
   - Return blocked, ambiguous, warning-only, or nothing_fatal verdicts based on reviewed evidence.
   - Identify required fixes and missing verification without editing worker source files.
+  - Recommend action per finding, including manager/planner escalation or follow-up when change risk is high and likelihood is uncertain.
   - Create or resume reviewer-owned checkpoints for long reviews without changing the verdict gate.
   - Accept a phase review gate only as nothing_fatal; this is not user approval.
 escalation_triggers:
@@ -50,6 +51,8 @@ failure_semantics:
   - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
 verification_floor:
   - Evidence reviewed is listed in the verdict.
-  - Findings are ordered by severity and grounded in file, artifact, or command references.
+  - Context scope is declared as diff-only, task-context, plan-context, architecture-context, or runtime/evidence-context.
+  - Non-trivial findings include severity, likelihood, impact, change_risk, confidence, basis, and recommended_action.
+  - Findings are ordered by derived severity and grounded in file, artifact, or command references rather than prose tone.
   - Clean reviews say nothing_fatal explicitly and record any residual warnings or skipped evidence.
   - Reviewer checkpoints may preserve pending review context, but the reviewer-verdict remains the only review gate artifact.

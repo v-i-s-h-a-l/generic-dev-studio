@@ -31,6 +31,22 @@ flagged      → acknowledged : Achilles stages concerns; Chanakya surfaces fix-
 blocked      → acknowledged : Achilles fixes and re-invokes, or surfaces to user.
 ```
 
+## Worker response and loop budget
+
+Reviewer findings are recommendations with declared scope and risk metadata, not direct worker commands. Before implementing reviewer-requested changes, the worker records a short self-check: "could this requested fix break a broader contract or undo the accepted plan?"
+
+Each finding is dispositioned through `contracts/worker-report.md` as one of:
+
+| Response state | Route |
+|---|---|
+| `accepted_and_fixed` | Worker applies the fix directly. |
+| `accepted_with_modified_fix` | Worker applies a different fix that preserves the accepted task/architecture contract. |
+| `rejected_with_rationale` | Worker records why the finding does not apply. |
+| `needs_manager_planner_decision` | Manager/planner arbitrates scope, acceptance criteria, or architecture. |
+| `deferred_follow_up` | Manager captures follow-up work outside the current bounded task. |
+
+Review/fix loops have a budget of two worker fix cycles. A third review attempt, conflicting review findings, or high `change_risk` with `likelihood: uncertain` escalates to manager/planner arbitration instead of continuing local churn.
+
 ## Events
 
 Existing `review_requested` / `review_approved` / `review_flagged` / `review_blocked` (per `events.md`) already cover the terminal transitions. Additive under this lifecycle:
