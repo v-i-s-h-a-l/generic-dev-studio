@@ -7,6 +7,8 @@ invocation:
     - "/dev-studio"
     - "route through the Studio v2 umbrella skill"
     - "use the canonical Studio v2 role router"
+    - "(studio-feedback)"
+    - "(studio feedback)"
     - "/dev-studio checkpoint"
     - "/dev-studio resume-checkpoint"
     - "/dev-studio <role> checkpoint"

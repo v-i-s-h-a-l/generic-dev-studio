@@ -32,6 +32,9 @@ grep -Fq 'type: agent-router' "$SKILL_DIR/SKILL.md" || fail "dev-studio is not a
 grep -Fq '<!-- v2-dev-studio:dispatch -->' "$SKILL_DIR/SKILL.md" || fail "missing dispatch anchor"
 grep -Fq '<!-- v2-dev-studio:landing -->' "$SKILL_DIR/SKILL.md" || fail "missing bare-role landing anchor"
 grep -Fq '<!-- v2-dev-studio:forwarders -->' "$SKILL_DIR/SKILL.md" || fail "missing forwarders anchor"
+grep -Fq '^\(studio[-\s]feedback\)' "$SKILL_DIR/SKILL.md" || fail "studio-feedback prefix tag contract missing"
+grep -Fq '\(studio[-\s]feedback\)\s*$' "$SKILL_DIR/SKILL.md" || fail "studio-feedback suffix tag contract missing"
+grep -Fq 'After capture, continue answering any non-feedback part' "$SKILL_DIR/SKILL.md" || fail "studio-feedback sidecar behavior missing"
 
 [ "$(yq -r '.invocation.slash_command' "$SKILL_DIR/routing.yaml")" = "/dev-studio" ] || fail "routing slash command mismatch"
 [ "$(yq -r '.scope' "$SKILL_DIR/portability.yaml")" = "global" ] || fail "dev-studio portability scope must be global"
@@ -74,5 +77,7 @@ grep -Fq '/dev-studio checkpoint' "$SKILL_DIR/SKILL.md" || fail "bare checkpoint
 grep -Fq 'direct one-line invocation' "$SKILL_DIR/SKILL.md" || fail "direct command suggestion not documented"
 yq -e '.invocation.triggers[] | select(. == "/dev-studio checkpoint")' "$SKILL_DIR/routing.yaml" >/dev/null || fail "checkpoint trigger metadata missing"
 yq -e '.invocation.triggers[] | select(. == "/dev-studio resume-checkpoint")' "$SKILL_DIR/routing.yaml" >/dev/null || fail "resume-checkpoint trigger metadata missing"
+yq -e '.invocation.triggers[] | select(. == "(studio-feedback)")' "$SKILL_DIR/routing.yaml" >/dev/null || fail "studio-feedback trigger metadata missing"
+yq -e '.invocation.triggers[] | select(. == "(studio feedback)")' "$SKILL_DIR/routing.yaml" >/dev/null || fail "studio feedback trigger metadata missing"
 
 printf 'PASS: dev-studio umbrella skill and forwarders\n'
