@@ -25,6 +25,7 @@
 #   resolve_reviews_dir_for  plans/reviews/
 #   resolve_rounds_dir_for   plans/rounds/
 #   resolve_releases_dir_for plans/releases/
+#   resolve_release_attempts_dir_for plans/release-attempts/
 #   resolve_feedback_dir_for plans/feedback/
 #   resolve_crashes_dir_for  plans/crashes/
 #   resolve_plans_index_for  plans/index.yaml
@@ -335,6 +336,7 @@ resolve_debriefs_dir_for() { printf '%s\n' "$(resolve_plans_dir_for    "${1:?slu
 resolve_reviews_dir_for()  { printf '%s\n' "$(resolve_plans_dir_for    "${1:?slug}")/reviews"; }
 resolve_rounds_dir_for()   { printf '%s\n' "$(resolve_plans_dir_for    "${1:?slug}")/rounds"; }
 resolve_releases_dir_for() { printf '%s\n' "$(resolve_plans_dir_for    "${1:?slug}")/releases"; }
+resolve_release_attempts_dir_for() { printf '%s\n' "$(resolve_plans_dir_for "${1:?slug}")/release-attempts"; }
 resolve_feedback_dir_for() { printf '%s\n' "$(resolve_plans_dir_for    "${1:?slug}")/feedback"; }
 resolve_crashes_dir_for()  { printf '%s\n' "$(resolve_plans_dir_for    "${1:?slug}")/crashes"; }
 resolve_plans_index_for()  { printf '%s\n' "$(resolve_plans_dir_for    "${1:?slug}")/index.yaml"; }
