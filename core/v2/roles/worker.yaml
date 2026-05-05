@@ -63,5 +63,6 @@ verification_floor:
   - Reviewer-requested changes include a worker self-check and per-finding response state before implementation.
   - The private worker-summary artifact is valid JSON, names the final commit when changes are made, and distinguishes self_review_performed, self_review_findings, self_review_fixes, and final_verification_evidence.
   - Worker artifacts distinguish refactoring needed now from refactoring follow-up proposed, and deferred refactoring concerns are copied into carryover or follow_ups for manager ingestion.
+  - "User-facing task completion or debrief summaries follow `_shared/contracts/completion-summary.md`: lead with a truthful fixed/implemented outcome, split user impact into before/after/new behavior when applicable, state PR or merge, local sync, worktree cleanup, and derived-data or stale-artifact cleanup, and use `Safe to end the session.` only when those closure facts are true."
   - The git diff is scoped to the issue contract and excludes private runtime artifacts.
   - Worker checkpoint use is optional and is reported separately from required worker-summary and debrief evidence.

@@ -11,12 +11,16 @@ failure_signals:
   - "The task is done\\."
   - "Let me know if"
 success_signals:
-  - "Safe To End"
-  - "Done:"
-  - "Changed:"
-  - "Verified:"
-  - "Not Done:"
-  - "Command:"
+  - "We (fixed|implemented)"
+  - "Impact on user:"
+  - "Behavior before:"
+  - "Behavior after:"
+  - "New behavior:"
+  - "PR/merge state:"
+  - "Local sync state:"
+  - "Worktree cleanup:"
+  - "Derived data and stale artifacts:"
+  - "Safe to end the session\\."
 notes: |
   Catches regressions where the final response becomes a vague prose summary
-  instead of the reusable completion-report shape.
+  instead of the shared completion-summary contract.
