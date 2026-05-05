@@ -4,11 +4,11 @@ description: YAML shape for TestFlight / App Store release artifacts under plans
 type: reference
 ---
 
-# Release Schema (`release@1.2.0`)
+# Release Schema (`release@1.3.0`)
 
 Per-release artifact written to `~/.dev-studio/<project>/plans/releases/<release-id>.yaml`. One file per build submitted to a release channel (TestFlight or App Store). Authored by `/achilles push-tf` or `/achilles app-store`; updated by `scripts/appstore-watch.sh` as the release transitions states.
 
-Version 1.2.0 is non-breaking — adds optional App Store PR metadata so the watcher can merge the submitted source branch only after `READY_FOR_SALE`. `min_reader: 1.0.0` keeps the entire active fleet compatible.
+Version 1.3.0 is non-breaking — adds `withdrawn` and `superseded` lifecycle states plus optional replacement-lineage fields for withdrawn-build hotfixes and post-release corrections. `min_reader: 1.0.0` keeps the entire active fleet compatible.
 
 Release state transitions governed by `state-machines/release-lifecycle.md` (landed alongside this schema in Phase 2.6 Commit B).
 
@@ -17,12 +17,12 @@ Release state transitions governed by `state-machines/release-lifecycle.md` (lan
 ```yaml
 schema_version:
   name: release
-  version: 1.2.0
+  version: 1.3.0
   min_reader: 1.0.0
   deprecated_at: null
 id: 0190f52a-9000-7f01-8aaa-77fe8fa99bbb        # UUIDv7
 channel: testflight                              # testflight | appstore
-state: submitted                                 # drafted | submitted | in-review | pending-developer-release | released | rejected | cancelled | archived
+state: submitted                                 # drafted | submitted | in-review | pending-developer-release | released | withdrawn | superseded | rejected | cancelled | archived
 build_number: 3047
 version: "1.12.0"
 tag: "TF-3047"                                   # GitHub release tag
@@ -32,6 +32,8 @@ last_state_checked_at: 2026-04-22T14:32:11Z
 released_at: null
 replaced_by: null                                # 1.1.0; release-id of the build that replaced this one (cancel→replace flow); null otherwise
 cancelled_reason: null                           # 1.1.0; free-text reason populated when state == cancelled; null otherwise
+replaces: null                                   # 1.3.0; release-id this build replaces; null for first submission in a lineage
+superseded_by: null                              # 1.3.0; release-id of replacement when this release is withdrawn or superseded
 tasks:
   - 0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11        # task-ids included in this release
   - 0190f52a-6f15-7b4c-9b2e-1e5faa80f622
@@ -81,6 +83,8 @@ notes: null
 | `notes` | string \| null | yes | Optional commentary. |
 | `replaced_by` | UUIDv7 \| null | no (1.1.0) | When set, names the release-id of the build that replaced this one — the cancel-and-replace pattern (cancel build N, ship build M instead). Setting `replaced_by` requires `state == cancelled`. Default when absent: `null` (release was not replaced). Consumed by Nabu (#214) for release-replacement-ready suggestions. |
 | `cancelled_reason` | string \| null | no (1.1.0) | Free-text reason ≤ 280 chars; populated when `state == cancelled`. Default when absent: `null`. Surfaces in `/chanakya status` release banner. |
+| `replaces` | UUIDv7 \| null | no (1.3.0) | Forward lineage pointer on the replacement release. Set when this artifact is the hotfix or correction that replaces a prior release artifact. Default when absent: `null`. |
+| `superseded_by` | UUIDv7 \| null | no (1.3.0) | Backward lineage pointer on the replaced artifact. Set when `state ∈ {withdrawn, superseded}` and names the replacement release-id. Default when absent: `null`. |
 
 ## Channels
 
@@ -98,14 +102,24 @@ See `state-machines/release-lifecycle.md`. Summary:
 
 ```
 drafted → submitted → in-review → pending-developer-release → released
+                                                                → superseded
                                                                 → archived
+submitted → withdrawn  (developer withdrew before approval; terminal for that artifact)
                                 → rejected
-                                → cancelled
+any non-terminal → cancelled
 submitted → released   (TestFlight processes without formal review)
-any     → archived     (compact sweep)
+any terminal → archived (compact sweep)
 ```
 
 Transitions emit `release_state_changed` (new event catalog entry landing alongside the state machine).
+
+## Replacement lineage
+
+Use `withdrawn` for a build the developer intentionally pulls before approval. This is distinct from `rejected` (Apple rejected it) and `cancelled` (local/user abort before the release train reached ASC terminal semantics). A withdrawn artifact remains audit-visible; the replacement artifact sets `replaces: <withdrawn-release-id>`, and the withdrawn artifact sets `superseded_by: <replacement-release-id>`.
+
+Use `superseded` for a released artifact that stays preserved but is no longer the active pointer because a later hotfix or correction release replaces it. The superseded artifact sets `superseded_by: <replacement-release-id>`, and the replacement artifact sets `replaces: <superseded-release-id>`.
+
+`replaced_by` remains the legacy 1.1.0 cancel-and-replace pointer for `state: cancelled`. New ASC withdrawal or correction flows use `superseded_by` instead so readers can distinguish local cancellation from developer withdrawal and post-release replacement.
 
 ## ASC metadata
 
@@ -143,6 +157,7 @@ Active watcher state files (`pending-appstore-review.json`) migrate into the per
 
 | Version | Landed | Changes |
 |---|---|---|
+| 1.3.0 | 2026-05-06 | Non-breaking: add `withdrawn` and `superseded` states plus optional `replaces` / `superseded_by` lineage fields for withdrawn-build hotfixes and released-build corrections (#190). |
 | 1.2.0 | 2026-05-05 | Non-breaking: add optional `github_pr`, `asc_metadata.finalize_pr_merged`, and `slack.pr_reply_ts` fields for App Store submission PR lifecycle (#164). |
 | 1.1.0 | 2026-04-27 | Non-breaking: add optional `replaced_by` (release-id pointer) and `cancelled_reason` (free text) fields for the cancel-and-replace flow that Nabu (#214) consumes (#247 Stage C deliverable 2). |
 | 1.0.0 | 2026-04-22 | Initial Phase 2.6 landing alongside `state-machines/release-lifecycle.md`. |

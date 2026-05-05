@@ -120,6 +120,14 @@ it, deletes the unqualified remote tag, and removes the local unqualified tag.
 The withdrawn tag remains the stable anchor for diff/revert workflows while
 making state visible in tag lists.
 
+Withdrawn App Store/GitHub release convention:
+
+- Keep the git tag; never delete the audit anchor.
+- Rename the GitHub Release title to `[WITHDRAWN] <tag>`.
+- Keep the GitHub Release as a draft and never promote it to Latest.
+- Prepend a withdrawal banner to the release body with the replacement release link when known.
+- Update the release artifact to `state: withdrawn` and set `superseded_by` to the replacement release-id once the replacement exists; the replacement artifact sets `replaces`.
+
 No event emitted at the commit boundary; the next event closes the archive phase.
 
 ### Step 4 — Archive
@@ -175,6 +183,20 @@ git log <last-tf-tag-on-this-branch>..HEAD --no-merges --author="<owner>" --form
 
 This keeps Slack composition independent of whether the prior TF build was
 eventually released, superseded, or withdrawn.
+
+For a withdrawn-and-replaced build, update the existing announcement parent and
+thread with the withdrawal and replacement context. Do not start a new top-level
+post unless no parent announcement exists; the audit trail belongs in one
+thread.
+
+### Hotfix replacement workflow
+
+The hotfix-replacement mode-pack contract is: import this contract and
+`_shared/state-machines/release-lifecycle.md`, then chain the replacement flow in
+one pass. The flow preflights the current release artifact, applies the
+withdrawn/superseded state transition, preserves or renames the GitHub Release
+and TF anchor, submits the replacement build, sets `replaces` /
+`superseded_by`, and updates the existing announcement thread.
 
 Format the parent and thread per `_shared/contracts/build-message-format.md`.
 The default parent is brief: headline, one tester-facing summary, then
