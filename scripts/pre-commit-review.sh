@@ -19,6 +19,7 @@ REVIEW_HOST="${STUDIO_REVIEW_HOST:-}"
 BYPASS_REVIEW=0
 CALLER_HOME="${HOME:-}"
 REVIEW_STARTED_AT=$(date +%s)
+REVIEW_CONTEXT_JSON="null"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -33,6 +34,8 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-review-budget.sh
+. "$SCRIPT_DIR/lib-review-budget.sh"
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh" 2>/dev/null || true
 
@@ -77,8 +80,10 @@ emit_gate_event() {
       --arg patch_id "$patch_id" \
       --arg bypass_source "$bypass_source" \
       --arg duration_s "$duration_s" \
+      --argjson review_context "$REVIEW_CONTEXT_JSON" \
       '{verdict:$verdict,review_host:$host,branch:$branch,head:$head,patch_id:$patch_id,bypass_source:$bypass_source}
-       + (if $duration_s == "" then {} else {duration_s:($duration_s|tonumber)} end)')
+       + (if $duration_s == "" then {} else {duration_s:($duration_s|tonumber)} end)
+       + (if $review_context == null then {} else {review_context:$review_context} end)')
   else
     data="{\"verdict\":\"$verdict\",\"review_host\":\"$host\",\"patch_id\":\"$patch_id\",\"bypass_source\":\"$bypass_source\""
     [ -n "$duration_s" ] && data="$data,\"duration_s\":$duration_s"
@@ -119,6 +124,7 @@ if [ "${STUDIO_BYPASS_REVIEW:-0}" = "1" ] || [ "$BYPASS_REVIEW" -eq 1 ]; then
 fi
 
 command -v yq >/dev/null 2>&1 || { printf 'pre-commit-review: yq is required\n' >&2; exit 1; }
+command -v jq >/dev/null 2>&1 || { printf 'pre-commit-review: jq is required\n' >&2; exit 1; }
 
 if [ -z "$REVIEW_HOST" ]; then
   hosts=()
@@ -145,6 +151,7 @@ spawn_command=$(printf '%s\n' "$eligibility" | sed -n 's/^SPAWN_COMMAND=//p' | h
 tmpdir=$(mktemp -d -t pre-commit-review.XXXXXX)
 trap 'rm -rf "$tmpdir"' EXIT
 payload="$tmpdir/review-payload.md"
+diff_payload="$tmpdir/staged.diff"
 summary="$tmpdir/reviewer-summary.md"
 reviewer_home="$tmpdir/reviewer-home"
 mkdir -p "$reviewer_home"
@@ -186,8 +193,14 @@ case "$REVIEW_HOST" in
     ;;
 esac
 
-{
+git diff --cached --patch > "$diff_payload"
+
+write_precommit_payload() {
+  local mode="$1" policy_json="$2"
+  local line_cap
+  line_cap=$(printf '%s\n' "$policy_json" | jq -r '.budget.payload_diff_line_cap')
   printf '# Studio Pre-Commit Review Payload\n\n'
+  printf 'Review context policy:\n\n```json\n%s\n```\n\n' "$(printf '%s' "$policy_json" | jq -c '.')"
   printf 'Metadata:\n\n'
   printf '%s\n' "- repository: $(basename "$REPO_ROOT")"
   printf '%s\n' "- branch: $(git symbolic-ref --quiet --short HEAD 2>/dev/null || printf unknown)"
@@ -208,15 +221,34 @@ checks, merge conflicts, or repo-rule violations. This is a pre-commit review:
 do not edit files, do not stage files, do not commit, and do not bypass this
 gate.
 
+This payload is diff-scoped by default. If the context is insufficient for a
+safe verdict, print REVIEW_CONTEXT_FALLBACK=expanded and do not print a verdict;
+the wrapper will rerun once with expanded context.
+
 PROMPT
+  if [ "$mode" = "expanded" ]; then
+    printf '\nExpanded repo review rules:\n\n```md\n'
+    sed -n '1,260p' "$REPO_ROOT/REVIEW.md"
+    printf '\n```\n'
+  fi
   printf '\nStaged diff:\n\n```diff\n'
-  git diff --cached --patch
+  if [ "$mode" = "summarized" ]; then
+    sed -n "1,${line_cap}p" "$diff_payload"
+    printf '\n--- diff summarized at %s lines; rerun with STUDIO_REVIEW_PAYLOAD_MODE=expanded for full context ---\n' "$line_cap"
+  else
+    cat "$diff_payload"
+  fi
   printf '\n```\n'
-} > "$payload"
+}
+
+policy_json=$(review_budget_policy_json precommit "$diff_payload" "${STUDIO_REVIEW_PAYLOAD_MODE:-auto}")
+write_precommit_payload "$(printf '%s\n' "$policy_json" | jq -r '.mode')" "$policy_json" > "$payload"
+REVIEW_CONTEXT_JSON=$(review_budget_payload_stats_json "$payload" "$policy_json")
+review_budget_emit_context_event studio "$patch_id" review_context_budget_resolved "$REVIEW_CONTEXT_JSON" "precommit-review-context:$patch_id"
 
 # shellcheck disable=SC2206
 spawn_argv=( $spawn_command )
-review_prompt="Read $payload, review the staged studio diff, and print STUDIO_REVIEW_VERDICT=<approved|approved_with_fixes|blocked>."
+review_prompt="Read $payload, review the staged studio diff, and print STUDIO_REVIEW_VERDICT=<approved|approved_with_fixes|blocked>. If context is insufficient, print REVIEW_CONTEXT_FALLBACK=expanded instead."
 
 case "$REVIEW_HOST" in
   codex*|*codex*)
@@ -246,16 +278,34 @@ case "$REVIEW_HOST" in
     ;;
 esac
 
-if ! ( cd "$REPO_ROOT" && case "$REVIEW_HOST" in
+run_precommit_reviewer() {
+  ( cd "$REPO_ROOT" && case "$REVIEW_HOST" in
     codex*|*codex*) "${review_cmd[@]}" > "$summary" 2>"$summary.err" ;;
     *) "${review_cmd[@]}" </dev/null > "$summary" 2>"$summary.err" ;;
-  esac ); then
+  esac )
+}
+
+if ! run_precommit_reviewer; then
   print_reviewer_failure "$summary" "$summary.err"
   exit 1
 fi
 
 verdict_count=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$summary" | wc -l | tr -d ' ')
 verdict=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$summary")
+if [ "$verdict_count" = "0" ] \
+    && grep -Eq '^REVIEW_CONTEXT_FALLBACK=expanded|INSUFFICIENT_CONTEXT' "$summary" \
+    && [ "$(printf '%s\n' "$REVIEW_CONTEXT_JSON" | jq -r '.mode')" != "expanded" ]; then
+  policy_json=$(review_budget_policy_json precommit "$diff_payload" expanded)
+  write_precommit_payload expanded "$policy_json" > "$payload"
+  REVIEW_CONTEXT_JSON=$(review_budget_payload_stats_json "$payload" "$policy_json")
+  review_budget_emit_context_event studio "$patch_id" review_context_budget_resolved "$REVIEW_CONTEXT_JSON" "precommit-review-context-expanded:$patch_id"
+  if ! run_precommit_reviewer; then
+    print_reviewer_failure "$summary" "$summary.err"
+    exit 1
+  fi
+  verdict_count=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$summary" | wc -l | tr -d ' ')
+  verdict=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$summary")
+fi
 if [ "$verdict_count" != "1" ]; then
   printf 'pre-commit-review: reviewer must emit exactly one STUDIO_REVIEW_VERDICT line (found %s)\n' "$verdict_count" >&2
   sed -n '1,120p' "$summary" >&2 || true

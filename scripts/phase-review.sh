@@ -23,6 +23,8 @@ CALLER_HOME="${HOME:-}"
 
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-review-budget.sh
+. "$SCRIPT_DIR/lib-review-budget.sh"
 
 usage() {
   sed -n '3,9p' "$0" >&2
@@ -157,6 +159,25 @@ esac
 spawn_argv=( $spawn_command )
 
 input_content=$(cat "$input")
+input_bytes=$(wc -c < "$input" 2>/dev/null | tr -d ' ' || printf '0')
+input_lines=$(wc -l < "$input" 2>/dev/null | tr -d ' ' || printf '0')
+case "$input_bytes" in ""|*[!0-9]*) input_bytes=0 ;; esac
+case "$input_lines" in ""|*[!0-9]*) input_lines=0 ;; esac
+input_estimated_tokens=$(((input_bytes + 2) / 3))
+phase_budget_tokens=$(review_budget_payload_token_budget)
+phase_context_status="ok"
+[ "$input_estimated_tokens" -le "$phase_budget_tokens" ] || phase_context_status="over_budget"
+phase_context_json=$(jq -n \
+  --arg kind "phase-$kind" \
+  --arg mode "artifact-scoped" \
+  --arg risk_level "phase-gate" \
+  --argjson bytes "$input_bytes" \
+  --argjson lines "$input_lines" \
+  --argjson estimated_tokens "$input_estimated_tokens" \
+  --argjson payload_budget_tokens "$phase_budget_tokens" \
+  --arg status "$phase_context_status" \
+  '{kind:$kind,mode:$mode,risk_level:$risk_level,budget:{payload_budget_tokens:$payload_budget_tokens},payload:{bytes:$bytes,lines:$lines,estimated_tokens:$estimated_tokens,status:$status}}')
+review_budget_emit_context_event studio "$input" review_context_budget_resolved "$phase_context_json" "phase-review-context:$kind:$input"
 
 prompt=$(cat <<EOF
 Read this $kind-review artifact and perform the required sibling-host review:
@@ -228,3 +249,4 @@ printf 'PHASE_REVIEW_HOST=%s\n' "$review_host"
 printf 'PHASE_REVIEW_OUTPUT=%s\n' "$output"
 printf 'PHASE_REVIEW_ERR=%s\n' "$err_output"
 printf 'PHASE_REVIEW_VERDICT=%s\n' "$verdict"
+printf 'PHASE_REVIEW_CONTEXT_TOKENS=%s\n' "$input_estimated_tokens"
