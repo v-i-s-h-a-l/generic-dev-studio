@@ -2444,10 +2444,16 @@ write_issue_phase_outcome_artifact() {
     ' "$summary_file"
     printf '\n## Refactoring Pressure\n\n'
     jq -r '
+      def text_item($x):
+        if ($x | type) == "object" then
+          "\($x.affected_area // "unknown area") - \($x.reason // "no reason supplied") (risk: \($x.risk // "unknown")\(if $x.suggested_timing then ", timing: \($x.suggested_timing)" else "" end))"
+        else
+          ($x | tostring)
+        end;
       def rows($label; $items):
         ($items // []) as $xs |
         if ($xs | length) == 0 then ["- \($label): none"]
-        else [ $xs[] | "- \($label): \(.affected_area // "unknown area") - \(.reason // "no reason supplied") (risk: \(.risk // "unknown")\(if .suggested_timing then ", timing: \(.suggested_timing)" else "" end))" ]
+        else [ $xs[] | "- \($label): \(text_item(.))" ]
         end;
       rows("needed now"; .refactoring_needed_now)[],
       rows("follow-up proposed"; .refactoring_follow_ups)[]
