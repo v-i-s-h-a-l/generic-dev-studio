@@ -51,6 +51,18 @@ exists. Unsafe public records stay in the inbox with a policy reason.
 `(studio-feedback)` and `(studio feedback)` tags create sidecar records under
 the studio feedback inbox and do not replace the rest of the prompt.
 
+<!-- v2-dev-studio:release-configure -->
+## Release Manager Configure
+
+`/dev-studio release-manager configure` routes to the release-manager role and
+uses `scripts/release-manager-configure.sh` for project-scoped release
+notification setup. Slack is the first supported integration. Quick setup writes
+defaults the user can change later: TestFlight uses no `<!here>` by default,
+a brief parent message, threaded tester details, module grouping when useful,
+and technical notes at the end only when they affect testing. App Store release
+announcements remain optional and post to the configured releases channel when
+present.
+
 <!-- v2-dev-studio:landing -->
 ## Bare Role Landing
 

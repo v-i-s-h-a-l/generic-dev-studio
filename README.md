@@ -65,6 +65,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio manager resume-plan  # "where were we" — load ROADMAP + ARCHITECTURE + pending memory
 /dev-studio reviewer review      # walk REVIEW.md against the pending diff
 /dev-studio release-manager      # draft release notes per RELEASES.md (never auto-tags)
+/dev-studio release-manager configure # one-time release notification setup (Slack TF/App Store)
 /dev-studio manager ingest       # capture one idea in the current repo context; --scope studio crosses to Forge
 /dev-studio manager reconcile    # project repo: sync emitted debriefs/reports into the task ledger
 /dev-studio manager analyze      # studio repo: telemetry/log analysis plus studio feedback triage
@@ -82,6 +83,7 @@ STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
 /dev-studio host-adapter nodes   # day-2 fleet management — status, add, remove, health, sync, schedule
 /dev-studio release-manager tf-push --background     # start TF archive/upload and keep session free for Slack drafting
 /dev-studio release-manager tf-push --version 26.5.0 # TestFlight push with explicit MARKETING_VERSION; live work needs STUDIO_TF_PUSH_LIVE=1
+scripts/release-manager-configure.sh --project turnip-ios --quick --tf-slack-channel C... # configure threaded TF Slack defaults
 /studio-setup                    # onboard THIS machine — auto-pilot, prompts for role only
 /studio-setup --manager          # zero-prompt manager onboarding
 /studio-setup --worker           # zero-prompt worker (id = hostname; --id X to override)
@@ -176,6 +178,7 @@ scripts/                # multi-worker fleet (BETA)
   achilles-queue.sh     # work-stealing dispatch queue — enqueue/drain/list/depth/clear
   chanakya-task-train.sh # manual single-train runner with sibling plan/outcome reviews and resume state
   analyze-collect.sh    # mechanical stats for usage-analysis passes (see ANALYSIS.md)
+  release-manager-configure.sh # project release notification setup (Slack first)
   forge-latency-report.sh  # stage-level task latency + review-gate comparison from event logs
   field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines

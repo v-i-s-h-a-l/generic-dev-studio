@@ -46,6 +46,7 @@ asc_metadata:
   stuck: false
 slack:
   posted_to: "#releases"
+  channel_id: "C0123456789"
   message_ts: "1745332800.001200"
   reply_ts: null                                 # filled when watcher finalizes
 notes: null

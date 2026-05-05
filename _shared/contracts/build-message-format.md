@@ -9,14 +9,23 @@ schema_version: 1
 
 **Status: authoritative** (promoted from informal under #287). `studio-tf-push.sh` Step 7 and the `/pushTFBuild` / `/fullSendToAppStore` wrappers compose against this contract; format-iteration work (Phase 4 of #217) updates this file as the single source of truth. Cross-referenced from `_shared/contracts/release-tf-push.md` Step 7 and Stage C's `slack_drafted` event.
 
-Shared composition rules for `#testing` (TF builds) and `#releases` (App Store submissions). Both channels use the same three-section shape: `*New*` / `*Fixed*` / `*Crash fixes*`. **Skip any section with no bullets.** The goal is skimmability — the channel is the changelog index; readers want to know what changed without reading prose.
+Shared composition rules for the configured TestFlight and App Store release
+channels. Both channels use the same three-section shape: `*New*` / `*Fixed*`
+/ `*Crash fixes*`. **Skip any section with no bullets.** The goal is
+skimmability — the channel is the changelog index; readers want to know what
+changed without reading prose.
 
 ## Headline
 
-- **TF:** `<!here> [iOS] build <NEW_BUILD_NUMBER> is available on TestFlight` — drop `<!here>` for buddy/internal/silent builds.
+- **TF:** `[iOS] build <NEW_BUILD_NUMBER> is available on TestFlight`. `<!here>` is opt-in via release config and is off by default.
 - **Release:** `[iOS] v<VERSION> (build <BUILD>) has been submitted for App Store review` — no `<!here>` on release parent.
 
-Blank line after headline, then sections.
+For TestFlight, the parent should stay brief: headline, blank line, one short
+tester-facing summary of what is ready, then `Details in thread.` The detailed
+sections move to the first thread reply when `STUDIO_TF_SLACK_DETAILS_MODE=thread`
+(the default).
+
+For App Store, blank line after headline, then sections.
 
 ## *New* section
 
@@ -73,9 +82,17 @@ Last line of the body. Signals cumulative state without re-listing prior bullets
 
 `*New*` → `*Fixed*` → `*Crash fixes*` → (TF only) rollover bullet.
 
+## Grouping
+
+When configured grouping is `module`, group the detailed TestFlight thread by
+tester-visible product area or module before falling back to the standard
+section labels. Use tester language: what changed in UX, UI behavior, flows,
+or verification surfaces. Do not expose implementation structure unless it is
+the only useful way to test the change.
+
 ## Thread replies
 
-- **TF:** threads are where reproduction steps, device-specific notes, and reporter follow-ups live — keep the parent terse. Composer should not seed the thread.
+- **TF:** first thread reply carries the detailed tester checklist when threaded details are enabled. Group by module when it makes the build easier to test; put important technical notes at the end under `*Technical notes*`, and only when they affect QA/product expectations.
 - **Release:** after the parent is sent, post two thread replies in this order:
   1. **App Store "What's New"** with a two-blank-line header `App Store "What's New" submitted with this build:\n\n\n<text>`. Highest-skim-value for product/leadership.
   2. **GitHub release URL** — stable tag URL (not the draft preview).

@@ -7,7 +7,10 @@ allowed-tools: [Bash, Read, Edit, Grep]
 
 Hybrid wrapper around `scripts/studio-tf-push.sh` (studio repo at `~/Documents/v-i-s-h-a-l/github/generic-dev-studio`). The studio script owns all mechanical work — bump, archive, export+upload, dSYMs — and emits the four pre-Slack events. This wrapper drives Slack composition + the human-approval gate, then emits `slack_drafted` / `slack_sent` via the same script's `emit` subcommand so all six events share one release-tag.
 
-Authoritative procedure: `_shared/contracts/release-tf-push.md`. Project knobs (paths, scheme, ASC ids, Crashlytics plist): `_shared/primitives/turnip-project-config.md`. Slack body rules: `_shared/contracts/build-message-format.md`.
+Authoritative procedure: `_shared/contracts/release-tf-push.md`. Project knobs
+(paths, scheme, ASC ids, Crashlytics plist) live in the project release config.
+Slack body rules: `_shared/contracts/build-message-format.md`. Configure
+channel and notification shape with `/dev-studio release-manager configure`.
 
 ## Arguments
 
@@ -33,11 +36,25 @@ NEW_BUILD_NUMBER=$(echo "$CTX" | jq -r .build)
 VERSION=$(echo "$CTX" | jq -r .version)
 BRANCH=$(echo "$CTX" | jq -r .branch)
 PREV_BUILD=$(echo "$CTX" | jq -r .prev_build)
+. ./scripts/lib-release-config.sh
+load_release_config
 ```
 
 The script emits `release_started`, `archive_completed`, `upload_completed`, `dsym_uploaded` along the way. If it exits non-zero it has already emitted `release_failed` with the stage that broke — surface stderr to the user and stop. Do NOT continue to Slack steps.
 
 The script reads release config from `~/.dev-studio/${STUDIO_RELEASE_PROJECT}/config/release.env` and secrets from `~/.dev-studio/${STUDIO_RELEASE_PROJECT}/secrets/`. It preflights non-interactive GitHub push auth, ASC key/JWT prerequisites, Slack token readability, and the app-scoped live-version lookup before it mutates the pbxproj. If it prints `WARNING: Could not determine live App Store version`, stop and resolve ASC/API access first; do not infer that there is no version conflict. For an intentionally upload-only run with Slack deferred, set `STUDIO_TF_SLACK_DEFERRED=1`.
+
+Required Slack config for notification:
+
+```bash
+STUDIO_TF_SLACK_CHANNEL=<Slack channel id>
+STUDIO_TF_SLACK_CHANNEL_NAME="#testing"          # display only
+STUDIO_TF_SLACK_NOTIFY_HERE=0                    # opt-in only
+STUDIO_TF_SLACK_PARENT_MODE=brief
+STUDIO_TF_SLACK_DETAILS_MODE=thread
+STUDIO_TF_SLACK_GROUPING=module
+STUDIO_TF_SLACK_TECHNICAL_FOOTER=1
+```
 
 ### Background option
 
@@ -77,7 +94,8 @@ Find the last shared build:
 
 ```bash
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
-LAST_SHARED_BUILD=$(./scripts/slack-fetch.sh history --channel C016BNCGDM2 --limit 10 \
+TF_CHANNEL="${STUDIO_TF_SLACK_CHANNEL:?run /dev-studio release-manager configure first}"
+LAST_SHARED_BUILD=$(./scripts/slack-fetch.sh history --channel "$TF_CHANNEL" --limit 10 \
   | jq -r 'select(.user=="U0AJYVC8P8X") | .text' \
   | grep -oE 'build [0-9]+ is available on TestFlight' \
   | head -1 | grep -oE '[0-9]+')
@@ -93,19 +111,21 @@ git log --no-merges --author="vishal" --format="%h | %s%n%b%n---" ${LAST_SHARED_
 
 Read full commit messages (subject + body). Compose per `build-message-format.md`:
 
-- Three sections: `*New*` / `*Fixed*` / `*Crash fixes*` — skip empty sections.
+- Parent: brief tester-facing summary since the last posted TF build, then `Details in thread.`
+- Thread detail: grouped tester checklist. Prefer module/product-area groups when useful; otherwise use `*New*` / `*Fixed*` / `*Crash fixes*`.
 - Feature rollup under *New*; bare crash-link bullets under *Crash fixes*.
 - Name regressions explicitly under *Fixed* as `• regression bug fix: <thing>`.
 - Rollover line `• includes changes from <PREV_BUILD_NUMBER>` when stacking on an unreleased TF (compare `LAST_SHARED_BUILD` vs `PREV_BUILD` from the context — if they differ, prepend a rollover bullet).
-- Headline: `<!here> [iOS] build <NEW_BUILD_NUMBER> is available on TestFlight`. Drop `<!here>` for buddy/internal/silent builds.
+- Headline: `[iOS] build <NEW_BUILD_NUMBER> is available on TestFlight`. Prefix `<!here>` only when `STUDIO_TF_SLACK_NOTIFY_HERE=1`.
+- Technical notes go at the end of the thread under `*Technical notes*`, only when they materially affect testing or product expectations.
 
 ## Step 4: Scan recent threads for cc-tag attribution
 
 ```bash
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
-./scripts/slack-fetch.sh history --channel C016BNCGDM2 --limit 15
+./scripts/slack-fetch.sh history --channel "$TF_CHANNEL" --limit 15
 # For each Vishal-CLI build message with replies:
-./scripts/slack-fetch.sh replies --channel C016BNCGDM2 --ts <MESSAGE_TS>
+./scripts/slack-fetch.sh replies --channel "$TF_CHANNEL" --ts <MESSAGE_TS>
 # Resolve display names (review only):
 ./scripts/slack-fetch.sh user --user <USER_ID>
 ```
@@ -120,7 +140,8 @@ CCS=$(echo "$BODY" | grep -oE 'cc: <@[A-Z0-9]+>' | wc -l | tr -d ' ')
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
 ./scripts/studio-tf-push.sh emit slack_drafted --release-tag "$RELEASE_TAG" \
   --data "$(jq -nc --argjson b "$NEW_BUILD_NUMBER" --argjson bc "$BULLETS" --argjson cc "$CCS" \
-              '{build:$b, channel:"#testing", bullet_count:$bc, cc_count:$cc}')"
+              --arg ch "${STUDIO_TF_SLACK_CHANNEL_NAME:-$TF_CHANNEL}" \
+              '{build:$b, channel:$ch, bullet_count:$bc, cc_count:$cc}')"
 ```
 
 ## Step 6: Human-approval gate
@@ -135,14 +156,16 @@ Strip parenthesised display names from the body, then:
 
 ```bash
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
-RESP=$(./scripts/slack-post.sh --channel C016BNCGDM2 --text "$FINAL_BODY")
+RESP=$(./scripts/slack-post.sh --channel "$TF_CHANNEL" --text "$FINAL_PARENT_BODY")
 PARENT_TS=$(echo "$RESP" | jq -r .ts)
 [ -n "$PARENT_TS" ] && [ "$PARENT_TS" != "null" ] || { echo "slack-post returned no ts"; exit 1; }
+./scripts/slack-post.sh --channel "$TF_CHANNEL" --thread-ts "$PARENT_TS" --text "$FINAL_THREAD_BODY" >/dev/null
 
-CHARS=$(printf '%s' "$FINAL_BODY" | wc -c | tr -d ' ')
+CHARS=$(printf '%s%s' "$FINAL_PARENT_BODY" "$FINAL_THREAD_BODY" | wc -c | tr -d ' ')
 ./scripts/studio-tf-push.sh emit slack_sent --release-tag "$RELEASE_TAG" \
   --data "$(jq -nc --argjson b "$NEW_BUILD_NUMBER" --arg ts "$PARENT_TS" --argjson c "$CHARS" \
-              '{build:$b, channel:"#testing", parent_ts:$ts, message_chars:$c}')"
+              --arg ch "${STUDIO_TF_SLACK_CHANNEL_NAME:-$TF_CHANNEL}" \
+              '{build:$b, channel:$ch, parent_ts:$ts, message_chars:$c}')"
 ```
 
 If the post fails:

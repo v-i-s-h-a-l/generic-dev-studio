@@ -7,7 +7,9 @@ allowed-tools: [Bash, Read, Edit, Grep]
 
 Tag the current commit, create a GitHub draft release, and submit the build to App Store Connect for review with manual release. Mechanical work (tag + push, GH draft, ASC API calls) routes through `scripts/studio-tf-push.sh appstore` in the studio repo (`~/Documents/v-i-s-h-a-l/github/generic-dev-studio`). This wrapper drives release-notes composition, the human-approval gate, and the optional Slack post.
 
-Authoritative knobs: `_shared/primitives/turnip-project-config.md` (App ID, ASC ids), `_shared/contracts/build-message-format.md` (release-notes shape).
+Authoritative knobs: project release config (App ID, ASC ids, Slack channels),
+`_shared/contracts/build-message-format.md` (release-notes shape). Configure
+Slack release announcements with `/dev-studio release-manager configure`.
 
 ## Step 1: Resolve build + previous tag + commits
 
@@ -76,17 +78,41 @@ The stable GH release URL — same for draft and published — is:
 https://github.com/turnip-ios/turnip-zaps/releases/tag/${CURRENT_BUILD_NUMBER}-zaps
 ```
 
-## Step 6: Optional Slack post
+## Step 6: Optional configured Slack post
 
-Post the unified A body via:
+If `STUDIO_RELEASES_SLACK_CHANNEL` is configured, post the unified A body to
+the release channel and seed the expected release thread replies. If it is not
+configured, skip Slack cleanly and report that release announcements are not
+configured.
 
 ```bash
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
 export STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-<project>}"
-./scripts/slack-post.sh --channel <release-channel-id> --text "$RELEASE_BODY"
+. ./scripts/lib-release-config.sh
+load_release_config
+RELEASES_CHANNEL="${STUDIO_RELEASES_SLACK_CHANNEL:-}"
+if [ -n "$RELEASES_CHANNEL" ]; then
+  RESP=$(./scripts/slack-post.sh --channel "$RELEASES_CHANNEL" --text "$RELEASE_BODY")
+  PARENT_TS=$(echo "$RESP" | jq -r .ts)
+  [ -n "$PARENT_TS" ] && [ "$PARENT_TS" != "null" ] || { echo "slack-post returned no ts"; exit 1; }
+  WHATS_NEW_REPLY=$(cat <<EOF
+App Store "What's New" submitted with this build:
+
+
+$WHATS_NEW_BODY
+EOF
+)
+  ./scripts/slack-post.sh --channel "$RELEASES_CHANNEL" --thread-ts "$PARENT_TS" \
+    --text "$WHATS_NEW_REPLY"
+  ./scripts/slack-post.sh --channel "$RELEASES_CHANNEL" --thread-ts "$PARENT_TS" \
+    --text "https://github.com/turnip-ios/turnip-zaps/releases/tag/${CURRENT_BUILD_NUMBER}-zaps"
+fi
 ```
 
-Confirm to the user with the Slack permalink and the GH release URL.
+Persist the Slack channel id and parent `ts` into the release artifact or
+pending App Store marker so `scripts/appstore-watch.sh` can post lifecycle
+replies into the same thread. Confirm to the user with the Slack thread and GH
+release URL when Slack was configured.
 
 ## Rollback
 
