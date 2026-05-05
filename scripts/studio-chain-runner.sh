@@ -2291,6 +2291,8 @@ Summary JSON fields:
 - tests/lints/builds arrays with command/outcome when run
 - tokens object when available, otherwise null
 - functionality_delivered optional string or array describing what users/agents can now do
+- refactoring_needed_now optional array for cleanup required by this task
+- refactoring_follow_ups optional array for deferred design debt with reason, affected area, risk, and suggested timing
 - carryover optional string or array for follow-up issues, parking-lot adds, or uncaptured asks
 - lessons optional string or array when telemetry supports next-chain recommendations
 - telemetry_gaps array listing missing fields such as "tokens" or "model"
@@ -2439,6 +2441,16 @@ write_issue_phase_outcome_artifact() {
         else [$v | tostring]
         end;
       (lines(.functionality_delivered) | if length == 0 then ["No worker narrative supplied."] else . end)[] | "- \(.)"
+    ' "$summary_file"
+    printf '\n## Refactoring Pressure\n\n'
+    jq -r '
+      def rows($label; $items):
+        ($items // []) as $xs |
+        if ($xs | length) == 0 then ["- \($label): none"]
+        else [ $xs[] | "- \($label): \(.affected_area // "unknown area") - \(.reason // "no reason supplied") (risk: \(.risk // "unknown")\(if .suggested_timing then ", timing: \(.suggested_timing)" else "" end))" ]
+        end;
+      rows("needed now"; .refactoring_needed_now)[],
+      rows("follow-up proposed"; .refactoring_follow_ups)[]
     ' "$summary_file"
     printf '\n## Diff Summary\n\n'
     jq -r '"- Files changed: \(.files_changed // 0)\n- Additions: \(.additions // 0)\n- Deletions: \(.deletions // 0)\n- Generated files: \(.generated_file_count // 0)"' "$summary_file"

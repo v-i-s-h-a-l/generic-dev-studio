@@ -221,7 +221,7 @@ ingest_debrief() {
   if [ "${follow_ups_count:-0}" -gt 0 ]; then
     i=0
     while [ "$i" -lt "$follow_ups_count" ]; do
-      title=$(yq -r ".follow_ups[$i].title // .follow_ups[$i].summary // .follow_ups[$i].description // .follow_ups[$i] // \"\"" "$SRC" 2>/dev/null | head -c 200)
+      title=$(yq -r ".follow_ups[$i].title // .follow_ups[$i].summary // .follow_ups[$i].description // .follow_ups[$i].text // .follow_ups[$i] // \"\"" "$SRC" 2>/dev/null | head -c 200)
       if [ -z "$title" ] || [ "$title" = "null" ]; then
         follow_ups_failed=$(( follow_ups_failed + 1 ))
         fail_data=$(printf '{"debrief_id":"%s","follow_up_index":%s,"reason":"follow_up_title_missing"}' \

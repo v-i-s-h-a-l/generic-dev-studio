@@ -74,6 +74,24 @@ cat > "$TMPROOT/completion.json" <<'JSON'
   "builds": [],
   "tokens": null,
   "functionality_delivered": ["Workers can start from a bounded envelope."],
+  "refactoring_needed_now": [
+    {
+      "kind": "localized_cleanup",
+      "reason": "Needed to keep this summary normalization maintainable.",
+      "affected_area": "completion summary",
+      "risk": "low",
+      "implemented_change": "Kept the action summary fields explicit."
+    }
+  ],
+  "refactoring_follow_ups": [
+    {
+      "kind": "awkward_boundary",
+      "reason": "Runner reports and chain envelopes share summary vocabulary.",
+      "affected_area": "chain reporting contracts",
+      "risk": "medium",
+      "suggested_timing": "After the current chain completes."
+    }
+  ],
   "decisions_made": ["Reuse chain-worker-summary.json as the completion envelope."],
   "assumptions_escrowed": [],
   "next_recommended_action": "Continue the chain with the normalized completion summary.",

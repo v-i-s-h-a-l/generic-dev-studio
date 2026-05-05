@@ -327,6 +327,18 @@
         "functionality_delivered": {
           "$ref": "#/$defs/narrative"
         },
+        "refactoring_needed_now": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/refactoringActionSummary"
+          }
+        },
+        "refactoring_follow_ups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/refactoringFollowUpSummary"
+          }
+        },
         "decisions_made": {
           "$ref": "#/$defs/narrativeOrRecords"
         },
@@ -368,6 +380,31 @@
         },
         "additionalProperties": true
       }
+    },
+    "refactoringActionSummary": {
+      "type": "object",
+      "required": ["reason", "affected_area", "risk"],
+      "properties": {
+        "kind": {"type": "string"},
+        "reason": {"type": "string", "minLength": 1},
+        "affected_area": {"type": "string", "minLength": 1},
+        "risk": {"enum": ["low", "medium", "high"]},
+        "implemented_change": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "refactoringFollowUpSummary": {
+      "type": "object",
+      "required": ["reason", "affected_area", "risk", "suggested_timing"],
+      "properties": {
+        "kind": {"type": "string"},
+        "reason": {"type": "string", "minLength": 1},
+        "affected_area": {"type": "string", "minLength": 1},
+        "risk": {"enum": ["low", "medium", "high"]},
+        "suggested_timing": {"type": "string", "minLength": 1},
+        "follow_up_ref": {"type": "string"}
+      },
+      "additionalProperties": true
     },
     "narrative": {
       "oneOf": [

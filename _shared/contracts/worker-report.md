@@ -63,6 +63,29 @@ review_loop:
 
 Budget is two fix cycles per bounded task. A third review attempt, conflicting findings, or repeated high-risk uncertain findings sets `escalation_required: true` with `escalation_reason` and routes to manager/planner arbitration. This preserves blockers for real correctness, contract, and regression risks while preventing local review churn from rewriting the original plan.
 
+## Refactoring pressure protocol
+
+Worker self-review records refactoring pressure without turning every task into a cleanup task:
+
+```yaml
+refactoring_pressure:
+  needed_now:
+    - kind: localized_cleanup
+      reason: "Duplicated parsing would make the touched change unsafe to maintain."
+      affected_area: "FilterPresetParser"
+      risk: low
+      implemented_change: "Extracted parsePresetName(_:) before adding the new branch."
+  deferred_follow_ups:
+    - kind: awkward_boundary
+      reason: "Repeated edits now cross the editor/export boundary."
+      affected_area: "ExportCoordinator and EditorSessionStore"
+      risk: medium
+      suggested_timing: "Plan after the current release branch closes."
+      follow_up_ref: "#123"
+```
+
+`needed_now[]` is only for refactors required for correctness, maintainability of the touched change, or safe completion of the bounded task. `deferred_follow_ups[]` is for code bloat, duplication, SOLID/design pressure, awkward boundaries, or localized cleanup that is real but not required now. Deferred items must also be copied into `follow_ups[]` with `category: refactoring-follow-up` when the manager should mint explicit work.
+
 ## Schema
 
 `report_state` is an optional field on `schemas/debrief.md` (debrief@2.0.2, non-breaking add). When absent, readers infer back-compat:
@@ -124,6 +147,7 @@ The manager inbox sweep reads `report_state` and branches:
 - **Two-stage Argus (#80)** — spec-compliance `fail` maps naturally to `done_with_concerns` (merged but reviewer noted divergence) or `blocked` (reviewer blocked merge).
 - **Build-debt (`_shared/schemas/build-debt.md`)** — `done_with_concerns` is the standard carrier for `build: true` / `test_unit: true`.
 - **Review context and evidence hardening (#537, #604, #605, #606)** — reviewer findings declare context scope and risk metadata; worker responses consume that metadata, preserve test/runtime evidence distinctions, and escalate same-host or uncertain high-change-risk loops instead of blindly applying fixes.
+- **Refactoring pressure (#607):** self-review can surface cleanup pressure, but only required current-task refactors are folded into the implementation. Deferred design debt travels through `refactoring_pressure.deferred_follow_ups[]` and `follow_ups[]`.
 
 ## Telemetry
 
