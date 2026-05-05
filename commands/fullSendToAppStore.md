@@ -72,6 +72,8 @@ STUDIO_TF_PUSH_LIVE=1 ./scripts/studio-tf-push.sh appstore \
 
 The script tags `${BUILD}-zaps`, pushes the tag, creates a GH draft release (account-switched to `vishal-zaps`), finds the build on ASC, creates or updates the App Store version, sets MANUAL release type with the build attached, and updates `whatsNew` for every localization.
 
+After the pending App Store watcher marker is armed, the script immediately raises a PR from the current source branch to `main`. If that branch already has an open PR to `main`, it reuses the existing PR. If another branch already has a pending App Store PR, it surfaces: `There is already a PR pending from <branch>. This new build is from <new-branch>. Raising a separate PR.` The PR is intentionally left open until the watcher sees `READY_FOR_SALE`; the watcher then merges it with `gh pr merge --merge`.
+
 The stable GH release URL — same for draft and published — is:
 
 ```
@@ -84,9 +86,12 @@ https://github.com/turnip-ios/turnip-zaps/releases/tag/${CURRENT_BUILD_NUMBER}-z
 `STUDIO_RELEASES_SLACK_CHANNEL` plus the App Store Slack toggles are enabled,
 posts the release parent message and configured thread replies. It persists the
 Slack channel id and parent `ts` into the pending App Store marker so
-`scripts/appstore-watch.sh` can post lifecycle replies into the same thread. If
-Slack is not configured, the script skips Slack cleanly and reports that release
-announcements are not configured.
+`scripts/appstore-watch.sh` can post lifecycle replies into the same thread.
+While the GitHub release is still a draft, the thread link is the PR URL. When
+ASC reaches `READY_FOR_SALE`, the watcher publishes the GitHub release and
+updates that thread reply to the release URL. If Slack is not configured, the
+script skips Slack cleanly and reports that release announcements are not
+configured.
 
 ## Rollback
 

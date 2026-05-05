@@ -10,13 +10,15 @@
 # Written by /fullSendToAppStore after submission. Absent marker → no-op.
 # Wrong project → no-op.
 #
-# On terminal state (PENDING_DEVELOPER_RELEASE / READY_FOR_SALE):
+# On live state (READY_FOR_SALE):
 #   1. gh release edit <tag> --draft=false
-#   2. Threaded Slack reply on the original configured release message
-#   3. Delete marker
-#   4. Emit appstore_released
+#   2. Replace the PR URL Slack thread reply with the GitHub release URL
+#   3. Merge the App Store PR with a merge commit
+#   4. Delete marker
+#   5. Emit appstore_released
 # Steps 1 and 2 are tracked in marker.finalize_progress for idempotency —
 # a partial failure re-attempts only the unfinished step on the next sweep.
+# PENDING_DEVELOPER_RELEASE only records the intermediate state; it is not live.
 #
 # On non-terminal: update last_state + next_check_at (30–60 min jitter),
 # emit appstore_state_checked.
@@ -83,11 +85,16 @@ read_field() {
       slack_parent_ts) yq -r '.slack.message_ts // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       slack_watcher_replies) yq -r '.asc_metadata.slack_watcher_replies // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       github_release_url) yq -r '.github_release_url // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      github_pr_url) yq -r '.github_pr.url // .github_pr_url // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      github_pr_number) yq -r '.github_pr.number // .github_pr_number // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      source_branch) yq -r '.source_branch // .github_pr.source_branch // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      slack_pr_reply_ts) yq -r '.slack.pr_reply_ts // .asc_metadata.slack_pr_reply_ts // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       asc_key_path) printf '%s\n' "${STUDIO_TF_ASC_KEY_PATH:-}" ;;
       asc_issuer_id) printf '%s\n' "${STUDIO_TF_ASC_ISSUER_ID:-}" ;;
       asc_key_id) printf '%s\n' "${STUDIO_TF_ASC_KEY_ID:-}" ;;
       finalize_draft_published) yq -r '.asc_metadata.finalize_draft_published // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       finalize_slack_posted) yq -r '.asc_metadata.finalize_slack_posted // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      finalize_pr_merged) yq -r '.asc_metadata.finalize_pr_merged // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       *) printf '\n' ;;
     esac
     return 0
@@ -120,6 +127,10 @@ REPO=$(read_field repo)
 CHANNEL=$(read_field slack_channel)
 PARENT_TS=$(read_field slack_parent_ts)
 URL=$(read_field github_release_url)
+PR_URL=$(read_field github_pr_url)
+PR_NUMBER=$(read_field github_pr_number)
+SOURCE_BRANCH=$(read_field source_branch)
+SLACK_PR_REPLY_TS=$(read_field slack_pr_reply_ts)
 WATCHER_REPLIES=$(read_field slack_watcher_replies)
 KEY_PATH=$(read_field asc_key_path)
 ISSUER_ID=$(read_field asc_issuer_id)
@@ -188,6 +199,65 @@ print(m.get('failures', 0))
 PY
 }
 
+mark_json_finalize_field() {
+  local field="$1" value="$2"
+  [ "$MARKER_SOURCE" = "json" ] || return 0
+  python3 - "$MARKER" "$field" "$value" <<'PY'
+import json, sys
+p, field, value = sys.argv[1], sys.argv[2], sys.argv[3]
+m = json.load(open(p))
+if value == "true":
+    m[field] = True
+elif value == "false":
+    m[field] = False
+else:
+    m[field] = value
+json.dump(m, open(p, 'w'), indent=2)
+PY
+}
+
+post_slack_thread_reply() {
+  local msg="$1" out_path="$2"
+  STUDIO_RELEASE_PROJECT="$STUDIO_RELEASE_PROJECT" "$SCRIPT_DIR/slack-post.sh" \
+    --channel "$CHANNEL" --thread-ts "$PARENT_TS" --text "$msg" >"$out_path"
+}
+
+update_slack_thread_reply() {
+  local ts="$1" msg="$2"
+  local token_file token payload response ok
+  token_file=$(release_slack_token_file)
+  [ -r "$token_file" ] || return 2
+  token=$(cat "$token_file")
+  [ -n "$token" ] || return 2
+  payload=$(jq -nc --arg channel "$CHANNEL" --arg ts "$ts" --arg text "$msg" \
+    '{channel:$channel, ts:$ts, text:$text}')
+  response=$(curl -sS -X POST "https://slack.com/api/chat.update" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json; charset=utf-8" \
+    --data "$payload") || return 1
+  ok=$(printf '%s' "$response" | jq -r '.ok // false' 2>/dev/null || printf false)
+  [ "$ok" = "true" ]
+}
+
+merge_appstore_pr() {
+  [ -n "$PR_NUMBER" ] || return 0
+  if with_login_home_for_github gh pr merge "$PR_NUMBER" --repo "$REPO" --merge >/dev/null 2>&1; then
+    mark_json_finalize_field finalize_pr_merged true
+    return 0
+  fi
+
+  local msg="PR merge failed — conflicts detected. Manual resolution needed."
+  printf '[appstore-watch] %s\n' "$msg" >&2
+  if [ "$WATCHER_REPLIES" != "0" ] && [ "$WATCHER_REPLIES" != "false" ] && \
+     [ "$WATCHER_REPLIES" != "FALSE" ] && [ -n "$PARENT_TS" ] && [ -n "$CHANNEL" ]; then
+    local out
+    out=$(mktemp /tmp/appstore-watch-pr-merge.XXXXXX)
+    post_slack_thread_reply "$msg" "$out" >/dev/null 2>&1 || true
+    rm -f "$out"
+  fi
+  return 1
+}
+
 # Generate ASC JWT (pattern from _shared/primitives/appstore-connect-jwt.md).
 TOKEN=$(python3 - "$KEY_PATH" "$ISSUER_ID" "$KEY_ID" <<'PY'
 import jwt, time, sys
@@ -245,13 +315,14 @@ if [ -n "$release_uuid" ]; then
 fi
 
 case "$STATE" in
-  PENDING_DEVELOPER_RELEASE|READY_FOR_SALE)
+  READY_FOR_SALE)
     # Idempotent finalize driven by marker.finalize_progress.
     DRAFT_DONE=$(read_field finalize_draft_published)
     SLACK_DONE=$(read_field finalize_slack_posted)
+    PR_MERGED=$(read_field finalize_pr_merged)
 
     if [ "$DRAFT_DONE" != "True" ] && [ "$DRAFT_DONE" != "true" ]; then
-      if gh release edit "$TAG" --repo "$REPO" --draft=false >/dev/null 2>&1; then
+      if with_login_home_for_github gh release edit "$TAG" --repo "$REPO" --draft=false >/dev/null 2>&1; then
         if [ "$MARKER_SOURCE" = "json" ]; then
           python3 - "$MARKER" <<'PY'
 import json, sys
@@ -289,8 +360,19 @@ PY
         MSG="Live on App Store — notes: $URL"
         SLACK_OUT=$(mktemp /tmp/appstore-watch-slack.XXXXXX)
         SLACK_ERR=$(mktemp /tmp/appstore-watch-slack.XXXXXX)
-        if STUDIO_RELEASE_PROJECT="$STUDIO_RELEASE_PROJECT" "$SCRIPT_DIR/slack-post.sh" \
-            --channel "$CHANNEL" --thread-ts "$PARENT_TS" --text "$MSG" >"$SLACK_OUT" 2>"$SLACK_ERR"; then
+        if [ -n "$SLACK_PR_REPLY_TS" ]; then
+          if update_slack_thread_reply "$SLACK_PR_REPLY_TS" "$MSG" >"$SLACK_OUT" 2>"$SLACK_ERR"; then
+            printf '{"ts":"%s"}\n' "$SLACK_PR_REPLY_TS" >"$SLACK_OUT"
+            slack_ok=true
+          else
+            slack_ok=false
+          fi
+        elif post_slack_thread_reply "$MSG" "$SLACK_OUT" 2>"$SLACK_ERR"; then
+          slack_ok=true
+        else
+          slack_ok=false
+        fi
+        if [ "$slack_ok" = "true" ]; then
           if [ "$MARKER_SOURCE" = "json" ]; then
             python3 - "$MARKER" "$SLACK_OUT" <<'PY'
 import json, sys
@@ -332,6 +414,15 @@ PY
       fi
     fi
 
+    if [ "$PR_MERGED" != "True" ] && [ "$PR_MERGED" != "true" ]; then
+      if ! merge_appstore_pr; then
+        fails=$(mark_failure pr_merge_failed "$STATE")
+        [ "$fails" -ge 3 ] && append_event chanakya appstore_watch_stuck "$TAG" \
+          "{\"reason\":\"pr_merge_failed\",\"failures\":$fails,\"state\":\"$STATE\"}" 2>/dev/null || true
+        exit 1
+      fi
+    fi
+
     [ "$MARKER_SOURCE" = "json" ] && rm -f "$MARKER"
     if [ -n "$release_uuid" ]; then
       release_state=$(yq -r '.state // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null)
@@ -341,6 +432,33 @@ PY
     append_event chanakya appstore_released "$TAG" \
       "{\"final_state\":\"$STATE\",\"tag\":\"$TAG\"}" 2>/dev/null || true
     echo "[appstore-watch] finalized $TAG — marker reconciled"
+    ;;
+  PENDING_DEVELOPER_RELEASE)
+    JITTER=$(( (RANDOM % 1801) + 1800 ))
+    NEXT_ISO=$(python3 - "$JITTER" <<'PY'
+import sys, datetime
+jitter = int(sys.argv[1])
+nxt = datetime.datetime.utcnow() + datetime.timedelta(seconds=jitter)
+print(nxt.strftime('%Y-%m-%dT%H:%M:%SZ'))
+PY
+)
+    if [ "$MARKER_SOURCE" = "json" ]; then
+      python3 - "$MARKER" "$STATE" "$NOW_ISO" "$NEXT_ISO" <<'PY'
+import json, sys
+p, state, now, nxt = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+m = json.load(open(p))
+m['last_state'] = state
+m['last_check_at'] = now
+m['failures'] = 0
+m.pop('stuck', None)
+m.pop('last_error', None)
+m['next_check_at'] = nxt
+json.dump(m, open(p, 'w'), indent=2)
+PY
+    fi
+    [ -n "$release_uuid" ] && set_release_asc_poll "$release_uuid" "$STATE" "$NOW_ISO" "$NEXT_ISO" 0 false || true
+    append_event chanakya appstore_state_checked "$TAG" \
+      "{\"state\":\"$STATE\",\"note\":\"pending_developer_release_not_live\"}" 2>/dev/null || true
     ;;
   *)
     JITTER=$(( (RANDOM % 1801) + 1800 ))

@@ -209,7 +209,7 @@ scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-s
 scripts/detect-edits.sh --quiet                         # emits brief_edited + debrief_edited
 
 # App Store submission watcher (auto-invoked by every sweep):
-scripts/appstore-watch.sh                               # idempotent; self-gated on marker.next_check_at
+scripts/appstore-watch.sh                               # idempotent; publishes release + merge-commit PR only at READY_FOR_SALE
 ```
 
 **Why work-stealing over upfront fan-out.** Task durations span 3–5× (XS LSP-only vs. M/L with full `xcodebuild`). Batch-assigning N+1…2N tasks to inboxes upfront leaves fast workers idle while slow ones still have a backlog. The queue hands one task at a time on each `task_completed` event, so every freed worker gets the next pending task.
