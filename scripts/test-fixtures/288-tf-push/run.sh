@@ -7,7 +7,7 @@
 #      third are filtered out — issue #288 step 5).
 #   2. studio-tf-push.sh push --dry-run walks all four pre-Slack events
 #      (release_started, archive_completed, upload_completed, dsym_uploaded)
-#      and emits the JSON context blob on stdout.
+#      and emits the JSON context blob on stdout, including the TF anchor tag.
 #   3. studio-tf-push.sh emit slack_drafted | slack_sent | release_failed
 #      reuses the captured release-tag.
 #
@@ -60,6 +60,8 @@ echo "$OUT" | grep -q "DRY-RUN event dsym_uploaded" || { echo "FAIL: missing dsy
 echo "$OUT" | grep -q "version decision:" || { echo "FAIL: missing version decision"; exit 1; }
 RT=$(echo "$CTX" | jq -r .release_tag)
 [ "$RT" = "release-fixture-288" ] || { echo "FAIL: release_tag mismatch ($RT)"; exit 1; }
+TF_TAG=$(echo "$CTX" | jq -r .tf_tag)
+[ "$TF_TAG" = "tf-0.0.0-1" ] || { echo "FAIL: tf_tag mismatch ($TF_TAG)"; exit 1; }
 echo "PASS: 4 events + context (release_tag=$RT)"
 
 echo
@@ -84,6 +86,8 @@ done
 [ -s "$BG_PREPARED" ] || { echo "FAIL: prepared context missing"; echo "$BG"; exit 1; }
 PREPARED_BUILD=$(jq -r .build "$BG_PREPARED")
 [ "$PREPARED_BUILD" = "1" ] || { echo "FAIL: prepared build mismatch ($PREPARED_BUILD)"; exit 1; }
+PREPARED_TF_TAG=$(jq -r .tf_tag "$BG_PREPARED")
+[ "$PREPARED_TF_TAG" = "tf-0.0.0-1" ] || { echo "FAIL: prepared tf_tag mismatch ($PREPARED_TF_TAG)"; exit 1; }
 for _ in $(seq 1 20); do
   [ "$(jq -r .state "$BG_STATUS" 2>/dev/null)" = "succeeded" ] && break
   sleep 0.2
@@ -125,6 +129,21 @@ if STUDIO_TF_PUSH_FIXTURE_NODE=fixture-laptop "$REPO/scripts/studio-tf-push.sh" 
   echo "FAIL: should have halted without STUDIO_TF_PUSH_LIVE=1"; exit 1
 fi
 echo "PASS: halted at prereq gate"
+
+echo
+echo "=== Test 6b: withdrawn TF tag dry-run reports renamed anchor ==="
+WITHDRAW_OUT=$("$REPO/scripts/studio-tf-push.sh" withdraw-tf-tag --dry-run --version 26.4.17 --build 3162 2>"$TMPHOME/withdraw.err")
+[ "$(echo "$WITHDRAW_OUT" | jq -r .old_tag)" = "tf-26.4.17-3162" ] || { echo "FAIL: old withdrawn tag mismatch"; exit 1; }
+[ "$(echo "$WITHDRAW_OUT" | jq -r .withdrawn_tag)" = "tf-26.4.17-3162-WITHDRAWN" ] || { echo "FAIL: withdrawn tag mismatch"; exit 1; }
+grep -q "would rename TF tag" "$TMPHOME/withdraw.err" || { echo "FAIL: missing withdrawn dry-run note"; exit 1; }
+echo "PASS: withdrawn tag dry-run shape"
+
+echo
+echo "=== Test 6c: script documents TF anchor creation and push ==="
+grep -q 'git tag -a "$tag"' "$REPO/scripts/studio-tf-push.sh" || { echo "FAIL: missing annotated TF tag creation"; exit 1; }
+grep -q 'git push origin "refs/tags/${tag}"' "$REPO/scripts/studio-tf-push.sh" || { echo "FAIL: missing TF tag push"; exit 1; }
+grep -q 'tf-<VERSION>-<NEW_BUILD_NUMBER>-WITHDRAWN' "$REPO/_shared/contracts/release-tf-push.md" || { echo "FAIL: missing withdrawn tag contract"; exit 1; }
+echo "PASS: TF anchor creation/push documented"
 
 echo
 echo "=== Test 6: failed push preflight leaves pbxproj untouched ==="
