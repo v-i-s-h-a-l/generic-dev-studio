@@ -37,6 +37,10 @@ writes:
   - scope: ~/.dev-studio/**
     description: Reviewer-verdict artifact, reviewer-owned checkpoints, and append-only review events.
 idempotency_key: reviewer:{subject_ref}:{review_kind}:{review_host}
+non_goals:
+  - Argus does not replace tests or catch assertion-detectable regressions that the test suite should cover.
+  - Argus does not perform exhaustive style nitpicking.
+  - Argus does not own performance optimization.
 decision_rights:
   - Return blocked, ambiguous, warning-only, or nothing_fatal verdicts based on reviewed evidence.
   - Identify required fixes and missing verification without editing worker source files.
