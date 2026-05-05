@@ -7,6 +7,7 @@
 #   scripts/query-plans.sh --kind=brief --task-id=<uuidv7>
 #   scripts/query-plans.sh --kind=review --subject-kind=task --subject-id=<uuidv7>
 #   scripts/query-plans.sh --kind=release --channel=testflight --state=released
+#   scripts/query-plans.sh --kind=release-attempt --operation=replace --state=withdrawn
 #   scripts/query-plans.sh --kind=feedback --source=slack-thread
 #   scripts/query-plans.sh --blocked-by=<task-uuid>
 #   scripts/query-plans.sh --format=json   # emit JSON instead of YAML-inline
@@ -117,9 +118,20 @@ if [ -n "$TOUCHES_GLOB" ]; then
 fi
 
 if [ -z "$KIND" ]; then
-  printf 'error: --kind is required (one of tasks, briefs, debriefs, reviews, rounds, releases, feedback, crashes)\n' >&2
+  printf 'error: --kind is required (one of tasks, briefs, debriefs, reviews, rounds, releases, release-attempts, feedback, crashes)\n' >&2
   exit 2
 fi
+
+case "$KIND" in
+  task) KIND=tasks ;;
+  brief) KIND=briefs ;;
+  debrief) KIND=debriefs ;;
+  review) KIND=reviews ;;
+  round) KIND=rounds ;;
+  release) KIND=releases ;;
+  release-attempt|release_attempt|release_attempts) KIND=release-attempts ;;
+  crash) KIND=crashes ;;
+esac
 
 if [ -z "$PROJECT" ]; then
   PROJECT=$(resolve_project 2>/dev/null) || {
@@ -143,7 +155,7 @@ fi
 # Preferred path: yq v4.
 if command -v yq >/dev/null 2>&1; then
   # Build the yq filter expression incrementally.
-  local_expr=".${KIND}[]"
+  local_expr=".\"${KIND}\"[]"
   for flt in "${FILTERS[@]:-}"; do
     [ -z "$flt" ] && continue
     # --foo=bar → select(.foo == "bar"). For --subject-kind=task we map to
@@ -196,7 +208,7 @@ done
 
 awk -v k="$KIND" -v sf="$state_filter" '
   $0 ~ "^" k ":" { in_block=1; next }
-  in_block==1 && /^[a-z]+:/ { in_block=0 }
+  in_block==1 && /^[a-z-]+:/ { in_block=0 }
   in_block==1 && /^[[:space:]]+-[[:space:]]*{/ {
     if (sf == "") { print; next }
     if (match($0, /state:[[:space:]]*[a-z_-]+/)) {

@@ -34,6 +34,7 @@
 #     transition_task_state    <uuid> <to> <actor> <reason>
 #     transition_brief_state   <uuid> <to> <actor> <reason>
 #     transition_release_state <uuid> <to> <actor> <reason>
+#     transition_release_attempt_state <uuid> <to> <actor> <reason>
 #     transition_review_state  <uuid> <to> <actor> <reason>
 #     transition_round_state   <uuid> <to> <actor> <reason>
 #
@@ -49,6 +50,8 @@
 #     write_review_artifact   <uuid> <subject-kind> <subject-uuid> <verdict> <findings-json>
 #     write_round_artifact    <uuid> <round-number> <scope> <tasks-csv> <body>
 #     write_release_artifact  <uuid> <channel> <version> <build> <tag> <tasks-csv>
+#     write_release_attempt_artifact <uuid> <operation> <channel> <intent-json>
+#     append_release_attempt_transaction <uuid> <entry-type> <status> <actor> <data-json>
 #
 #   Legacy counterpart helpers (RETIRED — fail loud on call)
 #     legacy_master_plan_set_status / append_row / archive_task
@@ -378,6 +381,61 @@ transition_brief_state()   { _transition_artifact briefs   "$1" "$2" "$3" "${4:-
 transition_release_state() { _transition_artifact releases "$1" "$2" "$3" "${4:-}"; }
 transition_review_state()  { _transition_artifact reviews  "$1" "$2" "$3" "${4:-}"; }
 transition_round_state()   { _transition_artifact rounds   "$1" "$2" "$3" "${4:-}"; }
+
+transition_release_attempt_state() {
+  local uuid="${1:?transition_release_attempt_state <uuid> <to> <actor> <reason>}"
+  local to_state="${2:?}" actor="${3:?}" reason="${4:-}"
+  local f
+  f=$(_artifact_path release-attempts "$uuid") || return 2
+  if [ ! -f "$f" ]; then
+    printf 'transition_release_attempt_state: no release attempt at %s\n' "$f" >&2
+    return 2
+  fi
+
+  local from_state
+  from_state=$(yq -r '.state // "null"' "$f" 2>/dev/null || echo null)
+  if [ "$from_state" = "$to_state" ]; then
+    return 0
+  fi
+
+  local ts event_id state_idem tx_idem
+  ts=$(iso_ts_now)
+  event_id=$(mint_uuidv7)
+  state_idem=$(idem_key "$actor" release_attempt "$uuid" "$from_state>$to_state")
+  tx_idem=$(idem_key "$actor" release_attempt "$uuid" "transition:$from_state>$to_state")
+
+  if [ "${DRY_RUN:-0}" = "1" ]; then
+    _dry_write_log "$f" "state=$to_state;transaction=transition" "$state_idem"
+  else
+    local reason_safe="${reason//\\/\\\\}"
+    reason_safe="${reason_safe//\"/\\\"}"
+    local data_file
+    data_file=$(mktemp "${f}.transition.XXXXXX") || return 2
+    jq -nc \
+      --arg from "$from_state" \
+      --arg to "$to_state" \
+      --arg reason "$reason" \
+      '{from:$from, to:$to, reason:$reason}' > "$data_file" || { rm -f "$data_file"; return 2; }
+    yq -i \
+      ".state = \"$to_state\" |
+       .updated_at = \"$ts\" |
+       .history += [{\"from\": \"$from_state\", \"to\": \"$to_state\", \"actor\": \"$actor\", \"at\": \"$ts\", \"event_id\": \"$event_id\", \"reason\": \"$reason_safe\"}] |
+       .transaction_log += [{\"id\":\"$event_id\",\"at\":\"$ts\",\"actor\":\"$actor\",\"type\":\"transition\",\"status\":\"complete\",\"data\": load(\"$data_file\")}]" \
+      "$f" 2>/dev/null || { rm -f "$data_file"; return 2; }
+    rm -f "$data_file"
+  fi
+
+  local state_data tx_data
+  state_data=$(printf '{"from":"%s","to":"%s","actor":"%s","event_id":"%s"}' \
+    "$(_json_escape "$from_state")" "$(_json_escape "$to_state")" "$(_json_escape "$actor")" "$event_id")
+  emit_event_keyed "$actor" release-attempt release_attempt_state_changed "$uuid" "$state_data" --idem-key "$state_idem" >/dev/null || return $?
+
+  tx_data=$(jq -nc --arg entry_type transition --arg status complete --arg actor "$actor" --arg event_id "$event_id" \
+    '{entry_type:$entry_type, status:$status, actor:$actor, event_id:$event_id}')
+  emit_event_keyed "$actor" release-attempt release_attempt_transaction_appended "$uuid" "$tx_data" --idem-key "$tx_idem" >/dev/null || return $?
+
+  _maybe_rebuild_index
+}
 
 set_release_asc_poll() {
   local uuid="${1:?set_release_asc_poll <release-uuid> <asc-state> <last-poll> <next-check> <failures> <stuck>}"
@@ -1168,6 +1226,137 @@ write_release_artifact() {
   data=$(printf '{"from":null,"to":"released","channel":"%s","tag":"%s"}' \
     "$(_json_escape "$channel")" "$(_json_escape "$tag")")
   emit_event_keyed achilles release release_state_changed "$uuid" "$data" --idem-key "$idem" >/dev/null || return $?
+  _maybe_rebuild_index
+}
+
+write_release_attempt_artifact() {
+  local uuid="${1:?write_release_attempt_artifact <uuid> <operation> <channel> <intent-json>}"
+  local operation="${2:?}" channel="${3:?}" intent_json="${4:?}"
+
+  case "$operation" in
+    submit|withdraw|resubmit|replace|release|expedite) ;;
+    *) printf 'write_release_attempt_artifact: unknown operation %s\n' "$operation" >&2; return 2 ;;
+  esac
+  case "$channel" in
+    testflight|appstore) ;;
+    *) printf 'write_release_attempt_artifact: unknown channel %s\n' "$channel" >&2; return 2 ;;
+  esac
+  printf '%s\n' "$intent_json" | jq -e 'type == "object"' >/dev/null 2>&1 || {
+    printf 'write_release_attempt_artifact: intent-json must be a JSON object\n' >&2
+    return 2
+  }
+
+  local f ts idem intent_yaml event_id
+  f=$(_artifact_path release-attempts "$uuid") || return 2
+  ts=$(iso_ts_now)
+  idem=$(idem_key nabu release_attempt "$uuid" "create:$operation:$channel:$intent_json")
+  intent_yaml=$(printf '%s\n' "$intent_json" | yq -P '.')
+  event_id=$(mint_uuidv7)
+
+  local payload
+  payload=$({
+    printf 'schema_version: {name: release-attempt, version: 1.0.0, min_reader: 1.0.0, deprecated_at: null}\n'
+    printf 'id: %s\n' "$uuid"
+    printf 'operation: %s\n' "$operation"
+    printf 'channel: %s\n' "$channel"
+    printf 'state: submitted\n'
+    printf 'created_at: %s\n' "$ts"
+    printf 'updated_at: %s\n' "$ts"
+    printf 'intent:\n'
+    printf '%s\n' "$intent_yaml" | sed 's/^/  /'
+    printf 'systems:\n'
+    printf '  app_store_connect: null\n'
+    printf '  git: null\n'
+    printf '  github_release: null\n'
+    printf '  messaging: null\n'
+    printf '  release_notes: null\n'
+    printf 'side_effects: []\n'
+    printf 'transaction_log:\n'
+    printf '  - id: %s\n' "$event_id"
+    printf '    at: %s\n' "$ts"
+    printf '    actor: nabu\n'
+    printf '    type: intent\n'
+    printf '    status: complete\n'
+    printf '    data:\n'
+    printf '      operation: %s\n' "$operation"
+    printf '      channel: %s\n' "$channel"
+  })
+
+  if [ "${DRY_RUN:-0}" = "1" ]; then
+    _dry_write_log "$f" "$payload" "$idem"
+  else
+    _atomic_write "$f" "$payload" || return 2
+  fi
+
+  local data tx_data tx_idem
+  data=$(jq -nc --arg operation "$operation" --arg channel "$channel" --arg actor nabu --arg event_id "$event_id" \
+    '{from:null, to:"submitted", actor:$actor, event_id:$event_id, operation:$operation, channel:$channel}')
+  emit_event_keyed nabu release-attempt release_attempt_state_changed "$uuid" "$data" --idem-key "$idem" >/dev/null || return $?
+  tx_idem=$(idem_key nabu release_attempt "$uuid" "intent:$operation:$channel")
+  tx_data=$(jq -nc --arg entry_type intent --arg status complete --arg actor nabu --arg event_id "$event_id" \
+    '{entry_type:$entry_type, status:$status, actor:$actor, event_id:$event_id}')
+  emit_event_keyed nabu release-attempt release_attempt_transaction_appended "$uuid" "$tx_data" --idem-key "$tx_idem" >/dev/null || return $?
+  _maybe_rebuild_index
+}
+
+append_release_attempt_transaction() {
+  local uuid="${1:?append_release_attempt_transaction <uuid> <entry-type> <status> <actor> <data-json>}"
+  local entry_type="${2:?}" status="${3:?}" actor="${4:?}" data_json="${5:-}"
+  [ -n "$data_json" ] || data_json="{}"
+  case "$entry_type" in
+    intent|side_effect_started|side_effect_completed|side_effect_failed|side_effect_skipped|transition|resume) ;;
+    *) printf 'append_release_attempt_transaction: unknown entry type %s\n' "$entry_type" >&2; return 2 ;;
+  esac
+  case "$status" in
+    pending|running|complete|skipped|failed) ;;
+    *) printf 'append_release_attempt_transaction: unknown status %s\n' "$status" >&2; return 2 ;;
+  esac
+  printf '%s\n' "$data_json" | jq -e 'type == "object"' >/dev/null 2>&1 || {
+    printf 'append_release_attempt_transaction: data-json must be a JSON object\n' >&2
+    return 2
+  }
+
+  local f ts event_id idem
+  f=$(_artifact_path release-attempts "$uuid") || return 2
+  [ -f "$f" ] || { printf 'append_release_attempt_transaction: no release attempt at %s\n' "$f" >&2; return 2; }
+  ts=$(iso_ts_now)
+  event_id=$(mint_uuidv7)
+  idem=$(idem_key "$actor" release_attempt "$uuid" "$entry_type:$status:$data_json")
+  local side_effect_key side_effect_status
+  side_effect_key=$(printf '%s\n' "$data_json" | jq -r '.side_effect // .key // ""')
+  side_effect_status=""
+  case "$entry_type" in
+    side_effect_started) side_effect_status=running ;;
+    side_effect_completed) side_effect_status=complete ;;
+    side_effect_failed) side_effect_status=failed ;;
+    side_effect_skipped) side_effect_status=skipped ;;
+  esac
+
+  if [ "${DRY_RUN:-0}" = "1" ]; then
+    _dry_write_log "$f" "transaction=$entry_type:$status" "$idem"
+  else
+    local data_file
+    data_file=$(mktemp "${f}.data.XXXXXX") || return 2
+    printf '%s\n' "$data_json" > "$data_file" || { rm -f "$data_file"; return 2; }
+    if [ -n "$side_effect_key" ] && [ -n "$side_effect_status" ]; then
+      yq -i \
+        ".updated_at = \"$ts\" |
+         .side_effects = ((.side_effects // []) | map(select(.key != \"$side_effect_key\")) + [{\"key\":\"$side_effect_key\",\"status\":\"$side_effect_status\",\"updated_at\":\"$ts\"}]) |
+         .transaction_log += [{\"id\":\"$event_id\",\"at\":\"$ts\",\"actor\":\"$actor\",\"type\":\"$entry_type\",\"status\":\"$status\",\"data\": load(\"$data_file\")}]" \
+        "$f" 2>/dev/null || { rm -f "$data_file"; return 2; }
+    else
+      yq -i \
+        ".updated_at = \"$ts\" |
+         .transaction_log += [{\"id\":\"$event_id\",\"at\":\"$ts\",\"actor\":\"$actor\",\"type\":\"$entry_type\",\"status\":\"$status\",\"data\": load(\"$data_file\")}]" \
+        "$f" 2>/dev/null || { rm -f "$data_file"; return 2; }
+    fi
+    rm -f "$data_file"
+  fi
+
+  local data
+  data=$(jq -nc --arg entry_type "$entry_type" --arg status "$status" --arg actor "$actor" --arg event_id "$event_id" \
+    '{entry_type:$entry_type, status:$status, actor:$actor, event_id:$event_id}')
+  emit_event_keyed "$actor" release-attempt release_attempt_transaction_appended "$uuid" "$data" --idem-key "$idem" >/dev/null || return $?
   _maybe_rebuild_index
 }
 
