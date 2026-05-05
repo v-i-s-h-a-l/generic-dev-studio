@@ -2388,13 +2388,15 @@ Public-safe telemetry: run/chain UUIDs and abstract gap names only."; then
 }
 
 write_issue_phase_plan_artifact() {
-  local artifact="$1" chain_name="$2" branch="$3" issue="$4" issue_run_id="$5" host="$6" before="$7" context="$8"
+  local artifact="$1" chain_name="$2" branch="$3" issue_branch="$4" issue_worktree="$5" issue="$6" issue_run_id="$7" host="$8" before="$9" context="${10}"
   mkdir -p "$(dirname "$artifact")"
   {
     printf '# Chain Issue Phase Plan\n\n'
     printf -- '- Run UUID: `%s`\n' "$RUN_ID"
     printf -- '- Chain: `%s`\n' "$chain_name"
-    printf -- '- Branch: `%s`\n' "$branch"
+    printf -- '- Chain branch: `%s`\n' "$branch"
+    printf -- '- Issue branch: `%s`\n' "$issue_branch"
+    printf -- '- Issue worktree: `%s`\n' "$issue_worktree"
     printf -- '- Issue: `#%s`\n' "$issue"
     printf -- '- Issue-run UUID: `%s`\n' "$issue_run_id"
     printf -- '- Host: `%s`\n' "$host"
@@ -2411,6 +2413,7 @@ write_issue_phase_plan_artifact() {
       printf 'None.\n'
     fi
     printf '\n## Acceptance Criteria\n\n'
+    printf -- '- After this plan review is clean, the runner writes `.studio/chain-task-start.json` before launching the worker.\n'
     printf -- '- Worker reads `.studio/chain-task-start.json` before acting.\n'
     printf -- '- Worker summary is valid JSON and remains uncommitted.\n'
     printf -- '- Issue branch produces a non-empty commit for successful execution.\n'
@@ -2514,7 +2517,7 @@ run_issue_job() {
   if [ "$DRY_RUN" -eq 0 ] && phase_review_required_for_issue "$phase_review_mode" "$issue_count_for_review"; then
     boundary_id="$chain_run_id-$issue_run_id"
     phase_plan_artifact="$PHASE_REVIEW_ROOT/$boundary_id-plan.md"
-    write_issue_phase_plan_artifact "$phase_plan_artifact" "$name" "$branch" "$issue" "$issue_run_id" "$host" "$before" "$phase_context"
+    write_issue_phase_plan_artifact "$phase_plan_artifact" "$name" "$branch" "$issue_branch" "$issue_worktree" "$issue" "$issue_run_id" "$host" "$before" "$phase_context"
     set +e
     run_phase_review_gate plan "$boundary_id" "$phase_plan_artifact" "$chain_run_id" "$issue_run_id" "$name" "$issue"
     phase_review_rc=$?
