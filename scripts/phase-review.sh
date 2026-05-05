@@ -233,10 +233,7 @@ case "$review_host" in
     ;;
 esac
 
-if ! ( cd "$REPO_ROOT" && case "$review_host" in
-    codex*|*codex*) "${review_cmd[@]}" > "$output" 2>"$err_output" ;;
-    *) "${review_cmd[@]}" </dev/null > "$output" 2>"$err_output" ;;
-  esac ); then
+if ! ( cd "$REPO_ROOT" && "${review_cmd[@]}" </dev/null > "$output" 2>"$err_output" ); then
   detail=$(first_line "$err_output")
   [ -n "$detail" ] || detail=$(first_line "$output")
   fail "reviewer command failed for $review_host${detail:+: $detail}"
