@@ -13,12 +13,13 @@
 #              version, archives, exports + uploads to ASC, uploads dSYMs.
 #              Outputs a one-line JSON context blob on stdout for the wrapper
 #              (release_tag, build, version, scheme, branch, archive_path,
-#              prev_build).
+#              prev_build, tf_tag).
 #   appstore   — App Store submission: tag + push tag, GH draft release,
 #              find build on ASC, create/update version, set MANUAL release,
 #              update whatsNew per localization. Inputs (release notes, what's
 #              new) come from files prepared by the wrapper after user
 #              approval.
+#   withdraw-tf-tag — rename a TF anchor tag to tf-<version>-<build>-WITHDRAWN.
 #   emit       — emit one release event (`slack_drafted` / `slack_sent` /
 #              `release_failed`) with the same release-tag the wrapper
 #              captured from `push`. Lets the wrapper participate in the
@@ -29,6 +30,7 @@
 #   scripts/studio-tf-push.sh appstore --build <n> --version <v> \
 #                              --release-notes-file <path> --whatsnew-file <path> \
 #                              [--dry-run]
+#   scripts/studio-tf-push.sh withdraw-tf-tag --build <n> --version <v> [--dry-run]
 #   scripts/studio-tf-push.sh emit <event> --release-tag <tag> --data <json>
 #
 # Env:
@@ -133,6 +135,47 @@ failure_excerpt() {
 require_cmd() {
   local name="$1"
   command -v "$name" >/dev/null 2>&1 || halt_failed prereq "$name required before release mutation"
+}
+
+tf_tag_name() {
+  local version="$1" build="$2"
+  case "$version" in
+    *[!0-9.]*|.*|*.) printf 'tf_tag: invalid version %s\n' "$version" >&2; return 2 ;;
+  esac
+  printf '%s\n' "$version" | grep -Eq '^[0-9]+[.][0-9]+[.][0-9]+$' || {
+    printf 'tf_tag: invalid version %s\n' "$version" >&2
+    return 2
+  }
+  case "$build" in
+    ''|*[!0-9]*) printf 'tf_tag: invalid build %s\n' "$build" >&2; return 2 ;;
+  esac
+  printf 'tf-%s-%s\n' "$version" "$build"
+}
+
+local_tag_commit() {
+  local tag="$1"
+  git rev-parse -q --verify "refs/tags/${tag}^{commit}" 2>/dev/null || true
+}
+
+ensure_tf_tag() {
+  local tag="$1" target="$2" version="$3" build="$4" branch="$5"
+  local existing
+  existing=$(local_tag_commit "$tag")
+  if [ -n "$existing" ]; then
+    local target_full
+    target_full=$(git rev-parse "$target^{commit}" 2>/dev/null || true)
+    if [ "$existing" != "$target_full" ]; then
+      halt_failed prereq "TF tag $tag already points at $existing, not bump commit $target_full"
+    fi
+    printf 'studio-tf-push: TF tag %s already exists at bump commit; reusing\n' "$tag" >&2
+    return 0
+  fi
+  git tag -a "$tag" "$target" -m "TestFlight build ${build} (v${version}) from ${branch}"
+}
+
+push_tf_tag() {
+  local tag="$1"
+  git push origin "refs/tags/${tag}"
 }
 
 preflight_push_release() {
@@ -522,10 +565,23 @@ EOF
       cd "$oldpwd" || true
       halt_failed prereq "version-bump commit failed"
     fi
-    bump_commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+    bump_commit=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+    local TF_TAG
+    TF_TAG=$(tf_tag_name "$VERSION" "$NEW_BUILD_NUMBER") || {
+      cd "$oldpwd" || true
+      halt_failed prereq "could not derive TF tag for version=$VERSION build=$NEW_BUILD_NUMBER"
+    }
+    ensure_tf_tag "$TF_TAG" "$bump_commit" "$VERSION" "$NEW_BUILD_NUMBER" "$BRANCH" || {
+      cd "$oldpwd" || true
+      halt_failed prereq "TF tag creation failed"
+    }
     if ! git push -u origin HEAD; then
       cd "$oldpwd" || true
-      halt_failed prereq "STRANDED_RELEASE_STATE: build-number commit $bump_commit exists locally but push failed after mutation. Next safe command: git -C '$PROJECT_ROOT' push -u origin HEAD"
+      halt_failed prereq "STRANDED_RELEASE_STATE: build-number commit ${bump_commit:0:12} and TF tag $TF_TAG exist locally but branch push failed after mutation. Next safe command: git -C '$PROJECT_ROOT' push -u origin HEAD && git -C '$PROJECT_ROOT' push origin refs/tags/$TF_TAG"
+    fi
+    if ! push_tf_tag "$TF_TAG"; then
+      cd "$oldpwd" || true
+      halt_failed prereq "STRANDED_RELEASE_STATE: build-number commit ${bump_commit:0:12} is on origin but TF tag $TF_TAG was not pushed. Next safe command: git -C '$PROJECT_ROOT' push origin refs/tags/$TF_TAG"
     fi
     cd "$oldpwd" || halt_failed prereq "return to studio repo failed after version bump"
   fi
@@ -535,6 +591,8 @@ EOF
   # jump ahead of queued Achilles task builds without preempting in-flight
   # ones (#267). Priority=release → rank 0 → sorts before task (rank 1).
   local ARCHIVE_PATH="/tmp/${SCHEME}-${NEW_BUILD_NUMBER}.xcarchive"
+  local TF_TAG
+  TF_TAG=$(tf_tag_name "$VERSION" "$NEW_BUILD_NUMBER") || halt_failed prereq "could not derive TF tag for version=$VERSION build=$NEW_BUILD_NUMBER"
   if [ -n "${STUDIO_TF_PUSH_PREPARED_CONTEXT_PATH:-}" ]; then
     mkdir -p "$(dirname "$STUDIO_TF_PUSH_PREPARED_CONTEXT_PATH")" 2>/dev/null || true
     jq -nc \
@@ -544,8 +602,9 @@ EOF
       --arg scheme "$SCHEME" \
       --arg branch "$BRANCH" \
       --arg archive_path "$ARCHIVE_PATH" \
+      --arg tf_tag "$TF_TAG" \
       --argjson prev_build "$LATEST_BUILD_NUMBER" \
-      '{release_tag:$release_tag, build:$build, version:$version, scheme:$scheme, branch:$branch, archive_path:$archive_path, prev_build:$prev_build, prepared:true}' \
+      '{release_tag:$release_tag, build:$build, version:$version, scheme:$scheme, branch:$branch, archive_path:$archive_path, tf_tag:$tf_tag, prev_build:$prev_build, prepared:true}' \
       >"$STUDIO_TF_PUSH_PREPARED_CONTEXT_PATH"
   fi
   local archive_started_at archive_duration_s=0
@@ -710,8 +769,60 @@ PLIST
     --arg scheme "$SCHEME" \
     --arg branch "$BRANCH" \
     --arg archive_path "$ARCHIVE_PATH" \
+    --arg tf_tag "$TF_TAG" \
     --argjson prev_build "$LATEST_BUILD_NUMBER" \
-    '{release_tag:$release_tag, build:$build, version:$version, scheme:$scheme, branch:$branch, archive_path:$archive_path, prev_build:$prev_build}'
+    '{release_tag:$release_tag, build:$build, version:$version, scheme:$scheme, branch:$branch, archive_path:$archive_path, tf_tag:$tf_tag, prev_build:$prev_build}'
+}
+
+cmd_withdraw_tf_tag() {
+  DRY_RUN_FLAG=0
+  local BUILD="" VERSION=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run) DRY_RUN_FLAG=1; shift ;;
+      --build) BUILD="${2:?}"; shift 2 ;;
+      --version) VERSION="${2:?}"; shift 2 ;;
+      *) printf 'withdraw-tf-tag: unknown arg %s\n' "$1" >&2; exit 2 ;;
+    esac
+  done
+  [ -n "$BUILD" ] || { printf 'withdraw-tf-tag: --build required\n' >&2; exit 2; }
+  [ -n "$VERSION" ] || { printf 'withdraw-tf-tag: --version required\n' >&2; exit 2; }
+  local OLD_TAG NEW_TAG
+  OLD_TAG=$(tf_tag_name "$VERSION" "$BUILD") || exit 2
+  NEW_TAG="${OLD_TAG}-WITHDRAWN"
+  RELEASE_TAG="${STUDIO_RELEASE_TAG:-withdraw-${OLD_TAG}-$(date -u +%Y%m%d-%H%M%S)}"
+
+  if [ "$DRY_RUN_FLAG" != "1" ] && [ "${STUDIO_TF_PUSH_LIVE:-0}" != "1" ]; then
+    halt_failed prereq "STUDIO_TF_PUSH_LIVE=1 required to rename/push TF withdrawal tags"
+  fi
+
+  if [ "$DRY_RUN_FLAG" = "1" ]; then
+    printf 'studio-tf-push: [dry-run] would rename TF tag %s to %s and push withdrawn marker\n' "$OLD_TAG" "$NEW_TAG" >&2
+    jq -nc --arg old "$OLD_TAG" --arg new "$NEW_TAG" '{old_tag:$old, withdrawn_tag:$new, dry_run:true}'
+    return 0
+  fi
+
+  require_cmd git
+  (
+    cd "$PROJECT_ROOT" || exit 1
+    git fetch --tags origin >/dev/null 2>&1 || exit 1
+    local old_commit new_commit
+    old_commit=$(local_tag_commit "$OLD_TAG")
+    [ -n "$old_commit" ] || { printf 'withdraw-tf-tag: source tag %s not found\n' "$OLD_TAG" >&2; exit 1; }
+    new_commit=$(local_tag_commit "$NEW_TAG")
+    if [ -n "$new_commit" ] && [ "$new_commit" != "$old_commit" ]; then
+      printf 'withdraw-tf-tag: %s already points at %s, not %s\n' "$NEW_TAG" "$new_commit" "$old_commit" >&2
+      exit 1
+    fi
+    if [ -z "$new_commit" ]; then
+      git tag -a "$NEW_TAG" "$old_commit" -m "WITHDRAWN: TestFlight build ${BUILD} (v${VERSION})"
+    fi
+    git push origin "refs/tags/${NEW_TAG}" || exit 1
+    git push origin ":refs/tags/${OLD_TAG}" || exit 1
+    git tag -d "$OLD_TAG" >/dev/null 2>&1 || true
+  ) || halt_failed prereq "TF withdrawn tag rename failed"
+
+  jq -nc --arg old "$OLD_TAG" --arg new "$NEW_TAG" '{old_tag:$old, withdrawn_tag:$new}'
 }
 
 cmd_appstore() {
@@ -834,10 +945,11 @@ cmd_appstore() {
 }
 
 case "${1:-}" in
-  push|""|--dry-run|--scheme|--background)
+  push|""|--dry-run|--scheme|--version|--background)
     [ "${1:-}" = "push" ] && shift
     cmd_push "$@" ;;
   appstore) shift; cmd_appstore "$@" ;;
+  withdraw-tf-tag) shift; cmd_withdraw_tf_tag "$@" ;;
   emit) shift; cmd_emit "$@" ;;
   -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) printf 'studio-tf-push: unknown subcommand %s\n' "$1" >&2; exit 2 ;;

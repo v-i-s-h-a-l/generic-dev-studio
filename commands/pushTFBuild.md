@@ -34,13 +34,14 @@ CTX=$(STUDIO_TF_PUSH_LIVE=1 ./scripts/studio-tf-push.sh push ${SCHEME:+--scheme 
 RELEASE_TAG=$(echo "$CTX" | jq -r .release_tag)
 NEW_BUILD_NUMBER=$(echo "$CTX" | jq -r .build)
 VERSION=$(echo "$CTX" | jq -r .version)
+TF_TAG=$(echo "$CTX" | jq -r .tf_tag)
 BRANCH=$(echo "$CTX" | jq -r .branch)
 PREV_BUILD=$(echo "$CTX" | jq -r .prev_build)
 . ./scripts/lib-release-config.sh
 load_release_config
 ```
 
-The script emits `release_started`, `archive_completed`, `upload_completed`, `dsym_uploaded` along the way. If it exits non-zero it has already emitted `release_failed` with the stage that broke — surface stderr to the user and stop. Do NOT continue to Slack steps.
+The script creates and pushes `tf-<version>-<build>` at the bump-build commit before archiving, then emits `release_started`, `archive_completed`, `upload_completed`, `dsym_uploaded` along the way. If it exits non-zero it has already emitted `release_failed` with the stage that broke — surface stderr to the user and stop. Do NOT continue to Slack steps.
 
 The script reads release config from `~/.dev-studio/${STUDIO_RELEASE_PROJECT}/config/release.env` and secrets from `~/.dev-studio/${STUDIO_RELEASE_PROJECT}/secrets/`. It preflights non-interactive GitHub push auth, ASC key/JWT prerequisites, Slack token readability, and the app-scoped live-version lookup before it mutates the pbxproj. If it prints `WARNING: Could not determine live App Store version`, stop and resolve ASC/API access first; do not infer that there is no version conflict. For an intentionally upload-only run with Slack deferred, set `STUDIO_TF_SLACK_DEFERRED=1`.
 
@@ -80,6 +81,7 @@ done
 CTX=$(cat "$PREPARED_CONTEXT_PATH")
 NEW_BUILD_NUMBER=$(echo "$CTX" | jq -r .build)
 VERSION=$(echo "$CTX" | jq -r .version)
+TF_TAG=$(echo "$CTX" | jq -r .tf_tag)
 BRANCH=$(echo "$CTX" | jq -r .branch)
 PREV_BUILD=$(echo "$CTX" | jq -r .prev_build)
 ```
@@ -90,7 +92,7 @@ Proceed to Slack drafting while the background run continues. Before sending Sla
 
 Compose from the user's commits since the last shared TF build, per `_shared/contracts/build-message-format.md`.
 
-Find the last shared build:
+Find the last shared build and prefer its TF tag as the lower bound:
 
 ```bash
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
@@ -105,8 +107,15 @@ Then:
 
 ```bash
 cd /Users/vishalsingh/Documents/Turnip.gg/turnip-ios
-LAST_SHARED_BUMP=$(git log --oneline --all --grep="Bump build number to $LAST_SHARED_BUILD" | head -1 | cut -d' ' -f1)
-git log --no-merges --author="vishal" --format="%h | %s%n%b%n---" ${LAST_SHARED_BUMP}..HEAD | grep -viE "Bump (build|version)"
+LAST_SHARED_TF_TAG=$(git tag --merged HEAD --sort=-creatordate \
+  | grep -E "^tf-[0-9]+[.][0-9]+[.][0-9]+-${LAST_SHARED_BUILD}(-WITHDRAWN)?$" \
+  | head -1)
+if [ -n "$LAST_SHARED_TF_TAG" ]; then
+  LOWER_BOUND="$LAST_SHARED_TF_TAG"
+else
+  LOWER_BOUND=$(git log --oneline --all --grep="Bump build number to $LAST_SHARED_BUILD" | head -1 | cut -d' ' -f1)
+fi
+git log --no-merges --author="vishal" --format="%h | %s%n%b%n---" ${LOWER_BOUND}..HEAD | grep -viE "Bump (build|version)"
 ```
 
 Read full commit messages (subject + body). Compose per `build-message-format.md`:
