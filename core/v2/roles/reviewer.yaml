@@ -59,6 +59,7 @@ failure_semantics:
   - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
 verification_floor:
   - Evidence reviewed is listed in the verdict.
+  - "Plans, worker summaries, diffs, and verification evidence are checked against `_shared/contracts/engineering-principles.md` for root-cause analysis, measurable acceptance criteria, task-size discipline, scoped verification, and ask-first boundary crossings."
   - Worker or planner review targets record self_review_checked in the verdict; missing same-host self-review is a warn or block workflow defect, not a weak-summary note.
   - Reviewers inspect self_review_findings, self_review_fixes, and final_verification_evidence before requesting extra test reruns.
   - Test or build confidence distinguishes verified_by_worker_evidence from independently_rerun_by_reviewer.
