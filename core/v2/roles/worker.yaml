@@ -33,6 +33,10 @@ writes:
   - scope: ~/.dev-studio/**
     description: Worker summary, debrief, evidence, optional worker checkpoint, or event artifacts explicitly named by the contract.
 idempotency_key: worker:{subject_ref}:{issue_run_id}
+non_goals:
+  - Achilles does not plan future work or own the master plan.
+  - Achilles does not decide what comes next after the current bounded task.
+  - Achilles does not author designs or architecture plans; that belongs to planner or future architect roles.
 decision_rights:
   - Modify assigned files within the contract ownership boundary.
   - Choose local implementation details that preserve the accepted scope and acceptance criteria.
