@@ -19,6 +19,7 @@
 #   2i. lint-v2-enforcement.sh --staged — A0.6 Studio v2 SPEC-derived gates.
 #   3.  privacy gate — reject if staged diff leaks another project's runtime.
 #
+# Main-branch commit guard bypass: `STUDIO_BYPASS_MAIN_COMMIT_GUARD=1 git commit ...`.
 # Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/2g/2h/2i/3.
 # Gates 1+1b (manifest regens) always run because stale manifests leak
 # downstream.
@@ -52,6 +53,18 @@ emit_precommit_duration() {
 }
 
 trap 'rc=$?; emit_precommit_duration "$rc"' EXIT
+
+branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+case "$branch" in
+  main|master|trunk|develop)
+    if [ "${STUDIO_BYPASS_MAIN_COMMIT_GUARD:-0}" != "1" ]; then
+      printf 'pre-commit: refusing to commit on local %s; create a feature worktree from origin/main instead\n' "$branch" >&2
+      printf 'bypass (emergencies only): STUDIO_BYPASS_MAIN_COMMIT_GUARD=1 git commit ...\n' >&2
+      exit 1
+    fi
+    printf 'pre-commit: STUDIO_BYPASS_MAIN_COMMIT_GUARD=1 — allowing commit on local %s\n' "$branch" >&2
+    ;;
+esac
 
 # Gate 1 — regenerate manifest + restage if it changed.
 if [ -x "$SCRIPTS/update-surface-manifest.sh" ]; then
