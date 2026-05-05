@@ -31,13 +31,23 @@ If the user asks "where were we" or similar, invoke `/resume-plan` — it reads 
 **Never edit the main checkout of this repo directly.** Every session that writes to `generic-dev-studio` must work in a dedicated `git worktree`:
 
 ```bash
-git worktree add /tmp/studio-<slug> main   # create isolated tree
+git fetch origin
+git worktree add -b <feature-branch> /tmp/studio-<slug> origin/main
 # ... do all work + commits here ...
-git push origin main                        # or cherry-pick/merge back to main
+git push -u origin <feature-branch>
+# open a PR and merge via GitHub; never push directly to main
 git worktree remove /tmp/studio-<slug>     # clean up when done
 ```
 
 **Why this is a hard rule:** parallel Claude Code sessions share the same process user and filesystem. When two sessions run in the main checkout simultaneously, one session's `git add` or `git reset` can pick up the other session's unstaged edits — producing accidental co-mingling in commits and making post-hoc untangling expensive or impossible (especially when origin has already advanced). Worktree isolation eliminates the problem at the source: only one session owns a given tree, no shared index, no cross-session bleed.
+
+**Local `main` is a mirror, not a work branch.** Do not commit, merge, rebase,
+or cherry-pick onto local `main`. Local `main` should only be fast-forwarded or
+reset to `origin/main` after remote PR merges. If local `main` diverges, first
+preserve any unique commit on a backup branch, then realign `main` to
+`origin/main` with explicit user approval before any destructive reset. The
+pre-commit hook blocks base-branch commits unless the user explicitly sets
+`STUDIO_BYPASS_MAIN_COMMIT_GUARD=1`.
 
 **This replaces the pathspec rule** (`git commit -- <paths>`). The pathspec approach was a workaround for shared-tree chaos; worktree isolation removes the chaos. The pathspec rule (REVIEW.md) is retired.
 
