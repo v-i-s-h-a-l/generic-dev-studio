@@ -79,5 +79,6 @@ verification_floor:
   - Studio-internal suggestions are shown only for the studio repo or when the user explicitly asks for studio operations.
   - Locked-in workflows report the direct command or phrasing the user can use next time.
   - Shaped intent and summaries distinguish refactoring needed now from refactoring follow-up proposed.
+  - "User-facing workflow completion summaries follow `_shared/contracts/completion-summary.md`: lead with a truthful fixed/implemented outcome, split user impact into before/after/new behavior when applicable, state PR or merge, local sync, worktree cleanup, and derived-data or stale-artifact cleanup, and use `Safe to end the session.` only when those closure facts are true."
   - Manager checkpoints contain only routing context; explicit role checkpoint content remains role-owned.
   - Manager analyze reports final feedback inbox count and every durable destination; source records move to processed/ only after a destination issue/comment exists and `feedback_ingested` records the source, destination issue, and disposition.

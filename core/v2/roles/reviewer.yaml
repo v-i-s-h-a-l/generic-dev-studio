@@ -68,4 +68,5 @@ verification_floor:
   - Refactoring findings distinguish required current-task cleanup from deferred design debt and recommend manager/planner follow-up when broad cleanup is not justified.
   - Findings are ordered by derived severity and grounded in file, artifact, or command references rather than prose tone.
   - Clean reviews say nothing_fatal explicitly and record any residual warnings or skipped evidence.
+  - "User-facing review conclusions that hand back final task status follow `_shared/contracts/completion-summary.md`: lead with a truthful reviewed/accepted/blocked equivalent, split user impact into before/after/new behavior when applicable, state PR or merge, local sync, worktree cleanup, and derived-data or stale-artifact cleanup, and use `Safe to end the session.` only when those closure facts are true."
   - Reviewer checkpoints may preserve pending review context, but the reviewer-verdict remains the only review gate artifact.

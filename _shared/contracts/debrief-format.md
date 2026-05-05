@@ -66,6 +66,13 @@ Task-mode writers normally call `scripts/task-emit-debrief.sh`, which wraps
 `write_debrief_artifact` from `scripts/lib-ledger.sh`, validates the payload,
 sets `tasks/<uuid>.yaml` `links.debrief`, and emits `debrief_emitted`.
 
+When a debrief is also summarized back to the user, the human-facing conclusion
+follows `_shared/contracts/completion-summary.md`. The YAML debrief remains the
+automation source of truth; the visible summary must still name the user impact,
+before/after/new behavior when applicable, PR or merge state, local sync state,
+worktree cleanup, derived-data or stale-artifact cleanup, and whether it is
+actually safe to end the session.
+
 The archived pre-Phase 2.6 section-header template lives at
 `_shared/contracts/.legacy/debrief-format-md.md` for old artifact readability
 only. Active writers MUST NOT use it.
