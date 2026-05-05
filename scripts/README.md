@@ -164,6 +164,7 @@ scripts/node-parity.sh [--fix|--dry-run]                # probe + cache toolchai
 scripts/check-xcode-parity.sh m1mini                    # pre-dispatch guard; exit 1 = MAJOR Xcode drift; STUDIO_IGNORE_XCODE_DRIFT=1 overrides (#136)
 scripts/node-warmup.sh m1mini [project]                 # async-safe pre-dispatch source sync + package cache warm-up (#138)
 scripts/task-write-test-cases.sh T001 '[{...}]'         # stdout debrief `tests.added` payload; no standalone sidecar write
+scripts/task-write-self-review.sh T001 '{...}'          # writes plans/self-reviews/T001.yaml with same-host findings/fixes before final verification
 scripts/task-invoke-argus.sh T001 /wt main S            # emits review_requested with reviewed base SHA (reviewer invoked through dispatch wrapper)
 scripts/task-merge.sh T001 /wt feature-branch --require-approved  # merge lock + approved-only policy + post-review base re-check
 scripts/node-janitor.sh [--days N] [--dry-run]          # periodic node-side sweep of stale derived-data + worktrees + dispatch logs/registry (#129, #272); LaunchAgent-driven

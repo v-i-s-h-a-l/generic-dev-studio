@@ -4,7 +4,7 @@ description: YAML shape for Argus and user verdicts under plans/reviews/<review-
 type: reference
 ---
 
-# Review Schema (`review@1.2.0`)
+# Review Schema (`review@1.3.0`)
 
 Per-review artifact written to `~/.dev-studio/<project>/plans/reviews/<review-id>.yaml`. Each review targets a subject (a task, a round, a release) and carries a verdict + findings list. Argus emits reviews on task merges; Chanakya emits them on round aggregates; the user emits them via `/chanakya review-feedback`.
 
@@ -13,7 +13,7 @@ Per-review artifact written to `~/.dev-studio/<project>/plans/reviews/<review-id
 ```yaml
 schema_version:
   name: review
-  version: 1.2.0
+  version: 1.3.0
   min_reader: 1.0.0
   deprecated_at: null
 id: 0190f52a-7a11-7e03-8c99-44df6fd77a77        # UUIDv7
@@ -43,6 +43,15 @@ evidence_reviewed:
     result: pass
     timestamp: 2026-05-05T01:10:00Z
     note: "Fresh worker evidence covered the reviewed diff; reviewer did not rerun."
+self_review_checked:
+  applicable: true
+  self_review_performed: true
+  artifact_refs:
+    - "plans/self-reviews/0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11.yaml"
+  findings_reviewed: 1
+  fixes_reviewed: 1
+  absence_disposition: none                       # not_applicable | none | warn | block
+  note: null
 scope:
   context_scopes: [diff-only, task-context]       # diff-only | task-context | plan-context | architecture-context | runtime/evidence-context
   diff_size: 187
@@ -55,7 +64,7 @@ notes: null
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `schema_version` | object | yes | Per `contracts/schema-version.md`. Version 1.2.0 adds structured review context and risk metadata for non-trivial findings. |
+| `schema_version` | object | yes | Per `contracts/schema-version.md`. Version 1.3.0 adds reviewer-visible same-host self-review inspection for #605. |
 | `id` | string (UUIDv7) | yes | |
 | `stage` | enum \| absent | no | `spec` \| `quality`. Set for Argus two-stage reviews (see `argus/modes/{spec-compliance,code-quality}.md`). Absent for user/chanakya reviewers. Missing in pre-1.1.0 reviews is read as `quality` for back-compat. |
 | `subject` | object | yes | `{kind, id}`. `kind ∈ {task, round, release}`. `id` must resolve to an artifact of that kind. |
@@ -66,7 +75,8 @@ notes: null
 | `verdict` | enum \| null | yes | `approved` \| `flagged` \| `blocked` \| null (while pre-terminal). Redundant with `state` for terminal verdicts; separates intent (state) from ruling (verdict). |
 | `findings` | array | yes | Per-finding `{rule, tier, message, severity, likelihood, impact, change_risk, confidence, basis, recommended_action, path?}`. See §Findings. |
 | `checks_run` | array | yes | Per-check `{name, result}`. `result ∈ {pass, fail, skip, warn}`. |
-| `evidence_reviewed` | array | no | Evidence inspected for the verdict. For test/build evidence, set `verification_source` to `verified_by_worker_evidence` or `independently_rerun_by_reviewer`; include command, timestamp, result, and a short note when reruns are skipped for cost. |
+| `evidence_reviewed` | array | no | Evidence inspected for the verdict. For test/build evidence, set `verification_source` to `verified_by_worker_evidence` or `independently_rerun_by_reviewer`; include command, timestamp, result, and a short note when reruns are skipped for cost. The schema permits omission for old artifacts; the reviewer role contract requires it for fresh verdicts. |
+| `self_review_checked` | object | no | Reviewer inspection of same-host self-review. The schema permits omission for old artifacts; the reviewer role contract requires it for fresh worker and planner reviews. For worker and planner targets, missing self-review sets `absence_disposition: warn` or `block`; other review kinds set `applicable: false` and `absence_disposition: not_applicable`. |
 | `scope` | object | yes | `{context_scopes, diff_size, file_count, caps_triggered}`. Records what Argus saw — useful for dashboards and rule-effectiveness analysis. |
 | `notes` | string \| null | yes | Optional reviewer commentary. |
 
@@ -152,6 +162,8 @@ User-emitted reviews (from `/chanakya review-feedback`) set verdict directly —
 
 Risk metadata does not weaken blocks. It explains why the finding is blocking, warning-only, or escalation-worthy. Reviewers keep true correctness, contract, or regression blockers as `tier: block`.
 
+Missing same-host self-review for worker or planner targets is a workflow defect. Reviewers encode it in `self_review_checked.absence_disposition` and add a finding when it affects the verdict: `warn` maps to `flagged`, and `block` maps to `blocked`.
+
 ## Lifecycle
 
 Per `state-machines/review-lifecycle.md`:
@@ -178,6 +190,7 @@ Pre-2.6 Argus review output lived in free-form markdown under the worktree (`.ar
 
 | Version | Landed | Changes |
 |---|---|---|
+| 1.3.0 | 2026-05-05 | Adds optional schema field `self_review_checked`; the reviewer role contract requires it for fresh worker/planner verdicts so reviewers can warn or block when same-host self-review is absent before external review (#605). |
 | 1.2.0 | 2026-05-05 | Adds `scope.context_scopes` and per-finding `severity`, `likelihood`, `impact`, `change_risk`, `confidence`, `basis`, and `recommended_action` for #606. Cross-references #537 review scope, #604 test evidence, and #605 same-host self-review. |
 | 1.0.0 | 2026-04-22 | Initial Phase 2.6 landing. |
 

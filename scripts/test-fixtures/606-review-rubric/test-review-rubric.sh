@@ -35,6 +35,14 @@ findings:
     message: "Finding needs worker disposition instead of direct application."
     path: "_shared/schemas/review.md"
 checks_run: []
+self_review_checked:
+  applicable: true
+  self_review_performed: true
+  artifact_refs: ["plans/self-reviews/0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11.yaml"]
+  findings_reviewed: 0
+  fixes_reviewed: 0
+  absence_disposition: none
+  note: null
 scope:
   context_scopes: [diff-only, task-context]
   diff_size: 42
@@ -69,6 +77,14 @@ findings:
     recommended_action: fix_now
     message: "This must escalate or defer instead of forcing a direct fix."
 checks_run: []
+self_review_checked:
+  applicable: true
+  self_review_performed: true
+  artifact_refs: ["plans/self-reviews/0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11.yaml"]
+  findings_reviewed: 0
+  fixes_reviewed: 0
+  absence_disposition: none
+  note: null
 scope:
   context_scopes: [diff-only]
   diff_size: 12

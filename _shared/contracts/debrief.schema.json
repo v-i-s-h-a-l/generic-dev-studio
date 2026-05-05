@@ -333,6 +333,27 @@
         "$ref": "worker-report.schema.json#/$defs/reviewResponse"
       }
     },
+    "self_review_performed": {
+      "type": "boolean"
+    },
+    "self_review_findings": {
+      "type": "array",
+      "items": {
+        "$ref": "worker-report.schema.json#/$defs/selfReviewFinding"
+      }
+    },
+    "self_review_fixes": {
+      "type": "array",
+      "items": {
+        "$ref": "worker-report.schema.json#/$defs/selfReviewFix"
+      }
+    },
+    "final_verification_evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "worker-report.schema.json#/$defs/finalVerificationEvidence"
+      }
+    },
     "refactoring_pressure": {
       "$ref": "worker-report.schema.json#/$defs/refactoringPressure"
     }

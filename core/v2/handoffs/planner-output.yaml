@@ -54,6 +54,11 @@ payload:
       risk: medium
       suggested_timing: After the role-contract migration completes.
       manager_follow_up_title: Extract shared role-handoff boundary guidance after migration.
+  self_review_performed: true
+  self_review_findings:
+    - "Checked planner contract scope against worker and reviewer role boundaries."
+  self_review_fixes:
+    - "Kept qa-engineer, flow-tester, and release-manager role contracts out of this leaf."
   review_ask: Verify the planner contract preserves manager escalation and the handoff fixture validates without broadening adjacent role scope.
   escalation:
     required: false

@@ -79,6 +79,8 @@ To promote a flag check to block: edit the `Block?` column in the check tables b
 
 **Goal:** actively enumerate edge cases the implementation may not handle, then verify test coverage.
 
+**Self-review prerequisite:** before external worker or planner review, inspect the producer's same-host self-review fields. Worker artifacts expose `self_review_performed`, `self_review_findings`, `self_review_fixes`, and `final_verification_evidence`; planner artifacts expose `self_review_performed`, `self_review_findings`, and `self_review_fixes`. Missing self-review is a workflow defect, not a substitute edge-case finding: warn for low-risk targets and block when the target is non-trivial or final verification confidence depends on the missing reasoning gate.
+
 **Procedure:**
 
 1. For each changed function or method in the diff, enumerate candidate edge cases:

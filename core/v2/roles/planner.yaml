@@ -56,4 +56,7 @@ verification_floor:
   - Planner output names scope, non-goals, dependencies, risks, reusable API findings, acceptance criteria, and explicit review ask.
   - Each worker contract produced by the planner has bounded ownership, required checks, stop conditions, and a private summary artifact path.
   - Planner output distinguishes dispatch-blocking refactors from deferred refactoring follow-ups that the manager can capture as separate work.
+  - Same-host plan self-review runs before cross-host plan review; it checks edge cases, likely bugs or regressions, hidden dependencies, acceptance-criteria gaps, and scope mistakes.
+  - Planner output distinguishes self_review_performed, self_review_findings, and self_review_fixes before it is sent to a reviewer.
+  - Cross-host plan review starts only after self-review fixes are integrated or the plan is marked blocked for manager decision.
   - Irreducible conflicts are escalated to manager before worker dispatch.
