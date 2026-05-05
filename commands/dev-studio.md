@@ -49,6 +49,9 @@ supplies the task context and runtime slug.
    - `reviewer` -> plan, outcome, diff, PR, or release-packet review.
    - `perf` -> performance, battery, memory, thermal, network, or instrumentation evidence.
    - `planner`, `qa-engineer`, `flow-tester`, `release-manager` -> active role contracts, usually manager-mediated or approval-gated.
+   - `release-manager configure` -> project-scoped release notification setup;
+     call `$STUDIO_REPO/scripts/release-manager-configure.sh` after shaping
+     quick/custom/descriptive Slack options with the user.
 
 6. Keep project state under `~/.dev-studio/$PROJECT_SLUG/` unless the user
    explicitly names another project slug. For `manager ingest`, call
