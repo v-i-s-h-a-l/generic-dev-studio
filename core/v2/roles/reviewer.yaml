@@ -12,6 +12,9 @@ inputs:
   - kind: worker-contract
     required: false
     description: Bounded task contract to review before dispatch or after completion.
+  - kind: worker-summary
+    required: false
+    description: Worker completion artifact with same-host self-review notes, fixes from that review, and final verification evidence.
   - kind: diff-or-outcome
     required: false
     description: Changed files, outcome summary, verification evidence, or release packet under review.
@@ -52,6 +55,8 @@ failure_semantics:
   - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
 verification_floor:
   - Evidence reviewed is listed in the verdict.
+  - Worker or planner review targets record self_review_checked in the verdict; missing same-host self-review is a warn or block workflow defect, not a weak-summary note.
+  - Reviewers inspect self_review_findings, self_review_fixes, and final_verification_evidence before requesting extra test reruns.
   - Test or build confidence distinguishes verified_by_worker_evidence from independently_rerun_by_reviewer.
   - Reviewers inspect worker command evidence before rerunning tests and rerun only when evidence is missing, stale, too narrow, diff-stale, cheap/high-value, risky, or suspicious.
   - Context scope is declared as diff-only, task-context, plan-context, architecture-context, or runtime/evidence-context.

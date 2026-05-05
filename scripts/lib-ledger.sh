@@ -1032,7 +1032,7 @@ write_review_artifact() {
 
   local payload
   payload=$({
-    printf 'schema_version: {name: review, version: 1.1.0, min_reader: 1.0.0, deprecated_at: null}\n'
+    printf 'schema_version: {name: review, version: 1.3.0, min_reader: 1.0.0, deprecated_at: null}\n'
     printf 'id: %s\n' "$uuid"
     printf 'subject: {kind: %s, id: %s}\n' "$subject_kind" "$subject_uuid"
     printf 'reviewer: argus\n'
@@ -1043,6 +1043,7 @@ write_review_artifact() {
     printf 'verdict: %s\n' "$verdict"
     printf 'findings: %s\n' "$findings_json"
     printf 'checks_run: []\n'
+    printf 'self_review_checked: {applicable: false, self_review_performed: false, artifact_refs: [], findings_reviewed: 0, fixes_reviewed: 0, absence_disposition: not_applicable, note: "Legacy writer did not receive self-review artifacts."}\n'
     printf 'scope: {context_scopes: [diff-only], diff_size: 0, file_count: 0, caps_triggered: []}\n'
     printf 'notes: null\n'
     printf 'idempotency_key: "%s"\n' "$idem"

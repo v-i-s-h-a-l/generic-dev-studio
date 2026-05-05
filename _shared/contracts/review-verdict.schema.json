@@ -254,6 +254,91 @@
         }
       }
     },
+    "self_review_checked": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Reviewer inspection of the producer's same-host self-review gate. Required by role contract for worker and planner targets.",
+      "required": [
+        "applicable",
+        "self_review_performed",
+        "artifact_refs",
+        "findings_reviewed",
+        "fixes_reviewed",
+        "absence_disposition"
+      ],
+      "properties": {
+        "applicable": {
+          "type": "boolean"
+        },
+        "self_review_performed": {
+          "type": "boolean"
+        },
+        "artifact_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "findings_reviewed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fixes_reviewed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "absence_disposition": {
+          "enum": [
+            "not_applicable",
+            "none",
+            "warn",
+            "block"
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "applicable": { "const": false }
+            },
+            "required": ["applicable"]
+          },
+          "then": {
+            "properties": {
+              "absence_disposition": { "const": "not_applicable" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "applicable": { "const": true },
+              "self_review_performed": { "const": false }
+            },
+            "required": ["applicable", "self_review_performed"]
+          },
+          "then": {
+            "properties": {
+              "absence_disposition": {
+                "enum": [
+                  "warn",
+                  "block"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
     "scope": {
       "type": "object",
       "required": [
@@ -482,6 +567,17 @@
           "result": "pass"
         }
       ],
+      "self_review_checked": {
+        "applicable": true,
+        "self_review_performed": true,
+        "artifact_refs": [
+          "plans/self-reviews/0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11.yaml"
+        ],
+        "findings_reviewed": 0,
+        "fixes_reviewed": 0,
+        "absence_disposition": "none",
+        "note": null
+      },
       "scope": {
         "context_scopes": ["diff-only", "task-context"],
         "diff_size": 187,

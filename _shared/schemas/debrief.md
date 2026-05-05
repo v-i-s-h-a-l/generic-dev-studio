@@ -4,7 +4,7 @@ description: YAML shape for Achilles-authored debriefs under plans/debriefs/<deb
 type: reference
 ---
 
-# Debrief Schema (`debrief@2.6.0`)
+# Debrief Schema (`debrief@2.7.0`)
 
 Per-debrief artifact written to `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml`. Replaces the markdown debriefs that previously landed at `plans/chanakya-inbox/<task-id>-debrief.md`. Authored by Achilles in `task` mode (paired with a brief), Achilles in `debrief` mode (direct-debrief, no brief), or Apollo in any perf-mode (`metrics:` block populated, `executed_with.host` reflects Apollo's surface).
 
@@ -15,7 +15,7 @@ Version 2.0.0 was a breaking change from the legacy markdown format (`contracts/
 ```yaml
 schema_version:
   name: debrief
-  version: 2.6.0
+  version: 2.7.0
   min_reader: 2.0.0
   deprecated_at: null
 id: 0190f52a-79aa-7d02-8b88-33ce5fe65e66        # UUIDv7
@@ -88,6 +88,22 @@ argus_review:
 report_state: done                                # done | done_with_concerns | blocked | needs_context — see contracts/worker-report.md
 review_loop: null                                # optional {attempt, budget, escalation_required, escalation_reason?}
 review_responses: []                             # optional worker dispositions for reviewer findings; see contracts/worker-report.md
+self_review_performed: true                      # optional same-host self-review gate result; required by current worker role contract
+self_review_findings:
+  - id: SR1
+    focus: edge_case                              # edge_case | possible_bug | regression | scope_drift | test_adequacy | acceptance_criteria | hidden_dependency | other
+    finding: "Empty input path was not covered by the first implementation."
+    severity: material                            # material | minor | none
+    disposition: fixed                            # fixed | not_applicable | deferred_follow_up | blocked
+self_review_fixes:
+  - finding_id: SR1
+    action: fixed
+    summary: "Added the empty-input guard before final verification."
+final_verification_evidence:
+  - command: "scripts/test-fixtures/605-self-review-gate/test-self-review-gate.sh"
+    outcome: pass                                 # pass | fail | skipped | blocked
+    timestamp: 2026-05-05T01:30:00Z
+    after_self_review_fixes: true
 refactoring_pressure:                            # optional; see contracts/worker-report.md
   needed_now:
     - kind: localized_cleanup
@@ -163,6 +179,10 @@ metrics: null                                     # 2.2.0; Apollo perf-mode only
 | `report_state` | enum \| absent | no | `done` \| `done_with_concerns` \| `blocked` \| `needs_context`. Worker-report contract — see `contracts/worker-report.md`. Absent in pre-2.0.2 debriefs; readers infer from other fields for back-compat. |
 | `review_loop` | object \| null \| absent | no | Optional review/fix loop budget: `{attempt, budget, escalation_required, escalation_reason?}`. Budget is two fix cycles; attempt ≥3 escalates. |
 | `review_responses` | array \| absent | no | Optional per-finding worker responses: accepted/fixed, modified fix, rejected, escalated, or deferred. Entries consume reviewer risk metadata and include the mandatory worker self-check. |
+| `self_review_performed` | boolean \| absent | no | Optional schema field, required by the current worker role contract for fresh task-mode emits. True only when same-host self-review ran after implementation and before final verification. |
+| `self_review_findings` | array \| absent | no | Same-host self-review findings focused on missed edge cases, possible bugs, regressions, scope drift, and test adequacy. |
+| `self_review_fixes` | array \| absent | no | Fixes or dispositions made from same-host self-review findings before final verification. |
+| `final_verification_evidence` | array \| absent | no | Final test/build/lint evidence captured after self-review fixes. Reviewers inspect this before deciding whether to rerun tests; do not duplicate test reruns by default. |
 | `refactoring_pressure` | object \| absent | no | Optional split between `needed_now[]` refactors the worker performed to keep the current change correct/maintainable and `deferred_follow_ups[]` design-debt opportunities. Deferred entries carry reason, affected area, risk, and suggested timing so the manager can mint explicit follow-up work instead of parsing prose. |
 | `executed_with` | object \| absent | no | 2.1.0; `{model_id, host, session_id, duration_s}`. Producer identity for multi-model accountability. Absent in pre-2.1.0 debriefs; readers MUST tolerate absence and either join `events/<date>.jsonl` `agent_boot` records by `task_id` to fill the gap or treat the executor as unknown. Three of the four fields (`model_id`, `host`, `session_id`) are already produced by `scripts/emit-agent-boot.sh`; `duration_s` is computed from the matching `agent_session_completed` event timestamp delta. |
 | `metrics` | object \| null | yes | 2.2.0; Apollo perf-mode only. Null for Achilles task / direct-debrief debriefs. Populated by Apollo when emitting a perf-mode debrief — carries strict-9 evidence (cohort, baseline, observed, delta, verdict) so Chanakya's ingest path can render perf outcomes without re-reading the underlying `.trace` / MXMetric artifact. Sub-shape documented inline with the example above; refusal subobject populated only when `verdict: refused`. |
@@ -208,6 +228,7 @@ The 141 processed debriefs in `chanakya-inbox/processed/` are **copied as-is** t
 
 | Version | Landed | Changes |
 |---|---|---|
+| 2.7.0 | 2026-05-05 | Non-breaking: optional same-host self-review fields and final verification evidence for #605. The worker role contract requires them for fresh task-mode output before external review. |
 | 2.6.0 | 2026-05-05 | Non-breaking: optional `refactoring_pressure` plus structured refactoring follow-up metadata so worker/planner cleanup concerns can be captured as explicit manager follow-up work (#607). |
 | 2.5.0 | 2026-05-05 | Non-breaking: optional `review_loop` and `review_responses` fields for #606 worker disposition of structured reviewer findings. |
 | 2.4.0 | 2026-05-02 | Non-breaking: `tests.added[]` / `tests.modified[]` items may now be `{title, preconditions?, steps?, expected?}` objects. Legacy string form remains accepted; new task-mode emits use objects as the canonical source for test-manifest/test-flow generation (#335). |

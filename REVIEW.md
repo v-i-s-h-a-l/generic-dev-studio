@@ -127,6 +127,8 @@ Every completion-style claim in a debrief (YAML or prose) must cite a specific, 
 
 When a reviewer accepts worker evidence instead of rerunning, the verdict must say `verified_by_worker_evidence` and cite the evidence. When a reviewer reruns, the verdict must say `independently_rerun_by_reviewer` and include the command, timestamp, and result. Do not collapse both into "tests pass"; downstream sessions need the confidence level and cost model. Gates that mandate independent reruns must document why the added latency is worth it, what failure mode it catches, and when the rerun can be skipped or made async.
 
+**Same-host self-review gate (issue #605).** Worker outputs must show `self_review_performed`, `self_review_findings`, `self_review_fixes`, and `final_verification_evidence`; planner outputs must show `self_review_performed`, `self_review_findings`, and `self_review_fixes` before cross-host plan review. Reviewers inspect those fields before requesting extra reruns. Missing self-review is a workflow defect: flag as `warn` when risk is low and block when the target is non-trivial, risky, or final verification claims depend on the missing review.
+
 ### R11 — No studio-initiated pushes to base branches (tier: **block + auto-fix**)
 
 Scripts and mode prose must never run `git push origin main` (or `master`, or any equivalent integration/base branch) against a project or studio repo. Remote base branches advance **only** through PR merges. Studio-initiated pushes may target feature branches (`push -u origin HEAD`, `push origin <feature-branch>`) or tags (`push origin <tag>`). Integration happens via `gh pr create` / `gh pr merge`, never direct ref advancement.
