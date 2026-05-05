@@ -239,6 +239,7 @@ Tag-only is fine for **internal markers** (`pre-merge-test`, `scratch-before-ref
 
 1. Ensure `main` is green (scripts pass `bash -n`, smoke tests pass, REVIEW.md rules satisfied).
 2. Draft the release notes in this template — work on a scratch file first (`/tmp/vX.Y.Z-notes.md`), not directly in the tag annotation.
+   Start from `Changelog:` commit trailers when they exist; see `_shared/contracts/definition-of-done.md`. If trailers are missing, insufficient, or superseded, record that in the release packet instead of silently reconstructing notes from commit subjects.
 3. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z — <short title>"` with an annotated tag, not a lightweight one.
 4. Push the tag: `git push origin vX.Y.Z`.
 5. Create the release: `gh release create vX.Y.Z --notes-file /tmp/vX.Y.Z-notes.md --title "vX.Y.Z — <short title>"`. Add `--prerelease` for `-beta.N` / `-rc.N`; omit for stable drops.
