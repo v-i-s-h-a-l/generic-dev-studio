@@ -201,6 +201,59 @@
         }
       }
     },
+    "evidence_reviewed": {
+      "type": "array",
+      "description": "Evidence inspected for the verdict. Test/build entries distinguish worker evidence from independent reviewer reruns.",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "verification_source",
+          "command",
+          "result",
+          "timestamp"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "build",
+              "tests",
+              "lint",
+              "runtime",
+              "review-artifact",
+              "other"
+            ]
+          },
+          "verification_source": {
+            "enum": [
+              "verified_by_worker_evidence",
+              "independently_rerun_by_reviewer",
+              "reviewed_non_test_evidence"
+            ]
+          },
+          "command": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result": {
+            "type": "string",
+            "minLength": 1
+          },
+          "timestamp": {
+            "$ref": "debrief.schema.json#/$defs/rfc3339"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          }
+        }
+      }
+    },
     "scope": {
       "type": "object",
       "required": [

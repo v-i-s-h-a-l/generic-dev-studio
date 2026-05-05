@@ -119,6 +119,8 @@ To promote a flag check to block: edit the `Block?` column in the check tables b
 3. Evaluate **path coverage**: does the test reach the changed lines, or does it call a wrapper that bypasses them?
 4. Flag tests that call changed functions but assert on unrelated outcomes (marker: false sense of coverage).
 
+**Rerun policy:** inspect worker verification evidence before running tests yourself. Accept fresh worker evidence when it names the command, timestamp, result, environment, covered commit or diff, and suite scope. Rerun only when evidence is missing, stale, diff-stale, too narrow for the changed surface, cheap/high-value, risky enough to justify independent reproduction, or suspicious. Record `verified_by_worker_evidence` or `independently_rerun_by_reviewer` in the verdict so later sessions do not treat both confidence levels as identical.
+
 **Verdict:** Inadequate tests → **flag** with specific test names and what's missing.
 
 | Check | Block? | Notes |
