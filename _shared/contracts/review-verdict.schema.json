@@ -103,7 +103,14 @@
         "required": [
           "rule",
           "tier",
-          "message"
+          "message",
+          "severity",
+          "likelihood",
+          "impact",
+          "change_risk",
+          "confidence",
+          "basis",
+          "recommended_action"
         ],
         "properties": {
           "rule": {
@@ -124,8 +131,51 @@
           },
           "path": {
             "type": "string"
+          },
+          "severity": {
+            "$ref": "#/$defs/findingSeverity"
+          },
+          "likelihood": {
+            "$ref": "#/$defs/findingLikelihood"
+          },
+          "impact": {
+            "$ref": "#/$defs/findingImpact"
+          },
+          "change_risk": {
+            "$ref": "#/$defs/findingChangeRisk"
+          },
+          "confidence": {
+            "$ref": "#/$defs/findingConfidence"
+          },
+          "basis": {
+            "$ref": "#/$defs/reviewContextScope"
+          },
+          "recommended_action": {
+            "$ref": "#/$defs/findingRecommendedAction"
           }
-        }
+        },
+        "allOf": [
+          {
+            "description": "High change risk plus uncertain likelihood must not ask workers to blindly patch.",
+            "if": {
+              "properties": {
+                "likelihood": { "const": "uncertain" },
+                "change_risk": { "const": "high" }
+              },
+              "required": ["likelihood", "change_risk"]
+            },
+            "then": {
+              "properties": {
+                "recommended_action": {
+                  "enum": [
+                    "needs_manager_planner_decision",
+                    "deferred_follow_up"
+                  ]
+                }
+              }
+            }
+          }
+        ]
       }
     },
     "checks_run": {
@@ -154,11 +204,20 @@
     "scope": {
       "type": "object",
       "required": [
+        "context_scopes",
         "diff_size",
         "file_count",
         "caps_triggered"
       ],
       "properties": {
+        "context_scopes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/reviewContextScope"
+          }
+        },
         "diff_size": {
           "type": "integer",
           "minimum": 0
@@ -203,6 +262,72 @@
       "type": "string",
       "description": "Per contracts/idempotency.md: `<agent>:<mode>:<stable-subject>:<content-hash>`. dispatch-review.sh additionally accepts the simpler `<task-id>:<stage>:<attempt>` form.",
       "minLength": 1
+    }
+  },
+  "$defs": {
+    "reviewContextScope": {
+      "type": "string",
+      "enum": [
+        "diff-only",
+        "task-context",
+        "plan-context",
+        "architecture-context",
+        "runtime/evidence-context"
+      ]
+    },
+    "findingSeverity": {
+      "type": "string",
+      "enum": [
+        "blocker",
+        "high",
+        "medium",
+        "low",
+        "info"
+      ]
+    },
+    "findingLikelihood": {
+      "type": "string",
+      "enum": [
+        "confirmed",
+        "likely",
+        "plausible",
+        "uncertain"
+      ]
+    },
+    "findingImpact": {
+      "type": "string",
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "findingChangeRisk": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "findingConfidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "findingRecommendedAction": {
+      "type": "string",
+      "enum": [
+        "fix_now",
+        "accepted_with_modified_fix",
+        "rejected_with_rationale",
+        "needs_manager_planner_decision",
+        "deferred_follow_up"
+      ]
     }
   },
   "allOf": [
@@ -305,6 +430,7 @@
         }
       ],
       "scope": {
+        "context_scopes": ["diff-only", "task-context"],
         "diff_size": 187,
         "file_count": 4,
         "caps_triggered": []

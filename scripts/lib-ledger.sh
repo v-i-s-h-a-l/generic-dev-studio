@@ -1043,7 +1043,7 @@ write_review_artifact() {
     printf 'verdict: %s\n' "$verdict"
     printf 'findings: %s\n' "$findings_json"
     printf 'checks_run: []\n'
-    printf 'scope: {diff_size: 0, file_count: 0, caps_triggered: []}\n'
+    printf 'scope: {context_scopes: [diff-only], diff_size: 0, file_count: 0, caps_triggered: []}\n'
     printf 'notes: null\n'
     printf 'idempotency_key: "%s"\n' "$idem"
   })
