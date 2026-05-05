@@ -18,6 +18,9 @@ inputs:
   - kind: release-anchor
     required: false
     description: Detailed release-management scope from issue #214 or a successor planning artifact.
+  - kind: release-notification-config-request
+    required: false
+    description: Project-scoped request to configure reusable release notification defaults such as Slack channels and message shape.
 outputs:
   - kind: release-packet
     required: true
@@ -25,6 +28,9 @@ outputs:
   - kind: checkpoint-artifact
     required: false
     description: Release-manager-owned compact checkpoint with release scope, channel state, blockers, operator decisions, and next packet action; not a release packet.
+  - kind: release-notification-config
+    required: false
+    description: Project release.env settings for optional Slack TestFlight/App Store announcements.
 reads:
   - scope: owned worktree
     description: Release docs, changelog, build/release scripts, tags, issue references, and verification artifacts.
@@ -34,13 +40,14 @@ writes:
   - scope: owned worktree
     description: Release-packet fixtures or checked-in release contracts when the source issue explicitly asks for substrate artifacts.
   - scope: ~/.dev-studio/**
-    description: Release packets, blocker records, operator-decision escrows, release-manager checkpoints, and private release-readiness notes.
+    description: Release packets, blocker records, operator-decision escrows, release-manager checkpoints, private release-readiness notes, and project release notification config.
 idempotency_key: release-manager:{subject_ref}:{release_scope}:{channel}
 decision_rights:
   - Declare release readiness, release blockers, and required operator decisions from gathered verification evidence.
   - Reference issue #214 as the detailed release-manager anchor without closing or duplicating its implementation scope.
   - Require build/release message lint, tag, GitHub release, TestFlight, and App Store evidence before external release actions.
   - Create or resume release-manager-owned checkpoints for long release preparation without granting external release authority.
+  - Configure reusable release notification defaults without posting externally unless the operator explicitly requests a test send.
   - Stop release preparation when the user has deferred release or when verification evidence is incomplete.
 escalation_triggers:
   - Tagging, GitHub release publication, TestFlight submission, App Store submission, or production messaging needs operator approval.
@@ -56,5 +63,6 @@ verification_floor:
   - Release packet names release scope, anchor issues including #214, notes state, tag state, GitHub release state, TestFlight/App Store state, and blockers.
   - "Release notes inspect `Changelog:` trailers per `_shared/contracts/definition-of-done.md`; if trailers are ignored or rewritten, the release packet records why."
   - Build/release message lint and external-channel states are represented as explicit evidence states.
+  - Notification setup writes project-scoped config only; Slack is optional, `<!here>` is opt-in, and TestFlight details default to a thread.
   - Any release-blocking item names the missing evidence or required operator decision.
   - Release-manager checkpoints may summarize packet progress, but release-packet remains the release readiness artifact.

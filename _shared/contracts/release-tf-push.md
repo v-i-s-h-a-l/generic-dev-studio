@@ -138,15 +138,25 @@ Emit `dsym_uploaded` with `data: { build: NEW_BUILD_NUMBER, count_succeeded, cou
 
 Run only when Steps 4 and 5 both verified successful.
 
-Compose the build-message body from the user's commits since the last shared TF build. Find the last shared build via `scripts/slack-fetch.sh history --channel #testing` (wraps `conversations.history`), filtering for messages from the studio's posting bot identity that match `build NNNN is available on TestFlight`. The matching `Bump build number to NNNN` commit is the lower bound for `git log --no-merges --author="<owner>" --format=...`. Thread-reply scans for cc-mention attribution use `scripts/slack-fetch.sh replies --channel <id> --ts <parent-ts>`; display-name resolution uses `scripts/slack-fetch.sh user --user <U>`.
+Compose the build-message body from the user's commits since the last shared TF build. Resolve the Slack channel from `STUDIO_TF_SLACK_CHANNEL` in the project release config; run `/dev-studio release-manager configure` if it is absent. Find the last shared build via `scripts/slack-fetch.sh history --channel "$STUDIO_TF_SLACK_CHANNEL"` (wraps `conversations.history`), filtering for messages from the studio's posting bot identity that match `build NNNN is available on TestFlight`. The matching `Bump build number to NNNN` commit is the lower bound for `git log --no-merges --author="<owner>" --format=...`. Thread-reply scans for cc-mention attribution use `scripts/slack-fetch.sh replies --channel <id> --ts <parent-ts>`; display-name resolution uses `scripts/slack-fetch.sh user --user <U>`.
 
-Format the body per `_shared/contracts/build-message-format.md` — three-section shape (`*New*` / `*Fixed*` / `*Crash fixes*`, skip empty sections), feature rollup, regression labelling, rollover bullet `• includes changes from <PREV_BUILD_NUMBER>` when stacking on an unreleased TF.
+Format the parent and thread per `_shared/contracts/build-message-format.md`.
+The default parent is brief: headline, one tester-facing summary, then
+`Details in thread.` The detailed tester checklist goes in the first thread
+reply. Group by product area/module when useful; otherwise use the standard
+three-section shape (`*New*` / `*Fixed*` / `*Crash fixes*`, skip empty
+sections), feature rollup, regression labelling, rollover bullet
+`• includes changes from <PREV_BUILD_NUMBER>` when stacking on an unreleased TF.
+Important technical notes go at the end under `*Technical notes*` only when
+they affect testing or product expectations.
 
-Headline: `<!here> [iOS] build <NEW_BUILD_NUMBER> is available on TestFlight`. Drop `<!here>` for buddy/internal/silent builds.
+Headline: `[iOS] build <NEW_BUILD_NUMBER> is available on TestFlight`. Prefix
+`<!here>` only when `STUDIO_TF_SLACK_NOTIFY_HERE=1`; the configured default is
+off.
 
-Scan the last 3–4 build threads from the studio's posting bot in `#testing`. For each composed bullet, check thread replies for matching bug reports or feature requests. Append `cc: <@USER_ID>` inline on matching bullets. Resolve display names via `users.info` for review only — the parenthesised name is not part of the final message.
+Scan the last 3–4 build threads from the studio's posting bot in the configured TestFlight channel. For each composed bullet, check thread replies for matching bug reports or feature requests. Append `cc: <@USER_ID>` inline on bullets in the thread detail that match a reporter. Resolve display names via `users.info` for review only — the parenthesised name is not part of the final message.
 
-Emit `slack_drafted` with `data: { build: NEW_BUILD_NUMBER, channel: "#testing", bullet_count, cc_count }`. Persist the draft text and resolved cc-list to a transient artifact under `~/.dev-studio/<project>/state/release-drafts/<release-tag>.txt` for the approval gate.
+Emit `slack_drafted` with `data: { build: NEW_BUILD_NUMBER, channel, bullet_count, cc_count }`. Persist the draft text and resolved cc-list to a transient artifact under `~/.dev-studio/<project>/state/release-drafts/<release-tag>.txt` for the approval gate.
 
 ### Step 8 — Human approval gate
 
@@ -158,9 +168,9 @@ D1 of issue #217 locks this gate. The driver does not auto-send. A future iterat
 
 ### Step 9 — Send to Slack
 
-Post via `scripts/slack-post.sh --channel #testing --text <body>` (wraps `chat.postMessage` per `_shared/primitives/slack-post.md`). Capture the response `ts` as `PARENT_TS`; assert non-empty before any thread reply via `scripts/slack-post.sh --thread-ts <PARENT_TS>`. Strip the parenthesised display names from the body before sending — they are reviewer-only.
+Post the parent via `scripts/slack-post.sh --channel "$STUDIO_TF_SLACK_CHANNEL" --text <parent>` (wraps `chat.postMessage` per `_shared/primitives/slack-post.md`). Capture the response `ts` as `PARENT_TS`; assert non-empty before posting the detail thread via `scripts/slack-post.sh --thread-ts <PARENT_TS> --text <thread>`. Strip the parenthesised display names before sending — they are reviewer-only.
 
-Emit `slack_sent` with `data: { build: NEW_BUILD_NUMBER, channel: "#testing", parent_ts: PARENT_TS, message_chars }`.
+Emit `slack_sent` with `data: { build: NEW_BUILD_NUMBER, channel, parent_ts: PARENT_TS, message_chars }`.
 
 If the post fails, emit `release_failed` with `data: { stage: "slack_send", reason }` and surface to the user. The build is already on TestFlight — the failure is in notification, not delivery — so the driver does not retry the upload steps.
 

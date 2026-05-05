@@ -12,7 +12,7 @@
 #
 # On terminal state (PENDING_DEVELOPER_RELEASE / READY_FOR_SALE):
 #   1. gh release edit <tag> --draft=false
-#   2. Threaded Slack reply on the original #releases message
+#   2. Threaded Slack reply on the original configured release message
 #   3. Delete marker
 #   4. Emit appstore_released
 # Steps 1 and 2 are tracked in marker.finalize_progress for idempotency —
@@ -79,7 +79,7 @@ read_field() {
       version) yq -r '.version // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       asc_app_id) yq -r '.asc_metadata.asc_app_id // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       repo) yq -r '.repo // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
-      slack_channel) yq -r '.slack.posted_to // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      slack_channel) yq -r '.slack.channel_id // .slack.posted_to // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       slack_parent_ts) yq -r '.slack.message_ts // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       github_release_url) yq -r '.github_release_url // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       asc_key_path) printf '%s\n' "${STUDIO_TF_ASC_KEY_PATH:-}" ;;

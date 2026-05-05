@@ -1,5 +1,5 @@
 ---
-description: Post an iOS TestFlight build notification to the #testing Slack channel
+description: Post an iOS TestFlight build notification to the configured Slack channel
 allowed-tools: [Bash, Read, Grep]
 ---
 
@@ -9,7 +9,9 @@ Notification-only path — for when a build was already pushed (perhaps manually
 
 If you want the full push path (bump → archive → upload → Slack), use `/pushTFBuild` instead.
 
-Authoritative composition rules: `_shared/contracts/build-message-format.md` in the studio repo.
+Authoritative composition rules: `_shared/contracts/build-message-format.md` in
+the studio repo. Configure the Slack channel and threaded-message defaults with
+`/dev-studio release-manager configure`.
 
 ## Step 1: Get the latest build number from TestFlight
 
@@ -18,6 +20,7 @@ cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
 export STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-<project>}"
 . ./scripts/lib-release-config.sh
 load_release_config
+TF_CHANNEL="${STUDIO_TF_SLACK_CHANNEL:?run /dev-studio release-manager configure first}"
 ASC_KEY_PATH=$(release_asc_key_path "$STUDIO_TF_ASC_KEY_ID")
 TOKEN=$(python3 - "$ASC_KEY_PATH" "$STUDIO_TF_ASC_ISSUER_ID" "$STUDIO_TF_ASC_KEY_ID" <<'PY'
 import jwt, time
@@ -45,14 +48,14 @@ else
 fi
 ```
 
-## Step 3: Scan recent #testing threads for cc-tag attribution
+## Step 3: Scan recent configured TestFlight threads for cc-tag attribution
 
 ```bash
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
 export STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-<project>}"
-./scripts/slack-fetch.sh history --channel C016BNCGDM2 --limit 3
+./scripts/slack-fetch.sh history --channel "$TF_CHANNEL" --limit 3
 # For messages with replies:
-./scripts/slack-fetch.sh replies --channel C016BNCGDM2 --ts <MESSAGE_TS>
+./scripts/slack-fetch.sh replies --channel "$TF_CHANNEL" --ts <MESSAGE_TS>
 # Resolve display names (review only):
 ./scripts/slack-fetch.sh user --user <USER_ID>
 ```
@@ -63,8 +66,10 @@ Append `<@USER_ID>` to bullets that match a thread reply.
 
 Compose per `build-message-format.md`:
 
-- First line: `<!here> [iOS] build ${BUILD_NUMBER} is available on TestFlight`
-- Bullet points in plain, non-technical language — translate technical commits into user-facing impact.
+- Parent first line: `[iOS] build ${BUILD_NUMBER} is available on TestFlight`; prefix `<!here>` only when `STUDIO_TF_SLACK_NOTIFY_HERE=1`.
+- Parent body: brief tester-facing summary, then `Details in thread.`
+- Thread body: grouped tester checklist in plain, non-technical language — translate technical commits into UI/UX behavior to verify.
+- Put important technical changes at the end of the thread under `*Technical notes*` only when they affect testing.
 
 Show the draft with parenthesised display names next to each `<@USER_ID>` (review only). Ask: **"Does this look good, or would you like to edit anything before sending?"**
 
@@ -77,7 +82,10 @@ Strip parenthesised names, then:
 ```bash
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
 export STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-<project>}"
-./scripts/slack-post.sh --channel C016BNCGDM2 --text "$FINAL_BODY"
+RESP=$(./scripts/slack-post.sh --channel "$TF_CHANNEL" --text "$FINAL_PARENT_BODY")
+PARENT_TS=$(echo "$RESP" | jq -r .ts)
+[ -n "$PARENT_TS" ] && [ "$PARENT_TS" != "null" ] || { echo "slack-post returned no ts"; exit 1; }
+./scripts/slack-post.sh --channel "$TF_CHANNEL" --thread-ts "$PARENT_TS" --text "$FINAL_THREAD_BODY"
 ```
 
 Confirm to the user that the message was sent.

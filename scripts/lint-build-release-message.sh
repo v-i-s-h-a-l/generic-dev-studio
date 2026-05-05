@@ -71,7 +71,8 @@ case "$CHANNEL" in
     ;;
 esac
 
-awk '
+saw_details_thread=$(grep -c '^Details in thread[.]$' "$tmp" || true)
+awk -v channel="$CHANNEL" -v saw_details_thread="$saw_details_thread" '
   function trim(s) {
     gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
     return s
@@ -90,6 +91,13 @@ awk '
     }
     next
   }
+  channel == "testflight" && /^\*[^*]+\*$/ {
+    section_count += 1
+    if (heading_seen[$0]++) {
+      printf "duplicate-heading: %s\n", $0
+    }
+    next
+  }
   /^[[:space:]]*(-|•)[[:space:]]+/ {
     if (section_count == 0) {
       printf "shape: bullet appears before any recognized section\n"
@@ -101,7 +109,7 @@ awk '
     next
   }
   END {
-    if (section_count == 0) {
+    if (section_count == 0 && !(channel == "testflight" && saw_details_thread > 0)) {
       printf "shape: expected at least one section heading: *New*, *Fixed*, or *Crash fixes*\n"
     }
   }
