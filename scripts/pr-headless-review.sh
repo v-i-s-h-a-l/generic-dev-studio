@@ -28,6 +28,7 @@ PR_URL_FOR_EVENT=""
 PR_HEAD_SHA_FOR_EVENT=""
 PR_REVIEW_VERDICT_FOR_EVENT=""
 PR_REVIEW_TOKENS_JSON="null"
+PR_REVIEW_CONTEXT_JSON="null"
 TMPDIR_TO_CLEAN=""
 REVIEW_SESSION_SCAN_STARTED_AT=$(date +%s)
 PARENT_HOST=""
@@ -85,6 +86,8 @@ AUTOPILOT="${PR_HEADLESS_REVIEW_AUTOPILOT:-$SCRIPT_DIR/pr-autopilot.sh}"
 
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-review-budget.sh
+. "$SCRIPT_DIR/lib-review-budget.sh"
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh" 2>/dev/null || true
 
@@ -124,6 +127,7 @@ emit_pr_review_duration() {
       --argjson duration_s "$duration_s" \
       --argjson exit_code "$rc" \
       --argjson tokens "$PR_REVIEW_TOKENS_JSON" \
+      --argjson review_context "$PR_REVIEW_CONTEXT_JSON" \
       '{pr:$pr,pr_url:$pr_url,head:$head,review_host:$host,selected_review_host:$host,verdict:$verdict,method:$method,status:$status,duration_s:$duration_s,exit_code:$exit_code,
         parent_host:$parent_host,
         eligible_review_hosts:($eligible_hosts | split(",") | map(select(length > 0))),
@@ -133,7 +137,8 @@ emit_pr_review_duration() {
        + (if $fallback_failures == "" then {} else {fallback_failures:$fallback_failures} end)
        + (if $cross_host_bypass_url == "" then {} else {cross_host_bypass_url:$cross_host_bypass_url} end)
        + (if $review_model_id == "" then {} else {review_model_key:$review_model_key,review_model_id:$review_model_id,review_model_provider_family:$review_model_provider_family,review_model_reasoning_effort:$review_model_reasoning_effort} end)
-       + (if $tokens == null then {} else {tokens:$tokens} end)')
+       + (if $tokens == null then {} else {tokens:$tokens} end)
+       + (if $review_context == null then {} else {review_context:$review_context} end)')
   else
     data=$(printf '{"pr":"%s","review_host":"%s","selected_review_host":"%s","verdict":"%s","method":"%s","status":"%s","parent_host":"%s","eligible_review_hosts":"%s","cross_host":"%s","cross_host_required":"%s","fallback_from":"%s","fallback_failures":"%s","duration_s":%s,"exit_code":%s}' \
       "$PR" "$REVIEW_HOST" "$REVIEW_HOST" "$PR_REVIEW_VERDICT_FOR_EVENT" "$METHOD" "$status" "$PARENT_HOST" "$ELIGIBLE_REVIEW_HOSTS_CSV" "$CROSS_HOST_FOR_EVENT" "$CROSS_HOST_REQUIRED" "$FALLBACK_FROM_CSV" "$FALLBACK_FAILURES_TEXT" "$duration_s" "$rc")
@@ -359,6 +364,7 @@ mkdir -p "$review_tmp_root"
 tmpdir=$(mktemp -d "$review_tmp_root/run.XXXXXX")
 TMPDIR_TO_CLEAN="$tmpdir"
 payload="$tmpdir/review-payload.md"
+diff_payload="$tmpdir/pr.diff"
 summary="$tmpdir/reviewer-summary.md"
 reviewer_home="$tmpdir/reviewer-home"
 mkdir -p "$reviewer_home"
@@ -366,9 +372,15 @@ reviewer_codex_home=""
 reviewer_claude_home=""
 reviewer_claude_config_dir=""
 
-{
+with_login_home_for_github gh pr diff "$PR" --patch > "$diff_payload"
+
+write_pr_payload() {
+  local mode="$1" policy_json="$2"
+  local line_cap
+  line_cap=$(printf '%s\n' "$policy_json" | jq -r '.budget.payload_diff_line_cap')
   printf '# Studio PR Review Payload\n\n'
-  printf 'Metadata:\n\n```json\n%s\n```\n\n' "$(printf '%s' "$pr_json" | jq -c '.')"
+  printf 'Review context policy:\n\n```json\n%s\n```\n\n' "$(printf '%s' "$policy_json" | jq -c '.')"
+  printf 'Metadata:\n\n```json\n%s\n```\n\n' "$(printf '%s' "$pr_json" | jq -c '{number,title,url,baseRefName,headRefName,headRefOid,author}')"
   cat <<'PROMPT'
 Review this studio PR against REVIEW.md and the repository-specific rules.
 Grouped feature/reliability PRs are normal when the included issues share a
@@ -389,11 +401,30 @@ checks, merge conflicts, or repo-rule violations. Non-critical findings may be
 fixed by the reviewer only if the reviewer host has write permissions and the
 fix is narrow and confined to the PR branch; summarize any fixes.
 
+This payload is diff-scoped by default. If the context is insufficient for a
+safe verdict, print REVIEW_CONTEXT_FALLBACK=expanded and do not print a verdict;
+the wrapper will rerun once with expanded context.
+
 PROMPT
+  if [ "$mode" = "expanded" ]; then
+    printf '\nExpanded repo review rules:\n\n```md\n'
+    sed -n '1,260p' "$REPO_ROOT/REVIEW.md"
+    printf '\n```\n'
+  fi
   printf '\nPR diff:\n\n```diff\n'
-  with_login_home_for_github gh pr diff "$PR" --patch
+  if [ "$mode" = "summarized" ]; then
+    sed -n "1,${line_cap}p" "$diff_payload"
+    printf '\n--- diff summarized at %s lines; rerun with STUDIO_REVIEW_PAYLOAD_MODE=expanded for full context ---\n' "$line_cap"
+  else
+    cat "$diff_payload"
+  fi
   printf '\n```\n'
-} > "$payload"
+}
+
+policy_json=$(review_budget_policy_json pr "$diff_payload" "${STUDIO_REVIEW_PAYLOAD_MODE:-auto}")
+write_pr_payload "$(printf '%s\n' "$policy_json" | jq -r '.mode')" "$policy_json" > "$payload"
+PR_REVIEW_CONTEXT_JSON=$(review_budget_payload_stats_json "$payload" "$policy_json")
+review_budget_emit_context_event studio "$PR" review_context_budget_resolved "$PR_REVIEW_CONTEXT_JSON" "pr-review-context:$pr_num:$head_sha"
 
 run_review_candidate() {
   local candidate="$1" eligibility spawn_command verdict_count model_resolution
@@ -425,7 +456,6 @@ run_review_candidate() {
   reviewer_codex_home=""
   reviewer_claude_home=""
   reviewer_claude_config_dir=""
-  set +e
   case "$REVIEW_HOST" in
     codex*|*codex*)
       reviewer_codex_home="${CODEX_REVIEWER_HOME:-${CODEX_HOME:-}}"
@@ -474,11 +504,11 @@ run_review_candidate() {
       spawn_argv+=(--model "$REVIEWER_MODEL_ID")
       ;;
   esac
-  review_prompt="Read $payload, review PR $pr_url at HEAD $head_sha, and print STUDIO_REVIEW_VERDICT=<approved|approved_with_fixes|blocked>."
+  review_prompt="Read $payload, review PR $pr_url at HEAD $head_sha, and print STUDIO_REVIEW_VERDICT=<approved|approved_with_fixes|blocked>. If context is insufficient, print REVIEW_CONTEXT_FALLBACK=expanded instead."
 
   case "$REVIEW_HOST" in
     codex*|*codex*)
-      ( cd "$REPO_ROOT" && env -i \
+      if ( cd "$REPO_ROOT" && env -i \
         PATH="$PATH" \
         HOME="$reviewer_home" \
         LANG="${LANG:-C.UTF-8}" \
@@ -491,11 +521,14 @@ run_review_candidate() {
         REVIEW_PAYLOAD="$payload" \
         PR_URL="$pr_url" \
         PR_HEAD_SHA="$head_sha" \
-        "${spawn_argv[@]}" "$review_prompt" > "$summary" 2>"$summary.err" )
-      review_rc=$?
+        "${spawn_argv[@]}" "$review_prompt" > "$summary" 2>"$summary.err" ); then
+        review_rc=0
+      else
+        review_rc=$?
+      fi
       ;;
     *)
-      ( cd "$REPO_ROOT" && env -i \
+      if ( cd "$REPO_ROOT" && env -i \
         PATH="$PATH" \
         HOME="$reviewer_claude_home" \
         LANG="${LANG:-C.UTF-8}" \
@@ -509,11 +542,13 @@ run_review_candidate() {
         REVIEW_PAYLOAD="$payload" \
         PR_URL="$pr_url" \
         PR_HEAD_SHA="$head_sha" \
-        "${spawn_argv[@]}" "$review_prompt" </dev/null > "$summary" 2>"$summary.err" )
-      review_rc=$?
+        "${spawn_argv[@]}" "$review_prompt" </dev/null > "$summary" 2>"$summary.err" ); then
+        review_rc=0
+      else
+        review_rc=$?
+      fi
       ;;
   esac
-  set -e
   if [ "$review_rc" -ne 0 ]; then
     append_failure "$REVIEW_HOST" "$summary" "$summary.err"
     return 1
@@ -521,6 +556,15 @@ run_review_candidate() {
 
   verdict_count=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$summary" | wc -l | tr -d ' ')
   verdict=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$summary")
+  if [ "$verdict_count" = "0" ] \
+      && grep -Eq '^REVIEW_CONTEXT_FALLBACK=expanded|INSUFFICIENT_CONTEXT' "$summary" \
+      && [ "$(printf '%s\n' "$PR_REVIEW_CONTEXT_JSON" | jq -r '.mode')" != "expanded" ]; then
+    policy_json=$(review_budget_policy_json pr "$diff_payload" expanded)
+    write_pr_payload expanded "$policy_json" > "$payload"
+    PR_REVIEW_CONTEXT_JSON=$(review_budget_payload_stats_json "$payload" "$policy_json")
+    review_budget_emit_context_event studio "$PR" review_context_budget_resolved "$PR_REVIEW_CONTEXT_JSON" "pr-review-context-expanded:$pr_num:$head_sha"
+    return 2
+  fi
   if [ "$verdict_count" != "1" ]; then
     printf 'pr-headless-review: reviewer must emit exactly one STUDIO_REVIEW_VERDICT line (found %s)\n' "$verdict_count" > "$summary.err"
     append_failure "$REVIEW_HOST" "$summary" "$summary.err"
@@ -569,7 +613,17 @@ fi
 selected=0
 failed_hosts=()
 for candidate in "${candidates[@]}"; do
-  if run_review_candidate "$candidate"; then
+  set +e
+  run_review_candidate "$candidate"
+  candidate_rc=$?
+  set -e
+  if [ "$candidate_rc" -eq 2 ]; then
+    set +e
+    run_review_candidate "$candidate"
+    candidate_rc=$?
+    set -e
+  fi
+  if [ "$candidate_rc" -eq 0 ]; then
     selected=1
     break
   fi
