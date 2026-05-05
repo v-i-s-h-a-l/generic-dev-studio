@@ -79,6 +79,17 @@ source record to `processed/` only after the destination exists. Unsafe public
 records stay in the inbox with a policy reason. Final output includes the
 remaining inbox count and the destination list.
 
+Treat `(studio-feedback)` and `(studio feedback)` as lightweight capture tags
+when either form appears at the start of the prompt, at the end of the prompt,
+or on a line by itself. Match the tag with
+`^\(studio[-\s]feedback\)`, `\(studio[-\s]feedback\)\s*$`, or a standalone
+`\(studio[-\s]feedback\)` line. Strip the tag before filing, use the remaining
+prompt content as the feedback body, infer kind and slug from that content, and
+write the sidecar record under
+`~/.dev-studio/generic-dev-studio/feedback-inbox/<source-project>/`.
+After capture, continue answering any non-feedback part of the user's prompt
+normally; the tag adds a feedback side effect and does not replace the request.
+
 <!-- v2-dev-studio:landing -->
 ## Bare Role Landing
 
