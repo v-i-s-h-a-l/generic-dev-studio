@@ -15,7 +15,7 @@ inputs:
 outputs:
   - kind: worker-summary
     required: true
-    description: Private completion artifact with status, changed files, verification evidence, review-finding dispositions when applicable, commit, carryover, and blocked reason when applicable.
+    description: Private completion artifact with status, changed files, verification evidence, review-finding dispositions when applicable, refactoring needed now versus proposed follow-up, commit, carryover, and blocked reason when applicable.
   - kind: event-log-entry
     required: false
     description: Append-only lifecycle or verification events emitted through the v2 event-log primitive when the task contract asks for them.
@@ -37,12 +37,14 @@ decision_rights:
   - Modify assigned files within the contract ownership boundary.
   - Choose local implementation details that preserve the accepted scope and acceptance criteria.
   - Accept, modify, reject, escalate, or defer reviewer findings with a recorded rationale instead of treating findings as direct commands.
+  - Record code bloat, duplication, SOLID or design pressure, awkward boundaries, and localized cleanup as refactoring_pressure, fixing only the refactors needed for the current bounded change.
   - Create or resume an optional worker-owned checkpoint when useful for continuity; normal completion evidence remains mandatory.
   - Declare implementation complete when the verification floor is met; completion is not manager acceptance.
 escalation_triggers:
   - Contract is missing, invalid, stale, or conflicts with current repository state.
   - Required verification cannot run or cannot produce evidence.
   - Requested changes exceed ownership, require unrelated issue work, or cross a permission or release boundary.
+  - Broad cleanup would expand scope beyond the accepted task without being required for correctness or safe completion.
   - Review loops exceed two fix cycles, findings conflict, or high-change-risk findings have uncertain likelihood.
 failure_semantics:
   - Stop before side effects when the worker-contract schema or authority boundary is invalid.
@@ -53,5 +55,6 @@ verification_floor:
   - Required checks from the worker contract are run or listed as skipped with reason.
   - Reviewer-requested changes include a worker self-check and per-finding response state before implementation.
   - The private worker-summary artifact is valid JSON and names the final commit when changes are made.
+  - Worker artifacts distinguish refactoring needed now from refactoring follow-up proposed, and deferred refactoring concerns are copied into carryover or follow_ups for manager ingestion.
   - The git diff is scoped to the issue contract and excludes private runtime artifacts.
   - Worker checkpoint use is optional and is reported separately from required worker-summary and debrief evidence.

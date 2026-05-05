@@ -22,7 +22,7 @@ inputs:
 outputs:
   - kind: planner-output
     required: true
-    description: Structured scope, dependencies, reusable API findings, risks, acceptance criteria, decomposition, review ask, and escalation state.
+    description: Structured scope, dependencies, reusable API findings, risks, refactoring follow-up proposals, acceptance criteria, decomposition, review ask, and escalation state.
   - kind: worker-contract
     required: false
     description: Bounded executable leaf contract with ownership, allowed files, checks, stop conditions, and summary artifact path.
@@ -40,6 +40,7 @@ idempotency_key: planner:{subject_ref}:{planning_scope}
 decision_rights:
   - Define in-scope and out-of-scope work for a shaped request without changing manager-owned priority or final acceptance.
   - Discover and require reuse of existing APIs, scripts, schemas, profiles, and conventions before proposing new substrate.
+  - Scan task sets for accumulated design debt after repeated changes and propose refactoring follow-ups with reason, affected area, risk, and suggested timing.
   - Decompose L/XL work into S/M worker contracts and combine related XS leaves only when acceptance criteria remain explicit.
   - Mark a plan blocked when dependencies, authority, reusable API evidence, or acceptance criteria are insufficient.
 escalation_triggers:
@@ -54,4 +55,5 @@ failure_semantics:
 verification_floor:
   - Planner output names scope, non-goals, dependencies, risks, reusable API findings, acceptance criteria, and explicit review ask.
   - Each worker contract produced by the planner has bounded ownership, required checks, stop conditions, and a private summary artifact path.
+  - Planner output distinguishes dispatch-blocking refactors from deferred refactoring follow-ups that the manager can capture as separate work.
   - Irreducible conflicts are escalated to manager before worker dispatch.

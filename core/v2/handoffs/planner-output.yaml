@@ -47,6 +47,13 @@ payload:
         - Resolver changes would remove worker, reviewer, or perf coverage.
         - Implementation would need qa-engineer, flow-tester, or release-manager role contracts.
       summary_artifact: .studio/chain-worker-summary.json
+  refactoring_follow_ups:
+    - kind: awkward_boundary
+      reason: Planner saw repeated role-contract edits accumulating boundary pressure between role contracts and handoff schemas.
+      affected_area: core/v2/roles and core/v2/schemas/handoff.schema.json
+      risk: medium
+      suggested_timing: After the role-contract migration completes.
+      manager_follow_up_title: Extract shared role-handoff boundary guidance after migration.
   review_ask: Verify the planner contract preserves manager escalation and the handoff fixture validates without broadening adjacent role scope.
   escalation:
     required: false

@@ -38,6 +38,7 @@ decision_rights:
   - Return blocked, ambiguous, warning-only, or nothing_fatal verdicts based on reviewed evidence.
   - Identify required fixes and missing verification without editing worker source files.
   - Recommend action per finding, including manager/planner escalation or follow-up when change risk is high and likelihood is uncertain.
+  - Flag unsafe scope expansion when broad refactoring or cleanup is folded into a bounded task without justification in the plan, self-review, or worker summary.
   - Create or resume reviewer-owned checkpoints for long reviews without changing the verdict gate.
   - Accept a phase review gate only as nothing_fatal; this is not user approval.
 escalation_triggers:
@@ -53,6 +54,7 @@ verification_floor:
   - Evidence reviewed is listed in the verdict.
   - Context scope is declared as diff-only, task-context, plan-context, architecture-context, or runtime/evidence-context.
   - Non-trivial findings include severity, likelihood, impact, change_risk, confidence, basis, and recommended_action.
+  - Refactoring findings distinguish required current-task cleanup from deferred design debt and recommend manager/planner follow-up when broad cleanup is not justified.
   - Findings are ordered by derived severity and grounded in file, artifact, or command references rather than prose tone.
   - Clean reviews say nothing_fatal explicitly and record any residual warnings or skipped evidence.
   - Reviewer checkpoints may preserve pending review context, but the reviewer-verdict remains the only review gate artifact.

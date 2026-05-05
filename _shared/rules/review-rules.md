@@ -139,11 +139,18 @@ Quick scan for things that should never ship.
 | Hardcoded magic values | Bare numeric literals ≠ 0/1 in business logic (not constants, not tests) | week1: flag |
 | Unusual diff size | Single commit >500 lines changed without a clear bulk-edit reason | week1: flag |
 | Scope creep | Files changed outside the brief's stated scope (compare diff file list to `## Files to Modify` in brief) | week1: flag |
+| Unsafe refactoring expansion | Broad cleanup, module reshaping, or unrelated duplication removal folded into the task without `refactoring_pressure.needed_now[]`, an acceptance criterion, or reviewer-visible rationale | week1: flag |
 
 **Procedure for scope creep:**
 1. Read the brief's `## Files to Modify` / `## Acceptance Criteria` sections.
 2. Diff the set of changed files against the brief's scope.
 3. Files outside scope: flag with the diff filename and the brief's stated scope. If a changed file is clearly unrelated (different module, no dependency), escalate flag severity.
+
+**Procedure for unsafe refactoring expansion:**
+1. Compare cleanup/refactor edits against the task scope, self-review `refactoring_pressure`, and worker summary.
+2. If the cleanup is required for correctness or maintainability of the touched change, approve or ask for `needed_now[]` evidence.
+3. If the cleanup is real but not required for this task, flag it with `recommended_action: deferred_follow_up` or `needs_manager_planner_decision`.
+4. If broad cleanup was already implemented without justification, flag scope expansion rather than treating the refactor as automatically desirable.
 
 ---
 

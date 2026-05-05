@@ -4,18 +4,18 @@ description: YAML shape for Achilles-authored debriefs under plans/debriefs/<deb
 type: reference
 ---
 
-# Debrief Schema (`debrief@2.4.0`)
+# Debrief Schema (`debrief@2.6.0`)
 
 Per-debrief artifact written to `~/.dev-studio/<project>/plans/debriefs/<debrief-id>.yaml`. Replaces the markdown debriefs that previously landed at `plans/chanakya-inbox/<task-id>-debrief.md`. Authored by Achilles in `task` mode (paired with a brief), Achilles in `debrief` mode (direct-debrief, no brief), or Apollo in any perf-mode (`metrics:` block populated, `executed_with.host` reflects Apollo's surface).
 
-Version 2.0.0 was a breaking change from the legacy markdown format (`contracts/debrief-format.md`). Prose narratives are kept as strings inside typed fields so Chanakya's ingest path does not need NLP to locate "Decisions Made" or "Build Verification" — they are structured. Subsequent 2.x bumps (2.0.1, 2.0.2, 2.1.0, 2.2.0, 2.3.0, 2.4.0) are non-breaking additive changes; `min_reader: 2.0.0` keeps the entire active fleet compatible.
+Version 2.0.0 was a breaking change from the legacy markdown format (`contracts/debrief-format.md`). Prose narratives are kept as strings inside typed fields so Chanakya's ingest path does not need NLP to locate "Decisions Made" or "Build Verification" — they are structured. Subsequent 2.x bumps (2.0.1 through 2.6.0) are non-breaking additive changes; `min_reader: 2.0.0` keeps the entire active fleet compatible.
 
 ## Shape
 
 ```yaml
 schema_version:
   name: debrief
-  version: 2.4.0
+  version: 2.6.0
   min_reader: 2.0.0
   deprecated_at: null
 id: 0190f52a-79aa-7d02-8b88-33ce5fe65e66        # UUIDv7
@@ -88,6 +88,20 @@ argus_review:
 report_state: done                                # done | done_with_concerns | blocked | needs_context — see contracts/worker-report.md
 review_loop: null                                # optional {attempt, budget, escalation_required, escalation_reason?}
 review_responses: []                             # optional worker dispositions for reviewer findings; see contracts/worker-report.md
+refactoring_pressure:                            # optional; see contracts/worker-report.md
+  needed_now:
+    - kind: localized_cleanup
+      reason: "Duplicated parsing would make the touched change unsafe to maintain."
+      affected_area: "FilterPresetParser"
+      risk: low
+      implemented_change: "Extracted parsePresetName(_:) before adding the new branch."
+  deferred_follow_ups:
+    - kind: awkward_boundary
+      reason: "Repeated edits now cross the editor/export boundary."
+      affected_area: "ExportCoordinator and EditorSessionStore"
+      risk: medium
+      suggested_timing: "Plan after the current release branch closes."
+      follow_up_ref: null
 metrics: null                                     # 2.2.0; Apollo perf-mode only. Null for Achilles task / direct-debrief.
 # Example of a populated Apollo metrics block (memory regression):
 # metrics:
@@ -149,6 +163,7 @@ metrics: null                                     # 2.2.0; Apollo perf-mode only
 | `report_state` | enum \| absent | no | `done` \| `done_with_concerns` \| `blocked` \| `needs_context`. Worker-report contract — see `contracts/worker-report.md`. Absent in pre-2.0.2 debriefs; readers infer from other fields for back-compat. |
 | `review_loop` | object \| null \| absent | no | Optional review/fix loop budget: `{attempt, budget, escalation_required, escalation_reason?}`. Budget is two fix cycles; attempt ≥3 escalates. |
 | `review_responses` | array \| absent | no | Optional per-finding worker responses: accepted/fixed, modified fix, rejected, escalated, or deferred. Entries consume reviewer risk metadata and include the mandatory worker self-check. |
+| `refactoring_pressure` | object \| absent | no | Optional split between `needed_now[]` refactors the worker performed to keep the current change correct/maintainable and `deferred_follow_ups[]` design-debt opportunities. Deferred entries carry reason, affected area, risk, and suggested timing so the manager can mint explicit follow-up work instead of parsing prose. |
 | `executed_with` | object \| absent | no | 2.1.0; `{model_id, host, session_id, duration_s}`. Producer identity for multi-model accountability. Absent in pre-2.1.0 debriefs; readers MUST tolerate absence and either join `events/<date>.jsonl` `agent_boot` records by `task_id` to fill the gap or treat the executor as unknown. Three of the four fields (`model_id`, `host`, `session_id`) are already produced by `scripts/emit-agent-boot.sh`; `duration_s` is computed from the matching `agent_session_completed` event timestamp delta. |
 | `metrics` | object \| null | yes | 2.2.0; Apollo perf-mode only. Null for Achilles task / direct-debrief debriefs. Populated by Apollo when emitting a perf-mode debrief — carries strict-9 evidence (cohort, baseline, observed, delta, verdict) so Chanakya's ingest path can render perf outcomes without re-reading the underlying `.trace` / MXMetric artifact. Sub-shape documented inline with the example above; refusal subobject populated only when `verdict: refused`. |
 
@@ -157,7 +172,7 @@ metrics: null                                     # 2.2.0; Apollo perf-mode only
 `known_issues[]` and `follow_ups[]` accept two shapes:
 
 - **Legacy string** — `"Blend-mode approximations may diverge from IMGLY"`. Pre-2.3.0 debriefs use this exclusively. Readers MUST tolerate it. Inheritance validators synthesize an id at read time as `<legacy-task-id-or-debrief-id>-ki-<index>` (or `-fu-<index>`) where `<index>` is the 1-based array position.
-- **Structured object** — `{id, text, category?, severity?}`. The `id` is stable across the artifact's lifetime (`<emitter-task-id>-ki-<n>` for known-issues, `-fu-<n>` for follow-ups). `category` is an optional short tag the inheritance validator (`scripts/validate-brief-inheritance.sh`) prefers as a grep probe over the full `text`. `severity ∈ {low, medium, high, critical}` is informational — no gate uses it today.
+- **Structured object** — `{id, text, title?, summary?, description?, category?, severity?, refactoring?}`. The `id` is stable across the artifact's lifetime (`<emitter-task-id>-ki-<n>` for known-issues, `-fu-<n>` for follow-ups). `category` is an optional short tag the inheritance validator (`scripts/validate-brief-inheritance.sh`) prefers as a grep probe over the full `text`. `title`, `summary`, and `description` are accepted by ingest as task-title sources; `text` remains the canonical concern body. `severity ∈ {low, medium, high, critical}` is informational — no gate uses it today. For deferred refactoring, set `category: refactoring-follow-up` and populate `refactoring` with the matching entry from `refactoring_pressure.deferred_follow_ups[]`.
 
 The structured form is the path forward (#162 — concern traceability). New emits should produce structured entries; the legacy form remains a back-compat carve-out for pre-2.3.0 debriefs that the studio does not rewrite. Producers MUST NOT mix shapes within a single array.
 
@@ -193,6 +208,7 @@ The 141 processed debriefs in `chanakya-inbox/processed/` are **copied as-is** t
 
 | Version | Landed | Changes |
 |---|---|---|
+| 2.6.0 | 2026-05-05 | Non-breaking: optional `refactoring_pressure` plus structured refactoring follow-up metadata so worker/planner cleanup concerns can be captured as explicit manager follow-up work (#607). |
 | 2.5.0 | 2026-05-05 | Non-breaking: optional `review_loop` and `review_responses` fields for #606 worker disposition of structured reviewer findings. |
 | 2.4.0 | 2026-05-02 | Non-breaking: `tests.added[]` / `tests.modified[]` items may now be `{title, preconditions?, steps?, expected?}` objects. Legacy string form remains accepted; new task-mode emits use objects as the canonical source for test-manifest/test-flow generation (#335). |
 | 2.3.0 | 2026-04-27 | Non-breaking: `known_issues[]` / `follow_ups[]` items may now be `{id, text, category?, severity?}` objects. Legacy string form remains accepted; no migration. Stable ids unblock `scripts/validate-brief-inheritance.sh` (#162 trimmed slice — silent-absorb gate at brief-write time). |
