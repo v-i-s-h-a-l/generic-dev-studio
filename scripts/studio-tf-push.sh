@@ -389,6 +389,143 @@ cmd_emit() {
   emit_event_keyed studio release "$event" "$rt" "$data" >/dev/null
 }
 
+release_bool_enabled() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+appstore_notify_slack() {
+  local build="$1" version="$2" tag="$3" release_notes_file="$4" whatsnew_file="$5" release_url="$6" dry_run_flag="$7"
+  APPSTORE_SLACK_STATUS="skipped_not_configured"
+  APPSTORE_SLACK_CHANNEL_USED=""
+  APPSTORE_SLACK_PARENT_TS=""
+
+  local channel="${STUDIO_RELEASES_SLACK_CHANNEL:-}"
+  if [ -z "$channel" ]; then
+    printf 'studio-tf-push: Slack release announcements not configured; skipping Slack post. Run /dev-studio release-manager configure to enable.\n' >&2
+    return 0
+  fi
+  if ! release_bool_enabled "${STUDIO_RELEASES_SLACK_APPSTORE_PARENT:-1}"; then
+    printf 'studio-tf-push: Slack release parent disabled by config; skipping App Store Slack post.\n' >&2
+    APPSTORE_SLACK_STATUS="skipped_parent_disabled"
+    return 0
+  fi
+
+  APPSTORE_SLACK_CHANNEL_USED="$channel"
+  local parent_text whatsnew_text whatsnew_reply resp parent_ts
+  parent_text=$(cat "$release_notes_file")
+  whatsnew_text=$(cat "$whatsnew_file")
+
+  if [ "$dry_run_flag" = "1" ]; then
+    printf 'studio-tf-push: [dry-run] would post App Store Slack parent to %s for build=%s version=%s tag=%s\n' \
+      "$channel" "$build" "$version" "$tag" >&2
+    if release_bool_enabled "${STUDIO_RELEASES_SLACK_WHATSNEW_REPLY:-1}"; then
+      printf 'studio-tf-push: [dry-run] would post App Store What'\''s New as a thread reply\n' >&2
+    fi
+    if release_bool_enabled "${STUDIO_RELEASES_SLACK_GITHUB_REPLY:-1}"; then
+      printf 'studio-tf-push: [dry-run] would post GitHub release URL as a thread reply\n' >&2
+    fi
+    APPSTORE_SLACK_STATUS="dry_run"
+    return 0
+  fi
+
+  if ! resp=$(STUDIO_RELEASE_PROJECT="$RELEASE_PROJECT" "$SCRIPT_DIR/slack-post.sh" \
+      --channel "$channel" --text "$parent_text" 2>&1); then
+    printf 'studio-tf-push: Slack parent post failed after App Store submission was prepared: %s\n' "$resp" >&2
+    APPSTORE_SLACK_STATUS="failed_parent"
+    return 0
+  fi
+  parent_ts=$(printf '%s' "$resp" | jq -r '.ts // empty' 2>/dev/null || true)
+  if [ -z "$parent_ts" ]; then
+    printf 'studio-tf-push: Slack parent post returned no ts; watcher thread replies disabled for this release.\n' >&2
+    APPSTORE_SLACK_STATUS="failed_no_ts"
+    return 0
+  fi
+  APPSTORE_SLACK_PARENT_TS="$parent_ts"
+
+  if release_bool_enabled "${STUDIO_RELEASES_SLACK_WHATSNEW_REPLY:-1}"; then
+    whatsnew_reply=$(cat <<EOF
+App Store "What's New" submitted with this build:
+
+
+$whatsnew_text
+EOF
+)
+    if ! STUDIO_RELEASE_PROJECT="$RELEASE_PROJECT" "$SCRIPT_DIR/slack-post.sh" \
+        --channel "$channel" --thread-ts "$parent_ts" --text "$whatsnew_reply" >/dev/null; then
+      printf 'studio-tf-push: warning: Slack What'\''s New thread reply failed\n' >&2
+    fi
+  fi
+
+  if release_bool_enabled "${STUDIO_RELEASES_SLACK_GITHUB_REPLY:-1}"; then
+    if ! STUDIO_RELEASE_PROJECT="$RELEASE_PROJECT" "$SCRIPT_DIR/slack-post.sh" \
+        --channel "$channel" --thread-ts "$parent_ts" --text "$release_url" >/dev/null; then
+      printf 'studio-tf-push: warning: Slack GitHub release thread reply failed\n' >&2
+    fi
+  fi
+
+  APPSTORE_SLACK_STATUS="posted"
+}
+
+write_appstore_pending_marker() {
+  local build="$1" version="$2" tag="$3" version_id="$4" build_id="$5" release_url="$6"
+  local state_dir marker_path watcher_replies
+  state_dir="$RELEASE_PROJECT_ROOT/.runtime/state"
+  marker_path="$state_dir/pending-appstore-review.json"
+  mkdir -p "$state_dir" || {
+    printf 'studio-tf-push: could not create marker state dir %s\n' "$state_dir" >&2
+    return 1
+  }
+  if release_bool_enabled "${STUDIO_RELEASES_SLACK_WATCHER_REPLIES:-1}"; then
+    watcher_replies=true
+  else
+    watcher_replies=false
+  fi
+  jq -nc \
+    --arg project "$RELEASE_PROJECT" \
+    --arg tag "$tag" \
+    --arg version "$version" \
+    --arg asc_app_id "$APP_ID" \
+    --arg repo "${STUDIO_TF_GH_REPO:-turnip-ios/turnip-zaps}" \
+    --arg github_release_url "$release_url" \
+    --arg asc_key_id "$ASC_KEY_ID" \
+    --arg asc_issuer_id "$ASC_ISSUER_ID" \
+    --arg build_id "$build_id" \
+    --arg appstore_version_id "$version_id" \
+    --arg slack_channel "$APPSTORE_SLACK_CHANNEL_USED" \
+    --arg slack_parent_ts "$APPSTORE_SLACK_PARENT_TS" \
+    --arg slack_post_status "$APPSTORE_SLACK_STATUS" \
+    --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg build "$build" \
+    --argjson watcher_replies "$watcher_replies" \
+    '{
+      project:$project,
+      tag:$tag,
+      version:$version,
+      build:($build | tonumber? // $build),
+      asc_app_id:$asc_app_id,
+      repo:$repo,
+      github_release_url:$github_release_url,
+      asc_key_id:$asc_key_id,
+      asc_issuer_id:$asc_issuer_id,
+      asc_build_id:$build_id,
+      appstore_version_id:$appstore_version_id,
+      slack_channel:$slack_channel,
+      slack_parent_ts:$slack_parent_ts,
+      slack_post_status:$slack_post_status,
+      slack_watcher_replies:$watcher_replies,
+      created_at:$created_at,
+      next_check_at:null,
+      failures:0,
+      finalize_draft_published:false,
+      finalize_slack_posted:false
+    }' >"$marker_path"
+  chmod 600 "$marker_path" 2>/dev/null || true
+  printf 'studio-tf-push: pending App Store marker: %s\n' "$marker_path" >&2
+}
+
 cmd_push() {
   DRY_RUN_FLAG=0
   local BACKGROUND_FLAG=0
@@ -858,9 +995,12 @@ cmd_appstore() {
   route_to_release_node
 
   local TAG="${BUILD}-zaps"
+  local GH_REPO="${STUDIO_TF_GH_REPO:-turnip-ios/turnip-zaps}"
+  local RELEASE_URL="https://github.com/${GH_REPO}/releases/tag/${TAG}"
   if [ "$DRY_RUN_FLAG" = "1" ]; then
     printf 'studio-tf-push: [dry-run] would tag %s, push, gh release create --draft, ASC submit build=%s version=%s\n' \
       "$TAG" "$BUILD" "$VERSION" >&2
+    appstore_notify_slack "$BUILD" "$VERSION" "$TAG" "$RELEASE_NOTES_FILE" "$WHATSNEW_FILE" "$RELEASE_URL" "$DRY_RUN_FLAG"
     return 0
   fi
 
@@ -878,13 +1018,13 @@ cmd_appstore() {
 
   gh auth switch --user vishal-zaps >/dev/null 2>&1 || true
   if ! gh release create "$TAG" \
-      --repo turnip-ios/turnip-zaps \
+      --repo "$GH_REPO" \
       --title "$TAG" \
       --notes-file "$RELEASE_NOTES_FILE" \
       --draft >/dev/null; then
     halt_failed prereq "gh release create failed"
   fi
-  printf 'studio-tf-push: GH draft release: https://github.com/turnip-ios/turnip-zaps/releases/tag/%s\n' "$TAG" >&2
+  printf 'studio-tf-push: GH draft release: %s\n' "$RELEASE_URL" >&2
 
   local TOKEN
   TOKEN=$(mint_jwt)
@@ -935,13 +1075,21 @@ cmd_appstore() {
   printf 'studio-tf-push: appstore submission ready (build=%s version=%s, %d localizations updated)\n' \
     "$BUILD" "$VERSION" "$loc_count" >&2
 
+  appstore_notify_slack "$BUILD" "$VERSION" "$TAG" "$RELEASE_NOTES_FILE" "$WHATSNEW_FILE" "$RELEASE_URL" "$DRY_RUN_FLAG"
+  write_appstore_pending_marker "$BUILD" "$VERSION" "$TAG" "$version_id" "$build_id" "$RELEASE_URL" \
+    || printf 'studio-tf-push: warning: pending App Store marker write failed; watcher will not thread lifecycle replies\n' >&2
+
   jq -nc \
     --arg release_tag "$RELEASE_TAG" \
     --arg tag "$TAG" \
+    --arg github_release_url "$RELEASE_URL" \
     --arg version_id "$version_id" \
     --arg build_id "$build_id" \
+    --arg slack_status "$APPSTORE_SLACK_STATUS" \
+    --arg slack_channel "$APPSTORE_SLACK_CHANNEL_USED" \
+    --arg slack_parent_ts "$APPSTORE_SLACK_PARENT_TS" \
     --argjson loc_count "$loc_count" \
-    '{release_tag:$release_tag, tag:$tag, version_id:$version_id, build_id:$build_id, localizations:$loc_count}'
+    '{release_tag:$release_tag, tag:$tag, github_release_url:$github_release_url, version_id:$version_id, build_id:$build_id, localizations:$loc_count, slack:{status:$slack_status, channel_id:$slack_channel, message_ts:$slack_parent_ts}}'
 }
 
 case "${1:-}" in
