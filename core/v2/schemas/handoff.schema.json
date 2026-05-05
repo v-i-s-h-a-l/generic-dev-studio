@@ -195,8 +195,27 @@
           "minItems": 1,
           "items": {"$ref": "#/$defs/taskContract"}
         },
+        "refactoring_follow_ups": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/refactoringFollowUp"}
+        },
         "review_ask": {"type": "string", "minLength": 1},
         "escalation": {"$ref": "#/$defs/escalation"}
+      }
+    },
+    "refactoringFollowUp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "affected_area", "risk", "suggested_timing"],
+      "properties": {
+        "kind": {
+          "enum": ["code_bloat", "duplication", "design_pressure", "awkward_boundary", "localized_cleanup", "testability", "other"]
+        },
+        "reason": {"type": "string", "minLength": 1},
+        "affected_area": {"type": "string", "minLength": 1},
+        "risk": {"enum": ["low", "medium", "high"]},
+        "suggested_timing": {"type": "string", "minLength": 1},
+        "manager_follow_up_title": {"type": "string", "minLength": 1}
       }
     },
     "qaContractPayload": {

@@ -332,6 +332,9 @@
       "items": {
         "$ref": "worker-report.schema.json#/$defs/reviewResponse"
       }
+    },
+    "refactoring_pressure": {
+      "$ref": "worker-report.schema.json#/$defs/refactoringPressure"
     }
   },
   "allOf": [
@@ -397,9 +400,13 @@
           "required": ["id", "text"],
           "properties": {
             "id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]+$" },
+            "title": { "type": "string" },
             "text": { "type": "string" },
+            "summary": { "type": "string" },
+            "description": { "type": "string" },
             "category": { "type": "string" },
-            "severity": { "enum": ["low", "medium", "high", "critical"] }
+            "severity": { "enum": ["low", "medium", "high", "critical"] },
+            "refactoring": { "$ref": "worker-report.schema.json#/$defs/refactoringFollowUp" }
           }
         }
       ]

@@ -58,6 +58,10 @@ yq -e '
   .consumer_role == "reviewer" and
   (.payload.reusable_api_findings | length > 0) and
   (.payload.acceptance_criteria | length > 0) and
+  (.payload.refactoring_follow_ups[0].reason | length > 0) and
+  (.payload.refactoring_follow_ups[0].affected_area | length > 0) and
+  (.payload.refactoring_follow_ups[0].risk == "medium") and
+  (.payload.refactoring_follow_ups[0].suggested_timing | length > 0) and
   (.payload.decomposition[0].owner_role == "worker") and
   (.payload.escalation.required == false)
 ' "$HANDOFF" >/dev/null || fail "planner-output fixture is missing expected planner payload"

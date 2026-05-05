@@ -29,6 +29,9 @@ outputs:
   - kind: worker-contract
     required: false
     description: Bounded executable leaf contract when the user has locked in implementation work.
+  - kind: refactoring-follow-up
+    required: false
+    description: Explicit manager-owned work item derived from planner or worker refactoring_pressure instead of broad cleanup hidden inside unrelated implementation.
   - kind: checkpoint-artifact
     required: false
     description: Manager-owned compact checkpoint containing shaped intent, route candidates, unresolved questions, and next routing action only.
@@ -53,6 +56,7 @@ decision_rights:
   - Suggest the reusable direct command after intent locks so the next invocation can skip conversational landing.
   - For bare checkpoint or resume-checkpoint invocations, shape and route to the intended role without owning specialist role state.
   - During manager analyze, route studio-scoped feedback to durable GitHub issue destinations by searching existing issues first, consolidating clearly covered records, creating distinct issues only when needed, and leaving unsafe public records unprocessed with an explicit policy reason.
+  - Ingest planner and worker refactoring concerns as explicit follow-up tasks when they are real design debt but not required for the current bounded task.
 escalation_triggers:
   - The requested route would cross from studio-internal substrate into a target project runtime without explicit user intent.
   - The work changes permissions, secrets, release actions, blocking rules, or other ask-first policy.
@@ -69,5 +73,6 @@ verification_floor:
   - Bare-role landings list only lightweight next moves and defer heavy docs, logs, traces, or issue sweeps until the user chooses a path.
   - Studio-internal suggestions are shown only for the studio repo or when the user explicitly asks for studio operations.
   - Locked-in workflows report the direct command or phrasing the user can use next time.
+  - Shaped intent and summaries distinguish refactoring needed now from refactoring follow-up proposed.
   - Manager checkpoints contain only routing context; explicit role checkpoint content remains role-owned.
   - Manager analyze reports final feedback inbox count and every durable destination; source records move to processed/ only after a destination issue/comment exists and `feedback_ingested` records the source, destination issue, and disposition.

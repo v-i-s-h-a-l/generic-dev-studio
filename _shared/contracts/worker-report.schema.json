@@ -20,6 +20,9 @@
       "items": {
         "$ref": "#/$defs/reviewResponse"
       }
+    },
+    "refactoring_pressure": {
+      "$ref": "#/$defs/refactoringPressure"
     }
   },
   "allOf": [
@@ -192,6 +195,110 @@
           }
         }
       ]
+    },
+    "refactoringPressure": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Worker self-review summary that separates refactoring required for the current bounded change from design debt proposed as follow-up work.",
+      "properties": {
+        "needed_now": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/currentTaskRefactor"
+          }
+        },
+        "deferred_follow_ups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/refactoringFollowUp"
+          }
+        }
+      }
+    },
+    "refactoringPressureKind": {
+      "type": "string",
+      "enum": [
+        "code_bloat",
+        "duplication",
+        "design_pressure",
+        "awkward_boundary",
+        "localized_cleanup",
+        "testability",
+        "other"
+      ]
+    },
+    "refactoringRisk": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "currentTaskRefactor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "reason",
+        "affected_area",
+        "risk",
+        "implemented_change"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/refactoringPressureKind"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "affected_area": {
+          "type": "string",
+          "minLength": 1
+        },
+        "risk": {
+          "$ref": "#/$defs/refactoringRisk"
+        },
+        "implemented_change": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "refactoringFollowUp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "reason",
+        "affected_area",
+        "risk",
+        "suggested_timing"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/refactoringPressureKind"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "affected_area": {
+          "type": "string",
+          "minLength": 1
+        },
+        "risk": {
+          "$ref": "#/$defs/refactoringRisk"
+        },
+        "suggested_timing": {
+          "type": "string",
+          "minLength": 1
+        },
+        "follow_up_ref": {
+          "type": "string"
+        }
+      }
     },
     "perStateRequirements": {
       "description": "Per-state required-field matrix from contracts/worker-report.md \u00a7Required-field matrix. Each branch constrains the payload slice that must be present when report_state has the given value. These are checked as-if on the debrief payload this slice lives in, so downstream validators composing this schema must have visibility to branch.merge_sha, debt, argus_review, tests, known_issues, open_questions, brief_id.",
