@@ -123,7 +123,7 @@ run_smoke_gate() {
         ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
         STUDIO_HOST="$HOST" \
         REVIEW_PAYLOAD="$payload" \
-        "${smoke_cmd[@]}" >"$stdout_file" 2>"$stderr_file" )
+        "${smoke_cmd[@]}" </dev/null >"$stdout_file" 2>"$stderr_file" )
       smoke_rc=$?
       ;;
     *)
