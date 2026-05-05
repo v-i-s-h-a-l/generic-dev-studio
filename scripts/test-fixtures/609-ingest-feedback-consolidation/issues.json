@@ -1,0 +1,16 @@
+[
+  {
+    "number": 606,
+    "title": "Sibling review payload handoff drops context",
+    "body": "The sibling review payload handoff should preserve readable context.",
+    "url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/606",
+    "state": "OPEN"
+  },
+  {
+    "number": 607,
+    "title": "Token budget guard should explain routing",
+    "body": "The guard should explain token budget routing decisions in studio workflow output.",
+    "url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/607",
+    "state": "OPEN"
+  }
+]

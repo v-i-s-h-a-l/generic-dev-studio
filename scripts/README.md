@@ -173,7 +173,7 @@ scripts/node-monitor.sh                                 # one-shot monitor check
 scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # YAML debrief + state flips
 
 # Studio-feedback ingestion (auto-fires via SessionStart hook + manager sweep):
-scripts/ingest-feedback.sh                              # idempotent; silent no-op outside generic-dev-studio
+scripts/ingest-feedback.sh                              # idempotent feedback route: create/comment/defer; silent outside generic-dev-studio
 scripts/analyze-feedback-ingest.sh --apply              # manager analyze durable routing: search/comment/create, then processed/
 
 # Studio PR autopilot primitives (#318):
