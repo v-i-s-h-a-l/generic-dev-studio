@@ -66,7 +66,8 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio reviewer review      # walk REVIEW.md against the pending diff
 /dev-studio release-manager      # draft release notes per RELEASES.md (never auto-tags)
 /dev-studio manager ingest       # capture one idea in the current repo context; --scope studio crosses to Forge
-/dev-studio manager analyze      # sweep analysis inputs, then route studio-feedback to durable issue destinations
+/dev-studio manager reconcile    # project repo: sync emitted debriefs/reports into the task ledger
+/dev-studio manager analyze      # studio repo: telemetry/log analysis plus studio feedback triage
 /dev-studio checkpoint           # manager-shaped checkpoint routing; explicit role owns content
 /dev-studio worker checkpoint    # worker-owned compact checkpoint; does not replace worker summary
 /dev-studio worker resume-checkpoint # resume worker checkpoint via manifest.json + context.md first
@@ -118,6 +119,8 @@ scripts/studio-weekly.sh --post                             # weekly GitHub PM d
 scripts/host-preflight.sh codex /repo                       # prove gh + git credential access before host task work
 scripts/studio-project-state.sh --status Todo               # Project-field backlog reader for Status / Track / Phase / Size / review state
 scripts/studio-gh.sh issue list --state open                # assistant-safe GitHub CLI wrapper for narrow issue lookups; normalizes synthetic Codex HOME
+scripts/manager-reconcile.sh --cwd "$PWD"                   # project report/debrief sync into the project task ledger
+scripts/manager-analyze.sh --cwd "$PWD"                     # studio-checkout analysis and feedback triage
 scripts/studio-dependency-export.sh --issue 443             # Mermaid graph from native GitHub blocked_by dependencies
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run plan review + reviewed chain PR merges
 # Chain manifests may set phase_review: required|auto|off; required/auto gates issue phases through scripts/phase-review.sh and forwards compact clean outcome feedback privately.
@@ -186,8 +189,10 @@ scripts/                # multi-worker fleet (BETA)
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
   studio-gh.sh          # GitHub CLI wrapper for assistant/interactive calls; normalizes synthetic Codex HOME
   dev-studio-ingest-resolve.sh # resolves /dev-studio manager ingest destination as JSON
+  manager-reconcile.sh  # /dev-studio manager reconcile: project debrief/report sync into task state
+  manager-analyze.sh    # /dev-studio manager analyze: studio-checkout analysis + feedback triage
   ingest-feedback.sh    # routes studio-feedback records to analysis + GH issue create/comment/defer
-  analyze-feedback-ingest.sh # manager analyze: consolidate feedback into existing/new GH issues before processed/
+  analyze-feedback-ingest.sh # studio feedback triage: consolidate into existing/new GH issues before processed/
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   appstore-watch.sh     # polls ASC for pending submission; finalizes draft release + Slack on release
   backfill-orphan-debriefs.sh  # recover tasks that finished without landing in master plan (dry-run default)
