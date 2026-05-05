@@ -95,7 +95,7 @@ the only useful way to test the change.
 - **TF:** first thread reply carries the detailed tester checklist when threaded details are enabled. Group by module when it makes the build easier to test; put important technical notes at the end under `*Technical notes*`, and only when they affect QA/product expectations.
 - **Release:** after the parent is sent, post two thread replies in this order:
   1. **App Store "What's New"** with a two-blank-line header `App Store "What's New" submitted with this build:\n\n\n<text>`. Highest-skim-value for product/leadership.
-  2. **GitHub release URL** — stable tag URL (not the draft preview).
+  2. **GitHub lifecycle URL** — while the GitHub release is a draft, post the App Store PR URL. When ASC reaches `READY_FOR_SALE`, replace that reply with the published GitHub release URL.
 
 ## Tone
 
