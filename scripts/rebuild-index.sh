@@ -224,7 +224,7 @@ emit_index() {
   printf 'project: %s\n' "$PROJECT"
 
   local kind singular_dir
-  for kind in tasks briefs debriefs reviews rounds releases feedback crashes; do
+  for kind in tasks briefs debriefs reviews rounds releases release-attempts feedback crashes; do
     singular_dir="$PLANS_DIR/$kind"
     printf '%s:\n' "$kind"
     [ -d "$singular_dir" ] || continue
@@ -294,6 +294,16 @@ emit_index() {
           printf '  - {id: %s, channel: %s, version: %s, tag: %s, state: %s, tasks: %s}\n' \
             "$id" "${channel:-null}" "${version:-null}" "${tag:-null}" "${state:-null}" \
             "$(printf '%s\n' "$tasks" | inline_list)"
+          ;;
+        release-attempts)
+          local operation channel from_release_id to_release_id
+          operation=$(yaml_scalar "$f" operation)
+          channel=$(yaml_scalar "$f" channel)
+          from_release_id=$(yaml_nested "$f" intent from_release_id)
+          to_release_id=$(yaml_nested "$f" intent to_release_id)
+          printf '  - {id: %s, operation: %s, channel: %s, state: %s, from_release_id: %s, to_release_id: %s}\n' \
+            "$id" "${operation:-null}" "${channel:-null}" "${state:-null}" \
+            "${from_release_id:-null}" "${to_release_id:-null}"
           ;;
         feedback)
           local source linked_tasks
