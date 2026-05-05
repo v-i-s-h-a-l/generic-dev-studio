@@ -180,6 +180,9 @@
         "risks",
         "acceptance_criteria",
         "decomposition",
+        "self_review_performed",
+        "self_review_findings",
+        "self_review_fixes",
         "review_ask",
         "escalation"
       ],
@@ -199,6 +202,9 @@
           "type": "array",
           "items": {"$ref": "#/$defs/refactoringFollowUp"}
         },
+        "self_review_performed": {"type": "boolean"},
+        "self_review_findings": {"$ref": "#/$defs/optionalTextArray"},
+        "self_review_fixes": {"$ref": "#/$defs/optionalTextArray"},
         "review_ask": {"type": "string", "minLength": 1},
         "escalation": {"$ref": "#/$defs/escalation"}
       }

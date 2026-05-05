@@ -52,9 +52,12 @@ failure_semantics:
   - Preserve partial output details and the stable idempotency key if a failure happens after writes.
   - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
 verification_floor:
+  - Same-host self-review runs after implementation and before final verification; it checks missed edge cases, possible bugs, regressions, scope drift, and test adequacy.
+  - Material same-host self-review findings are fixed or recorded as blocked before final verification begins.
+  - Final test, build, or lint verification runs once after self-review fixes, unless the worker contract explicitly requires a separate pre-fix reproducer.
   - Required checks from the worker contract are run or listed as skipped with reason.
   - Reviewer-requested changes include a worker self-check and per-finding response state before implementation.
-  - The private worker-summary artifact is valid JSON and names the final commit when changes are made.
+  - The private worker-summary artifact is valid JSON, names the final commit when changes are made, and distinguishes self_review_performed, self_review_findings, self_review_fixes, and final_verification_evidence.
   - Worker artifacts distinguish refactoring needed now from refactoring follow-up proposed, and deferred refactoring concerns are copied into carryover or follow_ups for manager ingestion.
   - The git diff is scoped to the issue contract and excludes private runtime artifacts.
   - Worker checkpoint use is optional and is reported separately from required worker-summary and debrief evidence.

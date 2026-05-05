@@ -21,6 +21,31 @@
         "$ref": "#/$defs/reviewResponse"
       }
     },
+    "self_review_performed": {
+      "type": "boolean",
+      "description": "True when the same-host self-review gate ran after implementation and before final verification."
+    },
+    "self_review_findings": {
+      "type": "array",
+      "description": "Same-host self-review findings focused on missed edge cases, possible bugs, regressions, scope drift, and test adequacy.",
+      "items": {
+        "$ref": "#/$defs/selfReviewFinding"
+      }
+    },
+    "self_review_fixes": {
+      "type": "array",
+      "description": "Fixes made because of same-host self-review findings, or recorded non-fix dispositions.",
+      "items": {
+        "$ref": "#/$defs/selfReviewFix"
+      }
+    },
+    "final_verification_evidence": {
+      "type": "array",
+      "description": "Final verification run after same-host self-review fixes. This is the evidence reviewers inspect before deciding whether to rerun anything.",
+      "items": {
+        "$ref": "#/$defs/finalVerificationEvidence"
+      }
+    },
     "refactoring_pressure": {
       "$ref": "#/$defs/refactoringPressure"
     }
@@ -195,6 +220,126 @@
           }
         }
       ]
+    },
+    "selfReviewFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "focus",
+        "finding",
+        "severity",
+        "disposition"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "focus": {
+          "enum": [
+            "edge_case",
+            "possible_bug",
+            "regression",
+            "scope_drift",
+            "test_adequacy",
+            "acceptance_criteria",
+            "hidden_dependency",
+            "other"
+          ]
+        },
+        "finding": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "enum": [
+            "material",
+            "minor",
+            "none"
+          ]
+        },
+        "disposition": {
+          "enum": [
+            "fixed",
+            "not_applicable",
+            "deferred_follow_up",
+            "blocked"
+          ]
+        },
+        "evidence_ref": {
+          "type": "string"
+        }
+      }
+    },
+    "selfReviewFix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "action",
+        "summary"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "enum": [
+            "fixed",
+            "not_applicable",
+            "deferred_follow_up",
+            "blocked"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string"
+        },
+        "follow_up_ref": {
+          "type": "string"
+        }
+      }
+    },
+    "finalVerificationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "outcome",
+        "timestamp",
+        "after_self_review_fixes"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "fail",
+            "skipped",
+            "blocked"
+          ]
+        },
+        "timestamp": {
+          "$ref": "debrief.schema.json#/$defs/rfc3339"
+        },
+        "after_self_review_fixes": {
+          "const": true
+        },
+        "evidence_ref": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
     },
     "refactoringPressure": {
       "type": "object",

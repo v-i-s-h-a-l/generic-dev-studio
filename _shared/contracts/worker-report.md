@@ -63,6 +63,33 @@ review_loop:
 
 Budget is two fix cycles per bounded task. A third review attempt, conflicting findings, or repeated high-risk uncertain findings sets `escalation_required: true` with `escalation_reason` and routes to manager/planner arbitration. This preserves blockers for real correctness, contract, and regression risks while preventing local review churn from rewriting the original plan.
 
+## Same-host self-review gate
+
+Workers run same-host self-review after implementation and before final verification. The review is a reasoning gate, not a second test pass: it checks missed edge cases, possible bugs, regressions, scope drift, and test adequacy. Material findings are fixed or recorded as blocked before final verification starts, so the final test/build/lint evidence is captured once after the reviewed fixes.
+
+Worker summaries and debriefs distinguish the gate from external reviewer responses:
+
+```yaml
+self_review_performed: true
+self_review_findings:
+  - id: SR1
+    focus: edge_case
+    finding: "Empty input path was not covered by the first implementation."
+    severity: material
+    disposition: fixed
+self_review_fixes:
+  - finding_id: SR1
+    action: fixed
+    summary: "Added the empty-input guard before final verification."
+final_verification_evidence:
+  - command: "scripts/test-fixtures/605-self-review-gate/test-self-review-gate.sh"
+    outcome: pass
+    timestamp: 2026-05-05T01:30:00Z
+    after_self_review_fixes: true
+```
+
+External reviewers inspect these fields before deciding whether to rerun tests. Missing same-host self-review is a workflow defect; reviewers record it as a warn or block depending on the review target and risk.
+
 ## Refactoring pressure protocol
 
 Worker self-review records refactoring pressure without turning every task into a cleanup task:
