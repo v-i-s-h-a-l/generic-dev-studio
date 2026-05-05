@@ -104,10 +104,14 @@ if [ -n "$LEGACY_REVIEW_FILE" ]; then
   finding_count=$(printf '%s' "$FINDINGS_JSON" | jq 'length' 2>/dev/null || echo 0)
   ts=$(iso_ts_now)
   {
+    printf -- '---\n'
+    printf 'review_id: %s\n' "$REVIEW_ID"
+    printf 'stage: %s\n' "$STAGE"
+    printf 'verdict: %s\n' "$VERDICT"
+    printf 'review_artifact: plans/reviews/%s.yaml\n' "$REVIEW_ID"
+    printf -- '---\n\n'
     printf '# Argus Review (%s): %s\n' "$STAGE" "$TASK_ID"
     printf 'Reviewed: %s\n' "$ts"
-    printf 'Stage: %s\n' "$STAGE"
-    printf 'Verdict: %s\n' "$VERDICT"
     [ -n "$BLOCK_REASON" ] && printf 'Block reason: %s\n' "$BLOCK_REASON"
     printf 'Review UUID: %s\n\n' "$REVIEW_ID"
     printf '## Findings (%s)\n\n' "$finding_count"
