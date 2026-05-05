@@ -52,6 +52,8 @@ failure_semantics:
   - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
 verification_floor:
   - Evidence reviewed is listed in the verdict.
+  - Test or build confidence distinguishes verified_by_worker_evidence from independently_rerun_by_reviewer.
+  - Reviewers inspect worker command evidence before rerunning tests and rerun only when evidence is missing, stale, too narrow, diff-stale, cheap/high-value, risky, or suspicious.
   - Context scope is declared as diff-only, task-context, plan-context, architecture-context, or runtime/evidence-context.
   - Non-trivial findings include severity, likelihood, impact, change_risk, confidence, basis, and recommended_action.
   - Refactoring findings distinguish required current-task cleanup from deferred design debt and recommend manager/planner follow-up when broad cleanup is not justified.

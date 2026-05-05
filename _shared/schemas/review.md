@@ -36,6 +36,13 @@ checks_run:
     result: pass
   - name: edge_case_coverage
     result: pass
+evidence_reviewed:
+  - kind: tests
+    verification_source: verified_by_worker_evidence  # verified_by_worker_evidence | independently_rerun_by_reviewer
+    command: "scripts/test-fixtures/604-reviewer-test-rerun-policy/test.sh"
+    result: pass
+    timestamp: 2026-05-05T01:10:00Z
+    note: "Fresh worker evidence covered the reviewed diff; reviewer did not rerun."
 scope:
   context_scopes: [diff-only, task-context]       # diff-only | task-context | plan-context | architecture-context | runtime/evidence-context
   diff_size: 187
@@ -59,6 +66,7 @@ notes: null
 | `verdict` | enum \| null | yes | `approved` \| `flagged` \| `blocked` \| null (while pre-terminal). Redundant with `state` for terminal verdicts; separates intent (state) from ruling (verdict). |
 | `findings` | array | yes | Per-finding `{rule, tier, message, severity, likelihood, impact, change_risk, confidence, basis, recommended_action, path?}`. See §Findings. |
 | `checks_run` | array | yes | Per-check `{name, result}`. `result ∈ {pass, fail, skip, warn}`. |
+| `evidence_reviewed` | array | no | Evidence inspected for the verdict. For test/build evidence, set `verification_source` to `verified_by_worker_evidence` or `independently_rerun_by_reviewer`; include command, timestamp, result, and a short note when reruns are skipped for cost. |
 | `scope` | object | yes | `{context_scopes, diff_size, file_count, caps_triggered}`. Records what Argus saw — useful for dashboards and rule-effectiveness analysis. |
 | `notes` | string \| null | yes | Optional reviewer commentary. |
 

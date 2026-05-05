@@ -116,6 +116,17 @@ Every completion-style claim in a debrief (YAML or prose) must cite a specific, 
 
 **Gate taxonomy (issue #84).** The `brief_completed.gate` event field distinguishes four outcomes: `verified` (build green + tests ran + Argus approved), `build-only` (build green, suite disabled), `waived` (build green, Argus skipped on a non-exempt path), `lsp-only` (LSP gate). Use this vocabulary in reviews + debriefs — "full-green" is legacy and ambiguous. A debrief reading `gate: build-only` or `gate: waived` without a matching explanation in `key_learnings` / `decisions` is an R10 hit: the structural signal is present but the WHY is missing. See `_shared/contracts/events.md` → `brief_completed.gate` taxonomy for source-signal rules.
 
+**Reviewer test rerun policy (issue #604).** R10 requires trustworthy, fresh verification evidence; it does not require reviewers to blindly repeat a worker's test command. Reviewers inspect the worker evidence first: exact command, timestamp, exit status or pass/fail output, environment, commit or diff covered, and whether the suite reaches the changed surface. A reviewer reruns tests only when one of these is true:
+
+- Evidence is missing, stale, incomplete, or not tied to the reviewed diff.
+- The diff changed after the worker's verification run.
+- The worker ran only a narrow suite and the changed surface needs broader coverage.
+- The command is cheap and high-value for the reviewed risk.
+- The change is risky enough that independent reproduction materially changes confidence.
+- The reviewer needs to reproduce a suspicious pass, failure, flake, or environment-dependent result.
+
+When a reviewer accepts worker evidence instead of rerunning, the verdict must say `verified_by_worker_evidence` and cite the evidence. When a reviewer reruns, the verdict must say `independently_rerun_by_reviewer` and include the command, timestamp, and result. Do not collapse both into "tests pass"; downstream sessions need the confidence level and cost model. Gates that mandate independent reruns must document why the added latency is worth it, what failure mode it catches, and when the rerun can be skipped or made async.
+
 ### R11 — No studio-initiated pushes to base branches (tier: **block + auto-fix**)
 
 Scripts and mode prose must never run `git push origin main` (or `master`, or any equivalent integration/base branch) against a project or studio repo. Remote base branches advance **only** through PR merges. Studio-initiated pushes may target feature branches (`push -u origin HEAD`, `push origin <feature-branch>`) or tags (`push origin <tag>`). Integration happens via `gh pr create` / `gh pr merge`, never direct ref advancement.
