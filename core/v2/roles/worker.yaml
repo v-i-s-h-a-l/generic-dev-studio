@@ -57,6 +57,7 @@ failure_semantics:
   - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
 verification_floor:
   - Same-host self-review runs after implementation and before final verification; it checks missed edge cases, possible bugs, regressions, scope drift, and test adequacy.
+  - "Implementation follows `_shared/contracts/engineering-principles.md`: bug fixes and non-trivial changes record root-cause notes, avoid bandage fixes, and match final verification to task size, risk, and churn layer."
   - Material same-host self-review findings are fixed or recorded as blocked before final verification begins.
   - Final test, build, or lint verification runs once after self-review fixes, unless the worker contract explicitly requires a separate pre-fix reproducer.
   - Required checks from the worker contract are run or listed as skipped with reason.
