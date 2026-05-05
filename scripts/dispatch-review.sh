@@ -70,6 +70,8 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-review-budget.sh
+. "$SCRIPT_DIR/lib-review-budget.sh"
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
 
@@ -318,6 +320,28 @@ fi
 if [ -n "$CAPTURE_HANDOFF" ]; then
   mkdir -p "$(dirname "$CAPTURE_HANDOFF")" 2>/dev/null || true
   cp "$handoff_path" "$CAPTURE_HANDOFF"
+fi
+
+handoff_bytes=$(wc -c < "$handoff_path" 2>/dev/null | tr -d ' ' || printf '0')
+handoff_lines=$(wc -l < "$handoff_path" 2>/dev/null | tr -d ' ' || printf '0')
+case "$handoff_bytes" in ""|*[!0-9]*) handoff_bytes=0 ;; esac
+case "$handoff_lines" in ""|*[!0-9]*) handoff_lines=0 ;; esac
+handoff_estimated_tokens=$(((handoff_bytes + 2) / 3))
+handoff_budget_tokens=$(review_budget_payload_token_budget)
+handoff_context_status="ok"
+[ "$handoff_estimated_tokens" -le "$handoff_budget_tokens" ] || handoff_context_status="over_budget"
+if command -v jq >/dev/null 2>&1; then
+  handoff_context_json=$(jq -n \
+    --arg kind "dispatch-$STAGE" \
+    --arg mode "handoff-scoped" \
+    --arg risk_level "argus-dispatch" \
+    --argjson bytes "$handoff_bytes" \
+    --argjson lines "$handoff_lines" \
+    --argjson estimated_tokens "$handoff_estimated_tokens" \
+    --argjson payload_budget_tokens "$handoff_budget_tokens" \
+    --arg status "$handoff_context_status" \
+    '{kind:$kind,mode:$mode,risk_level:$risk_level,budget:{payload_budget_tokens:$payload_budget_tokens},payload:{bytes:$bytes,lines:$lines,estimated_tokens:$estimated_tokens,status:$status}}')
+  review_budget_emit_context_event argus "$TASK_ID" review_context_budget_resolved "$handoff_context_json" "dispatch-review-context:$IDEM_KEY"
 fi
 
 # ---- Step 5: env-scrubbed spawn -------------------------------------------
