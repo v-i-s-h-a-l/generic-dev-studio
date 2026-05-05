@@ -81,6 +81,7 @@ read_field() {
       repo) yq -r '.repo // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       slack_channel) yq -r '.slack.channel_id // .slack.posted_to // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       slack_parent_ts) yq -r '.slack.message_ts // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      slack_watcher_replies) yq -r '.asc_metadata.slack_watcher_replies // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       github_release_url) yq -r '.github_release_url // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       asc_key_path) printf '%s\n' "${STUDIO_TF_ASC_KEY_PATH:-}" ;;
       asc_issuer_id) printf '%s\n' "${STUDIO_TF_ASC_ISSUER_ID:-}" ;;
@@ -119,6 +120,7 @@ REPO=$(read_field repo)
 CHANNEL=$(read_field slack_channel)
 PARENT_TS=$(read_field slack_parent_ts)
 URL=$(read_field github_release_url)
+WATCHER_REPLIES=$(read_field slack_watcher_replies)
 KEY_PATH=$(read_field asc_key_path)
 ISSUER_ID=$(read_field asc_issuer_id)
 KEY_ID=$(read_field asc_key_id)
@@ -126,6 +128,8 @@ KEY_ID=$(read_field asc_key_id)
 APP_ID="${APP_ID:-${STUDIO_TF_APP_ID:-}}"
 REPO="${REPO:-${STUDIO_TF_GH_REPO:-turnip-ios/turnip-zaps}}"
 URL="${URL:-https://github.com/${REPO}/releases/tag/${TAG}}"
+CHANNEL="${CHANNEL:-${STUDIO_RELEASES_SLACK_CHANNEL:-}}"
+WATCHER_REPLIES="${WATCHER_REPLIES:-${STUDIO_RELEASES_SLACK_WATCHER_REPLIES:-1}}"
 KEY_ID="${KEY_ID:-${STUDIO_TF_ASC_KEY_ID:-}}"
 ISSUER_ID="${ISSUER_ID:-${STUDIO_TF_ASC_ISSUER_ID:-}}"
 if [ -z "$KEY_PATH" ]; then
@@ -267,28 +271,44 @@ PY
 
     if [ "$SLACK_DONE" != "True" ] && [ "$SLACK_DONE" != "true" ]; then
       SLACK_TOKEN_FILE=$(release_slack_token_file)
-      if [ -r "$SLACK_TOKEN_FILE" ] && [ -n "$PARENT_TS" ] && [ -n "$CHANNEL" ]; then
-        SLACK_BOT_TOKEN=$(cat "$SLACK_TOKEN_FILE")
-        MSG="🎉 Live on App Store — notes: $URL"
-        BODY=$(python3 - "$CHANNEL" "$PARENT_TS" "$MSG" <<'PY'
-import json, sys
-print(json.dumps({'channel': sys.argv[1], 'thread_ts': sys.argv[2], 'text': sys.argv[3]}))
-PY
-)
-        if curl -s --max-time 20 -X POST https://slack.com/api/chat.postMessage \
-            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$BODY" >/dev/null 2>&1; then
-          if [ "$MARKER_SOURCE" = "json" ]; then
-            python3 - "$MARKER" <<'PY'
+      if [ "$WATCHER_REPLIES" = "0" ] || [ "$WATCHER_REPLIES" = "false" ] || [ "$WATCHER_REPLIES" = "FALSE" ]; then
+        if [ "$MARKER_SOURCE" = "json" ]; then
+          python3 - "$MARKER" <<'PY'
 import json, sys
 p = sys.argv[1]; m = json.load(open(p)); m['finalize_slack_posted'] = True
+m['finalize_slack_skipped_reason'] = 'watcher_replies_disabled'
+json.dump(m, open(p, 'w'), indent=2)
+PY
+        else
+          if [ -n "$release_uuid" ]; then
+            set_release_finalize_progress "$release_uuid" finalize_slack_posted true || true
+            set_release_finalize_progress "$release_uuid" finalize_slack_skipped_reason watcher_replies_disabled || true
+          fi
+        fi
+      elif [ -r "$SLACK_TOKEN_FILE" ] && [ -n "$PARENT_TS" ] && [ -n "$CHANNEL" ]; then
+        MSG="Live on App Store — notes: $URL"
+        SLACK_OUT=$(mktemp /tmp/appstore-watch-slack.XXXXXX)
+        SLACK_ERR=$(mktemp /tmp/appstore-watch-slack.XXXXXX)
+        if STUDIO_RELEASE_PROJECT="$STUDIO_RELEASE_PROJECT" "$SCRIPT_DIR/slack-post.sh" \
+            --channel "$CHANNEL" --thread-ts "$PARENT_TS" --text "$MSG" >"$SLACK_OUT" 2>"$SLACK_ERR"; then
+          if [ "$MARKER_SOURCE" = "json" ]; then
+            python3 - "$MARKER" "$SLACK_OUT" <<'PY'
+import json, sys
+p = sys.argv[1]; out_path = sys.argv[2]; m = json.load(open(p)); m['finalize_slack_posted'] = True
+try:
+    out = json.load(open(out_path))
+    if out.get('ts'):
+        m['slack_reply_ts'] = out['ts']
+except Exception:
+    pass
 json.dump(m, open(p, 'w'), indent=2)
 PY
           else
             [ -n "$release_uuid" ] && set_release_finalize_progress "$release_uuid" finalize_slack_posted true || true
           fi
+          rm -f "$SLACK_OUT" "$SLACK_ERR"
         else
+          rm -f "$SLACK_OUT" "$SLACK_ERR"
           fails=$(mark_failure slack_post_failed "$STATE")
           [ "$fails" -ge 3 ] && append_event chanakya appstore_watch_stuck "$TAG" \
             "{\"reason\":\"slack_post_failed\",\"failures\":$fails,\"state\":\"$STATE\"}" 2>/dev/null || true

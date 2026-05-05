@@ -80,39 +80,13 @@ https://github.com/turnip-ios/turnip-zaps/releases/tag/${CURRENT_BUILD_NUMBER}-z
 
 ## Step 6: Optional configured Slack post
 
-If `STUDIO_RELEASES_SLACK_CHANNEL` is configured, post the unified A body to
-the release channel and seed the expected release thread replies. If it is not
-configured, skip Slack cleanly and report that release announcements are not
-configured.
-
-```bash
-cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
-export STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-<project>}"
-. ./scripts/lib-release-config.sh
-load_release_config
-RELEASES_CHANNEL="${STUDIO_RELEASES_SLACK_CHANNEL:-}"
-if [ -n "$RELEASES_CHANNEL" ]; then
-  RESP=$(./scripts/slack-post.sh --channel "$RELEASES_CHANNEL" --text "$RELEASE_BODY")
-  PARENT_TS=$(echo "$RESP" | jq -r .ts)
-  [ -n "$PARENT_TS" ] && [ "$PARENT_TS" != "null" ] || { echo "slack-post returned no ts"; exit 1; }
-  WHATS_NEW_REPLY=$(cat <<EOF
-App Store "What's New" submitted with this build:
-
-
-$WHATS_NEW_BODY
-EOF
-)
-  ./scripts/slack-post.sh --channel "$RELEASES_CHANNEL" --thread-ts "$PARENT_TS" \
-    --text "$WHATS_NEW_REPLY"
-  ./scripts/slack-post.sh --channel "$RELEASES_CHANNEL" --thread-ts "$PARENT_TS" \
-    --text "https://github.com/turnip-ios/turnip-zaps/releases/tag/${CURRENT_BUILD_NUMBER}-zaps"
-fi
-```
-
-Persist the Slack channel id and parent `ts` into the release artifact or
-pending App Store marker so `scripts/appstore-watch.sh` can post lifecycle
-replies into the same thread. Confirm to the user with the Slack thread and GH
-release URL when Slack was configured.
+`scripts/studio-tf-push.sh appstore` reads the project release config and, when
+`STUDIO_RELEASES_SLACK_CHANNEL` plus the App Store Slack toggles are enabled,
+posts the release parent message and configured thread replies. It persists the
+Slack channel id and parent `ts` into the pending App Store marker so
+`scripts/appstore-watch.sh` can post lifecycle replies into the same thread. If
+Slack is not configured, the script skips Slack cleanly and reports that release
+announcements are not configured.
 
 ## Rollback
 
