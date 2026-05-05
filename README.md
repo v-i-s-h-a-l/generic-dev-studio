@@ -83,6 +83,7 @@ STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
 /dev-studio host-adapter nodes   # day-2 fleet management — status, add, remove, health, sync, schedule
 /dev-studio release-manager tf-push --background     # start TF archive/upload and keep session free for Slack drafting
 /dev-studio release-manager tf-push --version 26.5.0 # TestFlight push with explicit MARKETING_VERSION; live work needs STUDIO_TF_PUSH_LIVE=1
+scripts/studio-tf-push.sh withdraw-tf-tag --version 26.4.17 --build 3162 # rename TF anchor to tf-<version>-<build>-WITHDRAWN
 scripts/release-manager-configure.sh --project turnip-ios --quick --tf-slack-channel C... # configure threaded TF Slack defaults
 /studio-setup                    # onboard THIS machine — auto-pilot, prompts for role only
 /studio-setup --manager          # zero-prompt manager onboarding

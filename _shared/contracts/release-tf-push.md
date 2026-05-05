@@ -37,6 +37,7 @@ Before Step 1:
 - Non-interactive GitHub push works for the active branch: `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never git push --dry-run --porcelain -u origin HEAD` succeeds. This preflight runs before any build-number or version mutation; auth failures must not open a credential prompt or create a stranded release commit.
 - Slack notification credentials are verified before mutation unless `STUDIO_TF_SLACK_DEFERRED=1` explicitly marks the run as upload-only/deferred-notification.
 - Long-running push work can be started with `scripts/studio-tf-push.sh push --background`. The parent returns a JSON handle immediately and the child writes status/log/context artifacts under `~/.dev-studio/<project>/state/release-runs/<release-tag>/`.
+- Every TF push creates an annotated git tag at the build-number commit before the archive phase: `tf-<version>-<build>` (for example `tf-26.4.17-3162`). The driver pushes both the active feature branch and that tag to origin before archiving so withdrawn or superseded TF builds still leave a stable diff/revert anchor.
 
 Halt with `release_started` not emitted if any prerequisite fails. Stage C's wrapper surfaces the missing piece to the user.
 
@@ -90,9 +91,34 @@ Preparing TestFlight build <NEW_BUILD_NUMBER> (v<VERSION>) from branch <BRANCH>.
 Co-Authored-By: Claude Opus 4.X (1M context) <noreply@anthropic.com>
 ```
 
-Push the branch with `git push -u origin HEAD`. R11 (no studio-initiated pushes to base branches) applies — the driver halts if the active branch is `main` / `master` / `release/*`.
+Create an annotated TF anchor tag at the bump commit:
 
-If a future push failure still occurs after the local bump commit, emit a stranded-release-state warning naming the local commit and the next safe `git push -u origin HEAD` recovery command. Do not write release artifacts or debriefs unless upload later succeeds.
+```
+tf-<VERSION>-<NEW_BUILD_NUMBER>
+```
+
+Push the branch with `git push -u origin HEAD`, then push the tag with
+`git push origin refs/tags/tf-<VERSION>-<NEW_BUILD_NUMBER>`. R11 (no
+studio-initiated pushes to base branches) applies — the driver halts if the
+active branch is `main` / `master` / `release/*`. Tag pushes are allowed because
+they do not advance a base branch.
+
+If a future push failure still occurs after the local bump commit, emit a
+stranded-release-state warning naming the local commit, TF tag, and the next
+safe recovery command. Do not write release artifacts or debriefs unless upload
+later succeeds.
+
+If a TF build is later withdrawn, mark the anchor by renaming it to:
+
+```
+tf-<VERSION>-<NEW_BUILD_NUMBER>-WITHDRAWN
+```
+
+Use `scripts/studio-tf-push.sh withdraw-tf-tag --version <VERSION> --build <NEW_BUILD_NUMBER>`.
+The command creates an annotated withdrawn tag at the original commit, pushes
+it, deletes the unqualified remote tag, and removes the local unqualified tag.
+The withdrawn tag remains the stable anchor for diff/revert workflows while
+making state visible in tag lists.
 
 No event emitted at the commit boundary; the next event closes the archive phase.
 
@@ -100,7 +126,7 @@ No event emitted at the commit boundary; the next event closes the archive phase
 
 Run `xcodebuild archive` against the project, scheme, and configuration declared in `turnip-project-config.md`. The archive lands at `/tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive`.
 
-When running in background mode, write `prepared-context.json` after Step 2 and before this archive starts. The file carries `release_tag`, `build`, `version`, `scheme`, `branch`, `archive_path`, and `prev_build`, allowing the wrapper to draft the Slack message while archive/upload continue. The wrapper must still wait for final `status.json` to reach `state=="succeeded"` before sending Slack.
+When running in background mode, write `prepared-context.json` after Step 2 and before this archive starts. The file carries `release_tag`, `build`, `version`, `scheme`, `branch`, `archive_path`, `tf_tag`, and `prev_build`, allowing the wrapper to draft the Slack message while archive/upload continue. The wrapper must still wait for final `status.json` to reach `state=="succeeded"` before sending Slack.
 
 Before invoking `xcodebuild archive`, enqueue the archive with `priority: "release"` in `~/.dev-studio/.runtime/build-queue/<node-id>/`, then acquire an `xcodebuild-lock/<node-id>/slot-<n>/` lock before starting the archive. The queue grants up to the node's `parallel_build_slots` and moves release entries ahead of queued task/background work without stopping any in-flight holder.
 
@@ -139,6 +165,16 @@ Emit `dsym_uploaded` with `data: { build: NEW_BUILD_NUMBER, count_succeeded, cou
 Run only when Steps 4 and 5 both verified successful.
 
 Compose the build-message body from the user's commits since the last shared TF build. Resolve the Slack channel from `STUDIO_TF_SLACK_CHANNEL` in the project release config; run `/dev-studio release-manager configure` if it is absent. Find the last shared build via `scripts/slack-fetch.sh history --channel "$STUDIO_TF_SLACK_CHANNEL"` (wraps `conversations.history`), filtering for messages from the studio's posting bot identity that match `build NNNN is available on TestFlight`. The matching `Bump build number to NNNN` commit is the lower bound for `git log --no-merges --author="<owner>" --format=...`. Thread-reply scans for cc-mention attribution use `scripts/slack-fetch.sh replies --channel <id> --ts <parent-ts>`; display-name resolution uses `scripts/slack-fetch.sh user --user <U>`.
+
+If a `tf-<version>-<build>` tag exists for the last shared build on this
+branch, prefer it as the lower bound:
+
+```
+git log <last-tf-tag-on-this-branch>..HEAD --no-merges --author="<owner>" --format=...
+```
+
+This keeps Slack composition independent of whether the prior TF build was
+eventually released, superseded, or withdrawn.
 
 Format the parent and thread per `_shared/contracts/build-message-format.md`.
 The default parent is brief: headline, one tester-facing summary, then
