@@ -626,10 +626,10 @@ core/v2/skills/dev-studio/
 scripts/dev-studio-ingest-resolve.sh --cwd "$PWD" --scope studio</code>
           </section>
           <section class="card">
-            <h3>Analyze Feedback</h3>
-            <p>Manager analyze routes actionable studio-feedback to durable issues after the private report: search first, consolidate when covered, create only distinct issues, and leave unsafe public records in the inbox with a reason. Parenthesized <code>(studio-feedback)</code> or <code>(studio feedback)</code> tags add a sidecar feedback record while the rest of the prompt is handled normally.</p>
-            <code class="shell">scripts/analyze-feedback-ingest.sh
-scripts/analyze-feedback-ingest.sh --apply</code>
+            <h3>Reconcile And Analyze</h3>
+            <p>Project repos use reconcile to sync emitted debriefs and reports into the project task ledger. Analyze runs from the studio repo for telemetry/log analysis and studio feedback triage; actionable feedback records are searched, consolidated, or filed after privacy screening.</p>
+            <code class="shell">scripts/manager-reconcile.sh --cwd "$PWD"
+scripts/manager-analyze.sh --cwd "$PWD"</code>
           </section>
           <section class="card">
             <h3>Project Profiles</h3>
@@ -735,6 +735,7 @@ scripts/worker-status.sh</code>
 /dev-studio manager resume-plan
 /dev-studio manager guard "has this shipped?"
 /dev-studio manager analyze
+/dev-studio manager reconcile
 /dev-studio manager ingest "capture this pattern"
 /dev-studio manager ingest --scope studio "capture this Forge workflow gap"</code>
           </article>
