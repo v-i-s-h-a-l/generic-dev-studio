@@ -86,6 +86,8 @@ argus_review:
   review_id: 0190f52a-7a11-7e03-8c99-44df6fd77a77 # null if not-invoked
   notes: null
 report_state: done                                # done | done_with_concerns | blocked | needs_context — see contracts/worker-report.md
+review_loop: null                                # optional {attempt, budget, escalation_required, escalation_reason?}
+review_responses: []                             # optional worker dispositions for reviewer findings; see contracts/worker-report.md
 metrics: null                                     # 2.2.0; Apollo perf-mode only. Null for Achilles task / direct-debrief.
 # Example of a populated Apollo metrics block (memory regression):
 # metrics:
@@ -145,6 +147,8 @@ metrics: null                                     # 2.2.0; Apollo perf-mode only
 | `open_questions` | array of strings | yes | Direct-debrief mode uses this for inline questions the user answered. Usually empty for task mode. |
 | `argus_review` | object | yes | `{status, review_id, notes}`. Status `not-invoked` only valid when Argus was bypassed (xs-skip or direct-debrief). |
 | `report_state` | enum \| absent | no | `done` \| `done_with_concerns` \| `blocked` \| `needs_context`. Worker-report contract — see `contracts/worker-report.md`. Absent in pre-2.0.2 debriefs; readers infer from other fields for back-compat. |
+| `review_loop` | object \| null \| absent | no | Optional review/fix loop budget: `{attempt, budget, escalation_required, escalation_reason?}`. Budget is two fix cycles; attempt ≥3 escalates. |
+| `review_responses` | array \| absent | no | Optional per-finding worker responses: accepted/fixed, modified fix, rejected, escalated, or deferred. Entries consume reviewer risk metadata and include the mandatory worker self-check. |
 | `executed_with` | object \| absent | no | 2.1.0; `{model_id, host, session_id, duration_s}`. Producer identity for multi-model accountability. Absent in pre-2.1.0 debriefs; readers MUST tolerate absence and either join `events/<date>.jsonl` `agent_boot` records by `task_id` to fill the gap or treat the executor as unknown. Three of the four fields (`model_id`, `host`, `session_id`) are already produced by `scripts/emit-agent-boot.sh`; `duration_s` is computed from the matching `agent_session_completed` event timestamp delta. |
 | `metrics` | object \| null | yes | 2.2.0; Apollo perf-mode only. Null for Achilles task / direct-debrief debriefs. Populated by Apollo when emitting a perf-mode debrief — carries strict-9 evidence (cohort, baseline, observed, delta, verdict) so Chanakya's ingest path can render perf outcomes without re-reading the underlying `.trace` / MXMetric artifact. Sub-shape documented inline with the example above; refusal subobject populated only when `verdict: refused`. |
 
@@ -189,6 +193,7 @@ The 141 processed debriefs in `chanakya-inbox/processed/` are **copied as-is** t
 
 | Version | Landed | Changes |
 |---|---|---|
+| 2.5.0 | 2026-05-05 | Non-breaking: optional `review_loop` and `review_responses` fields for #606 worker disposition of structured reviewer findings. |
 | 2.4.0 | 2026-05-02 | Non-breaking: `tests.added[]` / `tests.modified[]` items may now be `{title, preconditions?, steps?, expected?}` objects. Legacy string form remains accepted; new task-mode emits use objects as the canonical source for test-manifest/test-flow generation (#335). |
 | 2.3.0 | 2026-04-27 | Non-breaking: `known_issues[]` / `follow_ups[]` items may now be `{id, text, category?, severity?}` objects. Legacy string form remains accepted; no migration. Stable ids unblock `scripts/validate-brief-inheritance.sh` (#162 trimmed slice — silent-absorb gate at brief-write time). |
 | 2.2.0 | 2026-04-27 | Non-breaking: add optional `metrics` block (`perf_mode`, `evidence_tier`, `verdict`, `cohort`, `baseline`, `observed`, `delta`, `refusal`) for Apollo perf-mode debriefs. Carries strict-9 evidence so Chanakya can render perf outcomes without re-reading artifacts (#235 Stage 5). Null for non-Apollo debriefs. |

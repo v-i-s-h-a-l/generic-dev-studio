@@ -17,6 +17,52 @@ Every debrief a worker writes carries a `report_state` — the worker's structur
 | `blocked` | The worker could not merge. Requires user input, external dependency, or escalation. No merge occurred; no commits on base. | Mark task `blocked`; push to user; do not re-dispatch automatically. |
 | `needs_context` | The brief was incomplete — a reference, spec, or decision the worker needed was missing. Re-dispatch after the manager regenerates the brief with the missing info. | Mark task `needs_brief_rework`; the manager regenerates the brief filling the gap; automatic re-dispatch once brief state returns to `ready`. |
 
+## Review finding response protocol
+
+When a worker receives reviewer findings, it records a `review_responses` array in the debrief or worker summary before applying reviewer-requested changes. Each entry consumes the review finding's structured metadata and records one response state:
+
+| Response state | Meaning |
+|---|---|
+| `accepted_and_fixed` | The finding is valid and the requested fix landed directly. |
+| `accepted_with_modified_fix` | The finding is valid, but the worker changed the implementation shape to preserve the task plan or architecture contract. |
+| `rejected_with_rationale` | The worker did not apply the finding and records why. |
+| `needs_manager_planner_decision` | The finding may require scope, architecture, or acceptance-criteria arbitration. |
+| `deferred_follow_up` | The finding is real but belongs in a follow-up rather than the current bounded task. |
+
+Each response includes:
+
+```yaml
+review_responses:
+  - finding_id: R6_docs_sync
+    response_state: accepted_with_modified_fix
+    self_check: "Does not change the command surface; docs-only clarification preserves the plan."
+    rationale: "Kept README untouched because the touched surface is an internal contract, not a user-visible command."
+    implemented_change: "Updated _shared/schemas/review.md instead."
+    review_metadata:
+      severity: medium
+      likelihood: likely
+      impact: medium
+      change_risk: medium
+      confidence: high
+      basis: task-context
+      recommended_action: accepted_with_modified_fix
+```
+
+The `self_check` is mandatory. It answers: "could this requested fix break a broader contract or undo the accepted plan?" High `change_risk` with `likelihood: uncertain` must route to `needs_manager_planner_decision` or `deferred_follow_up`; do not blindly patch.
+
+## Review loop budget
+
+Workers track review/fix cycles with:
+
+```yaml
+review_loop:
+  attempt: 2
+  budget: 2
+  escalation_required: false
+```
+
+Budget is two fix cycles per bounded task. A third review attempt, conflicting findings, or repeated high-risk uncertain findings sets `escalation_required: true` with `escalation_reason` and routes to manager/planner arbitration. This preserves blockers for real correctness, contract, and regression risks while preventing local review churn from rewriting the original plan.
+
 ## Schema
 
 `report_state` is an optional field on `schemas/debrief.md` (debrief@2.0.2, non-breaking add). When absent, readers infer back-compat:
@@ -77,6 +123,7 @@ The manager inbox sweep reads `report_state` and branches:
 - **R10 (REVIEW.md)** — verification-evidence rule. `done` implies the evidence fields are present.
 - **Two-stage Argus (#80)** — spec-compliance `fail` maps naturally to `done_with_concerns` (merged but reviewer noted divergence) or `blocked` (reviewer blocked merge).
 - **Build-debt (`_shared/schemas/build-debt.md`)** — `done_with_concerns` is the standard carrier for `build: true` / `test_unit: true`.
+- **Review context and evidence hardening (#537, #604, #605, #606)** — reviewer findings declare context scope and risk metadata; worker responses consume that metadata, preserve test/runtime evidence distinctions, and escalate same-host or uncertain high-change-risk loops instead of blindly applying fixes.
 
 ## Telemetry
 

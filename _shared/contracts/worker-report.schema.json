@@ -11,6 +11,15 @@
   "properties": {
     "report_state": {
       "$ref": "#/$defs/reportState"
+    },
+    "review_loop": {
+      "$ref": "#/$defs/reviewLoop"
+    },
+    "review_responses": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reviewResponse"
+      }
     }
   },
   "allOf": [
@@ -28,6 +37,161 @@
         "needs_context"
       ],
       "description": "done = all green, close normally. done_with_concerns = merged with caveats the user should see. blocked = no merge, needs user input. needs_context = brief incomplete, regenerate."
+    },
+    "reviewResponseState": {
+      "type": "string",
+      "enum": [
+        "accepted_and_fixed",
+        "accepted_with_modified_fix",
+        "rejected_with_rationale",
+        "needs_manager_planner_decision",
+        "deferred_follow_up"
+      ]
+    },
+    "reviewResponse": {
+      "type": "object",
+      "required": [
+        "finding_id",
+        "response_state",
+        "self_check",
+        "rationale",
+        "review_metadata"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "response_state": {
+          "$ref": "#/$defs/reviewResponseState"
+        },
+        "self_check": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Worker answer to: could this requested fix break a broader contract or undo the accepted plan?"
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "implemented_change": {
+          "type": "string"
+        },
+        "follow_up_ref": {
+          "type": "string"
+        },
+        "escalation_ref": {
+          "type": "string"
+        },
+        "review_metadata": {
+          "type": "object",
+          "required": [
+            "severity",
+            "likelihood",
+            "impact",
+            "change_risk",
+            "confidence",
+            "basis",
+            "recommended_action"
+          ],
+          "properties": {
+            "severity": {
+              "enum": ["blocker", "high", "medium", "low", "info"]
+            },
+            "likelihood": {
+              "enum": ["confirmed", "likely", "plausible", "uncertain"]
+            },
+            "impact": {
+              "enum": ["critical", "high", "medium", "low"]
+            },
+            "change_risk": {
+              "enum": ["high", "medium", "low"]
+            },
+            "confidence": {
+              "enum": ["high", "medium", "low"]
+            },
+            "basis": {
+              "enum": ["diff-only", "task-context", "plan-context", "architecture-context", "runtime/evidence-context"]
+            },
+            "recommended_action": {
+              "enum": [
+                "fix_now",
+                "accepted_with_modified_fix",
+                "rejected_with_rationale",
+                "needs_manager_planner_decision",
+                "deferred_follow_up"
+              ]
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "description": "High-risk uncertain findings are escalated or deferred rather than blindly implemented.",
+          "if": {
+            "properties": {
+              "review_metadata": {
+                "properties": {
+                  "likelihood": { "const": "uncertain" },
+                  "change_risk": { "const": "high" }
+                },
+                "required": ["likelihood", "change_risk"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "response_state": {
+                "enum": [
+                  "needs_manager_planner_decision",
+                  "deferred_follow_up"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "reviewLoop": {
+      "type": "object",
+      "required": [
+        "attempt",
+        "budget",
+        "escalation_required"
+      ],
+      "properties": {
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "budget": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2
+        },
+        "escalation_required": {
+          "type": "boolean"
+        },
+        "escalation_reason": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "attempt": { "minimum": 3 }
+            },
+            "required": ["attempt"]
+          },
+          "then": {
+            "properties": {
+              "escalation_required": { "const": true }
+            },
+            "required": ["escalation_reason"]
+          }
+        }
+      ]
     },
     "perStateRequirements": {
       "description": "Per-state required-field matrix from contracts/worker-report.md \u00a7Required-field matrix. Each branch constrains the payload slice that must be present when report_state has the given value. These are checked as-if on the debrief payload this slice lives in, so downstream validators composing this schema must have visibility to branch.merge_sha, debt, argus_review, tests, known_issues, open_questions, brief_id.",
