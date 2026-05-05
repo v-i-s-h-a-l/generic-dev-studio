@@ -173,9 +173,11 @@ scripts/monitor-install.sh install                      # opt-in laptop LaunchAg
 scripts/node-monitor.sh                                 # one-shot monitor check; tracks streak/cooldown state and emits node_unreachable alerts (#132)
 scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # YAML debrief + state flips
 
-# Studio-feedback ingestion (auto-fires via SessionStart hook + manager sweep):
+# Manager reconcile/analyze + studio-feedback ingestion:
+scripts/manager-reconcile.sh --cwd "$PWD"               # project repo: sync emitted debriefs/reports into the project task ledger
+scripts/manager-analyze.sh --cwd "$PWD"                 # studio repo: telemetry/log analysis plus studio feedback triage
 scripts/ingest-feedback.sh                              # idempotent feedback route: create/comment/defer; silent outside generic-dev-studio
-scripts/analyze-feedback-ingest.sh --apply              # manager analyze durable routing: search/comment/create, then processed/
+scripts/analyze-feedback-ingest.sh --apply              # studio-feedback durable routing: search/comment/create, then processed/
 scripts/feedback-retroactive-sweep.sh --project generic-dev-studio --since YYYY-MM-DD [--apply] # recover missed `(studio-feedback)` / `(studio feedback)` transcript prompts
 
 # Studio PR autopilot primitives (#318):

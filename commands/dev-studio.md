@@ -54,6 +54,11 @@ supplies the task context and runtime slug.
    explicitly names another project slug. For `manager ingest`, call
    `$STUDIO_REPO/scripts/dev-studio-ingest-resolve.sh --cwd "$PROJECT_ROOT"`
    with any explicit `--scope` or `--to` arguments and follow its JSON route.
+   For `manager analyze`, call
+   `$STUDIO_REPO/scripts/manager-analyze.sh --cwd "$PROJECT_ROOT"`. It is
+   studio-checkout only; if invoked from a project checkout, surface the
+   script's refusal and point to `manager reconcile`. For `manager reconcile`,
+   call `$STUDIO_REPO/scripts/manager-reconcile.sh --cwd "$PROJECT_ROOT"`.
    Use studio scripts from `$STUDIO_REPO/scripts/`.
 
 7. For a bare-role landing:
