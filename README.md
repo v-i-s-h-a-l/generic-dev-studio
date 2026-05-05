@@ -198,7 +198,7 @@ scripts/                # multi-worker fleet (BETA)
   ingest-feedback.sh    # routes studio-feedback records to analysis + GH issue create/comment/defer
   analyze-feedback-ingest.sh # studio feedback triage: consolidate into existing/new GH issues before processed/
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
-  appstore-watch.sh     # polls ASC for pending submission; finalizes draft release + Slack on release
+  appstore-watch.sh     # polls ASC; publishes release + merge-commit PR only at READY_FOR_SALE
   backfill-orphan-debriefs.sh  # recover tasks that finished without landing in master plan (dry-run default)
   achilles-refresh-base.sh     # legacy worker helper: fetch + merge base before reviewer handoff
   task-merge.sh                # serialized merge gate: approved-only option + post-review base re-check

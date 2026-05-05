@@ -15,8 +15,8 @@ Every release routed through the studio — TestFlight or App Store — traverse
 | `drafted` | Release artifact created but not yet submitted to ASC. | Achilles `push-tf` / `app-store` modes pre-upload. |
 | `submitted` | Build uploaded to App Store Connect; ASC processing begins. | Achilles release modes post-upload. |
 | `in-review` | Apple has started formal review (App Store channel only). | `scripts/appstore-watch.sh` on ASC state `IN_REVIEW`. |
-| `pending-developer-release` | Apple approved; awaiting developer release (App Store channel only). | `scripts/appstore-watch.sh` on ASC state `PENDING_DEVELOPER_RELEASE`. |
-| `released` | Live on the channel. TestFlight: processed + available to testers. App Store: shipped to production. | `scripts/appstore-watch.sh` on ASC state `READY_FOR_SALE` (App Store) or `PROCESSED` for TestFlight. |
+| `pending-developer-release` | Apple approved; awaiting developer release (App Store channel only). This is not live and must not merge the source PR. | `scripts/appstore-watch.sh` on ASC state `PENDING_DEVELOPER_RELEASE`. |
+| `released` | Live on the channel. TestFlight: processed + available to testers. App Store: shipped to production. App Store source PR merge and GitHub release publication happen only here. | `scripts/appstore-watch.sh` on ASC state `READY_FOR_SALE` (App Store) or `PROCESSED` for TestFlight. |
 | `rejected` | Apple rejected the submission (App Store channel only). | `scripts/appstore-watch.sh` on ASC state `DEVELOPER_REJECTED` / `REJECTED`. |
 | `cancelled` | User or agent cancelled the submission before review terminal. | Explicit cancellation by Chanakya or user. |
 | `archived` | Post-compact cold storage. Terminal. | Chanakya compact mode. |
@@ -40,7 +40,13 @@ cancelled             → archived                  : compact sweep.
 **Channel-specific notes:**
 
 - **TestFlight channel** typically transitions `drafted → submitted → released`. ASC may emit build-processing states (`PROCESSING`, `INVALID_BINARY`) during `submitted`; these stay inside `submitted` until a terminal TF state is observed.
-- **App Store channel** has the full review flow. `pending-developer-release` is the holdpoint where the release awaits the developer to push the "Release" button.
+- **App Store channel** has the full review flow. `pending-developer-release` is the holdpoint where the release awaits the developer to push the "Release" button; it is not a merge signal. `READY_FOR_SALE` is the first unambiguous live signal and triggers the source PR merge with `gh pr merge --merge`.
+
+## App Store PR Lifecycle
+
+`/fullSendToAppStore` creates or reuses a PR from the submitted source branch to `main` immediately after the watcher marker is armed. PR creation is idempotent per source branch. If a different source branch already has a pending App Store PR, the submission continues and the user is notified that a separate PR is being raised.
+
+The watcher keeps the PR open through `PENDING_DEVELOPER_RELEASE`. On `READY_FOR_SALE`, it publishes the draft GitHub release, updates the Slack thread link from the PR URL to the GitHub release URL when possible, then merges the PR with a merge commit. If `gh pr merge --merge` fails, the watcher posts `PR merge failed — conflicts detected. Manual resolution needed.` to the Slack thread and stops without attempting a rebase.
 
 ## Required fields per transition event
 

@@ -425,7 +425,7 @@ appstore_notify_slack() {
       printf 'studio-tf-push: [dry-run] would post App Store What'\''s New as a thread reply\n' >&2
     fi
     if release_bool_enabled "${STUDIO_RELEASES_SLACK_GITHUB_REPLY:-1}"; then
-      printf 'studio-tf-push: [dry-run] would post GitHub release URL as a thread reply\n' >&2
+      printf 'studio-tf-push: [dry-run] would post App Store PR URL as a thread reply after watcher setup\n' >&2
     fi
     APPSTORE_SLACK_STATUS="dry_run"
     return 0
@@ -456,13 +456,6 @@ EOF
     if ! STUDIO_RELEASE_PROJECT="$RELEASE_PROJECT" "$SCRIPT_DIR/slack-post.sh" \
         --channel "$channel" --thread-ts "$parent_ts" --text "$whatsnew_reply" >/dev/null; then
       printf 'studio-tf-push: warning: Slack What'\''s New thread reply failed\n' >&2
-    fi
-  fi
-
-  if release_bool_enabled "${STUDIO_RELEASES_SLACK_GITHUB_REPLY:-1}"; then
-    if ! STUDIO_RELEASE_PROJECT="$RELEASE_PROJECT" "$SCRIPT_DIR/slack-post.sh" \
-        --channel "$channel" --thread-ts "$parent_ts" --text "$release_url" >/dev/null; then
-      printf 'studio-tf-push: warning: Slack GitHub release thread reply failed\n' >&2
     fi
   fi
 
@@ -524,6 +517,119 @@ write_appstore_pending_marker() {
     }' >"$marker_path"
   chmod 600 "$marker_path" 2>/dev/null || true
   printf 'studio-tf-push: pending App Store marker: %s\n' "$marker_path" >&2
+}
+
+update_appstore_pending_marker_pr() {
+  local pr_url="$1" pr_number="$2" source_branch="$3" notice="$4" slack_pr_reply_ts="$5"
+  local marker_path="$RELEASE_PROJECT_ROOT/.runtime/state/pending-appstore-review.json"
+  [ -f "$marker_path" ] || return 0
+  local tmp
+  tmp=$(mktemp "${marker_path}.XXXXXX") || return 1
+  jq \
+    --arg pr_url "$pr_url" \
+    --arg pr_number "$pr_number" \
+    --arg source_branch "$source_branch" \
+    --arg notice "$notice" \
+    --arg slack_pr_reply_ts "$slack_pr_reply_ts" \
+    '.github_pr_url = $pr_url |
+     .github_pr_number = ($pr_number | tonumber? // $pr_number) |
+     .source_branch = $source_branch |
+     .pending_pr_notice = $notice |
+     .slack_pr_reply_ts = $slack_pr_reply_ts |
+     .finalize_pr_merged = false' \
+    "$marker_path" >"$tmp" && mv "$tmp" "$marker_path"
+  chmod 600 "$marker_path" 2>/dev/null || true
+}
+
+notify_appstore_pending_pr_notice() {
+  local notice="$1"
+  [ -n "$notice" ] || return 0
+  printf 'studio-tf-push: %s\n' "$notice" >&2
+  if [ -n "$APPSTORE_SLACK_PARENT_TS" ] && [ -n "$APPSTORE_SLACK_CHANNEL_USED" ] && \
+     release_bool_enabled "${STUDIO_RELEASES_SLACK_WATCHER_REPLIES:-1}"; then
+    STUDIO_RELEASE_PROJECT="$RELEASE_PROJECT" "$SCRIPT_DIR/slack-post.sh" \
+      --channel "$APPSTORE_SLACK_CHANNEL_USED" \
+      --thread-ts "$APPSTORE_SLACK_PARENT_TS" \
+      --text "$notice" >/dev/null 2>&1 || \
+      printf 'studio-tf-push: warning: Slack pending-PR notice failed\n' >&2
+  fi
+}
+
+post_appstore_pr_link() {
+  local pr_url="$1"
+  APPSTORE_PR_SLACK_REPLY_TS=""
+  [ -n "$pr_url" ] || return 0
+  if [ -z "$APPSTORE_SLACK_PARENT_TS" ] || [ -z "$APPSTORE_SLACK_CHANNEL_USED" ]; then
+    return 0
+  fi
+  if ! release_bool_enabled "${STUDIO_RELEASES_SLACK_GITHUB_REPLY:-1}"; then
+    return 0
+  fi
+  if ! release_bool_enabled "${STUDIO_RELEASES_SLACK_WATCHER_REPLIES:-1}"; then
+    return 0
+  fi
+  local resp
+  if resp=$(STUDIO_RELEASE_PROJECT="$RELEASE_PROJECT" "$SCRIPT_DIR/slack-post.sh" \
+      --channel "$APPSTORE_SLACK_CHANNEL_USED" \
+      --thread-ts "$APPSTORE_SLACK_PARENT_TS" \
+      --text "$pr_url" 2>&1); then
+    APPSTORE_PR_SLACK_REPLY_TS=$(printf '%s' "$resp" | jq -r '.ts // empty' 2>/dev/null || true)
+  else
+    printf 'studio-tf-push: warning: Slack App Store PR URL thread reply failed: %s\n' "$resp" >&2
+  fi
+}
+
+create_or_reuse_appstore_pr() {
+  local source_branch="$1" gh_repo="$2" tag="$3" release_url="$4"
+  APPSTORE_PR_URL=""
+  APPSTORE_PR_NUMBER=""
+  APPSTORE_PR_PENDING_NOTICE=""
+
+  local prs same_pr pending_branch pr_body pr_url pr_json
+  prs=$(with_login_home_for_github gh pr list \
+    --repo "$gh_repo" \
+    --base main \
+    --state open \
+    --json number,headRefName,title,url 2>/dev/null) || halt_failed prereq "gh pr list failed"
+
+  same_pr=$(printf '%s' "$prs" | jq -c --arg branch "$source_branch" \
+    '[.[] | select(.headRefName == $branch)] | first // empty')
+  if [ -n "$same_pr" ]; then
+    APPSTORE_PR_URL=$(printf '%s' "$same_pr" | jq -r '.url')
+    APPSTORE_PR_NUMBER=$(printf '%s' "$same_pr" | jq -r '.number')
+    printf 'studio-tf-push: reusing open App Store PR #%s from %s\n' "$APPSTORE_PR_NUMBER" "$source_branch" >&2
+    return 0
+  fi
+
+  pending_branch=$(printf '%s' "$prs" | jq -r --arg branch "$source_branch" \
+    '[.[] | select(.headRefName != $branch and (.title | startswith("App Store submission ")))] | first | .headRefName // empty')
+  if [ -n "$pending_branch" ]; then
+    APPSTORE_PR_PENDING_NOTICE="There is already a PR pending from ${pending_branch}. This new build is from ${source_branch}. Raising a separate PR."
+  fi
+
+  pr_body=$(cat <<EOF
+App Store submission for ${tag}.
+
+Release notes remain in the draft GitHub release until App Store Connect reports READY_FOR_SALE:
+${release_url}
+
+Merge policy: merge to main only after READY_FOR_SALE, using a merge commit.
+EOF
+)
+  pr_url=$(with_login_home_for_github gh pr create \
+    --repo "$gh_repo" \
+    --base main \
+    --head "$source_branch" \
+    --title "App Store submission ${tag}" \
+    --body "$pr_body" 2>/dev/null) || halt_failed prereq "gh pr create failed"
+  APPSTORE_PR_URL=$(printf '%s\n' "$pr_url" | tail -1)
+  pr_json=$(with_login_home_for_github gh pr view "$APPSTORE_PR_URL" \
+    --repo "$gh_repo" \
+    --json number,url 2>/dev/null) || halt_failed prereq "gh pr view failed after create"
+  APPSTORE_PR_NUMBER=$(printf '%s' "$pr_json" | jq -r '.number // empty')
+  APPSTORE_PR_URL=$(printf '%s' "$pr_json" | jq -r '.url // empty')
+  [ -n "$APPSTORE_PR_URL" ] || halt_failed prereq "gh pr create returned no URL"
+  printf 'studio-tf-push: App Store PR: %s\n' "$APPSTORE_PR_URL" >&2
 }
 
 cmd_push() {
@@ -1016,8 +1122,8 @@ cmd_appstore() {
     git push origin "$TAG" || exit 1
   ) || halt_failed prereq "git tag/push failed"
 
-  gh auth switch --user vishal-zaps >/dev/null 2>&1 || true
-  if ! gh release create "$TAG" \
+  with_login_home_for_github gh auth switch --user vishal-zaps >/dev/null 2>&1 || true
+  if ! with_login_home_for_github gh release create "$TAG" \
       --repo "$GH_REPO" \
       --title "$TAG" \
       --notes-file "$RELEASE_NOTES_FILE" \
@@ -1078,18 +1184,25 @@ cmd_appstore() {
   appstore_notify_slack "$BUILD" "$VERSION" "$TAG" "$RELEASE_NOTES_FILE" "$WHATSNEW_FILE" "$RELEASE_URL" "$DRY_RUN_FLAG"
   write_appstore_pending_marker "$BUILD" "$VERSION" "$TAG" "$version_id" "$build_id" "$RELEASE_URL" \
     || printf 'studio-tf-push: warning: pending App Store marker write failed; watcher will not thread lifecycle replies\n' >&2
+  create_or_reuse_appstore_pr "$appstore_branch" "$GH_REPO" "$TAG" "$RELEASE_URL"
+  notify_appstore_pending_pr_notice "$APPSTORE_PR_PENDING_NOTICE"
+  post_appstore_pr_link "$APPSTORE_PR_URL"
+  update_appstore_pending_marker_pr "$APPSTORE_PR_URL" "$APPSTORE_PR_NUMBER" "$appstore_branch" "$APPSTORE_PR_PENDING_NOTICE" "$APPSTORE_PR_SLACK_REPLY_TS" \
+    || printf 'studio-tf-push: warning: pending App Store marker PR metadata update failed\n' >&2
 
   jq -nc \
     --arg release_tag "$RELEASE_TAG" \
     --arg tag "$TAG" \
     --arg github_release_url "$RELEASE_URL" \
+    --arg github_pr_url "$APPSTORE_PR_URL" \
+    --arg github_pr_number "$APPSTORE_PR_NUMBER" \
     --arg version_id "$version_id" \
     --arg build_id "$build_id" \
     --arg slack_status "$APPSTORE_SLACK_STATUS" \
     --arg slack_channel "$APPSTORE_SLACK_CHANNEL_USED" \
     --arg slack_parent_ts "$APPSTORE_SLACK_PARENT_TS" \
     --argjson loc_count "$loc_count" \
-    '{release_tag:$release_tag, tag:$tag, github_release_url:$github_release_url, version_id:$version_id, build_id:$build_id, localizations:$loc_count, slack:{status:$slack_status, channel_id:$slack_channel, message_ts:$slack_parent_ts}}'
+    '{release_tag:$release_tag, tag:$tag, github_release_url:$github_release_url, github_pr:{url:$github_pr_url, number:($github_pr_number | tonumber? // $github_pr_number)}, version_id:$version_id, build_id:$build_id, localizations:$loc_count, slack:{status:$slack_status, channel_id:$slack_channel, message_ts:$slack_parent_ts}}'
 }
 
 case "${1:-}" in

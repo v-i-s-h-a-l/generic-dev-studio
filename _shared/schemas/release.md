@@ -4,11 +4,11 @@ description: YAML shape for TestFlight / App Store release artifacts under plans
 type: reference
 ---
 
-# Release Schema (`release@1.1.0`)
+# Release Schema (`release@1.2.0`)
 
 Per-release artifact written to `~/.dev-studio/<project>/plans/releases/<release-id>.yaml`. One file per build submitted to a release channel (TestFlight or App Store). Authored by `/achilles push-tf` or `/achilles app-store`; updated by `scripts/appstore-watch.sh` as the release transitions states.
 
-Version 1.1.0 is non-breaking — adds the optional `replaced_by` and `cancelled_reason` fields to support the cancel-and-replace flow Nabu (#214) needs. `min_reader: 1.0.0` keeps the entire active fleet compatible.
+Version 1.2.0 is non-breaking — adds optional App Store PR metadata so the watcher can merge the submitted source branch only after `READY_FOR_SALE`. `min_reader: 1.0.0` keeps the entire active fleet compatible.
 
 Release state transitions governed by `state-machines/release-lifecycle.md` (landed alongside this schema in Phase 2.6 Commit B).
 
@@ -17,7 +17,7 @@ Release state transitions governed by `state-machines/release-lifecycle.md` (lan
 ```yaml
 schema_version:
   name: release
-  version: 1.1.0
+  version: 1.2.0
   min_reader: 1.0.0
   deprecated_at: null
 id: 0190f52a-9000-7f01-8aaa-77fe8fa99bbb        # UUIDv7
@@ -37,6 +37,10 @@ tasks:
   - 0190f52a-6f15-7b4c-9b2e-1e5faa80f622
 reviews:
   - 0190f52a-7b22-7e04-8cff-66ef7ec99c99        # pre-release review-ids (if any)
+github_pr:
+  number: 42                                      # App Store source PR to main; null until submission creates/reuses it
+  url: "https://github.com/org/repo/pull/42"
+  source_branch: "feature/appstore-release"
 asc_metadata:
   asc_build_id: "1234567890"                     # App Store Connect build identifier
   app_store_state: "WAITING_FOR_REVIEW"          # ASC appStoreState verbatim
@@ -44,10 +48,12 @@ asc_metadata:
   next_check_at: 2026-04-22T15:02:11Z
   consecutive_failures: 0
   stuck: false
+  finalize_pr_merged: false                      # true after READY_FOR_SALE merge commit lands
 slack:
   posted_to: "#releases"
   channel_id: "C0123456789"
   message_ts: "1745332800.001200"
+  pr_reply_ts: "1745332810.001300"                # PR URL reply, updated to release URL at READY_FOR_SALE
   reply_ts: null                                 # filled when watcher finalizes
 notes: null
 ```
@@ -69,6 +75,7 @@ notes: null
 | `released_at` | RFC3339 UTC \| null | yes | Set when state transitions to `released`. |
 | `tasks` | array of UUIDv7 | yes | Task-ids shipped in this release. Bidirectional with `task.links.release`. |
 | `reviews` | array of UUIDv7 | yes | Pre-release review artifacts (e.g. release-gate reviews). |
+| `github_pr` | object \| null | no | App Store source PR opened from the submitted branch to `main`; merged with a merge commit only after `READY_FOR_SALE`. Null for TestFlight and for legacy artifacts. |
 | `asc_metadata` | object \| null | yes | ASC poll state. Null for channels without ASC (none today). |
 | `slack` | object \| null | yes | Slack post metadata for release announcements. Null when no post made. |
 | `notes` | string \| null | yes | Optional commentary. |
@@ -136,6 +143,7 @@ Active watcher state files (`pending-appstore-review.json`) migrate into the per
 
 | Version | Landed | Changes |
 |---|---|---|
+| 1.2.0 | 2026-05-05 | Non-breaking: add optional `github_pr`, `asc_metadata.finalize_pr_merged`, and `slack.pr_reply_ts` fields for App Store submission PR lifecycle (#164). |
 | 1.1.0 | 2026-04-27 | Non-breaking: add optional `replaced_by` (release-id pointer) and `cancelled_reason` (free text) fields for the cancel-and-replace flow that Nabu (#214) consumes (#247 Stage C deliverable 2). |
 | 1.0.0 | 2026-04-22 | Initial Phase 2.6 landing alongside `state-machines/release-lifecycle.md`. |
 
