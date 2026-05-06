@@ -71,6 +71,7 @@ scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # sa
 scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex --yes # execute after plan with node/RAM-sized session pool + private report
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview role/branch-scoped checkpoint hooks
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements     # unattended start/resume when state is safe and unambiguous
+scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --yes # execute without routine continuation prompts; typed blockers halt
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show the supervisor's next action without mutating state
 scripts/studio-chain-runner.sh --discover                                  # bare invocation lists runnable manifests and resumable runs
 scripts/manager-work-chain.sh prd-to-chain-automation                      # manager front door: auto-run a named work-chain; bare call discovers

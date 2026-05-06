@@ -515,9 +515,9 @@
           </article>
           <article class="role">
             <h3>Parallel Chains</h3>
-            <p>Use chain manifests when the repo already has an issue chain. Bare invocation discovers runnable manifests and resumable runs; dry-run first, then launch one independent chain per shell session. The manager front door for the PRD automation arc is <code>/dev-studio manager work-chain prd-to-chain-automation</code>, which auto-runs the chain through the repo-side manager wrapper.</p>
+            <p>Use chain manifests when the repo already has an issue chain. Bare invocation discovers runnable manifests and resumable runs; dry-run first, then launch one independent chain per shell session. The manager front door for the PRD automation arc is <code>/dev-studio manager work-chain prd-to-chain-automation</code>, which auto-runs the chain through the repo-side manager wrapper. Unattended chain runs avoid routine continue prompts and stop only on typed blockers after finite retries.</p>
             <code class="shell">scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt; --dry-run
-scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt;
+scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt; --unattended --yes
 scripts/studio-chain-runner.sh --discover
 scripts/manager-work-chain.sh prd-to-chain-automation</code>
           </article>
@@ -716,9 +716,9 @@ scripts/manager-analyze.sh --cwd "$PWD"</code>
           </article>
           <article class="role">
             <h3>Chain Runs</h3>
-            <p>Issue chains can run with persisted private reports and resume markers. Use dry-run first, or type the chain runner with no manifest to see runnable manifests and resumable runs before starting a chain. The manager wrapper mirrors the same discovery flow for bare invocations and auto-runs named work-chains by default.</p>
+            <p>Issue chains can run with persisted private reports and resume markers. Use dry-run first, or type the chain runner with no manifest to see runnable manifests and resumable runs before starting a chain. The manager wrapper mirrors the same discovery flow for bare invocations and auto-runs named work-chains by default. Explicit <code>--attended</code> and <code>--unattended</code> modes keep human prompts reserved for real review, implementation, permission, or test blockers.</p>
             <code class="shell">scripts/studio-chain-runner.sh &lt;manifest&gt; --dry-run
-scripts/studio-chain-runner.sh &lt;manifest&gt; --auto
+scripts/studio-chain-runner.sh --auto &lt;manifest&gt;
 scripts/studio-chain-runner.sh --discover
 scripts/manager-work-chain.sh prd-to-chain-automation</code>
           </article>

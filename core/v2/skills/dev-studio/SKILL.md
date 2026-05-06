@@ -81,7 +81,9 @@ direct invocation once the workflow is selected. `manager ingest` calls
 `scripts/studio-chain-runner.sh` now shows runnable manifests and resumable
 runs before any plan or resume action is chosen, and `/dev-studio manager
 work-chain prd-to-chain-automation` auto-runs the new PRD automation chain
-while bare `manager work-chain` still lands in discovery.
+while bare `manager work-chain` still lands in discovery. Chain execution
+supports explicit `--attended` and `--unattended` modes; unattended runs avoid
+routine continue prompts and stop only on typed blockers after finite retries.
 
 After a bare role landing, later bare subcommands may resolve through that
 active role when unambiguous in the same session. Store the resolved canonical

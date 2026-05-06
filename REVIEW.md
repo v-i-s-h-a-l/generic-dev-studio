@@ -176,9 +176,11 @@ if [ "$(yaml_field "$CAPS" supports_hooks)" != "true" ]; then
 fi
 ```
 
-### R15 — Single retry layer: at most one retry, no inner retries (tier: **ask**)
+### R15 — Single retry layer: bounded retries only at declared orchestration edges (tier: **ask**)
 
 `dispatch-review.sh` and `spawn-worker.sh` retry a failed spawn at most once. No worker script may implement its own inner retry loop. Validator rejections never auto-retry (per `_shared/contracts/idempotency.md §Per-step retry classification`). Prevents cascading retry amplification that could double-emit events or consume API quota unexpectedly.
+
+Exception: `scripts/studio-chain-runner.sh` may use its declared chain execution retry policy for idempotent infrastructure operations only: auth/preflight probes, remote ref reads, fetches, and pushes that are safe to repeat after an ambiguous client-side failure. The retry budget must be finite, surfaced in plan/state/envelopes/halt records, and exhausted retries must write a typed halt record. Do not wrap non-idempotent GitHub mutations such as PR creation, issue close/comment, or telemetry comments.
 
 **How to check:** grep the diff for `for _ in 1 2`, `while retry`, `attempt=`, or `RETRY_COUNT` patterns in `scripts/*.sh`. If a loop implements retry semantics that isn't the single allowed outer retry in dispatch/spawn scripts, flag for review.
 

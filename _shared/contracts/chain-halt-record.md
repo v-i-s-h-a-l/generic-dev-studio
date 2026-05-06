@@ -23,8 +23,19 @@ Every non-fatal halt must leave:
 - the validator-enforced `halt_class`
 - a resumable state object
 - one visible `next_command`, normally `scripts/studio-chain-runner.sh --resume <run_id> --yes`
+- finite retry policy metadata showing the auto-retry limit was exhausted or not applicable
+- escalation metadata showing whether a human prompt is allowed for this halt class
 
 True hard stops set `true_hard_stop: true`, `status: "terminated"`, and `next_command: null`. The runner must not execute a stored command automatically.
+
+## Retry And Escalation Policy
+
+The chain runner distinguishes routine continuation from useful human judgment:
+
+- `attended` mode may prompt only for `review-needed`, `human-needed`, and `fatal` halt classes.
+- `unattended` mode continues through routine plan, worker, ingest, outcome, PR, merge, and close boundaries until a typed blocker appears.
+- Retryable infrastructure operations use a finite auto-retry budget from `STUDIO_CHAIN_RETRY_LIMIT` (default `2`) and `STUDIO_CHAIN_RETRY_BACKOFF_SEC` (default `2`). After the budget is exhausted, the runner writes a halt record instead of asking "should we continue?"
+- Review gates are not retried as routine failures: blocked and ambiguous reviews stop as `review-needed`; reviewer host eligibility stops as `human-needed`.
 
 ## Reason Mapping
 
