@@ -7,7 +7,7 @@
 # Usage:
 #   scripts/validate-contract.sh <schema-name> <file>
 #
-# <schema-name>: worker-report | debrief | review-verdict | handoff | chain-task-envelope | chain-halt-record | chain-decision-escrow | apollo-scenario | apollo-code-area | apollo-signpost-plan
+# <schema-name>: worker-report | debrief | review-verdict | handoff | chain-task-envelope | chain-halt-record | chain-decision-escrow | task-graph | apollo-scenario | apollo-code-area | apollo-signpost-plan
 # <file>:        path to artifact (JSON or YAML — check-jsonschema handles both)
 #
 # Exit 0  — payload is valid against the named schema.
@@ -39,11 +39,12 @@ case "$SCHEMA_NAME" in
   chain-task-envelope) SCHEMA_FILE="$REPO_ROOT/_shared/contracts/chain-task-envelope.schema.json" ;;
   chain-halt-record) SCHEMA_FILE="$REPO_ROOT/_shared/contracts/chain-halt-record.schema.json" ;;
   chain-decision-escrow) SCHEMA_FILE="$REPO_ROOT/_shared/contracts/chain-decision-escrow.schema.json" ;;
+  task-graph)     SCHEMA_FILE="$REPO_ROOT/_shared/contracts/task-graph.schema.json" ;;
   apollo-scenario) SCHEMA_FILE="$REPO_ROOT/_shared/contracts/apollo-scenario.schema.json" ;;
   apollo-code-area) SCHEMA_FILE="$REPO_ROOT/_shared/contracts/apollo-code-area.schema.json" ;;
   apollo-signpost-plan) SCHEMA_FILE="$REPO_ROOT/_shared/contracts/apollo-signpost-plan.schema.json" ;;
   *)
-    printf 'validate-contract: unknown schema %s (want worker-report|debrief|review-verdict|handoff|chain-task-envelope|chain-halt-record|chain-decision-escrow|apollo-scenario|apollo-code-area|apollo-signpost-plan)\n' \
+    printf 'validate-contract: unknown schema %s (want worker-report|debrief|review-verdict|handoff|chain-task-envelope|chain-halt-record|chain-decision-escrow|task-graph|apollo-scenario|apollo-code-area|apollo-signpost-plan)\n' \
       "$SCHEMA_NAME" >&2
     exit 2
     ;;

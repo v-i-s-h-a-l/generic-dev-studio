@@ -33,11 +33,11 @@ cat > "$SUMMARY_ROOT/issue-480.json" <<JSON
   "additions": 50,
   "deletions": 4,
   "generated_file_count": 0,
-  "tokens": null,
-  "tests": [{"command":"fixture-test","outcome":"pass"}],
+  "tokens": {"total": 900},
+  "tests": [{"command":"fixture-test","outcome":"pass"},{"command":"flaky-test","outcome":"flaky"}],
   "lints": [],
   "builds": [],
-  "telemetry_gaps": ["tokens", "model"]
+  "telemetry_gaps": ["model"]
 }
 JSON
 
@@ -105,6 +105,10 @@ for needle in \
   "Run UUID: \`$RUN_ID\`" \
   "Status: \`failed\`" \
   "## Stage Reconstruction" \
+  "## Efficiency Summary" \
+  "Seconds per changed file: 21" \
+  "Tokens per changed file: 450" \
+  "Rework signals: 1 bad/flaky tests" \
   "execute:" \
   "review:" \
   "resume:" \
@@ -113,7 +117,6 @@ for needle in \
   "## Resume Attempts" \
   "$ATTEMPT_ID" \
   "model_tool_permission_prompt" \
-  "tokens: 1" \
   "model: 1" \
   "telemetry_artifact_malformed" \
   "Run state: \`$RUN_STATE_JSON\`" \

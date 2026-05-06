@@ -32,6 +32,7 @@ Required fields:
 | `run_id`, `chain_run_id`, `issue_run_id` | UUID join keys for invocation, chain, and issue slice. |
 | `source_issue` | `{number,title,body,url,state}` from GitHub at launch time. |
 | `ownership` | `{chain,branch,issue_branch,worktree,host}`. |
+| `execution_policy` | Mode, review gates, retry budget, and escalation rules the child should honor without reopening parent context. |
 | `expected_summary_artifact` | Exact `.studio/chain-worker-summary.json` path the worker must write. |
 | `required_checks` | String array seeded from runner-known requirements. |
 | `allowed_assumptions` | String array of assumptions the child may rely on without reopening parent context. |
@@ -40,6 +41,15 @@ Required fields:
 | `privacy` | `{classification:"private-runtime",rules:[...]}`. |
 
 The start envelope is a private runtime artifact. It stays under `.studio` in the issue worktree and is removed by the chain runner during cleanup. `phase_review_context` is not human acceptance and must not include raw reviewer prose; it is only the compact subset needed to prevent stale assumptions in the next issue phase.
+
+Issue worktrees live below the parent run UUID temporary root, not directly
+under the shared `studio-chain-runner` temp directory. A resumed run keeps the
+same `run_id`, `chain_run_id`, and `issue_run_id` values from `state.json`;
+completed and integrated issues are skipped, completed but unintegrated issues
+are integrated before new work starts, and pending dependency-ready issues are
+relaunched with a fresh child session.
+
+`execution_policy.mode` is `attended` or `unattended`. Attended mode allows questions only for real design, implementation, permission, destructive-change, test, or review judgment blockers. Unattended mode proceeds through routine boundaries until such a blocker appears. `execution_policy.retry` carries a finite auto-retry limit and backoff; exhausted retryable failures become typed halt records. `execution_policy.escalation.routine_continue_prompts` must remain `false`.
 
 ## Completion Envelope
 
