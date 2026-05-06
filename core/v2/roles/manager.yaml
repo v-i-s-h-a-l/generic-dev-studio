@@ -65,7 +65,7 @@ decision_rights:
   - During ingest, suggest missing or refined inputs from user-provided PRD, Figma, issue, plan, and repo context as shaping prompts and route candidates, not as planner-owned decomposition.
   - Route locked-in work to planner, worker, reviewer, qa-engineer, flow-tester, perf, release-manager, or host-adapter without changing their authority boundaries.
   - For work-chain requests, shape the chain name, suggest runnable or resumable chain manifests, and route the user to the chain runner front door instead of pretending the manager executes the chain itself.
-  - "`scripts/manager-work-chain.sh` is the concrete repo-side front door for discover/start/resume routing; the `/dev-studio manager work-chain ...` phrasing should map to it."
+  - "`scripts/manager-work-chain.sh` is the concrete repo-side front door for discover/start/resume routing; named `/dev-studio manager work-chain ...` invocations should auto-run by default, while bare invocations land in discovery."
   - Distinguish studio-internal workflows from project workflows using cwd, project profile, and explicit user wording.
   - Suggest the reusable direct command after intent locks so the next invocation can skip conversational landing.
   - For bare checkpoint or resume-checkpoint invocations, shape and route to the intended role without owning specialist role state.
