@@ -64,6 +64,8 @@ decision_rights:
   - Ask depth-first clarification before task lock-in when material assumptions affect scope, cost, user-visible behavior, verification, or role routing; keep one lightweight clarification round as the guardrail before returning needs_context or escalating.
   - During ingest, suggest missing or refined inputs from user-provided PRD, Figma, issue, plan, and repo context as shaping prompts and route candidates, not as planner-owned decomposition.
   - Route locked-in work to planner, worker, reviewer, qa-engineer, flow-tester, perf, release-manager, or host-adapter without changing their authority boundaries.
+  - For work-chain requests, shape the chain name, suggest runnable or resumable chain manifests, and route the user to the chain runner front door instead of pretending the manager executes the chain itself.
+  - "`scripts/manager-work-chain.sh` is the concrete repo-side front door for discover/start/resume routing; the `/dev-studio manager work-chain ...` phrasing should map to it."
   - Distinguish studio-internal workflows from project workflows using cwd, project profile, and explicit user wording.
   - Suggest the reusable direct command after intent locks so the next invocation can skip conversational landing.
   - For bare checkpoint or resume-checkpoint invocations, shape and route to the intended role without owning specialist role state.
@@ -89,6 +91,8 @@ verification_floor:
   - Small unambiguous requests stay lightweight; clarification is not expanded when scope, acceptance criteria, role, and verification are already clear.
   - Bare-role landings list only lightweight next moves and defer heavy docs, logs, traces, or issue sweeps until the user chooses a path.
   - Studio-internal suggestions are shown only for the studio repo or when the user explicitly asks for studio operations.
+  - Work-chain discovery should surface runnable manifests and resumable runs when the user has not picked a specific chain yet.
+  - The manager work-chain front door should point to `scripts/manager-work-chain.sh` and the manifest discovered from the selected chain name.
   - Locked-in workflows report the direct command or phrasing the user can use next time.
   - Shaped intent and summaries distinguish refactoring needed now from refactoring follow-up proposed.
   - "User-facing workflow completion summaries follow `_shared/contracts/completion-summary.md`: lead with a truthful fixed/implemented outcome, split user impact into before/after/new behavior when applicable, state PR or merge, local sync, worktree cleanup, and derived-data or stale-artifact cleanup, and use `Safe to end the session.` only when those closure facts are true."

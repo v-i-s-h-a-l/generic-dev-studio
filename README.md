@@ -75,6 +75,8 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio manager ingest       # capture one idea in the current repo context; --scope studio crosses to Forge
 /dev-studio manager reconcile    # project repo: sync emitted debriefs/reports into the task ledger
 /dev-studio manager analyze      # studio repo: telemetry/log analysis plus studio feedback triage
+/dev-studio manager work-chain prd-to-chain-automation # discover/start/resume the PRD automation chain
+scripts/manager-work-chain.sh prd-to-chain-automation # repo-side wrapper for the manager work-chain front door
 /dev-studio checkpoint           # manager-shaped checkpoint routing; explicit role owns content
 /dev-studio worker checkpoint    # worker-owned compact checkpoint; does not replace worker summary
 /dev-studio worker resume-checkpoint # resume worker checkpoint via manifest.json + context.md first
@@ -82,6 +84,8 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview checkpoint-aware safe-boundary hooks
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
+scripts/studio-chain-runner.sh --discover # bare invocation lists runnable manifests and resumable runs
+scripts/manager-work-chain.sh prd-to-chain-automation # manager front door that discovers or launches a work-chain
 scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters from private chain-run telemetry
 scripts/studio-checkpoint.sh resume --latest --role worker # compact session resume; reads manifest.json + context.md before lazy drift checks
 scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
@@ -193,7 +197,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
   studio-dependency-export.sh # Mermaid graph from native GitHub blocked_by issue dependencies
   studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
-  studio-chain-runner.sh   # plan/execute/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, optional checkpoint hooks, locks, and private run reports
+  studio-chain-runner.sh   # plan/execute/discover/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, optional checkpoint hooks, locks, and private run reports
   studio-chain-telemetry-digest.sh # v1 counters and weekly digest from private chain-run reports/events
   studio-checkpoint.sh # compact create/update/resume checkpoints under per-project .runtime/v2/checkpoints
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
