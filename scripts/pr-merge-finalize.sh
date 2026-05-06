@@ -133,6 +133,21 @@ $cleanup_paths
 EOF
 }
 
+detach_current_head_worktree_before_merge() {
+  local current_branch
+  current_branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  [ "$current_branch" = "$head_ref" ] || return 0
+  if [ -n "$(git status --porcelain)" ]; then
+    cleanup_failed=1
+    cleanup_notes="${cleanup_notes}head_worktree_detach_skipped_dirty;"
+    return 0
+  fi
+  if ! git -c advice.detachedHead=false checkout --detach HEAD >/dev/null; then
+    cleanup_failed=1
+    cleanup_notes="${cleanup_notes}head_worktree_detach_failed;"
+  fi
+}
+
 json=$(with_login_home_for_github gh pr view "$PR" --json number,state,isDraft,mergeable,mergeStateStatus,headRefName,headRefOid,headRepositoryOwner,baseRefName,url,commits) \
   || { printf 'pr-merge-finalize: failed to read PR %s\n' "$PR" >&2; exit 1; }
 
@@ -212,6 +227,8 @@ if [ "$METHOD" = "auto" ]; then
     METHOD="rebase"
   fi
 fi
+
+detach_current_head_worktree_before_merge
 
 printf 'Merging PR via GitHub: %s\n' "$url"
 remote_merge_warning=""
