@@ -304,6 +304,7 @@ STUDIO_PROJECT_ROOT=$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_project_root_for ge
 CHAIN_RUNS_ROOT="$STUDIO_PROJECT_ROOT/chain-runs"
 ANALYSIS_ROOT=$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_analysis_root)
 CHAIN_RUN_ROOT=""
+RUN_WORK_ROOT=""
 SUMMARY_ROOT=""
 HALT_ROOT=""
 ESCROW_ROOT=""
@@ -315,6 +316,7 @@ PLAN_JSON=""
 
 configure_run_paths() {
   CHAIN_RUN_ROOT="$CHAIN_RUNS_ROOT/$RUN_ID"
+  RUN_WORK_ROOT="$RUN_ROOT/$RUN_ID"
   SUMMARY_ROOT="$CHAIN_RUN_ROOT/worker-summaries"
   HALT_ROOT="$CHAIN_RUN_ROOT/halt-records"
   ESCROW_ROOT="$CHAIN_RUN_ROOT/decision-escrows"
@@ -1707,6 +1709,9 @@ finish_run() {
     emit_chain_event chain_resume_attempt_completed "" "$RUN_ID" "" "" "$status" "$duration_s" \
       "$(jq -cn --arg attempt_id "$ATTEMPT_ID" --arg reason "$reason" '{attempt_id:$attempt_id, failure_reason:(if $reason == "" then null else $reason end)}')"
   fi
+  if [ "$status" = "completed" ] && [ -n "${RUN_WORK_ROOT:-}" ]; then
+    rm -rf "$RUN_WORK_ROOT" 2>/dev/null || true
+  fi
   log "report written to $RUN_REPORT"
 }
 
@@ -1852,6 +1857,14 @@ print_supervisor_decision() {
   if [ "$action" = "refused_ambiguous" ]; then
     printf -- '- Manual selector: `scripts/studio-chain-runner.sh --resume <run_id> --yes`\n'
   fi
+  if [ "$action" = "resume" ]; then
+    printf -- '- Resume semantics: continue the selected run only; completed and integrated issues are skipped, completed but unintegrated issues are integrated before new work starts, pending dependency-ready issues are relaunched, and failed/halted issues keep their halt record until the cause is corrected.\n'
+    printf -- '- Resume command: `scripts/studio-chain-runner.sh --resume %s --yes`\n' "$selected_run_id"
+  elif [ "$action" = "start" ]; then
+    printf -- '- Namespacing: this run owns `%s/%s/`; chain and issue worktrees are created below that run UUID so concurrent chains cannot share temporary paths.\n' "$RUN_ROOT" "$selected_run_id"
+  elif [ "$action" = "refused_hard_stop" ] || [ "$action" = "refused_escrow" ] || [ "$action" = "refused_lock" ]; then
+    printf -- '- Resume semantics: automatic resume is refused until the selected run is unlocked or its halt/escrow state is resolved.\n'
+  fi
   printf '\n'
   jq -cn \
     --arg action "$action" \
@@ -1878,6 +1891,66 @@ lock_is_stale() {
   case "$pid" in ''|*[!0-9]*) return 0 ;; esac
   kill -0 "$pid" 2>/dev/null && return 1
   return 0
+}
+
+positive_int_or_default() {
+  local value="$1" fallback="$2"
+  case "$value" in
+    ''|*[!0-9]*|0) printf '%s\n' "$fallback" ;;
+    *) printf '%s\n' "$value" ;;
+  esac
+}
+
+chain_artifact_hygiene_sweep() {
+  [ "$DRY_RUN" -eq 0 ] || return 0
+  local tmp_retention_days run_retention_days max_bytes lock run_dir state status artifact
+  tmp_retention_days=$(positive_int_or_default "${STUDIO_CHAIN_TMP_RETENTION_DAYS:-2}" 2)
+  run_retention_days=$(positive_int_or_default "${STUDIO_CHAIN_RUN_RETENTION_DAYS:-30}" 30)
+  max_bytes=$(positive_int_or_default "${STUDIO_CHAIN_ARTIFACT_MAX_BYTES:-1048576}" 1048576)
+
+  mkdir -p "$RUN_ROOT" "$CHAIN_RUNS_ROOT"
+
+  while IFS= read -r lock; do
+    [ -n "$lock" ] || continue
+    if lock_is_stale "$lock"; then
+      rm -rf "$lock"
+    fi
+  done <<EOF
+$(find "$CHAIN_RUNS_ROOT" -type d \( -name 'state.json.lock' -o -name 'state.json.update.lock' \) 2>/dev/null)
+EOF
+
+  while IFS= read -r run_dir; do
+    [ -n "$run_dir" ] || continue
+    [ "$run_dir" = "$RUN_WORK_ROOT" ] && continue
+    rm -rf "$run_dir"
+  done <<EOF
+$(find "$RUN_ROOT" -mindepth 1 -maxdepth 1 -type d -mtime +"$tmp_retention_days" 2>/dev/null)
+EOF
+
+  if command -v gzip >/dev/null 2>&1; then
+    while IFS= read -r artifact; do
+      [ -n "$artifact" ] || continue
+      case "$artifact" in
+        "$CHAIN_RUN_ROOT"/*|*.gz) continue ;;
+      esac
+      gzip -f "$artifact" 2>/dev/null || true
+    done <<EOF
+$(find "$CHAIN_RUNS_ROOT" -type f \( -name 'events.jsonl' -o -name 'report.md' -o -name '*.out' \) -size +"$max_bytes"c 2>/dev/null)
+EOF
+  fi
+
+  while IFS= read -r state; do
+    [ -n "$state" ] || continue
+    run_dir=$(dirname "$state")
+    [ "$run_dir" = "$CHAIN_RUN_ROOT" ] && continue
+    status=$(jq -r '.status // "unknown"' "$state" 2>/dev/null || printf 'unknown')
+    [ "$status" = "completed" ] || continue
+    if [ -n "$(find "$run_dir" -maxdepth 0 -type d -mtime +"$run_retention_days" -print -quit 2>/dev/null)" ]; then
+      rm -rf "$run_dir"
+    fi
+  done <<EOF
+$(find "$CHAIN_RUNS_ROOT" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null)
+EOF
 }
 
 acquire_state_lock() {
@@ -2260,7 +2333,7 @@ build_plan_json() {
     esac
     chain_run_id=$(mint_uuidv7)
     chain_slug=$(slugify "$name")
-    chain_worktree="$RUN_ROOT/$chain_slug-feature"
+    chain_worktree="$RUN_WORK_ROOT/$chain_slug-feature"
     worker_pool=$(chain_worker_pool_size)
     issues_tmp="$out.issues.$$"
     printf '[]\n' > "$issues_tmp"
@@ -2309,7 +2382,7 @@ build_plan_json() {
       issue_slug=$(slugify "$issue")
       issue_branch="$branch-issue-$issue_slug"
       validate_branch_ref "$issue_branch" "issue"
-      issue_worktree="$RUN_ROOT/$chain_slug-issue-$issue_slug"
+      issue_worktree="$RUN_WORK_ROOT/$chain_slug-issue-$issue_slug"
       issue_run_id=$(mint_uuidv7)
       jq \
         --argjson issue "$issue" \
@@ -2532,6 +2605,7 @@ elif [ "$YES" -eq 1 ]; then
   acquire_state_lock
 fi
 
+chain_artifact_hygiene_sweep
 prepare_plan
 explain_plan "$PLAN_JSON"
 
@@ -3292,7 +3366,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
 
   chain_slug=$(slugify "$name")
   chain_worktree=$(jq -r ".chains[$idx].chain_worktree" "$PLAN_JSON")
-  chain_results_dir="$RUN_ROOT/$chain_slug-results-$chain_run_id"
+  chain_results_dir="$RUN_WORK_ROOT/$chain_slug-results-$chain_run_id"
   CHAIN_WORKER_POOL=$(jq -r ".chains[$idx].worker_pool" "$PLAN_JSON")
 
   log "starting chain $name on $branch from latest $base using host=$host git_metadata_strategy=$git_metadata_strategy checkpoint=$checkpoint_mode worker_pool=$CHAIN_WORKER_POOL"

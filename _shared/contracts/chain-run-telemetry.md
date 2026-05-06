@@ -15,6 +15,28 @@ Autonomous studio chains write compact local telemetry to:
 
 The file is private runtime state. It is append-only within one run directory; v1 uses atomic single-line JSONL appends and no external collector.
 
+## Runtime Hygiene
+
+Each non-dry-run invocation owns a run-scoped temporary root under:
+
+```text
+${TMPDIR:-/tmp}/studio-chain-runner/<run_id>/
+```
+
+Chain worktrees, issue worktrees, and per-issue result files stay under that
+run UUID so concurrent chains cannot collide on path names. Completed runs
+remove their temporary root after the private report is written. Failed or
+halted runs keep their temporary root until a later hygiene sweep or manual
+inspection.
+
+At startup, the runner performs a bounded private sweep: stale state locks whose
+PIDs are gone are removed, old temporary run roots are pruned, oversized old
+private artifacts such as `events.jsonl`, `report.md`, and wrapper `.out` files
+are gzip-archived when `gzip` is available, and old completed run directories
+may be pruned. Defaults are intentionally conservative and can be tuned with
+`STUDIO_CHAIN_TMP_RETENTION_DAYS`, `STUDIO_CHAIN_RUN_RETENTION_DAYS`, and
+`STUDIO_CHAIN_ARTIFACT_MAX_BYTES`.
+
 ## Event Envelope
 
 Every line carries the same top-level envelope:
