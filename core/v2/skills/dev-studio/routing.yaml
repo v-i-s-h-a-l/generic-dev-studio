@@ -13,6 +13,10 @@ invocation:
     - "/dev-studio resume-checkpoint"
     - "/dev-studio <role> checkpoint"
     - "/dev-studio <role> resume-checkpoint"
+    - "/dev-studio help"
+    - "/dev-studio <role> help"
+    - "active dev-studio role"
+    - "session-local dev-studio role"
 domains:
   - studio-v2
   - forge
