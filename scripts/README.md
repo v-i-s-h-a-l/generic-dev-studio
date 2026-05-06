@@ -86,6 +86,8 @@ scripts/studio-checkpoint.sh create --role worker --goal "..." --next "..." # co
 scripts/studio-checkpoint.sh resume --latest --role worker                  # load manifest.json + context.md first, then inspect drift lazily
 scripts/codex-worker-exec.sh "<prompt>"                                    # internal Codex worker launcher: workspace-write + ~/.dev-studio + ephemeral + no prompts
 # Chain dry-runs show the selected git metadata strategy; sandboxed hosts use issue-local clones so commits stay inside the worker root.
+# Chain worktrees/results are namespaced under the run UUID; resume continues only the selected run and surfaces skipped/integrated/pending issue semantics.
+# Chain startup sweeps stale state locks, old temporary run roots, and oversized private artifacts; tune with STUDIO_CHAIN_TMP_RETENTION_DAYS, STUDIO_CHAIN_RUN_RETENTION_DAYS, and STUDIO_CHAIN_ARTIFACT_MAX_BYTES.
 # Chain reports include typed halt records and decision escrow when automation pauses or continues on a low-risk default.
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
 scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
