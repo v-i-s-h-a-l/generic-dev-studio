@@ -77,6 +77,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio manager analyze      # studio repo: telemetry/log analysis plus studio feedback triage
 /dev-studio manager work-chain prd-to-chain-automation # auto-run the PRD automation chain; bare call discovers available chains
 scripts/manager-work-chain.sh prd-to-chain-automation # repo-side wrapper for the manager work-chain front door
+scripts/prd-intake-normalize.sh prd.md # normalize a PRD/transcript/issue brief into a planner-ready requirement packet
 /dev-studio checkpoint           # manager-shaped checkpoint routing; explicit role owns content
 /dev-studio worker checkpoint    # worker-owned compact checkpoint; does not replace worker summary
 /dev-studio worker resume-checkpoint # resume worker checkpoint via manifest.json + context.md first
@@ -199,6 +200,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
   studio-chain-runner.sh   # plan/execute/discover/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, optional checkpoint hooks, locks, and private run reports
   studio-chain-telemetry-digest.sh # v1 counters and weekly digest from private chain-run reports/events
+  prd-intake-normalize.sh # deterministic PRD/transcript/issue brief normalization into a small requirement packet
   studio-checkpoint.sh # compact create/update/resume checkpoints under per-project .runtime/v2/checkpoints
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   studio-staleness-triage.sh # scheduled GitHub issue staleness labels + escalation comments for the PM surface
