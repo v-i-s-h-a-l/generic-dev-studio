@@ -78,8 +78,9 @@ direct invocation once the workflow is selected. `manager ingest` calls
 `scripts/manager-analyze.sh`; `manager reconcile` calls
 `scripts/manager-reconcile.sh`; `manager work-chain` calls
 `scripts/manager-work-chain.sh`. For chain orchestration, bare
-`scripts/studio-chain-runner.sh` now shows runnable manifests and resumable
-runs before any plan or resume action is chosen, and `/dev-studio manager
+`scripts/studio-chain-runner.sh` now shows runnable chains, resumable runs, and
+next-action commands before any plan or resume action is chosen. Use
+`--discover <manifest|chain-name>` for filtered discovery; `/dev-studio manager
 work-chain prd-to-chain-automation` auto-runs the new PRD automation chain
 while bare `manager work-chain` still lands in discovery. Chain execution
 supports explicit `--attended` and `--unattended` modes; unattended runs avoid

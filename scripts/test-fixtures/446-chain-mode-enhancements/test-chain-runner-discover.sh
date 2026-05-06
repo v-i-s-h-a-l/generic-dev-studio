@@ -46,10 +46,27 @@ grep -q 'chains/workflow-measurement-improvements.yaml' "$TMPROOT/out" || {
   cat "$TMPROOT/out" >&2
   exit 1
 }
-grep -q 'scripts/studio-chain-runner.sh chains/workflow-measurement-improvements.yaml --only field-telemetry-mvp --dry-run' "$TMPROOT/out" || {
+grep -q 'scripts/manager-work-chain.sh field-telemetry-mvp --dry-run' "$TMPROOT/out" || {
   printf 'missing runnable chain suggestion\n' >&2
   cat "$TMPROOT/out" >&2
   exit 1
 }
+grep -q 'Attended run: `scripts/studio-chain-runner.sh <manifest|chain-name> --attended --yes`' "$TMPROOT/out" || {
+  printf 'missing attended command contract\n' >&2
+  cat "$TMPROOT/out" >&2
+  exit 1
+}
+
+HOME="$HOME_DIR" "$ROOT/scripts/studio-chain-runner.sh" --discover prd-to-chain-automation > "$TMPROOT/filtered.out" 2>&1
+grep -q 'prd-to-chain-automation' "$TMPROOT/filtered.out" || {
+  printf 'filtered discovery omitted named chain\n' >&2
+  cat "$TMPROOT/filtered.out" >&2
+  exit 1
+}
+if grep -q 'scripts/manager-work-chain.sh field-telemetry-mvp --dry-run' "$TMPROOT/filtered.out"; then
+  printf 'filtered discovery included unrelated runnable chain\n' >&2
+  cat "$TMPROOT/filtered.out" >&2
+  exit 1
+fi
 
 printf 'PASS: chain-runner discovery mode\n'

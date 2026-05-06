@@ -2,12 +2,12 @@
 # studio-chain-runner.sh - execute issue chains with capacity-scaled fresh host sessions.
 #
 # Usage:
+#   scripts/studio-chain-runner.sh [--discover [<manifest|chain-name>] [--only <chain>]]
 #   scripts/studio-chain-runner.sh <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--yes] [--parallel-chains <n|auto|1>] [--checkpoint auto|off] [--attended|--unattended]
 #   scripts/studio-chain-runner.sh --auto <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--checkpoint auto|off] [--unattended]
 #   scripts/studio-chain-runner.sh --explain-next <manifest|chain-name> [--only <chain>]
 #   scripts/studio-chain-runner.sh --resume <run_id> [--yes]
 #   scripts/studio-chain-runner.sh --list
-#   scripts/studio-chain-runner.sh --discover
 #
 # Manifest shape:
 #   schema_version: 1
@@ -105,9 +105,7 @@ if [ "$DISCOVER_MODE" -eq 1 ] && {
   [ "$AUTO_MODE" -eq 1 ] ||
   [ "$EXPLAIN_NEXT" -eq 1 ] ||
   [ "$LIST_RUNS" -eq 1 ] ||
-  [ -n "$MANIFEST" ] ||
   [ -n "$RESUME_ID" ] ||
-  [ -n "$ONLY_CHAIN" ] ||
   [ -n "$HOST_OVERRIDE" ] ||
   [ "$DRY_RUN" -eq 1 ] ||
   [ "$YES" -eq 1 ] ||
@@ -176,7 +174,7 @@ if [ "$LIST_RUNS" -eq 1 ]; then
 fi
 
 discover_persisted_runs() {
-  local parent_home project_root chain_root state_count state run_id status manifest next_command
+  local parent_home project_root chain_root state_count state run_id status manifest next_command rows_tmp
   command -v jq >/dev/null 2>&1 || { printf 'studio-chain-runner: jq required\n' >&2; exit 2; }
   parent_home=$(resolve_parent_home_for_github)
   project_root=$(HOME="$parent_home" resolve_project_root_for generic-dev-studio)
@@ -194,8 +192,7 @@ discover_persisted_runs() {
     return 0
   fi
 
-  printf '| Run ID | Status | Manifest | Suggested command |\n'
-  printf '|---|---|---|---|\n'
+  rows_tmp=$(mktemp -t studio-chain-discovery-runs.XXXXXX)
   while IFS= read -r state; do
     [ -n "$state" ] || continue
     [ -r "$state" ] || continue
@@ -210,23 +207,54 @@ discover_persisted_runs() {
         else "scripts/studio-chain-runner.sh --resume \($run_id) --yes"
         end
     ' "$state" 2>/dev/null || printf 'scripts/studio-chain-runner.sh --resume %s --yes' "$run_id")
-    printf '| `%s` | `%s` | `%s` | `%s` |\n' "$run_id" "$status" "$manifest" "$next_command"
+    printf '| `%s` | `%s` | `%s` | `%s` |\n' "$run_id" "$status" "$manifest" "$next_command" >> "$rows_tmp"
   done <<EOF
 $(find "$chain_root" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null | sort)
 EOF
+  if [ ! -s "$rows_tmp" ]; then
+    printf -- '- No resumable chain runs found.\n'
+    rm -f "$rows_tmp"
+    return 0
+  fi
+  printf '| Run ID | Status | Manifest | Suggested command |\n'
+  printf '|---|---|---|---|\n'
+  cat "$rows_tmp"
+  rm -f "$rows_tmp"
 }
 
 discover_chain_manifests() {
-  local manifest chain_count idx name issues command rel_manifest
+  local manifest chain_count idx name issues command rel_manifest manifest_filter manifest_list_tmp rows_tmp candidate
   command -v yq >/dev/null 2>&1 || { printf 'studio-chain-runner: yq required\n' >&2; exit 2; }
-  printf '\n## Available Chain Manifests\n\n'
+  printf '\n## Runnable Work Chains\n\n'
   if [ ! -d "$REPO_ROOT/chains" ]; then
     printf -- '- No chain manifests found under `%s`.\n' "$REPO_ROOT/chains"
     return 0
   fi
 
-  printf '| Manifest | Chain | Issues | Suggested command |\n'
-  printf '|---|---|---|---|\n'
+  manifest_filter="${MANIFEST:-}"
+  manifest_list_tmp=$(mktemp -t studio-chain-discovery-manifests.XXXXXX)
+  if [ -n "$manifest_filter" ]; then
+    candidate=""
+    if [ -f "$manifest_filter" ]; then
+      candidate="$manifest_filter"
+    elif [ -f "$REPO_ROOT/$manifest_filter" ]; then
+      candidate="$REPO_ROOT/$manifest_filter"
+    elif [ -f "$REPO_ROOT/chains/$manifest_filter.yaml" ]; then
+      candidate="$REPO_ROOT/chains/$manifest_filter.yaml"
+    elif [ -f "$REPO_ROOT/chains/$manifest_filter.yml" ]; then
+      candidate="$REPO_ROOT/chains/$manifest_filter.yml"
+    fi
+    if [ -z "$candidate" ]; then
+      printf 'studio-chain-runner: chain manifest not found for discovery: %s\n' "$manifest_filter" >&2
+      rm -f "$manifest_list_tmp"
+      exit 2
+    fi
+    printf '%s\n' "$candidate" > "$manifest_list_tmp"
+  else
+    find "$REPO_ROOT/chains" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null | sort > "$manifest_list_tmp"
+  fi
+
+  rows_tmp=$(mktemp -t studio-chain-discovery-chains.XXXXXX)
   while IFS= read -r manifest; do
     [ -n "$manifest" ] || continue
     [ -f "$manifest" ] || continue
@@ -237,19 +265,33 @@ discover_chain_manifests() {
     esac
     for ((idx = 0; idx < chain_count; idx++)); do
       name=$(yq -r ".chains[$idx].name" "$manifest")
+      [ -n "$ONLY_CHAIN" ] && [ "$name" != "$ONLY_CHAIN" ] && continue
       issues=$(yq -r ".chains[$idx].issues | join(\",\")" "$manifest")
-      command="scripts/studio-chain-runner.sh $rel_manifest --only $name --dry-run"
-      printf '| `%s` | `%s` | `%s` | `%s` |\n' "$rel_manifest" "$name" "${issues:-"-"}" "$command"
+      command="scripts/manager-work-chain.sh $name --dry-run"
+      printf '| `%s` | `%s` | `%s` | `%s` |\n' "$rel_manifest" "$name" "${issues:-"-"}" "$command" >> "$rows_tmp"
     done
-  done <<EOF
-$(find "$REPO_ROOT/chains" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null | sort)
-EOF
+  done < "$manifest_list_tmp"
+  rm -f "$manifest_list_tmp"
+  if [ ! -s "$rows_tmp" ]; then
+    printf -- '- No runnable work chains matched the current filter.\n'
+    rm -f "$rows_tmp"
+    return 0
+  fi
+  printf '| Manifest | Chain | Issues | Suggested command |\n'
+  printf '|---|---|---|---|\n'
+  cat "$rows_tmp"
+  rm -f "$rows_tmp"
 }
 
 print_discovery() {
   printf '# Studio Chain Discovery\n\n'
-  printf -- '- Bare invocation lists runnable manifests and resumable runs.\n'
-  printf -- '- Use `--discover` explicitly when you want the same non-mutating menu.\n'
+  printf -- '- Bare invocation is discovery-only; it never starts or resumes work.\n'
+  printf -- '- Add a manifest or chain name to filter suggestions: `scripts/studio-chain-runner.sh --discover prd-to-chain-automation`.\n\n'
+  printf '## Next Actions\n\n'
+  printf -- '- Preview a chain: `scripts/manager-work-chain.sh <chain> --dry-run`\n'
+  printf -- '- Attended run: `scripts/studio-chain-runner.sh <manifest|chain-name> --attended --yes`\n'
+  printf -- '- Unattended run or safe resume: `scripts/studio-chain-runner.sh --auto <manifest|chain-name>`\n'
+  printf -- '- Resume a known run: `scripts/studio-chain-runner.sh --resume <run_id> --yes`\n\n'
   discover_persisted_runs
   discover_chain_manifests
   printf '\n'
