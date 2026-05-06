@@ -90,10 +90,31 @@ run_case() {
     "jq -e 'select(.event==\"pr_merge_finalize_completed\" and .data.duration_s >= 0 and .data.cleanup_failed == true)' '$EVENT_LOG' >/dev/null"
 }
 
+run_head_worktree_case() {
+  local out main_wt branch_after
+  out="$TMPROOT/out-head-worktree.txt"
+  main_wt="$TMPROOT/main-worktree"
+  git -C "$WORK" branch -f feature HEAD
+  git -C "$WORK" checkout -q feature
+  git -C "$WORK" worktree add -q "$main_wt" main
+  : > "$MERGE_LOG"
+  BASE_REF=main COMMIT_COUNT=1 \
+    bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
+      --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
+      > "$out" 2>"$out.err"
+  branch_after=$(git -C "$WORK" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  assert "head worktree case detaches before gh merge" "[ -z '$branch_after' ]"
+  assert "head worktree case reports merge success" "grep -q 'PR_MERGED=1' '$out'"
+  assert "head worktree case avoided detach failure" "! grep -q 'head_worktree_detach_.*failed\\|head_worktree_detach_skipped_dirty' '$out'"
+  git -C "$WORK" worktree remove -f "$main_wt"
+  git -C "$WORK" checkout -q main
+}
+
 cd "$WORK" || exit 1
 run_case main 3 rebase
 run_case main 4 merge
 run_case feature 4 rebase
+run_head_worktree_case
 
 if [ "$failures" -ne 0 ]; then
   printf 'FAIL: %s assertion(s)\n' "$failures" >&2
