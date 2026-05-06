@@ -253,7 +253,7 @@ Emitted by `scripts/studio-chain-runner.sh`. Agent field is `studio`, mode field
 | `chain_run_started` | A chain-runner invocation starts after manifest resolution. | `run_id`, `manifest`, `only_chain`, `host_override`, `status` |
 | `chain_started` | One manifest chain starts. | `run_id`, `chain_run_id`, `chain`, `branch`, `base`, `host`, `issue_count` |
 | `chain_issue_started` | One issue worktree is prepared and the worker subprocess is about to run. | `run_id`, `chain_run_id`, `issue_run_id`, `issue_branch`, `host`, `commit_before` |
-| `chain_issue_completed` | The worker subprocess exits and the parent validates or gap-fills `.studio/chain-worker-summary.json`. | `run_id`, `chain_run_id`, `issue_run_id`, `summary`, `commit_after`, `exit_code`, `worker_duration_s`, `telemetry_gaps` |
+| `chain_issue_completed` | The worker subprocess exits and the parent validates or gap-fills `.studio/chain-worker-summary.json`. | `run_id`, `chain_run_id`, `issue_run_id`, `summary`, `commit_after`, `exit_code`, `worker_duration_s`, `check_counts` (`tests`/`lints`/`builds` total + bad), `token_telemetry` (`present`/`missing`), `telemetry_gaps` |
 | `chain_issue_scheduler_blocked` | The issue scheduler has pending nodes but none are ready because dependencies are unsatisfied. | `run_id`, `chain_run_id`, `chain`, `reason`, `status` |
 | `chain_issue_closed` | The runner closes or comments on an integrated source issue after the chain PR path succeeds. | `run_id`, `chain_run_id`, `issue_number`, `pr_url`, `status` |
 | `chain_pr_opened` | The final chain PR is opened. | `run_id`, `chain_run_id`, `pr_number`, `pr_url`, `branch` |

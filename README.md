@@ -89,7 +89,7 @@ scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint au
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
 scripts/studio-chain-runner.sh --discover # bare invocation lists runnable manifests and resumable runs
 scripts/manager-work-chain.sh prd-to-chain-automation # manager front door that discovers or launches a work-chain
-scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters from private chain-run telemetry
+scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters, efficiency ratios, and bottlenecks from private chain-run telemetry
 scripts/studio-checkpoint.sh resume --latest --role worker # compact session resume; reads manifest.json + context.md before lazy drift checks
 scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
 STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
@@ -201,7 +201,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-dependency-export.sh # Mermaid graph from native GitHub blocked_by issue dependencies
   studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
   studio-chain-runner.sh   # plan/execute/discover/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, optional checkpoint hooks, locks, and private run reports
-  studio-chain-telemetry-digest.sh # v1 counters and weekly digest from private chain-run reports/events
+  studio-chain-telemetry-digest.sh # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run reports/events
   prd-intake-normalize.sh # deterministic PRD/transcript/issue brief normalization into a small requirement packet
   prd-task-graph-synthesize.sh # deterministic requirement-packet to scheduler-graph synthesis with dependency/race validation
   studio-checkpoint.sh # compact create/update/resume checkpoints under per-project .runtime/v2/checkpoints

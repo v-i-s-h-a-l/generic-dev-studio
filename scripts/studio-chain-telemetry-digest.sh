@@ -162,6 +162,10 @@ jq -n \
   [ $selected_summaries[] | (.tests // [])[]? ] as $tests |
   [ $selected_summaries[] | (.lints // [])[]? ] as $lints |
   [ $selected_summaries[] | (.builds // [])[]? ] as $builds |
+  ($selected_summaries | max_by(.duration_s // -1)?) as $slowest_summary |
+  ([ $selected_summaries[].duration_s? // empty ] | add // 0) as $worker_duration_s |
+  ([ $selected_summaries[].files_changed? // empty ] | add // 0) as $files_changed |
+  (if ($tokens | length) == 0 then null else ($tokens | add) end) as $tokens_total |
   {
     schema_version: 1,
     kind: "studio_chain_telemetry_digest",
@@ -177,13 +181,17 @@ jq -n \
       worker_exit_nonzero: ([ $selected_summaries[] | select((.exit_code // 0) != 0) ] | length),
       hosts: ($selected_summaries | counts_by(.host)),
       models_missing: ([ $selected_summaries[] | select((.model // .model_name // null) == null) ] | length),
-      tokens_total: (if ($tokens | length) == 0 then null else ($tokens | add) end),
+      tokens_total: $tokens_total,
       token_reports: ($tokens | length),
-      worker_duration_s: ([ $selected_summaries[].duration_s? // empty ] | add // 0),
-      files_changed: ([ $selected_summaries[].files_changed? // empty ] | add // 0),
+      worker_duration_s: $worker_duration_s,
+      avg_worker_duration_s: (if ($selected_summaries | length) == 0 then null else ($worker_duration_s / ($selected_summaries | length)) end),
+      files_changed: $files_changed,
       additions: ([ $selected_summaries[].additions? // empty ] | add // 0),
       deletions: ([ $selected_summaries[].deletions? // empty ] | add // 0),
       generated_file_count: ([ $selected_summaries[].generated_file_count? // empty ] | add // 0),
+      seconds_per_file_changed: (if $files_changed == 0 then null else ($worker_duration_s / $files_changed) end),
+      tokens_per_file_changed: (if $tokens_total == null or $files_changed == 0 then null else ($tokens_total / $files_changed) end),
+      slowest_issue: (if $slowest_summary == null then null else {issue_number: ($slowest_summary.issue_number // null), duration_s: ($slowest_summary.duration_s // null), run_id: ($slowest_summary.run_id // null)} end),
       reviews_total: ($reviews | length),
       review_passes: ([ $reviews[] | select((.status // .data.status // "") == "completed") ] | length),
       review_failures: ([ $reviews[] | select((.status // .data.status // "") != "completed") ] | length),
@@ -204,6 +212,11 @@ jq -n \
       carryover_items: ([ $selected_summaries[] | lines(.carryover)[] ] | length),
       lesson_items: ([ $selected_summaries[] | lines(.lessons)[] ] | length)
     },
+    bottlenecks: ([
+      (if $slowest_summary != null then {kind:"slowest_issue", issue_number: ($slowest_summary.issue_number // null), duration_s: ($slowest_summary.duration_s // null), run_id: ($slowest_summary.run_id // null)} else empty end),
+      (if ([ $tests[] | select(bad_outcome) ] | length) > 0 then {kind:"test_failures_or_flakes", count: ([ $tests[] | select(bad_outcome) ] | length)} else empty end),
+      (if ([ ($summary_gaps + $event_gaps)[] | select(. == "tokens") ] | length) > 0 then {kind:"missing_token_telemetry", count: ([ ($summary_gaps + $event_gaps)[] | select(. == "tokens") ] | length)} else empty end)
+    ]),
     runs: [
       $selected_states[] |
       {
@@ -241,6 +254,18 @@ jq -r '
   "- Tests/lints/builds: \(.counters.tests_bad)/\(.counters.tests_total) bad tests, \(.counters.lints_bad)/\(.counters.lints_total) bad lints, \(.counters.builds_bad)/\(.counters.builds_total) bad builds",
   "- Tokens: \(if .counters.tokens_total == null then "missing" else (.counters.tokens_total | tostring) end) across \(.counters.token_reports) summaries",
   "- Churn: \(.counters.files_changed) files, +\(.counters.additions)/-\(.counters.deletions), generated \(.counters.generated_file_count)",
+  "- Efficiency: avg \(.counters.avg_worker_duration_s // "missing")s/issue, \(if .counters.seconds_per_file_changed == null then "missing" else (.counters.seconds_per_file_changed | tostring) end)s/file, \(if .counters.tokens_per_file_changed == null then "missing" else (.counters.tokens_per_file_changed | tostring) end) tokens/file",
+  "",
+  "## Bottlenecks",
+  "",
+  (if (.bottlenecks | length) == 0 then "- none"
+   else .bottlenecks[] |
+     if .kind == "slowest_issue" then "- slowest issue: #\(.issue_number // "unknown") at \(.duration_s // "unknown")s"
+     elif .kind == "test_failures_or_flakes" then "- test failures/flakes: \(.count)"
+     elif .kind == "missing_token_telemetry" then "- missing token telemetry: \(.count)"
+     else "- \(.kind): \(.count // "n/a")"
+     end
+   end),
   "",
   "## Status Counters",
   "",
