@@ -80,8 +80,8 @@ direct invocation once the workflow is selected. `manager ingest` calls
 `scripts/manager-work-chain.sh`. For chain orchestration, bare
 `scripts/studio-chain-runner.sh` now shows runnable manifests and resumable
 runs before any plan or resume action is chosen, and `/dev-studio manager
-work-chain prd-to-chain-automation` is the manager-shaped front door for the
-new PRD automation chain.
+work-chain prd-to-chain-automation` auto-runs the new PRD automation chain
+while bare `manager work-chain` still lands in discovery.
 
 After a bare role landing, later bare subcommands may resolve through that
 active role when unambiguous in the same session. Store the resolved canonical
