@@ -84,6 +84,7 @@ scripts/studio-chain-runner.sh --resume <run_id> --yes                     # res
 scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
 scripts/studio-chain-telemetry-digest.sh --days 7                          # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run telemetry
+scripts/lint-chain-workflow-docs.sh --staged                               # guard chain launcher docs, usage text, and fixtures; bypass with STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1
 scripts/studio-checkpoint.sh create --role worker --goal "..." --next "..." # compact private checkpoint under per-project .runtime/v2/checkpoints
 scripts/studio-checkpoint.sh resume --latest --role worker                  # load manifest.json + context.md first, then inspect drift lazily
 scripts/codex-worker-exec.sh "<prompt>"                                    # internal Codex worker launcher: workspace-write + ~/.dev-studio + ephemeral + no prompts
@@ -274,6 +275,8 @@ dispatched_from=user@host
 | `ACHILLES_UNATTENDED` | `0` | Set to `1` to pass `--dangerously-skip-permissions` for fully unattended overnight runs. |
 | `ACHILLES_AUTONOMOUS` | `0` (set to `1` automatically by the worker per task) | Tells the worker subprocess there is no user to answer clarifying questions; it must pick obvious defaults and document them in the debrief. Exported by `achilles-worker.sh` for every `claude -p` subprocess. Do not set manually unless testing. |
 | `ACHILLES_DISPLAY_NAME` | derived (see below) | Friendly name for panes / logs. Override per-shell, or pre-bake per-project via `~/.dev-studio/<project>/.display_name` (first non-comment line wins). |
+| `STUDIO_CHAIN_EXECUTION_MODE` | `attended` | Default chain execution mode. `--auto` switches to `unattended`; explicit `--attended` or `--unattended` wins for normal runner calls. |
+| `STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS` | `0` | Set to `1` to bypass the chain workflow docs guard in emergency commits; update README, scripts docs, runner usage, and fixtures together instead when possible. |
 
 **Display-name resolution:** `ACHILLES_DISPLAY_NAME` env var → `~/.dev-studio/<project>/.display_name` file → git-remote basename → project slug.
 
