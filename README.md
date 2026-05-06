@@ -28,6 +28,7 @@ timeline
     May 2026 : v0.9.0 — Forge reliability closure
              : v0.10.0 — Apollo network efficiency
              : v0.11.0 — Studio v2 router + release flow hardening
+             : v0.11.1 — active role shortcuts + role help
     Coming next : Issue graph hygiene — duplicate, blocked-by, caused-by, urgent triage
     Deferred : Knowledge layer — memory-query + synthesis across debriefs
              : Lu Ban — a dedicated architect agent for design dialogue
@@ -39,6 +40,7 @@ timeline
 
 ### Story so far
 
+- **[v0.11.1](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.11.1)** — The `/dev-studio` router is easier to use after a role is selected. Once a session lands in `manager`, short follow-up commands like `status`, `ingest`, `reconcile`, `guard`, and `audit` can keep using that role while the context is clear. `/dev-studio help` shows the role index, `/dev-studio <role> help` shows examples for that role, and bare checkpoint routing still lands in manager unless the role is explicit.
 - **[v0.11.0](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.11.0)** — The studio now runs through one canonical `/dev-studio` router instead of the old top-level role surfaces. Manager, worker, reviewer, performance, QA, flow-test, release, and host-adapter work all resolve through v2 role contracts with dedicated substrate for events, context budgets, project profiles, checkpoints, and handoffs. Long chains are easier to resume and audit, Projects-board planning is visible from the CLI, review gates are clearer, and release flows now leave a stronger trail through TestFlight tags, App Store PR lifecycle handling, Slack handoffs, withdrawn/superseded states, and release-attempt transaction logs.
 - **[v0.10.0](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.10.0)** — Apollo can now explain network efficiency with the same strict evidence discipline it already applies to memory, thermal, battery, and CPU. Network traces, URLSession task metrics, MetricKit transfer windows, cellular-condition context, and paired Power Profiler evidence now route through a dedicated `/apollo network` mode. Guided profiling can hand a human-run app flow across battery, CPU, memory, and network, while the reviewed Apollo chain path keeps multi-issue studio work gated by sibling review before it lands.
 - **[v0.9.0](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.9.0)** — Forge reliability work now closes with fewer loose ends: `/studio work` surfaces parallel chain opportunities, track lookups stay current as issues close, and PR review payloads land somewhere sibling hosts can actually read. Cross-host review wrappers now centralize smoke eligibility, MCP isolation, auth-home selection, and failure details. The safety floor also got sharper at runtime: Argus warnings can block risky merges, TestFlight pushes can pin an explicit marketing version with safer App Store-state checks, and build gates preserve bounded log tails when the success marker goes missing.
