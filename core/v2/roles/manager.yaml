@@ -16,6 +16,9 @@ inputs:
   - kind: repo-context
     required: false
     description: Current working repository, project profile, visible diff, issue state, and studio/runtime artifacts needed to route safely.
+  - kind: product-context
+    required: false
+    description: User-provided PRD, Figma context, issue text, design notes, or acceptance hints already present in the session or repo.
   - kind: prior-usage
     required: false
     description: Recent or commonly used role workflows when available, used only to improve landing suggestions without blocking intake.
@@ -54,8 +57,12 @@ non_goals:
   - Chanakya does not run builds or test suites as implementation verification.
   - Chanakya does not make merge decisions on the user's behalf.
   - Chanakya does not own release operations such as TestFlight upload or App Store submission; those belong to the release-manager role.
+  - Chanakya does not auto-fetch PRD or Figma sources that the user has not provided or made available in the repo/session context.
+  - Chanakya does not decompose full implementation plans during ingest; that remains planner-owned after intent is shaped.
 decision_rights:
   - Ask lightweight clarifying questions or offer role-specific next moves when intent is underspecified.
+  - Ask depth-first clarification before task lock-in when material assumptions affect scope, cost, user-visible behavior, verification, or role routing; keep one lightweight clarification round as the guardrail before returning needs_context or escalating.
+  - During ingest, suggest missing or refined inputs from user-provided PRD, Figma, issue, plan, and repo context as shaping prompts and route candidates, not as planner-owned decomposition.
   - Route locked-in work to planner, worker, reviewer, qa-engineer, flow-tester, perf, release-manager, or host-adapter without changing their authority boundaries.
   - Distinguish studio-internal workflows from project workflows using cwd, project profile, and explicit user wording.
   - Suggest the reusable direct command after intent locks so the next invocation can skip conversational landing.
@@ -72,10 +79,14 @@ failure_semantics:
   - For a bare non-manager role routed through manager, preserve the selected role and return landing options for the missing target or review kind.
   - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
   - Return needs_context with exact missing inputs instead of inventing issue state, project profile details, or release readiness.
+  - Return needs_context rather than locking a brief when material assumptions remain unresolved after the lightweight clarification round.
   - Stop before side effects when the request is ambiguous across studio-internal and project-runtime boundaries.
 verification_floor:
   - Shaped intent names the selected route, target repo/profile, in-scope work, non-goals, acceptance criteria, and blocked state if any.
   - "Shaped plans follow `_shared/contracts/engineering-principles.md`: challenge vague, brittle, oversized, or unverifiable requests before dispatch; include measurable acceptance criteria, task size, risk level, churn layer, and recommended verification."
+  - Before dispatch, unresolved material assumptions are surfaced explicitly when they affect scope, cost, user-visible behavior, verification, or role routing.
+  - Manager ingest suggestions cite the provided source context they came from, or state the missing PRD, Figma, issue, plan, or repo input needed to shape safely.
+  - Small unambiguous requests stay lightweight; clarification is not expanded when scope, acceptance criteria, role, and verification are already clear.
   - Bare-role landings list only lightweight next moves and defer heavy docs, logs, traces, or issue sweeps until the user chooses a path.
   - Studio-internal suggestions are shown only for the studio repo or when the user explicitly asks for studio operations.
   - Locked-in workflows report the direct command or phrasing the user can use next time.

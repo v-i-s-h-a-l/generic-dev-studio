@@ -61,6 +61,12 @@ supplies the task context and runtime slug.
 5. Execute the matched role workflow by following the router and role contract:
    - `manager` -> shaping, status, resume, ingest, guard, audit, or a
      cwd-aware landing when no subcommand/request is present.
+     Manager asks depth-first clarification before lock-in when material
+     assumptions affect scope, cost, user-visible behavior, verification, or
+     role routing. Manager ingest may suggest missing/refined inputs from
+     PRD, Figma, issue, plan, or repo context already provided in the
+     session/repo; it does not auto-fetch unavailable sources or decompose
+     planner-owned work.
    - `worker` -> bounded task contract in an isolated worktree.
    - `reviewer` -> plan, outcome, diff, PR, or release-packet review.
    - `perf` -> performance, battery, memory, thermal, network, or instrumentation evidence.
