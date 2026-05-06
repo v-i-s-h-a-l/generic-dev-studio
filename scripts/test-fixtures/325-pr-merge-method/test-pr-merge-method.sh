@@ -85,6 +85,7 @@ run_case() {
       > "$out" 2>"$out.err"
   assert "auto $base $count commits reports $expected" "grep -q 'MERGE_METHOD=$expected' '$out'"
   assert "auto $base $count commits calls gh --$expected" "grep -q -- '--$expected' '$MERGE_LOG'"
+  assert "auto $base $count commits leaves branch cleanup to git" "! grep -q -- '--delete-branch' '$MERGE_LOG'"
   assert "auto $base $count commits exits zero" "grep -q 'PR_MERGED=1' '$out'"
   assert "auto $base $count commits emits merge-finalize duration" \
     "jq -e 'select(.event==\"pr_merge_finalize_completed\" and .data.duration_s >= 0 and .data.cleanup_failed == true)' '$EVENT_LOG' >/dev/null"
