@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "task-graph.schema.json",
+  "schema": 1,
+  "title": "Task Graph",
+  "description": "Deterministic dependency graph synthesized from a normalized requirement packet before scheduler execution.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "source",
+    "nodes",
+    "edges",
+    "ready_node_ids",
+    "validation"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "task-graph" },
+    "source": {
+      "type": "object",
+      "required": ["title", "source_label", "fingerprint_sha256", "generator"],
+      "properties": {
+        "title": { "type": "string" },
+        "source_label": { "type": "string" },
+        "fingerprint_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "generator": {
+          "type": "object",
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edge" }
+    },
+    "ready_node_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "validation": {
+      "type": "object",
+      "required": [
+        "status",
+        "missing_dependencies",
+        "parallel_write_races",
+        "packet_conflicts",
+        "unresolved_missing_details"
+      ],
+      "properties": {
+        "status": { "enum": ["valid", "invalid"] },
+        "missing_dependencies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/missingDependency" }
+        },
+        "parallel_write_races": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/parallelWriteRace" }
+        },
+        "packet_conflicts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/packetConflict" }
+        },
+        "unresolved_missing_details": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/missingDetail" }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "source_id",
+        "label",
+        "dependencies",
+        "read_resources",
+        "write_resources",
+        "status"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["task", "shared_prerequisite"] },
+        "source_id": { "type": "string", "pattern": "^[A-Z][0-9]{3}$" },
+        "label": { "type": "string" },
+        "dependencies": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "read_resources": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "write_resources": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "status": { "enum": ["ready", "blocked"] }
+      },
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": "object",
+      "required": ["from", "to", "reason"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "missingDependency": {
+      "type": "object",
+      "required": ["node_id", "missing_source_id"],
+      "properties": {
+        "node_id": { "type": "string" },
+        "missing_source_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "parallelWriteRace": {
+      "type": "object",
+      "required": ["resource", "node_ids"],
+      "properties": {
+        "resource": { "type": "string" },
+        "node_ids": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "packetConflict": {
+      "type": "object",
+      "required": ["source_id", "text"],
+      "properties": {
+        "source_id": { "type": "string" },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "missingDetail": {
+      "type": "object",
+      "required": ["source_id", "text"],
+      "properties": {
+        "source_id": { "type": "string" },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
