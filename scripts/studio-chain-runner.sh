@@ -2,8 +2,8 @@
 # studio-chain-runner.sh - execute issue chains with capacity-scaled fresh host sessions.
 #
 # Usage:
-#   scripts/studio-chain-runner.sh <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--yes] [--parallel-chains <n|auto|1>] [--checkpoint auto|off]
-#   scripts/studio-chain-runner.sh --auto <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--checkpoint auto|off]
+#   scripts/studio-chain-runner.sh <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--yes] [--parallel-chains <n|auto|1>] [--checkpoint auto|off] [--attended|--unattended]
+#   scripts/studio-chain-runner.sh --auto <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--checkpoint auto|off] [--unattended]
 #   scripts/studio-chain-runner.sh --explain-next <manifest|chain-name> [--only <chain>]
 #   scripts/studio-chain-runner.sh --resume <run_id> [--yes]
 #   scripts/studio-chain-runner.sh --list
@@ -49,6 +49,10 @@ AUTO_MODE=0
 EXPLAIN_NEXT=0
 SUPERVISOR_LOCK=""
 SUPERVISOR_LOCK_ACQUIRED=0
+EXECUTION_MODE="${STUDIO_CHAIN_EXECUTION_MODE:-attended}"
+EXECUTION_MODE_EXPLICIT=0
+RETRY_LIMIT="${STUDIO_CHAIN_RETRY_LIMIT:-2}"
+RETRY_BACKOFF_SEC="${STUDIO_CHAIN_RETRY_BACKOFF_SEC:-2}"
 
 if [ $# -eq 0 ]; then
   DISCOVER_MODE=1
@@ -72,6 +76,8 @@ while [ $# -gt 0 ]; do
     --parallel-chains=*) PARALLEL_CHAINS="${1#--parallel-chains=}"; shift ;;
     --checkpoint) CHECKPOINT_OVERRIDE="${2:?--checkpoint requires auto or off}"; shift 2 ;;
     --checkpoint=*) CHECKPOINT_OVERRIDE="${1#--checkpoint=}"; shift ;;
+    --attended) EXECUTION_MODE="attended"; EXECUTION_MODE_EXPLICIT=1; shift ;;
+    --unattended) EXECUTION_MODE="unattended"; EXECUTION_MODE_EXPLICIT=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --yes|--no-confirm) YES=1; shift ;;
     --allow-closed-issues) ALLOW_CLOSED_ISSUES=1; shift ;;
@@ -114,6 +120,20 @@ fi
 if [ "$AUTO_MODE" -eq 1 ] && [ "$EXPLAIN_NEXT" -eq 1 ]; then
   printf 'studio-chain-runner: --auto and --explain-next are mutually exclusive\n' >&2
   usage
+fi
+
+if [ "$AUTO_MODE" -eq 1 ] && [ "$EXECUTION_MODE_EXPLICIT" -eq 0 ]; then
+  EXECUTION_MODE="unattended"
+fi
+
+case "$EXECUTION_MODE" in
+  attended|unattended) ;;
+  *) printf 'studio-chain-runner: execution mode must be attended or unattended: %s\n' "$EXECUTION_MODE" >&2; exit 2 ;;
+esac
+
+if [ "$AUTO_MODE" -eq 1 ] && [ "$EXECUTION_MODE" = "attended" ]; then
+  printf 'studio-chain-runner: --auto is unattended; use --explain-next for a non-mutating attended decision preview\n' >&2
+  exit 2
 fi
 
 if { [ "$AUTO_MODE" -eq 1 ] || [ "$EXPLAIN_NEXT" -eq 1 ]; } && [ -n "$RESUME_ID" ]; then
@@ -255,6 +275,12 @@ esac
 case "$CHECKPOINT_OVERRIDE" in
   ""|auto|off) ;;
   *) printf 'studio-chain-runner: --checkpoint must be auto or off\n' >&2; exit 2 ;;
+esac
+case "$RETRY_LIMIT" in
+  ''|*[!0-9]*) printf 'studio-chain-runner: STUDIO_CHAIN_RETRY_LIMIT must be a non-negative integer\n' >&2; exit 2 ;;
+esac
+case "$RETRY_BACKOFF_SEC" in
+  ''|*[!0-9]*) printf 'studio-chain-runner: STUDIO_CHAIN_RETRY_BACKOFF_SEC must be a non-negative integer\n' >&2; exit 2 ;;
 esac
 
 command -v yq >/dev/null 2>&1 || { printf 'studio-chain-runner: yq required\n' >&2; exit 2; }
@@ -418,6 +444,9 @@ write_run_state() {
     --arg report "$RUN_REPORT" \
     --arg plan "$PLAN_JSON" \
     --arg parallel_chains "$PARALLEL_CHAINS" \
+    --arg execution_mode "$EXECUTION_MODE" \
+    --argjson retry_limit "$RETRY_LIMIT" \
+    --argjson retry_backoff_sec "$RETRY_BACKOFF_SEC" \
     --arg failure_reason "$failure_reason" \
     --argjson chains "$chains_json" \
     --argjson halt_records "$halt_records_json" \
@@ -435,6 +464,13 @@ write_run_state() {
       report: $report,
       plan: $plan,
       parallel_chains: $parallel_chains,
+      execution_mode: $execution_mode,
+      retry_policy: {
+        auto_retry_limit: $retry_limit,
+        backoff_seconds: $retry_backoff_sec,
+        retryable_halt_classes: ["retryable"],
+        prompt_after_exhaustion: false
+      },
       chains: $chains,
       halt_records: $halt_records,
       decision_escrows: $decision_escrows,
@@ -706,6 +742,9 @@ write_halt_record() {
     --arg writer "$writer" \
     --arg summary "$summary" \
     --arg next_command "$next_command" \
+    --arg execution_mode "$EXECUTION_MODE" \
+    --argjson retry_limit "$RETRY_LIMIT" \
+    --argjson retry_backoff_sec "$RETRY_BACKOFF_SEC" \
     --argjson true_hard_stop "$hard_stop" \
     --arg run_state "$RUN_STATE_JSON" \
     --arg report "$RUN_REPORT" \
@@ -733,6 +772,21 @@ write_halt_record() {
       next_command: (if $next_command == "" then null else $next_command end),
       affected_artifacts: [$run_state, $report],
       rollback_path: "Inspect the halt record and resume with the next_command after correcting the cause; fatal records require a fresh human-authored plan.",
+      retry_policy: {
+        auto_retry_limit: $retry_limit,
+        backoff_seconds: $retry_backoff_sec,
+        exhausted: ($halt_class == "retryable"),
+        retryable: ($halt_class == "retryable")
+      },
+      escalation: {
+        execution_mode: $execution_mode,
+        prompt_allowed: ($halt_class == "review-needed" or $halt_class == "human-needed" or $halt_class == "fatal"),
+        routine_continue_prompt: false,
+        reason: (if ($halt_class == "review-needed") then "review judgment required"
+          elif ($halt_class == "human-needed") then "human decision required"
+          elif ($halt_class == "fatal") then "hard safety stop"
+          else "resume command is available after correcting the typed cause" end)
+      },
       true_hard_stop: $true_hard_stop,
       human_action_required: ($halt_class == "human-needed" or $halt_class == "fatal"),
       privacy: {classification: "private-runtime"}
@@ -1055,6 +1109,9 @@ write_chain_task_start_envelope() {
     --arg host "$host" \
     --arg git_metadata_strategy "$git_metadata_strategy" \
     --arg summary_path "$summary_path" \
+    --arg execution_mode "$EXECUTION_MODE" \
+    --argjson retry_limit "$RETRY_LIMIT" \
+    --argjson retry_backoff_sec "$RETRY_BACKOFF_SEC" \
     --argjson phase_review_context "$phase_review_context" \
     '{
       schema_version: 1,
@@ -1077,6 +1134,30 @@ write_chain_task_start_envelope() {
         worktree: $worktree,
         host: $host,
         git_metadata_strategy: $git_metadata_strategy
+      },
+      execution_policy: {
+        mode: $execution_mode,
+        review_gates: [
+          "issue plan phase review before worker launch",
+          "worker implementation and summary ingestion",
+          "issue outcome phase review over diff and test/lint/build evidence",
+          "final chain PR headless review before merge"
+        ],
+        retry: {
+          auto_retry_limit: $retry_limit,
+          backoff_seconds: $retry_backoff_sec,
+          retryable_halt_classes: ["retryable"],
+          prompt_after_exhaustion: false
+        },
+        escalation: {
+          attended_prompts: [
+            "reviewer blocked or ambiguous verdict",
+            "worker-reported design, implementation, permission, destructive-change, or test blocker",
+            "fatal safety or external-state blocker"
+          ],
+          unattended_behavior: "continue through routine gates; halt only with a typed halt record when a real blocker appears",
+          routine_continue_prompts: false
+        }
       },
       expected_summary_artifact: $summary_path,
       required_checks: [
@@ -1610,6 +1691,13 @@ abort_run() {
   exit 1
 }
 
+abort_run_with_reason() {
+  local reason_id="$1" summary="$2"
+  write_halt_record "$reason_id" "$summary" >/dev/null || log "halt record write failed for: $summary"
+  finish_run failed "$summary"
+  exit 1
+}
+
 finish_unexpected_exit() {
   local rc=$?
   if [ "$rc" -ne 0 ] && [ "${RUN_FINISHED:-0}" != "1" ] && [ "${DRY_RUN:-0}" -eq 0 ]; then
@@ -1888,6 +1976,40 @@ run() {
     return 0
   fi
   "$@"
+}
+
+run_retryable() {
+  local reason_id="$1"
+  shift
+  local attempt=0 rc=0
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf 'DRY-RUN retry[%s] limit=%s backoff=%ss' "$reason_id" "$RETRY_LIMIT" "$RETRY_BACKOFF_SEC"
+    printf ' %q' "$@"
+    printf '\n'
+    return 0
+  fi
+
+  while :; do
+    set +e
+    "$@"
+    rc=$?
+    set -e
+    [ "$rc" -eq 0 ] && return 0
+    if [ "$attempt" -ge "$RETRY_LIMIT" ]; then
+      log "retry exhausted for $reason_id after $attempt retry attempt(s): $*"
+      return "$rc"
+    fi
+    attempt=$((attempt + 1))
+    log "retry $attempt/$RETRY_LIMIT for $reason_id after exit $rc: $*"
+    [ "$RETRY_BACKOFF_SEC" -gt 0 ] && sleep "$RETRY_BACKOFF_SEC"
+  done
+}
+
+run_retryable_or_abort() {
+  local reason_id="$1" summary="$2"
+  shift 2
+  run_retryable "$reason_id" "$@" || abort_run_with_reason "$reason_id" "$summary"
 }
 
 validate_branch_ref() {
@@ -2171,8 +2293,38 @@ build_plan_json() {
     --arg host_override "$HOST_OVERRIDE" \
     --arg parallel_chains "$PARALLEL_CHAINS" \
     --arg checkpoint_override "$CHECKPOINT_OVERRIDE" \
+    --arg execution_mode "$EXECUTION_MODE" \
+    --argjson retry_limit "$RETRY_LIMIT" \
+    --argjson retry_backoff_sec "$RETRY_BACKOFF_SEC" \
     --slurpfile chains "$chains_tmp" \
-    '{schema_version:1, run_id:$run_id, manifest:$manifest, only_chain:(if $only_chain == "" then null else $only_chain end), host_override:(if $host_override == "" then null else $host_override end), parallel_chains:$parallel_chains, checkpoint_override:(if $checkpoint_override == "" then null else $checkpoint_override end), chains:$chains[0]}' > "$tmp"
+    '{
+      schema_version:1,
+      run_id:$run_id,
+      manifest:$manifest,
+      only_chain:(if $only_chain == "" then null else $only_chain end),
+      host_override:(if $host_override == "" then null else $host_override end),
+      parallel_chains:$parallel_chains,
+      checkpoint_override:(if $checkpoint_override == "" then null else $checkpoint_override end),
+      execution_mode:$execution_mode,
+      retry_policy:{
+        auto_retry_limit:$retry_limit,
+        backoff_seconds:$retry_backoff_sec,
+        retryable_halt_classes:["retryable"],
+        prompt_after_exhaustion:false
+      },
+      review_gates:[
+        "issue plan phase review before worker launch",
+        "worker implementation and summary ingestion",
+        "issue outcome phase review over diff and test/lint/build evidence",
+        "final chain PR headless review before merge"
+      ],
+      escalation_policy:{
+        routine_continue_prompts:false,
+        prompt_only_for:["review-needed", "human-needed", "fatal"],
+        unattended_halt_classes:["review-needed", "human-needed", "fatal"]
+      },
+      chains:$chains[0]
+    }' > "$tmp"
   mv "$tmp" "$out"
   rm -f "$chains_tmp"
 }
@@ -2195,10 +2347,8 @@ validate_execution_graph() {
 
 live_preflight() {
   local plan="$1" reviewer_host branch issue_branch base
-  with_login_home_for_github gh auth status >/dev/null 2>&1 || {
-    printf 'studio-chain-runner: GitHub auth is not available\n' >&2
-    exit 2
-  }
+  run_retryable_or_abort github_auth_unavailable "GitHub auth is not available" \
+    with_login_home_for_github gh auth status
   emit_chain_event chain_auth_normalized "" "$RUN_ID" "" "" completed 0 \
     "$(jq -cn --arg home_source "login-home" --arg github_auth "available" --arg secrets "omitted" '{home_source:$home_source, github_auth:$github_auth, secrets:$secrets}')"
   reviewer_host="${STUDIO_REVIEW_HOST:-claude-reviewer}"
@@ -2207,10 +2357,8 @@ live_preflight() {
     exit 2
   }
   while IFS=$'\t' read -r branch base; do
-    with_login_home_for_github git ls-remote --exit-code --heads origin "$base" >/dev/null 2>&1 || {
-      printf 'studio-chain-runner: cannot verify origin/%s\n' "$base" >&2
-      exit 2
-    }
+    run_retryable_or_abort network_partition "cannot verify origin/$base" \
+      with_login_home_for_github git ls-remote --exit-code --heads origin "$base"
     if [ -z "$RESUME_ID" ] && git show-ref --verify --quiet "refs/heads/$branch"; then
       printf 'studio-chain-runner: local chain branch already exists: %s\n' "$branch" >&2
       exit 2
@@ -2238,14 +2386,22 @@ EOF
 }
 
 explain_plan() {
-  local plan="$1" effective_parallel risk
+  local plan="$1" effective_parallel risk execution_mode retry_limit retry_backoff gates
   effective_parallel=1
   risk="sequential execution: this runner serializes chain PR/review/issue-closure mutation; preflight still blocks duplicate issues, branch collisions, and declared dependency conflicts before execution"
+  execution_mode=$(jq -r '.execution_mode // "attended"' "$plan")
+  retry_limit=$(jq -r '.retry_policy.auto_retry_limit // 2' "$plan")
+  retry_backoff=$(jq -r '.retry_policy.backoff_seconds // 2' "$plan")
+  gates=$(jq -r '(.review_gates // []) | join("; ")' "$plan")
   printf '# Studio Chain Plan\n\n'
   printf -- '- Run UUID: `%s`\n' "$RUN_ID"
   printf -- '- Manifest: `%s`\n' "$MANIFEST"
   printf -- '- State: `%s`\n' "$RUN_STATE_JSON"
   printf -- '- Parallel chains: `%s` effective `%s`\n' "$PARALLEL_CHAINS" "$effective_parallel"
+  printf -- '- Execution mode: `%s`\n' "$execution_mode"
+  printf -- '- Retry policy: auto retry retryable operations up to `%s` time(s), backoff `%ss`, then write a typed halt record without asking a routine continuation question\n' "$retry_limit" "$retry_backoff"
+  printf -- '- Escalation policy: attended prompts are reserved for review-needed, human-needed, or fatal blockers; unattended mode runs until a typed blocker appears\n'
+  [ -z "$gates" ] || printf -- '- Review gates: %s\n' "$gates"
   printf -- '- Host/model policy: manifest host, overridden by `--host`; `auto` resolves to `%s`\n' "${HOST_OVERRIDE:-codex}"
   printf -- '- Risk notes: %s\n\n' "$risk"
   jq -r '
@@ -2436,9 +2592,11 @@ finalize_chain_pr() {
   [ -n "$implementation_host" ] || implementation_host=$(resolve_current_studio_host unknown)
 
   log "rebasing $chain_branch on origin/$base"
-  run with_login_home_for_github git -C "$chain_worktree" fetch origin --prune
+  run_retryable_or_abort network_partition "fetch origin failed for $chain_branch" \
+    with_login_home_for_github git -C "$chain_worktree" fetch origin --prune
   run git -C "$chain_worktree" rebase "origin/$base"
-  run with_login_home_for_github git -C "$chain_worktree" push -u origin "$chain_branch"
+  run_retryable_or_abort network_partition "push failed for $chain_branch" \
+    with_login_home_for_github git -C "$chain_worktree" push -u origin "$chain_branch"
 
   if [ "$DRY_RUN" -eq 1 ]; then
     FINAL_PR_URL="<dry-run-pr-url>"
@@ -2884,7 +3042,8 @@ for ((idx = 0; idx < chain_count; idx++)); do
   emit_chain_event chain_started "" "$RUN_ID" "$chain_run_id" "" running 0 \
     "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --arg git_metadata_strategy "$git_metadata_strategy" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, host:$host, git_metadata_strategy:$git_metadata_strategy, issue_count:$issue_count, worker_pool:$worker_pool}')"
   host_preflight "$host" "$REPO_ROOT" || abort_run "host preflight failed for $host"
-  run with_login_home_for_github git -C "$REPO_ROOT" fetch origin --prune
+  run_retryable_or_abort network_partition "fetch origin failed before chain $name" \
+    with_login_home_for_github git -C "$REPO_ROOT" fetch origin --prune
   if [ "$DRY_RUN" -eq 0 ]; then
     mkdir -p "$chain_results_dir"
     if [ -n "$RESUME_ID" ] && git_checkout_exists "$chain_worktree"; then
@@ -2979,7 +3138,8 @@ PR: $FINAL_PR_URL"
   done
 
   if [ "$DRY_RUN" -eq 0 ]; then
-    with_login_home_for_github git -C "$REPO_ROOT" fetch origin --prune
+    run_retryable_or_abort network_partition "fetch origin failed during chain cleanup" \
+      with_login_home_for_github git -C "$REPO_ROOT" fetch origin --prune
     git -C "$REPO_ROOT" worktree remove "$chain_worktree" || true
     git -C "$REPO_ROOT" branch -D "$branch" 2>/dev/null || true
   else
