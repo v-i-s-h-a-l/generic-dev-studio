@@ -459,6 +459,8 @@
             role's landing instead of running a heavy default action.
           </p>
           <code class="shell">/dev-studio manager
+/dev-studio help
+/dev-studio manager help
 /dev-studio reviewer
 /dev-studio release-manager
 /dev-studio manager resume-plan
@@ -543,6 +545,22 @@ scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt;</code>
             <code class="shell">/dev-studio checkpoint
 /dev-studio worker checkpoint
 /dev-studio reviewer resume-checkpoint</code>
+          </article>
+          <article class="role">
+            <h3>Active Role Shortcuts</h3>
+            <p>After a bare role landing, unqualified commands may keep using that role while the session context is clear. Explicit role prefixes always override the shortcut.</p>
+            <code class="shell">/dev-studio manager
+status
+ingest "capture this pattern"
+reconcile
+/dev-studio reviewer review</code>
+          </article>
+          <article class="role">
+            <h3>Role Help</h3>
+            <p>Use router help for the role index, or role help for available commands, examples, aliases, and checkpoint/resume availability.</p>
+            <code class="shell">/dev-studio help
+/dev-studio manager help
+/dev-studio release-manager help</code>
           </article>
         </div>
       </div>
@@ -732,6 +750,7 @@ scripts/worker-status.sh</code>
             <p>Shapes intent, resumes arcs, routes work, guards against repeats, captures patterns, and escalates operator decisions.</p>
             <div class="meta"><span class="pill status-live">direct use</span><span class="pill">contract-backed landing</span></div>
             <code class="shell">/dev-studio manager
+/dev-studio manager help
 /dev-studio manager resume-plan
 /dev-studio manager guard "has this shipped?"
 /dev-studio manager analyze
@@ -743,14 +762,16 @@ scripts/worker-status.sh</code>
             <h3>planner</h3>
             <p>Turns shaped work into executable scope, dependencies, acceptance criteria, and worker contracts.</p>
             <div class="meta"><span class="pill status-contract">contract-backed</span><span class="pill">handoff: planner-output</span></div>
-            <code class="shell">/dev-studio planner plan issue 123
+            <code class="shell">/dev-studio planner help
+/dev-studio planner plan issue 123
 /dev-studio planner split this feature into worker contracts</code>
           </article>
           <article class="role">
             <h3>worker</h3>
             <p>Implements one bounded contract in an isolated worktree and returns typed completion evidence.</p>
             <div class="meta"><span class="pill status-live">direct use</span><span class="pill">fleet scripts</span></div>
-            <code class="shell">/dev-studio worker T123
+            <code class="shell">/dev-studio worker help
+/dev-studio worker T123
 scripts/achilles-worker.sh
 scripts/achilles-queue.sh drain</code>
           </article>
@@ -758,7 +779,8 @@ scripts/achilles-queue.sh drain</code>
             <h3>reviewer</h3>
             <p>Reviews plans, diffs, outcomes, PRs, and release packets for blockers, warnings, and missing evidence.</p>
             <div class="meta"><span class="pill status-live">direct use</span><span class="pill">headless review wrappers</span></div>
-            <code class="shell">/dev-studio reviewer
+            <code class="shell">/dev-studio reviewer help
+/dev-studio reviewer
 /dev-studio reviewer review
 scripts/phase-review.sh --kind plan --input phase-plan.md
 scripts/pr-headless-review.sh &lt;pr&gt;</code>
@@ -767,38 +789,104 @@ scripts/pr-headless-review.sh &lt;pr&gt;</code>
             <h3>qa-engineer</h3>
             <p>Builds automated QA contracts and stable target checks beyond the worker's local verification.</p>
             <div class="meta"><span class="pill status-contract">contract-backed</span><span class="pill">handoff: qa-contract</span></div>
-            <code class="shell">/dev-studio qa-engineer write QA targets for T123
+            <code class="shell">/dev-studio qa-engineer help
+/dev-studio qa-engineer write QA targets for T123
 scripts/v2-multispawn-pilot.sh run</code>
           </article>
           <article class="role">
             <h3>flow-tester</h3>
             <p>Defines exploratory user-flow scenarios, severity thresholds, pass/fail state, and merge-block rules.</p>
             <div class="meta"><span class="pill status-contract">contract-backed</span><span class="pill">handoff: flow-test-checklist</span></div>
-            <code class="shell">/dev-studio flow-tester check onboarding on build 456
+            <code class="shell">/dev-studio flow-tester help
+/dev-studio flow-tester check onboarding on build 456
 /dev-studio flow-tester write a release smoke checklist</code>
           </article>
           <article class="role">
             <h3>perf</h3>
             <p>Investigates memory, CPU, thermal, battery, network, signpost, and trace evidence without taking functional acceptance authority.</p>
             <div class="meta"><span class="pill status-live">direct use</span><span class="pill">metric evidence gate</span></div>
-            <code class="shell">/dev-studio perf profile editor startup
+            <code class="shell">/dev-studio perf help
+/dev-studio perf profile editor startup
 /dev-studio perf compare baseline and post-fix traces</code>
           </article>
           <article class="role">
             <h3>release-manager</h3>
             <p>Assembles release readiness, blocker state, notes, tag state, TestFlight/App Store state, and approval gates.</p>
             <div class="meta"><span class="pill status-contract">approval-gated</span><span class="pill">handoff: release-packet</span></div>
-            <code class="shell">/dev-studio release-manager
+            <code class="shell">/dev-studio release-manager help
+/dev-studio release-manager
 /dev-studio release-manager prepare beta readiness
+/dev-studio release-manager configure
 /dev-studio release-manager tf-push --background</code>
           </article>
           <article class="role">
             <h3>host-adapter</h3>
             <p>Represents host capability and sync operations. It is infrastructure, not a general implementation agent.</p>
             <div class="meta"><span class="pill status-registry">registry-only</span><span class="pill">sync scripts</span></div>
-            <code class="shell">scripts/sync-host-skills.sh --all
+            <code class="shell">/dev-studio host-adapter help
+/dev-studio host-adapter nodes
+/dev-studio host-adapter sync
+scripts/sync-host-skills.sh --all
 scripts/host-preflight.sh codex /repo</code>
           </article>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Role help</th>
+                <th>Commands shown</th>
+                <th>Examples</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>/dev-studio manager help</code></td>
+                <td><code>status</code>, <code>resume-plan</code>, <code>ingest</code>, <code>guard</code>, <code>audit</code>, <code>analyze</code>, <code>reconcile</code>, <code>add</code></td>
+                <td><code>/dev-studio manager ingest "capture this"</code></td>
+              </tr>
+              <tr>
+                <td><code>/dev-studio worker help</code></td>
+                <td>bounded contract execution, <code>checkpoint</code>, <code>resume-checkpoint</code></td>
+                <td><code>/dev-studio worker T123</code></td>
+              </tr>
+              <tr>
+                <td><code>/dev-studio reviewer help</code></td>
+                <td><code>review</code>, plan/outcome/diff/PR/release-packet review, lifecycle actions</td>
+                <td><code>/dev-studio reviewer review</code></td>
+              </tr>
+              <tr>
+                <td><code>/dev-studio perf help</code></td>
+                <td><code>profile</code>, metric investigation, lifecycle actions</td>
+                <td><code>/dev-studio perf profile editor startup</code></td>
+              </tr>
+              <tr>
+                <td><code>/dev-studio planner help</code></td>
+                <td><code>plan</code>, decomposition, acceptance criteria, lifecycle actions</td>
+                <td><code>/dev-studio planner plan issue 123</code></td>
+              </tr>
+              <tr>
+                <td><code>/dev-studio qa-engineer help</code></td>
+                <td>QA target design, test contracts, lifecycle actions</td>
+                <td><code>/dev-studio qa-engineer write QA targets for T123</code></td>
+              </tr>
+              <tr>
+                <td><code>/dev-studio flow-tester help</code></td>
+                <td>exploratory scenarios, checklists, lifecycle actions</td>
+                <td><code>/dev-studio flow-tester check onboarding on build 456</code></td>
+              </tr>
+              <tr>
+                <td><code>/dev-studio release-manager help</code></td>
+                <td><code>release</code>, <code>configure</code>, <code>tf-push</code>, release packets, lifecycle actions</td>
+                <td><code>/dev-studio release-manager configure</code></td>
+              </tr>
+              <tr>
+                <td><code>/dev-studio host-adapter help</code></td>
+                <td><code>nodes</code>, <code>sync</code>, host capability checks</td>
+                <td><code>/dev-studio host-adapter nodes</code></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </details>
@@ -891,8 +979,11 @@ scripts/host-preflight.sh codex /repo</code>
             <li>Explicit canonical role routes directly, such as <code>/dev-studio worker &lt;contract&gt;</code>.</li>
             <li>Compatibility alias resolves through <code>scripts/v2-role-resolve.sh</code>, such as <code>/dev-studio achilles &lt;contract&gt;</code>.</li>
             <li>Former top-level names remain aliases only when placed under <code>/dev-studio</code>.</li>
+            <li>A bare subcommand may route through the session-local active role when the current conversation clearly selected one.</li>
             <li>A bare role token opens that role's lightweight landing.</li>
             <li>No role token opens the <code>manager</code> landing.</li>
+            <li>Bare <code>/dev-studio</code> clears any assumed active-role shortcut and re-lands in manager.</li>
+            <li>Bare <code>/dev-studio checkpoint</code> and <code>/dev-studio resume-checkpoint</code> land in manager; role-qualified lifecycle commands stay role-owned.</li>
             <li>Unknown role tokens fail before side effects.</li>
           </ol>
         </div>
@@ -970,6 +1061,11 @@ scripts/host-preflight.sh codex /repo</code>
           invocations land in manager for shaping; explicit role invocations keep
           checkpoint content owned by that role and follow the compact shared
           checkpoint contract.
+        </p>
+        <p>
+          Active-role shortcuts are conversation-local only. They are not stored
+          in runtime files, env vars, or router metadata, and explicit role
+          prefixes remain the user-controlled override.
         </p>
         <p>
           This page is the studio-layer command surface. It intentionally does not

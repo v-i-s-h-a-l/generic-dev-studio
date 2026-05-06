@@ -37,9 +37,25 @@ supplies the task context and runtime slug.
    - Empty arguments route to the lightweight `manager` landing.
    - A canonical role or compatibility alias in the first token routes through
      `$STUDIO_REPO/scripts/v2-role-resolve.sh`.
+   - Store any session-local active role only in the host conversation context,
+     using the resolved canonical role after alias resolution. Do not write
+     active-role state to disk or env vars.
+   - If no role token is present and the current session has a clear active
+     role, resolve unambiguous bare subcommands through that active role.
+     Explicit `/dev-studio <role> ...` always wins and replaces the active role
+     for that invocation. Bare `/dev-studio` re-lands in `manager` and clears
+     any assumed active-role shortcut.
+   - Bare `help` with no active role shows the router-level role index. Bare
+     `help` with an active role shows that role's help. `<role> help` always
+     shows that role's available commands, examples, aliases, and shared
+     lifecycle actions.
    - A role token with no remaining request starts that role's lightweight
      landing. Load the role contract, inspect only cheap cwd/profile context,
      and offer next moves instead of running a heavy default action.
+   - Bare `/dev-studio checkpoint` and `/dev-studio resume-checkpoint` always
+     land in `manager`; role-qualified lifecycle commands are owned by the
+     named role. Do not let active-role shortcuts swallow those bare slash
+     invocations.
    - Unknown role tokens fail before side effects.
 
 5. Execute the matched role workflow by following the router and role contract:
@@ -52,6 +68,33 @@ supplies the task context and runtime slug.
    - `release-manager configure` -> project-scoped release notification setup;
      call `$STUDIO_REPO/scripts/release-manager-configure.sh` after shaping
      quick/custom/descriptive Slack options with the user.
+   - `host-adapter` -> nodes, sync, host capability, and host skill refresh.
+   - `operator` -> human authority marker only; surface an explicit decision
+     instead of pretending to execute a runnable role.
+
+   Bare subcommand ownership:
+
+   | Command | Owner | Example |
+   |---|---|---|
+   | `help` | router or active role | `/dev-studio help`, `/dev-studio manager help` |
+   | `status` | manager | `status` after `/dev-studio manager` |
+   | `resume-plan` | manager | `/dev-studio manager resume-plan` |
+   | `ingest` | manager | `ingest "capture this"` |
+   | `guard` | manager | `guard "has this shipped?"` |
+   | `audit` | manager | `audit` |
+   | `analyze` | manager | `/dev-studio manager analyze` |
+   | `reconcile` | manager | `reconcile` in a project repo |
+   | `add` | manager | `/dev-studio manager add <url>` |
+   | `sync` | host-adapter | `/dev-studio host-adapter sync` |
+   | `nodes` | host-adapter | `/dev-studio host-adapter nodes` |
+   | `review` | reviewer | `/dev-studio reviewer review` |
+   | `plan` | planner | `/dev-studio planner plan issue 123` |
+   | `profile` | perf | `/dev-studio perf profile editor startup` |
+   | `qa` | qa-engineer | `/dev-studio qa-engineer help` |
+   | `flow`, `flow-test` | flow-tester | `/dev-studio flow-tester help` |
+   | `release`, `tf-push` | release-manager | `/dev-studio release-manager tf-push --background` |
+   | `configure` | release-manager only when active or prefixed | `/dev-studio release-manager configure` |
+   | `checkpoint`, `resume-checkpoint` | lifecycle special | `/dev-studio worker checkpoint` |
 
 6. Keep project state under `~/.dev-studio/$PROJECT_SLUG/` unless the user
    explicitly names another project slug. For `manager ingest`, call
@@ -83,6 +126,32 @@ supplies the task context and runtime slug.
 
    Then say: "Studio v2 router docs opened. Path in the repo:
    `core/v2/skills/dev-studio/docs.html`."
+
+   If the user asks for role help in chat instead of opening docs, summarize
+   from this index:
+
+   - `manager`: `status`, `resume-plan`, `ingest`, `guard`, `audit`,
+     `analyze`, `reconcile`, `add`; examples: `/dev-studio manager ingest
+     "capture this"`, `/dev-studio manager reconcile`.
+   - `worker`: bounded contract execution plus `checkpoint` and
+     `resume-checkpoint`; example: `/dev-studio worker T123`.
+   - `reviewer`: `review`, plan/outcome/diff/PR/release-packet review plus
+     lifecycle actions; example: `/dev-studio reviewer review`.
+   - `perf`: `profile` and metric investigation requests plus lifecycle
+     actions; example: `/dev-studio perf profile editor startup`.
+   - `planner`: `plan` and decomposition requests plus lifecycle actions;
+     example: `/dev-studio planner plan issue 123`.
+   - `qa-engineer`: QA target and test-contract requests plus lifecycle
+     actions; example: `/dev-studio qa-engineer write QA targets for T123`.
+   - `flow-tester`: exploratory flow scenarios and checklists plus lifecycle
+     actions; example: `/dev-studio flow-tester check onboarding on build 456`.
+   - `release-manager`: `release`, `configure`, `tf-push`, release packets,
+     and lifecycle actions; examples: `/dev-studio release-manager configure`,
+     `/dev-studio release-manager tf-push --background`.
+   - `host-adapter`: `nodes`, `sync`, host capability checks; example:
+     `/dev-studio host-adapter nodes`.
+   - `operator`: decision authority only; surface an approval request rather
+     than running a role.
 
 ## Notes
 

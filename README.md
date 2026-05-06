@@ -64,6 +64,8 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 ```
 # Studio v2 router — canonical role dispatch
 /dev-studio manager              # bare role landing — suggests next moves, then reports the direct command
+/dev-studio help                 # router-level role index; active-role help after a role is selected
+/dev-studio <role> help          # available commands and examples for one role
 /dev-studio manager resume-plan  # "where were we" — load ROADMAP + ARCHITECTURE + pending memory
 /dev-studio reviewer review      # walk REVIEW.md against the pending diff
 /dev-studio release-manager      # draft release notes per RELEASES.md (never auto-tags)
@@ -146,15 +148,17 @@ scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-s
 
 **Minimal-intervention by default.** Studio v2 routes through canonical roles under `/dev-studio`. The former top-level v1 agent surfaces were removed by A10; compatibility names such as `chanakya`, `achilles`, `argus`, and `apollo` now live as v2 role aliases.
 
+**Session-local role shortcuts.** After a bare role landing such as `/dev-studio manager`, unqualified commands like `status`, `ingest`, `reconcile`, `guard`, or `audit` may resolve through that role while the session context is clear. Explicit `/dev-studio <role> ...` always wins; bare `/dev-studio` re-lands in manager.
+
 ---
 
 ## What's in the Repo
 
 ```
 core/v2/skills/dev-studio/
-  SKILL.md         # v2 umbrella role router
-  docs.html        # self-contained /dev-studio docs page
-  routing.yaml     # /dev-studio invocation metadata
+  SKILL.md         # v2 umbrella role router; active-role and help intent rules
+  docs.html        # self-contained /dev-studio docs page with per-role help
+  routing.yaml     # /dev-studio invocation metadata and help triggers
   forwarders.yaml  # post-A10 compatibility-alias state
 
 core/v2/roles/
