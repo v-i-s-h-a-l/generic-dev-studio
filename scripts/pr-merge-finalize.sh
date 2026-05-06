@@ -148,6 +148,18 @@ detach_current_head_worktree_before_merge() {
   fi
 }
 
+delete_remote_head_branch_after_merge() {
+  [ -n "$head_ref" ] || return 0
+  [ "$head_ref" != "$base_ref" ] || return 0
+  if with_login_home_for_github git push origin --delete "$head_ref" >/dev/null 2>&1; then
+    return 0
+  fi
+  if with_login_home_for_github git ls-remote --exit-code --heads origin "$head_ref" >/dev/null 2>&1; then
+    cleanup_failed=1
+    cleanup_notes="${cleanup_notes}remote_branch_delete_failed;"
+  fi
+}
+
 json=$(with_login_home_for_github gh pr view "$PR" --json number,state,isDraft,mergeable,mergeStateStatus,headRefName,headRefOid,headRepositoryOwner,baseRefName,url,commits) \
   || { printf 'pr-merge-finalize: failed to read PR %s\n' "$PR" >&2; exit 1; }
 
@@ -233,9 +245,9 @@ detach_current_head_worktree_before_merge
 printf 'Merging PR via GitHub: %s\n' "$url"
 remote_merge_warning=""
 case "$METHOD" in
-  merge)  merge_cmd=(with_login_home_for_github gh pr merge "$PR" --merge --delete-branch) ;;
-  squash) merge_cmd=(with_login_home_for_github gh pr merge "$PR" --squash --delete-branch) ;;
-  rebase) merge_cmd=(with_login_home_for_github gh pr merge "$PR" --rebase --delete-branch) ;;
+  merge)  merge_cmd=(with_login_home_for_github gh pr merge "$PR" --merge) ;;
+  squash) merge_cmd=(with_login_home_for_github gh pr merge "$PR" --squash) ;;
+  rebase) merge_cmd=(with_login_home_for_github gh pr merge "$PR" --rebase) ;;
 esac
 if ! "${merge_cmd[@]}"; then
   merged_state=$(with_login_home_for_github gh pr view "$PR" --json state --jq '.state' 2>/dev/null || true)
@@ -245,6 +257,7 @@ if ! "${merge_cmd[@]}"; then
   fi
   remote_merge_warning="gh_merge_returned_nonzero_after_remote_merge"
 fi
+delete_remote_head_branch_after_merge
 
 current_path=$(current_worktree_path)
 control_path=""
