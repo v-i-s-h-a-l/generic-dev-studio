@@ -75,7 +75,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio manager ingest       # capture one idea in the current repo context; --scope studio crosses to Forge
 /dev-studio manager reconcile    # project repo: sync emitted debriefs/reports into the task ledger
 /dev-studio manager analyze      # studio repo: telemetry/log analysis plus studio feedback triage
-/dev-studio manager work-chain prd-to-chain-automation # discover/start/resume the PRD automation chain
+/dev-studio manager work-chain prd-to-chain-automation # auto-run the PRD automation chain; bare call discovers available chains
 scripts/manager-work-chain.sh prd-to-chain-automation # repo-side wrapper for the manager work-chain front door
 /dev-studio checkpoint           # manager-shaped checkpoint routing; explicit role owns content
 /dev-studio worker checkpoint    # worker-owned compact checkpoint; does not replace worker summary

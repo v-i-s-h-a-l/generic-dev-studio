@@ -9,6 +9,18 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 RUNNER="$SCRIPT_DIR/studio-chain-runner.sh"
 
+has_explicit_mode_flag() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --auto|--auto=*|--discover|--list|--resume|--resume=*|--explain-next|--explain-next=*)
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
 usage() {
   cat <<'EOF' >&2
 Usage:
@@ -28,5 +40,9 @@ fi
 case "$1" in
   -h|--help) usage ;;
 esac
+
+if [ "${1#-}" = "$1" ] && ! has_explicit_mode_flag "$@"; then
+  exec "$RUNNER" --auto "$@"
+fi
 
 exec "$RUNNER" "$@"
