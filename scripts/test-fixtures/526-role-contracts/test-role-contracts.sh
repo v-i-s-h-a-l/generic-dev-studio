@@ -38,6 +38,11 @@ for role in manager worker reviewer qa-engineer flow-tester perf release-manager
 done
 
 grep -Fq 'For bare checkpoint or resume-checkpoint invocations' "$ROOT/core/v2/roles/manager.yaml" || fail "manager does not own bare checkpoint shaping"
+grep -Fq 'kind: product-context' "$ROOT/core/v2/roles/manager.yaml" || fail "manager product-context input missing"
+grep -Fq 'material assumptions affect scope, cost, user-visible behavior, verification, or role routing' "$ROOT/core/v2/roles/manager.yaml" || fail "manager clarification materiality rule missing"
+grep -Fq 'does not auto-fetch PRD or Figma sources' "$ROOT/core/v2/roles/manager.yaml" || fail "manager PRD/Figma source boundary missing"
+grep -Fq 'Return needs_context rather than locking a brief when material assumptions remain unresolved' "$ROOT/core/v2/roles/manager.yaml" || fail "manager unresolved-assumption needs_context rule missing"
+grep -Fq 'Small unambiguous requests stay lightweight' "$ROOT/core/v2/roles/manager.yaml" || fail "manager lightweight-task guard missing"
 grep -Fq 'Worker checkpoint use is optional' "$ROOT/core/v2/roles/worker.yaml" || fail "worker checkpoint optionality not documented"
 
 [ "$("$CMD" --resolve --role chanakya)" = "core/v2/roles/manager.yaml" ] || fail "chanakya alias did not resolve to manager contract"
