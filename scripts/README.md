@@ -74,6 +74,7 @@ scripts/studio-chain-runner.sh --auto workflow-measurement-improvements     # un
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show the supervisor's next action without mutating state
 scripts/studio-chain-runner.sh --discover                                  # bare invocation lists runnable manifests and resumable runs
 scripts/manager-work-chain.sh prd-to-chain-automation                      # manager front door: auto-run a named work-chain; bare call discovers
+scripts/prd-intake-normalize.sh prd.md                                     # normalize PRD/transcript/issue brief language into a requirement packet
 scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from ~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/state.json
 scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
