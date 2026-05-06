@@ -76,7 +76,12 @@ inspect cheap cwd/profile context, suggest likely next moves, then report the
 direct invocation once the workflow is selected. `manager ingest` calls
 `scripts/dev-studio-ingest-resolve.sh`; `manager analyze` calls
 `scripts/manager-analyze.sh`; `manager reconcile` calls
-`scripts/manager-reconcile.sh`.
+`scripts/manager-reconcile.sh`; `manager work-chain` calls
+`scripts/manager-work-chain.sh`. For chain orchestration, bare
+`scripts/studio-chain-runner.sh` now shows runnable manifests and resumable
+runs before any plan or resume action is chosen, and `/dev-studio manager
+work-chain prd-to-chain-automation` is the manager-shaped front door for the
+new PRD automation chain.
 
 After a bare role landing, later bare subcommands may resolve through that
 active role when unambiguous in the same session. Store the resolved canonical

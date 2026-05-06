@@ -7,6 +7,7 @@
 #   scripts/studio-chain-runner.sh --explain-next <manifest|chain-name> [--only <chain>]
 #   scripts/studio-chain-runner.sh --resume <run_id> [--yes]
 #   scripts/studio-chain-runner.sh --list
+#   scripts/studio-chain-runner.sh --discover
 #
 # Manifest shape:
 #   schema_version: 1
@@ -33,14 +34,13 @@ usage() {
   exit 2
 }
 
-[ $# -ge 1 ] || usage
-
 MANIFEST=""
 ONLY_CHAIN=""
 HOST_OVERRIDE=""
 DRY_RUN=0
 YES=0
 RESUME_ID=""
+DISCOVER_MODE=0
 ALLOW_CLOSED_ISSUES=0
 PARALLEL_CHAINS="auto"
 CHECKPOINT_OVERRIDE="${STUDIO_CHAIN_CHECKPOINT:-}"
@@ -50,9 +50,14 @@ EXPLAIN_NEXT=0
 SUPERVISOR_LOCK=""
 SUPERVISOR_LOCK_ACQUIRED=0
 
+if [ $# -eq 0 ]; then
+  DISCOVER_MODE=1
+fi
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --list) LIST_RUNS=1; shift ;;
+    --discover) DISCOVER_MODE=1; shift ;;
     --auto) AUTO_MODE=1; MANIFEST="${2:?--auto requires a manifest or chain name}"; shift 2 ;;
     --auto=*) AUTO_MODE=1; MANIFEST="${1#--auto=}"; shift ;;
     --explain-next) EXPLAIN_NEXT=1; MANIFEST="${2:?--explain-next requires a manifest or chain name}"; shift 2 ;;
@@ -85,6 +90,26 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+if [ "$DISCOVER_MODE" -eq 0 ] && [ "$LIST_RUNS" -eq 0 ] && [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ]; then
+  DISCOVER_MODE=1
+fi
+
+if [ "$DISCOVER_MODE" -eq 1 ] && {
+  [ "$AUTO_MODE" -eq 1 ] ||
+  [ "$EXPLAIN_NEXT" -eq 1 ] ||
+  [ "$LIST_RUNS" -eq 1 ] ||
+  [ -n "$MANIFEST" ] ||
+  [ -n "$RESUME_ID" ] ||
+  [ -n "$ONLY_CHAIN" ] ||
+  [ -n "$HOST_OVERRIDE" ] ||
+  [ "$DRY_RUN" -eq 1 ] ||
+  [ "$YES" -eq 1 ] ||
+  [ "$ALLOW_CLOSED_ISSUES" -eq 1 ] ||
+  [ "$PARALLEL_CHAINS" != "auto" ]
+}; then
+  usage
+fi
 
 if [ "$AUTO_MODE" -eq 1 ] && [ "$EXPLAIN_NEXT" -eq 1 ]; then
   printf 'studio-chain-runner: --auto and --explain-next are mutually exclusive\n' >&2
@@ -127,6 +152,91 @@ list_persisted_runs() {
 
 if [ "$LIST_RUNS" -eq 1 ]; then
   list_persisted_runs
+  exit 0
+fi
+
+discover_persisted_runs() {
+  local parent_home project_root chain_root state_count state run_id status manifest next_command
+  command -v jq >/dev/null 2>&1 || { printf 'studio-chain-runner: jq required\n' >&2; exit 2; }
+  parent_home=$(resolve_parent_home_for_github)
+  project_root=$(HOME="$parent_home" resolve_project_root_for generic-dev-studio)
+  chain_root="$project_root/chain-runs"
+
+  printf '## Resumable Runs\n\n'
+  if [ ! -d "$chain_root" ]; then
+    printf -- '- No persisted chain runs found under `%s`.\n' "$chain_root"
+    return 0
+  fi
+
+  state_count=$(find "$chain_root" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$state_count" -eq 0 ]; then
+    printf -- '- No persisted chain runs found under `%s`.\n' "$chain_root"
+    return 0
+  fi
+
+  printf '| Run ID | Status | Manifest | Suggested command |\n'
+  printf '|---|---|---|---|\n'
+  while IFS= read -r state; do
+    [ -n "$state" ] || continue
+    [ -r "$state" ] || continue
+    run_id=$(jq -r '.run_id // "unknown"' "$state" 2>/dev/null || printf 'unknown')
+    status=$(jq -r '.status // "unknown"' "$state" 2>/dev/null || printf 'unknown')
+    [ "$status" = "completed" ] && continue
+    manifest=$(jq -r '.manifest // "unknown"' "$state" 2>/dev/null || printf 'unknown')
+    next_command=$(jq -r --arg run_id "$run_id" '
+      (.halt_records // []) as $halts
+      | if ($halts | length) > 0 and (($halts | last | .next_command // "") != "") then ($halts | last | .next_command)
+        elif ($halts | length) > 0 and (($halts | last | .halt_class // "") == "fatal") then "inspect halt record"
+        else "scripts/studio-chain-runner.sh --resume \($run_id) --yes"
+        end
+    ' "$state" 2>/dev/null || printf 'scripts/studio-chain-runner.sh --resume %s --yes' "$run_id")
+    printf '| `%s` | `%s` | `%s` | `%s` |\n' "$run_id" "$status" "$manifest" "$next_command"
+  done <<EOF
+$(find "$chain_root" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null | sort)
+EOF
+}
+
+discover_chain_manifests() {
+  local manifest chain_count idx name issues command rel_manifest
+  command -v yq >/dev/null 2>&1 || { printf 'studio-chain-runner: yq required\n' >&2; exit 2; }
+  printf '\n## Available Chain Manifests\n\n'
+  if [ ! -d "$REPO_ROOT/chains" ]; then
+    printf -- '- No chain manifests found under `%s`.\n' "$REPO_ROOT/chains"
+    return 0
+  fi
+
+  printf '| Manifest | Chain | Issues | Suggested command |\n'
+  printf '|---|---|---|---|\n'
+  while IFS= read -r manifest; do
+    [ -n "$manifest" ] || continue
+    [ -f "$manifest" ] || continue
+    rel_manifest=${manifest#"$REPO_ROOT/"}
+    chain_count=$(yq -r '.chains | length' "$manifest" 2>/dev/null || printf '0')
+    case "$chain_count" in
+      ''|null|*[!0-9]*|0) continue ;;
+    esac
+    for ((idx = 0; idx < chain_count; idx++)); do
+      name=$(yq -r ".chains[$idx].name" "$manifest")
+      issues=$(yq -r ".chains[$idx].issues | join(\",\")" "$manifest")
+      command="scripts/studio-chain-runner.sh $rel_manifest --only $name --dry-run"
+      printf '| `%s` | `%s` | `%s` | `%s` |\n' "$rel_manifest" "$name" "${issues:-"-"}" "$command"
+    done
+  done <<EOF
+$(find "$REPO_ROOT/chains" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null | sort)
+EOF
+}
+
+print_discovery() {
+  printf '# Studio Chain Discovery\n\n'
+  printf -- '- Bare invocation lists runnable manifests and resumable runs.\n'
+  printf -- '- Use `--discover` explicitly when you want the same non-mutating menu.\n'
+  discover_persisted_runs
+  discover_chain_manifests
+  printf '\n'
+}
+
+if [ "$DISCOVER_MODE" -eq 1 ]; then
+  print_discovery
   exit 0
 fi
 
