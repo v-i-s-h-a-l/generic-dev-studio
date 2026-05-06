@@ -956,6 +956,36 @@ write_halt_record() {
   printf '%s\n' "$file"
 }
 
+supersede_completed_halt_records() {
+  local resolved_at tmp
+  [ "$DRY_RUN" -eq 0 ] || return 0
+  [ -f "$RUN_STATE_JSON" ] || return 0
+  resolved_at=$(iso_ts_now)
+  tmp="$RUN_STATE_JSON.halts.$$"
+  jq \
+    --arg resolved_at "$resolved_at" \
+    --arg attempt_id "$ATTEMPT_ID" \
+    '(.halt_records // []) as $records
+     | .halt_records = ($records | map(
+         if (.status // "") == "paused" then
+           . + {
+             status: "superseded",
+             next_command: null,
+             superseded_at: $resolved_at,
+             superseded_by_attempt_id: $attempt_id,
+             resolution: "run_completed_after_resume"
+           }
+         else . end
+       ))
+     | .halt_record_resolution = {
+         resolved_at: $resolved_at,
+         attempt_id: $attempt_id,
+         active_count: ([.halt_records[]? | select((.status // "") == "paused" or (.status // "") == "terminated")] | length),
+         superseded_count: ([.halt_records[]? | select((.status // "") == "superseded")] | length)
+       }' "$RUN_STATE_JSON" > "$tmp"
+  mv "$tmp" "$RUN_STATE_JSON"
+}
+
 default_review_deadline() {
   local epoch
   epoch=$(( $(now_epoch) + 604800 ))
@@ -1394,16 +1424,86 @@ $(jq -r '.telemetry_gaps[]? | if type == "object" then (.gap_kind // .kind // em
 EOF
 }
 
+codex_home_for_worker() {
+  local launch_home="$1"
+  if [ -n "${CODEX_WORKER_HOME:-}" ]; then
+    printf '%s\n' "$CODEX_WORKER_HOME"
+  elif [ -n "${CODEX_HOME:-}" ]; then
+    printf '%s\n' "$CODEX_HOME"
+  elif [ -n "$launch_home" ] && [ -d "$launch_home/.codex" ]; then
+    printf '%s\n' "$launch_home/.codex"
+  elif [ -n "${HOME:-}" ] && [ -d "$HOME/.codex" ]; then
+    printf '%s\n' "$HOME/.codex"
+  fi
+}
+
+collect_codex_worker_session_telemetry() {
+  local host="$1" worktree="$2" started_at="$3" launch_home="$4"
+  local codex_home session_dir best_file="" best_mtime=0 candidate mtime
+  case "$host" in
+    codex*|*codex*) ;;
+    *) printf '{}\n'; return 0 ;;
+  esac
+  codex_home=$(codex_home_for_worker "$launch_home")
+  session_dir="$codex_home/sessions"
+  [ -n "$codex_home" ] && [ -d "$session_dir" ] || { printf '{}\n'; return 0; }
+
+  while IFS= read -r -d '' candidate; do
+    mtime=$(stat -f %m "$candidate" 2>/dev/null || printf '')
+    case "$mtime" in
+      ''|*[!0-9]*) continue ;;
+    esac
+    [ "$mtime" -ge "$started_at" ] || continue
+    if jq -e --arg cwd "$worktree" '
+      select((.type == "session_meta" or .type == "turn_context") and .payload.cwd == $cwd)
+    ' "$candidate" >/dev/null 2>&1; then
+      if [ -z "$best_file" ] || [ "$mtime" -ge "$best_mtime" ]; then
+        best_file="$candidate"
+        best_mtime="$mtime"
+      fi
+    fi
+  done < <(find "$session_dir" -type f -name '*.jsonl' -print0 2>/dev/null)
+
+  [ -n "$best_file" ] || { printf '{}\n'; return 0; }
+  jq -rs '
+    ([ .[] | select(.type == "turn_context") | {model:(.payload.model // null), effort:(.payload.effort // null)} ] | last) as $ctx
+    | ([ .[]
+        | select(.type == "event_msg" and .payload.type == "token_count" and (.payload.info.total_token_usage // null) != null)
+        | .payload.info.total_token_usage
+      ] | last) as $usage
+    | {
+        source: "codex_session_log",
+        model: ($ctx.model // null),
+        model_version: ($ctx.model // null),
+        effort: ($ctx.effort // null),
+        tokens: (if $usage == null then null else {
+          total: ($usage.total_tokens // null),
+          total_tokens: ($usage.total_tokens // null),
+          input: ($usage.input_tokens // 0),
+          output: ($usage.output_tokens // 0),
+          cache_read: ($usage.cached_input_tokens // 0),
+          reasoning_output: ($usage.reasoning_output_tokens // 0),
+          source: "codex_session_log"
+        } end)
+      }
+    | with_entries(select(.value != null))
+  ' "$best_file" 2>/dev/null || printf '{}\n'
+}
+
 ingest_worker_summary() {
-  local chain_name="$1" issue="$2" host="$3" worktree="$4" before="$5" after="$6" exit_code="$7" started_at="$8" chain_run_id="$9" issue_run_id="${10}"
+  local chain_name="$1" issue="$2" host="$3" worktree="$4" before="$5" after="$6" exit_code="$7" started_at="$8" chain_run_id="$9" issue_run_id="${10}" telemetry_file="${11:-}"
   local summary_path="$worktree/.studio/chain-worker-summary.json"
   local dest="$SUMMARY_ROOT/${chain_name}-issue-${issue}-${issue_run_id}.json"
-  local ended_at created_at duration_s stats changed_artifacts
+  local ended_at created_at duration_s stats changed_artifacts session_telemetry_json
   ended_at=$(now_epoch)
   created_at=$(iso_ts_now)
   duration_s=$(duration_since "$started_at" "$ended_at")
   stats=$(diff_stats_json "$worktree" "$before" "$after")
   changed_artifacts=$(changed_artifacts_json "$worktree" "$before" "$after")
+  session_telemetry_json="{}"
+  if [ -n "$telemetry_file" ] && [ -f "$telemetry_file" ] && jq -e . "$telemetry_file" >/dev/null 2>&1; then
+    session_telemetry_json=$(jq -c . "$telemetry_file")
+  fi
 
   if [ -f "$summary_path" ] && jq -e . "$summary_path" >/dev/null 2>&1; then
     jq -c \
@@ -1418,8 +1518,23 @@ ingest_worker_summary() {
       --argjson duration_s "$duration_s" \
       --argjson stats "$stats" \
       --argjson changed_artifacts "$changed_artifacts" \
-      'def has_model: ((.model // .model_name // .model_version // null) != null);
+      --argjson session_telemetry "$session_telemetry_json" \
+      '($session_telemetry.tokens // null) as $telemetry_tokens
+       | ($session_telemetry.model // $session_telemetry.model_version // null) as $telemetry_model
+       | ($session_telemetry.model_version // $session_telemetry.model // null) as $telemetry_model_version
+       | ($session_telemetry.effort // $session_telemetry.reasoning_effort // null) as $telemetry_effort
+       | (.tokens // $telemetry_tokens) as $final_tokens
+       | (.model // .model_name // .model_version // $telemetry_model) as $final_model
+       | (.model_version // $telemetry_model_version) as $final_model_version
+       | (.effort // .reasoning_effort // $telemetry_effort) as $final_effort
+       | def has_model: ($final_model != null);
        def has_checks: (((.tests // []) | length) + ((.lints // []) | length) + ((.builds // []) | length)) > 0;
+       def gap_active($gap):
+         if $gap == "tokens" or $gap == "token_usage" then $final_tokens == null
+         elif $gap == "model" then (has_model | not)
+         elif $gap == "model_version" then $final_model_version == null
+         elif $gap == "effort" or $gap == "reasoning_effort" then $final_effort == null
+         else true end;
        . + {
         schema_version: (.schema_version // 1),
         kind: (.kind // "completion"),
@@ -1442,14 +1557,18 @@ ingest_worker_summary() {
         tests: (.tests // []),
         lints: (.lints // []),
         builds: (.builds // []),
-        tokens: (.tokens // null),
+        tokens: $final_tokens,
+        model: (.model // .model_name // $telemetry_model),
+        model_version: $final_model_version,
+        effort: $final_effort,
+        telemetry_sources: (((.telemetry_sources // []) + (if (($session_telemetry.source // "") == "") then [] else [$session_telemetry.source] end)) | unique),
         functionality_delivered: (.functionality_delivered // null),
         carryover: (.carryover // null),
         lessons: (.lessons // null),
         telemetry_gaps: (((.telemetry_gaps // [])
-          + (if (.tokens // null) == null then ["tokens"] else [] end)
+          + (if $final_tokens == null then ["tokens"] else [] end)
           + (if has_model then [] else ["model"] end)
-          + (if has_checks then [] else ["tests_lints_builds"] end)) | unique)
+          + (if has_checks then [] else ["tests_lints_builds"] end)) | unique | map(select(gap_active(.))))
       }' "$summary_path" > "$dest"
     emit_chain_event chain_worker_summary_ingested "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed "$duration_s" \
       "$(jq -cn --arg summary "$dest" '{summary:$summary, validation:"valid"}')"
@@ -1475,6 +1594,7 @@ ingest_worker_summary() {
       --argjson stats "$stats" \
       --argjson changed_artifacts "$changed_artifacts" \
       --arg summary_gap "$summary_gap" \
+      --argjson session_telemetry "$session_telemetry_json" \
       '{
         schema_version: 1,
         kind: "completion",
@@ -1499,13 +1619,18 @@ ingest_worker_summary() {
         tests: [],
         lints: [],
         builds: [],
-        tokens: null,
-        model: null,
+        tokens: ($session_telemetry.tokens // null),
+        model: ($session_telemetry.model // null),
+        model_version: ($session_telemetry.model_version // $session_telemetry.model // null),
+        effort: ($session_telemetry.effort // null),
         model_recommendation: null,
+        telemetry_sources: (if (($session_telemetry.source // "") == "") then [] else [$session_telemetry.source] end),
         functionality_delivered: null,
         carryover: null,
         lessons: null,
-        telemetry_gaps: [$summary_gap, "model", "tokens", "tests_lints_builds"]
+        telemetry_gaps: ([$summary_gap, "tests_lints_builds"]
+          + (if ($session_telemetry.model // $session_telemetry.model_version // null) == null then ["model"] else [] end)
+          + (if ($session_telemetry.tokens // null) == null then ["tokens"] else [] end))
       }' > "$dest"
     emit_chain_event chain_artifact_validation_failed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$duration_s" \
       "$(jq -cn --arg artifact "chain-worker-summary" --arg reason "$summary_gap" --arg summary "$dest" '{artifact:$artifact, reason_id:$reason, summary:$summary}')"
@@ -1790,7 +1915,26 @@ generate_run_report() {
     printf '\n## Halt Records\n\n'
     halt_count=0
     [ -n "$halt_dir" ] && halt_count=$(find "$halt_dir" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$halt_count" -gt 0 ]; then
+    if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ] && [ "$(jq '(.halt_records // []) | length' "$RUN_STATE_JSON" 2>/dev/null || printf 0)" -gt 0 ]; then
+      jq -r '
+        (.halt_records // []) as $records
+        | ($records | map(select((.status // "") == "paused" or (.status // "") == "terminated"))) as $active
+        | ($records | map(select((.status // "") == "superseded"))) as $superseded
+        | if ($active | length) > 0 then
+            ["| Reason | Class | Status | Next Command | Artifact |",
+             "|---|---|---|---|---|"],
+            ($active[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(.next_command // "hard stop") | \(.path // "missing") |")
+          elif ($superseded | length) > 0 then
+            "No active halt records. Superseded halt records: \($superseded | length) (run completed after resume).",
+            "",
+            "| Reason | Class | Status | Resolution | Artifact |",
+            "|---|---|---|---|---|",
+            ($superseded[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(.resolution // "run_completed_after_resume") | \(.path // "missing") |")
+          else
+            "No active halt records."
+          end
+      ' "$RUN_STATE_JSON"
+    elif [ "$halt_count" -gt 0 ]; then
       jq -r -s '
         ["| Reason | Class | Status | Next Command | Summary |",
          "|---|---|---|---|---|"],
@@ -1861,6 +2005,9 @@ finish_run() {
     return 0
   fi
   write_run_state "$status" "$reason"
+  if [ "$status" = "completed" ]; then
+    supersede_completed_halt_records
+  fi
   generate_run_report "$status" "$reason"
   duration_s=$(duration_since "$RUN_STARTED_AT")
   emit_chain_event chain_run_completed "" "$RUN_ID" "" "" "$status" "$duration_s" \
@@ -2934,6 +3081,7 @@ Private telemetry report: local only; resolve by run ID on the machine that ran 
 Public-safe telemetry: run/chain UUIDs and abstract gap names only."; then
     abort_run "PR telemetry comment failed for $pr_url"
   fi
+  detach_chain_worktree_for_merge_cleanup "$chain_branch" "$chain_worktree"
 
   review_started_at=$(now_epoch)
   review_out="$CHAIN_RUN_ROOT/review-$pr_number.out"
@@ -2956,6 +3104,27 @@ Public-safe telemetry: run/chain UUIDs and abstract gap names only."; then
       "$(jq -cn --arg pr_url "$pr_url" --argjson exit_code "$review_rc" --arg verdict "$review_verdict" --arg model "$review_model" --arg effort "$review_effort" --arg review_host "$review_host" --arg parent_host "$review_parent_host" --arg output "$review_out" '{pr_url:$pr_url, exit_code:$exit_code, verdict:(if $verdict == "" then null else $verdict end), model:(if $model == "" then null else $model end), effort:(if $effort == "" then null else $effort end), review_host:(if $review_host == "" then null else $review_host end), parent_host:(if $parent_host == "" then null else $parent_host end), wrapper_output:$output}')"
     abort_run "PR review failed for $pr_url"
   fi
+}
+
+detach_chain_worktree_for_merge_cleanup() {
+  local chain_branch="$1" chain_worktree="$2" current_branch
+  [ "$DRY_RUN" -eq 0 ] || {
+    printf 'DRY-RUN git -C %q checkout --detach HEAD\n' "$chain_worktree"
+    return 0
+  }
+  [ -d "$chain_worktree/.git" ] || [ -f "$chain_worktree/.git" ] || return 0
+  current_branch=$(git -C "$chain_worktree" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  [ "$current_branch" = "$chain_branch" ] || return 0
+  log "detaching $chain_worktree from $chain_branch before PR merge cleanup"
+  run git -C "$chain_worktree" checkout --detach HEAD
+}
+
+chain_worktree_registered() {
+  local chain_worktree="$1"
+  git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null | awk -v target="$chain_worktree" '
+    /^worktree / && substr($0, 10) == target { found=1 }
+    END { exit found ? 0 : 1 }
+  '
 }
 
 write_issue_phase_plan_artifact() {
@@ -3053,7 +3222,7 @@ write_issue_phase_outcome_artifact() {
 run_issue_job() {
   local name="$1" branch="$2" chain_worktree="$3" issue="$4" host="$5" git_metadata_strategy="$6" issue_worktree="$7" issue_branch="$8" chain_run_id="$9" issue_run_id="${10}" result_file="${11}" phase_review_mode="${12:-auto}" issue_count_for_review="${13:-1}"
   local before after worker_rc child_worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason parent_finalized effective_worker_rc
-  local phase_context boundary_id phase_plan_artifact phase_outcome_artifact phase_review_rc phase_review_reason
+  local phase_context boundary_id phase_plan_artifact phase_outcome_artifact phase_review_rc phase_review_reason worker_telemetry_file worker_launch_home
   issue_started_at=$(now_epoch)
   parent_finalized=false
 
@@ -3124,7 +3293,10 @@ run_issue_job() {
   fi
 
   after=$(git -C "$issue_worktree" rev-parse HEAD)
-  summary_file=$(ingest_worker_summary "$name" "$issue" "$host" "$issue_worktree" "$before" "$after" "$worker_rc" "$issue_started_at" "$chain_run_id" "$issue_run_id")
+  worker_telemetry_file="$CHAIN_RUN_ROOT/worker-telemetry-$issue_run_id.json"
+  worker_launch_home=$(host_launch_home)
+  collect_codex_worker_session_telemetry "$host" "$issue_worktree" "$issue_started_at" "$worker_launch_home" > "$worker_telemetry_file" || printf '{}\n' > "$worker_telemetry_file"
+  summary_file=$(ingest_worker_summary "$name" "$issue" "$host" "$issue_worktree" "$before" "$after" "$worker_rc" "$issue_started_at" "$chain_run_id" "$issue_run_id" "$worker_telemetry_file")
   effective_worker_rc=$(chain_git_parent_finalize_effective_worker_rc "$worker_rc" "$summary_file")
   write_decision_escrows_from_summary "$summary_file" || log "decision escrow extraction failed for $summary_file"
   issue_duration=$(duration_since "$issue_started_at")
@@ -3603,7 +3775,11 @@ PR: $FINAL_PR_URL"
   if [ "$DRY_RUN" -eq 0 ]; then
     run_retryable_or_abort network_partition "fetch origin failed during chain cleanup" \
       with_login_home_for_github git -C "$REPO_ROOT" fetch origin --prune
-    git -C "$REPO_ROOT" worktree remove "$chain_worktree" || true
+    if chain_worktree_registered "$chain_worktree"; then
+      git -C "$REPO_ROOT" worktree remove "$chain_worktree" || true
+    else
+      log "chain worktree already removed: $chain_worktree"
+    fi
     git -C "$REPO_ROOT" branch -D "$branch" 2>/dev/null || true
   else
     printf 'DRY-RUN git -C %q fetch origin --prune\n' "$REPO_ROOT"
