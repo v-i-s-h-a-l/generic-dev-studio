@@ -325,6 +325,7 @@ configure_run_paths() {
   PLAN_JSON="$CHAIN_RUN_ROOT/plan.json"
   if [ "$DRY_RUN" -eq 1 ] && [ -z "$RESUME_ID" ]; then
     PLAN_JSON="$RUN_ROOT/$RUN_ID-plan.json"
+    RUN_STATE_JSON="$RUN_ROOT/$RUN_ID-state.json"
   fi
   if { [ "$DRY_RUN" -eq 0 ] || [ -n "$RESUME_ID" ]; } && [ "$EXPLAIN_NEXT" -eq 0 ]; then
     mkdir -p "$SUMMARY_ROOT" "$HALT_ROOT" "$ESCROW_ROOT" "$PHASE_REVIEW_ROOT"
@@ -374,7 +375,7 @@ event_stage() {
   case "$1" in
     chain_run_started|chain_plan_prepared|chain_phase_review_completed) printf 'plan\n' ;;
     chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed) printf 'preflight\n' ;;
-    chain_started|chain_issue_started|chain_issue_completed|chain_issue_validated|chain_parent_commit_finalized) printf 'execute\n' ;;
+    chain_started|chain_issue_started|chain_issue_completed|chain_issue_validated|chain_parent_commit_finalized|chain_issue_scheduler_blocked) printf 'execute\n' ;;
     chain_worker_summary_ingested|chain_telemetry_gap|checkpoint_auto_created|checkpoint_auto_loaded|checkpoint_context_savings_estimated) printf 'ingest\n' ;;
     chain_pr_opened|chain_review_completed) printf 'review\n' ;;
     chain_completed|chain_issue_merged) printf 'merge\n' ;;
@@ -482,14 +483,32 @@ write_run_state() {
 }
 
 update_state_jq() {
-  local filter tmp
-  [ "$DRY_RUN" -eq 0 ] || return 0
+  local filter tmp lock acquired=0 spins=0
   [ -f "$RUN_STATE_JSON" ] || return 0
+  lock="$RUN_STATE_JSON.update.lock"
+  while ! mkdir "$lock" 2>/dev/null; do
+    if lock_is_stale "$lock"; then
+      rm -rf "$lock"
+      continue
+    fi
+    spins=$((spins + 1))
+    if [ "$spins" -gt 600 ]; then
+      printf 'studio-chain-runner: timed out waiting for state update lock: %s\n' "$lock" >&2
+      return 1
+    fi
+    sleep 0.1
+  done
+  acquired=1
+  printf '%s\n' "$$" > "$lock/pid"
+  printf '%s\n' "$(iso_ts_now)" > "$lock/created_at"
   filter="${*: -1}"
   set -- "${@:1:$(($# - 1))}"
   tmp="$RUN_STATE_JSON.tmp.$$"
   jq "$@" --arg updated_at "$(iso_ts_now)" ".updated_at = \$updated_at | $filter" "$RUN_STATE_JSON" > "$tmp"
   mv "$tmp" "$RUN_STATE_JSON"
+  if [ "$acquired" -eq 1 ]; then
+    rm -rf "$lock"
+  fi
 }
 
 mark_chain_state() {
@@ -516,6 +535,13 @@ mark_issue_state() {
      | if $after == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .commit_after) = $after end
      | if $summary == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .summary) = $summary end
      | if $reason == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .failure_reason) = $reason end'
+}
+
+mark_issue_integrated() {
+  local issue_run_id="$1"
+  update_state_jq \
+    --arg issue_run_id "$issue_run_id" \
+    '(.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .integrated) = true'
 }
 
 sanitize_checkpoint_component() {
@@ -2198,7 +2224,7 @@ resolve_resume_state() {
 
 build_plan_json() {
   local out="$1" chain_count idx name base branch host phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state
-  local chain_run_id issue_run_id issue_slug issue_branch issue_worktree chain_slug chain_worktree worker_pool
+  local chain_run_id issue_run_id issue_slug issue_branch issue_worktree chain_slug chain_worktree worker_pool issue_kind dependencies_json previous_issue
   local tmp chains_tmp issues_tmp
   tmp="$out.tmp.$$"
   chains_tmp="$out.chains.$$"
@@ -2238,13 +2264,41 @@ build_plan_json() {
     worker_pool=$(chain_worker_pool_size)
     issues_tmp="$out.issues.$$"
     printf '[]\n' > "$issues_tmp"
+    previous_issue=""
     for ((i = 0; i < issue_count; i++)); do
-      issue=$(yq -r ".chains[$idx].issues[$i]" "$MANIFEST")
+      issue_kind=$(yq -r ".chains[$idx].issues[$i] | type" "$MANIFEST")
+      case "$issue_kind" in
+        '!!int'|number)
+          issue=$(yq -r ".chains[$idx].issues[$i]" "$MANIFEST")
+          if [ -n "$previous_issue" ]; then
+            dependencies_json=$(jq -cn --argjson dep "$previous_issue" '[$dep]')
+          else
+            dependencies_json='[]'
+          fi
+          ;;
+        '!!map'|object)
+          issue=$(yq -r ".chains[$idx].issues[$i].number // .chains[$idx].issues[$i].issue // \"\"" "$MANIFEST")
+          dependencies_json=$(yq -o=json ".chains[$idx].issues[$i].dependencies // .chains[$idx].issues[$i].depends_on // []" "$MANIFEST" | jq -c '
+            if type == "array" then map(tonumber)
+            elif . == null then []
+            else [tonumber]
+            end
+          ')
+          ;;
+        *)
+          printf 'studio-chain-runner: invalid issue entry in chain %s at index %s\n' "$name" "$i" >&2
+          exit 2
+          ;;
+      esac
       case "$issue" in ''|null|*[!0-9]*)
         printf 'studio-chain-runner: invalid issue id in chain %s: %s\n' "$name" "$issue" >&2
         exit 2
         ;;
       esac
+      if ! printf '%s\n' "$dependencies_json" | jq -e 'type == "array" and all(.[]; (type == "number") and . > 0)' >/dev/null; then
+        printf 'studio-chain-runner: invalid dependencies for issue #%s in chain %s\n' "$issue" "$name" >&2
+        exit 2
+      fi
       issue_json=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,state,url)
       issue_title=$(printf '%s' "$issue_json" | jq -r '.title')
       issue_state=$(printf '%s' "$issue_json" | jq -r '.state')
@@ -2264,9 +2318,11 @@ build_plan_json() {
         --arg branch "$issue_branch" \
         --arg worktree "$issue_worktree" \
         --arg issue_run_id "$issue_run_id" \
-        '. + [{number:$issue,title:$title,state:$state,issue_branch:$branch,issue_worktree:$worktree,issue_run_id:$issue_run_id,status:"pending"}]' \
+        --argjson dependencies "$dependencies_json" \
+        '. + [{number:$issue,title:$title,state:$state,dependencies:$dependencies,issue_branch:$branch,issue_worktree:$worktree,issue_run_id:$issue_run_id,status:"pending"}]' \
         "$issues_tmp" > "$issues_tmp.next"
       mv "$issues_tmp.next" "$issues_tmp"
+      previous_issue="$issue"
     done
     jq \
       --arg name "$name" \
@@ -2331,13 +2387,23 @@ build_plan_json() {
 
 validate_execution_graph() {
   local plan="$1"
-  local duplicate_issues duplicate_branches protected_targets dependency_conflicts
+  local duplicate_issues duplicate_branches protected_targets dependency_conflicts invalid_issue_dependencies
   duplicate_issues=$(jq -r '[.chains[].issues[].number] | group_by(.)[] | select(length > 1) | .[0]' "$plan" | paste -sd, -)
   [ -z "$duplicate_issues" ] || { printf 'studio-chain-runner: duplicate issue IDs across chains: %s\n' "$duplicate_issues" >&2; exit 2; }
   duplicate_branches=$(jq -r '[.chains[].branch, (.chains[].issues[].issue_branch)] | group_by(.)[] | select(length > 1) | .[0]' "$plan" | paste -sd, -)
   [ -z "$duplicate_branches" ] || { printf 'studio-chain-runner: duplicate branch refs in plan: %s\n' "$duplicate_branches" >&2; exit 2; }
   protected_targets=$(jq -r '.chains[].base | select(. == "feature" or . == "production" or . == "develop" or . == "trunk")' "$plan" | paste -sd, -)
   [ -z "$protected_targets" ] || { printf 'studio-chain-runner: protected base targets are not allowed: %s\n' "$protected_targets" >&2; exit 2; }
+  invalid_issue_dependencies=$(jq -r '
+    .chains[] as $chain
+    | ($chain.issues | map(.number)) as $numbers
+    | $chain.issues[]
+    | . as $issue
+    | (.dependencies // [])[]
+    | select(($numbers | index(.)) == null or . == $issue.number)
+    | "#\($issue.number)->#\(.)"
+  ' "$plan" | paste -sd, -)
+  [ -z "$invalid_issue_dependencies" ] || { printf 'studio-chain-runner: invalid issue dependencies: %s\n' "$invalid_issue_dependencies" >&2; exit 2; }
   dependency_conflicts=$(yq -r '[.chains[] | select(has("depends_on") or has("dependencies"))] | length' "$MANIFEST")
   if [ "$dependency_conflicts" != "0" ] && [ "$PARALLEL_CHAINS" != "1" ]; then
     log "dependency metadata present; falling back to sequential chain execution"
@@ -2417,9 +2483,10 @@ explain_plan() {
     "- Phase review: `\(.phase_review // "auto")`\n" +
     "- Checkpoint automation: `\(.checkpoint // "off")`\n" +
     "- Worker pool: `\(.worker_pool)`\n" +
+    "- Issue scheduler: `dependency-ready nodes up to worker_pool; scalar issue lists preserve manifest order`\n" +
     "- Planned PR: base `\(.base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
-    "| Issue | State | Status | Issue-run UUID | Branch | Worktree |\n|---:|---|---|---|---|---|\n" +
-    ([.issues[] | "| #\(.number) \(.title) | \(.state) | \(.status) | `\(.issue_run_id)` | `\(.issue_branch)` | `\(.issue_worktree)` |"] | join("\n")) +
+    "| Issue | Depends On | State | Status | Issue-run UUID | Branch | Worktree |\n|---:|---|---|---|---|---|---|\n" +
+    ([.issues[] | "| #\(.number) \(.title) | \(if ((.dependencies // []) | length) == 0 then "-" else ((.dependencies // []) | map("#" + tostring) | join(", ")) end) | \(.state) | \(.status) | `\(.issue_run_id)` | `\(.issue_branch)` | `\(.issue_worktree)` |"] | join("\n")) +
     "\n"
   ' "$plan"
 }
@@ -2434,6 +2501,8 @@ prepare_plan() {
     build_plan_json "$PLAN_JSON"
     if [ "$DRY_RUN" -eq 0 ]; then
       write_run_state planned ""
+    else
+      cp "$PLAN_JSON" "$RUN_STATE_JSON"
     fi
   fi
   validate_execution_graph "$PLAN_JSON"
@@ -2811,11 +2880,12 @@ run_issue_job() {
   child_worker_rc=$worker_rc
 
   if [ "$DRY_RUN" -eq 1 ]; then
+    mark_issue_state "$issue_run_id" completed "$before" "dry-run-after"
     jq -n \
       --arg issue "$issue" \
       --arg branch "$issue_branch" \
       --arg worktree "$issue_worktree" \
-      '{status:"completed", issue:($issue|tonumber), issue_branch:$branch, issue_worktree:$worktree}' > "$result_file"
+      '{status:"completed", issue:($issue|tonumber), issue_branch:$branch, issue_worktree:$worktree, commit_before:"dry-run-before", commit_after:"dry-run-after"}' > "$result_file"
     return 0
   fi
 
@@ -2990,8 +3060,8 @@ integrate_issue_result() {
           ;;
       esac
     fi
-    git -C "$chain_worktree" checkout "$branch"
-    chain_git_integrate_issue_workspace "$REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy"
+    git -C "$chain_worktree" checkout "$branch" || return 1
+    chain_git_integrate_issue_workspace "$REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy" || return 1
     emit_chain_event chain_issue_merged "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed 0 \
       "$(jq -cn --arg chain "$chain_name" --arg branch "$branch" --arg issue_branch "$issue_branch" --arg commit_after "$result_commit_after" '{chain:$chain, branch:$branch, issue_branch:$issue_branch, commit_after:(if $commit_after == "" then null else $commit_after end)}')"
   else
@@ -3012,6 +3082,194 @@ integrate_issue_result() {
         ;;
     esac
   fi
+}
+
+process_completed_issue_result() {
+  local chain_name="$1" branch="$2" chain_worktree="$3" issue="$4" git_metadata_strategy="$5" result_file="$6" chain_run_id="$7" issue_run_id="$8" checkpoint_mode="$9"
+  local result_status result_reason
+
+  result_status=$(jq -r '.status // "failed"' "$result_file")
+  if [ "$result_status" != "completed" ]; then
+    result_reason=$(jq -r '.reason // "issue failed"' "$result_file")
+    SCHEDULER_FAILURE_REASON="$result_reason"
+    return 1
+  fi
+
+  if ! integrate_issue_result "$chain_name" "$branch" "$chain_worktree" "$issue" "$git_metadata_strategy" "$result_file" "$chain_run_id" "$issue_run_id"; then
+    SCHEDULER_FAILURE_REASON="issue #$issue integration failed"
+    return 1
+  fi
+  mark_issue_integrated "$issue_run_id"
+  if [ "$checkpoint_mode" = "auto" ]; then
+    if [ "$DRY_RUN" -eq 0 ]; then
+      create_auto_checkpoint_after_issue "$checkpoint_mode" "$chain_name" "$branch" "$chain_worktree" "$chain_run_id" "$issue_run_id" "$issue" "$result_file"
+    else
+      printf 'DRY-RUN cd %q && scripts/studio-checkpoint.sh create --project generic-dev-studio --role manager --mode chain-auto --branch %q --checkpoint-id chain-%s-%s-%s --resume-command %q\n' \
+        "$chain_worktree" "$branch" "$RUN_ID" "$chain_run_id" "$issue_run_id" "scripts/studio-chain-runner.sh --resume $RUN_ID --yes --checkpoint auto"
+    fi
+  fi
+  return 0
+}
+
+issue_dependencies_satisfied() {
+  local chain_idx="$1" issue_idx="$2"
+  jq -e --argjson chain_idx "$chain_idx" --argjson issue_idx "$issue_idx" '
+    (.chains[$chain_idx].issues[$issue_idx].dependencies // []) as $deps
+    | ([.chains[$chain_idx].issues[] | select((.number as $n | $deps | index($n)) != null) | select((.status // "pending") == "completed")] | length) == ($deps | length)
+  ' "$RUN_STATE_JSON" >/dev/null
+}
+
+pending_issue_count() {
+  local chain_idx="$1"
+  jq -r --argjson chain_idx "$chain_idx" '[.chains[$chain_idx].issues[] | select((.status // "pending") == "pending")] | length' "$RUN_STATE_JSON"
+}
+
+issue_job_is_running() {
+  local target_pid="$1" pid
+  while IFS= read -r pid; do
+    [ "$pid" = "$target_pid" ] && return 0
+  done <<EOF
+$(jobs -pr 2>/dev/null || true)
+EOF
+  return 1
+}
+
+collect_finished_issue_jobs() {
+  local chain_name="$1" branch="$2" chain_worktree="$3" git_metadata_strategy="$4" checkpoint_mode="$5"
+  local idx pid result_file issue chain_run_id issue_run_id worker_rc
+  local -a next_pids next_results next_issues next_chain_run_ids next_issue_run_ids
+  next_pids=()
+  next_results=()
+  next_issues=()
+  next_chain_run_ids=()
+  next_issue_run_ids=()
+
+  for ((idx = 0; idx < ${#ISSUE_PIDS[@]}; idx++)); do
+    pid="${ISSUE_PIDS[$idx]}"
+    result_file="${ISSUE_RESULT_FILES[$idx]}"
+    issue="${ISSUE_NUMBERS[$idx]}"
+    chain_run_id="${ISSUE_CHAIN_RUN_IDS[$idx]}"
+    issue_run_id="${ISSUE_RUN_IDS[$idx]}"
+    if [ -f "$result_file" ]; then
+      wait "$pid" 2>/dev/null || true
+      if ! process_completed_issue_result "$chain_name" "$branch" "$chain_worktree" "$issue" "$git_metadata_strategy" "$result_file" "$chain_run_id" "$issue_run_id" "$checkpoint_mode"; then
+        return 1
+      fi
+    elif ! issue_job_is_running "$pid"; then
+      set +e
+      wait "$pid" 2>/dev/null
+      worker_rc=$?
+      set -e
+      jq -n \
+        --arg issue "$issue" \
+        --argjson rc "$worker_rc" \
+        --arg reason "issue #$issue worker exited before writing result" \
+        '{status:"failed", issue:($issue|tonumber), exit_code:$rc, reason:$reason}' > "$result_file"
+      if ! process_completed_issue_result "$chain_name" "$branch" "$chain_worktree" "$issue" "$git_metadata_strategy" "$result_file" "$chain_run_id" "$issue_run_id" "$checkpoint_mode"; then
+        return 1
+      fi
+    else
+      next_pids+=("$pid")
+      next_results+=("$result_file")
+      next_issues+=("$issue")
+      next_chain_run_ids+=("$chain_run_id")
+      next_issue_run_ids+=("$issue_run_id")
+    fi
+  done
+
+  if [ "${#next_pids[@]}" -gt 0 ]; then ISSUE_PIDS=("${next_pids[@]}"); else ISSUE_PIDS=(); fi
+  if [ "${#next_results[@]}" -gt 0 ]; then ISSUE_RESULT_FILES=("${next_results[@]}"); else ISSUE_RESULT_FILES=(); fi
+  if [ "${#next_issues[@]}" -gt 0 ]; then ISSUE_NUMBERS=("${next_issues[@]}"); else ISSUE_NUMBERS=(); fi
+  if [ "${#next_chain_run_ids[@]}" -gt 0 ]; then ISSUE_CHAIN_RUN_IDS=("${next_chain_run_ids[@]}"); else ISSUE_CHAIN_RUN_IDS=(); fi
+  if [ "${#next_issue_run_ids[@]}" -gt 0 ]; then ISSUE_RUN_IDS=("${next_issue_run_ids[@]}"); else ISSUE_RUN_IDS=(); fi
+  return 0
+}
+
+wait_for_running_issue_jobs() {
+  local chain_name="$1" branch="$2" chain_worktree="$3" git_metadata_strategy="$4" checkpoint_mode="$5"
+  while [ "${#ISSUE_PIDS[@]}" -gt 0 ]; do
+    sleep 1
+    collect_finished_issue_jobs "$chain_name" "$branch" "$chain_worktree" "$git_metadata_strategy" "$checkpoint_mode" || return 1
+  done
+}
+
+run_chain_issue_scheduler() {
+  local chain_idx="$1" chain_name="$2" branch="$3" chain_worktree="$4" host="$5" git_metadata_strategy="$6" chain_run_id="$7" phase_review_mode="$8" checkpoint_mode="$9" issue_count="${10}" chain_results_dir="${11}"
+  local scheduled_any pending_count running_count i issue issue_branch issue_worktree issue_run_id issue_status issue_commit_after result_file result_reason
+
+  ISSUE_PIDS=()
+  ISSUE_RESULT_FILES=()
+  ISSUE_NUMBERS=()
+  ISSUE_CHAIN_RUN_IDS=()
+  ISSUE_RUN_IDS=()
+  SCHEDULER_FAILURE_REASON=""
+
+  while :; do
+    collect_finished_issue_jobs "$chain_name" "$branch" "$chain_worktree" "$git_metadata_strategy" "$checkpoint_mode" || {
+      wait_for_running_issue_jobs "$chain_name" "$branch" "$chain_worktree" "$git_metadata_strategy" "$checkpoint_mode" || true
+      abort_run "$SCHEDULER_FAILURE_REASON"
+    }
+
+    scheduled_any=0
+    running_count=${#ISSUE_PIDS[@]}
+    while [ "$running_count" -lt "$CHAIN_WORKER_POOL" ]; do
+      scheduled_any=0
+      for ((i = 0; i < issue_count; i++)); do
+        issue=$(jq -r ".chains[$chain_idx].issues[$i].number" "$PLAN_JSON")
+        issue_branch=$(jq -r ".chains[$chain_idx].issues[$i].issue_branch" "$PLAN_JSON")
+        issue_worktree=$(jq -r ".chains[$chain_idx].issues[$i].issue_worktree" "$PLAN_JSON")
+        issue_run_id=$(jq -r ".chains[$chain_idx].issues[$i].issue_run_id" "$PLAN_JSON")
+        issue_status=$(jq -r --arg id "$issue_run_id" '.chains[].issues[] | select(.issue_run_id == $id) | .status // "pending"' "$RUN_STATE_JSON" 2>/dev/null || printf 'pending')
+        result_file="$chain_results_dir/issue-$issue-$issue_run_id.json"
+
+        if [ "$issue_status" = "completed" ]; then
+          if jq -e --arg id "$issue_run_id" '.chains[].issues[] | select(.issue_run_id == $id) | .integrated == true' "$RUN_STATE_JSON" >/dev/null 2>&1; then
+            continue
+          fi
+          issue_commit_after=$(jq -r --arg id "$issue_run_id" '.chains[].issues[] | select(.issue_run_id == $id) | .commit_after // ""' "$RUN_STATE_JSON" 2>/dev/null || true)
+          jq -n \
+            --arg issue "$issue" \
+            --arg branch "$issue_branch" \
+            --arg worktree "$issue_worktree" \
+            --arg commit_after "$issue_commit_after" \
+            '{status:"completed", issue:($issue|tonumber), issue_branch:$branch, issue_worktree:$worktree, commit_after:(if $commit_after == "" then null else $commit_after end), resumed:true}' > "$result_file"
+          process_completed_issue_result "$chain_name" "$branch" "$chain_worktree" "$issue" "$git_metadata_strategy" "$result_file" "$chain_run_id" "$issue_run_id" "$checkpoint_mode" || abort_run "$SCHEDULER_FAILURE_REASON"
+          continue
+        fi
+
+        [ "$issue_status" = "pending" ] || continue
+        issue_dependencies_satisfied "$chain_idx" "$i" || continue
+
+        rm -f "$result_file"
+        mark_issue_state "$issue_run_id" running
+        run_issue_job "$chain_name" "$branch" "$chain_worktree" "$issue" "$host" "$git_metadata_strategy" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file" "$phase_review_mode" "$issue_count" &
+        ISSUE_PIDS+=("$!")
+        ISSUE_RESULT_FILES+=("$result_file")
+        ISSUE_NUMBERS+=("$issue")
+        ISSUE_CHAIN_RUN_IDS+=("$chain_run_id")
+        ISSUE_RUN_IDS+=("$issue_run_id")
+        scheduled_any=1
+        running_count=${#ISSUE_PIDS[@]}
+        break
+      done
+      [ "$scheduled_any" -eq 1 ] || break
+    done
+
+    pending_count=$(pending_issue_count "$chain_idx")
+    running_count=${#ISSUE_PIDS[@]}
+    if [ "$pending_count" -eq 0 ] && [ "$running_count" -eq 0 ]; then
+      return 0
+    fi
+    if [ "$running_count" -eq 0 ]; then
+      result_reason="chain graph blocked: no pending issue has all dependencies completed"
+      emit_chain_event chain_issue_scheduler_blocked "" "$RUN_ID" "$chain_run_id" "" blocked 0 \
+        "$(jq -cn --arg chain "$chain_name" --arg reason "$result_reason" '{chain:$chain, reason:$reason}')"
+      write_halt_record "implementation_scope_blocked" "$result_reason" "$chain_run_id" "" "$chain_name" "" "parent-runner" >/dev/null || true
+      log "$result_reason"
+      abort_run "$result_reason"
+    fi
+    sleep 1
+  done
 }
 
 for ((idx = 0; idx < chain_count; idx++)); do
@@ -3066,52 +3324,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
 
   load_auto_checkpoint_for_chain "$checkpoint_mode" "$chain_run_id" "$branch" "$chain_worktree"
 
-  ISSUE_PIDS=()
-  for ((i = 0; i < issue_count; i++)); do
-    issue=$(jq -r ".chains[$idx].issues[$i].number" "$PLAN_JSON")
-    issue_branch=$(jq -r ".chains[$idx].issues[$i].issue_branch" "$PLAN_JSON")
-    issue_worktree=$(jq -r ".chains[$idx].issues[$i].issue_worktree" "$PLAN_JSON")
-    issue_run_id=$(jq -r ".chains[$idx].issues[$i].issue_run_id" "$PLAN_JSON")
-    issue_status=$(jq -r --arg id "$issue_run_id" '.chains[].issues[] | select(.issue_run_id == $id) | .status // "pending"' "$RUN_STATE_JSON" 2>/dev/null || printf 'pending')
-    result_file="$chain_results_dir/issue-$issue-$issue_run_id.json"
-
-    if [ "$issue_status" = "completed" ]; then
-      log "resume skip completed issue #$issue"
-      issue_commit_after=$(jq -r --arg id "$issue_run_id" '.chains[].issues[] | select(.issue_run_id == $id) | .commit_after // ""' "$RUN_STATE_JSON" 2>/dev/null || true)
-      jq -n \
-        --arg issue "$issue" \
-        --arg branch "$issue_branch" \
-        --arg worktree "$issue_worktree" \
-        --arg commit_after "$issue_commit_after" \
-        '{status:"completed", issue:($issue|tonumber), issue_branch:$branch, issue_worktree:$worktree, commit_after:(if $commit_after == "" then null else $commit_after end), resumed:true}' > "$result_file"
-      integrate_issue_result "$name" "$branch" "$chain_worktree" "$issue" "$git_metadata_strategy" "$result_file" "$chain_run_id" "$issue_run_id"
-      if [ "$checkpoint_mode" = "auto" ]; then
-        if [ "$DRY_RUN" -eq 0 ]; then
-          create_auto_checkpoint_after_issue "$checkpoint_mode" "$name" "$branch" "$chain_worktree" "$chain_run_id" "$issue_run_id" "$issue" "$result_file"
-        else
-          printf 'DRY-RUN cd %q && scripts/studio-checkpoint.sh create --project generic-dev-studio --role manager --mode chain-auto --branch %q --checkpoint-id chain-%s-%s-%s --resume-command %q\n' \
-            "$chain_worktree" "$branch" "$RUN_ID" "$chain_run_id" "$issue_run_id" "scripts/studio-chain-runner.sh --resume $RUN_ID --yes --checkpoint auto"
-        fi
-      fi
-      continue
-    fi
-
-    run_issue_job "$name" "$branch" "$chain_worktree" "$issue" "$host" "$git_metadata_strategy" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$result_file" "$phase_review_mode" "$issue_count"
-    result_status=$(jq -r '.status // "failed"' "$result_file")
-    if [ "$result_status" != "completed" ]; then
-      result_reason=$(jq -r '.reason // "issue failed"' "$result_file")
-      abort_run "$result_reason"
-    fi
-    integrate_issue_result "$name" "$branch" "$chain_worktree" "$issue" "$git_metadata_strategy" "$result_file" "$chain_run_id" "$issue_run_id"
-    if [ "$checkpoint_mode" = "auto" ]; then
-      if [ "$DRY_RUN" -eq 0 ]; then
-        create_auto_checkpoint_after_issue "$checkpoint_mode" "$name" "$branch" "$chain_worktree" "$chain_run_id" "$issue_run_id" "$issue" "$result_file"
-      else
-        printf 'DRY-RUN cd %q && scripts/studio-checkpoint.sh create --project generic-dev-studio --role manager --mode chain-auto --branch %q --checkpoint-id chain-%s-%s-%s --resume-command %q\n' \
-          "$chain_worktree" "$branch" "$RUN_ID" "$chain_run_id" "$issue_run_id" "scripts/studio-chain-runner.sh --resume $RUN_ID --yes --checkpoint auto"
-      fi
-    fi
-  done
+  run_chain_issue_scheduler "$idx" "$name" "$branch" "$chain_worktree" "$host" "$git_metadata_strategy" "$chain_run_id" "$phase_review_mode" "$checkpoint_mode" "$issue_count" "$chain_results_dir"
 
   finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id" "$host"
   chain_duration=$(duration_since "$chain_started_at")

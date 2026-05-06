@@ -69,6 +69,7 @@ scripts/studio-weekly.sh --post                                  # weekly GitHub
 scripts/studio-chain-runner.sh workflow-measurement-improvements            # default plan/explain + private resumable state
 scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # same resolved graph, then non-mutating command trace
 scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex --yes # execute after plan with node/RAM-sized session pool + private report
+scripts/studio-chain-runner.sh my-chain --dry-run                          # object-form issues may declare dependencies/depends_on; ready independent issues fill worker_pool
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview role/branch-scoped checkpoint hooks
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements     # unattended start/resume when state is safe and unambiguous
 scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --yes # execute without routine continuation prompts; typed blockers halt
