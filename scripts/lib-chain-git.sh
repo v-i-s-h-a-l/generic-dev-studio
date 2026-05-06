@@ -11,13 +11,13 @@ chain_git_prepare_issue_workspace() {
 
   case "$strategy" in
     linked-worktree)
-      git -C "$repo_root" worktree remove --force "$issue_worktree" 2>/dev/null || rm -rf "$issue_worktree"
-      git -C "$repo_root" worktree add -B "$issue_branch" "$issue_worktree" "$chain_branch"
+      git -C "$repo_root" worktree remove --force "$issue_worktree" 2>/dev/null || rm -rf "$issue_worktree" || return 1
+      git -C "$repo_root" worktree add -B "$issue_branch" "$issue_worktree" "$chain_branch" || return 1
       ;;
     local-clone)
-      rm -rf "$issue_worktree"
-      git clone --quiet --no-local --branch "$chain_branch" "$chain_worktree" "$issue_worktree"
-      git -C "$issue_worktree" checkout -q -B "$issue_branch" "$chain_branch"
+      rm -rf "$issue_worktree" || return 1
+      git clone --quiet --no-local --branch "$chain_branch" "$chain_worktree" "$issue_worktree" || return 1
+      git -C "$issue_worktree" checkout -q -B "$issue_branch" "$chain_branch" || return 1
       ;;
     *)
       printf 'chain-git: unknown git metadata strategy: %s\n' "$strategy" >&2
@@ -36,17 +36,17 @@ chain_git_integrate_issue_workspace() {
 
   case "$strategy" in
     linked-worktree)
-      git -C "$issue_worktree" rebase "$chain_branch"
-      git -C "$chain_worktree" merge --ff-only "$issue_branch"
-      git -C "$repo_root" worktree remove "$issue_worktree"
-      git -C "$repo_root" branch -D "$issue_branch"
+      git -C "$issue_worktree" rebase "$chain_branch" || return 1
+      git -C "$chain_worktree" merge --ff-only "$issue_branch" || return 1
+      git -C "$repo_root" worktree remove "$issue_worktree" || return 1
+      git -C "$repo_root" branch -D "$issue_branch" || return 1
       ;;
     local-clone)
-      git -C "$issue_worktree" fetch "$chain_worktree" "$chain_branch"
-      git -C "$issue_worktree" rebase FETCH_HEAD
-      git -C "$chain_worktree" fetch "$issue_worktree" "$issue_branch"
-      git -C "$chain_worktree" merge --ff-only FETCH_HEAD
-      rm -rf "$issue_worktree"
+      git -C "$issue_worktree" fetch "$chain_worktree" "$chain_branch" || return 1
+      git -C "$issue_worktree" rebase FETCH_HEAD || return 1
+      git -C "$chain_worktree" fetch "$issue_worktree" "$issue_branch" || return 1
+      git -C "$chain_worktree" merge --ff-only FETCH_HEAD || return 1
+      rm -rf "$issue_worktree" || return 1
       ;;
     *)
       printf 'chain-git: unknown git metadata strategy: %s\n' "$strategy" >&2

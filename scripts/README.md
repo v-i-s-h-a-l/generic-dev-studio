@@ -69,20 +69,29 @@ scripts/studio-weekly.sh --post                                  # weekly GitHub
 scripts/studio-chain-runner.sh workflow-measurement-improvements            # default plan/explain + private resumable state
 scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # same resolved graph, then non-mutating command trace
 scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex --yes # execute after plan with node/RAM-sized session pool + private report
+scripts/studio-chain-runner.sh my-chain --dry-run                          # object-form issues may declare dependencies/depends_on; ready independent issues fill worker_pool
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview role/branch-scoped checkpoint hooks
+scripts/studio-chain-runner.sh --discover                                  # bare invocation lists runnable chains, resumable runs, and next actions
+scripts/studio-chain-runner.sh --discover prd-to-chain-automation          # filtered discovery for one chain or manifest
+scripts/manager-work-chain.sh prd-to-chain-automation --dry-run            # preview the named chain through the manager front door
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements     # unattended start/resume when state is safe and unambiguous
+scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes # attended execution with explicit confirmation bypass
+scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --yes # execute without routine continuation prompts; typed blockers halt
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show the supervisor's next action without mutating state
-scripts/studio-chain-runner.sh --discover                                  # bare invocation lists runnable manifests and resumable runs
-scripts/manager-work-chain.sh prd-to-chain-automation                      # manager front door: auto-run a named work-chain; bare call discovers
+scripts/prd-intake-normalize.sh prd.md                                     # normalize PRD/transcript/issue brief language into a requirement packet
+scripts/prd-task-graph-synthesize.sh packet.md                             # synthesize deterministic scheduler graph; flags missing prereqs and write races
 scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from ~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/state.json
 scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
-scripts/studio-chain-telemetry-digest.sh --days 7                          # v1 counters + weekly digest from private chain-run telemetry
+scripts/studio-chain-telemetry-digest.sh --days 7                          # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run telemetry
+scripts/lint-chain-workflow-docs.sh --staged                               # guard chain launcher docs, usage text, and fixtures; bypass with STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1
 scripts/studio-checkpoint.sh create --role worker --goal "..." --next "..." # compact private checkpoint under per-project .runtime/v2/checkpoints
 scripts/studio-checkpoint.sh resume --latest --role worker                  # load manifest.json + context.md first, then inspect drift lazily
 scripts/codex-worker-exec.sh "<prompt>"                                    # internal Codex worker launcher: workspace-write + ~/.dev-studio + ephemeral + no prompts
 # Chain dry-runs show the selected git metadata strategy; sandboxed hosts use issue-local clones so commits stay inside the worker root.
-# Chain reports include typed halt records and decision escrow when automation pauses or continues on a low-risk default.
+# Chain worktrees/results are namespaced under the run UUID; resume continues only the selected run and surfaces skipped/integrated/pending issue semantics.
+# Chain startup sweeps stale state locks, old temporary run roots, and oversized private artifacts; tune with STUDIO_CHAIN_TMP_RETENTION_DAYS, STUDIO_CHAIN_RUN_RETENTION_DAYS, and STUDIO_CHAIN_ARTIFACT_MAX_BYTES.
+# Chain reports include compact efficiency metrics, test/lint/build outcomes, typed halt records, and decision escrow when automation pauses or continues on a low-risk default.
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
 scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
 scripts/studio-project-state.sh --status Todo         # field-aware backlog reader for the Studio v2 Projects board
@@ -266,6 +275,8 @@ dispatched_from=user@host
 | `ACHILLES_UNATTENDED` | `0` | Set to `1` to pass `--dangerously-skip-permissions` for fully unattended overnight runs. |
 | `ACHILLES_AUTONOMOUS` | `0` (set to `1` automatically by the worker per task) | Tells the worker subprocess there is no user to answer clarifying questions; it must pick obvious defaults and document them in the debrief. Exported by `achilles-worker.sh` for every `claude -p` subprocess. Do not set manually unless testing. |
 | `ACHILLES_DISPLAY_NAME` | derived (see below) | Friendly name for panes / logs. Override per-shell, or pre-bake per-project via `~/.dev-studio/<project>/.display_name` (first non-comment line wins). |
+| `STUDIO_CHAIN_EXECUTION_MODE` | `attended` | Default chain execution mode. `--auto` switches to `unattended`; explicit `--attended` or `--unattended` wins for normal runner calls. |
+| `STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS` | `0` | Set to `1` to bypass the chain workflow docs guard in emergency commits; update README, scripts docs, runner usage, and fixtures together instead when possible. |
 
 **Display-name resolution:** `ACHILLES_DISPLAY_NAME` env var → `~/.dev-studio/<project>/.display_name` file → git-remote basename → project slug.
 

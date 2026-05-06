@@ -17,10 +17,13 @@
 #   2h. lint-v2-bootstrap.sh --staged — keep v2 substrate pre-SPEC changes
 #       inside the A0.4 bootstrap/meta boundary.
 #   2i. lint-v2-enforcement.sh --staged — A0.6 Studio v2 SPEC-derived gates.
+#   2j. lint-chain-workflow-docs.sh --staged — keep chain launcher docs,
+#       usage text, and regression fixtures aligned.
 #   3.  privacy gate — reject if staged diff leaks another project's runtime.
 #
 # Main-branch commit guard bypass: `STUDIO_BYPASS_MAIN_COMMIT_GUARD=1 git commit ...`.
-# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/2g/2h/2i/3.
+# Chain workflow docs guard bypass: `STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1 git commit ...`.
+# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/2g/2h/2i/2j/3.
 # Gates 1+1b (manifest regens) always run because stale manifests leak
 # downstream.
 # LLM review is not part of the default hook path. Run
@@ -190,6 +193,17 @@ if [ -x "$SCRIPTS/lint-v2-enforcement.sh" ]; then
   if [ "$rc" -ne 0 ]; then
     printf '\npre-commit: Studio v2 enforcement violations above — see core/v2/SPEC.md and _shared/rules/enforcement-contract.md\n' >&2
     printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2j — chain workflow docs and fixture contract (#654).
+if [ -x "$SCRIPTS/lint-chain-workflow-docs.sh" ]; then
+  "$SCRIPTS/lint-chain-workflow-docs.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: chain workflow docs drift found — update README/scripts docs, runner usage text, or fixtures together\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1 git commit ...\n' >&2
     exit 1
   fi
 fi

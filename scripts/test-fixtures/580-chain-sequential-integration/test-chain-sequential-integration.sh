@@ -92,7 +92,7 @@ awk '
 
 awk '
   /if \[ "\$issue_status" = "completed" \]/ { completed_block=1 }
-  /integrate_issue_result "\$name" "\$branch" "\$chain_worktree" "\$issue"/ && completed_block { integrated=1 }
+  /process_completed_issue_result "\$chain_name" "\$branch" "\$chain_worktree" "\$issue"/ && completed_block { integrated=1 }
   /continue/ && completed_block && integrated { ok=1 }
   END { exit !ok }
 ' "$ROOT/scripts/studio-chain-runner.sh" || fail "resume completed-issue path does not integrate before continuing"
