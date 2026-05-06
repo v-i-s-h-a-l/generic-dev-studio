@@ -291,10 +291,11 @@ git clone <this-repo> && cd generic-dev-studio
 ### Fleet prerequisites (only if you'll use multi-worker mode)
 
 ```bash
-brew install fswatch coreutils yq jq
+brew install fswatch coreutils yq jq shellcheck
 ```
 
 `yq` (v4+) drives post-2.6 YAML artifacts (`scripts/rebuild-index.sh`, `scripts/query-plans.sh`, `scripts/query-tasks.sh`, `scripts/detect-edits.sh`). `jq` drives event-log normalization in `scripts/migrate-ledger.sh` and dedupe in `scripts/read-events.sh`. Without either, `scripts/migrate-ledger.sh` fails pre-flight.
+`shellcheck` lint-checks Bash scripts before script changes land.
 
 ### Git hooks (contributors only)
 

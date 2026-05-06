@@ -142,6 +142,22 @@ tools:
     duration: "<30s"
     alternatives: ""
 
+  - id: shellcheck
+    name: ShellCheck
+    category: toolchain
+    tier: recommended
+    roles: [manager, dual]
+    why: "Shell linter — catches Bash portability and quoting defects before script changes land"
+    details: "Static analyzer for shell scripts. Studio script changes use it to catch quoting bugs, unreachable branches, bad source paths, and portability mistakes before review."
+    check_type: command
+    check_target: shellcheck
+    version_cmd: "shellcheck --version 2>/dev/null | awk '/^version:/ {print $2}'"
+    min_version: ""
+    install_type: brew
+    install_target: shellcheck
+    duration: "<1 min"
+    alternatives: "manual review only; higher risk for shell-script changes"
+
   - id: git
     name: git
     category: vcs
