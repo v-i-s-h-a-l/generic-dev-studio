@@ -54,12 +54,22 @@ Every line carries the same top-level envelope:
 | `task` | no | Issue number, PR number, decision id, or empty string. |
 | `data` | yes | Bounded object. Long/private details should be represented as private artifact paths. |
 
+## Run Metrics
+
+`state.json` stores a compact derived `efficiency_metrics` object. It is
+computed from worker summaries plus events and is intentionally aggregate-only:
+issue pass/fail counts, worker duration totals and averages, slowest issue,
+token totals when available, churn totals, seconds/tokens per changed file,
+retry/resume/review counters, test/lint/build outcome counts, telemetry-gap
+counts, and a small `bottlenecks` array. Missing token or model telemetry stays
+`null` or a named gap; readers must not coerce missing data to zero.
+
 ## Required Event Data
 
 | Event family | Required `data` fields |
 |---|---|
 | Supervisor: `chain_supervisor_decision` | Emitted for mutating `--auto` decisions; `--auto --dry-run` and `--explain-next` print the decision envelope without writing telemetry. Include `action`; include `selected_run_id` for resume/start when available, `candidate_run_ids` for ambiguity/refusals, `reason_id` for refusals, and `lock_path` for lock-held refusals. |
-| Lifecycle: `chain_run_started`, `chain_started`, `chain_issue_started`, `chain_issue_completed`, `chain_completed`, `chain_run_completed` | `status`, `duration_s`; scoped IDs in the envelope; stage-specific fields such as `chain`, `host`, `commit_before`, `commit_after`, or `report` when available. |
+| Lifecycle: `chain_run_started`, `chain_started`, `chain_issue_started`, `chain_issue_completed`, `chain_completed`, `chain_run_completed` | `status`, `duration_s`; scoped IDs in the envelope; stage-specific fields such as `chain`, `host`, `commit_before`, `commit_after`, or `report` when available. `chain_issue_completed` also carries compact `check_counts`, token presence, and telemetry gaps when a worker summary exists. |
 | Resume: `chain_resume_attempt_started`, `chain_resume_attempt_completed` | `attempt_id`; completed event also includes `failure_reason` when non-empty. |
 | Halt: `chain_halt_recorded` | `reason_id`, `halt_class`, `halt_record`. |
 | Escrow: `chain_decision_escrow_opened` | `decision_id`, `risk_class`, `status`, `escrow_record`. |

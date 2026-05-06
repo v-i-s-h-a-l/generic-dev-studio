@@ -425,9 +425,84 @@ emit_chain_event() {
   printf '%s\n' "$line" >> "$EVENTS_JSONL"
 }
 
+chain_efficiency_metrics_json() {
+  local status="$1" failure_reason="${2:-}" summaries_file events_file
+  summaries_file=$(mktemp -t studio-chain-efficiency-summaries.XXXXXX)
+  events_file=$(mktemp -t studio-chain-efficiency-events.XXXXXX)
+  : > "$summaries_file"
+  : > "$events_file"
+  if [ -n "${SUMMARY_ROOT:-}" ] && [ -d "$SUMMARY_ROOT" ]; then
+    find "$SUMMARY_ROOT" -type f -name '*.json' 2>/dev/null | sort | while IFS= read -r summary; do
+      jq -c . "$summary" >> "$summaries_file" 2>/dev/null || true
+    done
+  fi
+  if [ -n "${EVENTS_JSONL:-}" ] && [ -f "$EVENTS_JSONL" ] && [ "$EVENTS_JSONL" != "/dev/null" ]; then
+    jq -c . "$EVENTS_JSONL" > "$events_file" 2>/dev/null || true
+  fi
+  jq -n \
+    --arg status "$status" \
+    --arg failure_reason "$failure_reason" \
+    --slurpfile summaries "$summaries_file" \
+    --slurpfile events "$events_file" '
+    def token_total:
+      (.tokens // null) as $t |
+      if $t == null then null
+      elif ($t | type) == "number" then $t
+      elif ($t | type) == "object" then ($t.total // $t.total_tokens // $t.usage.total_tokens // null)
+      else null
+      end;
+    def bad_outcome:
+      ((.outcome // .status // "") | tostring | test("fail|error|flaky"; "i"));
+    def bad_count($arr): [($arr // [])[]? | select(bad_outcome)] | length;
+    def duration: (.duration_s // 0 | tonumber? // 0);
+    def counts_by(key):
+      reduce .[] as $item ({}; ($item | key // "unknown" | tostring) as $k | .[$k] = ((.[$k] // 0) + 1));
+    [ $summaries[] ] as $rows |
+    [ $events[] ] as $events |
+    [ $rows[] | token_total | select(. != null) ] as $tokens |
+    [ $rows[] | (.tests // [])[]? ] as $tests |
+    [ $rows[] | (.lints // [])[]? ] as $lints |
+    [ $rows[] | (.builds // [])[]? ] as $builds |
+    ($rows | max_by(duration)?) as $slowest |
+    {
+      schema_version: 1,
+      status: $status,
+      failure_reason: (if $failure_reason == "" then null else $failure_reason end),
+      issues_completed: ([ $rows[] | select((.exit_code // 1) == 0) ] | length),
+      issues_failed: ([ $rows[] | select((.exit_code // 0) != 0) ] | length),
+      worker_duration_s: ([ $rows[] | duration ] | add // 0),
+      avg_worker_duration_s: (if ($rows | length) == 0 then null else (([ $rows[] | duration ] | add // 0) / ($rows | length)) end),
+      slowest_issue: (if $slowest == null then null else {issue_number: ($slowest.issue_number // null), duration_s: ($slowest.duration_s // null)} end),
+      tokens_total: (if ($tokens | length) == 0 then null else ($tokens | add) end),
+      token_reports: ($tokens | length),
+      files_changed: ([ $rows[].files_changed? // empty ] | add // 0),
+      additions: ([ $rows[].additions? // empty ] | add // 0),
+      deletions: ([ $rows[].deletions? // empty ] | add // 0),
+      generated_file_count: ([ $rows[].generated_file_count? // empty ] | add // 0),
+      seconds_per_file_changed: (if ([ $rows[].files_changed? // empty ] | add // 0) == 0 then null else (([ $rows[] | duration ] | add // 0) / ([ $rows[].files_changed? // empty ] | add)) end),
+      tokens_per_file_changed: (if (($tokens | length) == 0) or (([ $rows[].files_changed? // empty ] | add // 0) == 0) then null else (($tokens | add) / ([ $rows[].files_changed? // empty ] | add)) end),
+      retry_events: ([ $events[] | select((.event // "") | test("retry"; "i")) ] | length),
+      resume_attempts: ([ $events[] | select((.event // "") | test("^chain_resume_attempt_")) ] | length),
+      phase_reviews: ([ $events[] | select((.event // "") == "chain_phase_review_completed") ] | length),
+      pr_reviews: ([ $events[] | select((.event // "") == "chain_review_completed") ] | length),
+      tests: {total: ($tests | length), bad: ([ $tests[] | select(bad_outcome) ] | length), outcomes: ($tests | counts_by(.outcome // .status))},
+      lints: {total: ($lints | length), bad: ([ $lints[] | select(bad_outcome) ] | length), outcomes: ($lints | counts_by(.outcome // .status))},
+      builds: {total: ($builds | length), bad: ([ $builds[] | select(bad_outcome) ] | length), outcomes: ($builds | counts_by(.outcome // .status))},
+      telemetry_gap_counts: ([ $rows[].telemetry_gaps[]? ] | map({gap: ., one: 1}) | counts_by(.gap)),
+      bottlenecks: ([
+        (if $slowest != null then {kind:"slowest_issue", issue_number: ($slowest.issue_number // null), duration_s: ($slowest.duration_s // null)} else empty end),
+        (if ([ $tests[] | select(bad_outcome) ] | length) > 0 then {kind:"test_failures_or_flakes", count: ([ $tests[] | select(bad_outcome) ] | length)} else empty end),
+        (if ([ $rows[].telemetry_gaps[]? | select(. == "tokens") ] | length) > 0 then {kind:"missing_token_telemetry", count: ([ $rows[].telemetry_gaps[]? | select(. == "tokens") ] | length)} else empty end)
+      ])
+    }'
+  rm -f "$summaries_file" "$events_file"
+}
+
 write_run_state() {
   local status="$1" failure_reason="${2:-}"
   local chains_json="[]" halt_records_json="[]" decision_escrows_json="[]" phase_reviews_json="[]" phase_review_feedback_json="[]" checkpoints_json="[]"
+  local efficiency_metrics_json
+  efficiency_metrics_json=$(chain_efficiency_metrics_json "$status" "$failure_reason")
   if [ -f "$RUN_STATE_JSON" ]; then
     chains_json=$(jq -c '.chains // []' "$RUN_STATE_JSON")
     halt_records_json=$(jq -c '.halt_records // []' "$RUN_STATE_JSON")
@@ -457,6 +532,7 @@ write_run_state() {
     --argjson phase_reviews "$phase_reviews_json" \
     --argjson phase_review_feedback "$phase_review_feedback_json" \
     --argjson checkpoints "$checkpoints_json" \
+    --argjson efficiency_metrics "$efficiency_metrics_json" \
     '{
       schema_version: 1,
       run_id: $run_id,
@@ -480,6 +556,7 @@ write_run_state() {
       phase_reviews: $phase_reviews,
       phase_review_feedback: $phase_review_feedback,
       checkpoints: $checkpoints,
+      efficiency_metrics: $efficiency_metrics,
       failure_reason: (if $failure_reason == "" then null else $failure_reason end)
     }' > "$RUN_STATE_JSON"
 }
@@ -1483,6 +1560,47 @@ generate_run_report() {
         [.[].event] | group_by(.) | map({event: .[0], count: length}) | sort_by(.event) |
         if length == 0 then "- none" else .[] | "- \(.event): \(.count)" end
       ' "$EVENTS_JSONL" 2>/dev/null || printf -- '- unreadable event log\n'
+    fi
+    printf '\n## Efficiency Summary\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        def token_total:
+          (.tokens // null) as $t |
+          if $t == null then null
+          elif ($t | type) == "number" then $t
+          elif ($t | type) == "object" then ($t.total // $t.total_tokens // $t.usage.total_tokens // null)
+          else null
+          end;
+        def bad_outcome:
+          ((.outcome // .status // "") | tostring | test("fail|error|flaky"; "i"));
+        def bad_count($arr): [($arr // [])[]? | select(bad_outcome)] | length;
+        . as $rows |
+        ([ $rows[].duration_s? // empty ] | add // 0) as $worker_seconds |
+        ([ $rows[].files_changed? // empty ] | add // 0) as $files |
+        ([ $rows[] | token_total | select(. != null) ] | add // null) as $tokens |
+        ($rows | max_by(.duration_s // -1)) as $slowest |
+        ([ $rows[] | bad_count(.tests) ] | add // 0) as $bad_tests |
+        ([ $rows[] | bad_count(.lints) ] | add // 0) as $bad_lints |
+        ([ $rows[] | bad_count(.builds) ] | add // 0) as $bad_builds |
+        "- Completed issues: \([ $rows[] | select((.exit_code // 1) == 0) ] | length)",
+        "- Failed issues: \([ $rows[] | select((.exit_code // 0) != 0) ] | length)",
+        "- Average worker duration: \(if ($rows | length) == 0 then "missing" else (($worker_seconds / ($rows | length)) | tostring) end)s",
+        "- Seconds per changed file: \(if $files == 0 then "missing" else (($worker_seconds / $files) | tostring) end)",
+        "- Tokens per changed file: \(if $tokens == null or $files == 0 then "missing" else (($tokens / $files) | tostring) end)",
+        "- Bottleneck: #\($slowest.issue_number // "unknown") at \($slowest.duration_s // "unknown")s",
+        "- Rework signals: \($bad_tests) bad/flaky tests, \($bad_lints) bad lints, \($bad_builds) bad builds",
+        "",
+        "| Issue | Duration | Files | Seconds/File | Tokens/File | Bad Checks | Gaps |",
+        "|---:|---:|---:|---:|---:|---:|---|",
+        ($rows[] |
+          (.files_changed // 0) as $row_files |
+          (token_total) as $row_tokens |
+          (bad_count(.tests) + bad_count(.lints) + bad_count(.builds)) as $bad |
+          "| #\(.issue_number // "unknown") | \(.duration_s // "unknown")s | \($row_files) | \(if $row_files == 0 or (.duration_s // null) == null then "missing" else (((.duration_s // 0) / $row_files) | tostring) end) | \(if $row_files == 0 or $row_tokens == null then "missing" else (($row_tokens / $row_files) | tostring) end) | \($bad) | \((.telemetry_gaps // []) | join(", ")) |"
+        )
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf 'No worker summaries were ingested.\n'
     fi
     printf '\n## Weekly Chain Digest\n\n'
     if [ -n "$digest_script" ] && [ -x "$digest_script" ]; then
@@ -3004,7 +3122,23 @@ run_issue_job() {
     --argjson child_exit_code "$child_worker_rc" \
     --argjson duration_s "$issue_duration" \
     --argjson parent_finalized "$parent_finalized" \
-    '{summary:$summary, commit_after:$after, exit_code:$exit_code, child_exit_code:$child_exit_code, worker_duration_s:$duration_s, parent_finalized:$parent_finalized, telemetry_gaps:(.telemetry_gaps // [])}' "$summary_file")
+    'def bad_outcome: ((.outcome // .status // "") | tostring | test("fail|error|flaky"; "i"));
+     def bad_count($arr): [($arr // [])[]? | select(bad_outcome)] | length;
+     {
+       summary:$summary,
+       commit_after:$after,
+       exit_code:$exit_code,
+       child_exit_code:$child_exit_code,
+       worker_duration_s:$duration_s,
+       parent_finalized:$parent_finalized,
+       check_counts:{
+         tests:{total:((.tests // []) | length), bad:bad_count(.tests)},
+         lints:{total:((.lints // []) | length), bad:bad_count(.lints)},
+         builds:{total:((.builds // []) | length), bad:bad_count(.builds)}
+       },
+       token_telemetry:(if (.tokens // null) == null then "missing" else "present" end),
+       telemetry_gaps:(.telemetry_gaps // [])
+     }' "$summary_file")
 
   if [ "$worker_rc" -ne 0 ]; then
     child_reason_id=$(jq -r '.halt_reason_id // empty' "$summary_file")
