@@ -83,12 +83,14 @@ scripts/prd-task-graph-synthesize.sh packet.md # turn a requirement packet into 
 /dev-studio worker checkpoint    # worker-owned compact checkpoint; does not replace worker summary
 /dev-studio worker resume-checkpoint # resume worker checkpoint via manifest.json + context.md first
 /studio-help                     # open the v2 router docs
+scripts/studio-chain-runner.sh --discover # bare invocation lists runnable chains, resumable runs, and next actions
+scripts/studio-chain-runner.sh --discover prd-to-chain-automation # filtered discovery for one chain or manifest
+scripts/manager-work-chain.sh prd-to-chain-automation --dry-run # preview the named chain through the manager front door
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
+scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes # attended run with explicit confirmation bypass
 scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --yes # no routine continue prompts; typed blockers halt
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview checkpoint-aware safe-boundary hooks
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
-scripts/studio-chain-runner.sh --discover # bare invocation lists runnable manifests and resumable runs
-scripts/manager-work-chain.sh prd-to-chain-automation # manager front door that discovers or launches a work-chain
 scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters, efficiency ratios, and bottlenecks from private chain-run telemetry
 scripts/studio-checkpoint.sh resume --latest --role worker # compact session resume; reads manifest.json + context.md before lazy drift checks
 scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels

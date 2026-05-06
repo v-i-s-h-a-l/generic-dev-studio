@@ -27,8 +27,10 @@ Usage:
   scripts/manager-work-chain.sh [<manifest|chain-name>] [runner-flags...]
 
 When no chain is named, this defaults to discovery so the manager front door
-can suggest runnable manifests and resumable runs. All runner flags are passed
-through to scripts/studio-chain-runner.sh.
+can suggest runnable chains and resumable runs. Named chains default to
+unattended supervisor selection through scripts/studio-chain-runner.sh --auto.
+Use --discover [<manifest|chain-name>] for filtered, non-mutating discovery.
+All runner flags are passed through to scripts/studio-chain-runner.sh.
 EOF
   exit 2
 }

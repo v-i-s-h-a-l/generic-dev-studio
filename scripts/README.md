@@ -71,11 +71,13 @@ scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # sa
 scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex --yes # execute after plan with node/RAM-sized session pool + private report
 scripts/studio-chain-runner.sh my-chain --dry-run                          # object-form issues may declare dependencies/depends_on; ready independent issues fill worker_pool
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview role/branch-scoped checkpoint hooks
+scripts/studio-chain-runner.sh --discover                                  # bare invocation lists runnable chains, resumable runs, and next actions
+scripts/studio-chain-runner.sh --discover prd-to-chain-automation          # filtered discovery for one chain or manifest
+scripts/manager-work-chain.sh prd-to-chain-automation --dry-run            # preview the named chain through the manager front door
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements     # unattended start/resume when state is safe and unambiguous
+scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes # attended execution with explicit confirmation bypass
 scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --yes # execute without routine continuation prompts; typed blockers halt
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show the supervisor's next action without mutating state
-scripts/studio-chain-runner.sh --discover                                  # bare invocation lists runnable manifests and resumable runs
-scripts/manager-work-chain.sh prd-to-chain-automation                      # manager front door: auto-run a named work-chain; bare call discovers
 scripts/prd-intake-normalize.sh prd.md                                     # normalize PRD/transcript/issue brief language into a requirement packet
 scripts/prd-task-graph-synthesize.sh packet.md                             # synthesize deterministic scheduler graph; flags missing prereqs and write races
 scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from ~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/state.json
