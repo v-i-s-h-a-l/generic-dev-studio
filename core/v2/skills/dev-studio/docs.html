@@ -515,7 +515,7 @@
           </article>
           <article class="role">
             <h3>Parallel Chains</h3>
-            <p>Use chain manifests when the repo already has an issue chain. Bare invocation discovers runnable manifests and resumable runs; dry-run first, then launch one independent chain per shell session. The manager front door for the PRD automation arc is <code>/dev-studio manager work-chain prd-to-chain-automation</code>, which routes through the repo-side manager wrapper.</p>
+            <p>Use chain manifests when the repo already has an issue chain. Bare invocation discovers runnable manifests and resumable runs; dry-run first, then launch one independent chain per shell session. The manager front door for the PRD automation arc is <code>/dev-studio manager work-chain prd-to-chain-automation</code>, which auto-runs the chain through the repo-side manager wrapper.</p>
             <code class="shell">scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt; --dry-run
 scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt;
 scripts/studio-chain-runner.sh --discover
@@ -716,7 +716,7 @@ scripts/manager-analyze.sh --cwd "$PWD"</code>
           </article>
           <article class="role">
             <h3>Chain Runs</h3>
-            <p>Issue chains can run with persisted private reports and resume markers. Use dry-run first, or type the chain runner with no manifest to see runnable manifests and resumable runs before starting a chain. The manager wrapper mirrors the same discovery/start/resume flow for named work-chains.</p>
+            <p>Issue chains can run with persisted private reports and resume markers. Use dry-run first, or type the chain runner with no manifest to see runnable manifests and resumable runs before starting a chain. The manager wrapper mirrors the same discovery flow for bare invocations and auto-runs named work-chains by default.</p>
             <code class="shell">scripts/studio-chain-runner.sh &lt;manifest&gt; --dry-run
 scripts/studio-chain-runner.sh &lt;manifest&gt; --auto
 scripts/studio-chain-runner.sh --discover
@@ -751,7 +751,7 @@ scripts/worker-status.sh</code>
         <div class="workflow-grid">
           <article class="role">
             <h3>manager</h3>
-            <p>Shapes intent, resumes arcs, routes work, guards against repeats, captures patterns, and escalates operator decisions. Work-chain requests route to the repo-side manager wrapper before they reach the chain runner.</p>
+            <p>Shapes intent, resumes arcs, routes work, guards against repeats, captures patterns, and escalates operator decisions. Work-chain requests route to the repo-side manager wrapper before they reach the chain runner, and named work-chains auto-run unless the user chooses a discovery or resume flag.</p>
             <div class="meta"><span class="pill status-live">direct use</span><span class="pill">contract-backed landing</span></div>
             <code class="shell">/dev-studio manager
 /dev-studio manager help
