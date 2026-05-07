@@ -87,6 +87,7 @@ scripts/studio-chain-runner.sh --resume <run_id> --yes                     # res
 scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
 scripts/studio-chain-rule-gates.sh --plan plan.json --dry-run              # deterministic rule-pack gates with typed JSON result + audit JSONL
+scripts/studio-ios-artifact-janitor.sh sweep --base /tmp/studio-ios-artifacts --json # redacted iOS artifact TTL sweep for scoped build/test roots
 scripts/rule-pack-resolve.sh --manifest chain.yaml --chain my-chain --issue 123 --role worker # selective rule-pack selection with context-budget telemetry
 scripts/manager-chain-monitor.sh status --project generic-dev-studio --json # non-mutating monitor status with owner/list/pending-write counts
 scripts/manager-chain-monitor.sh recovery --full-rewrite --project generic-dev-studio --dry-run # explicit recovery front door; execution requires approval
@@ -98,7 +99,7 @@ scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker      # lo
 scripts/codex-worker-exec.sh "<prompt>"                                    # internal Codex worker launcher: workspace-write + ~/.dev-studio + ephemeral + no prompts
 # Chain dry-runs show the selected git metadata strategy; sandboxed hosts use issue-local clones so commits stay inside the worker root.
 # Chain worktrees/results are namespaced under the run UUID; resume continues only the selected run, reconciles stale running issues from completed private summaries after required outcome review, and surfaces skipped/integrated/pending issue semantics.
-# Chain startup sweeps stale state locks, old temporary run roots, and oversized private artifacts; tune with STUDIO_CHAIN_TMP_RETENTION_DAYS, STUDIO_CHAIN_RUN_RETENTION_DAYS, and STUDIO_CHAIN_ARTIFACT_MAX_BYTES.
+# Chain startup sweeps stale state locks, old temporary run roots, scoped iOS artifact roots, and oversized private artifacts; tune with STUDIO_CHAIN_TMP_RETENTION_DAYS, STUDIO_CHAIN_RUN_RETENTION_DAYS, STUDIO_CHAIN_ARTIFACT_MAX_BYTES, and STUDIO_IOS_ARTIFACT_* TTL/pressure settings.
 # Chain reports include compact efficiency metrics, test/lint/build outcomes, typed halt records, and decision escrow when automation pauses or continues on a low-risk default.
 # Chain manifest preflight rejects planning artifacts before run creation; project-scoped manifests declare issue_repo or resolve it from the target repo remote.
 # Release-bearing chain manifests declare approved_release_id plus sync_strategy; rebase is the default, and squash is used only when the manifest explicitly opts in.

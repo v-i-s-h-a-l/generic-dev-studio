@@ -2853,6 +2853,59 @@ EOF
   done <<EOF
 $(find "$CHAIN_RUNS_ROOT" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null)
 EOF
+
+  ios_artifact_janitor_startup_sweep
+}
+
+ios_artifact_tmp_base() {
+  local tmp_base
+  tmp_base="${TMPDIR:-/tmp}"
+  tmp_base="${tmp_base%/}"
+  [ -n "$tmp_base" ] || tmp_base="/tmp"
+  printf '%s/studio-ios-artifacts\n' "$tmp_base"
+}
+
+ios_artifact_janitor_startup_sweep() {
+  local janitor tmp_base persisted_base
+  janitor="$SCRIPT_DIR/studio-ios-artifact-janitor.sh"
+  [ -x "$janitor" ] || return 0
+  tmp_base=$(ios_artifact_tmp_base)
+  if [ -d "$tmp_base" ]; then
+    "$janitor" sweep --base "$tmp_base" --json >/dev/null 2>&1 || true
+  fi
+  if [ -d "$CHAIN_RUNS_ROOT" ]; then
+    while IFS= read -r persisted_base; do
+      [ -n "$persisted_base" ] || continue
+      "$janitor" sweep --base "$persisted_base" --json >/dev/null 2>&1 || true
+    done <<EOF
+$(find "$CHAIN_RUNS_ROOT" -mindepth 2 -maxdepth 2 -type d -name ios-artifacts 2>/dev/null)
+EOF
+  fi
+}
+
+ios_chain_artifact_root() {
+  local chain_run_id="$1"
+  printf '%s/ios-artifacts/%s\n' "$CHAIN_RUN_ROOT" "$chain_run_id"
+}
+
+run_ios_artifact_chain_cleanup() {
+  local chain_name="$1" chain_run_id="$2" chain_status="$3"
+  local janitor root telemetry_file telemetry rc=0
+  janitor="$SCRIPT_DIR/studio-ios-artifact-janitor.sh"
+  [ -x "$janitor" ] || return 0
+  root=$(ios_chain_artifact_root "$chain_run_id")
+  [ -d "$root" ] || return 0
+  telemetry_file="$CHAIN_RUN_ROOT/ios-artifact-cleanup-$chain_run_id.json"
+  set +e
+  telemetry=$("$janitor" complete-chain --root "$root" --status "$chain_status" --json 2>/dev/null)
+  rc=$?
+  set -e
+  if [ -n "$telemetry" ]; then
+    printf '%s\n' "$telemetry" > "$telemetry_file"
+    emit_chain_event chain_ios_artifact_cleanup_completed "" "$RUN_ID" "$chain_run_id" "" completed 0 \
+      "$(jq -c --arg chain "$chain_name" --arg artifact "$telemetry_file" --argjson janitor_rc "$rc" '. + {chain:$chain, telemetry_artifact:$artifact, janitor_exit_code:$janitor_rc}' "$telemetry_file")"
+  fi
+  return 0
 }
 
 acquire_state_lock() {
@@ -3963,7 +4016,7 @@ chain_count=$(jq '.chains | length' "$PLAN_JSON")
 
 execute_issue_session() {
   local chain_name="$1" chain_branch="$2" issue="$3" host="$4" git_metadata_strategy="$5" worktree="$6" issue_branch="$7" chain_run_id="$8" issue_run_id="$9" before="${10}" phase_review_context="${11:-[]}" rule_pack_resolution="${12:-null}"
-  local issue_json issue_title issue_body spawn prompt summary_path start_path source_branch
+  local issue_json issue_title issue_body spawn prompt summary_path start_path source_branch chain_artifact_root
   local -a spawn_argv
   local launch_home="" codex_auth_home=""
 
@@ -3973,7 +4026,9 @@ execute_issue_session() {
   source_branch=$(jq -r --arg id "$chain_run_id" '.chains[] | select(.chain_run_id == $id) | .source_branch // .base // "main"' "$PLAN_JSON")
   summary_path="$worktree/.studio/chain-worker-summary.json"
   start_path="$worktree/.studio/chain-task-start.json"
+  chain_artifact_root=$(ios_chain_artifact_root "$chain_run_id")
   if [ "$DRY_RUN" -eq 0 ]; then
+    mkdir -p "$chain_artifact_root"
     write_chain_task_start_envelope "$chain_name" "$chain_branch" "$source_branch" "$issue_branch" "$issue_json" "$host" "$git_metadata_strategy" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context" "$rule_pack_resolution"
   fi
 
@@ -4063,15 +4118,39 @@ EOF
 
   if [ -n "$launch_home" ] && [ -d "$launch_home" ]; then
     if [ -n "$codex_auth_home" ]; then
-      (cd "$worktree" && env HOME="$launch_home" CODEX_HOME="$codex_auth_home" "${spawn_argv[@]}" "$prompt")
+      (cd "$worktree" && env \
+        HOME="$launch_home" \
+        CODEX_HOME="$codex_auth_home" \
+        STUDIO_RUN_ID="$RUN_ID" \
+        STUDIO_CHAIN_RUN_ID="$chain_run_id" \
+        STUDIO_ISSUE_RUN_ID="$issue_run_id" \
+        STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
+        "${spawn_argv[@]}" "$prompt")
     else
-      (cd "$worktree" && env HOME="$launch_home" "${spawn_argv[@]}" "$prompt")
+      (cd "$worktree" && env \
+        HOME="$launch_home" \
+        STUDIO_RUN_ID="$RUN_ID" \
+        STUDIO_CHAIN_RUN_ID="$chain_run_id" \
+        STUDIO_ISSUE_RUN_ID="$issue_run_id" \
+        STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
+        "${spawn_argv[@]}" "$prompt")
     fi
   else
     if [ -n "$codex_auth_home" ]; then
-      (cd "$worktree" && env CODEX_HOME="$codex_auth_home" "${spawn_argv[@]}" "$prompt")
+      (cd "$worktree" && env \
+        CODEX_HOME="$codex_auth_home" \
+        STUDIO_RUN_ID="$RUN_ID" \
+        STUDIO_CHAIN_RUN_ID="$chain_run_id" \
+        STUDIO_ISSUE_RUN_ID="$issue_run_id" \
+        STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
+        "${spawn_argv[@]}" "$prompt")
     else
-      (cd "$worktree" && "${spawn_argv[@]}" "$prompt")
+      (cd "$worktree" && env \
+        STUDIO_RUN_ID="$RUN_ID" \
+        STUDIO_CHAIN_RUN_ID="$chain_run_id" \
+        STUDIO_ISSUE_RUN_ID="$issue_run_id" \
+        STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
+        "${spawn_argv[@]}" "$prompt")
     fi
   fi
 }
@@ -5116,6 +5195,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
   mark_chain_issues_completed_after_pr "$chain_run_id" "$final_chain_head"
   emit_chain_event chain_completed "" "$RUN_ID" "$chain_run_id" "" completed "$chain_duration" \
     "$(jq -cn --arg name "$name" --arg pr_url "$FINAL_PR_URL" '{chain:$name, pr_url:(if $pr_url == "" then null else $pr_url end)}')"
+  run_ios_artifact_chain_cleanup "$name" "$chain_run_id" completed
 
   for ((i = 0; i < issue_count; i++)); do
     issue=$(jq -r ".chains[$idx].issues[$i].number" "$PLAN_JSON")
