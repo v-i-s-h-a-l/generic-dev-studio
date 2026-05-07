@@ -41,6 +41,7 @@ REQUIRED_SECRET_SCOPES=""
 USER_BLOCKED="false"
 FORCE_LOCAL=0
 FORCE_WORKER=""
+EXCLUDE_WORKERS=""
 BREAK_AFFINITY=0
 CLEAR_AFFINITY=0
 ALLOW_MANAGER_IMPACT=0
@@ -65,7 +66,7 @@ Options:
   --cache-key <key> --simulator-runtime <runtime> --xcode-version <version>
   --requires-secret-scope <a,b>
   --user-blocked true|false
-  --force-local | --force-worker <node-id> | --break-affinity | --clear-affinity
+  --force-local | --force-worker <node-id> | --exclude-worker <node-id> | --break-affinity | --clear-affinity
   --allow-manager-impact
   --dry-run
 EOF
@@ -111,6 +112,8 @@ while [ $# -gt 0 ]; do
     --force-local) FORCE_LOCAL=1; shift ;;
     --force-worker) FORCE_WORKER="${2:?--force-worker requires node-id}"; shift 2 ;;
     --force-worker=*) FORCE_WORKER="${1#--force-worker=}"; shift ;;
+    --exclude-worker) EXCLUDE_WORKERS="${EXCLUDE_WORKERS}${EXCLUDE_WORKERS:+,}${2:?--exclude-worker requires node-id}"; shift 2 ;;
+    --exclude-worker=*) EXCLUDE_WORKERS="${EXCLUDE_WORKERS}${EXCLUDE_WORKERS:+,}${1#--exclude-worker=}"; shift ;;
     --break-affinity) BREAK_AFFINITY=1; shift ;;
     --clear-affinity) CLEAR_AFFINITY=1; shift ;;
     --allow-manager-impact) ALLOW_MANAGER_IMPACT=1; shift ;;
@@ -124,6 +127,7 @@ done
 
 case "${STUDIO_IOS_ROUTER_FORCE_LOCAL:-0}" in 1|true|TRUE|yes|YES) FORCE_LOCAL=1 ;; esac
 [ -n "${STUDIO_IOS_ROUTER_FORCE_WORKER:-}" ] && FORCE_WORKER="$STUDIO_IOS_ROUTER_FORCE_WORKER"
+[ -n "${STUDIO_IOS_ROUTER_EXCLUDE_WORKERS:-}" ] && EXCLUDE_WORKERS="${EXCLUDE_WORKERS}${EXCLUDE_WORKERS:+,}$STUDIO_IOS_ROUTER_EXCLUDE_WORKERS"
 case "${STUDIO_IOS_ROUTER_BREAK_AFFINITY:-0}" in 1|true|TRUE|yes|YES) BREAK_AFFINITY=1 ;; esac
 case "${STUDIO_IOS_ROUTER_CLEAR_AFFINITY:-0}" in 1|true|TRUE|yes|YES) CLEAR_AFFINITY=1 ;; esac
 case "${STUDIO_IOS_ROUTER_ALLOW_MANAGER_IMPACT:-0}" in 1|true|TRUE|yes|YES) ALLOW_MANAGER_IMPACT=1 ;; esac
@@ -185,6 +189,19 @@ truthy() {
     1|true|TRUE|yes|YES) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+csv_contains() {
+  local list="$1" needle="$2" item
+  [ -n "$needle" ] || return 1
+  [ -n "$list" ] || return 1
+  while IFS= read -r item; do
+    item=$(printf '%s' "$item" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+    [ "$item" = "$needle" ] && return 0
+  done <<EOF
+$(printf '%s' "$list" | tr ',' '\n')
+EOF
+  return 1
 }
 
 num_or_default() {
@@ -485,6 +502,10 @@ add_candidate() {
     role_ok=$(printf '%s\n' "$node_json" | jq -r --arg role "$ROLE" '(.roles // [] | index($role)) != null' 2>/dev/null || printf false)
   fi
   [ "$role_ok" = "true" ] || append_reason "role_mismatch"
+
+  if csv_contains "$EXCLUDE_WORKERS" "$id"; then
+    append_reason "excluded_by_failover"
+  fi
 
   secret_ok=true
   if [ -n "$REQUIRED_SECRET_SCOPES" ] && [ "$REQUIRED_SECRET_SCOPES" != "none" ]; then
