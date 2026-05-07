@@ -13,7 +13,7 @@ has_explicit_mode_flag() {
   local arg
   for arg in "$@"; do
     case "$arg" in
-      --auto|--auto=*|--discover|--list|--resume|--resume=*|--explain-next|--explain-next=*)
+      --auto|--auto=*|--discover|--list|--resume|--resume=*|--explain-next|--explain-next=*|--attended|--unattended|--dry-run|--yes|--no-confirm)
         return 0
         ;;
     esac
