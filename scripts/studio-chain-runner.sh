@@ -34,6 +34,8 @@ CALLER_HOME="${HOME:-}"
 . "$SCRIPT_DIR/lib-ledger.sh"
 # shellcheck source=lib-chain-git.sh
 . "$SCRIPT_DIR/lib-chain-git.sh"
+# shellcheck source=lib-chain-monitor-notifier.sh
+. "$SCRIPT_DIR/lib-chain-monitor-notifier.sh"
 
 usage() {
   sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' >&2
@@ -642,6 +644,45 @@ update_state_jq() {
   fi
 }
 
+chain_monitor_notify_state_change() {
+  local chain_run_id="${1:-}" issue_run_id="${2:-}" issue_number="${3:-}" mutation="${4:-state-updated}" chain_name="${5:-}"
+  [ -f "${RUN_STATE_JSON:-}" ] || return 0
+  declare -F chain_monitor_notify_runner_state >/dev/null 2>&1 || return 0
+  chain_monitor_notify_runner_state \
+    --project generic-dev-studio \
+    --run-state "$RUN_STATE_JSON" \
+    --run-id "$RUN_ID" \
+    --chain-run-id "$chain_run_id" \
+    --issue-run-id "$issue_run_id" \
+    --chain "$chain_name" \
+    --issue-number "$issue_number" \
+    --mutation "$mutation" \
+    --dry-run "$DRY_RUN" || true
+}
+
+chain_monitor_notify_chain_state_change() {
+  local chain_run_id="${1:-}" mutation="${2:-state-updated}" chain_name
+  [ -n "$chain_run_id" ] || return 0
+  [ -f "${RUN_STATE_JSON:-}" ] || return 0
+  chain_name=$(jq -r --arg id "$chain_run_id" '.chains[]? | select((.chain_run_id // "") == $id) | .name // ""' "$RUN_STATE_JSON" 2>/dev/null | head -n 1)
+  chain_monitor_notify_state_change "$chain_run_id" "" "" "$mutation" "$chain_name"
+}
+
+chain_monitor_notify_issue_state_change() {
+  local issue_run_id="${1:-}" mutation="${2:-state-updated}" info chain_run_id chain_name issue_number
+  [ -n "$issue_run_id" ] || return 0
+  [ -f "${RUN_STATE_JSON:-}" ] || return 0
+  info=$(jq -r --arg id "$issue_run_id" '
+    .chains[]? as $chain
+    | $chain.issues[]?
+    | select((.issue_run_id // "") == $id)
+    | [($chain.chain_run_id // ""), ($chain.name // ""), ((.number // .issue // "") | tostring)] | @tsv
+  ' "$RUN_STATE_JSON" 2>/dev/null | head -n 1)
+  [ -n "$info" ] || return 0
+  IFS=$'\t' read -r chain_run_id chain_name issue_number <<<"$info"
+  chain_monitor_notify_state_change "$chain_run_id" "$issue_run_id" "$issue_number" "$mutation" "$chain_name"
+}
+
 mark_chain_state() {
   local chain_run_id="$1" status="$2" pr_url="${3:-}"
   update_state_jq \
@@ -650,6 +691,7 @@ mark_chain_state() {
     --arg pr_url "$pr_url" \
     '(.chains[] | select(.chain_run_id == $chain_run_id) | .status) = $status
      | if $pr_url == "" then . else (.chains[] | select(.chain_run_id == $chain_run_id) | .pr_url) = $pr_url end'
+  chain_monitor_notify_chain_state_change "$chain_run_id" state-updated
 }
 
 mark_issue_state() {
@@ -666,6 +708,7 @@ mark_issue_state() {
      | if $after == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .commit_after) = $after end
      | if $summary == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .summary) = $summary end
      | if $reason == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .failure_reason) = $reason end'
+  chain_monitor_notify_issue_state_change "$issue_run_id" state-updated
 }
 
 mark_issue_retry_attempt() {
@@ -692,6 +735,7 @@ mark_issue_integrated() {
   update_state_jq \
     --arg issue_run_id "$issue_run_id" \
     '(.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .integrated) = true'
+  chain_monitor_notify_issue_state_change "$issue_run_id" state-updated
 }
 
 mark_chain_issues_completed_after_pr() {
@@ -705,6 +749,7 @@ mark_chain_issues_completed_after_pr() {
        | if $after == "" then . else .commit_after = $after end
        | del(.failure_reason)
      )'
+  chain_monitor_notify_chain_state_change "$chain_run_id" state-updated
 }
 
 sanitize_checkpoint_component() {
