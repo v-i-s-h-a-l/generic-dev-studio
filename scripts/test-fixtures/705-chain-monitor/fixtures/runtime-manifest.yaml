@@ -1,0 +1,20 @@
+schema_version: 1
+chains:
+  - name: chain-monitor-reconciliation
+    base: main
+    branch: feature/runtime-private-branch
+    host: codex
+    summary: Runtime manifest claim
+    issues:
+      - 727
+      - 728
+  - name: runtime-only
+    issues:
+      - number: 901
+        title: Runtime task
+      - task: non-issue-task
+        title: Non-issue runtime task
+  - name: runtime-over-repo
+    issues:
+      - number: 902
+        title: Runtime copy of task
