@@ -668,6 +668,19 @@ mark_issue_integrated() {
     '(.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .integrated) = true'
 }
 
+mark_chain_issues_completed_after_pr() {
+  local chain_run_id="$1" commit_after="${2:-}"
+  update_state_jq \
+    --arg chain_run_id "$chain_run_id" \
+    --arg after "$commit_after" \
+    '(.chains[] | select(.chain_run_id == $chain_run_id) | .issues[]) |= (
+       .status = "completed"
+       | .integrated = true
+       | if $after == "" then . else .commit_after = $after end
+       | del(.failure_reason)
+     )'
+}
+
 sanitize_checkpoint_component() {
   printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_' | sed 's/^_*//; s/_*$//; s/__/_/g'
 }
@@ -4068,7 +4081,9 @@ for ((idx = 0; idx < chain_count; idx++)); do
 
   finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id" "$host"
   chain_duration=$(duration_since "$chain_started_at")
+  final_chain_head=$(git -C "$chain_worktree" rev-parse HEAD 2>/dev/null || true)
   mark_chain_state "$chain_run_id" completed "$FINAL_PR_URL"
+  mark_chain_issues_completed_after_pr "$chain_run_id" "$final_chain_head"
   emit_chain_event chain_completed "" "$RUN_ID" "$chain_run_id" "" completed "$chain_duration" \
     "$(jq -cn --arg name "$name" --arg pr_url "$FINAL_PR_URL" '{chain:$name, pr_url:(if $pr_url == "" then null else $pr_url end)}')"
 
