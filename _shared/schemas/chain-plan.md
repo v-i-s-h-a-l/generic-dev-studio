@@ -29,8 +29,10 @@ execution_policy:
   offload_economics: required
 chains:
   - name: release-bearing-chain-policy
-    base: main
+    source_branch: main
+    # base remains accepted as a backwards-compatible alias for source_branch.
     branch: feature/release-bearing-chain-policy
+    expected_source_sha: 0190f52a90007f018aaa77fe8fa99bbb00000000
     host: auto
     approved_release_id: 0190f52a-9000-7f01-8aaa-77fe8fa99bbb
     sync_strategy: rebase
@@ -61,8 +63,11 @@ chains:
 | `rule_packs` | no | `[]` | Global selective rule-pack request. Accepts a string, list, or `{required, optional, advisory, disabled}` object. |
 | `execution_policy` | no | default | Global execution contract block for future policy resolution. Current runners treat it as manifest data until routing implementation projects it. |
 | `chains[].name` | yes | - | Stable chain name; also drives default branch and worktree slugs. |
-| `chains[].base` | no | `main` | Explicit PR base. Mechanical gates reject missing or invalid bases in the generated plan. |
-| `chains[].branch` | no | `feature/<name>` | Chain branch. It must not equal the base branch. |
+| `chains[].source_branch` | no | `main` | Explicit task source branch and final PR base. Chain branches are created from `origin/<source_branch>`, issue branches are created from the chain branch, and PR creation uses this branch as `--base`. |
+| `chains[].base` | no | `main` | Backwards-compatible alias for `source_branch`. If both are present they must name the same branch, otherwise the runner rejects the manifest as ambiguous. |
+| `chains[].target_base` | no | - | Compatibility synonym for `source_branch` for generated manifests that use target-base wording. It must not conflict with `source_branch` or `base`. |
+| `chains[].expected_source_sha` / `chains[].source_sha` | no | - | Optional stale-source guard. When present, mechanical gates and PR finalization verify the selected source branch still points at the expected SHA. |
+| `chains[].branch` | no | `feature/<name>` | Chain branch. It must not equal the source branch/PR base. |
 | `chains[].host` | no | `auto` | `auto` resolves to the runner default or `--host`. |
 | `chains[].approved_release_id` | no | `null` | Marks the chain as release-bearing. When present, each completed leaf is checked before integration for ancestry back to its launch chain commit and for merge commits introduced in the leaf. |
 | `chains[].sync_strategy` | no | `rebase` | Leaf integration strategy. `rebase` preserves existing behavior; `squash` is used only when this field explicitly says `squash`. |
@@ -107,7 +112,10 @@ cost checks pass.
 A chain is release-bearing only when `approved_release_id` is present. The
 runner keeps non-release-bearing chains on the historical path: issue leaves
 are prepared from the chain branch and integrated with `sync_strategy: rebase`
-unless the manifest explicitly changes the strategy.
+unless the manifest explicitly changes the strategy. Source-branch targeting
+does not change the leaf policy: `source_branch` selects the source/PR base,
+the chain branch remains the integration lane, and issue branches still launch
+from the chain branch.
 
 For release-bearing chains, the runner checks each leaf immediately before
 integration:
