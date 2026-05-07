@@ -208,6 +208,12 @@ sections), feature rollup, regression labelling, rollover bullet
 Important technical notes go at the end under `*Technical notes*` only when
 they affect testing or product expectations.
 
+If the draft starts from git commits, use
+`scripts/studio-tf-push.sh compose-message --channel testflight` against
+git-log-style commit blocks to apply the commit taxonomy before hand-editing.
+For App Store copy, run the same input through `--channel appstore`; TF-only
+work-in-progress and internal buckets are intentionally omitted there.
+
 Headline: `[iOS] build <NEW_BUILD_NUMBER> is available on TestFlight`. Prefix
 `<!here>` only when `STUDIO_TF_SLACK_NOTIFY_HERE=1`; the configured default is
 off.

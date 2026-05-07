@@ -85,6 +85,7 @@ read_field() {
       slack_parent_ts) yq -r '.slack.message_ts // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       slack_watcher_replies) yq -r '.asc_metadata.slack_watcher_replies // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       github_release_url) yq -r '.github_release_url // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      release_notes_summary) yq -r '.release_notes_summary // .asc_metadata.release_notes_summary // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       github_pr_url) yq -r '.github_pr.url // .github_pr_url // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       github_pr_number) yq -r '.github_pr.number // .github_pr_number // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       source_branch) yq -r '.source_branch // .github_pr.source_branch // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
@@ -127,6 +128,7 @@ REPO=$(read_field repo)
 CHANNEL=$(read_field slack_channel)
 PARENT_TS=$(read_field slack_parent_ts)
 URL=$(read_field github_release_url)
+RELEASE_NOTES_SUMMARY=$(read_field release_notes_summary)
 PR_URL=$(read_field github_pr_url)
 PR_NUMBER=$(read_field github_pr_number)
 SOURCE_BRANCH=$(read_field source_branch)
@@ -357,7 +359,11 @@ PY
           fi
         fi
       elif [ -r "$SLACK_TOKEN_FILE" ] && [ -n "$PARENT_TS" ] && [ -n "$CHANNEL" ]; then
-        MSG="Live on App Store — notes: $URL"
+        if [ -n "$RELEASE_NOTES_SUMMARY" ]; then
+          printf -v MSG 'Live on App Store — %s\n%s' "$RELEASE_NOTES_SUMMARY" "$URL"
+        else
+          MSG="Live on App Store — notes: $URL"
+        fi
         SLACK_OUT=$(mktemp /tmp/appstore-watch-slack.XXXXXX)
         SLACK_ERR=$(mktemp /tmp/appstore-watch-slack.XXXXXX)
         if [ -n "$SLACK_PR_REPLY_TS" ]; then

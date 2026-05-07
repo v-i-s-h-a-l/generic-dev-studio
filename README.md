@@ -101,6 +101,7 @@ STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
 /dev-studio host-adapter nodes   # day-2 fleet management — status, add, remove, health, sync, schedule
 /dev-studio release-manager tf-push --background     # start TF archive/upload and keep session free for Slack drafting
 /dev-studio release-manager tf-push --version 26.5.0 # TestFlight push with explicit MARKETING_VERSION; live work needs STUDIO_TF_PUSH_LIVE=1
+scripts/studio-tf-push.sh compose-message --channel testflight < commits.txt # taxonomy-aware release/TestFlight bullet composer
 scripts/studio-tf-push.sh withdraw-tf-tag --version 26.4.17 --build 3162 # rename TF anchor to tf-<version>-<build>-WITHDRAWN
 scripts/release-manager-configure.sh --project turnip-ios --quick --appstore-slack-channel C... # configure opt-in App Store Slack release announcements
 /studio-setup                    # onboard THIS machine — auto-pilot, prompts for role only
@@ -222,6 +223,7 @@ scripts/                # multi-worker fleet (BETA)
   ingest-feedback.sh    # routes studio-feedback records to analysis + GH issue create/comment/defer
   analyze-feedback-ingest.sh # studio feedback triage: consolidate into existing/new GH issues before processed/
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
+  compose-build-release-message.sh # taxonomy-aware TestFlight/App Store bullet composer
   appstore-watch.sh     # polls ASC; publishes release + merge-commit PR only at READY_FOR_SALE
   backfill-orphan-debriefs.sh  # recover tasks that finished without landing in master plan (dry-run default)
   achilles-refresh-base.sh     # legacy worker helper: fetch + merge base before reviewer handoff
