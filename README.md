@@ -29,6 +29,7 @@ timeline
              : v0.10.0 — Apollo network efficiency
              : v0.11.0 — Studio v2 router + release flow hardening
              : v0.11.1 — active role shortcuts + role help
+             : v0.12.0 — reviewed work chains + commit taxonomy
     Coming next : Issue graph hygiene — duplicate, blocked-by, caused-by, urgent triage
     Deferred : Knowledge layer — memory-query + synthesis across debriefs
              : Lu Ban — a dedicated architect agent for design dialogue
@@ -40,6 +41,7 @@ timeline
 
 ### Story so far
 
+- **[v0.12.0](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.12.0)** — Studio work can now move from rough planning to reviewed, dependency-aware chains with less session babysitting. The manager work-chain front door, PRD normalization, task-graph synthesis, selective rule packs, checkpoint-aware resumes, and telemetry digests make long arcs easier to launch, audit, and recover. Commit messages now carry a release-friendly taxonomy, TestFlight/App Store drafts can use that metadata directly, and feature-branch merge gates are shared across chain, worktree, and PR paths so dependent branches rebase or retarget instead of quietly accumulating merge commits.
 - **[v0.11.1](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.11.1)** — The `/dev-studio` router is easier to use after a role is selected. Once a session lands in `manager`, short follow-up commands like `status`, `ingest`, `reconcile`, `guard`, and `audit` can keep using that role while the context is clear. `/dev-studio help` shows the role index, `/dev-studio <role> help` shows examples for that role, and bare checkpoint routing still lands in manager unless the role is explicit.
 - **[v0.11.0](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.11.0)** — The studio now runs through one canonical `/dev-studio` router instead of the old top-level role surfaces. Manager, worker, reviewer, performance, QA, flow-test, release, and host-adapter work all resolve through v2 role contracts with dedicated substrate for events, context budgets, project profiles, checkpoints, and handoffs. Long chains are easier to resume and audit, Projects-board planning is visible from the CLI, review gates are clearer, and release flows now leave a stronger trail through TestFlight tags, App Store PR lifecycle handling, Slack handoffs, withdrawn/superseded states, and release-attempt transaction logs.
 - **[v0.10.0](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.10.0)** — Apollo can now explain network efficiency with the same strict evidence discipline it already applies to memory, thermal, battery, and CPU. Network traces, URLSession task metrics, MetricKit transfer windows, cellular-condition context, and paired Power Profiler evidence now route through a dedicated `/apollo network` mode. Guided profiling can hand a human-run app flow across battery, CPU, memory, and network, while the reviewed Apollo chain path keeps multi-issue studio work gated by sibling review before it lands.
