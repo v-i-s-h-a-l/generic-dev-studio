@@ -163,6 +163,7 @@ scripts/lint-v2-enforcement.sh --staged                     # A0.6 Studio v2 SPE
 scripts/lint-chain-workflow-docs.sh --staged                # keep chain launcher docs, usage text, and fixtures aligned
 scripts/v2-profile.sh --profile ios-turnip --list           # A6 project-profile operation resolver
 scripts/studio-ios-check-router.sh explain --operation build --chain my-chain --task-id T001 # local-first iOS build/test routing explanation
+scripts/studio-ios-check-router.sh explain --operation release:testflight --role release --requires-secret-scope asc,slack # release/TestFlight capability + secret + priority routing explanation
 scripts/studio-ios-check-failover.sh decide --operation build --task-id T001 --selected-executor worker-a --failure-signal remote_timeout # classify worker-routed check failure and publish a finite retry/halt path
 scripts/studio-ios-artifact-janitor.sh sweep --base /tmp/studio-ios-artifacts --json # redacted iOS artifact retention cleanup
 scripts/v2-cutover.sh --status                              # A9 v1 archive / v2 traffic-switch status
@@ -253,7 +254,7 @@ scripts/                # multi-worker fleet (BETA)
   lint-v2-enforcement.sh # A0.6 Studio v2 SPEC-derived substrate/profile gates
   lint-chain-workflow-docs.sh # guards chain launcher docs, usage text, and regression fixtures
   v2-profile.sh          # A6 resolver/runner for profile-owned build/test/lint/release operations
-  studio-ios-check-router.sh # local-manager-first iOS build/test scheduler with affinity, overrides, dry-run explanations, and routing telemetry
+  studio-ios-check-router.sh # local-manager-first iOS scheduler with build/test affinity plus release/TestFlight secret-scope priority routing
   studio-ios-check-failover.sh # typed worker-routed build/test failure classification, finite retry/halt policy, and partial-artifact retention
   studio-ios-artifact-janitor.sh # retention records, pass cleanup, TTL sweeps, and redacted telemetry for scoped iOS build/test artifacts
   lint-build-release-message.sh # A11 build/release message shape + duplicate linter

@@ -221,6 +221,7 @@ scripts/lint-v2-enforcement.sh --staged                 # A0.6 Studio v2 SPEC-de
 scripts/v2-profile.sh --profile ios-turnip --validate   # validate the A6 project-profile layer and iOS profile
 scripts/v2-profile.sh --profile ios-turnip --operation build --project-root /path/to/project --dry-run  # resolve an abstract operation without running it
 scripts/studio-ios-check-router.sh explain --operation build --chain my-chain --task-id T001 --source-branch main # local-first iOS build/test route explanation with affinity/economics
+scripts/studio-ios-check-router.sh explain --operation release:testflight --role release --requires-secret-scope asc,slack # release/TestFlight capability + secret + queue-priority route explanation
 scripts/studio-ios-check-failover.sh decide --operation build --task-id T001 --selected-executor worker-a --failure-signal remote_timeout # classify failover and publish the selected retry or halt path
 scripts/v2-cutover.sh --status                          # report A9 v1 archive / v2 traffic-switch status
 scripts/v2-cutover.sh --validate                        # validate the A9 cutover manifest and rollback playbook

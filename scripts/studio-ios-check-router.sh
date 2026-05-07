@@ -24,6 +24,7 @@ fi
 
 OPERATION="build"
 ROLE="xcodebuild"
+RELEASE_CHANNEL=""
 CHAIN=""
 TASK_ID=""
 WORKTREE=""
@@ -45,6 +46,7 @@ EXCLUDE_WORKERS=""
 BREAK_AFFINITY=0
 CLEAR_AFFINITY=0
 ALLOW_MANAGER_IMPACT=0
+ALLOW_RELEASE_LOCAL_FALLBACK=0
 JSON_OUTPUT=1
 DRY_RUN_FLAG=0
 NO_TELEMETRY=0
@@ -58,16 +60,18 @@ Usage:
   scripts/studio-ios-check-router.sh clear-affinity --chain <name> [--source-branch <branch>] [--role <role>]
 
 Options:
-  --operation <build|test|test:unit|test:ui|lsp-only|implementation>
+  --operation <build|test|test:unit|test:ui|lsp-only|implementation|release:testflight|release:appstore>
   --role <xcodebuild|swift-test>
   --chain <name> --task-id <id> --worktree <path>
   --source-branch <branch> --base-sha <sha> --worktree-sha <sha>
   --run-id <id> --chain-run-id <id> --issue-run-id <id> --manifest-version <n>
   --cache-key <key> --simulator-runtime <runtime> --xcode-version <version>
   --requires-secret-scope <a,b>
+  --release-channel <testflight|appstore|release>
   --user-blocked true|false
   --force-local | --force-worker <node-id> | --exclude-worker <node-id> | --break-affinity | --clear-affinity
   --allow-manager-impact
+  --allow-release-local-fallback
   --dry-run
 EOF
   exit 2
@@ -79,6 +83,8 @@ while [ $# -gt 0 ]; do
     --operation=*) OPERATION="${1#--operation=}"; shift ;;
     --role) ROLE="${2:?--role requires a value}"; shift 2 ;;
     --role=*) ROLE="${1#--role=}"; shift ;;
+    --release-channel) RELEASE_CHANNEL="${2:?--release-channel requires a value}"; shift 2 ;;
+    --release-channel=*) RELEASE_CHANNEL="${1#--release-channel=}"; shift ;;
     --chain) CHAIN="${2:?--chain requires a value}"; shift 2 ;;
     --chain=*) CHAIN="${1#--chain=}"; shift ;;
     --task-id) TASK_ID="${2:?--task-id requires a value}"; shift 2 ;;
@@ -117,6 +123,7 @@ while [ $# -gt 0 ]; do
     --break-affinity) BREAK_AFFINITY=1; shift ;;
     --clear-affinity) CLEAR_AFFINITY=1; shift ;;
     --allow-manager-impact) ALLOW_MANAGER_IMPACT=1; shift ;;
+    --allow-release-local-fallback) ALLOW_RELEASE_LOCAL_FALLBACK=1; shift ;;
     --dry-run) DRY_RUN_FLAG=1; shift ;;
     --json) JSON_OUTPUT=1; shift ;;
     --no-telemetry) NO_TELEMETRY=1; shift ;;
@@ -131,6 +138,7 @@ case "${STUDIO_IOS_ROUTER_FORCE_LOCAL:-0}" in 1|true|TRUE|yes|YES) FORCE_LOCAL=1
 case "${STUDIO_IOS_ROUTER_BREAK_AFFINITY:-0}" in 1|true|TRUE|yes|YES) BREAK_AFFINITY=1 ;; esac
 case "${STUDIO_IOS_ROUTER_CLEAR_AFFINITY:-0}" in 1|true|TRUE|yes|YES) CLEAR_AFFINITY=1 ;; esac
 case "${STUDIO_IOS_ROUTER_ALLOW_MANAGER_IMPACT:-0}" in 1|true|TRUE|yes|YES) ALLOW_MANAGER_IMPACT=1 ;; esac
+case "${STUDIO_IOS_ALLOW_RELEASE_LOCAL_FALLBACK:-${STUDIO_TF_ALLOW_LOCAL_RELEASE_FALLBACK:-0}}" in 1|true|TRUE|yes|YES) ALLOW_RELEASE_LOCAL_FALLBACK=1 ;; esac
 case "${DRY_RUN:-0}" in 1|true|TRUE|yes|YES) DRY_RUN_FLAG=1 ;; esac
 
 safe_segment() {
@@ -247,6 +255,36 @@ operation_is_expensive() {
   esac
 }
 
+operation_is_release() {
+  [ -n "$RELEASE_CHANNEL" ] && return 0
+  case "$OPERATION" in
+    release|release:*|testflight|tf-push|testflight-push|appstore|app-store|release-beta|release-prod) return 0 ;;
+  esac
+  case "$ROLE" in
+    release|release-manager|shipper) return 0 ;;
+  esac
+  return 1
+}
+
+release_channel() {
+  if [ -n "$RELEASE_CHANNEL" ]; then
+    printf '%s\n' "$RELEASE_CHANNEL"
+    return 0
+  fi
+  case "$OPERATION" in
+    release:testflight|testflight|tf-push|testflight-push|release-beta) printf 'testflight\n' ;;
+    release:appstore|appstore|app-store|release-prod) printf 'appstore\n' ;;
+    *) printf 'release\n' ;;
+  esac
+}
+
+release_needs_xcodebuild() {
+  case "$OPERATION" in
+    release:appstore|appstore|app-store|release-prod) return 1 ;;
+    *) operation_is_release ;;
+  esac
+}
+
 operation_needs_simulator() {
   case "$OPERATION:$ROLE" in
     test*:*|ui-test:*|unit-test:*|*:swift-test) return 0 ;;
@@ -314,6 +352,20 @@ MIN_RAM_GIB=$(num_or_default "${STUDIO_IOS_ROUTER_MIN_RAM_GIB:-8}" 8)
 MAX_LOAD=$(float_or_default "${STUDIO_IOS_ROUTER_MAX_LOAD:-6}" 6)
 OVERHEAD_BUDGET_MS=$(num_or_default "${STUDIO_IOS_ROUTER_OVERHEAD_BUDGET_MS:-2000}" 2000)
 AFFINITY_TTL_S=$(num_or_default "${STUDIO_IOS_ROUTER_AFFINITY_TTL_S:-86400}" 86400)
+
+RELEASE_JOB=false
+RELEASE_CHANNEL_RESOLVED=""
+JOB_PRIORITY="task"
+if operation_is_release; then
+  RELEASE_JOB=true
+  RELEASE_CHANNEL_RESOLVED=$(release_channel)
+  JOB_PRIORITY="release"
+  # Release/TestFlight dispatch is secret-bearing by definition. Callers may
+  # ask for a stricter set, but an empty/none set never downgrades the floor.
+  if [ -z "$REQUIRED_SECRET_SCOPES" ] || [ "$REQUIRED_SECRET_SCOPES" = "none" ]; then
+    REQUIRED_SECRET_SCOPES="asc,slack"
+  fi
+fi
 
 if [ "$CLEAR_AFFINITY" = "1" ] || [ "$COMMAND" = "clear-affinity" ]; then
   previous="null"
@@ -465,6 +517,59 @@ active_locks_for() {
   find "$lock_dir" -mindepth 1 -maxdepth 1 -type d -name 'slot-*' 2>/dev/null | wc -l | tr -d ' '
 }
 
+node_has_role_json() {
+  local node_json="$1" role="$2"
+  [ -n "$role" ] || { printf 'false\n'; return 0; }
+  printf '%s\n' "$node_json" | jq -r --arg role "$role" '(.roles // [] | index($role)) != null' 2>/dev/null || printf 'false\n'
+}
+
+local_registry_node_json() {
+  local registry self
+  registry="$(resolve_runtime_global)/nodes.json"
+  [ -r "$registry" ] || { printf '{}\n'; return 0; }
+  self=$(resolve_self_machine_id 2>/dev/null || true)
+  [ -n "$self" ] || { printf '{}\n'; return 0; }
+  jq -c --arg mid "$self" '.nodes[]? | select(.machine_id == $mid)' "$registry" 2>/dev/null | head -1
+}
+
+queue_snapshot_for() {
+  local id="$1" priority="${2:-task}" qdir f fn f_rank f_id
+  local depth=0 ahead_count=0 displaced_count=0 displaced_ids=""
+  local our_rank=1
+  case "$priority" in
+    release) our_rank=0 ;;
+    background) our_rank=2 ;;
+    *) our_rank=1 ;;
+  esac
+  qdir="$(resolve_runtime_global)/build-queue/$id"
+  if [ -d "$qdir" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      depth=$((depth + 1))
+      fn=$(basename "$f")
+      f_rank=$(printf '%s' "$fn" | cut -d- -f1)
+      case "$f_rank" in ''|*[!0-9]*) f_rank=1 ;; esac
+      if [ "$f_rank" -le "$our_rank" ] 2>/dev/null; then
+        ahead_count=$((ahead_count + 1))
+      elif [ "$priority" = "release" ]; then
+        displaced_count=$((displaced_count + 1))
+        f_id=$(jq -r '.id // "unknown"' "$f" 2>/dev/null || printf 'unknown')
+        displaced_ids="${displaced_ids}${displaced_ids:+
+}${f_id}"
+      fi
+    done <<EOF
+$(find "$qdir" -maxdepth 1 -type f -name '*.json' 2>/dev/null | sort)
+EOF
+  fi
+  jq -n \
+    --arg priority "$priority" \
+    --argjson depth "$depth" \
+    --argjson ahead_count "$ahead_count" \
+    --argjson displaced_count "$displaced_count" \
+    --argjson displaced_jobs "$(printf '%s\n' "$displaced_ids" | sed '/^$/d' | json_lines_to_array)" \
+    '{priority:$priority,depth:$depth,ahead_count:$ahead_count,displaced_count:$displaced_count,displaced_jobs:$displaced_jobs}'
+}
+
 slots_for_json() {
   local id="$1" node_json="$2" slots
   if [ "$id" = "local" ]; then
@@ -482,7 +587,9 @@ add_candidate() {
   local state_json parity_json health_status probed_at probed_epoch probe_age_s status_fresh
   local enabled role_ok secret_ok xcode_candidate xcode_ok swift_version simulator_available
   local ram_gib load1 load_ok ram_ok queue_depth queue_wait_s slots active_locks lock_state lock_ok
+  local queue_snapshot priority_ahead_count displaced_count preemption_status preemption_safe_boundary preemption_refused preemption_reason
   local source_json cache_warmth disk_pressure REASONS reasons_json eligible reason_class remote_total_s
+  local release_role_ok release_xcode_role_ok release_local_allowed local_registered release_capable release_predicate
 
   state_json=$(file_json_or_empty "$CANDIDATE_STATE_DIR/$(safe_segment "$id").json")
   parity_json="{}"
@@ -498,10 +605,30 @@ add_candidate() {
   [ "$enabled" = "true" ] || append_reason "disabled"
 
   role_ok=true
-  if [ "$is_local" != "true" ]; then
+  release_role_ok=true
+  release_xcode_role_ok=true
+  release_local_allowed=true
+  if [ "$RELEASE_JOB" = "true" ]; then
+    release_role_ok=$(node_has_role_json "$node_json" release)
+    role_ok="$release_role_ok"
+    if release_needs_xcodebuild; then
+      release_xcode_role_ok=$(node_has_role_json "$node_json" xcodebuild)
+    fi
+    local_registered=$(printf '%s\n' "$node_json" | jq -r 'has("id")' 2>/dev/null || printf false)
+    if [ "$is_local" = "true" ] && [ "$local_registered" != "true" ] && [ "$ALLOW_RELEASE_LOCAL_FALLBACK" != "1" ]; then
+      release_local_allowed=false
+      role_ok=false
+    fi
+  elif [ "$is_local" != "true" ]; then
     role_ok=$(printf '%s\n' "$node_json" | jq -r --arg role "$ROLE" '(.roles // [] | index($role)) != null' 2>/dev/null || printf false)
   fi
   [ "$role_ok" = "true" ] || append_reason "role_mismatch"
+  if [ "$RELEASE_JOB" = "true" ] && [ "$release_xcode_role_ok" != "true" ]; then
+    append_reason "release_xcodebuild_role_missing"
+  fi
+  if [ "$RELEASE_JOB" = "true" ] && [ "$release_local_allowed" != "true" ]; then
+    append_reason "release_local_fallback_not_allowed"
+  fi
 
   if csv_contains "$EXCLUDE_WORKERS" "$id"; then
     append_reason "excluded_by_failover"
@@ -509,7 +636,7 @@ add_candidate() {
 
   secret_ok=true
   if [ -n "$REQUIRED_SECRET_SCOPES" ] && [ "$REQUIRED_SECRET_SCOPES" != "none" ]; then
-    if [ "$is_local" = "true" ]; then
+    if [ "$is_local" = "true" ] && [ "$RELEASE_JOB" != "true" ]; then
       secret_ok=true
     else
       secret_ok=$(printf '%s\n' "$node_json" | jq -r --arg req "$REQUIRED_SECRET_SCOPES" \
@@ -600,18 +727,23 @@ add_candidate() {
   [ "$load_ok" = "true" ] || append_reason "load_high"
 
   slots=$(slots_for_json "$id" "$node_json")
+  queue_snapshot=$(queue_snapshot_for "$id" "$JOB_PRIORITY")
+  active_locks=$(json_get "$state_json" '.active_locks')
+  [ -n "$active_locks" ] || active_locks=$(active_locks_for "$id")
+  active_locks=$(num_or_default "$active_locks" 0)
   queue_depth=$(json_get "$state_json" '.queue_depth')
-  [ -n "$queue_depth" ] || queue_depth=$(queue_depth_for "$id")
+  [ -n "$queue_depth" ] || queue_depth=$(printf '%s\n' "$queue_snapshot" | jq -r '.depth // 0')
   queue_depth=$(num_or_default "$queue_depth" 0)
   queue_wait_s=$(json_get "$state_json" '.queue_wait_s')
-  if [ -z "$queue_wait_s" ]; then
+  if [ -z "$queue_wait_s" ] && [ "$RELEASE_JOB" = "true" ]; then
+    priority_ahead_count=$(printf '%s\n' "$queue_snapshot" | jq -r '.ahead_count // 0')
+    priority_ahead_count=$(num_or_default "$priority_ahead_count" 0)
+    queue_wait_s=$(( (priority_ahead_count + active_locks) * QUEUE_SLOT_SECONDS / slots ))
+  elif [ -z "$queue_wait_s" ]; then
     queue_wait_s=$((queue_depth * QUEUE_SLOT_SECONDS / slots))
   fi
   queue_wait_s=$(num_or_default "$queue_wait_s" 0)
 
-  active_locks=$(json_get "$state_json" '.active_locks')
-  [ -n "$active_locks" ] || active_locks=$(active_locks_for "$id")
-  active_locks=$(num_or_default "$active_locks" 0)
   lock_state="available"
   lock_ok=true
   if [ "$active_locks" -ge "$slots" ]; then
@@ -635,6 +767,26 @@ add_candidate() {
     fi
   fi
 
+  preemption_status="not_applicable"
+  preemption_safe_boundary=""
+  preemption_refused=false
+  preemption_reason=""
+  if [ "$RELEASE_JOB" = "true" ]; then
+    displaced_count=$(printf '%s\n' "$queue_snapshot" | jq -r '.displaced_count // 0')
+    displaced_count=$(num_or_default "$displaced_count" 0)
+    if [ "$displaced_count" -gt 0 ]; then
+      preemption_status="safe_boundary"
+      preemption_safe_boundary="before_job_start"
+      preemption_reason="release_priority_over_queued_normal_work"
+    elif [ "$active_locks" -ge "$slots" ]; then
+      preemption_status="waiting"
+      preemption_refused=true
+      preemption_reason="running_job_not_at_safe_boundary"
+    else
+      preemption_status="none"
+    fi
+  fi
+
   source_json=$(source_sync_check "$id" "$is_local")
   source_fresh=$(printf '%s\n' "$source_json" | jq -r '.fresh')
   if [ "$source_fresh" != "true" ]; then
@@ -648,6 +800,26 @@ add_candidate() {
   [ -n "$disk_pressure" ] || disk_pressure=$(json_get "$node_json" '.ios_routing.disk_pressure')
   [ "$disk_pressure" = "high" ] && append_reason "disk_pressure"
   [ -n "$disk_pressure" ] || disk_pressure="unknown"
+
+  release_capable=true
+  if [ "$RELEASE_JOB" = "true" ]; then
+    if [ "$release_role_ok" != "true" ] || [ "$release_xcode_role_ok" != "true" ] || \
+       [ "$secret_ok" != "true" ] || [ "$release_local_allowed" != "true" ]; then
+      release_capable=false
+    fi
+  fi
+  release_predicate=$(jq -n \
+    --argjson required "$RELEASE_JOB" \
+    --arg channel "$RELEASE_CHANNEL_RESOLVED" \
+    --arg priority "$JOB_PRIORITY" \
+    --arg required_secret_scopes "$REQUIRED_SECRET_SCOPES" \
+    --argjson allow_local_fallback "$(truthy "$ALLOW_RELEASE_LOCAL_FALLBACK" && printf true || printf false)" \
+    --argjson role_ok "$release_role_ok" \
+    --argjson xcodebuild_role_ok "$release_xcode_role_ok" \
+    --argjson secret_ok "$secret_ok" \
+    --argjson local_fallback_allowed "$release_local_allowed" \
+    --argjson capable "$release_capable" \
+    '{required:$required,channel:(if $channel == "" then null else $channel end),priority:$priority,required_roles:(if $required then (["release"] + (if $channel == "appstore" then [] else ["xcodebuild"] end)) else [] end),required_secret_scopes:(if $required_secret_scopes == "" then [] else ($required_secret_scopes | split(",") | map(gsub("^\\s+|\\s+$"; ""))) end),allow_local_fallback:$allow_local_fallback,role:$role_ok,xcodebuild_role:$xcodebuild_role_ok,secret_scope:$secret_ok,local_fallback_allowed:$local_fallback_allowed,capable:$capable}')
 
   reasons_json=$(printf '%s\n' "$REASONS" | sed '/^$/d' | json_lines_to_array)
   eligible=false
@@ -686,14 +858,22 @@ add_candidate() {
     --argjson queue_wait_s "$queue_wait_s" \
     --argjson secret_ok "$secret_ok" \
     --argjson source_sync "$source_json" \
+    --argjson release_predicate "$release_predicate" \
     --arg cache_warmth "$cache_warmth" \
     --arg disk_pressure "$disk_pressure" \
+    --argjson queue_snapshot "$queue_snapshot" \
+    --arg preemption_status "$preemption_status" \
+    --arg preemption_safe_boundary "$preemption_safe_boundary" \
+    --argjson preemption_refused "$preemption_refused" \
+    --arg preemption_reason "$preemption_reason" \
     --argjson remote_total_s "$remote_total_s" \
-    '{id:$id,is_local:$is_local,eligible:$eligible,reason_class:$reason_class,reasons:$reasons,predicates:{role:$role_ok,health:{status:$health_status,fresh:$status_fresh,age_s:$probe_age_s},xcode_toolchain:{ok:$xcode_ok,xcode_version:$xcode_version,swift_version:$swift_version},simulator_available:$simulator_available,ram_load:{ram_available_gib:$ram_available_gib,ram_ok:$ram_ok,load1:$load1,load_ok:$load_ok},lock_state:{state:$lock_state,ok:$lock_ok,active_locks:$active_locks,slots:$slots},queue:{depth:$queue_depth,wait_s:$queue_wait_s},secret_scope:$secret_ok,source_sync:$source_sync,disk_pressure:$disk_pressure},queue:{depth:$queue_depth,wait_s:$queue_wait_s,slots:$slots},cache:{warmth:$cache_warmth},economics:{remote_total_s:$remote_total_s,remote_setup_cost_s:'"$REMOTE_SETUP_COST_S"',retry_cost_s:'"$RETRY_COST_S"'}}' \
+    '{id:$id,is_local:$is_local,eligible:$eligible,reason_class:$reason_class,reasons:$reasons,predicates:{role:$role_ok,health:{status:$health_status,fresh:$status_fresh,age_s:$probe_age_s},xcode_toolchain:{ok:$xcode_ok,xcode_version:$xcode_version,swift_version:$swift_version},simulator_available:$simulator_available,ram_load:{ram_available_gib:$ram_available_gib,ram_ok:$ram_ok,load1:$load1,load_ok:$load_ok},lock_state:{state:$lock_state,ok:$lock_ok,active_locks:$active_locks,slots:$slots},queue:{depth:$queue_depth,wait_s:$queue_wait_s,priority:$queue_snapshot.priority,ahead_count:$queue_snapshot.ahead_count},secret_scope:$secret_ok,release:$release_predicate,source_sync:$source_sync,disk_pressure:$disk_pressure},queue:{depth:$queue_depth,wait_s:$queue_wait_s,slots:$slots,priority:$queue_snapshot.priority,ahead_count:$queue_snapshot.ahead_count},preemption:{status:$preemption_status,safe_boundary:(if $preemption_safe_boundary == "" then null else $preemption_safe_boundary end),refused:$preemption_refused,reason:(if $preemption_reason == "" then null else $preemption_reason end),displaced_count:$queue_snapshot.displaced_count,displaced_jobs:$queue_snapshot.displaced_jobs,displaced_work_retains_cache_artifacts:(if $queue_snapshot.displaced_count > 0 then true else null end)},cache:{warmth:$cache_warmth},economics:{remote_total_s:$remote_total_s,remote_setup_cost_s:'"$REMOTE_SETUP_COST_S"',retry_cost_s:'"$RETRY_COST_S"'}}' \
     >>"$CANDIDATES_FILE"
 }
 
-add_candidate "local" "{}" true
+LOCAL_NODE_JSON=$(local_registry_node_json)
+[ -n "$LOCAL_NODE_JSON" ] || LOCAL_NODE_JSON="{}"
+add_candidate "local" "$LOCAL_NODE_JSON" true
 
 REGISTRY="$(resolve_runtime_global)/nodes.json"
 if [ -r "$REGISTRY" ]; then
@@ -733,6 +913,18 @@ best_worker() {
   '
 }
 
+best_release_worker() {
+  printf '%s\n' "$CANDIDATES_JSON" | jq -r '
+    [.[] | select(.is_local == false and .eligible == true and .predicates.release.required == true and .predicates.release.capable == true)]
+    | sort_by((.preemption.refused // false), .queue.wait_s, .queue.ahead_count, .predicates.ram_load.load1)
+    | .[0].id // ""
+  '
+}
+
+local_release_eligible() {
+  printf '%s\n' "$CANDIDATES_JSON" | jq -r '([.[] | select(.id == "local") | select(.eligible == true and .predicates.release.capable == true)] | length) > 0'
+}
+
 affinity_candidate_reason() {
   local id="$1"
   printf '%s\n' "$CANDIDATES_JSON" | jq -r --arg id "$id" '.[] | select(.id == $id) | .reason_class // "missing_candidate"' 2>/dev/null | head -1
@@ -745,9 +937,15 @@ if [ -r "$AFFINITY_FILE" ]; then
 fi
 
 if [ "$FORCE_LOCAL" = "1" ]; then
-  SELECTED="local"
-  REASON_CLASS="user_force_local"
-  REASON="user override forced local manager"
+  if [ "$RELEASE_JOB" = "true" ] && [ "$(local_release_eligible)" != "true" ]; then
+    SELECTED="none"
+    REASON_CLASS="release_local_fallback_refused"
+    REASON="release/TestFlight local fallback was requested but local machine did not satisfy release role and secret-scope predicates"
+  else
+    SELECTED="local"
+    REASON_CLASS="user_force_local"
+    REASON="user override forced local manager"
+  fi
 elif [ -n "$FORCE_WORKER" ]; then
   forced=$(select_worker_by_id "$FORCE_WORKER")
   if [ -n "$forced" ]; then
@@ -756,9 +954,41 @@ elif [ -n "$FORCE_WORKER" ]; then
     REASON="user override forced named eligible worker"
     AFFINITY_DECISION="forced"
   else
+    if [ "$RELEASE_JOB" = "true" ]; then
+      SELECTED="none"
+      REASON_CLASS="release_force_worker_ineligible_refusal"
+      REASON="named release worker failed capability or secret-scope eligibility; refusing implicit local fallback"
+    else
+      SELECTED="local"
+      REASON_CLASS="user_force_worker_ineligible_fallback"
+      REASON="named worker failed eligibility checks; local manager fallback"
+    fi
+  fi
+elif [ "$RELEASE_JOB" = "true" ]; then
+  candidate=$(best_release_worker)
+  if [ -n "$candidate" ]; then
+    SELECTED="$candidate"
+    REASON_CLASS="release_capable_secret_scoped_worker"
+    REASON="release/TestFlight job selected a release-capable worker with required secret scopes before generic affinity"
+    AFFINITY_DECISION="bypassed"
+    [ -n "$AFFINITY_PREFERRED" ] && AFFINITY_BREAK_REASON="release_secret_scope_routing"
+  elif [ "$(local_release_eligible)" = "true" ]; then
     SELECTED="local"
-    REASON_CLASS="user_force_worker_ineligible_fallback"
-    REASON="named worker failed eligibility checks; local manager fallback"
+    if [ "$ALLOW_RELEASE_LOCAL_FALLBACK" = "1" ]; then
+      REASON_CLASS="release_local_fallback_allowed"
+      REASON="no eligible remote release worker was available; local fallback is explicitly allowed and secret-scoped"
+    else
+      REASON_CLASS="release_capable_secret_scoped_local"
+      REASON="local machine is registered with release capability and required secret scopes"
+    fi
+    AFFINITY_DECISION="bypassed"
+    [ -n "$AFFINITY_PREFERRED" ] && AFFINITY_BREAK_REASON="release_secret_scope_routing"
+  else
+    SELECTED="none"
+    REASON_CLASS="release_no_capable_secret_scoped_executor"
+    REASON="no executor satisfied release role, required secret scopes, health, queue, and source-sync predicates"
+    AFFINITY_DECISION="bypassed"
+    [ -n "$AFFINITY_PREFERRED" ] && AFFINITY_BREAK_REASON="release_secret_scope_routing"
   fi
 elif ! operation_is_expensive; then
   SELECTED="local"
@@ -820,15 +1050,19 @@ if [ "$REASON_CLASS" = "local_first" ]; then
   fi
 fi
 
-SELECTED_CANDIDATE=$(printf '%s\n' "$CANDIDATES_JSON" | jq -c --arg id "$SELECTED" '.[] | select(.id == $id)' | head -1)
-[ -n "$SELECTED_CANDIDATE" ] || SELECTED_CANDIDATE=$(printf '%s\n' "$CANDIDATES_JSON" | jq -c '.[] | select(.id == "local")' | head -1)
+if [ "$SELECTED" = "none" ]; then
+  SELECTED_CANDIDATE="null"
+else
+  SELECTED_CANDIDATE=$(printf '%s\n' "$CANDIDATES_JSON" | jq -c --arg id "$SELECTED" '.[] | select(.id == $id)' | head -1)
+  [ -n "$SELECTED_CANDIDATE" ] || SELECTED_CANDIDATE=$(printf '%s\n' "$CANDIDATES_JSON" | jq -c '.[] | select(.id == "local")' | head -1)
+fi
 SELECTED_QUEUE_WAIT_S=$(printf '%s\n' "$SELECTED_CANDIDATE" | jq -r '.queue.wait_s // 0')
 SELECTED_REMOTE_TOTAL_S=$(printf '%s\n' "$SELECTED_CANDIDATE" | jq -r '.economics.remote_total_s // 0')
 MANAGER_SAVINGS_S=$((LOCAL_QUEUE_WAIT_S - SELECTED_REMOTE_TOTAL_S))
-[ "$SELECTED" = "local" ] && MANAGER_SAVINGS_S=0
+case "$SELECTED" in local|none) MANAGER_SAVINGS_S=0 ;; esac
 [ "$MANAGER_SAVINGS_S" -lt 0 ] && MANAGER_SAVINGS_S=0
 
-if [ "$SELECTED" != "local" ] && operation_is_expensive && [ "$DRY_RUN_FLAG" != "1" ]; then
+if [ "$SELECTED" != "local" ] && [ "$SELECTED" != "none" ] && operation_is_expensive && [ "$DRY_RUN_FLAG" != "1" ]; then
   set_at="$CREATED_AT"
   expires_at=$(date -u -r $((NOW_EPOCH + AFFINITY_TTL_S)) +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$((NOW_EPOCH + AFFINITY_TTL_S))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '')
   affinity_doc=$(jq -n \
@@ -853,7 +1087,7 @@ END_MS=$(now_ms)
 OVERHEAD_MS=$((END_MS - START_MS))
 [ "$OVERHEAD_MS" -lt 0 ] && OVERHEAD_MS=0
 
-REJECTED=$(printf '%s\n' "$CANDIDATES_JSON" | jq --arg selected "$SELECTED" '[.[] | select(.id != $selected and .eligible == false) | {id,reason_class,reasons,predicates:{role:.predicates.role,health:.predicates.health,xcode_toolchain:.predicates.xcode_toolchain,simulator_available:.predicates.simulator_available,ram_load:.predicates.ram_load,lock_state:.predicates.lock_state,queue:.predicates.queue,secret_scope:.predicates.secret_scope,source_sync:.predicates.source_sync,cache:.cache,disk_pressure:.predicates.disk_pressure}}]')
+REJECTED=$(printf '%s\n' "$CANDIDATES_JSON" | jq --arg selected "$SELECTED" '[.[] | select(.id != $selected and .eligible == false) | {id,reason_class,reasons,predicates:{role:.predicates.role,health:.predicates.health,xcode_toolchain:.predicates.xcode_toolchain,simulator_available:.predicates.simulator_available,ram_load:.predicates.ram_load,lock_state:.predicates.lock_state,queue:.predicates.queue,secret_scope:.predicates.secret_scope,release:.predicates.release,source_sync:.predicates.source_sync,cache:.cache,disk_pressure:.predicates.disk_pressure},preemption:.preemption}]')
 SYNC_REMEDIATION=$(printf '%s\n' "$CANDIDATES_JSON" | jq \
   --arg selected "$SELECTED" \
   --arg reason "$REASON_CLASS" \
@@ -891,18 +1125,26 @@ DECISION=$(jq -n \
   --arg affinity_preferred "$AFFINITY_PREFERRED" \
   --arg affinity_break_reason "$AFFINITY_BREAK_REASON" \
   --arg cache_key "$CACHE_KEY" \
+  --argjson release_job "$RELEASE_JOB" \
+  --arg release_channel "$RELEASE_CHANNEL_RESOLVED" \
+  --arg priority "$JOB_PRIORITY" \
+  --arg required_secret_scopes "$REQUIRED_SECRET_SCOPES" \
   --argjson selected_candidate "$SELECTED_CANDIDATE" \
   --argjson candidates "$CANDIDATES_JSON" \
   --argjson rejected "$REJECTED" \
   --argjson source_sync_remediation "$SYNC_REMEDIATION" \
   --argjson overhead_ms "$OVERHEAD_MS" \
   --argjson overhead_budget_ms "$OVERHEAD_BUDGET_MS" \
-  '{schema_version:1,kind:"studio-ios-routing-decision",created_at:$ts,operation:$operation,role:$role,chain:$chain,task_id:$task,source_branch:$source_branch,selected_executor:$selected,selected_is_local:($selected == "local"),reason_class:$reason_class,reason:$reason,user_blocked:$user_blocked,eligibility_predicates:["role","health","xcode_toolchain_version","simulator_availability","ram_load","lock_state","queue_depth","secret_scope","source_sync_freshness"],economics:{manager_savings_s:$manager_savings_s,manager_queue_wait_s:$manager_queue_wait_s,selected_queue_wait_s:$selected_queue_wait_s,remote_latency_cost_s:$remote_latency_cost_s,retry_cost_s:$retry_cost_s,cost_threshold_s:$cost_threshold_s,beneficial:$beneficial,user_blocked:$user_blocked},affinity:{decision:$affinity_decision,preferred_executor:(if $affinity_preferred == "" then null else $affinity_preferred end),break_reason:(if $affinity_break_reason == "" then null else $affinity_break_reason end),max_queue_wait_s:$max_affinity_queue_wait_s},cache:{key:$cache_key,selected_warmth:$selected_candidate.cache.warmth},source_sync_remediation:$source_sync_remediation,selected_candidate:$selected_candidate,rejected_executors:$rejected,candidates:$candidates,scheduler:{overhead_ms:$overhead_ms,overhead_budget_ms:$overhead_budget_ms,over_budget:($overhead_ms > $overhead_budget_ms)}}')
+  '{schema_version:1,kind:"studio-ios-routing-decision",created_at:$ts,operation:$operation,role:$role,chain:$chain,task_id:$task,source_branch:$source_branch,selected_executor:(if $selected == "none" then null else $selected end),selected_is_local:($selected == "local"),reason_class:$reason_class,reason:$reason,user_blocked:$user_blocked,job_class:(if $release_job then "release" else "build-test" end),priority:$priority,eligibility_predicates:(["role","health","xcode_toolchain_version","simulator_availability","ram_load","lock_state","queue_depth","secret_scope","source_sync_freshness"] + (if $release_job then ["release_capability","operator_approval_boundary"] else [] end)),release:{required:$release_job,channel:(if $release_channel == "" then null else $release_channel end),required_secret_scopes:(if $required_secret_scopes == "" then [] else ($required_secret_scopes | split(",") | map(gsub("^\\s+|\\s+$"; ""))) end),routing_policy:(if $release_job then "capability_secret_priority_first" else "not_applicable" end),operator_approval_required:$release_job,external_mutation_authority:"operator_only"},economics:{manager_savings_s:$manager_savings_s,manager_queue_wait_s:$manager_queue_wait_s,selected_queue_wait_s:$selected_queue_wait_s,remote_latency_cost_s:$remote_latency_cost_s,retry_cost_s:$retry_cost_s,cost_threshold_s:$cost_threshold_s,beneficial:$beneficial,user_blocked:$user_blocked},affinity:{decision:$affinity_decision,preferred_executor:(if $affinity_preferred == "" then null else $affinity_preferred end),break_reason:(if $affinity_break_reason == "" then null else $affinity_break_reason end),max_queue_wait_s:$max_affinity_queue_wait_s},queue:{selected_priority:$priority,selected_wait_s:$selected_queue_wait_s,selected_preemption:($selected_candidate.preemption // null)},preemption:($selected_candidate.preemption // null),cache:{key:$cache_key,selected_warmth:($selected_candidate.cache.warmth // null)},source_sync_remediation:$source_sync_remediation,selected_candidate:$selected_candidate,rejected_executors:$rejected,candidates:$candidates,scheduler:{overhead_ms:$overhead_ms,overhead_budget_ms:$overhead_budget_ms,over_budget:($overhead_ms > $overhead_budget_ms)}}')
 
 if [ "$NO_TELEMETRY" != "1" ] && [ "$DRY_RUN_FLAG" != "1" ] && command -v emit_event_keyed >/dev/null 2>&1; then
-  EVENT_PAYLOAD=$(printf '%s\n' "$DECISION" | jq -c '{selected_executor,reason_class,operation,role,chain,task_id,economics,affinity,source_sync_remediation,rejected_executors:([.rejected_executors[] | {id,reason_class,reasons}]),scheduler}')
+  EVENT_PAYLOAD=$(printf '%s\n' "$DECISION" | jq -c '{selected_executor,reason_class,operation,role,chain,task_id,job_class,priority,release,queue,preemption,economics,affinity,source_sync_remediation,rejected_executors:([.rejected_executors[] | {id,reason_class,reasons,predicates:{release:.predicates.release,secret_scope:.predicates.secret_scope,queue:.predicates.queue},preemption}]),scheduler}')
   emit_event_keyed studio scheduler ios_check_routing_decision "$TASK_ID" "$EVENT_PAYLOAD" \
     --idem-key "ios-route:${CHAIN}:${TASK_ID}:${OPERATION}:${SELECTED}:${REASON_CLASS}" >/dev/null 2>&1 || true
+  if [ "$RELEASE_JOB" = "true" ]; then
+    emit_event_keyed studio release release_priority_routing_decision "$TASK_ID" "$EVENT_PAYLOAD" \
+      --idem-key "release-route:${CHAIN}:${TASK_ID}:${OPERATION}:${SELECTED}:${REASON_CLASS}" >/dev/null 2>&1 || true
+  fi
 fi
 
 if [ -n "${STUDIO_IOS_ROUTING_DECISION_FILE:-}" ]; then
