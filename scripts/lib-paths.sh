@@ -179,6 +179,7 @@ resolve_parent_home_for_github() {
 
 with_login_home_for_github() {
   [ "$#" -gt 0 ] || return 2
+  _lp_load_project_env 2>/dev/null || true
   local original_home="${HOME:-}" parent_home parent_host
   parent_home=$(resolve_parent_home_for_github)
   if [ -n "$parent_home" ] && [ "$parent_home" != "$original_home" ]; then
