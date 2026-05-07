@@ -30,11 +30,12 @@ umask 022
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-CALLER_HOME="${HOME:-}"
 
-# shellcheck source=lib-paths.sh
+# shellcheck source=scripts/lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
-# shellcheck source=lib-review-budget.sh
+# shellcheck source=scripts/lib-studio-context.sh
+. "$SCRIPT_DIR/lib-studio-context.sh"
+# shellcheck source=scripts/lib-review-budget.sh
 . "$SCRIPT_DIR/lib-review-budget.sh"
 
 usage() {
@@ -288,28 +289,23 @@ trap 'rm -rf "$tmpdir"' EXIT
 reviewer_home="$tmpdir/reviewer-home"
 mkdir -p "$reviewer_home"
 
-LOGIN_HOME=$(resolve_user_login_home 2>/dev/null || true)
 reviewer_codex_home=""
 reviewer_claude_home=""
 reviewer_claude_config_dir=""
 
+export STUDIO_CONTEXT_HOST_PROFILE="$review_host"
+studio_context_resolve delegated-host-spawn || fail "reviewer auth home unavailable via Studio context for $review_host"
+
 case "$review_host" in
   codex*|*codex*)
-    reviewer_codex_home="${CODEX_REVIEWER_HOME:-${CODEX_HOME:-}}"
-    if [ -z "$reviewer_codex_home" ]; then
-      if [ -n "$CALLER_HOME" ] && [ -d "$CALLER_HOME/.codex" ]; then
-        reviewer_codex_home="$CALLER_HOME/.codex"
-      elif [ -n "$LOGIN_HOME" ] && [ -d "$LOGIN_HOME/.codex" ]; then
-        reviewer_codex_home="$LOGIN_HOME/.codex"
-      fi
-    fi
+    reviewer_codex_home="$STUDIO_CONTEXT_AUTH_HOME"
     [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] \
-      || fail "codex reviewer auth home not found; set CODEX_REVIEWER_HOME or CODEX_HOME"
+      || fail "codex reviewer auth home not found via Studio context"
     ;;
   claude*|*claude*)
-    reviewer_claude_home="${CLAUDE_REVIEWER_HOME:-$LOGIN_HOME}"
+    reviewer_claude_home="$STUDIO_CONTEXT_AUTH_HOME"
     [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] \
-      || fail "claude reviewer auth home not found; set CLAUDE_REVIEWER_HOME"
+      || fail "claude reviewer auth home not found via Studio context"
     reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-$reviewer_claude_home/.claude-reviewer}"
     mkdir -p "$reviewer_claude_config_dir" \
       || fail "failed to create claude reviewer config dir: $reviewer_claude_config_dir"
