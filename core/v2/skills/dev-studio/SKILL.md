@@ -62,13 +62,8 @@ the studio feedback inbox and do not replace the rest of the prompt.
 ## Release Manager Configure
 
 `/dev-studio release-manager configure` routes to the release-manager role and
-uses `scripts/release-manager-configure.sh` for project-scoped release
-notification setup. Slack is the first supported integration. Quick setup writes
-defaults the user can change later: TestFlight uses no `<!here>` by default,
-a brief parent message, threaded tester details, module grouping when useful,
-and technical notes at the end only when they affect testing. App Store release
-announcements remain optional and post to the configured releases channel when
-present.
+uses `scripts/release-manager-configure.sh` for project-scoped Slack release
+notification setup. Defaults stay editable and avoid TestFlight `<!here>`.
 
 <!-- v2-dev-studio:landing -->
 ## Bare Role Landing
@@ -79,14 +74,14 @@ direct invocation once the workflow is selected. `manager ingest` calls
 `scripts/dev-studio-ingest-resolve.sh`; `manager analyze` calls
 `scripts/manager-analyze.sh`; `manager reconcile` calls
 `scripts/manager-reconcile.sh`; `manager work-chain` calls
-`scripts/manager-work-chain.sh`. For chain orchestration, bare
-`scripts/studio-chain-runner.sh` now shows runnable chains, resumable runs, and
-next-action commands before any plan or resume action is chosen. Use
-`--discover <manifest|chain-name>` for filtered discovery; `/dev-studio manager
-work-chain prd-to-chain-automation` auto-runs the new PRD automation chain
-while bare `manager work-chain` still lands in discovery. Chain execution
-supports explicit `--attended` and `--unattended` modes; unattended runs avoid
-routine continue prompts and stop only on typed blockers after finite retries.
+`scripts/manager-work-chain.sh`. Bare `scripts/studio-chain-runner.sh` shows
+runnable chains, resumable runs, and next actions. Prefer `/dev-studio manager
+work-chain ...` in user-facing guidance; script commands are secondary
+automation/debug equivalents. Use `--discover <manifest|chain-name>` for
+filtered discovery; `/dev-studio manager work-chain prd-to-chain-automation`
+auto-runs that chain while bare `manager work-chain` lands in discovery. Chain
+execution supports `--attended` and `--unattended`; end attended/ingest
+work-chain planning with the next `/dev-studio manager work-chain ...` command.
 
 After a bare role landing, later bare subcommands may resolve through that
 active role when unambiguous in the same session. Store the resolved canonical

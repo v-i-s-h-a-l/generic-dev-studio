@@ -207,9 +207,11 @@ discover_persisted_runs() {
       (.halt_records // []) as $halts
       | if ($halts | length) > 0 and (($halts | last | .next_command // "") != "") then ($halts | last | .next_command)
         elif ($halts | length) > 0 and (($halts | last | .halt_class // "") == "fatal") then "inspect halt record"
-        else "scripts/studio-chain-runner.sh --resume \($run_id) --yes"
+        else "/dev-studio manager work-chain --resume \($run_id) --yes"
         end
-    ' "$state" 2>/dev/null || printf 'scripts/studio-chain-runner.sh --resume %s --yes' "$run_id")
+    ' "$state" 2>/dev/null || printf '/dev-studio manager work-chain --resume %s --yes' "$run_id")
+    next_command=$(printf '%s\n' "$next_command" \
+      | sed "s#${SCRIPT_DIR}/studio-chain-runner.sh#/dev-studio manager work-chain#g; s#scripts/studio-chain-runner.sh#/dev-studio manager work-chain#g")
     printf '| `%s` | `%s` | `%s` | `%s` |\n' "$run_id" "$status" "$manifest" "$next_command" >> "$rows_tmp"
   done <<EOF
 $(find "$chain_root" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null | sort)
@@ -270,7 +272,7 @@ discover_chain_manifests() {
       name=$(yq -r ".chains[$idx].name" "$manifest")
       [ -n "$ONLY_CHAIN" ] && [ "$name" != "$ONLY_CHAIN" ] && continue
       issues=$(yq -r ".chains[$idx].issues | join(\",\")" "$manifest")
-      command="scripts/manager-work-chain.sh $name --dry-run"
+      command="/dev-studio manager work-chain $name --dry-run"
       printf '| `%s` | `%s` | `%s` | `%s` |\n' "$rel_manifest" "$name" "${issues:-"-"}" "$command" >> "$rows_tmp"
     done
   done < "$manifest_list_tmp"
@@ -289,12 +291,14 @@ discover_chain_manifests() {
 print_discovery() {
   printf '# Studio Chain Discovery\n\n'
   printf -- '- Bare invocation is discovery-only; it never starts or resumes work.\n'
-  printf -- '- Add a manifest or chain name to filter suggestions: `scripts/studio-chain-runner.sh --discover prd-to-chain-automation`.\n\n'
+  printf -- '- Preferred user entrypoint: `/dev-studio manager work-chain`.\n'
+  printf -- '- Add a manifest or chain name to filter suggestions: `/dev-studio manager work-chain --discover prd-to-chain-automation`.\n\n'
   printf '## Next Actions\n\n'
-  printf -- '- Preview a chain: `scripts/manager-work-chain.sh <chain> --dry-run`\n'
-  printf -- '- Attended run: `scripts/studio-chain-runner.sh <manifest|chain-name> --attended --yes`\n'
-  printf -- '- Unattended run or safe resume: `scripts/studio-chain-runner.sh --auto <manifest|chain-name>`\n'
-  printf -- '- Resume a known run: `scripts/studio-chain-runner.sh --resume <run_id> --yes`\n\n'
+  printf -- '- Preview a chain: `/dev-studio manager work-chain <chain> --dry-run`\n'
+  printf -- '- Attended run: `/dev-studio manager work-chain <manifest|chain-name> --attended --yes`\n'
+  printf -- '- Unattended run or safe resume: `/dev-studio manager work-chain <manifest|chain-name>`\n'
+  printf -- '- Resume a known run: `/dev-studio manager work-chain --resume <run_id> --yes`\n\n'
+  printf 'Script equivalents remain available for automation: `scripts/manager-work-chain.sh ...` and `scripts/studio-chain-runner.sh ...`.\n\n'
   discover_persisted_runs
   discover_chain_manifests
   printf '\n'
@@ -3703,9 +3707,58 @@ integrate_issue_result() {
   fi
 }
 
+print_issue_progress_recap() {
+  local chain_name="$1" chain_run_id="$2" issue_run_id="$3" issue="$4" summary_file="${5:-}"
+  [ "$DRY_RUN" -eq 0 ] || return 0
+
+  if [ -z "$summary_file" ] || [ ! -f "$summary_file" ]; then
+    summary_file=$(summary_for_issue_run "$chain_name" "$issue" "$issue_run_id" 2>/dev/null || true)
+  fi
+
+  jq -r \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg run_id "$RUN_ID" \
+    --arg summary_file "$summary_file" \
+    --slurpfile summary "${summary_file:-/dev/null}" '
+      def task_label($task):
+        if $task == null then "None"
+        else "#\($task.number) \($task.title // "(untitled)") (`\($task.status // "unknown")`)"
+        end;
+      def summary_text:
+        ($summary[0] // {}) as $s
+        | ($s.functionality_delivered // $s.summary // null) as $text
+        | if $text == null then "Summary artifact: \($summary_file)"
+          elif ($text | type) == "array" then ($text | map(tostring) | join("; "))
+          else ($text | tostring)
+          end;
+      def signal_count($name):
+        ($summary[0] // {}) as $s
+        | (($s[$name] // []) | length);
+      (.chains[] | select(.chain_run_id == $chain_run_id)) as $chain
+      | ($chain.issues | to_entries) as $items
+      | (($items | map(select(.value.issue_run_id == $issue_run_id)) | .[0].key) // 0) as $idx
+      | ($items[$idx].value // {}) as $current
+      | (if $idx > 0 then $items[$idx - 1].value else null end) as $previous
+      | (($items | map(select(.key > $idx and (.value.status // "pending") != "completed")) | .[0].value) // null) as $next
+      | ([ $chain.issues[] | select((.status // "") == "completed") ] | length) as $completed
+      | ($chain.issues | length) as $total
+      | "## Chain Progress Recap\n\n"
+        + "- Previous task: \(task_label($previous))\n"
+        + "- Just completed: \(task_label($current))\n"
+        + "- What changed: \(summary_text)\n"
+        + "- Verification signals: tests \(signal_count("tests")), lints \(signal_count("lints")), builds \(signal_count("builds"))\n"
+        + "- Next task: \(task_label($next))\n"
+        + "- Overall progress: \($completed)/\($total) issues completed in `\($chain.name)`.\n"
+        + "- Direction: continue toward the chain goal on branch `\($chain.branch)` with phase review gates intact.\n"
+        + "- Preferred command if this session stops: `/dev-studio manager work-chain --resume \($run_id) --yes`\n"
+    ' "$RUN_STATE_JSON"
+  printf '\n'
+}
+
 process_completed_issue_result() {
   local chain_name="$1" branch="$2" chain_worktree="$3" issue="$4" git_metadata_strategy="$5" result_file="$6" chain_run_id="$7" issue_run_id="$8" checkpoint_mode="$9"
-  local result_status result_reason
+  local result_status result_reason summary_file
 
   result_status=$(jq -r '.status // "failed"' "$result_file")
   if [ "$result_status" != "completed" ]; then
@@ -3719,6 +3772,8 @@ process_completed_issue_result() {
     return 1
   fi
   mark_issue_integrated "$issue_run_id"
+  summary_file=$(jq -r '.summary // empty' "$result_file" 2>/dev/null || true)
+  print_issue_progress_recap "$chain_name" "$chain_run_id" "$issue_run_id" "$issue" "$summary_file"
   if [ "$checkpoint_mode" = "auto" ]; then
     if [ "$DRY_RUN" -eq 0 ]; then
       create_auto_checkpoint_after_issue "$checkpoint_mode" "$chain_name" "$branch" "$chain_worktree" "$chain_run_id" "$issue_run_id" "$issue" "$result_file"

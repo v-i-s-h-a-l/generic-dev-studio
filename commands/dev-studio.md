@@ -66,7 +66,10 @@ supplies the task context and runtime slug.
      role routing. Manager ingest may suggest missing/refined inputs from
      PRD, Figma, issue, plan, or repo context already provided in the
      session/repo; it does not auto-fetch unavailable sources or decompose
-     planner-owned work.
+     planner-owned work. For `manager work-chain`, prefer the
+     `/dev-studio manager work-chain ...` command in user-facing next steps,
+     especially after ingest or attended planning; script paths are secondary
+     automation/debug equivalents.
    - `worker` -> bounded task contract in an isolated worktree.
    - `reviewer` -> plan, outcome, diff, PR, or release-packet review.
    - `perf` -> performance, battery, memory, thermal, network, or instrumentation evidence.

@@ -73,6 +73,8 @@ scripts/studio-chain-runner.sh my-chain --dry-run                          # obj
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview role/branch-scoped checkpoint hooks
 scripts/studio-chain-runner.sh --discover                                  # bare invocation lists runnable chains, resumable runs, and next actions
 scripts/studio-chain-runner.sh --discover prd-to-chain-automation          # filtered discovery for one chain or manifest
+/dev-studio manager work-chain prd-to-chain-automation --dry-run           # preferred user-facing preview path
+/dev-studio manager work-chain --resume <run_id> --yes                     # preferred user-facing resume path from summaries/halt records
 scripts/manager-work-chain.sh prd-to-chain-automation --dry-run            # preview the named chain through the manager front door
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements     # unattended start/resume when state is safe and unambiguous
 scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes # attended execution with explicit confirmation bypass

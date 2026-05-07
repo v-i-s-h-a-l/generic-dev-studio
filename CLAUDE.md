@@ -310,9 +310,17 @@ worktrees/branches) and keep dependency-ordered work sequential.
 Do not auto-spawn user shell sessions. Do not suggest parallelizing across:
 unclean phase-gate reviews, dependent phases, shared branch/index mutations,
 or work that has not been shaped enough to know its write boundaries. For
-studio chains, suggest `scripts/studio-chain-runner.sh <manifest> --only
-<chain> --dry-run` per shell first, then the non-dry-run command after the user
-accepts the shape.
+studio chains, prefer `/dev-studio manager work-chain <manifest-or-chain>
+--only <chain> --dry-run` per shell first, then the matching `/dev-studio
+manager work-chain ... --attended --yes` or default manager work-chain command
+after the user accepts the shape. Include script equivalents only as secondary
+automation/debug paths.
+
+When an attended or ingest session produces a plan work-chain, end with the
+next `/dev-studio manager work-chain ...` command the user can run. After each
+chain task completes, surface a compact progress recap: previous task, just
+completed task, what changed, next task/command, overall progress, and the
+current chain direction/goal.
 
 ## Auto-apply tiers (reduce user touchpoints)
 
