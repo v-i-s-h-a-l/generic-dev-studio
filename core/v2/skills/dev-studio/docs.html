@@ -543,7 +543,7 @@ scripts/manager-work-chain.sh prd-to-chain-automation</code>
           </article>
           <article class="role">
             <h3>Checkpoint Resume</h3>
-            <p>Use bare checkpoint only for manager-shaped routing. Put the role before checkpoint when the role already owns the state; checkpoint artifacts do not replace summaries, verdicts, packets, checklists, or event logs.</p>
+            <p>Use bare checkpoint only for manager-shaped routing. Put the role before checkpoint when the role already owns the state; checkpoint artifacts do not replace summaries, verdicts, packets, checklists, or event logs. Create/update print the checkpoint id, and that id is enough for resume-checkpoint.</p>
             <code class="shell">/dev-studio checkpoint
 /dev-studio worker checkpoint
 /dev-studio reviewer resume-checkpoint</code>

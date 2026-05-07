@@ -79,7 +79,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 scripts/manager-work-chain.sh prd-to-chain-automation # repo-side wrapper for the manager work-chain front door
 scripts/prd-intake-normalize.sh prd.md # normalize a PRD/transcript/issue brief into a planner-ready requirement packet
 scripts/prd-task-graph-synthesize.sh packet.md # turn a requirement packet into a validated scheduler graph
-/dev-studio checkpoint           # manager-shaped checkpoint routing; explicit role owns content
+/dev-studio checkpoint           # manager-shaped checkpoint routing; stdout is the checkpoint id for resume
 /dev-studio worker checkpoint    # worker-owned compact checkpoint; does not replace worker summary
 /dev-studio worker resume-checkpoint # resume worker checkpoint via manifest.json + context.md first
 /studio-help                     # open the v2 router docs
@@ -93,7 +93,7 @@ scripts/studio-chain-runner.sh --resume <run_id> --yes # resume state; reconcile
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview checkpoint-aware safe-boundary hooks
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
 scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters, efficiency ratios, and bottlenecks from private chain-run telemetry
-scripts/studio-checkpoint.sh resume --latest --role worker # compact session resume; reads manifest.json + context.md before lazy drift checks
+scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker # compact session resume by id; add --latest for branch-scoped lookup
 scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
 STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
 /dev-studio host-adapter nodes   # day-2 fleet management — status, add, remove, health, sync, schedule
