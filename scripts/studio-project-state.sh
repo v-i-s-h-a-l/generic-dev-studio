@@ -72,7 +72,8 @@ resolve_repo_slug() {
       remote=${remote%.git}
       ;;
     *)
-      remote="v-i-s-h-a-l/generic-dev-studio"
+      printf 'studio-project-state: could not resolve GitHub repo slug from origin; set STUDIO_PROJECT_REPO=owner/repo\n' >&2
+      return 2
       ;;
   esac
   printf '%s\n' "$remote"
@@ -176,6 +177,7 @@ fallback_items_for_search() {
   repo_slug=$(resolve_repo_slug)
   tmp_numbers=$(mktemp -t studio-project-state-numbers.XXXXXX)
   tmp_items=$(mktemp -t studio-project-state-items.XXXXXX)
+  trap 'rm -f "$tmp_numbers" "$tmp_items"' RETURN
   : > "$tmp_numbers"
   : > "$tmp_items"
 
@@ -192,13 +194,12 @@ fallback_items_for_search() {
     fi
   done < <(search_terms)
 
-  sort -nu "$tmp_numbers" | while IFS= read -r issue_number; do
+  while IFS= read -r issue_number; do
     [ -n "$issue_number" ] || continue
     graphql_project_item_for_issue "$repo_slug" "$issue_number" >> "$tmp_items" || return $?
-  done
+  done < <(sort -nu "$tmp_numbers")
 
   jq -s '.' "$tmp_items"
-  rm -f "$tmp_numbers" "$tmp_items"
 }
 
 raw_json=$(
