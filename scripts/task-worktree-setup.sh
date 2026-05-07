@@ -13,6 +13,7 @@
 #
 # Exit codes:
 #   0  worktree created (or simulated under DRY_RUN=1)
+#   4  feature-branch merge-commit policy blocked the selected base branch
 #   2  missing args, repo-root not a git repo, or worktree add failed
 
 set -u
@@ -21,6 +22,8 @@ umask 022
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-feature-branch-policy.sh
+. "$SCRIPT_DIR/lib-feature-branch-policy.sh"
 
 TASK_ID="${1:?usage: task-worktree-setup.sh <task-id> <repo-root>}"
 REPO_ROOT="${2:?repo-root required}"
@@ -52,6 +55,16 @@ else
     || { printf 'error: git rev-parse --abbrev-ref HEAD failed\n' >&2; exit 2; }
   ORIG_HEAD=$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null) \
     || { printf 'error: git rev-parse HEAD failed\n' >&2; exit 2; }
+fi
+
+if ! feature_branch_policy_evaluate "$REPO_ROOT" "$ORIG_BRANCH" "" "worktree base branch"; then
+  if [ "${STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE:-0}" = "1" ]; then
+    printf 'warning: %s (override STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1)\n' "$FEATURE_BRANCH_POLICY_DETAIL" >&2
+  else
+    printf 'error: %s\n' "$FEATURE_BRANCH_POLICY_DETAIL" >&2
+    printf 'error: rebase or retarget the dependent branch before creating the task worktree, or set STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 for an explicit escape hatch\n' >&2
+    exit 4
+  fi
 fi
 
 WORKTREE="$HOME/.dev-studio/$PROJECT/worktrees/$TASK_ID"

@@ -111,11 +111,60 @@ run_head_worktree_case() {
   git -C "$WORK" checkout -q main
 }
 
+prepare_feature_branch_with_merge_commit() {
+  git -C "$WORK" checkout -q main
+  git -C "$WORK" branch -D feature sibling >/dev/null 2>&1 || true
+
+  git -C "$WORK" checkout -q -b feature
+  printf 'feature\n' > feature.txt
+  git -C "$WORK" add feature.txt
+  git -C "$WORK" commit -q -m 'feature work'
+
+  git -C "$WORK" checkout -q main
+  git -C "$WORK" checkout -q -b sibling
+  printf 'sibling\n' > sibling.txt
+  git -C "$WORK" add sibling.txt
+  git -C "$WORK" commit -q -m 'sibling work'
+
+  git -C "$WORK" checkout -q feature
+  git -C "$WORK" merge --no-ff sibling -m 'merge sibling into feature' >/dev/null
+  git -C "$WORK" checkout -q main
+}
+
+run_feature_merge_commit_gate_case() {
+  local out rc
+  out="$TMPROOT/out-feature-merge-gate.txt"
+  prepare_feature_branch_with_merge_commit
+  : > "$MERGE_LOG"
+
+  set +e
+  BASE_REF=main COMMIT_COUNT=2 \
+    bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
+      --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
+      > "$out" 2>"$out.err"
+  rc=$?
+  set -e
+
+  assert "merge-commit feature history blocks PR finalize" "[ $rc -ne 0 ]"
+  assert "merge-commit feature history explains rebase/retarget policy" "grep -q 'rebase or retarget the branch before merging' '$out.err'"
+  assert "merge-commit feature history does not invoke gh merge" "! grep -q -- 'pr merge' '$MERGE_LOG'"
+
+  : > "$MERGE_LOG"
+  BASE_REF=main COMMIT_COUNT=2 STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 \
+    bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
+      --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
+      > "$out.bypass" 2>"$out.bypass.err"
+  assert "merge-commit bypass allows finalize" "grep -q 'PR_MERGED=1' '$out.bypass'"
+  assert "merge-commit bypass still records merge method" "grep -q 'MERGE_METHOD=rebase' '$out.bypass'"
+  assert "merge-commit bypass reaches gh merge" "grep -q -- '--rebase' '$MERGE_LOG'"
+}
+
 cd "$WORK" || exit 1
 run_case main 3 rebase
 run_case main 4 merge
 run_case feature 4 rebase
 run_head_worktree_case
+run_feature_merge_commit_gate_case
 
 if [ "$failures" -ne 0 ]; then
   printf 'FAIL: %s assertion(s)\n' "$failures" >&2
