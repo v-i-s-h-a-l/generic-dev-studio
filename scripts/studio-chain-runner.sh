@@ -1184,7 +1184,7 @@ append_phase_review_feedback() {
 
 run_phase_review_gate() {
   local kind="$1" boundary_id="$2" artifact="$3" chain_run_id="$4" issue_run_id="$5" chain_name="$6" issue="$7"
-  local review_host actual_review_host fallback_from fallback_to fallback_reason review_file review_meta review_rc verdict feedback review_started_at review_duration
+  local review_host actual_review_host fallback_from fallback_to fallback_reason cross_host_satisfied degraded_review degraded_reason next_cross_host_retry review_file review_meta review_rc verdict feedback review_started_at review_duration
   review_host="${STUDIO_REVIEW_HOST:-claude-reviewer}"
   review_file="$PHASE_REVIEW_ROOT/$boundary_id-$kind-review.md"
 
@@ -1216,6 +1216,12 @@ run_phase_review_gate() {
   fallback_from=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_FALLBACK_FROM=//p' | tail -1)
   fallback_to=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_FALLBACK_TO=//p' | tail -1)
   fallback_reason=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_FALLBACK_REASON=//p' | tail -1)
+  cross_host_satisfied=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_CROSS_HOST_SATISFIED=//p' | tail -1)
+  [ -n "$cross_host_satisfied" ] || cross_host_satisfied="unknown"
+  degraded_review=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_DEGRADED=//p' | tail -1)
+  [ -n "$degraded_review" ] || degraded_review="0"
+  degraded_reason=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_DEGRADED_REASON=//p' | tail -1)
+  next_cross_host_retry=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_NEXT_CROSS_HOST_RETRY=//p' | tail -1)
   feedback="[]"
   if [ "$kind" = "outcome" ] && [ -f "$review_file" ]; then
     feedback=$(compact_phase_review_feedback_json "$review_file")
@@ -1231,11 +1237,17 @@ run_phase_review_gate() {
       --arg fallback_from "$fallback_from" \
       --arg fallback_to "$fallback_to" \
       --arg fallback_reason "$fallback_reason" \
+      --arg cross_host_satisfied "$cross_host_satisfied" \
+      --arg degraded_review "$degraded_review" \
+      --arg degraded_reason "$degraded_reason" \
+      --arg next_cross_host_retry "$next_cross_host_retry" \
       --arg artifact "$artifact" \
       --arg review "$review_file" \
       --argjson feedback "$feedback" \
-      '{kind:$kind, boundary_id:$boundary_id, verdict:$verdict, requested_review_host:$requested_review_host, review_host:$review_host, artifact:$artifact, review:$review, feedback:$feedback}
-       | if $fallback_from != "" then . + {fallback_from:$fallback_from, fallback_to:$fallback_to, fallback_reason:$fallback_reason} else . end')"
+      '{kind:$kind, boundary_id:$boundary_id, verdict:$verdict, requested_review_host:$requested_review_host, review_host:$review_host, cross_host_satisfied:$cross_host_satisfied, degraded_review:($degraded_review == "1"), artifact:$artifact, review:$review, feedback:$feedback}
+       | if $fallback_from != "" then . + {fallback_from:$fallback_from, fallback_to:$fallback_to, fallback_reason:$fallback_reason} else . end
+       | if $degraded_reason != "" then . + {degraded_reason:$degraded_reason} else . end
+       | if $next_cross_host_retry != "" then . + {next_cross_host_retry:$next_cross_host_retry} else . end')"
 
   case "$verdict" in
     clean)
