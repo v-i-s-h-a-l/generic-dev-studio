@@ -16,6 +16,7 @@ fail() {
 [ -x "$RUN" ] || fail "scripts/ingest-feedback.sh is not executable"
 
 export HOME="$TMPROOT/home"
+export STUDIO_BYPASS_FEEDBACK_LOGIN_HOME=1
 export ACHILLES_PROJECT=generic-dev-studio
 INBOX="$HOME/.dev-studio/generic-dev-studio/feedback-inbox/sample-project"
 mkdir -p "$INBOX"
