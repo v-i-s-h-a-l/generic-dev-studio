@@ -8,6 +8,11 @@ type: reference
 
 Per-task DerivedData paths and staleness rules. Argus reuses Achilles's DerivedData — no recompile needed for test runs.
 
+For Studio v2 iOS chain execution, the higher-level isolation contract lives in
+`_shared/contracts/ios-isolated-execution.md`. That contract defines the target
+chain/lane/executor cache scope; this primitive remains the legacy v1 path
+convention until the v2 routing and artifact implementation migrates callers.
+
 ## Path Convention
 
 All agents use the same path pattern:
