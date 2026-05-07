@@ -23,6 +23,7 @@ Post Phase 2.5 Commit C, layout is frozen: later phases land new files in existi
 | `events.md` | Event log schema, atomicity, offset, event catalog. |
 | `build-message-format.md` | Authoritative producer → Slack build-posting contract (#287). |
 | `release-tf-push.md` | Studio-owned TestFlight / App Store push procedure — prerequisites, archive, upload, dSYM, Slack draft, human-approval gate, send. Event taxonomy + `requires_secret_scope` declaration. Phase 2 (#217 Stage B). |
+| `ios-isolated-execution.md` | Studio v2 iOS execution contract for isolated worktrees, source-branch integration, build/test affinity, artifacts, locks, and privacy. |
 | `role-topology-handoff-rfc.md` | Studio v2 A0d normative RFC for canonical roles, handoff artifact families, decision rights, and contract-level failure semantics. |
 | `plans-index-validator.md` | Invariants + finding codes for `plans/index.yaml` and artifact cross-references. Phase 2.6. |
 | `agent-boot.md` | Per-session `agent_boot` event emitted at first write. Minimal payload — agent, git_sha, skill_version. Phase 2.6. |

@@ -23,6 +23,13 @@ fi
 
 [ -x "$RESOLVE" ] || fail "resolver is not executable"
 [ -f "$SCHEMA" ] || fail "missing chain manifest schema"
+jq -e '
+  .properties.execution_policy["$ref"] == "#/$defs/execution_policy"
+  and ."$defs".chain.properties.execution_policy["$ref"] == "#/$defs/execution_policy"
+  and (."$defs".execution_policy.properties.build_test_affinity.enum == ["chain", "none"])
+  and (."$defs".execution_policy.properties.derived_data_scope.enum == ["chain-lane", "issue"])
+  and (."$defs".execution_policy.properties.offload_economics.enum == ["required", "advisory", "disabled"])
+' "$SCHEMA" >/dev/null || fail "chain manifest schema missing execution policy contract"
 
 manifest="$TMPROOT/chain.yaml"
 cat >"$manifest" <<'YAML'
@@ -30,6 +37,13 @@ schema_version: 1
 rule_packs:
   required: [privacy]
   advisory: [missing-advisory]
+execution_policy:
+  build_test_affinity: chain
+  derived_data_scope: chain-lane
+  prefer_local_manager: true
+  max_affinity_queue_wait_sec: 900
+  artifact_retention: default
+  offload_economics: required
 chains:
   - name: resolver-fixture
     base: main

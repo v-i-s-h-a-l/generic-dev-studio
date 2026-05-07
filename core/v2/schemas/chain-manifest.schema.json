@@ -43,6 +43,7 @@
       }
     },
     "rule_packs": { "$ref": "#/$defs/rule_packs" },
+    "execution_policy": { "$ref": "#/$defs/execution_policy" },
     "chains": {
       "type": "array",
       "minItems": 1,
@@ -84,6 +85,37 @@
         }
       ]
     },
+    "execution_policy": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "build_test_affinity": {
+          "enum": ["chain", "none"],
+          "default": "chain"
+        },
+        "derived_data_scope": {
+          "enum": ["chain-lane", "issue"],
+          "default": "chain-lane"
+        },
+        "prefer_local_manager": {
+          "type": "boolean",
+          "default": true
+        },
+        "max_affinity_queue_wait_sec": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 900
+        },
+        "artifact_retention": {
+          "enum": ["default", "success-prune", "failure-retain", "release-retain"],
+          "default": "default"
+        },
+        "offload_economics": {
+          "enum": ["required", "advisory", "disabled"],
+          "default": "required"
+        }
+      }
+    },
     "chain": {
       "type": "object",
       "additionalProperties": true,
@@ -96,6 +128,7 @@
         "approved_release_id": { "type": "string", "minLength": 1 },
         "sync_strategy": { "enum": ["rebase", "squash"], "default": "rebase" },
         "phase_review": { "enum": ["required", "auto", "off"], "default": "auto" },
+        "execution_policy": { "$ref": "#/$defs/execution_policy" },
         "rule_packs": { "$ref": "#/$defs/rule_packs" },
         "issues": {
           "type": "array",

@@ -237,6 +237,12 @@ Project-specific guidance can extend behavior without forking core skills and
 without token cost when absent. Secrets resolve per project first, then through
 documented migration or legacy fallback paths until A6 removes the fallback.
 
+For iOS project execution, `_shared/contracts/ios-isolated-execution.md` defines
+the contract-level isolation model for source branches, chain branches, issue
+worktrees, build/test affinity, DerivedData scope, simulator slots, artifacts,
+and public/private telemetry boundaries. Profile implementation must satisfy
+that contract rather than encoding iOS build routing directly in core roles.
+
 <!-- v2-spec:context-budget -->
 ## Context and Skill Loading
 

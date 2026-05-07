@@ -31,6 +31,13 @@ chains:
     branch: feature/ios-v2-execution
     host: auto
     phase_review: required
+    execution_policy:
+      build_test_affinity: chain
+      derived_data_scope: chain-lane
+      prefer_local_manager: true
+      max_affinity_queue_wait_sec: 900
+      artifact_retention: default
+      offload_economics: required
     issues:
       - number: 663
       - number: 664
