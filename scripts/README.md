@@ -198,7 +198,7 @@ scripts/feedback-retroactive-sweep.sh --project generic-dev-studio --since YYYY-
 # Studio PR autopilot primitives (#318):
 scripts/pr-reviewer-eligibility.sh codex-reviewer       # no-prompt/no-secret reviewer preflight + real verdict-emitting smoke gate
 scripts/pr-reviewer-eligibility.sh claude-reviewer      # same reviewer floor for Claude Code; uses CLAUDE_REVIEWER_HOME + CLAUDE_REVIEWER_CONFIG_DIR
-scripts/phase-review.sh --review-host claude-reviewer --input phase-plan.md --output review.md   # sibling-host phase gate; falls back to codex-reviewer on Claude subscription/403 failures
+scripts/phase-review.sh --review-host claude-reviewer --input phase-plan.md --output review.md   # sibling-host phase gate; tries alternate cross-host reviewers, then degraded same-host continuity when needed
 scripts/pre-commit-review.sh                            # manual reviewer gate for risky staged diffs; accepts approved/approved_with_fixes only
 scripts/lint-field-review-surfaces.sh --staged          # blocks raw cross-host review snippets outside phase-review wrappers
 scripts/v2-role-resolve.sh manager                      # resolve Studio v2 role aliases to canonical role names

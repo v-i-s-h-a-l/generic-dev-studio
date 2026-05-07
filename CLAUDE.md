@@ -170,8 +170,28 @@ scripts/phase-review.sh --review-host codex-reviewer --kind outcome --input phas
 
 Pick the sibling reviewer explicitly (`claude-reviewer` when primary is Codex,
 `codex-reviewer` when primary is Claude Code). The wrapper runs
-`scripts/pr-reviewer-eligibility.sh` first and stops before the phase if the
-reviewer is not smoke-eligible.
+`scripts/pr-reviewer-eligibility.sh` first. If the requested reviewer fails
+eligibility, execution, timeout, or verdict parsing, the wrapper tries another
+cross-host reviewer profile first.
+
+**Degraded reviewer continuity:** when no cross-host reviewer returns usable
+output, `scripts/phase-review.sh` may fall back to the parent host's reviewer
+profile for intermediate phase gates. This keeps long chains from wedging on a
+reviewer outage, but it is not equivalent to sibling-host review:
+
+- The wrapper must emit `PHASE_REVIEW_DEGRADED=1`,
+  `PHASE_REVIEW_CROSS_HOST_SATISFIED=false`, and
+  `PHASE_REVIEW_NEXT_CROSS_HOST_RETRY=next_boundary`.
+- The chain runner may continue only when the degraded reviewer still returns a
+  clean verdict.
+- The next independent phase/outcome/PR boundary must retry cross-host review
+  unless a recorded cooldown says the sibling host is still unavailable.
+- Final PR review remains stricter; same-host PR fallback still requires
+  explicit user approval through the PR review wrapper.
+
+Disable degraded phase continuity with
+`STUDIO_DISABLE_PHASE_REVIEW_DEGRADED_SAME_HOST=1` when the phase must fail
+closed instead.
 
 **Field-agent review setup rule:** this same primitive applies when v2 field
 agents add cross-host **review** to worker, planner/architect, qa-engineer,
@@ -202,7 +222,7 @@ the plan/outcome artifact and must not be used silently by an assistant. See
 - Verification evidence (commands run, results)
 - Explicit ask: "did the execution match the plan? any drift?"
 
-**Iterate until "nothing fatal."** Do not execute a phase without a clean plan review. Do not move to the next phase without a clean outcome review.
+**Iterate until "nothing fatal."** Do not execute a phase without a clean plan review. Do not move to the next phase without a clean outcome review. A degraded same-host clean verdict may keep the chain moving only under the continuity rule above; it must stay marked as not cross-host-satisfied and must trigger a cross-host retry at the next boundary.
 
 **Archive every review** to `~/.dev-studio/<project>/analysis/<date>-<phase>-<plan|outcome>-review.md` (NEVER `/tmp` — gets wiped per `feedback_codex_sibling_review_pattern.md` lesson).
 
