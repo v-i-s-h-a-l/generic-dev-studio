@@ -26,7 +26,8 @@ run_checkpoint() {
   (cd "$REPO" && HOME="$HOME" ACHILLES_PROJECT=test-project "$ROOT/scripts/studio-checkpoint.sh" "$@")
 }
 
-created_dir=$(run_checkpoint create \
+root="$HOME/.dev-studio/test-project/.runtime/v2/checkpoints"
+created_id=$(run_checkpoint create \
   --role worker \
   --goal "Implement compact checkpoint runtime" \
   --completed "Path helpers added" \
@@ -34,11 +35,12 @@ created_dir=$(run_checkpoint create \
   --evidence "$REPO/file.txt" \
   --checkpoint-id ckpt-runtime-create)
 
+[ "$created_id" = "ckpt-runtime-create" ] || fail "create did not print checkpoint id"
+created_dir="$root/sessions/$created_id"
 [ -f "$created_dir/manifest.json" ] || fail "create did not write manifest"
 [ -f "$created_dir/context.md" ] || fail "create did not write context"
 [ ! -f "$created_dir/transcript.txt" ] || fail "checkpoint stored transcript"
 
-root="$HOME/.dev-studio/test-project/.runtime/v2/checkpoints"
 jq -e '.kind == "studio-v2-checkpoint-index" and (.checkpoints[] | select(.checkpoint_id == "ckpt-runtime-create"))' "$root/index.json" >/dev/null \
   || fail "index missing created checkpoint"
 jq -e '.checkpoint_id == "ckpt-runtime-create"' "$root/latest/worker/feature_test.json" >/dev/null \
@@ -56,13 +58,15 @@ if command -v check-jsonschema >/dev/null 2>&1; then
     || fail "created evidence failed schema validation"
 fi
 
-updated_dir=$(run_checkpoint update \
+updated_id=$(run_checkpoint update \
   --role worker \
   --goal "Continue compact checkpoint runtime" \
   --completed "Create flow works" \
   --next "Verify resume drift" \
   --checkpoint-id ckpt-runtime-update)
 
+[ "$updated_id" = "ckpt-runtime-update" ] || fail "update did not print checkpoint id"
+updated_dir="$root/sessions/$updated_id"
 jq -e '.role_state.supersedes == "ckpt-runtime-create"' "$updated_dir/state.json" >/dev/null \
   || fail "update did not record lineage"
 jq -e '.checkpoints[] | select(.checkpoint_id == "ckpt-runtime-create" and .status == "superseded")' "$root/index.json" >/dev/null \
@@ -82,7 +86,7 @@ printf '%s\n' "$drift_output" | grep -Eq 'Drift: (possible|confirmed)' || fail "
 jq -e 'select(.event == "checkpoint_resumed" and .drift.status != "unknown")' "$updated_dir/telemetry.jsonl" >/dev/null \
   || fail "resume drift telemetry missing"
 
-budget_dir=$(run_checkpoint create \
+budget_id=$(run_checkpoint create \
   --role worker \
   --goal "Budget warning checkpoint" \
   --completed "This deliberately creates a compact but warning-level default load." \
@@ -90,6 +94,7 @@ budget_dir=$(run_checkpoint create \
   --checkpoint-id ckpt-runtime-budget \
   --budget-max-bytes 120 \
   --budget-max-tokens 30 2>"$TMPROOT/budget.err")
+budget_dir="$root/sessions/$budget_id"
 grep -Fq 'largest section:' "$TMPROOT/budget.err" || fail "budget warning did not list largest sections"
 jq -e 'select(.event == "checkpoint_budget_warning")' "$budget_dir/telemetry.jsonl" >/dev/null \
   || fail "budget warning telemetry missing"
@@ -99,12 +104,13 @@ jq -e 'select(.event == "checkpoint_usefulness_recorded" and .usefulness.resume_
   || fail "usefulness telemetry missing"
 
 git -C "$REPO" checkout -q -b feature/chain
-manager_chain_dir=$(run_checkpoint create \
+manager_chain_id=$(run_checkpoint create \
   --role manager \
   --goal "Chain automation checkpoint" \
   --completed "Manager checkpoint for the active chain branch" \
   --next "Resume the chain branch" \
   --checkpoint-id ckpt-manager-chain)
+manager_chain_dir="$root/sessions/$manager_chain_id"
 run_checkpoint create \
   --role worker \
   --goal "Unrelated worker checkpoint" \
