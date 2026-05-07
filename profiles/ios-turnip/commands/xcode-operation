@@ -26,12 +26,122 @@ first_match() {
   find "$project_root" -maxdepth 1 -name "$1" -print | sort | head -1
 }
 
+safe_segment() {
+  local value="${1:-unknown}" safe
+  safe=$(printf '%s' "$value" | sed 's/[^A-Za-z0-9._-]/-/g; s/--*/-/g; s/^-//; s/-$//')
+  [ -n "$safe" ] || safe="unknown"
+  printf '%s\n' "$safe"
+}
+
+path_hash() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+  else
+    cksum | awk '{print $1}'
+  fi
+}
+
+short_hash() {
+  path_hash | cut -c1-32
+}
+
+absolute_path() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s/%s\n' "$project_root" "$1" ;;
+  esac
+}
+
+project_path_signal() {
+  local real checksum
+  real=$(cd "$project_root" && pwd -P)
+  checksum=$(printf '%s' "$real" | short_hash)
+  printf 'project-root-sha256:%s\n' "$checksum"
+}
+
+project_slug() {
+  local real base checksum
+  real=$(cd "$project_root" && pwd -P)
+  base=$(basename "$real")
+  checksum=$(printf '%s' "$real" | path_hash | cut -c1-10)
+  printf '%s-%s\n' "$(safe_segment "$base")" "$checksum"
+}
+
+chain_envelope_field() {
+  local field="$1" envelope="$project_root/.studio/chain-task-start.json"
+  [ -f "$envelope" ] || return 0
+  if command -v jq >/dev/null 2>&1; then
+    jq -r --arg field "$field" '.[$field] // empty' "$envelope" 2>/dev/null || true
+  else
+    sed -n "s/.*\"$field\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$envelope" | head -1
+  fi
+}
+
+chain_ownership_field() {
+  local field="$1" envelope="$project_root/.studio/chain-task-start.json"
+  [ -f "$envelope" ] || return 0
+  if command -v jq >/dev/null 2>&1; then
+    jq -r --arg field "$field" '.ownership[$field] // empty' "$envelope" 2>/dev/null || true
+  fi
+}
+
+arg_has_flag() {
+  local flag="$1"
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      "$flag"|"$flag"=*) return 0 ;;
+    esac
+    shift
+  done
+  return 1
+}
+
+arg_value() {
+  local flag="$1" previous=""
+  shift
+  while [ $# -gt 0 ]; do
+    if [ "$previous" = "$flag" ]; then
+      printf '%s\n' "$1"
+      return 0
+    fi
+    case "$1" in
+      "$flag"=*)
+        printf '%s\n' "${1#*=}"
+        return 0
+        ;;
+    esac
+    previous="$1"
+    shift
+  done
+  return 0
+}
+
+reject_artifact_path_args() {
+  if arg_has_flag -derivedDataPath "$@" || arg_has_flag -resultBundlePath "$@"; then
+    printf 'xcode-operation: pass artifact path overrides with STUDIO_IOS_DERIVED_DATA_PATH or STUDIO_IOS_RESULT_BUNDLE_PATH, not raw xcodebuild args\n' >&2
+    exit 2
+  fi
+  if [ -n "${STUDIO_IOS_CONFIGURATION:-}" ] && arg_has_flag -configuration "$@"; then
+    printf 'xcode-operation: pass configuration with STUDIO_IOS_CONFIGURATION or xcodebuild args, not both\n' >&2
+    exit 2
+  fi
+  if [ -n "${STUDIO_IOS_SDK:-}" ] && arg_has_flag -sdk "$@"; then
+    printf 'xcode-operation: pass SDK with STUDIO_IOS_SDK or xcodebuild args, not both\n' >&2
+    exit 2
+  fi
+}
+
 xcode_target_flags() {
-  local workspace project scheme destination
+  local workspace project scheme destination configuration sdk
   workspace="${STUDIO_IOS_WORKSPACE:-$(first_match '*.xcworkspace')}"
   project="${STUDIO_IOS_PROJECT:-$(first_match '*.xcodeproj')}"
   scheme="${STUDIO_IOS_SCHEME:-}"
   destination="${STUDIO_IOS_DESTINATION:-platform=iOS Simulator,name=iPhone 16}"
+  configuration="${STUDIO_IOS_CONFIGURATION:-}"
+  sdk="${STUDIO_IOS_SDK:-}"
 
   if [ -n "$workspace" ]; then
     printf '%s\0%s\0' -workspace "$workspace"
@@ -46,6 +156,12 @@ xcode_target_flags() {
     printf '%s\0%s\0' -scheme "$scheme"
   fi
   printf '%s\0%s\0' -destination "$destination"
+  if [ -n "$configuration" ]; then
+    printf '%s\0%s\0' -configuration "$configuration"
+  fi
+  if [ -n "$sdk" ]; then
+    printf '%s\0%s\0' -sdk "$sdk"
+  fi
 }
 
 run_configured_shell() {
@@ -59,12 +175,238 @@ run_configured_shell() {
 }
 
 run_xcodebuild() {
-  local action="$1"
+  local action="$1" operation_attempt artifact_root issue_run_id lane cache_key cache_state
+  local derived_data_path result_bundle_path log_path summary_path tmp_path metadata_path missing_inputs
+  local configuration sdk scheme destination xcode_version simulator_runtime device_class
+  local package_graph_hash build_settings_hash source_branch base_commit worktree_commit executor_id path_signal
+  local cache_material candidate_metadata rc tee_rc
+  local -a pipe_status
   local -a flags
+  shift
+  reject_artifact_path_args "$@"
+
+  operation_attempt="$(safe_segment "${STUDIO_IOS_ARTIFACT_ATTEMPT:-${STUDIO_ARTIFACT_ATTEMPT:-1}}")-$(safe_segment "$operation")"
+  issue_run_id="${STUDIO_IOS_ISSUE_RUN_ID:-${STUDIO_ISSUE_RUN_ID:-${STUDIO_ISSUE_RUN_UUID:-${ISSUE_RUN_ID:-${ISSUE_RUN_UUID:-}}}}}"
+  [ -n "$issue_run_id" ] || issue_run_id="$(chain_envelope_field issue_run_id)"
+  [ -n "$issue_run_id" ] || issue_run_id="standalone"
+  issue_run_id="$(safe_segment "$issue_run_id")"
+
+  artifact_root="${STUDIO_IOS_ARTIFACT_ROOT:-${STUDIO_CHAIN_ARTIFACT_ROOT:-}}"
+  if [ -z "$artifact_root" ]; then
+    local run_id tmp_base
+    tmp_base="${TMPDIR:-/tmp}"
+    tmp_base="${tmp_base%/}"
+    [ -n "$tmp_base" ] || tmp_base="/tmp"
+    run_id="${STUDIO_RUN_ID:-${RUN_ID:-}}"
+    [ -n "$run_id" ] || run_id="$(chain_envelope_field run_id)"
+    if [ -n "$run_id" ]; then
+      artifact_root="$tmp_base/studio-ios-artifacts/$(safe_segment "$run_id")"
+    else
+      artifact_root="$tmp_base/studio-ios-artifacts/standalone/$(project_slug)"
+    fi
+  fi
+  artifact_root="$(absolute_path "$artifact_root")"
+
+  lane="${STUDIO_IOS_LANE_ID:-${STUDIO_IOS_EXECUTOR_ID:-${STUDIO_EXECUTOR_ID:-${HOSTNAME:-}}}}"
+  [ -n "$lane" ] || lane="$(hostname 2>/dev/null || printf 'local')"
+  lane="$(safe_segment "$lane")"
+
+  scheme="${STUDIO_IOS_SCHEME:-}"
+  destination="${STUDIO_IOS_DESTINATION:-platform=iOS Simulator,name=iPhone 16}"
+  configuration="${STUDIO_IOS_CONFIGURATION:-$(arg_value -configuration "$@")}"
+  sdk="${STUDIO_IOS_SDK:-$(arg_value -sdk "$@")}"
+  xcode_version="${STUDIO_IOS_XCODE_VERSION:-}"
+  simulator_runtime="${STUDIO_IOS_SIMULATOR_RUNTIME:-}"
+  device_class="${STUDIO_IOS_DEVICE_CLASS:-}"
+  package_graph_hash="${STUDIO_IOS_PACKAGE_GRAPH_HASH:-}"
+  build_settings_hash="${STUDIO_IOS_BUILD_SETTINGS_HASH:-}"
+  source_branch="${STUDIO_IOS_SOURCE_BRANCH:-${STUDIO_SOURCE_BRANCH:-}}"
+  [ -n "$source_branch" ] || source_branch="$(chain_ownership_field source_branch)"
+  base_commit="${STUDIO_IOS_BASE_COMMIT:-${STUDIO_BASE_COMMIT:-}}"
+  worktree_commit="${STUDIO_IOS_WORKTREE_COMMIT:-$(git -C "$project_root" rev-parse HEAD 2>/dev/null || true)}"
+  executor_id="${STUDIO_IOS_EXECUTOR_ID:-${STUDIO_EXECUTOR_ID:-$lane}}"
+  path_signal="${STUDIO_IOS_PATH_SENSITIVITY:-$(project_path_signal)}"
+
+  missing_inputs=""
+  [ -n "$xcode_version" ] || missing_inputs="$missing_inputs xcode_version"
+  [ -n "$sdk" ] || missing_inputs="$missing_inputs sdk"
+  [ -n "$simulator_runtime" ] || missing_inputs="$missing_inputs simulator_runtime"
+  [ -n "$device_class" ] || missing_inputs="$missing_inputs device_class"
+  [ -n "$scheme" ] || missing_inputs="$missing_inputs scheme"
+  [ -n "$configuration" ] || missing_inputs="$missing_inputs configuration"
+  [ -n "$package_graph_hash" ] || missing_inputs="$missing_inputs package_graph_hash"
+  [ -n "$build_settings_hash" ] || missing_inputs="$missing_inputs build_settings_hash"
+  [ -n "$source_branch" ] || missing_inputs="$missing_inputs source_branch"
+  [ -n "$base_commit" ] || missing_inputs="$missing_inputs base_commit"
+  [ -n "$worktree_commit" ] || missing_inputs="$missing_inputs worktree_commit"
+  [ -n "$executor_id" ] || missing_inputs="$missing_inputs executor_identity"
+  [ -n "$path_signal" ] || missing_inputs="$missing_inputs path_sensitivity"
+
+  if [ -n "${STUDIO_IOS_CACHE_KEY:-}" ]; then
+    cache_key="$(safe_segment "$STUDIO_IOS_CACHE_KEY")"
+    cache_state="override"
+  elif [ -n "$missing_inputs" ]; then
+    cache_key="cold-$(safe_segment "$issue_run_id")-$(safe_segment "$operation_attempt")-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    cache_state="cold_missing_inputs"
+  else
+    cache_material=$(printf '%s\n' \
+      "xcode_version=$xcode_version" \
+      "sdk=$sdk" \
+      "simulator_runtime=$simulator_runtime" \
+      "device_class=$device_class" \
+      "scheme=$scheme" \
+      "configuration=$configuration" \
+      "package_graph_hash=$package_graph_hash" \
+      "build_settings_hash=$build_settings_hash" \
+      "source_branch=$source_branch" \
+      "base_commit=$base_commit" \
+      "worktree_commit=$worktree_commit" \
+      "executor_id=$executor_id" \
+      "path_signal=$path_signal")
+    cache_key="cache-$(printf '%s' "$cache_material" | short_hash)"
+    cache_state="stable"
+  fi
+
+  if [ -n "${STUDIO_IOS_DERIVED_DATA_PATH:-}" ]; then
+    derived_data_path="$(absolute_path "$STUDIO_IOS_DERIVED_DATA_PATH")"
+  elif [ "${STUDIO_IOS_DERIVED_DATA_SCOPE:-lane}" = "integration" ]; then
+    derived_data_path="$artifact_root/DerivedData/integration/$cache_key"
+  else
+    derived_data_path="$artifact_root/DerivedData/lanes/$lane/$cache_key"
+  fi
+  metadata_path="${derived_data_path}.metadata.json"
+
+  if [ "$cache_state" = "stable" ] && [ -d "$derived_data_path" ]; then
+    candidate_metadata="$metadata_path"
+    if ! command -v jq >/dev/null 2>&1 || ! jq -e --arg key "$cache_key" '.schema_version == 1 and .cache_key == $key' "$candidate_metadata" >/dev/null 2>&1; then
+      cache_key="cold-$(safe_segment "$issue_run_id")-$(safe_segment "$operation_attempt")-metadata-mismatch-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+      cache_state="cold_metadata_mismatch"
+      if [ "${STUDIO_IOS_DERIVED_DATA_SCOPE:-lane}" = "integration" ]; then
+        derived_data_path="$artifact_root/DerivedData/integration/$cache_key"
+      else
+        derived_data_path="$artifact_root/DerivedData/lanes/$lane/$cache_key"
+      fi
+      metadata_path="${derived_data_path}.metadata.json"
+    fi
+  fi
+
+  result_bundle_path="$(absolute_path "${STUDIO_IOS_RESULT_BUNDLE_PATH:-$artifact_root/result-bundles/$issue_run_id/$operation_attempt.xcresult}")"
+  log_path="$(absolute_path "${STUDIO_IOS_LOG_PATH:-$artifact_root/logs/$issue_run_id/$operation_attempt.log}")"
+  summary_path="$(absolute_path "${STUDIO_IOS_SUMMARY_PATH:-$artifact_root/summaries/$issue_run_id/$operation_attempt.summary.txt}")"
+  tmp_path="$(absolute_path "${STUDIO_IOS_TEMP_DIR:-$artifact_root/tmp/$issue_run_id/$operation_attempt}")"
+
   while IFS= read -r -d '' part; do
     flags+=("$part")
   done < <(xcode_target_flags)
-  (cd "$project_root" && xcodebuild "${flags[@]}" "$action" "$@")
+  [ "${#flags[@]}" -gt 0 ] || return 2
+
+  mkdir -p "$derived_data_path" "$(dirname "$metadata_path")" "$(dirname "$result_bundle_path")" "$(dirname "$log_path")" "$(dirname "$summary_path")" "$tmp_path"
+  write_cache_metadata "$metadata_path" "$cache_key" "$cache_state" "$missing_inputs" "$operation_attempt" "$issue_run_id" "$artifact_root" "$derived_data_path" "$result_bundle_path" "$log_path" "$summary_path" "$tmp_path" "$scheme" "$configuration" "$sdk" "$destination" "$xcode_version" "$simulator_runtime" "$device_class" "$package_graph_hash" "$build_settings_hash" "$source_branch" "$base_commit" "$worktree_commit" "$executor_id" "$path_signal"
+
+  set +e
+  (
+    cd "$project_root" && TMPDIR="$tmp_path" xcodebuild \
+      "${flags[@]}" \
+      -derivedDataPath "$derived_data_path" \
+      -resultBundlePath "$result_bundle_path" \
+      "$action" "$@"
+  ) 2>&1 | tee "$log_path"
+  pipe_status=("${PIPESTATUS[@]}")
+  rc=${pipe_status[0]:-1}
+  tee_rc=${pipe_status[1]:-0}
+  set -e
+  [ "$tee_rc" -eq 0 ] || {
+    printf 'xcode-operation: failed to write xcodebuild log: %s\n' "$log_path" >&2
+    return "$tee_rc"
+  }
+  write_xcode_summary "$summary_path" "$rc" "$operation" "$action" "$derived_data_path" "$result_bundle_path" "$log_path" "$metadata_path" "$cache_state"
+  return "$rc"
+}
+
+json_string() {
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$1" | jq -Rs .
+  else
+    printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  fi
+}
+
+json_array_from_words() {
+  local first=1 item
+  printf '['
+  for item in $1; do
+    if [ "$first" -eq 0 ]; then printf ','; fi
+    json_string "$item"
+    first=0
+  done
+  printf ']'
+}
+
+write_cache_metadata() {
+  local metadata_path="$1" cache_key="$2" cache_state="$3" missing_inputs="$4" operation_attempt="$5" issue_run_id="$6"
+  local artifact_root="$7" derived_data_path="$8" result_bundle_path="$9" log_path="${10}" summary_path="${11}" tmp_path="${12}"
+  local scheme="${13}" configuration="${14}" sdk="${15}" destination="${16}" xcode_version="${17}" simulator_runtime="${18}" device_class="${19}"
+  local package_graph_hash="${20}" build_settings_hash="${21}" source_branch="${22}" base_commit="${23}" worktree_commit="${24}" executor_id="${25}" path_signal="${26}"
+  local tmp_file writer_run_id chain_run_id
+  tmp_file="$metadata_path.tmp"
+  writer_run_id="${STUDIO_RUN_ID:-${RUN_ID:-$(chain_envelope_field run_id)}}"
+  chain_run_id="${STUDIO_CHAIN_RUN_ID:-${CHAIN_RUN_ID:-$(chain_envelope_field chain_run_id)}}"
+  {
+    printf '{\n'
+    printf '  "schema_version": 1,\n'
+    printf '  "kind": "studio-ios-derived-data-cache",\n'
+    printf '  "cache_key": %s,\n' "$(json_string "$cache_key")"
+    printf '  "cache_state": %s,\n' "$(json_string "$cache_state")"
+    printf '  "missing_inputs": %s,\n' "$(json_array_from_words "$missing_inputs")"
+    printf '  "writer_run_id": %s,\n' "$(json_string "$writer_run_id")"
+    printf '  "chain_run_id": %s,\n' "$(json_string "$chain_run_id")"
+    printf '  "issue_run_id": %s,\n' "$(json_string "$issue_run_id")"
+    printf '  "operation_attempt": %s,\n' "$(json_string "$operation_attempt")"
+    printf '  "paths": {\n'
+    printf '    "artifact_root": %s,\n' "$(json_string "$artifact_root")"
+    printf '    "derived_data_path": %s,\n' "$(json_string "$derived_data_path")"
+    printf '    "result_bundle_path": %s,\n' "$(json_string "$result_bundle_path")"
+    printf '    "log_path": %s,\n' "$(json_string "$log_path")"
+    printf '    "summary_path": %s,\n' "$(json_string "$summary_path")"
+    printf '    "tmp_path": %s\n' "$(json_string "$tmp_path")"
+    printf '  },\n'
+    printf '  "inputs": {\n'
+    printf '    "xcode_version": %s,\n' "$(json_string "$xcode_version")"
+    printf '    "sdk": %s,\n' "$(json_string "$sdk")"
+    printf '    "simulator_runtime": %s,\n' "$(json_string "$simulator_runtime")"
+    printf '    "device_class": %s,\n' "$(json_string "$device_class")"
+    printf '    "scheme": %s,\n' "$(json_string "$scheme")"
+    printf '    "configuration": %s,\n' "$(json_string "$configuration")"
+    printf '    "destination": %s,\n' "$(json_string "$destination")"
+    printf '    "package_graph_hash": %s,\n' "$(json_string "$package_graph_hash")"
+    printf '    "build_settings_hash": %s,\n' "$(json_string "$build_settings_hash")"
+    printf '    "source_branch": %s,\n' "$(json_string "$source_branch")"
+    printf '    "base_commit": %s,\n' "$(json_string "$base_commit")"
+    printf '    "worktree_commit": %s,\n' "$(json_string "$worktree_commit")"
+    printf '    "executor_id": %s,\n' "$(json_string "$executor_id")"
+    printf '    "path_sensitivity": %s\n' "$(json_string "$path_signal")"
+    printf '  }\n'
+    printf '}\n'
+  } > "$tmp_file"
+  mv "$tmp_file" "$metadata_path"
+}
+
+write_xcode_summary() {
+  local summary_path="$1" rc="$2" op="$3" action="$4" derived_data_path="$5" result_bundle_path="$6" log_path="$7" metadata_path="$8" cache_state="$9"
+  {
+    printf 'operation=%s\n' "$op"
+    printf 'xcodebuild_action=%s\n' "$action"
+    printf 'exit_code=%s\n' "$rc"
+    printf 'cache_state=%s\n' "$cache_state"
+    printf 'derived_data_path=%s\n' "$derived_data_path"
+    printf 'result_bundle_path=%s\n' "$result_bundle_path"
+    printf 'log_path=%s\n' "$log_path"
+    printf 'cache_metadata_path=%s\n' "$metadata_path"
+    printf '\nnotable_log_lines:\n'
+    if [ -f "$log_path" ]; then
+      grep -E '(\*\* (BUILD|TEST) (SUCCEEDED|FAILED) \*\*|error:|warning:|Failing tests:)' "$log_path" | tail -50 || true
+    fi
+  } > "$summary_path"
 }
 
 case "$operation" in

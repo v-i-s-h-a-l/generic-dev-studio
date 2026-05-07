@@ -59,6 +59,12 @@ rules:
   - id: release-command-explicit
     severity: block
     description: Release operations fail unless the project supplies the matching STUDIO_IOS_RELEASE_* command.
+  - id: build-test-artifacts-scoped
+    severity: block
+    description: Build and test operations write DerivedData, result bundles, logs, summaries, and temporary files under STUDIO_IOS_ARTIFACT_ROOT, STUDIO_CHAIN_ARTIFACT_ROOT, or a run-scoped temp root derived from .studio/chain-task-start.json.
+  - id: debug-artifact-overrides-explicit
+    severity: block
+    description: Debugging overrides use STUDIO_IOS_DERIVED_DATA_PATH, STUDIO_IOS_RESULT_BUNDLE_PATH, STUDIO_IOS_LOG_PATH, STUDIO_IOS_SUMMARY_PATH, or STUDIO_IOS_TEMP_DIR; raw xcodebuild artifact path flags are rejected.
   - id: no-core-command-edits
     severity: block
     description: Normal project command changes are made under profiles/ios-turnip, not core/v2.
