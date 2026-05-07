@@ -10,6 +10,46 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 RUNNER="$SCRIPT_DIR/studio-chain-runner.sh"
 PLAN_CHAIN="$SCRIPT_DIR/manager-plan-chain.sh"
 
+resolve_manifest_path() {
+  local input="${1:?usage: resolve_manifest_path <manifest|chain-name>}" candidate
+  if [ -f "$input" ]; then
+    printf '%s\n' "$input"
+    return 0
+  fi
+
+  candidate="$SCRIPT_DIR/../chains/$input.yaml"
+  if [ -f "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  candidate="$SCRIPT_DIR/../chains/$input.yml"
+  if [ -f "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  return 1
+}
+
+manifest_kind() {
+  local manifest="${1:?usage: manifest_kind <manifest>}" kind=""
+  if command -v yq >/dev/null 2>&1; then
+    kind=$(yq -r '.kind // ""' "$manifest" 2>/dev/null || true)
+  else
+    kind=$(sed -n 's/^kind:[[:space:]]*//p' "$manifest" 2>/dev/null | head -n 1 | tr -d '"'\''')
+  fi
+  printf '%s\n' "$kind"
+}
+
+reject_local_work_chain_manifest() {
+  local manifest="${1:?usage: reject_local_work_chain_manifest <manifest>}"
+  printf 'manager-work-chain: local project work-chain manifest is not runner-compatible: %s\n' "$manifest" >&2
+  printf 'manager-work-chain: this manifest uses local task ids, not runner chains[] issue numbers.\n' >&2
+  printf 'manager-work-chain: create or map GitHub issues first, then pass a runner-compatible manifest to studio-chain-runner.sh.\n' >&2
+  exit 2
+}
+
 has_explicit_mode_flag() {
   local arg
   for arg in "$@"; do
@@ -62,6 +102,14 @@ case "$1" in
     exec "$PLAN_CHAIN" --from-plan "$from_plan" --execute --unattended "$@"
     ;;
 esac
+
+if [ "${1#-}" = "$1" ]; then
+  if manifest_path=$(resolve_manifest_path "$1" 2>/dev/null); then
+    if [ "$(manifest_kind "$manifest_path")" = "project-work-chain" ]; then
+      reject_local_work_chain_manifest "$manifest_path"
+    fi
+  fi
+fi
 
 if [ "${1#-}" = "$1" ] && ! has_explicit_mode_flag "$@"; then
   exec "$RUNNER" --auto "$@"
