@@ -108,6 +108,70 @@ _sourcesync_state_file() {
   printf '%s/source-sync/%s/%s.%s.full\n' "$(resolve_project_root)/.runtime/state" "$node_id" "$session_id" "$key"
 }
 
+_sourcesync_safe_segment() {
+  local value="${1:-unknown}" safe
+  safe=$(printf '%s' "$value" | sed 's/[^A-Za-z0-9._-]/-/g; s/--*/-/g; s/^-//; s/-$//')
+  [ -n "$safe" ] || safe="unknown"
+  printf '%s\n' "$safe"
+}
+
+_sourcesync_envelope_field() {
+  local local_path="$1" filter="$2" envelope
+  envelope="$local_path/.studio/chain-task-start.json"
+  [ -r "$envelope" ] || return 0
+  jq -r "$filter // empty" "$envelope" 2>/dev/null || true
+}
+
+_sourcesync_record_ios_proof() {
+  local node_id="${1:?node-id required}" local_path="${2:?local path required}"
+  case "${STUDIO_IOS_DISABLE_SOURCE_SYNC_PROOF:-0}" in 1|true|TRUE|yes|YES) return 0 ;; esac
+  command -v jq >/dev/null 2>&1 || return 0
+
+  local project state_root chain branch base_sha worktree_sha run_id chain_run_id issue_run_id manifest_version
+  project=$(resolve_project 2>/dev/null || printf unknown)
+  state_root="${STUDIO_IOS_ROUTING_STATE_ROOT:-$(resolve_project_root_for "$project")/.runtime/state/ios-check-routing}"
+  chain="${STUDIO_IOS_CHAIN:-${STUDIO_CHAIN:-}}"
+  [ -n "$chain" ] || chain=$(_sourcesync_envelope_field "$local_path" '.ownership.chain')
+  [ -n "$chain" ] || chain=$(_sourcesync_envelope_field "$local_path" '.chain')
+  [ -n "$chain" ] || chain="standalone"
+
+  branch="${STUDIO_IOS_SOURCE_BRANCH:-${STUDIO_SOURCE_BRANCH:-}}"
+  [ -n "$branch" ] || branch=$(_sourcesync_envelope_field "$local_path" '.ownership.source_branch')
+  if [ -z "$branch" ]; then
+    branch=$(git -C "$local_path" symbolic-ref --short HEAD 2>/dev/null || true)
+  fi
+  [ -n "$branch" ] || branch="unknown"
+
+  base_sha="${STUDIO_IOS_BASE_COMMIT:-${STUDIO_BASE_COMMIT:-}}"
+  if [ -z "$base_sha" ]; then
+    base_sha=$(git -C "$local_path" merge-base HEAD "origin/$branch" 2>/dev/null || true)
+  fi
+  worktree_sha="${STUDIO_IOS_WORKTREE_COMMIT:-$(git -C "$local_path" rev-parse HEAD 2>/dev/null || true)}"
+  run_id="${STUDIO_RUN_ID:-${RUN_ID:-$(_sourcesync_envelope_field "$local_path" '.run_id')}}"
+  chain_run_id="${STUDIO_CHAIN_RUN_ID:-${CHAIN_RUN_ID:-$(_sourcesync_envelope_field "$local_path" '.chain_run_id')}}"
+  issue_run_id="${STUDIO_ISSUE_RUN_ID:-${ISSUE_RUN_ID:-$(_sourcesync_envelope_field "$local_path" '.issue_run_id')}}"
+  manifest_version="${STUDIO_CHAIN_MANIFEST_VERSION:-${STUDIO_IOS_MANIFEST_VERSION:-1}}"
+
+  local proof_dir proof_file tmp
+  proof_dir="$state_root/source-sync/$(_sourcesync_safe_segment "$chain")"
+  mkdir -p "$proof_dir" 2>/dev/null || return 1
+  proof_file="$proof_dir/$(_sourcesync_safe_segment "$node_id").json"
+  tmp=$(mktemp "${proof_file}.XXXXXX" 2>/dev/null || printf '%s.tmp' "$proof_file")
+  jq -n \
+    --arg node "$node_id" \
+    --arg chain "$chain" \
+    --arg source_branch "$branch" \
+    --arg base_sha "$base_sha" \
+    --arg worktree_sha "$worktree_sha" \
+    --arg run_id "$run_id" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg manifest_version "$manifest_version" \
+    --arg synced_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{schema_version:1,kind:"studio-ios-source-sync-proof",executor:$node,chain:$chain,source_branch:$source_branch,base_sha:$base_sha,worktree_sha:$worktree_sha,run_id:$run_id,chain_run_id:$chain_run_id,issue_run_id:$issue_run_id,manifest_version:$manifest_version,synced_at:$synced_at}' \
+    >"$tmp" && mv "$tmp" "$proof_file"
+}
+
 sourcesync_start_warmup_once() {
   local node_id="${1:?node-id required}" project="${2:?project required}" worktree="${3:?worktree required}"
   local scheme="${4:-}" destination="${5:-}" project_relpath="${6:-}" session_id marker_dir marker script_dir
@@ -132,7 +196,7 @@ sourcesync_relative_to_home() {
   local p="${1:?local path required}"
   case "$p" in
     "$HOME")     printf '.\n'; return 0 ;;
-    "$HOME"/*)   printf '%s\n' "${p#$HOME/}"; return 0 ;;
+    "$HOME"/*)   printf '%s\n' "${p#"$HOME"/}"; return 0 ;;
     *)
       printf 'sourcesync: %s is not under $HOME — refusing to translate\n' "$p" >&2
       return 1
@@ -291,6 +355,8 @@ sourcesync_push() {
   duration_ms=$((end_ms - start_ms))
   [ "$duration_ms" -lt 0 ] && duration_ms=0
   printf 'sourcesync: mode=%s sync_duration_ms=%s node=%s\n' "$mode" "$duration_ms" "$node_id" >&2
+  _sourcesync_record_ios_proof "$node_id" "$local_path" 2>/dev/null \
+    || printf 'sourcesync: warn: failed to record iOS source-sync proof for %s\n' "$node_id" >&2
   printf '%s\n' "$rel"
 }
 

@@ -99,6 +99,7 @@ Use `printf '%s\n'` (not `echo`) — portable and avoids trailing-space issues.
 | `precommit_review_blocked` | `scripts/pre-commit-review.sh` received `blocked` for the staged diff and rejected the commit. | `verdict`, `review_host`, `branch`, `head`, `patch_id`, `duration_s` |
 | `precommit_review_bypassed` | User explicitly skipped the staged-diff review gate with `STUDIO_BYPASS_REVIEW=1` or `--bypass-review`. Assistants must not set this bypass on their own initiative. | `verdict` (`bypassed`), `review_host`, `branch`, `head`, `patch_id`, `bypass_source` (`env`\|`flag`), `duration_s` |
 | `precommit_hook_completed` | `.githooks/pre-commit` completed its deterministic local gates. The default hook path does not spawn an LLM reviewer; run `scripts/pre-commit-review.sh` explicitly for risky local diffs. | `duration_s`, `exit_code`, `status` (`passed`\|`failed`), `branch`, `head`, `llm_review` (`manual_only`) |
+| `ios_check_routing_decision` | `scripts/studio-ios-check-router.sh` selected an executor for an iOS build/test check. Emitted for wet routing decisions, not dry-run explanations. | `selected_executor`, `reason_class` (`local_first_manager_available`\|`worker_offload_beneficial`\|`affinity_reused`\|`no_eligible_worker_fallback`\|`cost_threshold_refusal`\|`user_force_local`\|`user_force_worker`\|other scheduler reason), `operation`, `role`, `chain`, `task_id`, `economics` (`manager_savings_s`, `manager_queue_wait_s`, `remote_latency_cost_s`, `retry_cost_s`, `cost_threshold_s`, `user_blocked`), `affinity`, `source_sync_remediation`, `rejected_executors`, `scheduler` (`overhead_ms`, `overhead_budget_ms`, `over_budget`) |
 | `pr_review_completed` | `scripts/pr-headless-review.sh` completed the PR-level no-secret reviewer gate and delegated to autopilot when eligible. | `duration_s`, `exit_code`, `status` (`passed`\|`blocked`\|`failed`), `pr`, `pr_url`, `head`, `review_host`, `selected_review_host`, `parent_host`, `eligible_review_hosts` (array of smoke-passing reviewer profiles), `cross_host` (boolean), `cross_host_required` (boolean), `fallback_from` (array), `fallback_failures` (optional), `cross_host_bypass_url` (optional), `verdict`, `method`, `tokens` (`{input, output, cache_read, cache_write}` — best-effort from the reviewer session log; omitted when unavailable) |
 | `pr_autopilot_started` | `scripts/pr-autopilot.sh` posted, or is about to post, the parent-owned PR review gate marker for a reviewer verdict. Best-effort telemetry; failure to emit does not block the gate. | `pr`, `pr_url`, `method`, `verdict`, `review_host`, `selected_review_host`, `parent_host`, `eligible_review_hosts`, `cross_host`, `cross_host_required`, `fallback_from`, `fallback_failures`, `cross_host_bypass_url`, `status` (`started`), `duration_s` |
 | `pr_autopilot_completed` | `scripts/pr-autopilot.sh` exited after posting the gate marker, stopping on `blocked`, or delegating to merge finalization. Emitted on success and failure. | `pr`, `pr_url`, `method`, `verdict`, `review_host`, `selected_review_host`, `parent_host`, `eligible_review_hosts`, `cross_host`, `cross_host_required`, `fallback_from`, `fallback_failures`, `cross_host_bypass_url`, `status` (`completed`\|`blocked`\|`failed`), `exit_code`, `duration_s` |
@@ -220,7 +221,7 @@ Emitted by `scripts/chanakya-snap.sh` compatibility producer and by role payload
 
 ### Dispatch events (issue #137)
 
-Emitted by `scripts/node-pick.sh` and `scripts/node-health.sh`. Agent field is `studio`, mode field is `dispatch`. Payload fields use the `studio.dispatch.*` namespace (see §"Non-conforming studio fields"). These are the discriminating events that close the R14 silent-skip gap on the dispatch layer — every fallback or probe failure leaves a queryable trace.
+Emitted by `scripts/node-pick.sh`, `scripts/node-health.sh`, and the iOS check scheduler. Agent field is `studio`; node probe/fallback mode is `dispatch`, and iOS scheduler mode is `scheduler`. Payload fields use the `studio.dispatch.*` namespace on existing gate events (see §"Non-conforming studio fields"). These are the discriminating events that close the R14 silent-skip gap on the dispatch layer — every fallback, probe failure, or local/remote routing decision leaves a queryable trace.
 
 | Event | Emitted when | Typical `data` keys |
 |---|---|---|
@@ -237,11 +238,15 @@ Emitted by `scripts/node-pick.sh` and `scripts/node-health.sh`. Agent field is `
 | Field | Values | Notes |
 |---|---|---|
 | `studio.dispatch.node` | node id from `nodes.json`, or `local` | Same value as the legacy `node` field on these events; kept for back-compat. |
-| `studio.dispatch.role` | `xcodebuild` \| `swift-test` | Capability label requested from `node-pick.sh`. |
-| `studio.dispatch.reason` | `healthy` \| `fallback:unreachable` \| `fallback:no-role` \| `fallback:disabled` \| `override` (reserved) | `healthy` when a remote node was picked; `fallback:*` mirrors `node_fallback.reason`. `override` reserved for future env-driven local pinning. |
+| `studio.dispatch.role` | `xcodebuild` \| `swift-test` | Capability label requested from `node-pick.sh` or the iOS check scheduler. |
+| `studio.dispatch.reason` | Legacy node-pick values (`healthy`, `fallback:*`) or scheduler reason classes (`local_first_manager_available`, `worker_offload_beneficial`, `affinity_reused`, `no_eligible_worker_fallback`, `cost_threshold_refusal`, `user_force_local`, `user_force_worker`, etc.) | Build/test gates use scheduler reason classes; swift-test package gates may still emit legacy node-pick values. |
 | `studio.dispatch.xcode_version` | semver string (e.g. `16.4`) or `""` | Best-effort pull from `~/.dev-studio/.runtime/node-parity-cache.json`. Empty when the cache hasn't probed the node yet. |
+| `studio.dispatch.manager_savings_s` | integer seconds | Scheduler estimate of local-manager wait saved by offload. `0` when local is selected. |
+| `studio.dispatch.remote_latency_cost_s` | integer seconds | Scheduler estimate of remote sync/setup latency for the selected decision. |
+| `studio.dispatch.retry_cost_s` | integer seconds | Scheduler estimate of retry cost if the selected executor fails. |
+| `studio.dispatch.user_blocked` | boolean | Whether the route blocks the human's current loop. |
 
-Side channel: gates set `STUDIO_DISPATCH_REASON_FILE` to a temp path before invoking `node-pick.sh`; node-pick writes one line (the reason value) to that file, gates read it, fold it into the payload, then unlink. Stdout of `node-pick.sh` remains the picked node id only — preserves the long-standing caller contract.
+Side channels: `task-build-gate.sh` and `task-test-gate.sh` set `STUDIO_IOS_ROUTING_DECISION_FILE` before invoking `studio-ios-check-router.sh`; the scheduler writes the full decision JSON there while stdout remains the picked executor id. `swift-test-gate.sh` still uses `STUDIO_DISPATCH_REASON_FILE` with `node-pick.sh`; node-pick writes one reason line while stdout remains the picked node id.
 
 ### Studio chain events
 

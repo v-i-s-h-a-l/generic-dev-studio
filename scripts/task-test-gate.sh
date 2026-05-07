@@ -3,9 +3,9 @@
 #
 # Phase 0 of the release-substrate arc (#215). The achilles test-suite mode
 # (and any future agent path that wants a full xcodebuild test run) routes
-# here so the toolchain entry funnels through one place: node-pick + per-
-# node lock + structured event emission. Direct xcodebuild from agent prose
-# is the bug — this wrapper closes that path for the test-suite shape.
+# here so the toolchain entry funnels through one place: iOS check routing +
+# per-node lock + structured event emission. Direct xcodebuild from agent
+# prose is the bug — this wrapper closes that path for the test-suite shape.
 #
 # Why a sibling rather than a new mode on task-build-gate.sh: the eventing
 # vocabulary differs (test_run_* vs build_check_*), the optional argument
@@ -79,24 +79,48 @@ esac
 
 PROJECT=$(resolve_project 2>/dev/null || echo unknown)
 
-# Pick a swift-test-tagged node — same role as swift-test-gate.sh asks for.
-# The build gate uses `xcodebuild`; the test gate uses `swift-test`. Both
-# resolve to the same machines today, but the role split keeps future
-# differentiation cheap (e.g. a node with simulators but no Xcode).
-REASON_FILE=$(mktemp 2>/dev/null || printf '/tmp/dispatch-reason-%s' "$$")
-: > "$REASON_FILE" 2>/dev/null || true
-NODE_ID=$(STUDIO_DISPATCH_REASON_FILE="$REASON_FILE" \
-  "$SCRIPT_DIR/node-pick.sh" swift-test 2>/dev/null || echo local)
-DISPATCH_REASON=$(tr -d '\n' < "$REASON_FILE" 2>/dev/null)
-rm -f "$REASON_FILE" 2>/dev/null || true
-[ -z "$DISPATCH_REASON" ] && DISPATCH_REASON="healthy"
-XCODE_VER=""
-PARITY_CACHE="$(resolve_runtime_global)/node-parity-cache.json"
-if [ -r "$PARITY_CACHE" ] && command -v jq >/dev/null 2>&1; then
-  XCODE_VER=$(jq -r --arg id "$NODE_ID" '.nodes[$id].xcodebuild.version // ""' "$PARITY_CACHE" 2>/dev/null)
+# The scheduler keeps test routing local-first while preserving chain
+# affinity for expensive simulator work.
+ROUTE_FILE=$(mktemp 2>/dev/null || printf '/tmp/ios-route-%s.json' "$$")
+ROUTE_ARGS=(pick --operation test --role swift-test --task-id "$TASK_ID" --worktree "$WORKTREE")
+[ -n "${STUDIO_IOS_REQUIRED_XCODE_VERSION:-}" ] && ROUTE_ARGS+=(--xcode-version "$STUDIO_IOS_REQUIRED_XCODE_VERSION")
+[ -n "${STUDIO_IOS_SIMULATOR_RUNTIME:-}" ] && ROUTE_ARGS+=(--simulator-runtime "$STUDIO_IOS_SIMULATOR_RUNTIME")
+[ -n "${STUDIO_IOS_USER_BLOCKED:-}" ] && ROUTE_ARGS+=(--user-blocked "$STUDIO_IOS_USER_BLOCKED")
+[ "${DRY_RUN:-0}" = "1" ] && ROUTE_ARGS+=(--dry-run)
+if ! NODE_ID=$(STUDIO_IOS_ROUTING_DECISION_FILE="$ROUTE_FILE" "$SCRIPT_DIR/studio-ios-check-router.sh" "${ROUTE_ARGS[@]}"); then
+  printf 'task-test-gate: iOS routing decision failed\n' >&2
+  rm -f "$ROUTE_FILE" 2>/dev/null || true
+  exit 2
 fi
-DISPATCH_FIELDS=$(printf ',"studio.dispatch.node":"%s","studio.dispatch.role":"swift-test","studio.dispatch.reason":"%s","studio.dispatch.xcode_version":"%s"' \
-  "$NODE_ID" "$DISPATCH_REASON" "$XCODE_VER")
+ROUTE_JSON=$(cat "$ROUTE_FILE" 2>/dev/null || printf '{}')
+rm -f "$ROUTE_FILE" 2>/dev/null || true
+if [ "${DRY_RUN:-0}" != "1" ]; then
+  SYNC_BOOTSTRAP_NODE=$(printf '%s\n' "$ROUTE_JSON" | jq -r 'select(.source_sync_remediation.required == true) | .source_sync_remediation.candidate_executor // empty' 2>/dev/null)
+  if [ -n "$SYNC_BOOTSTRAP_NODE" ] && [ "$SYNC_BOOTSTRAP_NODE" != "local" ]; then
+    # shellcheck source=lib-source-sync.sh
+    . "$SCRIPT_DIR/lib-source-sync.sh"
+    if sourcesync_push "$SYNC_BOOTSTRAP_NODE" "$WORKTREE" >/dev/null; then
+      ROUTE_FILE=$(mktemp 2>/dev/null || printf '/tmp/ios-route-%s.json' "$$")
+      if ! NODE_ID=$(STUDIO_IOS_ROUTING_DECISION_FILE="$ROUTE_FILE" "$SCRIPT_DIR/studio-ios-check-router.sh" "${ROUTE_ARGS[@]}"); then
+        printf 'task-test-gate: iOS routing decision failed after source-sync bootstrap\n' >&2
+        rm -f "$ROUTE_FILE" 2>/dev/null || true
+        exit 2
+      fi
+      ROUTE_JSON=$(cat "$ROUTE_FILE" 2>/dev/null || printf '{}')
+      rm -f "$ROUTE_FILE" 2>/dev/null || true
+    else
+      printf 'task-test-gate: source-sync bootstrap to %s failed; keeping initial routing decision\n' "$SYNC_BOOTSTRAP_NODE" >&2
+    fi
+  fi
+fi
+DISPATCH_REASON=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.reason_class // "routing_unknown"' 2>/dev/null)
+XCODE_VER=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.selected_candidate.predicates.xcode_toolchain.xcode_version // ""' 2>/dev/null)
+MANAGER_SAVINGS_S=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.manager_savings_s // 0' 2>/dev/null)
+REMOTE_LATENCY_COST_S=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.remote_latency_cost_s // 0' 2>/dev/null)
+RETRY_COST_S=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.retry_cost_s // 0' 2>/dev/null)
+USER_BLOCKED_JSON=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.user_blocked // false' 2>/dev/null)
+DISPATCH_FIELDS=$(printf ',"studio.dispatch.node":"%s","studio.dispatch.role":"swift-test","studio.dispatch.reason":"%s","studio.dispatch.xcode_version":"%s","studio.dispatch.manager_savings_s":%s,"studio.dispatch.remote_latency_cost_s":%s,"studio.dispatch.retry_cost_s":%s,"studio.dispatch.user_blocked":%s' \
+  "$NODE_ID" "$DISPATCH_REASON" "$XCODE_VER" "$MANAGER_SAVINGS_S" "$REMOTE_LATENCY_COST_S" "$RETRY_COST_S" "$USER_BLOCKED_JSON")
 
 if node_is_self "$NODE_ID"; then
   IS_LOCAL=1
