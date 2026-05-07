@@ -200,6 +200,7 @@ scripts/pr-reviewer-eligibility.sh codex-reviewer       # no-prompt/no-secret re
 scripts/pr-reviewer-eligibility.sh claude-reviewer      # same reviewer floor for Claude Code; uses CLAUDE_REVIEWER_HOME + CLAUDE_REVIEWER_CONFIG_DIR
 scripts/phase-review.sh --review-host claude-reviewer --input phase-plan.md --output review.md   # sibling-host phase gate; tries alternate cross-host reviewers, then degraded same-host continuity when needed
 scripts/pre-commit-review.sh                            # manual reviewer gate for risky staged diffs; accepts approved/approved_with_fixes only
+scripts/lint-commit-message.sh --file .git/COMMIT_EDITMSG # validates studio commit messages for Change-Type and Studio-Host trailers; bypass with STUDIO_BYPASS_COMMIT_TRAILER_LINT=1
 scripts/lint-field-review-surfaces.sh --staged          # blocks raw cross-host review snippets outside phase-review wrappers
 scripts/v2-role-resolve.sh manager                      # resolve Studio v2 role aliases to canonical role names
 scripts/lint-v2-bootstrap.sh --staged                   # blocks pre-A0.5 substrate code outside the A0.4 bootstrap/meta boundary
