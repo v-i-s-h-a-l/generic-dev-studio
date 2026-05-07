@@ -157,11 +157,32 @@ else
   gate_skip dirty_tree_and_index hard STUDIO_BYPASS_DIRTY_TREE_GATE "repo cleanliness is enforced when --enforce-git-workflow is set"
 fi
 
-while IFS=$'\t' read -r chain_name base expected_sha branch; do
+while IFS=$'\t' read -r chain_name base expected_sha branch approved_release_id sync_strategy; do
   [ -n "$chain_name" ] || continue
   [ "$base" = "__none__" ] && base=""
   [ "$expected_sha" = "__none__" ] && expected_sha=""
   [ "$branch" = "__none__" ] && branch=""
+  [ "$approved_release_id" = "__none__" ] && approved_release_id=""
+  [ "$sync_strategy" = "__none__" ] && sync_strategy="rebase"
+  [ -n "$sync_strategy" ] && [ "$sync_strategy" != "null" ] || sync_strategy="rebase"
+
+  case "$sync_strategy" in
+    rebase|squash)
+      gate_pass chain_manifest_sync_strategy hard STUDIO_BYPASS_CHAIN_SYNC_STRATEGY_GATE "chain $chain_name sync_strategy is $sync_strategy"
+      ;;
+    *)
+      gate_fail chain_manifest_sync_strategy hard STUDIO_BYPASS_CHAIN_SYNC_STRATEGY_GATE "chain $chain_name has invalid sync_strategy: $sync_strategy"
+      ;;
+  esac
+
+  if [ -n "$approved_release_id" ] && [ "$approved_release_id" != "null" ]; then
+    gate_pass release_chain_manifest_policy hard STUDIO_BYPASS_RELEASE_CHAIN_MANIFEST_POLICY_GATE "chain $chain_name declares approved_release_id $approved_release_id"
+  elif printf '%s\n' "$branch" | grep -Eq '^(release|releases|v|hotfix)/'; then
+    gate_fail release_chain_manifest_policy hard STUDIO_BYPASS_RELEASE_CHAIN_MANIFEST_POLICY_GATE "release-line chain $chain_name must declare approved_release_id"
+  else
+    gate_skip release_chain_manifest_policy hard STUDIO_BYPASS_RELEASE_CHAIN_MANIFEST_POLICY_GATE "chain $chain_name is not release-bearing"
+  fi
+
   if [ -z "$base" ] || [ "$base" = "null" ]; then
     gate_fail explicit_pr_base hard STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE "chain $chain_name has no explicit PR base"
   elif git check-ref-format --branch "$base" >/dev/null 2>&1; then
@@ -210,7 +231,7 @@ while IFS=$'\t' read -r chain_name base expected_sha branch; do
   else
     gate_skip no_feature_branch_merge_commits hard STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE "feature branch $branch does not exist yet"
   fi
-done < <(jq -r '.chains[] | [.name, (.base // "__none__"), (.expected_source_sha // .source_sha // "__none__"), (.branch // "__none__")] | @tsv' "$PLAN")
+done < <(jq -r '.chains[] | [.name, (.base // "__none__"), (.expected_source_sha // .source_sha // "__none__"), (.branch // "__none__"), (.approved_release_id // "__none__"), (.sync_strategy // "rebase")] | @tsv' "$PLAN")
 
 if command -v rg >/dev/null 2>&1; then
   if rg -n 'git[[:space:]].*push([^#\n]*[[:space:]])--force([[:space:]=]|$)' "$REPO/scripts" | grep -v 'studio-chain-rule-gates.sh:' >/dev/null 2>&1; then
