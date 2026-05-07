@@ -36,8 +36,10 @@ conversation context, not on-disk state.
 
 `checkpoint` and `resume-checkpoint` route through the selected role. Bare
 checkpoint invocations land in `manager`; role-qualified invocations are owned
-by that role. Checkpoints do not replace summaries, verdicts, release packets,
-QA/flow checklists, perf verdicts, or event logs.
+by that role. Create/update checkpoint commands print the checkpoint id, and
+that id is enough for `resume-checkpoint`. Checkpoints do not replace
+summaries, verdicts, release packets, QA/flow checklists, perf verdicts, or
+event logs.
 
 <!-- v2-dev-studio:manager-analyze -->
 ## Manager Analyze Routing

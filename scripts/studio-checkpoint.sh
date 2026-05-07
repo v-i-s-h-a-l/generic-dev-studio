@@ -499,7 +499,7 @@ cmd_create_or_update() {
   write_index_entry "$index" "$project" "$checkpoint_id" "$now" "$role" "$default_bytes" "$default_tokens" "$from_id"
   pointer=$(latest_pointer_path "$latest_dir" "$role" "$branch")
   write_latest_pointer "$pointer" "$checkpoint_id" "$now" "$project" "$role" "$branch" "$head"
-  printf '%s\n' "$dir"
+  printf '%s\n' "$checkpoint_id"
 }
 
 cmd_resume() {
