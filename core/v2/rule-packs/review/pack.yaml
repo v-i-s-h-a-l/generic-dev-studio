@@ -1,0 +1,19 @@
+id: review
+version: 1
+status: active
+introduced_in: 674
+owner: reviewer
+summary_path: core/v2/rule-packs/summaries/review.md
+full_doc_path: REVIEW.md
+metadata_path: core/v2/rule-packs/review/pack.yaml
+applicability:
+  any_of: [role_reviewer, phase_review, mode_review]
+  all_of: []
+  none_of: []
+enforcement_hooks:
+  - scripts/argus-select-rules.sh
+  - scripts/pr-headless-review.sh
+  - scripts/phase-review.sh
+fixture_refs:
+  - scripts/test-fixtures/257-argus-classifier/test-argus-classifier.sh
+  - scripts/test-fixtures/674-rule-pack-metadata/test-rule-pack-metadata.sh

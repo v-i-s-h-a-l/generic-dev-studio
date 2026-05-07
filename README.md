@@ -92,6 +92,8 @@ scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --
 scripts/studio-chain-runner.sh --resume <run_id> --yes # resume state; reconcile completed worker summaries before dependents
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview checkpoint-aware safe-boundary hooks
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
+scripts/studio-chain-rule-gates.sh --plan plan.json --dry-run # deterministic rule-pack workflow gates with JSON audit output
+scripts/rule-pack-resolve.sh --manifest chain.yaml --chain my-chain --issue 123 --role worker # selective rule-pack selection with context-budget telemetry
 scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters, efficiency ratios, and bottlenecks from private chain-run telemetry
 scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker # compact session resume by id; add --latest for branch-scoped lookup
 scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
@@ -205,6 +207,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-dependency-export.sh # Mermaid graph from native GitHub blocked_by issue dependencies
   studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
   studio-chain-runner.sh   # plan/execute/discover/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, optional checkpoint hooks, locks, and private run reports
+  studio-chain-rule-gates.sh # deterministic chain workflow gates for git hygiene, artifact roots, cache keys, cleanup TTLs, and telemetry redaction
   studio-chain-telemetry-digest.sh # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run reports/events
   prd-intake-normalize.sh # deterministic PRD/transcript/issue brief normalization into a small requirement packet
   prd-task-graph-synthesize.sh # deterministic requirement-packet to scheduler-graph synthesis with dependency/race validation

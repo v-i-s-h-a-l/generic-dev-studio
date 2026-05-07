@@ -16,6 +16,9 @@
 #       base: main
 #       branch: feature/field-telemetry-mvp
 #       host: auto
+#       rule_packs:
+#         required: [source-branch-integration]
+#         optional: [privacy]
 #       issues: [384, 313, 223]
 
 set -euo pipefail
@@ -418,7 +421,7 @@ event_data() {
 event_stage() {
   case "$1" in
     chain_run_started|chain_plan_prepared|chain_phase_review_completed) printf 'plan\n' ;;
-    chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed) printf 'preflight\n' ;;
+    chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed|chain_rule_gate_completed) printf 'preflight\n' ;;
     chain_started|chain_issue_started|chain_issue_completed|chain_issue_validated|chain_parent_commit_finalized|chain_issue_scheduler_blocked) printf 'execute\n' ;;
     chain_worker_summary_ingested|chain_telemetry_gap|checkpoint_auto_created|checkpoint_auto_loaded|checkpoint_context_savings_estimated) printf 'ingest\n' ;;
     chain_pr_opened|chain_review_completed) printf 'review\n' ;;
@@ -1289,7 +1292,7 @@ phase_review_required_for_issue() {
 }
 
 write_chain_task_start_envelope() {
-  local chain_name="$1" chain_branch="$2" issue_branch="$3" issue_json="$4" host="$5" git_metadata_strategy="$6" worktree="$7" chain_run_id="$8" issue_run_id="$9" summary_path="${10}" start_path="${11}" phase_review_context="${12:-[]}"
+  local chain_name="$1" chain_branch="$2" issue_branch="$3" issue_json="$4" host="$5" git_metadata_strategy="$6" worktree="$7" chain_run_id="$8" issue_run_id="$9" summary_path="${10}" start_path="${11}" phase_review_context="${12:-[]}" rule_pack_resolution="${13:-null}"
   mkdir -p "$(dirname "$start_path")"
   jq -n \
     --argjson source_issue "$issue_json" \
@@ -1308,6 +1311,7 @@ write_chain_task_start_envelope() {
     --argjson retry_limit "$RETRY_LIMIT" \
     --argjson retry_backoff_sec "$RETRY_BACKOFF_SEC" \
     --argjson phase_review_context "$phase_review_context" \
+    --argjson rule_pack_resolution "$rule_pack_resolution" \
     '{
       schema_version: 1,
       kind: "start",
@@ -1368,6 +1372,7 @@ write_chain_task_start_envelope() {
         "Runtime handoff artifacts under .studio are private and disposable.",
         "Prior phase-review feedback in this envelope is private context from a clean outcome review, not human acceptance."
       ],
+      rule_pack_resolution: $rule_pack_resolution,
       phase_review_context: $phase_review_context,
       stop_conditions: [
         "Required scope cannot be implemented safely from the source issue.",
@@ -2809,6 +2814,110 @@ validate_execution_graph() {
   fi
 }
 
+attach_rule_pack_resolutions() {
+  local plan="$1" tmp chain_count idx issue_count issue_idx name issue resolution_file resolver_rc
+  [ -x "$SCRIPT_DIR/rule-pack-resolve.sh" ] || return 0
+  tmp="$plan.rule-packs.$$"
+  cp "$plan" "$tmp"
+  chain_count=$(jq -r '.chains | length' "$tmp")
+  for ((idx = 0; idx < chain_count; idx++)); do
+    name=$(jq -r ".chains[$idx].name" "$tmp")
+    resolution_file="$tmp.rule-pack-resolution.$idx.json"
+    set +e
+    "$SCRIPT_DIR/rule-pack-resolve.sh" \
+      --manifest "$MANIFEST" \
+      --chain "$name" \
+      --role worker \
+      --mode chain_runner \
+      --phase implementation >"$resolution_file"
+    resolver_rc=$?
+    set -e
+    if [ "$resolver_rc" -ne 0 ] && [ "$resolver_rc" -ne 3 ]; then
+      rm -f "$tmp" "$resolution_file"
+      printf 'studio-chain-runner: rule-pack resolver failed for chain %s\n' "$name" >&2
+      exit "$resolver_rc"
+    fi
+    jq --argjson idx "$idx" --slurpfile resolution "$resolution_file" \
+      '.chains[$idx].rule_pack_resolution = $resolution[0]' \
+      "$tmp" >"$tmp.next"
+    mv "$tmp.next" "$tmp"
+    rm -f "$resolution_file"
+    issue_count=$(jq -r ".chains[$idx].issues | length" "$tmp")
+    for ((issue_idx = 0; issue_idx < issue_count; issue_idx++)); do
+      issue=$(jq -r ".chains[$idx].issues[$issue_idx].number" "$tmp")
+      resolution_file="$tmp.rule-pack-resolution.$idx.$issue_idx.json"
+      set +e
+      "$SCRIPT_DIR/rule-pack-resolve.sh" \
+        --manifest "$MANIFEST" \
+        --chain "$name" \
+        --issue "$issue" \
+        --role worker \
+        --mode chain_runner \
+        --phase implementation >"$resolution_file"
+      resolver_rc=$?
+      set -e
+      if [ "$resolver_rc" -ne 0 ] && [ "$resolver_rc" -ne 3 ]; then
+        rm -f "$tmp" "$resolution_file"
+        printf 'studio-chain-runner: rule-pack resolver failed for chain %s issue #%s\n' "$name" "$issue" >&2
+        exit "$resolver_rc"
+      fi
+      jq --argjson idx "$idx" --argjson issue_idx "$issue_idx" --slurpfile resolution "$resolution_file" \
+        '.chains[$idx].issues[$issue_idx].rule_pack_resolution = $resolution[0]' \
+        "$tmp" >"$tmp.next"
+      mv "$tmp.next" "$tmp"
+      rm -f "$resolution_file"
+    done
+  done
+  mv "$tmp" "$plan"
+}
+
+rule_pack_resolution_blocked() {
+  local plan="$1"
+  jq -e '
+    [
+      (.chains[].rule_pack_resolution? | select((.status // "ok") == "halt")),
+      (.chains[].issues[].rule_pack_resolution? | select((.status // "ok") == "halt"))
+    ] | length > 0
+  ' "$plan" >/dev/null 2>&1
+}
+
+apply_mechanical_rule_gates() {
+  local plan="$1" tmp gate_result gate_rc audit_log
+  local -a gate_args
+  [ -x "$SCRIPT_DIR/studio-chain-rule-gates.sh" ] || return 0
+  tmp="$plan.gates.$$"
+  gate_result="$plan.gates.result.$$"
+  audit_log="$CHAIN_RUN_ROOT/rule-pack-gates.jsonl"
+  gate_args=(
+    --plan "$plan"
+    --manifest "$MANIFEST"
+    --repo "$REPO_ROOT"
+    --audit-log "$audit_log"
+    --expected-run-work-root "$RUN_WORK_ROOT"
+  )
+  [ "$DRY_RUN" -eq 0 ] || gate_args+=(--dry-run)
+
+  set +e
+  "$SCRIPT_DIR/studio-chain-rule-gates.sh" "${gate_args[@]}" >"$gate_result"
+  gate_rc=$?
+  set -e
+  if [ "$gate_rc" -ne 0 ] && [ "$gate_rc" -ne 4 ]; then
+    rm -f "$gate_result"
+    printf 'studio-chain-runner: mechanical rule gate failed to run\n' >&2
+    exit "$gate_rc"
+  fi
+  jq --slurpfile gates "$gate_result" '.mechanical_rule_gates = $gates[0]' "$plan" >"$tmp"
+  mv "$tmp" "$plan"
+  emit_chain_event chain_rule_gate_completed "" "$RUN_ID" "" "" "$(jq -r '.status' "$gate_result")" 0 \
+    "$(jq -c '{audit_log, checks:([.checks[] | {id,status,severity,override_env}]), failure_count:(.failures | length), override_count:(.overrides | length)}' "$gate_result")"
+  if [ "$gate_rc" -eq 4 ]; then
+    jq -r '.failures[] | "studio-chain-runner: rule gate blocked: \(.id) - \(.detail) (override: \(.override_env // "none"))"' "$gate_result" >&2
+    rm -f "$gate_result"
+    exit 4
+  fi
+  rm -f "$gate_result"
+}
+
 live_preflight() {
   local plan="$1" reviewer_host branch issue_branch base
   run_retryable_or_abort github_auth_unavailable "GitHub auth is not available" \
@@ -2866,6 +2975,7 @@ explain_plan() {
   printf -- '- Retry policy: auto retry retryable operations up to `%s` time(s), backoff `%ss`, then write a typed halt record without asking a routine continuation question\n' "$retry_limit" "$retry_backoff"
   printf -- '- Escalation policy: attended prompts are reserved for review-needed, human-needed, or fatal blockers; unattended mode runs until a typed blocker appears\n'
   [ -z "$gates" ] || printf -- '- Review gates: %s\n' "$gates"
+  printf -- '- Mechanical rule gates: `%s`; audit `%s`\n' "$(jq -r '.mechanical_rule_gates.status // "not-run"' "$plan")" "$(jq -r '.mechanical_rule_gates.audit_log // "none"' "$plan")"
   printf -- '- Host/model policy: manifest host, overridden by `--host`; `auto` resolves to `%s`\n' "${HOST_OVERRIDE:-codex}"
   printf -- '- Risk notes: %s\n\n' "$risk"
   jq -r '
@@ -2882,9 +2992,41 @@ explain_plan() {
     "- Checkpoint automation: `\(.checkpoint // "off")`\n" +
     "- Worker pool: `\(.worker_pool)`\n" +
     "- Issue scheduler: `dependency-ready nodes up to worker_pool; scalar issue lists preserve manifest order`\n" +
+    "- Rule-pack status: `\(.rule_pack_resolution.status // "not-resolved")`; selected `\((.rule_pack_resolution.selected_packs // []) | length)`, skipped `\((.rule_pack_resolution.skipped_packs // []) | length)`, estimated summary tokens `\(.rule_pack_resolution.estimated_context_cost.summary_tokens_estimated // "unknown")`, skipped full-doc tokens `\(.rule_pack_resolution.context_budget.skipped_full_doc_tokens_estimated // "unknown")`, cold-context delta `\(.rule_pack_resolution.context_budget.cold_context_delta_tokens_estimated // "unknown")`\n" +
     "- Planned PR: base `\(.base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
-    "| Issue | Depends On | State | Status | Issue-run UUID | Branch | Worktree |\n|---:|---|---|---|---|---|---|\n" +
-    ([.issues[] | "| #\(.number) \(.title) | \(if ((.dependencies // []) | length) == 0 then "-" else ((.dependencies // []) | map("#" + tostring) | join(", ")) end) | \(.state) | \(.status) | `\(.issue_run_id)` | `\(.issue_branch)` | `\(.issue_worktree)` |"] | join("\n")) +
+    "| Issue | Depends On | State | Status | Rule Packs | Issue-run UUID | Branch | Worktree |\n|---:|---|---|---|---:|---|---|---|\n" +
+    ([.issues[] | "| #\(.number) \(.title) | \(if ((.dependencies // []) | length) == 0 then "-" else ((.dependencies // []) | map("#" + tostring) | join(", ")) end) | \(.state) | \(.status) | \((.rule_pack_resolution.selected_packs // []) | length) | `\(.issue_run_id)` | `\(.issue_branch)` | `\(.issue_worktree)` |"] | join("\n")) +
+    "\n\n### Rule Packs\n\n" +
+    "| Scope | Pack | Decision | Reason | Summary |\n|---|---|---|---|---|\n" +
+    ([
+      (.rule_pack_resolution.selected_packs // [])[]
+      | "| chain | \(.id) | selected (\(.requirement // "auto")) | \(.reason) | `\(.summary_path // "")` |"
+    ] + [
+      (.rule_pack_resolution.skipped_packs // [])[]
+      | "| chain | \(.id) | skipped | \(.reason) | `\(.summary_path // "")` |"
+    ] + [
+      (.rule_pack_resolution.warnings // [])[]
+      | "| chain | \(.pack_id) | warning | \(.reason) | - |"
+    ] + [
+      (.rule_pack_resolution.blockers // [])[]
+      | "| chain | \(.pack_id // .summary_path // "unknown") | blocker | \(.reason_id // .type) | - |"
+    ] + [
+      .issues[] as $issue
+      | ($issue.rule_pack_resolution.selected_packs // [])[]
+      | "| #\($issue.number) | \(.id) | selected (\(.requirement // "auto")) | \(.reason) | `\(.summary_path // "")` |"
+    ] + [
+      .issues[] as $issue
+      | ($issue.rule_pack_resolution.skipped_packs // [])[]
+      | "| #\($issue.number) | \(.id) | skipped | \(.reason) | `\(.summary_path // "")` |"
+    ] + [
+      .issues[] as $issue
+      | ($issue.rule_pack_resolution.warnings // [])[]
+      | "| #\($issue.number) | \(.pack_id) | warning | \(.reason) | - |"
+    ] + [
+      .issues[] as $issue
+      | ($issue.rule_pack_resolution.blockers // [])[]
+      | "| #\($issue.number) | \(.pack_id // .summary_path // "unknown") | blocker | \(.reason_id // .type) | - |"
+    ] | join("\n")) +
     "\n"
   ' "$plan"
 }
@@ -2897,13 +3039,19 @@ prepare_plan() {
     MANIFEST=$(resolve_manifest "$MANIFEST")
     MANIFEST=$(canonical_path "$MANIFEST")
     build_plan_json "$PLAN_JSON"
+  fi
+  attach_rule_pack_resolutions "$PLAN_JSON"
+  apply_mechanical_rule_gates "$PLAN_JSON"
+  validate_execution_graph "$PLAN_JSON"
+  if [ -z "$RESUME_ID" ]; then
     if [ "$DRY_RUN" -eq 0 ]; then
       write_run_state planned ""
     else
       cp "$PLAN_JSON" "$RUN_STATE_JSON"
     fi
+  else
+    cp "$PLAN_JSON" "$RUN_STATE_JSON"
   fi
-  validate_execution_graph "$PLAN_JSON"
 }
 
 trap finish_unexpected_exit EXIT
@@ -2934,6 +3082,11 @@ chain_artifact_hygiene_sweep
 prepare_plan
 explain_plan "$PLAN_JSON"
 
+if rule_pack_resolution_blocked "$PLAN_JSON"; then
+  printf 'studio-chain-runner: rule-pack resolution blocked; fix required rule_packs before execution\n' >&2
+  exit 3
+fi
+
 if [ "$DRY_RUN" -eq 1 ]; then
   log "dry-run plan follows with non-mutating commands"
 elif [ "$YES" -eq 0 ]; then
@@ -2954,7 +3107,7 @@ fi
 chain_count=$(jq '.chains | length' "$PLAN_JSON")
 
 execute_issue_session() {
-  local chain_name="$1" chain_branch="$2" issue="$3" host="$4" git_metadata_strategy="$5" worktree="$6" issue_branch="$7" chain_run_id="$8" issue_run_id="$9" before="${10}" phase_review_context="${11:-[]}"
+  local chain_name="$1" chain_branch="$2" issue="$3" host="$4" git_metadata_strategy="$5" worktree="$6" issue_branch="$7" chain_run_id="$8" issue_run_id="$9" before="${10}" phase_review_context="${11:-[]}" rule_pack_resolution="${12:-null}"
   local issue_json issue_title issue_body spawn prompt summary_path start_path
   local -a spawn_argv
   local launch_home=""
@@ -2965,7 +3118,7 @@ execute_issue_session() {
   summary_path="$worktree/.studio/chain-worker-summary.json"
   start_path="$worktree/.studio/chain-task-start.json"
   if [ "$DRY_RUN" -eq 0 ]; then
-    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$issue_branch" "$issue_json" "$host" "$git_metadata_strategy" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context"
+    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$issue_branch" "$issue_json" "$host" "$git_metadata_strategy" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context" "$rule_pack_resolution"
   fi
 
   spawn=$(host_spawn_command "$host")
@@ -3240,7 +3393,7 @@ write_issue_phase_outcome_artifact() {
 run_issue_job() {
   local name="$1" branch="$2" chain_worktree="$3" issue="$4" host="$5" git_metadata_strategy="$6" issue_worktree="$7" issue_branch="$8" chain_run_id="$9" issue_run_id="${10}" result_file="${11}" phase_review_mode="${12:-auto}" issue_count_for_review="${13:-1}"
   local before after worker_rc child_worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason parent_finalized effective_worker_rc
-  local phase_context boundary_id phase_plan_artifact phase_outcome_artifact phase_review_rc phase_review_reason worker_telemetry_file worker_launch_home
+  local phase_context boundary_id phase_plan_artifact phase_outcome_artifact phase_review_rc phase_review_reason worker_telemetry_file worker_launch_home rule_pack_resolution
   issue_started_at=$(now_epoch)
   parent_finalized=false
 
@@ -3294,8 +3447,9 @@ run_issue_job() {
     fi
   fi
 
+  rule_pack_resolution=$(jq -c --arg id "$issue_run_id" '.chains[].issues[] | select(.issue_run_id == $id) | .rule_pack_resolution // null' "$PLAN_JSON")
   set +e
-  execute_issue_session "$name" "$branch" "$issue" "$host" "$git_metadata_strategy" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$before" "$phase_context"
+  execute_issue_session "$name" "$branch" "$issue" "$host" "$git_metadata_strategy" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$before" "$phase_context" "$rule_pack_resolution"
   worker_rc=$?
   set -e
   child_worker_rc=$worker_rc

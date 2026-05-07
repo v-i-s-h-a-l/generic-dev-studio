@@ -1,0 +1,249 @@
+schema_version: 1
+kind: studio-v2-rule-pack-catalog
+parent_issue: 672
+leaf_issue: 674
+status: active
+budget_policy:
+  always_loaded_budget_tokens: 700
+  per_pack_summary_budget_tokens: 180
+  selected_summary_bundle_budget_tokens: 1200
+  token_estimate: chars_div_4_rounded_up
+  full_doc_triggers:
+    - blocking_or_ask_tier_decision_depends_on_exact_wording
+    - enforcement_hook_changed_or_debugged
+    - summary_conflicts_with_selected_context
+    - task_edits_pack_fixture_or_owner_surface
+    - operator_requests_full_policy
+predicate_families:
+  - role
+  - phase
+  - manifest
+  - touched_surface
+  - language_platform
+  - release_job
+  - build_test_job
+  - review_debug_mode
+pack_interface:
+  required_files:
+    summary_path: compact LLM-loadable summary
+    full_doc_path: complete rule or policy source
+    metadata_path: pack-local metadata, or this catalog while catalog-only
+    owner: owning role, team, or repo surface
+    applicability: any_of/all_of/none_of predicates compatible with Argus rule frontmatter
+    enforcement_policy: script-enforced hard gates versus LLM-reviewed advisory checks, with override envs
+    enforcement_hooks: scripts, hooks, or manual gates that enforce the pack
+    fixture_refs: regression fixtures or examples proving expected selection
+  materialized_layout:
+    root: core/v2/rule-packs/<pack-id>/
+    summary: summary.md
+    full_doc: rules.md
+    metadata: pack.yaml
+matching_policy:
+  argus_frontmatter_compatible: true
+  condition_semantics: all declared groups must match; omitted groups are unconstrained
+  empty_any_of: always eligible for any_of
+  unknown_context: missing optional context fields do not match constrained groups
+versioning:
+  current_entry_version: 1
+  deprecation_behavior: deprecated packs require replaced_by or a removal reason and must stop loading after deprecated_at
+packs:
+  - id: git-workflow
+    version: 1
+    status: active
+    introduced_in: 674
+    owner: studio-git-workflow
+    summary_path: core/v2/rule-packs/summaries/git-workflow.md
+    full_doc_path: CLAUDE.md
+    metadata_path: core/v2/rule-packs/catalog.yaml
+    applicability:
+      any_of: [touches_git, manifest_requires_git_workflow]
+      all_of: []
+      none_of: []
+    enforcement_policy:
+      script_enforced: [dirty_tree_and_index, expected_source_branch_sha, explicit_pr_base, source_branch_lock, no_raw_force_push, no_feature_branch_merge_commits, force_with_lease_requires_override]
+      llm_reviewed: [commit_message_quality, branch_naming_intent, emergency_bypass_rationale]
+      override_env: [STUDIO_BYPASS_DIRTY_TREE_GATE, STUDIO_BYPASS_SOURCE_SHA_GATE, STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE, STUDIO_BYPASS_SOURCE_BRANCH_LOCK_GATE, STUDIO_BYPASS_RAW_FORCE_PUSH_GATE, STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE, STUDIO_BYPASS_FORCE_WITH_LEASE_GATE]
+    enforcement_hooks:
+      - scripts/studio-chain-rule-gates.sh
+      - .githooks/pre-commit
+      - scripts/lint-host-agnostic.sh
+    fixture_refs:
+      - scripts/test-fixtures/674-rule-pack-metadata/test-rule-pack-metadata.sh
+  - id: source-branch-integration
+    version: 1
+    status: active
+    introduced_in: 674
+    owner: studio-chain-runner
+    summary_path: core/v2/rule-packs/summaries/source-branch-integration.md
+    full_doc_path: _shared/contracts/chain-task-envelope.md
+    metadata_path: core/v2/rule-packs/catalog.yaml
+    applicability:
+      any_of: [manifest_chain_run, mode_chain_runner]
+      all_of: []
+      none_of: []
+    enforcement_policy:
+      script_enforced: [explicit_pr_base, artifact_root_construction, expected_source_branch_sha]
+      llm_reviewed: [phase_scope_alignment, worker_prompt_specificity, prior_review_feedback_handling]
+      override_env: [STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE, STUDIO_BYPASS_ARTIFACT_ROOT_GATE, STUDIO_BYPASS_SOURCE_SHA_GATE]
+    enforcement_hooks:
+      - scripts/studio-chain-rule-gates.sh
+      - scripts/studio-chain-runner.sh
+      - scripts/studio-chain-reviewed.sh
+    fixture_refs:
+      - scripts/test-fixtures/478-chain-task-envelope/
+      - scripts/test-fixtures/674-rule-pack-metadata/test-rule-pack-metadata.sh
+  - id: ios-artifacts
+    version: 1
+    status: active
+    introduced_in: 674
+    owner: ios-profile
+    summary_path: core/v2/rule-packs/summaries/ios-artifacts.md
+    full_doc_path: profiles/ios-turnip/profile.yaml
+    metadata_path: core/v2/rule-packs/catalog.yaml
+    applicability:
+      any_of: [platform_ios, touches_xcode, touches_swift, release_job_testflight]
+      all_of: []
+      none_of: []
+    enforcement_policy:
+      script_enforced: [derived_data_cache_key]
+      llm_reviewed: [scheme_selection, simulator_destination_choice, signing_context]
+      override_env: [STUDIO_BYPASS_DERIVED_DATA_CACHE_KEY_GATE]
+    enforcement_hooks:
+      - scripts/studio-chain-rule-gates.sh
+      - profiles/ios-turnip/commands/xcode-operation
+    fixture_refs:
+      - scripts/test-fixtures/524-project-profile/test-v2-profile.sh
+      - scripts/test-fixtures/674-rule-pack-metadata/test-rule-pack-metadata.sh
+  - id: worker-routing
+    version: 1
+    status: active
+    introduced_in: 674
+    owner: studio-manager
+    summary_path: core/v2/rule-packs/summaries/worker-routing.md
+    full_doc_path: core/v2/roles/worker.yaml
+    metadata_path: core/v2/rule-packs/catalog.yaml
+    applicability:
+      any_of: [role_worker, manifest_task_assignment, phase_implementation]
+      all_of: []
+      none_of: []
+    enforcement_policy:
+      script_enforced: []
+      llm_reviewed: [role_scope_fit, implementation_boundary, summary_completeness]
+      override_env: []
+    enforcement_hooks:
+      - scripts/v2-role-contract.sh
+      - scripts/v2-role-resolve.sh
+    fixture_refs:
+      - scripts/test-fixtures/526-role-contracts/test-role-contracts.sh
+      - scripts/test-fixtures/674-rule-pack-metadata/test-rule-pack-metadata.sh
+  - id: telemetry
+    version: 1
+    status: active
+    introduced_in: 674
+    owner: studio-telemetry
+    summary_path: core/v2/rule-packs/summaries/telemetry.md
+    full_doc_path: _shared/contracts/completion-summary.md
+    metadata_path: core/v2/rule-packs/catalog.yaml
+    applicability:
+      any_of: [manifest_chain_run, phase_outcome, touches_telemetry]
+      all_of: []
+      none_of: []
+    enforcement_policy:
+      script_enforced: [telemetry_redaction]
+      llm_reviewed: [completion_claim_quality, evidence_sufficiency, public_summary_privacy]
+      override_env: [STUDIO_BYPASS_TELEMETRY_REDACTION_GATE]
+    enforcement_hooks:
+      - scripts/studio-chain-rule-gates.sh
+      - scripts/studio-chain-telemetry-digest.sh
+      - scripts/field-workflow-report.sh
+    fixture_refs:
+      - scripts/test-fixtures/480-chain-run-telemetry/
+      - scripts/test-fixtures/674-rule-pack-metadata/test-rule-pack-metadata.sh
+  - id: cleanup-retention
+    version: 1
+    status: active
+    introduced_in: 674
+    owner: studio-runtime-hygiene
+    summary_path: core/v2/rule-packs/summaries/cleanup-retention.md
+    full_doc_path: _shared/rules/cleanup-policy.md
+    metadata_path: core/v2/rule-packs/catalog.yaml
+    applicability:
+      any_of: [touches_runtime_artifacts, phase_cleanup, mode_chain_runner]
+      all_of: []
+      none_of: []
+    enforcement_policy:
+      script_enforced: [artifact_root_construction, cleanup_ttl_class]
+      llm_reviewed: [retention_reasonableness, private_artifact_lifecycle]
+      override_env: [STUDIO_BYPASS_ARTIFACT_ROOT_GATE, STUDIO_BYPASS_CLEANUP_TTL_GATE]
+    enforcement_hooks:
+      - scripts/studio-chain-rule-gates.sh
+      - scripts/studio-chain-runner.sh
+    fixture_refs:
+      - scripts/test-fixtures/651-chain-artifact-hygiene/test-chain-artifact-hygiene.sh
+      - scripts/test-fixtures/674-rule-pack-metadata/test-rule-pack-metadata.sh
+  - id: release-routing
+    version: 1
+    status: active
+    introduced_in: 674
+    owner: release-manager
+    summary_path: core/v2/rule-packs/summaries/release-routing.md
+    full_doc_path: core/v2/roles/release-manager.yaml
+    metadata_path: core/v2/rule-packs/catalog.yaml
+    applicability:
+      any_of: [role_release_manager, release_job_testflight, release_job_app_store, release_job_tagging]
+      all_of: []
+      none_of: []
+    enforcement_policy:
+      script_enforced: []
+      llm_reviewed: [release_channel_fit, human_approval_boundary, notes_quality]
+      override_env: []
+    enforcement_hooks:
+      - scripts/release-manager-configure.sh
+      - scripts/lint-build-release-message.sh
+    fixture_refs:
+      - scripts/test-fixtures/543-release-manager-contract/test-release-manager-contract.sh
+      - scripts/test-fixtures/674-rule-pack-metadata/test-rule-pack-metadata.sh
+  - id: privacy
+    version: 1
+    status: active
+    introduced_in: 674
+    owner: studio-privacy
+    summary_path: core/v2/rule-packs/summaries/privacy.md
+    full_doc_path: CLAUDE.md
+    metadata_path: core/v2/rule-packs/catalog.yaml
+    applicability:
+      any_of: [touches_public_output, touches_private_runtime, manifest_requires_privacy]
+      all_of: []
+      none_of: []
+    enforcement_policy:
+      script_enforced: [telemetry_redaction]
+      llm_reviewed: [public_private_boundary, anonymization_quality]
+      override_env: [STUDIO_BYPASS_TELEMETRY_REDACTION_GATE]
+    enforcement_hooks:
+      - scripts/studio-chain-rule-gates.sh
+      - scripts/lint-host-agnostic.sh
+    fixture_refs:
+      - scripts/test-fixtures/674-rule-pack-metadata/test-rule-pack-metadata.sh
+  - id: review
+    version: 1
+    status: active
+    introduced_in: 674
+    owner: reviewer
+    summary_path: core/v2/rule-packs/summaries/review.md
+    full_doc_path: REVIEW.md
+    metadata_path: core/v2/rule-packs/review/pack.yaml
+    applicability:
+      any_of: [role_reviewer, phase_review, mode_review]
+      all_of: []
+      none_of: []
+    enforcement_policy:
+      script_enforced: []
+      llm_reviewed: [review_rule_selection, finding_severity, test_adequacy_judgment]
+      override_env: []
+    enforcement_hooks:
+      - scripts/argus-select-rules.sh
+      - scripts/pr-headless-review.sh
+      - scripts/phase-review.sh
+    fixture_refs:
+      - scripts/test-fixtures/257-argus-classifier/test-argus-classifier.sh
+      - scripts/test-fixtures/674-rule-pack-metadata/test-rule-pack-metadata.sh

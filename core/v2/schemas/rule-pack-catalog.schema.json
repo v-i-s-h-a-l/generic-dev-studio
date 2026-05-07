@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "rule-pack-catalog.schema.json",
+  "title": "Studio v2 rule-pack catalog",
+  "description": "Script-readable metadata for selective rule-pack loading.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "parent_issue",
+    "leaf_issue",
+    "status",
+    "budget_policy",
+    "predicate_families",
+    "pack_interface",
+    "matching_policy",
+    "versioning",
+    "packs"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "studio-v2-rule-pack-catalog" },
+    "parent_issue": { "const": 672 },
+    "leaf_issue": { "const": 674 },
+    "status": { "enum": ["active", "retired"] },
+    "budget_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "always_loaded_budget_tokens",
+        "per_pack_summary_budget_tokens",
+        "selected_summary_bundle_budget_tokens",
+        "token_estimate",
+        "full_doc_triggers"
+      ],
+      "properties": {
+        "always_loaded_budget_tokens": { "type": "integer", "const": 700 },
+        "per_pack_summary_budget_tokens": { "type": "integer", "minimum": 1, "maximum": 400 },
+        "selected_summary_bundle_budget_tokens": { "type": "integer", "minimum": 1, "maximum": 3000 },
+        "token_estimate": { "const": "chars_div_4_rounded_up" },
+        "full_doc_triggers": { "$ref": "#/$defs/non_empty_string_list" }
+      }
+    },
+    "predicate_families": {
+      "type": "array",
+      "minItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "role",
+          "phase",
+          "manifest",
+          "touched_surface",
+          "language_platform",
+          "release_job",
+          "build_test_job",
+          "review_debug_mode"
+        ]
+      }
+    },
+    "pack_interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_files", "materialized_layout"],
+      "properties": {
+        "required_files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "summary_path",
+            "full_doc_path",
+            "metadata_path",
+            "owner",
+            "applicability",
+            "enforcement_policy",
+            "enforcement_hooks",
+            "fixture_refs"
+          ],
+          "properties": {
+            "summary_path": { "type": "string", "minLength": 1 },
+            "full_doc_path": { "type": "string", "minLength": 1 },
+            "metadata_path": { "type": "string", "minLength": 1 },
+            "owner": { "type": "string", "minLength": 1 },
+            "applicability": { "type": "string", "minLength": 1 },
+            "enforcement_policy": { "type": "string", "minLength": 1 },
+            "enforcement_hooks": { "type": "string", "minLength": 1 },
+            "fixture_refs": { "type": "string", "minLength": 1 }
+          }
+        },
+        "materialized_layout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["root", "summary", "full_doc", "metadata"],
+          "properties": {
+            "root": { "type": "string", "minLength": 1 },
+            "summary": { "type": "string", "minLength": 1 },
+            "full_doc": { "type": "string", "minLength": 1 },
+            "metadata": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "matching_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argus_frontmatter_compatible", "condition_semantics", "empty_any_of", "unknown_context"],
+      "properties": {
+        "argus_frontmatter_compatible": { "const": true },
+        "condition_semantics": { "type": "string", "minLength": 1 },
+        "empty_any_of": { "type": "string", "minLength": 1 },
+        "unknown_context": { "type": "string", "minLength": 1 }
+      }
+    },
+    "versioning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current_entry_version", "deprecation_behavior"],
+      "properties": {
+        "current_entry_version": { "type": "integer", "minimum": 1 },
+        "deprecation_behavior": { "type": "string", "minLength": 1 }
+      }
+    },
+    "packs": {
+      "type": "array",
+      "minItems": 9,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/pack" }
+    }
+  },
+  "$defs": {
+    "non_empty_string_list": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "string_list": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_/-]*$"
+      }
+    },
+    "applicability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["any_of", "all_of", "none_of"],
+      "properties": {
+        "any_of": { "$ref": "#/$defs/string_list" },
+        "all_of": { "$ref": "#/$defs/string_list" },
+        "none_of": { "$ref": "#/$defs/string_list" }
+      }
+    },
+    "pack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "status",
+        "introduced_in",
+        "owner",
+        "summary_path",
+        "full_doc_path",
+        "metadata_path",
+        "applicability",
+        "enforcement_policy",
+        "enforcement_hooks",
+        "fixture_refs"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "version": { "type": "integer", "minimum": 1 },
+        "status": { "enum": ["active", "deprecated", "retired"] },
+        "introduced_in": { "type": "integer", "minimum": 1 },
+        "deprecated_at": { "type": ["string", "null"], "minLength": 1 },
+        "replaced_by": { "type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "removal_reason": { "type": ["string", "null"], "minLength": 1 },
+        "owner": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "summary_path": { "type": "string", "minLength": 1 },
+        "full_doc_path": { "type": "string", "minLength": 1 },
+        "metadata_path": { "type": "string", "minLength": 1 },
+        "applicability": { "$ref": "#/$defs/applicability" },
+        "enforcement_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["script_enforced", "llm_reviewed", "override_env"],
+          "properties": {
+            "script_enforced": { "$ref": "#/$defs/string_list" },
+            "llm_reviewed": { "$ref": "#/$defs/string_list" },
+            "override_env": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^STUDIO_[A-Z0-9_]+$"
+              }
+            }
+          }
+        },
+        "enforcement_hooks": { "$ref": "#/$defs/non_empty_string_list" },
+        "fixture_refs": { "$ref": "#/$defs/non_empty_string_list" }
+      }
+    }
+  }
+}
