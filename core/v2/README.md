@@ -72,6 +72,9 @@ Current substrate artifacts:
   Exercise it with `scripts/v2-manager.sh proof-of-life --subject-ref <ref>
   --dry-run` or provide `--runtime-root` to write the private runtime artifact
   and append the registered `manager_proof_of_life` event.
+- `rule-packs/always-loaded-contract.md` defines the minimal always-loaded rule
+  floor for selective rule-pack loading and its context budget. Its regression
+  fixture is `scripts/test-fixtures/673-always-loaded-contract/`.
 
 Runtime event-log behavior is implemented by `scripts/v2-event-log.sh`:
 
