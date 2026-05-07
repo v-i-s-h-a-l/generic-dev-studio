@@ -1,0 +1,25 @@
+# Control-plane context substrate chain.
+#
+# Parent issue:
+#   #710 Control-plane context substrate: canonical Studio home, host profiles,
+#   and path/auth enforcement.
+#
+# Dry-run:
+#   scripts/studio-chain-runner.sh chains/control-plane-context-substrate.yaml --dry-run
+#
+# Execute/resume the spec chain:
+#   scripts/studio-chain-runner.sh chains/control-plane-context-substrate.yaml --only control-plane-context-spec --attended
+#
+# Scope note:
+#   This manifest intentionally starts with the spec/inventory chain only. Add
+#   resolver, enforcement, and migration chains after #711/#712 produce reviewed
+#   contract and inventory outputs.
+
+schema_version: 1
+chains:
+  - name: control-plane-context-spec
+    base: main
+    branch: feature/control-plane-context-spec
+    host: auto
+    phase_review: required
+    issues: [711, 712]
