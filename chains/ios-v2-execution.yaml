@@ -1,0 +1,51 @@
+# iOS v2 execution chain from the 2026-05-08 manager intake.
+#
+# Discover:
+#   scripts/studio-chain-runner.sh --discover ios-v2-execution
+#
+# Dry-run:
+#   scripts/studio-chain-runner.sh ios-v2-execution --dry-run
+#
+# Reviewed dry-run:
+#   scripts/studio-chain-reviewed.sh ios-v2-execution --dry-run
+#
+# Manager front door:
+#   /dev-studio manager work-chain ios-v2-execution
+#
+# Scope:
+# - #662 is the umbrella and is intentionally excluded from execution.
+# - `host: auto` matches existing chain manifests; the runner resolves the
+#   concrete host at execution time.
+# - #663 defines the contract and must land before implementation leaves start.
+# - #664 and #665 can proceed independently after #663.
+# - #666 and #667 can proceed independently after #665.
+# - #668 depends on routing plus retention/failover surfaces.
+# - #669 layers release/TestFlight priority after generic routing/failover.
+# - #670 records telemetry after the behavior surfaces exist.
+# - #671 validates the full contract after all implementation issues land.
+
+schema_version: 1
+chains:
+  - name: ios-v2-execution
+    base: main
+    branch: feature/ios-v2-execution
+    host: auto
+    phase_review: required
+    issues:
+      - number: 663
+      - number: 664
+        dependencies: [663]
+      - number: 665
+        dependencies: [663]
+      - number: 666
+        dependencies: [665]
+      - number: 667
+        dependencies: [663, 665]
+      - number: 668
+        dependencies: [666, 667]
+      - number: 669
+        dependencies: [667, 668]
+      - number: 670
+        dependencies: [664, 666, 668, 669]
+      - number: 671
+        dependencies: [663, 664, 665, 666, 667, 668, 669, 670]
