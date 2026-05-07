@@ -6,6 +6,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 RUN="$ROOT/scripts/dev-studio-ingest-resolve.sh"
 TMPROOT=$(mktemp -d -t ingest-resolver.XXXXXX)
 trap 'rm -rf "$TMPROOT"' EXIT
+export STUDIO_BYPASS_FEEDBACK_LOGIN_HOME=1
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -23,6 +24,12 @@ make_repo() {
 make_repo "$TMPROOT/generic-dev-studio"
 make_repo "$TMPROOT/sample-app"
 printf 'workflow gap\n' > "$TMPROOT/message.md"
+mkdir -p "$TMPROOT/bin" "$TMPROOT/login-home" "$TMPROOT/.codex-homes/personal"
+cat > "$TMPROOT/bin/dscl" <<EOF
+#!/usr/bin/env bash
+printf 'NFSHomeDirectory: %s\n' "$TMPROOT/login-home"
+EOF
+chmod +x "$TMPROOT/bin/dscl"
 
 studio_json=$(HOME="$TMPROOT/home" "$RUN" --cwd "$TMPROOT/generic-dev-studio")
 printf '%s\n' "$studio_json" | jq -e \
@@ -76,6 +83,20 @@ printf '%s\n' "$cross_to_json" | jq -e \
    and .requires_privacy_scrub == true' >/dev/null || {
   printf '%s\n' "$cross_to_json" >&2
   fail "--to generic-dev-studio did not route cross-context to Forge"
+}
+
+synthetic_home_json=$(
+  env -u STUDIO_BYPASS_FEEDBACK_LOGIN_HOME \
+    HOME="$TMPROOT/.codex-homes/personal" \
+    PATH="$TMPROOT/bin:$PATH" \
+    "$RUN" --cwd "$TMPROOT/sample-app" --scope studio
+)
+printf '%s\n' "$synthetic_home_json" | jq -e \
+  --arg login_home "$TMPROOT/login-home" \
+  '.scope == "studio"
+   and .artifact_root == ($login_home + "/.dev-studio/generic-dev-studio/feedback-inbox/sample-app")' >/dev/null || {
+  printf '%s\n' "$synthetic_home_json" >&2
+  fail "synthetic HOME studio feedback did not resolve through login home"
 }
 
 explicit_project_json=$(HOME="$TMPROOT/home" "$RUN" --cwd "$TMPROOT/sample-app" --to other-app)

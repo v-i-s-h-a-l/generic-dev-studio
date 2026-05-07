@@ -7,6 +7,7 @@ FIXTURE_DIR="$ROOT/scripts/test-fixtures/608-feedback-analyze-ingest"
 RUN="$ROOT/scripts/analyze-feedback-ingest.sh"
 TMPROOT=$(mktemp -d -t feedback-analyze-ingest.XXXXXX)
 trap 'rm -rf "$TMPROOT"' EXIT
+export STUDIO_BYPASS_FEEDBACK_LOGIN_HOME=1
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2

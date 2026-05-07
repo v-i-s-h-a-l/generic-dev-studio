@@ -24,6 +24,7 @@ fi
 
 export HOME="$TMPROOT/home"
 export STUDIO_BYPASS_ANALYZE_LOGIN_HOME=1
+export STUDIO_BYPASS_FEEDBACK_LOGIN_HOME=1
 PROJECT_CWD="$TMPROOT/sample-app"
 PROJECT_ROOT="$HOME/.dev-studio/sample-app"
 STUDIO_INBOX="$HOME/.dev-studio/generic-dev-studio/feedback-inbox/sample-app"
