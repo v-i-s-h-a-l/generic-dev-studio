@@ -494,6 +494,30 @@ _lp_load_project_env() {
   . "$env_file"
 }
 
+# Resolve the stable home for studio-self feedback/analysis artifacts. Host
+# launchers may run with a synthetic HOME (for example ~/.codex-homes/...), but
+# manager-analyze runs from the login home so feedback writers must land there
+# too. Tests and intentional isolation runs can opt out.
+resolve_feedback_data_home() {
+  case "${STUDIO_BYPASS_FEEDBACK_LOGIN_HOME:-0}" in
+    1|true|TRUE|yes|YES)
+      printf '%s\n' "${HOME:-}"
+      return 0
+      ;;
+  esac
+
+  if studio_home_is_synthetic "${HOME:-}"; then
+    local login_home
+    login_home=$(resolve_user_login_home 2>/dev/null || true)
+    if [ -n "$login_home" ] && [ -d "$login_home" ]; then
+      printf '%s\n' "$login_home"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "${HOME:-}"
+}
+
 # Studio-self feedback inbox for a given source-project slug. Feedback records
 # authored in any project route here (see CLAUDE.md "Analysis sessions and
 # privacy"); generic-dev-studio is the destination because that's where the
@@ -505,13 +529,13 @@ resolve_feedback_inbox_for() {
 
 # Root of the studio-self feedback inbox (parent of per-source subfolders).
 resolve_feedback_inbox_root() {
-  printf '%s\n' "$(resolve_project_root_for generic-dev-studio)/feedback-inbox"
+  printf '%s\n' "$(resolve_feedback_data_home)/.dev-studio/generic-dev-studio/feedback-inbox"
 }
 
 # Studio-self analysis root — private, never-committed reports (see CLAUDE.md
 # "Analysis sessions and privacy" → "Detailed analysis report").
 resolve_analysis_root() {
-  printf '%s\n' "$(resolve_project_root_for generic-dev-studio)/analysis"
+  printf '%s\n' "$(resolve_feedback_data_home)/.dev-studio/generic-dev-studio/analysis"
 }
 
 # Friendly display name. Auto-derived in this order:
