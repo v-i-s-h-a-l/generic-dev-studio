@@ -13,7 +13,8 @@
 #   schema_version: 1
 #   chains:
 #     - name: ios-v2-execution
-#       base: main
+#       source_branch: main
+#       # base remains accepted as a backwards-compatible alias for source_branch.
 #       branch: feature/ios-v2-execution
 #       host: auto
 #       approved_release_id: 0190f52a-9000-7f01-8aaa-77fe8fa99bbb
@@ -1695,7 +1696,7 @@ phase_review_required_for_issue() {
 }
 
 write_chain_task_start_envelope() {
-  local chain_name="$1" chain_branch="$2" issue_branch="$3" issue_json="$4" host="$5" git_metadata_strategy="$6" worktree="$7" chain_run_id="$8" issue_run_id="$9" summary_path="${10}" start_path="${11}" phase_review_context="${12:-[]}" rule_pack_resolution="${13:-null}"
+  local chain_name="$1" chain_branch="$2" source_branch="$3" issue_branch="$4" issue_json="$5" host="$6" git_metadata_strategy="$7" worktree="$8" chain_run_id="$9" issue_run_id="${10}" summary_path="${11}" start_path="${12}" phase_review_context="${13:-[]}" rule_pack_resolution="${14:-null}"
   mkdir -p "$(dirname "$start_path")"
   jq -n \
     --argjson source_issue "$issue_json" \
@@ -1705,6 +1706,7 @@ write_chain_task_start_envelope() {
     --arg issue_run_id "$issue_run_id" \
     --arg chain "$chain_name" \
     --arg branch "$chain_branch" \
+    --arg source_branch "$source_branch" \
     --arg issue_branch "$issue_branch" \
     --arg worktree "$worktree" \
     --arg host "$host" \
@@ -1732,6 +1734,7 @@ write_chain_task_start_envelope() {
       ownership: {
         chain: $chain,
         branch: $branch,
+        source_branch: $source_branch,
         issue_branch: $issue_branch,
         worktree: $worktree,
         host: $host,
@@ -1771,7 +1774,7 @@ write_chain_task_start_envelope() {
       ],
       allowed_assumptions: [
         "The source issue body is the authoritative scoped brief.",
-        "The chain runner owns PR creation, main merge, issue closure, and worktree cleanup.",
+        "The chain runner owns PR creation, source-branch merge, issue closure, and worktree cleanup.",
         "Runtime handoff artifacts under .studio are private and disposable.",
         "Prior phase-review feedback in this envelope is private context from a clean outcome review, not human acceptance."
       ],
@@ -1780,7 +1783,7 @@ write_chain_task_start_envelope() {
       stop_conditions: [
         "Required scope cannot be implemented safely from the source issue.",
         "Verification needed for an unqualified completion claim cannot be run or captured.",
-        "The worker would need to change unrelated issues, open a PR, merge to main, close the issue, or commit private .studio artifacts."
+        "The worker would need to change unrelated issues, open a PR, merge to the source branch, close the issue, or commit private .studio artifacts."
       ],
       privacy: {
         classification: "private-runtime",
@@ -3020,14 +3023,21 @@ validate_branch_ref() {
 }
 
 validate_chain_branch() {
-  local branch="$1" base="$2"
-  validate_branch_ref "$base" "base"
+  local branch="$1" source_branch="$2"
+  validate_branch_ref "$source_branch" "source"
   validate_branch_ref "$branch" "chain"
 
-  if [ "$branch" = "$base" ]; then
-    printf 'studio-chain-runner: chain branch must not equal base branch: %s\n' "$branch" >&2
+  if [ "$branch" = "$source_branch" ]; then
+    printf 'studio-chain-runner: chain branch must not equal source branch: %s\n' "$branch" >&2
     exit 2
   fi
+
+  case "$source_branch" in
+    feature|production|develop|trunk)
+      printf 'studio-chain-runner: protected source branch targets are not allowed: %s\n' "$source_branch" >&2
+      exit 2
+      ;;
+  esac
 
   case "$branch" in
     main|master|trunk|develop|production)
@@ -3057,6 +3067,52 @@ host_spawn_command() {
 
 yaml_field() {
   yq -r ".${2} // \"\"" "$1" 2>/dev/null
+}
+
+normalize_manifest_value() {
+  case "${1:-}" in
+    ""|null) return 0 ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+manifest_chain_field() {
+  local chain_idx="$1" field="$2" value
+  value=$(yq -r ".chains[$chain_idx].$field // \"\"" "$MANIFEST")
+  normalize_manifest_value "$value"
+}
+
+resolve_chain_source_branch() {
+  local chain_idx="$1" chain_name="$2"
+  local source_branch target_base base selected="" label value
+  source_branch=$(manifest_chain_field "$chain_idx" source_branch)
+  target_base=$(manifest_chain_field "$chain_idx" target_base)
+  base=$(manifest_chain_field "$chain_idx" base)
+
+  for label in source_branch target_base base; do
+    case "$label" in
+      source_branch) value="$source_branch" ;;
+      target_base) value="$target_base" ;;
+      base) value="$base" ;;
+    esac
+    [ -n "$value" ] || continue
+    if [ -z "$selected" ]; then
+      selected="$value"
+    elif [ "$selected" != "$value" ]; then
+      printf 'studio-chain-runner: conflicting source branch fields for chain %s: %s=%s conflicts with selected source %s\n' \
+        "$chain_name" "$label" "$value" "$selected" >&2
+      exit 2
+    fi
+  done
+
+  [ -n "$selected" ] || selected="main"
+  printf '%s\n' "$selected"
+}
+
+resolve_chain_expected_source_sha() {
+  local chain_idx="$1" value
+  value=$(yq -r ".chains[$chain_idx].expected_source_sha // .chains[$chain_idx].source_sha // \"\"" "$MANIFEST")
+  normalize_manifest_value "$value"
 }
 
 host_sandbox_profile() {
@@ -3211,7 +3267,7 @@ resolve_resume_state() {
 }
 
 build_plan_json() {
-  local out="$1" chain_count idx name base branch host approved_release_id sync_strategy phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state issue_url
+  local out="$1" chain_count idx name base source_branch expected_source_sha branch host approved_release_id sync_strategy phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state issue_url
   local chain_run_id issue_run_id issue_slug issue_branch issue_worktree chain_slug chain_worktree worker_pool issue_kind dependencies_json previous_issue
   local tmp chains_tmp issues_tmp mapped_at
   tmp="$out.tmp.$$"
@@ -3230,7 +3286,9 @@ build_plan_json() {
   for ((idx = 0; idx < chain_count; idx++)); do
     name=$(yq -r ".chains[$idx].name" "$MANIFEST")
     [ -n "$ONLY_CHAIN" ] && [ "$name" != "$ONLY_CHAIN" ] && continue
-    base=$(yq -r ".chains[$idx].base // \"main\"" "$MANIFEST")
+    source_branch=$(resolve_chain_source_branch "$idx" "$name")
+    base="$source_branch"
+    expected_source_sha=$(resolve_chain_expected_source_sha "$idx")
     branch=$(yq -r ".chains[$idx].branch // (\"feature/\" + .chains[$idx].name)" "$MANIFEST")
     host=$(yq -r ".chains[$idx].host // \"auto\"" "$MANIFEST")
     approved_release_id=$(yq -r ".chains[$idx].approved_release_id // \"\"" "$MANIFEST")
@@ -3354,6 +3412,8 @@ build_plan_json() {
     jq \
       --arg name "$name" \
       --arg base "$base" \
+      --arg source_branch "$source_branch" \
+      --arg expected_source_sha "$expected_source_sha" \
       --arg branch "$branch" \
       --arg host "$host" \
       --arg approved_release_id "$approved_release_id" \
@@ -3365,7 +3425,24 @@ build_plan_json() {
       --arg worktree "$chain_worktree" \
       --argjson worker_pool "$worker_pool" \
       --slurpfile issues "$issues_tmp" \
-      '. + [{name:$name,base:$base,branch:$branch,host:$host,approved_release_id:(if $approved_release_id == "" then null else $approved_release_id end),sync_strategy:$sync_strategy,phase_review:$phase_review_mode,checkpoint:$checkpoint_mode,git_metadata_strategy:$git_metadata_strategy,chain_run_id:$chain_run_id,chain_worktree:$worktree,worker_pool:$worker_pool,status:"pending",issues:$issues[0]}]' \
+      '. + [{
+        name:$name,
+        base:$base,
+        source_branch:$source_branch,
+        expected_source_sha:(if $expected_source_sha == "" then null else $expected_source_sha end),
+        branch:$branch,
+        host:$host,
+        approved_release_id:(if $approved_release_id == "" then null else $approved_release_id end),
+        sync_strategy:$sync_strategy,
+        phase_review:$phase_review_mode,
+        checkpoint:$checkpoint_mode,
+        git_metadata_strategy:$git_metadata_strategy,
+        chain_run_id:$chain_run_id,
+        chain_worktree:$worktree,
+        worker_pool:$worker_pool,
+        status:"pending",
+        issues:$issues[0]
+      }]' \
       "$chains_tmp" > "$chains_tmp.next"
     mv "$chains_tmp.next" "$chains_tmp"
     rm -f "$issues_tmp"
@@ -3440,12 +3517,15 @@ validate_execution_graph() {
     printf 'studio-chain-runner: map each done task to a GitHub issue before treating implementation state as authoritative.\n' >&2
     exit 2
   }
+  local same_source_chain
   duplicate_issues=$(jq -r '[.chains[].issues[].number] | group_by(.)[] | select(length > 1) | .[0]' "$plan" | paste -sd, -)
   [ -z "$duplicate_issues" ] || { printf 'studio-chain-runner: duplicate issue IDs across chains: %s\n' "$duplicate_issues" >&2; exit 2; }
   duplicate_branches=$(jq -r '[.chains[].branch, (.chains[].issues[].issue_branch)] | group_by(.)[] | select(length > 1) | .[0]' "$plan" | paste -sd, -)
   [ -z "$duplicate_branches" ] || { printf 'studio-chain-runner: duplicate branch refs in plan: %s\n' "$duplicate_branches" >&2; exit 2; }
-  protected_targets=$(jq -r '.chains[].base | select(. == "feature" or . == "production" or . == "develop" or . == "trunk")' "$plan" | paste -sd, -)
-  [ -z "$protected_targets" ] || { printf 'studio-chain-runner: protected base targets are not allowed: %s\n' "$protected_targets" >&2; exit 2; }
+  protected_targets=$(jq -r '.chains[] | (.source_branch // .base) | select(. == "feature" or . == "production" or . == "develop" or . == "trunk")' "$plan" | paste -sd, -)
+  [ -z "$protected_targets" ] || { printf 'studio-chain-runner: protected source branch targets are not allowed: %s\n' "$protected_targets" >&2; exit 2; }
+  same_source_chain=$(jq -r '.chains[] | select(.branch == (.source_branch // .base)) | .name' "$plan" | paste -sd, -)
+  [ -z "$same_source_chain" ] || { printf 'studio-chain-runner: chain branch must not equal source branch for chains: %s\n' "$same_source_chain" >&2; exit 2; }
   invalid_issue_dependencies=$(jq -r '
     .chains[] as $chain
     | ($chain.issues | map(.number)) as $numbers
@@ -3541,10 +3621,14 @@ apply_mechanical_rule_gates() {
     --plan "$plan"
     --manifest "$MANIFEST"
     --repo "$TARGET_REPO_ROOT"
-    --audit-log "$audit_log"
     --expected-run-work-root "$RUN_WORK_ROOT"
   )
-  [ "$DRY_RUN" -eq 0 ] || gate_args+=(--dry-run)
+  if [ "$DRY_RUN" -eq 0 ]; then
+    gate_args+=(--audit-log "$audit_log")
+  else
+    audit_log=""
+    gate_args+=(--dry-run)
+  fi
 
   set +e
   "$SCRIPT_DIR/studio-chain-rule-gates.sh" "${gate_args[@]}" >"$gate_result"
@@ -3644,8 +3728,25 @@ validate_release_chain_leaf_policy() {
   fi
 }
 
+verify_expected_source_sha_or_abort() {
+  local chain_name="$1" source_branch="$2" expected_sha="$3" phase="$4"
+  local actual_sha
+  [ -n "$expected_sha" ] && [ "$expected_sha" != "null" ] || return 0
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf 'DRY-RUN verify origin/%q matches expected source SHA %q before %s\n' "$source_branch" "$expected_sha" "$phase"
+    return 0
+  fi
+  actual_sha=$(with_login_home_for_github git ls-remote --heads origin "$source_branch" 2>/dev/null | awk 'NR == 1 { print $1 }') || actual_sha=""
+  if [ -z "$actual_sha" ]; then
+    abort_run_with_reason network_partition "cannot verify origin/$source_branch before $phase for chain $chain_name"
+  fi
+  if [ "$actual_sha" != "$expected_sha" ]; then
+    abort_run_with_reason base_branch_advanced "source branch $source_branch for chain $chain_name changed before $phase: expected $expected_sha, got $actual_sha"
+  fi
+}
+
 live_preflight() {
-  local plan="$1" reviewer_host branch issue_branch base
+  local plan="$1" reviewer_host chain_name branch issue_branch base expected_source_sha
   run_retryable_or_abort github_auth_unavailable "GitHub auth is not available" \
     with_login_home_for_github gh auth status
   emit_chain_event chain_auth_normalized "" "$RUN_ID" "" "" completed 0 \
@@ -3655,9 +3756,11 @@ live_preflight() {
     printf 'studio-chain-runner: reviewer host unavailable: %s\n' "$reviewer_host" >&2
     exit 2
   }
-  while IFS=$'\t' read -r branch base; do
+  while IFS=$'\t' read -r chain_name branch base expected_source_sha; do
+    [ "$expected_source_sha" = "__none__" ] && expected_source_sha=""
     run_retryable_or_abort network_partition "cannot verify origin/$base" \
       with_login_home_for_github git ls-remote --exit-code --heads origin "$base"
+    verify_expected_source_sha_or_abort "$chain_name" "$base" "$expected_source_sha" "chain worktree creation"
     if [ -z "$RESUME_ID" ] && git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/heads/$branch"; then
       printf 'studio-chain-runner: local chain branch already exists: %s\n' "$branch" >&2
       exit 2
@@ -3667,7 +3770,7 @@ live_preflight() {
       exit 2
     fi
   done <<EOF
-$(jq -r '.chains[] | [.branch, .base] | @tsv' "$plan")
+$(jq -r '.chains[] | [.name, .branch, (.source_branch // .base), (.expected_source_sha // .source_sha // "__none__")] | @tsv' "$plan")
 EOF
   while IFS= read -r issue_branch; do
     [ -n "$issue_branch" ] || continue
@@ -3712,6 +3815,8 @@ explain_plan() {
     "## Chain \(.name)\n\n" +
     "- Chain-run UUID: `\(.chain_run_id)`\n" +
     "- Base: `\(.base)`\n" +
+    "- Source branch: `\(.source_branch // .base)`\n" +
+    "- Expected source SHA: `\(.expected_source_sha // .source_sha // "not pinned")`\n" +
     "- Branch: `\(.branch)`\n" +
     "- Approved release: `\(.approved_release_id // "none")`\n" +
     "- Leaf sync strategy: `\(.sync_strategy // "rebase")`\n" +
@@ -3724,7 +3829,7 @@ explain_plan() {
     "- Worker pool: `\(.worker_pool)`\n" +
     "- Issue scheduler: `dependency-ready nodes up to worker_pool; scalar issue lists preserve manifest order`\n" +
     "- Rule-pack status: `\(.rule_pack_resolution.status // "not-resolved")`; selected `\((.rule_pack_resolution.selected_packs // []) | length)`, skipped `\((.rule_pack_resolution.skipped_packs // []) | length)`, estimated summary tokens `\(.rule_pack_resolution.estimated_context_cost.summary_tokens_estimated // "unknown")`, skipped full-doc tokens `\(.rule_pack_resolution.context_budget.skipped_full_doc_tokens_estimated // "unknown")`, cold-context delta `\(.rule_pack_resolution.context_budget.cold_context_delta_tokens_estimated // "unknown")`\n" +
-    "- Planned PR: base `\(.base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
+    "- Planned PR: base `\(.source_branch // .base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
     "| Issue | Depends On | Issue State | Runner Status | Lifecycle | Rule Packs | Issue-run UUID | Branch | Worktree |\n|---:|---|---|---|---|---:|---|---|---|\n" +
     ([.issues[] | "| #\(.number) \(.title) | \(if ((.dependencies // []) | length) == 0 then "-" else ((.dependencies // []) | map("#" + tostring) | join(", ")) end) | \(.state) | \(.status) | \(.lifecycle_state // "unknown") | \((.rule_pack_resolution.selected_packs // []) | length) | `\(.issue_run_id)` | `\(.issue_branch)` | `\(.issue_worktree)` |"] | join("\n")) +
     "\n\n### Rule Packs\n\n" +
@@ -3858,17 +3963,18 @@ chain_count=$(jq '.chains | length' "$PLAN_JSON")
 
 execute_issue_session() {
   local chain_name="$1" chain_branch="$2" issue="$3" host="$4" git_metadata_strategy="$5" worktree="$6" issue_branch="$7" chain_run_id="$8" issue_run_id="$9" before="${10}" phase_review_context="${11:-[]}" rule_pack_resolution="${12:-null}"
-  local issue_json issue_title issue_body spawn prompt summary_path start_path
+  local issue_json issue_title issue_body spawn prompt summary_path start_path source_branch
   local -a spawn_argv
   local launch_home="" codex_auth_home=""
 
   issue_json=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,body,url,state)
   issue_title=$(printf '%s' "$issue_json" | jq -r '.title')
   issue_body=$(printf '%s' "$issue_json" | jq -r '.body // ""')
+  source_branch=$(jq -r --arg id "$chain_run_id" '.chains[] | select(.chain_run_id == $id) | .source_branch // .base // "main"' "$PLAN_JSON")
   summary_path="$worktree/.studio/chain-worker-summary.json"
   start_path="$worktree/.studio/chain-task-start.json"
   if [ "$DRY_RUN" -eq 0 ]; then
-    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$issue_branch" "$issue_json" "$host" "$git_metadata_strategy" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context" "$rule_pack_resolution"
+    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$source_branch" "$issue_branch" "$issue_json" "$host" "$git_metadata_strategy" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context" "$rule_pack_resolution"
   fi
 
   spawn=$(host_spawn_command "$host")
@@ -3890,6 +3996,7 @@ Chain-run UUID: $chain_run_id
 Issue-run UUID: $issue_run_id
 Chain: $chain_name
 Chain branch: $chain_branch
+Source branch / PR base: $source_branch
 Issue: #$issue - $issue_title
 Working directory: $worktree
 Git metadata strategy: $git_metadata_strategy
@@ -3906,7 +4013,7 @@ Rules:
 - Before exit, write $summary_path as valid JSON.
 - Do not add or commit $summary_path; it is a private parent-runner artifact.
 - Do not open a PR.
-- Do not merge to main.
+- Do not merge to the source branch ($source_branch) or main.
 - Do not close the issue; the chain runner owns issue closure after integration.
 - If blocked, exit non-zero after writing a concise reason.
 
@@ -3970,13 +4077,17 @@ EOF
 }
 
 finalize_chain_pr() {
-  local chain_name="$1" chain_branch="$2" chain_worktree="$3" base="$4" chain_run_id="$5" implementation_host="${6:-}"
+  local chain_name="$1" chain_branch="$2" chain_worktree="$3" base="$4" chain_run_id="$5" implementation_host="${6:-}" expected_source_sha="${7:-}"
   local pr_url pr_number review_started_at review_rc review_duration review_out review_verdict review_model review_effort review_host review_parent_host
   [ -n "$implementation_host" ] || implementation_host=$(resolve_current_studio_host unknown)
 
+  if [ "$chain_branch" = "$base" ]; then
+    abort_run_with_reason branch_worktree_conflict "chain branch $chain_branch must not equal PR base/source branch"
+  fi
   log "rebasing $chain_branch on origin/$base"
   run_retryable_or_abort network_partition "fetch origin failed for $chain_branch" \
     with_login_home_for_github git -C "$chain_worktree" fetch origin --prune
+  verify_expected_source_sha_or_abort "$chain_name" "$base" "$expected_source_sha" "PR finalization"
   run git -C "$chain_worktree" rebase "origin/$base"
   run_retryable_or_abort network_partition "push failed for $chain_branch" \
     with_login_home_for_github git -C "$chain_worktree" push -u origin "$chain_branch"
@@ -4006,7 +4117,7 @@ Review gate: \`scripts/pr-headless-review.sh <pr> --method auto\`.")
   FINAL_PR_URL="$pr_url"
   log "opened PR $pr_url"
   emit_chain_event chain_pr_opened "$pr_number" "$RUN_ID" "$chain_run_id" "" completed 0 \
-    "$(jq -cn --arg pr_url "$pr_url" --arg pr_number "$pr_number" --arg branch "$chain_branch" '{pr_url:$pr_url, pr_number:$pr_number, branch:$branch}')"
+    "$(jq -cn --arg pr_url "$pr_url" --arg pr_number "$pr_number" --arg branch "$chain_branch" --arg base "$base" '{pr_url:$pr_url, pr_number:$pr_number, branch:$branch, base:$base, source_branch:$base}')"
   if ! with_login_home_for_github gh pr comment "$pr_number" --repo "$REPO_SLUG" --body "Chain run: \`$RUN_ID\`
 
 Private telemetry report: local only; resolve by run ID on the machine that ran the chain.
@@ -4078,7 +4189,7 @@ write_issue_phase_plan_artifact() {
     printf 'Execute exactly this issue in its isolated worktree and commit the result on the issue branch.\n\n'
     printf '## Scope\n\n'
     printf -- '- In: bounded issue implementation, private worker summary, focused verification evidence.\n'
-    printf -- '- Out: PR creation, merge to main, issue closure, unrelated issue work, public copy of private review prose.\n\n'
+    printf -- '- Out: PR creation, merge to the source/base branch, issue closure, unrelated issue work, public copy of private review prose.\n\n'
     printf '## Prior Clean Outcome Feedback\n\n'
     if [ "$(printf '%s' "$context" | jq 'length')" -gt 0 ]; then
       printf '%s\n' "$context" | jq -r '.[] | "- \(.kind): \(.text)"'
@@ -4942,9 +5053,10 @@ run_chain_issue_scheduler() {
 
 for ((idx = 0; idx < chain_count; idx++)); do
   name=$(jq -r ".chains[$idx].name" "$PLAN_JSON")
-  base=$(jq -r ".chains[$idx].base" "$PLAN_JSON")
+  base=$(jq -r ".chains[$idx].source_branch // .chains[$idx].base" "$PLAN_JSON")
   branch=$(jq -r ".chains[$idx].branch" "$PLAN_JSON")
   host=$(jq -r ".chains[$idx].host" "$PLAN_JSON")
+  expected_source_sha=$(jq -r ".chains[$idx].expected_source_sha // .chains[$idx].source_sha // \"\"" "$PLAN_JSON")
   approved_release_id=$(jq -r ".chains[$idx].approved_release_id // \"\"" "$PLAN_JSON")
   sync_strategy=$(jq -r ".chains[$idx].sync_strategy // \"rebase\"" "$PLAN_JSON")
   phase_review_mode=$(jq -r ".chains[$idx].phase_review // \"auto\"" "$PLAN_JSON")
@@ -4968,10 +5080,11 @@ for ((idx = 0; idx < chain_count; idx++)); do
   log "starting chain $name on $branch from latest $base using host=$host git_metadata_strategy=$git_metadata_strategy sync_strategy=$sync_strategy checkpoint=$checkpoint_mode worker_pool=$CHAIN_WORKER_POOL"
   mark_chain_state "$chain_run_id" running
   emit_chain_event chain_started "" "$RUN_ID" "$chain_run_id" "" running 0 \
-    "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --arg git_metadata_strategy "$git_metadata_strategy" --arg sync_strategy "$sync_strategy" --arg approved_release_id "$approved_release_id" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, host:$host, git_metadata_strategy:$git_metadata_strategy, sync_strategy:$sync_strategy, approved_release_id:(if $approved_release_id == "" then null else $approved_release_id end), issue_count:$issue_count, worker_pool:$worker_pool}')"
+    "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --arg git_metadata_strategy "$git_metadata_strategy" --arg sync_strategy "$sync_strategy" --arg approved_release_id "$approved_release_id" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, source_branch:$base, host:$host, git_metadata_strategy:$git_metadata_strategy, sync_strategy:$sync_strategy, approved_release_id:(if $approved_release_id == "" then null else $approved_release_id end), issue_count:$issue_count, worker_pool:$worker_pool}')"
   host_preflight "$host" "$TARGET_REPO_ROOT" || abort_run "host preflight failed for $host"
   run_retryable_or_abort network_partition "fetch origin failed before chain $name" \
     with_login_home_for_github git -C "$TARGET_REPO_ROOT" fetch origin --prune
+  verify_expected_source_sha_or_abort "$name" "$base" "$expected_source_sha" "chain worktree creation"
   if [ "$DRY_RUN" -eq 0 ]; then
     mkdir -p "$chain_results_dir"
     if [ -n "$RESUME_ID" ] && git_checkout_exists "$chain_worktree"; then
@@ -4996,7 +5109,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
 
   run_chain_issue_scheduler "$idx" "$name" "$branch" "$chain_worktree" "$host" "$git_metadata_strategy" "$chain_run_id" "$phase_review_mode" "$checkpoint_mode" "$issue_count" "$chain_results_dir"
 
-  finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id" "$host"
+  finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id" "$host" "$expected_source_sha"
   chain_duration=$(duration_since "$chain_started_at")
   final_chain_head=$(git -C "$chain_worktree" rev-parse HEAD 2>/dev/null || true)
   mark_chain_state "$chain_run_id" completed "$FINAL_PR_URL"
