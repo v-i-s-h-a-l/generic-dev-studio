@@ -323,6 +323,29 @@ The hook blocks commits on local base branches (`main`, `master`, `trunk`, `deve
 
 Use one feature or reliability branch for related issues when they share a workflow surface, safety-floor path, test fixture set, or user-facing capability. Keep issue closure explicit in the PR body (`Closes #353`, `Closes #355`, ...), and split once the branch needs unrelated reviewers, mixes urgent and non-urgent work, or becomes hard to review in one pass. Direct pushes to `main` remain forbidden; grouped work still merges through the PR review gate.
 
+### Release-bearing chains
+
+Release-bearing chain manifests declare `approved_release_id`. The manager picks
+one chain branch from the manifest, launches every issue leaf from that branch,
+and integrates completed leaves back into that same manager-owned branch before
+the final PR targets the manifest base. Leaf sessions should not retarget
+themselves to `main` or another integration branch.
+
+The default leaf integration strategy is `sync_strategy: rebase`: the runner
+rebases the issue leaf onto the current chain branch and fast-forwards the chain
+branch. `sync_strategy: squash` is opt-in for release-bearing chains that need a
+single commit per leaf. Immediately before integration, the runner records
+`release_chain_sync_strategy`, `release_chain_leaf_ancestry`, and
+`release_chain_leaf_merge_commits` gate rows. Those gates reject unsupported
+sync strategies, leaves that no longer descend from the launch chain commit, and
+post-launch merge commits in the leaf. User-controlled emergency overrides are
+audited through the matching `STUDIO_BYPASS_CHAIN_*` variables.
+
+Approved-release promotion is also HEAD-bound. `pr-merge-finalize` records the
+release approval only after it finds the studio review-gate comment for the
+current PR `HEAD_SHA`; App Store promotion routes through that same finalizer, so
+missing or stale approval metadata cannot promote the release PR to `main`.
+
 ### One-time directories (per project)
 
 Worker scripts auto-create everything on first run. The scripts resolve paths via `scripts/lib-paths.sh` — project slug defaults to the git toplevel basename, override with `ACHILLES_PROJECT=<slug>`. No setup needed.
@@ -381,10 +404,6 @@ Studio chain issue sessions do not need write access to the main checkout's
 linked-worktree metadata. For `workspace-write` hosts, `studio-chain-runner`
 uses a per-issue local clone so normal `git add` and `git commit` write inside
 the issue working directory plus `~/.dev-studio`.
-Release-bearing chain manifests declare `approved_release_id`; those issue
-leaves are checked for launch-commit ancestry and post-launch merge commits
-before the runner applies the manifest's `sync_strategy` (`rebase` by default,
-`squash` only when explicitly declared).
 When `--checkpoint auto` or manifest `checkpoint: auto` is enabled, chain
 checkpoints stay under the same private runtime root and resume only through
 the manager role plus the active chain branch after drift checks.
