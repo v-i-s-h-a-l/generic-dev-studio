@@ -60,9 +60,9 @@ packs:
       all_of: []
       none_of: []
     enforcement_policy:
-      script_enforced: [dirty_tree_and_index, expected_source_branch_sha, explicit_pr_base, source_branch_lock, no_raw_force_push, no_feature_branch_merge_commits, force_with_lease_requires_override]
+      script_enforced: [dirty_tree_and_index, expected_source_branch_sha, explicit_pr_base, source_branch_lock, no_raw_force_push, no_feature_branch_merge_commits, force_with_lease_requires_override, release_chain_leaf_merge_commits]
       llm_reviewed: [commit_message_quality, branch_naming_intent, emergency_bypass_rationale]
-      override_env: [STUDIO_BYPASS_DIRTY_TREE_GATE, STUDIO_BYPASS_SOURCE_SHA_GATE, STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE, STUDIO_BYPASS_SOURCE_BRANCH_LOCK_GATE, STUDIO_BYPASS_RAW_FORCE_PUSH_GATE, STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE, STUDIO_BYPASS_FORCE_WITH_LEASE_GATE]
+      override_env: [STUDIO_BYPASS_DIRTY_TREE_GATE, STUDIO_BYPASS_SOURCE_SHA_GATE, STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE, STUDIO_BYPASS_SOURCE_BRANCH_LOCK_GATE, STUDIO_BYPASS_RAW_FORCE_PUSH_GATE, STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE, STUDIO_BYPASS_FORCE_WITH_LEASE_GATE, STUDIO_BYPASS_CHAIN_LEAF_MERGE_COMMIT_GATE]
     enforcement_hooks:
       - scripts/studio-chain-rule-gates.sh
       - .githooks/pre-commit
@@ -82,9 +82,9 @@ packs:
       all_of: []
       none_of: []
     enforcement_policy:
-      script_enforced: [explicit_pr_base, artifact_root_construction, expected_source_branch_sha]
+      script_enforced: [explicit_pr_base, artifact_root_construction, expected_source_branch_sha, release_chain_manifest_policy, chain_manifest_sync_strategy, release_chain_leaf_ancestry, release_chain_sync_strategy]
       llm_reviewed: [phase_scope_alignment, worker_prompt_specificity, prior_review_feedback_handling]
-      override_env: [STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE, STUDIO_BYPASS_ARTIFACT_ROOT_GATE, STUDIO_BYPASS_SOURCE_SHA_GATE]
+      override_env: [STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE, STUDIO_BYPASS_ARTIFACT_ROOT_GATE, STUDIO_BYPASS_SOURCE_SHA_GATE, STUDIO_BYPASS_RELEASE_CHAIN_MANIFEST_POLICY_GATE, STUDIO_BYPASS_CHAIN_SYNC_STRATEGY_GATE, STUDIO_BYPASS_CHAIN_LEAF_ANCESTRY_GATE]
     enforcement_hooks:
       - scripts/studio-chain-rule-gates.sh
       - scripts/studio-chain-runner.sh

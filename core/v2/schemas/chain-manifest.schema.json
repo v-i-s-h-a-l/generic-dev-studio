@@ -59,6 +59,8 @@
         "base": { "type": "string", "default": "main" },
         "branch": { "type": "string", "minLength": 1 },
         "host": { "type": "string", "default": "auto" },
+        "approved_release_id": { "type": "string", "minLength": 1 },
+        "sync_strategy": { "enum": ["rebase", "squash"], "default": "rebase" },
         "phase_review": { "enum": ["required", "auto", "off"], "default": "auto" },
         "rule_packs": { "$ref": "#/$defs/rule_packs" },
         "issues": {

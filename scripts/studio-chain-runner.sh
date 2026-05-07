@@ -16,6 +16,8 @@
 #       base: main
 #       branch: feature/field-telemetry-mvp
 #       host: auto
+#       approved_release_id: 0190f52a-9000-7f01-8aaa-77fe8fa99bbb
+#       sync_strategy: rebase
 #       rule_packs:
 #         required: [source-branch-integration]
 #         optional: [privacy]
@@ -2655,7 +2657,7 @@ resolve_resume_state() {
 }
 
 build_plan_json() {
-  local out="$1" chain_count idx name base branch host phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state
+  local out="$1" chain_count idx name base branch host approved_release_id sync_strategy phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state
   local chain_run_id issue_run_id issue_slug issue_branch issue_worktree chain_slug chain_worktree worker_pool issue_kind dependencies_json previous_issue
   local tmp chains_tmp issues_tmp
   tmp="$out.tmp.$$"
@@ -2677,6 +2679,9 @@ build_plan_json() {
     base=$(yq -r ".chains[$idx].base // \"main\"" "$MANIFEST")
     branch=$(yq -r ".chains[$idx].branch // (\"feature/\" + .chains[$idx].name)" "$MANIFEST")
     host=$(yq -r ".chains[$idx].host // \"auto\"" "$MANIFEST")
+    approved_release_id=$(yq -r ".chains[$idx].approved_release_id // \"\"" "$MANIFEST")
+    sync_strategy=$(yq -r ".chains[$idx].sync_strategy // \"rebase\"" "$MANIFEST")
+    [ -n "$sync_strategy" ] && [ "$sync_strategy" != "null" ] || sync_strategy="rebase"
     [ "$host" = "auto" ] && host="${HOST_OVERRIDE:-codex}"
     [ -n "$HOST_OVERRIDE" ] && host="$HOST_OVERRIDE"
     phase_review_mode=$(resolve_phase_review_mode "$idx")
@@ -2761,6 +2766,8 @@ build_plan_json() {
       --arg base "$base" \
       --arg branch "$branch" \
       --arg host "$host" \
+      --arg approved_release_id "$approved_release_id" \
+      --arg sync_strategy "$sync_strategy" \
       --arg phase_review_mode "$phase_review_mode" \
       --arg checkpoint_mode "$checkpoint_mode" \
       --arg git_metadata_strategy "$git_metadata_strategy" \
@@ -2768,7 +2775,7 @@ build_plan_json() {
       --arg worktree "$chain_worktree" \
       --argjson worker_pool "$worker_pool" \
       --slurpfile issues "$issues_tmp" \
-      '. + [{name:$name,base:$base,branch:$branch,host:$host,phase_review:$phase_review_mode,checkpoint:$checkpoint_mode,git_metadata_strategy:$git_metadata_strategy,chain_run_id:$chain_run_id,chain_worktree:$worktree,worker_pool:$worker_pool,status:"pending",issues:$issues[0]}]' \
+      '. + [{name:$name,base:$base,branch:$branch,host:$host,approved_release_id:(if $approved_release_id == "" then null else $approved_release_id end),sync_strategy:$sync_strategy,phase_review:$phase_review_mode,checkpoint:$checkpoint_mode,git_metadata_strategy:$git_metadata_strategy,chain_run_id:$chain_run_id,chain_worktree:$worktree,worker_pool:$worker_pool,status:"pending",issues:$issues[0]}]' \
       "$chains_tmp" > "$chains_tmp.next"
     mv "$chains_tmp.next" "$chains_tmp"
     rm -f "$issues_tmp"
@@ -2937,6 +2944,10 @@ apply_mechanical_rule_gates() {
   fi
   jq --slurpfile gates "$gate_result" '.mechanical_rule_gates = $gates[0]' "$plan" >"$tmp"
   mv "$tmp" "$plan"
+  if jq -e '.mechanical_rule_gates.overrides[]? | select(.id == "chain_manifest_sync_strategy")' "$plan" >/dev/null 2>&1; then
+    jq '(.chains[] | select((.sync_strategy // "rebase") != "rebase" and (.sync_strategy // "rebase") != "squash") | .sync_strategy) = "rebase"' "$plan" >"$tmp"
+    mv "$tmp" "$plan"
+  fi
   emit_chain_event chain_rule_gate_completed "" "$RUN_ID" "" "" "$(jq -r '.status' "$gate_result")" 0 \
     "$(jq -c '{audit_log, checks:([.checks[] | {id,status,severity,override_env}]), failure_count:(.failures | length), override_count:(.overrides | length)}' "$gate_result")"
   if [ "$gate_rc" -eq 4 ]; then
@@ -2945,6 +2956,79 @@ apply_mechanical_rule_gates() {
     exit 4
   fi
   rm -f "$gate_result"
+}
+
+chain_policy_audit_log() {
+  local audit_log=""
+  if [ -f "$PLAN_JSON" ]; then
+    audit_log=$(jq -r '.mechanical_rule_gates.audit_log // empty' "$PLAN_JSON" 2>/dev/null || true)
+  fi
+  [ -n "$audit_log" ] || audit_log="$CHAIN_RUN_ROOT/rule-pack-gates.jsonl"
+  printf '%s\n' "$audit_log"
+}
+
+record_chain_policy_gate() {
+  local gate_id="$1" status="$2" severity="$3" override_env="$4" detail="$5" chain_run_id="${6:-}" issue_run_id="${7:-}" issue="${8:-}"
+  local audit_log
+  [ "$DRY_RUN" -eq 0 ] || return 0
+  audit_log=$(chain_policy_audit_log)
+  [ -n "$audit_log" ] || return 0
+  mkdir -p "$(dirname "$audit_log")"
+  jq -cn \
+    --arg schema_version "1" \
+    --arg kind "studio-chain-rule-gate-audit" \
+    --arg created_at "$(iso_ts_now)" \
+    --arg gate_id "$gate_id" \
+    --arg status "$status" \
+    --arg severity "$severity" \
+    --arg override_env "$override_env" \
+    --arg detail "$detail" \
+    --arg manifest "$MANIFEST" \
+    --arg plan "$PLAN_JSON" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg issue "$issue" \
+    --argjson dry_run "$DRY_RUN" \
+    '{schema_version:($schema_version|tonumber),kind:$kind,created_at:$created_at,gate_id:$gate_id,status:$status,severity:$severity,override_env:(if $override_env == "" then null else $override_env end),detail:$detail,manifest:(if $manifest == "" then null else $manifest end),plan:$plan,chain_run_id:(if $chain_run_id == "" then null else $chain_run_id end),issue_run_id:(if $issue_run_id == "" then null else $issue_run_id end),issue_number:(if $issue == "" then null else ($issue|tonumber) end),dry_run:$dry_run}' \
+    >>"$audit_log"
+}
+
+release_leaf_gate_failed_or_overridden() {
+  local gate_id="$1" override_env="$2" detail="$3" chain_run_id="$4" issue_run_id="$5" issue="$6"
+  if [ "${!override_env:-}" = "1" ]; then
+    record_chain_policy_gate "$gate_id" override hard "$override_env" "$detail" "$chain_run_id" "$issue_run_id" "$issue"
+    return 0
+  fi
+  record_chain_policy_gate "$gate_id" failed hard "$override_env" "$detail" "$chain_run_id" "$issue_run_id" "$issue"
+  return 1
+}
+
+validate_release_chain_leaf_policy() {
+  local chain_name="$1" issue="$2" issue_worktree="$3" issue_branch="$4" commit_before="$5" approved_release_id="$6" sync_strategy="$7" chain_run_id="$8" issue_run_id="$9"
+  local context
+  [ -n "$approved_release_id" ] && [ "$approved_release_id" != "null" ] || return 0
+  context="release-bearing leaf $issue_branch for chain $chain_name issue #$issue"
+
+  case "$sync_strategy" in
+    rebase|squash)
+      record_chain_policy_gate release_chain_sync_strategy passed hard STUDIO_BYPASS_CHAIN_SYNC_STRATEGY_GATE "$context uses manifest sync_strategy=$sync_strategy" "$chain_run_id" "$issue_run_id" "$issue"
+      ;;
+    *)
+      release_leaf_gate_failed_or_overridden release_chain_sync_strategy STUDIO_BYPASS_CHAIN_SYNC_STRATEGY_GATE "$context has unsupported sync_strategy=$sync_strategy" "$chain_run_id" "$issue_run_id" "$issue" || return 1
+      ;;
+  esac
+
+  if chain_git_release_leaf_ancestry_ok "$issue_worktree" "$commit_before" "$context"; then
+    record_chain_policy_gate release_chain_leaf_ancestry passed hard STUDIO_BYPASS_CHAIN_LEAF_ANCESTRY_GATE "$CHAIN_GIT_RELEASE_LEAF_DETAIL" "$chain_run_id" "$issue_run_id" "$issue"
+  else
+    release_leaf_gate_failed_or_overridden release_chain_leaf_ancestry STUDIO_BYPASS_CHAIN_LEAF_ANCESTRY_GATE "$CHAIN_GIT_RELEASE_LEAF_DETAIL" "$chain_run_id" "$issue_run_id" "$issue" || return 1
+  fi
+
+  if chain_git_release_leaf_merge_commits_ok "$issue_worktree" "$commit_before" "$context"; then
+    record_chain_policy_gate release_chain_leaf_merge_commits passed hard STUDIO_BYPASS_CHAIN_LEAF_MERGE_COMMIT_GATE "$CHAIN_GIT_RELEASE_LEAF_DETAIL" "$chain_run_id" "$issue_run_id" "$issue"
+  else
+    release_leaf_gate_failed_or_overridden release_chain_leaf_merge_commits STUDIO_BYPASS_CHAIN_LEAF_MERGE_COMMIT_GATE "$CHAIN_GIT_RELEASE_LEAF_DETAIL" "$chain_run_id" "$issue_run_id" "$issue" || return 1
+  fi
 }
 
 live_preflight() {
@@ -3013,6 +3097,8 @@ explain_plan() {
     "- Chain-run UUID: `\(.chain_run_id)`\n" +
     "- Base: `\(.base)`\n" +
     "- Branch: `\(.branch)`\n" +
+    "- Approved release: `\(.approved_release_id // "none")`\n" +
+    "- Leaf sync strategy: `\(.sync_strategy // "rebase")`\n" +
     "- Worktree: `\(.chain_worktree)`\n" +
     "- Host: `\(.host)`\n" +
     "- Git metadata strategy: `\(.git_metadata_strategy // "linked-worktree")`\n" +
@@ -3655,11 +3741,19 @@ git_checkout_exists() {
 
 integrate_issue_result() {
   local chain_name="$1" branch="$2" chain_worktree="$3" issue="$4" git_metadata_strategy="$5" result_file="$6" chain_run_id="$7" issue_run_id="$8"
-  local issue_branch issue_worktree result_commit_after
+  local issue_branch issue_worktree result_commit_before result_commit_after approved_release_id sync_strategy
 
   issue_branch=$(jq -r '.issue_branch' "$result_file")
   issue_worktree=$(jq -r '.issue_worktree' "$result_file")
+  CHAIN_INTEGRATION_FAILURE_REASON=""
+  result_commit_before=$(jq -r '.commit_before // ""' "$result_file")
   result_commit_after=$(jq -r '.commit_after // ""' "$result_file")
+  if [ -z "$result_commit_before" ] || [ "$result_commit_before" = "null" ]; then
+    result_commit_before=$(jq -r --arg id "$issue_run_id" '.chains[].issues[] | select(.issue_run_id == $id) | .commit_before // ""' "$RUN_STATE_JSON" 2>/dev/null || true)
+  fi
+  approved_release_id=$(jq -r --arg id "$chain_run_id" '.chains[] | select(.chain_run_id == $id) | .approved_release_id // ""' "$PLAN_JSON" 2>/dev/null || true)
+  sync_strategy=$(jq -r --arg id "$chain_run_id" '.chains[] | select(.chain_run_id == $id) | .sync_strategy // "rebase"' "$PLAN_JSON" 2>/dev/null || printf 'rebase')
+  [ -n "$sync_strategy" ] && [ "$sync_strategy" != "null" ] || sync_strategy="rebase"
 
   if [ "$DRY_RUN" -eq 0 ]; then
     if [ "$(jq -r '.resumed // false' "$result_file")" = "true" ]; then
@@ -3683,24 +3777,46 @@ integrate_issue_result() {
           ;;
       esac
     fi
+    if ! validate_release_chain_leaf_policy "$chain_name" "$issue" "$issue_worktree" "$issue_branch" "$result_commit_before" "$approved_release_id" "$sync_strategy" "$chain_run_id" "$issue_run_id"; then
+      CHAIN_INTEGRATION_FAILURE_REASON="issue #$issue release-bearing leaf policy failed"
+      return 1
+    fi
     git -C "$chain_worktree" checkout "$branch" || return 1
-    chain_git_integrate_issue_workspace "$REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy" || return 1
+    chain_git_integrate_issue_workspace "$REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy" "$sync_strategy" || return 1
     emit_chain_event chain_issue_merged "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed 0 \
-      "$(jq -cn --arg chain "$chain_name" --arg branch "$branch" --arg issue_branch "$issue_branch" --arg commit_after "$result_commit_after" '{chain:$chain, branch:$branch, issue_branch:$issue_branch, commit_after:(if $commit_after == "" then null else $commit_after end)}')"
+      "$(jq -cn --arg chain "$chain_name" --arg branch "$branch" --arg issue_branch "$issue_branch" --arg commit_after "$result_commit_after" --arg sync_strategy "$sync_strategy" '{chain:$chain, branch:$branch, issue_branch:$issue_branch, sync_strategy:$sync_strategy, commit_after:(if $commit_after == "" then null else $commit_after end)}')"
   else
     printf 'DRY-RUN git -C %q checkout %q\n' "$chain_worktree" "$branch"
+    printf 'DRY-RUN chain leaf sync strategy: %s\n' "$sync_strategy"
     case "$git_metadata_strategy" in
       linked-worktree)
-        printf 'DRY-RUN git -C %q rebase %q\n' "$issue_worktree" "$branch"
-        printf 'DRY-RUN git -C %q merge --ff-only %q\n' "$chain_worktree" "$issue_branch"
+        case "$sync_strategy" in
+          rebase)
+            printf 'DRY-RUN git -C %q rebase %q\n' "$issue_worktree" "$branch"
+            printf 'DRY-RUN git -C %q merge --ff-only %q\n' "$chain_worktree" "$issue_branch"
+            ;;
+          squash)
+            printf 'DRY-RUN git -C %q merge --squash %q\n' "$chain_worktree" "$issue_branch"
+            printf 'DRY-RUN git -C %q commit -m %q\n' "$chain_worktree" "Squash $issue_branch into $branch"
+            ;;
+        esac
         printf 'DRY-RUN git -C %q worktree remove %q\n' "$REPO_ROOT" "$issue_worktree"
         printf 'DRY-RUN git -C %q branch -D %q\n' "$REPO_ROOT" "$issue_branch"
         ;;
       local-clone)
-        printf 'DRY-RUN git -C %q fetch %q %q\n' "$issue_worktree" "$chain_worktree" "$branch"
-        printf 'DRY-RUN git -C %q rebase FETCH_HEAD\n' "$issue_worktree"
-        printf 'DRY-RUN git -C %q fetch %q %q\n' "$chain_worktree" "$issue_worktree" "$issue_branch"
-        printf 'DRY-RUN git -C %q merge --ff-only FETCH_HEAD\n' "$chain_worktree"
+        case "$sync_strategy" in
+          rebase)
+            printf 'DRY-RUN git -C %q fetch %q %q\n' "$issue_worktree" "$chain_worktree" "$branch"
+            printf 'DRY-RUN git -C %q rebase FETCH_HEAD\n' "$issue_worktree"
+            printf 'DRY-RUN git -C %q fetch %q %q\n' "$chain_worktree" "$issue_worktree" "$issue_branch"
+            printf 'DRY-RUN git -C %q merge --ff-only FETCH_HEAD\n' "$chain_worktree"
+            ;;
+          squash)
+            printf 'DRY-RUN git -C %q fetch %q %q\n' "$chain_worktree" "$issue_worktree" "$issue_branch"
+            printf 'DRY-RUN git -C %q merge --squash FETCH_HEAD\n' "$chain_worktree"
+            printf 'DRY-RUN git -C %q commit -m %q\n' "$chain_worktree" "Squash $issue_branch into $branch"
+            ;;
+        esac
         printf 'DRY-RUN rm -rf %q\n' "$issue_worktree"
         ;;
     esac
@@ -3768,7 +3884,8 @@ process_completed_issue_result() {
   fi
 
   if ! integrate_issue_result "$chain_name" "$branch" "$chain_worktree" "$issue" "$git_metadata_strategy" "$result_file" "$chain_run_id" "$issue_run_id"; then
-    SCHEDULER_FAILURE_REASON="issue #$issue integration failed"
+    SCHEDULER_FAILURE_REASON="${CHAIN_INTEGRATION_FAILURE_REASON:-issue #$issue integration failed}"
+    CHAIN_INTEGRATION_FAILURE_REASON=""
     return 1
   fi
   mark_issue_integrated "$issue_run_id"
@@ -4085,6 +4202,8 @@ for ((idx = 0; idx < chain_count; idx++)); do
   base=$(jq -r ".chains[$idx].base" "$PLAN_JSON")
   branch=$(jq -r ".chains[$idx].branch" "$PLAN_JSON")
   host=$(jq -r ".chains[$idx].host" "$PLAN_JSON")
+  approved_release_id=$(jq -r ".chains[$idx].approved_release_id // \"\"" "$PLAN_JSON")
+  sync_strategy=$(jq -r ".chains[$idx].sync_strategy // \"rebase\"" "$PLAN_JSON")
   phase_review_mode=$(jq -r ".chains[$idx].phase_review // \"auto\"" "$PLAN_JSON")
   checkpoint_mode=$(jq -r ".chains[$idx].checkpoint // \"off\"" "$PLAN_JSON")
   git_metadata_strategy=$(jq -r ".chains[$idx].git_metadata_strategy // \"linked-worktree\"" "$PLAN_JSON")
@@ -4103,10 +4222,10 @@ for ((idx = 0; idx < chain_count; idx++)); do
   chain_results_dir="$RUN_WORK_ROOT/$chain_slug-results-$chain_run_id"
   CHAIN_WORKER_POOL=$(jq -r ".chains[$idx].worker_pool" "$PLAN_JSON")
 
-  log "starting chain $name on $branch from latest $base using host=$host git_metadata_strategy=$git_metadata_strategy checkpoint=$checkpoint_mode worker_pool=$CHAIN_WORKER_POOL"
+  log "starting chain $name on $branch from latest $base using host=$host git_metadata_strategy=$git_metadata_strategy sync_strategy=$sync_strategy checkpoint=$checkpoint_mode worker_pool=$CHAIN_WORKER_POOL"
   mark_chain_state "$chain_run_id" running
   emit_chain_event chain_started "" "$RUN_ID" "$chain_run_id" "" running 0 \
-    "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --arg git_metadata_strategy "$git_metadata_strategy" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, host:$host, git_metadata_strategy:$git_metadata_strategy, issue_count:$issue_count, worker_pool:$worker_pool}')"
+    "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --arg git_metadata_strategy "$git_metadata_strategy" --arg sync_strategy "$sync_strategy" --arg approved_release_id "$approved_release_id" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, host:$host, git_metadata_strategy:$git_metadata_strategy, sync_strategy:$sync_strategy, approved_release_id:(if $approved_release_id == "" then null else $approved_release_id end), issue_count:$issue_count, worker_pool:$worker_pool}')"
   host_preflight "$host" "$REPO_ROOT" || abort_run "host preflight failed for $host"
   run_retryable_or_abort network_partition "fetch origin failed before chain $name" \
     with_login_home_for_github git -C "$REPO_ROOT" fetch origin --prune
