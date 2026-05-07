@@ -1,0 +1,17 @@
+{
+  "now_epoch": 2000,
+  "stale_threshold_s": 100,
+  "completed_retention_s": 300,
+  "cases": [
+    { "name": "available", "raw_status": "available", "updated_epoch": 1980, "expected": "available" },
+    { "name": "queued", "raw_status": "pending", "updated_epoch": 1980, "expected": "queued" },
+    { "name": "running", "raw_status": "running", "updated_epoch": 1980, "expected": "running" },
+    { "name": "paused", "raw_status": "paused", "updated_epoch": 1980, "expected": "paused" },
+    { "name": "blocked", "raw_status": "blocked", "updated_epoch": 1000, "expected": "blocked" },
+    { "name": "failed", "raw_status": "failed", "updated_epoch": 1000, "expected": "failed" },
+    { "name": "completed", "raw_status": "completed", "completed_epoch": 1900, "expected": "completed" },
+    { "name": "completed-to-archived", "raw_status": "completed", "completed_epoch": 1600, "expected": "archived" },
+    { "name": "stale", "raw_status": "running", "updated_epoch": 1000, "expected": "stale" },
+    { "name": "unknown", "raw_status": "not-a-status", "updated_epoch": 1980, "expected": "unknown" }
+  ]
+}

@@ -65,6 +65,18 @@ the studio feedback inbox and do not replace the rest of the prompt.
 uses `scripts/release-manager-configure.sh` for project-scoped Slack release
 notification setup. Defaults stay editable and avoid TestFlight `<!here>`.
 
+<!-- v2-dev-studio:manager-chain-monitor -->
+## Manager Chain Monitor
+
+`/dev-studio manager chain-monitor` routes to the manager role and uses
+`scripts/manager-chain-monitor.sh` for chain monitor `configure`, `sync`,
+`status`, and `recovery`. `status` is non-mutating and reports owner home,
+owner project, state path, Slack List ID, dry-run collision count, and pending
+write count without secrets. Recovery defaults to dry-run; destructive
+full-rewrite execution must require explicit operator approval. Background sync
+scheduling uses `scripts/schedule-chain-monitor.sh` and is macOS LaunchAgent
+only, with login-home ownership.
+
 <!-- v2-dev-studio:landing -->
 ## Bare Role Landing
 
@@ -74,9 +86,11 @@ direct invocation once the workflow is selected. `manager ingest` calls
 `scripts/dev-studio-ingest-resolve.sh`; `manager analyze` calls
 `scripts/manager-analyze.sh`; `manager reconcile` calls
 `scripts/manager-reconcile.sh`; `manager work-chain` calls
-`scripts/manager-work-chain.sh`. Bare `scripts/studio-chain-runner.sh` shows
-runnable chains, resumable runs, and next actions. Prefer `/dev-studio manager
-work-chain ...` in user-facing guidance; script commands are secondary
+`scripts/manager-work-chain.sh`; `manager chain-monitor` calls
+`scripts/manager-chain-monitor.sh`. Bare `scripts/studio-chain-runner.sh`
+shows runnable chains, resumable runs, and next actions. Prefer
+`/dev-studio manager work-chain ...` in user-facing guidance; script commands
+are secondary
 automation/debug equivalents. Use `--discover <manifest|chain-name>` for
 filtered discovery; `/dev-studio manager work-chain prd-to-chain-automation`
 auto-runs that chain while bare `manager work-chain` lands in discovery. Chain

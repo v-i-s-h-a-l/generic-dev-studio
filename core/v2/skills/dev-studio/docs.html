@@ -519,7 +519,8 @@
             <code class="shell">scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt; --dry-run
 scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt; --unattended --yes
 scripts/studio-chain-runner.sh --discover
-scripts/manager-work-chain.sh prd-to-chain-automation</code>
+scripts/manager-work-chain.sh prd-to-chain-automation
+scripts/manager-chain-monitor.sh status --project generic-dev-studio --json</code>
           </article>
           <article class="role">
             <h3>Hotfix Bug</h3>
@@ -760,6 +761,7 @@ scripts/worker-status.sh</code>
 /dev-studio manager guard "has this shipped?"
 /dev-studio manager analyze
 /dev-studio manager reconcile
+/dev-studio manager chain-monitor status
 /dev-studio manager ingest "capture this pattern"
 /dev-studio manager work-chain
 /dev-studio manager ingest --scope studio "capture this Forge workflow gap"</code>

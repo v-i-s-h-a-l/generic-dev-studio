@@ -97,6 +97,9 @@ scripts/studio-chain-runner.sh --resume <run_id> --yes # resume state; reconcile
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview checkpoint-aware safe-boundary hooks
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
 scripts/studio-chain-rule-gates.sh --plan plan.json --dry-run # deterministic rule-pack workflow gates with JSON audit output
+scripts/chain-monitor-sync.sh --project generic-dev-studio --dry-run # locked/idempotent Slack List row sync from chain manifests and run state
+scripts/manager-chain-monitor.sh status --project generic-dev-studio --json # non-mutating monitor status with owner/list/pending-write counts
+scripts/schedule-chain-monitor.sh --install --project generic-dev-studio --interval-s 300 # login-home macOS LaunchAgent for background monitor sync
 scripts/rule-pack-resolve.sh --manifest chain.yaml --chain my-chain --issue 123 --role worker # selective rule-pack selection with context-budget telemetry
 scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters, efficiency ratios, and bottlenecks from private chain-run telemetry
 scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker # compact session resume by id; add --latest for branch-scoped lookup
@@ -213,6 +216,9 @@ scripts/                # multi-worker fleet (BETA)
   studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
   studio-chain-runner.sh   # plan/execute/discover/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, optional checkpoint hooks, locks, and private run reports
   studio-chain-rule-gates.sh # deterministic chain workflow gates for git hygiene, artifact roots, cache keys, cleanup TTLs, and telemetry redaction
+  chain-monitor-sync.sh # locked/idempotent chain monitor Slack List row sync from manifests, runtime manifests, and persisted chain-run state
+  manager-chain-monitor.sh # manager front door for monitor configure/sync/status/recovery while preserving login-home ownership
+  schedule-chain-monitor.sh # login-home macOS LaunchAgent installer for background chain monitor sync
   studio-chain-telemetry-digest.sh # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run reports/events
   prd-intake-normalize.sh # deterministic PRD/transcript/issue brief normalization into a small requirement packet
   prd-task-graph-synthesize.sh # deterministic requirement-packet to scheduler-graph synthesis with dependency/race validation
@@ -381,7 +387,7 @@ Add to `~/.claude/settings.json` under `permissions.allow`:
 
 `~/.dev-studio/` sits outside `~/.claude/` on purpose — agents read/write their artifacts unattended without tripping the self-mod guard.
 
-Optional node monitoring installs `~/Library/LaunchAgents/dev.studio.node-monitor.plist` via `scripts/monitor-install.sh install`. That path is outside `~/.dev-studio/**` by design because launchd only loads user agents from `~/Library/LaunchAgents`.
+Optional node monitoring installs `~/Library/LaunchAgents/dev.studio.node-monitor.plist` via `scripts/monitor-install.sh install`. Optional chain monitor background sync installs `~/Library/LaunchAgents/dev.studio.chain-monitor-sync.<project>.plist` via `scripts/schedule-chain-monitor.sh --install`. Those paths are outside `~/.dev-studio/**` by design because launchd only loads user agents from `~/Library/LaunchAgents`.
 
 ### Codex Permissions
 
