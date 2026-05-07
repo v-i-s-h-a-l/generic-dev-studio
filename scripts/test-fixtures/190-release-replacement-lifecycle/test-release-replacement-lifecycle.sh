@@ -11,12 +11,19 @@ fail() {
   exit 1
 }
 
-grep -Fq 'release@1.3.0' "$SCHEMA" || fail "release schema version was not bumped"
+grep -Fq 'release@1.4.0' "$SCHEMA" || fail "release schema version was not bumped"
+grep -Fq 'approved_at' "$SCHEMA" || fail "schema does not document approval timestamp"
+grep -Fq 'approved_by' "$SCHEMA" || fail "schema does not document approval writer"
+grep -Fq 'approval_review_head_sha' "$SCHEMA" || fail "schema does not document approval review head sha"
+grep -Fq 'approval_review_comment_url' "$SCHEMA" || fail "schema does not document approval review comment reference"
 grep -Fq 'withdrawn' "$SCHEMA" || fail "schema does not document withdrawn state"
 grep -Fq 'superseded' "$SCHEMA" || fail "schema does not document superseded state"
 grep -Fq 'replaces' "$SCHEMA" || fail "schema does not document replacement forward pointer"
 grep -Fq 'superseded_by' "$SCHEMA" || fail "schema does not document replacement back pointer"
 
+grep -Fq 'submitted             → approved' "$LIFECYCLE" || fail "missing submitted to approved transition"
+grep -Fq 'approved              → in-review' "$LIFECYCLE" || fail "missing approved to in-review transition"
+grep -Fq 'studio approval gate' "$LIFECYCLE" || fail "missing studio approval gate wording"
 grep -Fq 'submitted             → withdrawn' "$LIFECYCLE" || fail "missing submitted to withdrawn transition"
 grep -Fq 'released              → superseded' "$LIFECYCLE" || fail "missing released to superseded transition"
 grep -Fq '[WITHDRAWN] <tag>' "$LIFECYCLE" || fail "missing GitHub release withdrawal title convention"
