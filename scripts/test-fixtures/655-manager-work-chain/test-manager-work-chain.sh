@@ -26,13 +26,15 @@ grep -q '# Studio Chain Discovery' "$TMPROOT/discover.out" \
   || fail "bare manager work-chain should default to discovery"
 grep -q 'prd-to-chain-automation' "$TMPROOT/discover.out" \
   || fail "discovery should surface the PRD automation chain"
-grep -q 'scripts/manager-work-chain.sh <chain> --dry-run' "$TMPROOT/discover.out" \
-  || fail "discovery should surface the preview command contract"
+grep -q '/dev-studio manager work-chain <chain> --dry-run' "$TMPROOT/discover.out" \
+  || fail "discovery should surface the preferred preview command contract"
+grep -q 'scripts/manager-work-chain.sh' "$TMPROOT/discover.out" \
+  || fail "discovery should keep script equivalents for automation"
 
 HOME="$TMPROOT/home" "$RUN" --discover prd-to-chain-automation >"$TMPROOT/discover-filtered.out"
 grep -q 'prd-to-chain-automation' "$TMPROOT/discover-filtered.out" \
   || fail "filtered manager discovery should surface the named chain"
-if grep -q 'scripts/manager-work-chain.sh field-telemetry-mvp --dry-run' "$TMPROOT/discover-filtered.out"; then
+if grep -q '/dev-studio manager work-chain field-telemetry-mvp --dry-run' "$TMPROOT/discover-filtered.out"; then
   fail "filtered manager discovery should not list unrelated chains"
 fi
 

@@ -59,6 +59,10 @@ check_public_docs() {
       E_CHAIN_DOC_DISCOVER 'document bare discovery before chain work starts'
     require_file_contains "$doc" 'scripts/studio-chain-runner.sh --discover prd-to-chain-automation' \
       E_CHAIN_DOC_FILTERED_DISCOVER 'document filtered discovery for a manifest or chain name'
+    require_file_contains "$doc" '/dev-studio manager work-chain prd-to-chain-automation --dry-run' \
+      E_CHAIN_DOC_DEV_STUDIO_PREVIEW 'document preferred dev-studio work-chain preview'
+    require_file_contains "$doc" '/dev-studio manager work-chain --resume <run_id> --yes' \
+      E_CHAIN_DOC_DEV_STUDIO_RESUME 'document preferred dev-studio work-chain resume'
     require_file_contains "$doc" 'scripts/manager-work-chain.sh prd-to-chain-automation --dry-run' \
       E_CHAIN_DOC_MANAGER_PREVIEW 'document manager front-door preview'
     require_file_contains "$doc" 'scripts/studio-chain-runner.sh --auto workflow-measurement-improvements' \
@@ -86,6 +90,10 @@ check_runner_contract() {
     E_CHAIN_RUNNER_DISCOVERY_ONLY 'bare runner invocation must remain non-mutating discovery'
   require_file_contains scripts/studio-chain-runner.sh 'Add a manifest or chain name to filter suggestions' \
     E_CHAIN_RUNNER_FILTER_COPY 'discovery output must explain filtered suggestions'
+  require_file_contains scripts/studio-chain-runner.sh '/dev-studio manager work-chain <chain> --dry-run' \
+    E_CHAIN_RUNNER_DEV_STUDIO_PREVIEW 'discovery output must prefer dev-studio manager preview commands'
+  require_file_contains scripts/studio-chain-runner.sh '## Chain Progress Recap' \
+    E_CHAIN_RUNNER_PROGRESS_RECAP 'chain runner must print compact task progress recaps'
   require_file_contains scripts/studio-chain-runner.sh '--auto is unattended' \
     E_CHAIN_RUNNER_AUTO_MODE 'auto mode must stay unattended unless the contract changes deliberately'
 }
@@ -102,6 +110,8 @@ check_manager_wrapper_contract() {
 check_fixtures() {
   require_file_contains scripts/test-fixtures/446-chain-mode-enhancements/test-chain-runner-discover.sh 'scripts/studio-chain-runner.sh" --discover prd-to-chain-automation' \
     E_CHAIN_FIXTURE_FILTERED_DISCOVER 'runner discovery fixture must cover filtered discovery'
+  require_file_contains scripts/test-fixtures/446-chain-mode-enhancements/test-chain-runner-discover.sh '/dev-studio manager work-chain field-telemetry-mvp --dry-run' \
+    E_CHAIN_FIXTURE_DEV_STUDIO_DISCOVER 'runner discovery fixture must assert preferred dev-studio commands'
   require_file_contains scripts/test-fixtures/446-chain-mode-enhancements/test-chain-runner-discover.sh 'filtered discovery included unrelated runnable chain' \
     E_CHAIN_FIXTURE_FILTER_NEGATIVE 'runner fixture must assert filtered discovery omits unrelated chains'
   require_file_contains scripts/test-fixtures/655-manager-work-chain/test-manager-work-chain.sh '"$RUN" --discover prd-to-chain-automation' \
