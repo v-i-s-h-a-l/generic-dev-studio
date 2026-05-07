@@ -421,7 +421,7 @@ event_data() {
 event_stage() {
   case "$1" in
     chain_run_started|chain_plan_prepared|chain_phase_review_completed) printf 'plan\n' ;;
-    chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed) printf 'preflight\n' ;;
+    chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed|chain_rule_gate_completed) printf 'preflight\n' ;;
     chain_started|chain_issue_started|chain_issue_completed|chain_issue_validated|chain_parent_commit_finalized|chain_issue_scheduler_blocked) printf 'execute\n' ;;
     chain_worker_summary_ingested|chain_telemetry_gap|checkpoint_auto_created|checkpoint_auto_loaded|checkpoint_context_savings_estimated) printf 'ingest\n' ;;
     chain_pr_opened|chain_review_completed) printf 'review\n' ;;
@@ -2881,6 +2881,43 @@ rule_pack_resolution_blocked() {
   ' "$plan" >/dev/null 2>&1
 }
 
+apply_mechanical_rule_gates() {
+  local plan="$1" tmp gate_result gate_rc audit_log
+  local -a gate_args
+  [ -x "$SCRIPT_DIR/studio-chain-rule-gates.sh" ] || return 0
+  tmp="$plan.gates.$$"
+  gate_result="$plan.gates.result.$$"
+  audit_log="$CHAIN_RUN_ROOT/rule-pack-gates.jsonl"
+  gate_args=(
+    --plan "$plan"
+    --manifest "$MANIFEST"
+    --repo "$REPO_ROOT"
+    --audit-log "$audit_log"
+    --expected-run-work-root "$RUN_WORK_ROOT"
+  )
+  [ "$DRY_RUN" -eq 0 ] || gate_args+=(--dry-run)
+
+  set +e
+  "$SCRIPT_DIR/studio-chain-rule-gates.sh" "${gate_args[@]}" >"$gate_result"
+  gate_rc=$?
+  set -e
+  if [ "$gate_rc" -ne 0 ] && [ "$gate_rc" -ne 4 ]; then
+    rm -f "$gate_result"
+    printf 'studio-chain-runner: mechanical rule gate failed to run\n' >&2
+    exit "$gate_rc"
+  fi
+  jq --slurpfile gates "$gate_result" '.mechanical_rule_gates = $gates[0]' "$plan" >"$tmp"
+  mv "$tmp" "$plan"
+  emit_chain_event chain_rule_gate_completed "" "$RUN_ID" "" "" "$(jq -r '.status' "$gate_result")" 0 \
+    "$(jq -c '{audit_log, checks:([.checks[] | {id,status,severity,override_env}]), failure_count:(.failures | length), override_count:(.overrides | length)}' "$gate_result")"
+  if [ "$gate_rc" -eq 4 ]; then
+    jq -r '.failures[] | "studio-chain-runner: rule gate blocked: \(.id) - \(.detail) (override: \(.override_env // "none"))"' "$gate_result" >&2
+    rm -f "$gate_result"
+    exit 4
+  fi
+  rm -f "$gate_result"
+}
+
 live_preflight() {
   local plan="$1" reviewer_host branch issue_branch base
   run_retryable_or_abort github_auth_unavailable "GitHub auth is not available" \
@@ -2938,6 +2975,7 @@ explain_plan() {
   printf -- '- Retry policy: auto retry retryable operations up to `%s` time(s), backoff `%ss`, then write a typed halt record without asking a routine continuation question\n' "$retry_limit" "$retry_backoff"
   printf -- '- Escalation policy: attended prompts are reserved for review-needed, human-needed, or fatal blockers; unattended mode runs until a typed blocker appears\n'
   [ -z "$gates" ] || printf -- '- Review gates: %s\n' "$gates"
+  printf -- '- Mechanical rule gates: `%s`; audit `%s`\n' "$(jq -r '.mechanical_rule_gates.status // "not-run"' "$plan")" "$(jq -r '.mechanical_rule_gates.audit_log // "none"' "$plan")"
   printf -- '- Host/model policy: manifest host, overridden by `--host`; `auto` resolves to `%s`\n' "${HOST_OVERRIDE:-codex}"
   printf -- '- Risk notes: %s\n\n' "$risk"
   jq -r '
@@ -3003,6 +3041,7 @@ prepare_plan() {
     build_plan_json "$PLAN_JSON"
   fi
   attach_rule_pack_resolutions "$PLAN_JSON"
+  apply_mechanical_rule_gates "$PLAN_JSON"
   validate_execution_graph "$PLAN_JSON"
   if [ -z "$RESUME_ID" ]; then
     if [ "$DRY_RUN" -eq 0 ]; then

@@ -35,6 +35,7 @@ Every pack must declare these fields in `core/v2/rule-packs/catalog.yaml`:
 - `metadata_path`: pack-local metadata when the pack graduates from catalog-only.
 - `owner`: owning role, team, or repo surface.
 - `applicability`: `any_of`, `all_of`, and `none_of` predicate lists.
+- `enforcement_policy`: script-enforced gates, LLM-reviewed checks, and override envs.
 - `enforcement_hooks`: scripts, hooks, or explicit manual checks.
 - `fixture_refs`: regression fixtures or examples proving expected selection.
 

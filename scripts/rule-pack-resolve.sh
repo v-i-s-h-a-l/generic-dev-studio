@@ -279,6 +279,7 @@ jq -n \
           full_doc_path:$pack.full_doc_path,
           metadata_path:$pack.metadata_path,
           applicability:$pack.applicability,
+          enforcement_policy:$pack.enforcement_policy,
           enforcement_hooks:$pack.enforcement_hooks,
           fixture_refs:$pack.fixture_refs
         }
