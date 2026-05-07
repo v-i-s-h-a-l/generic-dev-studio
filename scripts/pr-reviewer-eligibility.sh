@@ -16,12 +16,11 @@ HOST="${1:-${STUDIO_REVIEW_HOST:-codex-reviewer}}"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 SMOKE_TIMEOUT_SEC="${STUDIO_REVIEWER_SMOKE_TIMEOUT_SEC:-45}"
-CALLER_HOME="${HOME:-}"
 
-# shellcheck source=lib-paths.sh
+# shellcheck source=scripts/lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
-
-LOGIN_HOME=$(resolve_user_login_home 2>/dev/null || true)
+# shellcheck source=scripts/lib-studio-context.sh
+. "$SCRIPT_DIR/lib-studio-context.sh"
 
 fail() {
   printf 'PR_REVIEWER_ELIGIBLE=0\n'
@@ -56,24 +55,27 @@ run_smoke_gate() {
   reviewer_claude_config_dir=""
   case "$HOST" in
     codex*|*codex*)
-      reviewer_codex_home="${CODEX_REVIEWER_HOME:-${CODEX_HOME:-}}"
-      if [ -z "$reviewer_codex_home" ]; then
-        if [ -n "$CALLER_HOME" ] && [ -d "$CALLER_HOME/.codex" ]; then
-          reviewer_codex_home="$CALLER_HOME/.codex"
-        elif [ -n "$LOGIN_HOME" ] && [ -d "$LOGIN_HOME/.codex" ]; then
-          reviewer_codex_home="$LOGIN_HOME/.codex"
-        fi
-      fi
+      export STUDIO_CONTEXT_HOST_PROFILE="$HOST"
+      studio_context_resolve delegated-host-spawn || {
+        rm -rf "$tmpdir"
+        fail smoke_auth_unavailable "codex reviewer auth home unavailable via Studio context"
+      }
+      reviewer_codex_home="$STUDIO_CONTEXT_AUTH_HOME"
       [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] || {
         rm -rf "$tmpdir"
-        fail smoke_auth_unavailable "codex reviewer auth home not found; set CODEX_REVIEWER_HOME or CODEX_HOME"
+        fail smoke_auth_unavailable "codex reviewer auth home not found via Studio context"
       }
       ;;
     claude*|*claude*)
-      reviewer_claude_home="${CLAUDE_REVIEWER_HOME:-$LOGIN_HOME}"
+      export STUDIO_CONTEXT_HOST_PROFILE="$HOST"
+      studio_context_resolve delegated-host-spawn || {
+        rm -rf "$tmpdir"
+        fail smoke_auth_unavailable "claude reviewer auth home unavailable via Studio context"
+      }
+      reviewer_claude_home="$STUDIO_CONTEXT_AUTH_HOME"
       [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] || {
         rm -rf "$tmpdir"
-        fail smoke_auth_unavailable "claude reviewer auth home not found; set CLAUDE_REVIEWER_HOME"
+        fail smoke_auth_unavailable "claude reviewer auth home not found via Studio context"
       }
       reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-$reviewer_claude_home/.claude-reviewer}"
       [ -n "$reviewer_claude_config_dir" ] || {

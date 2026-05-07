@@ -38,6 +38,11 @@ cat > "$BIN/gh" <<'SH'
 #!/usr/bin/env bash
 set -u
 
+[ -n "${EXPECTED_GITHUB_HOME:-}" ] && [ "$HOME" = "$EXPECTED_GITHUB_HOME" ] || {
+  printf 'gh did not receive normalized github HOME\n' >&2
+  exit 11
+}
+
 case "$1 $2" in
   "pr view")
     case " $* " in
@@ -77,11 +82,19 @@ export GITHUB_TOKEN="must-not-leak"
 export OPENAI_API_KEY="must-not-leak"
 export ANTHROPIC_API_KEY="must-not-leak"
 export HOME="$TMPROOT/caller-home"
-export CODEX_HOME="$HOME/.codex"
+export STUDIO_CONTEXT_GITHUB_HOME="$TMPROOT/github-home"
+export CODEX_REVIEWER_HOME="$TMPROOT/reviewer-home"
+export EXPECTED_GITHUB_HOME="$STUDIO_CONTEXT_GITHUB_HOME"
 export STUDIO_PARENT_HOST="claude-code"
 mkdir -p "$HOME/.config/gh"
 printf 'github.com: token\n' > "$HOME/.config/gh/hosts.yml"
-mkdir -p "$CODEX_HOME"
+mkdir -p "$STUDIO_CONTEXT_GITHUB_HOME" "$CODEX_REVIEWER_HOME"
+
+resolved_codex_home=$(STUDIO_CONTEXT_HOST_PROFILE=codex-reviewer bash -c ". '$ROOT/scripts/lib-studio-context.sh'; studio_context_get auth_home delegated-host-spawn")
+[ "$resolved_codex_home" = "$CODEX_REVIEWER_HOME" ] || {
+  printf 'fixture resolved codex auth home incorrectly: %s\n' "$resolved_codex_home" >&2
+  exit 1
+}
 
 failures=0
 assert() {

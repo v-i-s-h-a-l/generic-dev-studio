@@ -22,7 +22,6 @@ usage() {
 [ $# -ge 1 ] || usage
 PR="$1"
 shift
-CALLER_HOME="${HOME:-}"
 PR_REVIEW_STARTED_AT=$(date +%s)
 PR_URL_FOR_EVENT=""
 PR_HEAD_SHA_FOR_EVENT=""
@@ -84,14 +83,15 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 AUTOPILOT="${PR_HEADLESS_REVIEW_AUTOPILOT:-$SCRIPT_DIR/pr-autopilot.sh}"
 
-# shellcheck source=lib-paths.sh
+# shellcheck source=scripts/lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
-# shellcheck source=lib-review-budget.sh
+# shellcheck source=scripts/lib-studio-context.sh
+. "$SCRIPT_DIR/lib-studio-context.sh"
+# shellcheck source=scripts/lib-review-budget.sh
 . "$SCRIPT_DIR/lib-review-budget.sh"
-# shellcheck source=lib-ledger.sh
+# shellcheck source=scripts/lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh" 2>/dev/null || true
 
-LOGIN_HOME=$(resolve_user_login_home 2>/dev/null || true)
 PARENT_HOST=$(resolve_current_studio_host unknown)
 
 emit_pr_review_duration() {
@@ -288,7 +288,7 @@ eligible_hosts() {
   rm -f "$hosts_file"
 }
 
-pr_json=$(with_login_home_for_github gh pr view "$PR" --json number,title,url,baseRefName,headRefName,headRefOid,author,commits) \
+pr_json=$("$SCRIPT_DIR/studio-gh.sh" pr view "$PR" --json number,title,url,baseRefName,headRefName,headRefOid,author,commits) \
   || { printf 'pr-headless-review: failed to read PR %s\n' "$PR" >&2; exit 1; }
 pr_num=$(printf '%s' "$pr_json" | jq -r '.number')
 pr_url=$(printf '%s' "$pr_json" | jq -r '.url')
@@ -372,7 +372,7 @@ reviewer_codex_home=""
 reviewer_claude_home=""
 reviewer_claude_config_dir=""
 
-with_login_home_for_github gh pr diff "$PR" --patch > "$diff_payload"
+"$SCRIPT_DIR/studio-gh.sh" pr diff "$PR" --patch > "$diff_payload"
 
 write_pr_payload() {
   local mode="$1" policy_json="$2"
@@ -443,6 +443,12 @@ run_review_candidate() {
     append_failure "$REVIEW_HOST" "$summary" "$summary.err"
     return 1
   }
+  export STUDIO_CONTEXT_HOST_PROFILE="$REVIEW_HOST"
+  studio_context_resolve delegated-host-spawn || {
+    printf 'pr-headless-review: failed to resolve reviewer auth home for %s\n' "$REVIEW_HOST" > "$summary.err"
+    append_failure "$REVIEW_HOST" "$summary" "$summary.err"
+    return 1
+  }
   resolver_args=(--review-host "$REVIEW_HOST" --implementation-host "$PARENT_HOST" --role reviewer.heavyweight)
   [ "$ALLOW_SAME_HOST_REVIEW" -eq 0 ] || resolver_args+=(--allow-same-family)
   model_resolution=$("$SCRIPT_DIR/resolve-reviewer-model.sh" "${resolver_args[@]}" 2>&1) || {
@@ -458,24 +464,17 @@ run_review_candidate() {
   reviewer_claude_config_dir=""
   case "$REVIEW_HOST" in
     codex*|*codex*)
-      reviewer_codex_home="${CODEX_REVIEWER_HOME:-${CODEX_HOME:-}}"
-      if [ -z "$reviewer_codex_home" ]; then
-        if [ -n "$CALLER_HOME" ] && [ -d "$CALLER_HOME/.codex" ]; then
-          reviewer_codex_home="$CALLER_HOME/.codex"
-        elif [ -n "$LOGIN_HOME" ] && [ -d "$LOGIN_HOME/.codex" ]; then
-          reviewer_codex_home="$LOGIN_HOME/.codex"
-        fi
-      fi
+      reviewer_codex_home="$STUDIO_CONTEXT_AUTH_HOME"
       [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] || {
-        printf 'pr-headless-review: codex reviewer auth home not found; set CODEX_REVIEWER_HOME or CODEX_HOME\n' > "$summary.err"
+        printf 'pr-headless-review: codex reviewer auth home not found via Studio context\n' > "$summary.err"
         append_failure "$REVIEW_HOST" "$summary" "$summary.err"
         return 1
       }
       ;;
     claude*|*claude*)
-      reviewer_claude_home="${CLAUDE_REVIEWER_HOME:-$LOGIN_HOME}"
+      reviewer_claude_home="$STUDIO_CONTEXT_AUTH_HOME"
       [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] || {
-        printf 'pr-headless-review: claude reviewer auth home not found; set CLAUDE_REVIEWER_HOME\n' > "$summary.err"
+        printf 'pr-headless-review: claude reviewer auth home not found via Studio context\n' > "$summary.err"
         append_failure "$REVIEW_HOST" "$summary" "$summary.err"
         return 1
       }

@@ -17,7 +17,6 @@ usage() {
 
 REVIEW_HOST="${STUDIO_REVIEW_HOST:-}"
 BYPASS_REVIEW=0
-CALLER_HOME="${HOME:-}"
 REVIEW_STARTED_AT=$(date +%s)
 REVIEW_CONTEXT_JSON="null"
 
@@ -32,14 +31,14 @@ done
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
-# shellcheck source=lib-paths.sh
+# shellcheck source=scripts/lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
-# shellcheck source=lib-review-budget.sh
+# shellcheck source=scripts/lib-studio-context.sh
+. "$SCRIPT_DIR/lib-studio-context.sh"
+# shellcheck source=scripts/lib-review-budget.sh
 . "$SCRIPT_DIR/lib-review-budget.sh"
-# shellcheck source=lib-ledger.sh
+# shellcheck source=scripts/lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh" 2>/dev/null || true
-
-LOGIN_HOME=$(resolve_user_login_home 2>/dev/null || true)
 
 yaml_field() {
   local file="$1" key="$2"
@@ -161,23 +160,26 @@ reviewer_claude_home=""
 reviewer_claude_config_dir=""
 case "$REVIEW_HOST" in
   codex*|*codex*)
-    reviewer_codex_home="${CODEX_REVIEWER_HOME:-${CODEX_HOME:-}}"
-    if [ -z "$reviewer_codex_home" ]; then
-      if [ -n "$CALLER_HOME" ] && [ -d "$CALLER_HOME/.codex" ]; then
-        reviewer_codex_home="$CALLER_HOME/.codex"
-      elif [ -n "$LOGIN_HOME" ] && [ -d "$LOGIN_HOME/.codex" ]; then
-        reviewer_codex_home="$LOGIN_HOME/.codex"
-      fi
-    fi
+    export STUDIO_CONTEXT_HOST_PROFILE="$REVIEW_HOST"
+    studio_context_resolve delegated-host-spawn || {
+      printf 'pre-commit-review: codex reviewer auth home unavailable via Studio context\n' >&2
+      exit 1
+    }
+    reviewer_codex_home="$STUDIO_CONTEXT_AUTH_HOME"
     [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] || {
-      printf 'pre-commit-review: codex reviewer auth home not found; set CODEX_REVIEWER_HOME or CODEX_HOME\n' >&2
+      printf 'pre-commit-review: codex reviewer auth home not found via Studio context\n' >&2
       exit 1
     }
     ;;
   claude*|*claude*)
-    reviewer_claude_home="${CLAUDE_REVIEWER_HOME:-$LOGIN_HOME}"
+    export STUDIO_CONTEXT_HOST_PROFILE="$REVIEW_HOST"
+    studio_context_resolve delegated-host-spawn || {
+      printf 'pre-commit-review: claude reviewer auth home unavailable via Studio context\n' >&2
+      exit 1
+    }
+    reviewer_claude_home="$STUDIO_CONTEXT_AUTH_HOME"
     [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] || {
-      printf 'pre-commit-review: claude reviewer auth home not found; set CLAUDE_REVIEWER_HOME\n' >&2
+      printf 'pre-commit-review: claude reviewer auth home not found via Studio context\n' >&2
       exit 1
     }
     reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-$reviewer_claude_home/.claude-reviewer}"
