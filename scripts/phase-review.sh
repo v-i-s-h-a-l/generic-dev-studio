@@ -14,10 +14,15 @@
 # gates must not hand-compose raw `claude -p` / `codex exec` calls; those bypass
 # the smoke/auth/config checks that keep reviewer sessions reliable.
 #
-# If Claude Code rejects an actual review with subscription/403 access errors,
-# the wrapper falls back to `codex-reviewer` by default. This keeps phase gates
-# from wedging during Claude service/account outages while preserving wrapper
-# auth isolation and surfacing the degraded reviewer choice. Disable with:
+# If a cross-host reviewer fails eligibility, execution, timeout, or verdict
+# parsing, the wrapper tries another cross-host reviewer profile first. If no
+# cross-host reviewer returns usable output, phase gates may fall back to the
+# parent host's reviewer profile as a degraded continuity path. Same-host
+# fallback is loud: it does not satisfy cross-host review and emits retry
+# metadata for the next independent boundary. Disable same-host continuity with:
+#   STUDIO_DISABLE_PHASE_REVIEW_DEGRADED_SAME_HOST=1
+#
+# Claude Code subscription/403 failures keep the existing explicit opt-out:
 #   STUDIO_DISABLE_PHASE_REVIEW_CLAUDE_403_FALLBACK=1
 
 set -u
@@ -57,14 +62,36 @@ text_mentions_claude_subscription_403() {
   grep -Eiq 'disabled Claude subscription access|Claude subscription access|subscription access for Claude Code|((^|[^0-9])403([^0-9]|$).*(Claude|subscription|access|Anthropic))|((Claude|subscription|access|Anthropic).*(^|[^0-9])403([^0-9]|$))'
 }
 
-claude_subscription_403_failure() {
+host_family() {
+  case "$1" in
+    codex*|*codex*) printf 'openai\n' ;;
+    claude-code|claude|claude-*|*claude*) printf 'anthropic\n' ;;
+    unknown|"") printf 'unknown\n' ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+hosts_are_cross_family() {
+  local parent="$1" reviewer="$2" parent_family reviewer_family
+  parent_family=$(host_family "$parent")
+  reviewer_family=$(host_family "$reviewer")
+  [ "$parent_family" != "unknown" ] && [ "$reviewer_family" != "unknown" ] && [ "$parent_family" != "$reviewer_family" ]
+}
+
+same_family_reviewer_for_parent() {
+  case "$1" in
+    codex*|*codex*) printf 'codex-reviewer\n' ;;
+    claude-code|claude|claude-*|*claude*) printf 'claude-reviewer\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+claude_subscription_403_present() {
   local file
   case "$review_host" in
     claude*|*claude*) ;;
     *) return 1 ;;
   esac
-  [ "${STUDIO_PHASE_REVIEW_FALLBACK_ACTIVE:-0}" != "1" ] || return 1
-  [ "${STUDIO_DISABLE_PHASE_REVIEW_CLAUDE_403_FALLBACK:-0}" != "1" ] || return 1
   for file in "$err_output" "$output"; do
     [ -f "$file" ] || continue
     if text_mentions_claude_subscription_403 < "$file"; then
@@ -74,38 +101,92 @@ claude_subscription_403_failure() {
   return 1
 }
 
-try_claude_403_fallback() {
-  local fallback_host detail fallback_meta fallback_rc saved_output saved_err
-  fallback_host="${STUDIO_PHASE_REVIEW_CLAUDE_403_FALLBACK_HOST:-codex-reviewer}"
-  [ "$fallback_host" != "$review_host" ] || return 1
-  detail=$(failure_detail "$err_output")
-  [ -n "$detail" ] || detail=$(failure_detail "$output")
+phase_review_has_usable_verdict() {
+  local review_file="$1"
+  if sed -n -E 's/^[[:space:]]*(PHASE_REVIEW_VERDICT|STUDIO_REVIEW_VERDICT)[[:space:]]*[:=][[:space:]]*(clean|blocked|ambiguous)[[:space:]]*$/\2/ip' "$review_file" | grep -q .; then
+    return 0
+  fi
+  if grep -Eiq 'fatal blockers[[:space:]]*:?[[:space:]]*(present|yes)|verdict[^[:cntrl:]]*(blocked|do not proceed|stop)' "$review_file"; then
+    return 0
+  fi
+  if grep -Eiq 'nothing fatal|no fatal blockers|fatal blockers[[:space:]]*:?[[:space:]]*(none|no)|verdict[^[:cntrl:]]*(clean|proceed)' "$review_file"; then
+    return 0
+  fi
+  return 1
+}
 
-  saved_output="$output.$review_host"
-  saved_err="$err_output.$review_host"
+fallback_host_list() {
+  local parent_host="$1" preferred_host="$2" configured candidate seen same_host parent_family
+  configured="${STUDIO_PHASE_REVIEW_FALLBACK_HOSTS:-claude-reviewer,codex-reviewer}"
+  parent_family=$(host_family "$parent_host")
+  seen=" $preferred_host "
+  IFS=',' read -r -a configured_hosts <<< "$configured"
+  for candidate in "${configured_hosts[@]}"; do
+    [ -n "$candidate" ] || continue
+    case "$seen" in *" $candidate "*) continue ;; esac
+    if [ "$parent_family" = "unknown" ] || hosts_are_cross_family "$parent_host" "$candidate"; then
+      printf '%s\t0\n' "$candidate"
+      seen="$seen$candidate "
+    fi
+  done
+  if [ "${STUDIO_DISABLE_PHASE_REVIEW_DEGRADED_SAME_HOST:-0}" != "1" ]; then
+    same_host=$(same_family_reviewer_for_parent "$parent_host" 2>/dev/null || true)
+    if [ -n "$same_host" ]; then
+      case "$seen" in
+        *" $same_host "*) ;;
+        *) printf '%s\t1\n' "$same_host" ;;
+      esac
+    fi
+  fi
+}
+
+save_failed_outputs_for_host() {
+  local host="$1" saved_output saved_err
+  saved_output="$output.$host"
+  saved_err="$err_output.$host"
   [ ! -f "$output" ] || mv "$output" "$saved_output"
   [ ! -f "$err_output" ] || mv "$err_output" "$saved_err"
+}
 
-  set +e
-  fallback_meta=$(STUDIO_PHASE_REVIEW_FALLBACK_ACTIVE=1 "$0" \
-    --review-host "$fallback_host" \
-    --kind "$kind" \
-    --input "$input" \
-    --output "$output" \
-    --err-output "$err_output" 2>&1)
-  fallback_rc=$?
-  set -e
-  if [ "$fallback_rc" -ne 0 ]; then
-    printf '%s\n' "$fallback_meta" >&2
-    fail "reviewer command failed for $review_host${detail:+: $detail}; fallback $fallback_host also failed"
+try_review_fallbacks() {
+  local reason="$1" detail="$2" parent_host fallback_host degraded fallback_meta fallback_rc failures
+  [ "${STUDIO_PHASE_REVIEW_NO_FALLBACK:-0}" != "1" ] || return 1
+  if [ "$reason" = "claude_subscription_403" ] && [ "${STUDIO_DISABLE_PHASE_REVIEW_CLAUDE_403_FALLBACK:-0}" = "1" ]; then
+    return 1
   fi
-
-  printf 'PHASE_REVIEW_FALLBACK_FROM=%s\n' "$review_host"
-  printf 'PHASE_REVIEW_FALLBACK_TO=%s\n' "$fallback_host"
-  printf 'PHASE_REVIEW_FALLBACK_REASON=claude_subscription_403\n'
-  printf 'PHASE_REVIEW_FALLBACK_DETAIL=%s\n' "$detail"
-  printf '%s\n' "$fallback_meta"
-  exit 0
+  parent_host=$(resolve_current_studio_host unknown)
+  failures=""
+  save_failed_outputs_for_host "$review_host"
+  while IFS=$'\t' read -r fallback_host degraded; do
+    [ -n "$fallback_host" ] || continue
+    set +e
+    fallback_meta=$(STUDIO_PHASE_REVIEW_NO_FALLBACK=1 STUDIO_PARENT_HOST="$parent_host" "$0" \
+      --review-host "$fallback_host" \
+      --kind "$kind" \
+      --input "$input" \
+      --output "$output" \
+      --err-output "$err_output" 2>&1)
+    fallback_rc=$?
+    set -e
+    if [ "$fallback_rc" -eq 0 ]; then
+      printf '%s\n' "$fallback_meta"
+      printf 'PHASE_REVIEW_FALLBACK_FROM=%s\n' "$review_host"
+      printf 'PHASE_REVIEW_FALLBACK_TO=%s\n' "$fallback_host"
+      printf 'PHASE_REVIEW_FALLBACK_REASON=%s\n' "$reason"
+      printf 'PHASE_REVIEW_FALLBACK_DETAIL=%s\n' "$detail"
+      if [ "$degraded" = "1" ]; then
+        printf 'PHASE_REVIEW_DEGRADED=1\n'
+        printf 'PHASE_REVIEW_DEGRADED_REASON=no_cross_host_reviewer_usable\n'
+        printf 'PHASE_REVIEW_CROSS_HOST_SATISFIED=false\n'
+        printf 'PHASE_REVIEW_NEXT_CROSS_HOST_RETRY=next_boundary\n'
+      fi
+      exit 0
+    fi
+    failures="${failures}${failures:+; }${fallback_host}: $(printf '%s\n' "$fallback_meta" | tail -1 | cut -c 1-180)"
+    save_failed_outputs_for_host "$fallback_host"
+  done < <(fallback_host_list "$parent_host" "$review_host")
+  [ -z "$failures" ] || printf 'PHASE_REVIEW_FALLBACK_FAILURES=%s\n' "$failures" >&2
+  return 1
 }
 
 phase_review_verdict() {
@@ -186,8 +267,12 @@ else
   eligibility=$("$SCRIPT_DIR/pr-reviewer-eligibility.sh" "$review_host") || {
     printf '%s\n' "$eligibility" >&2
     printf '%s\n' "$eligibility" > "$err_output"
-    if claude_subscription_403_failure; then
-      try_claude_403_fallback
+    detail=$(failure_detail "$err_output")
+    [ -n "$detail" ] || detail="reviewer host is not eligible"
+    if claude_subscription_403_present; then
+      try_review_fallbacks claude_subscription_403 "$detail"
+    else
+      try_review_fallbacks reviewer_ineligible "$detail"
     fi
     fail "reviewer host is not eligible: $review_host"
   }
@@ -308,17 +393,36 @@ esac
 if ! ( cd "$REPO_ROOT" && "${review_cmd[@]}" </dev/null > "$output" 2>"$err_output" ); then
   detail=$(failure_detail "$err_output")
   [ -n "$detail" ] || detail=$(failure_detail "$output")
-  if claude_subscription_403_failure; then
-    try_claude_403_fallback
+  if claude_subscription_403_present; then
+    try_review_fallbacks claude_subscription_403 "$detail"
+  else
+    try_review_fallbacks reviewer_command_failed "$detail"
   fi
   fail "reviewer command failed for $review_host${detail:+: $detail}"
 fi
 
-[ -s "$output" ] || fail "reviewer produced empty output: $output"
+[ -s "$output" ] || {
+  try_review_fallbacks reviewer_empty_output "reviewer produced empty output"
+  fail "reviewer produced empty output: $output"
+}
+
+if ! phase_review_has_usable_verdict "$output"; then
+  detail=$(first_line "$output")
+  [ -n "$detail" ] || detail="reviewer output did not include a stable verdict"
+  try_review_fallbacks reviewer_no_usable_verdict "$detail"
+  fail "reviewer did not emit a usable verdict for $review_host${detail:+: $detail}"
+fi
 
 verdict=$(phase_review_verdict "$output")
+parent_host_for_meta=$(resolve_current_studio_host unknown)
 printf 'PHASE_REVIEW_HOST=%s\n' "$review_host"
 printf 'PHASE_REVIEW_OUTPUT=%s\n' "$output"
 printf 'PHASE_REVIEW_ERR=%s\n' "$err_output"
 printf 'PHASE_REVIEW_VERDICT=%s\n' "$verdict"
 printf 'PHASE_REVIEW_CONTEXT_TOKENS=%s\n' "$input_estimated_tokens"
+if hosts_are_cross_family "$parent_host_for_meta" "$review_host"; then
+  printf 'PHASE_REVIEW_CROSS_HOST_SATISFIED=true\n'
+else
+  printf 'PHASE_REVIEW_CROSS_HOST_SATISFIED=false\n'
+fi
+printf 'PHASE_REVIEW_DEGRADED=0\n'

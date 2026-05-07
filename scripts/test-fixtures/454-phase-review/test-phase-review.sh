@@ -91,6 +91,9 @@ case "${GH_TOKEN:-}${GITHUB_TOKEN:-}${OPENAI_API_KEY:-}${ANTHROPIC_API_KEY:-}" i
   *) printf 'secret leaked into codex reviewer env\n' >&2; exit 22 ;;
 esac
 case " $* " in
+  *"codex reviewer outage"*) printf 'codex reviewer outage: no usable verdict\n' >&2; exit 23 ;;
+esac
+case " $* " in
   *"STUDIO_REVIEW_VERDICT"*) printf 'STUDIO_REVIEW_VERDICT=approved\n' ;;
   *) printf 'PHASE_REVIEW_VERDICT=clean\ncodex fallback found nothing fatal.\n' ;;
 esac
@@ -176,4 +179,36 @@ if grep -q 'PHASE_REVIEW_HOST=codex-reviewer' "$disabled_out"; then
   exit 1
 fi
 
-printf 'PASS: phase-review uses reviewer wrapper and falls back on Claude 403\n'
+degraded_input="$TMPROOT/degraded-plan.md"
+degraded_output="$TMPROOT/degraded-review.md"
+degraded_out="$TMPROOT/phase-review-degraded.out"
+cat > "$degraded_input" <<'MD'
+# Phase plan
+
+Review ask: what's still wrong?
+codex reviewer outage
+MD
+
+if ! STUDIO_PARENT_HOST=claude-code bash "$ROOT/scripts/phase-review.sh" \
+  --review-host codex-reviewer \
+  --kind plan \
+  --input "$degraded_input" \
+  --output "$degraded_output" >"$degraded_out" 2>"$degraded_out.err"; then
+  sed -n '1,160p' "$degraded_out" >&2 || true
+  sed -n '1,160p' "$degraded_out.err" >&2 || true
+  sed -n '1,160p' "$degraded_output" >&2 || true
+  sed -n '1,160p' "$degraded_output.err" >&2 || true
+  exit 1
+fi
+
+grep -q 'PHASE_REVIEW_FALLBACK_FROM=codex-reviewer' "$degraded_out"
+grep -q 'PHASE_REVIEW_FALLBACK_TO=claude-reviewer' "$degraded_out"
+grep -q 'PHASE_REVIEW_FALLBACK_REASON=reviewer_command_failed' "$degraded_out"
+grep -q 'PHASE_REVIEW_HOST=claude-reviewer' "$degraded_out"
+grep -q 'PHASE_REVIEW_DEGRADED=1' "$degraded_out"
+grep -q 'PHASE_REVIEW_CROSS_HOST_SATISFIED=false' "$degraded_out"
+grep -q 'PHASE_REVIEW_NEXT_CROSS_HOST_RETRY=next_boundary' "$degraded_out"
+grep -q 'codex reviewer outage' "$degraded_output.err.codex-reviewer"
+grep -q 'nothing fatal' "$degraded_output"
+
+printf 'PASS: phase-review uses reviewer wrapper and handles degraded fallback\n'
