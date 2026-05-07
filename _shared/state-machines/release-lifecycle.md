@@ -52,14 +52,14 @@ superseded            → archived                  : compact sweep.
 
 ## App Store PR Lifecycle
 
-`/fullSendToAppStore` creates or reuses a PR from the submitted source branch to `main` immediately after the watcher marker is armed. PR creation is idempotent per source branch. If a different source branch already has a pending App Store PR, the submission continues and the user is notified that a separate PR is being raised.
+`/fullSendToAppStore` creates or reuses a PR from the submitted source branch to `main` immediately after the submitted release artifact is written. PR creation is idempotent per source branch. If a different source branch already has a pending App Store PR, the submission continues and the user is notified that a separate PR is being raised.
 
-The watcher keeps the PR open through `PENDING_DEVELOPER_RELEASE`. On `READY_FOR_SALE`, it publishes the draft GitHub release, updates the Slack thread link from the PR URL to the GitHub release URL when possible, includes `release_notes_summary` in the final Slack reply when the marker has one, then merges the PR with a merge commit. If `gh pr merge --merge` fails, the watcher posts `PR merge failed — conflicts detected. Manual resolution needed.` to the Slack thread and stops without attempting a rebase.
+The watcher keeps the PR open through `PENDING_DEVELOPER_RELEASE`. On `READY_FOR_SALE`, it publishes the draft GitHub release, updates the Slack thread link from the PR URL to the GitHub release URL when possible, includes `release_notes_summary` in the final Slack reply when the marker has one, then delegates the PR merge to `scripts/pr-merge-finalize.sh --release-id <release-id> --method merge`. The finalizer re-checks the HEAD_SHA-bound studio review-gate comment, records approval metadata on the release artifact, and only then merges. If the review comment is missing/stale or the merge fails, the watcher posts `PR merge failed — missing/stale studio review approval or conflicts detected. Manual resolution needed.` to the Slack thread and stops without attempting a rebase.
 
 `submitted → approved` owns the studio approval side effects:
 
-- Release-manager writes `approved_at`, `approved_by`, `approval_review_head_sha`, and `approval_review_comment_url` into the release artifact.
-- The approval review comment must identify the gate result and the release head SHA that was reviewed.
+- `scripts/pr-merge-finalize.sh` is the explicit writer for `approved_at`, `approved_by`, `approval_review_head_sha`, and `approval_review_comment_url`.
+- The approval review comment must identify the gate result and the release head SHA that was reviewed. `--record-release-approval-only --release-id <release-id>` records that state without merging, so release-manager can approve the artifact while the App Store PR remains open.
 
 ## Required fields per transition event
 

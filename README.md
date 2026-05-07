@@ -228,7 +228,7 @@ scripts/                # multi-worker fleet (BETA)
   analyze-feedback-ingest.sh # studio feedback triage: consolidate into existing/new GH issues before processed/
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   compose-build-release-message.sh # taxonomy-aware TestFlight/App Store bullet composer
-  appstore-watch.sh     # polls ASC; publishes release + merge-commit PR only at READY_FOR_SALE
+  appstore-watch.sh     # polls ASC; publishes release + promotes PR only at READY_FOR_SALE after release approval is recorded
   backfill-orphan-debriefs.sh  # recover tasks that finished without landing in master plan (dry-run default)
   achilles-refresh-base.sh     # legacy worker helper: fetch + merge base before reviewer handoff
   task-merge.sh                # serialized merge gate: approved-only option + post-review base re-check

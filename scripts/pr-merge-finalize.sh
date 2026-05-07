@@ -3,7 +3,8 @@
 #
 # Usage:
 #   scripts/pr-merge-finalize.sh <pr-number-or-url> [--method auto|merge|squash|rebase] \
-#       [--expected-head-sha <sha>] [--bypass-review --user-approved-bypass <url>]
+#       [--expected-head-sha <sha>] [--release-id <uuid>] [--record-release-approval-only] \
+#       [--bypass-review --user-approved-bypass <url>]
 #
 # This script intentionally performs GitHub PR flow only. It never pushes a
 # base branch directly. Branch deletion is delegated to gh pr merge
@@ -13,7 +14,7 @@ set -eu
 umask 022
 
 usage() {
-  printf 'usage: pr-merge-finalize.sh <pr-number-or-url> [--method auto|merge|squash|rebase] [--expected-head-sha <sha>] [--bypass-review --user-approved-bypass <url>]\n' >&2
+  printf 'usage: pr-merge-finalize.sh <pr-number-or-url> [--method auto|merge|squash|rebase] [--expected-head-sha <sha>] [--release-id <uuid>] [--record-release-approval-only] [--bypass-review --user-approved-bypass <url>]\n' >&2
   exit 2
 }
 
@@ -23,6 +24,8 @@ shift
 
 METHOD="auto"
 EXPECTED_HEAD_SHA=""
+RELEASE_ID=""
+RECORD_RELEASE_APPROVAL_ONLY=0
 BYPASS_REVIEW=0
 USER_APPROVED_BYPASS=""
 while [ $# -gt 0 ]; do
@@ -34,6 +37,14 @@ while [ $# -gt 0 ]; do
     --expected-head-sha)
       EXPECTED_HEAD_SHA="${2:?}"
       shift 2
+      ;;
+    --release-id)
+      RELEASE_ID="${2:?}"
+      shift 2
+      ;;
+    --record-release-approval-only)
+      RECORD_RELEASE_APPROVAL_ONLY=1
+      shift
       ;;
     --bypass-review)
       BYPASS_REVIEW=1
@@ -54,6 +65,10 @@ case "$METHOD" in
   auto|merge|squash|rebase) ;;
   *) printf 'pr-merge-finalize: --method must be auto|merge|squash|rebase\n' >&2; exit 2 ;;
 esac
+[ "$RECORD_RELEASE_APPROVAL_ONLY" -eq 0 ] || [ -n "$RELEASE_ID" ] || {
+  printf 'pr-merge-finalize: --record-release-approval-only requires --release-id <uuid>\n' >&2
+  exit 2
+}
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
@@ -76,13 +91,15 @@ remote_merge_warning=""
 commit_count=""
 base_ref=""
 head_ref=""
+release_approval_recorded=0
+release_approval_reference_url=""
 
 emit_pr_merge_event() {
   local event="$1" status="${2:-}" rc="${3:-0}" duration_s cleanup_json
   duration_s=$(( $(date -u +%s) - STARTED_AT ))
   cleanup_json=false
   [ "$cleanup_failed" = "0" ] || cleanup_json=true
-  data=$(printf '{"pr":"%s","pr_number":"%s","pr_url":"%s","method":"%s","base_ref":"%s","head_ref":"%s","head_sha":"%s","commit_count":"%s","status":"%s","exit_code":%s,"duration_s":%s,"cleanup_failed":%s,"cleanup_notes":"%s","remote_merge_warning":"%s"}' \
+  data=$(printf '{"pr":"%s","pr_number":"%s","pr_url":"%s","method":"%s","base_ref":"%s","head_ref":"%s","head_sha":"%s","commit_count":"%s","release_id":"%s","release_approval_recorded":%s,"release_approval_reference_url":"%s","record_release_approval_only":%s,"status":"%s","exit_code":%s,"duration_s":%s,"cleanup_failed":%s,"cleanup_notes":"%s","remote_merge_warning":"%s"}' \
     "$(_json_escape "$PR")" \
     "$(_json_escape "$number")" \
     "$(_json_escape "$url")" \
@@ -91,6 +108,10 @@ emit_pr_merge_event() {
     "$(_json_escape "$head_ref")" \
     "$(_json_escape "$head_sha")" \
     "$(_json_escape "$commit_count")" \
+    "$(_json_escape "$RELEASE_ID")" \
+    "$release_approval_recorded" \
+    "$(_json_escape "$release_approval_reference_url")" \
+    "$RECORD_RELEASE_APPROVAL_ONLY" \
     "$(_json_escape "$status")" \
     "$rc" \
     "$duration_s" \
@@ -217,13 +238,15 @@ case "$merge_state" in
     ;;
 esac
 
-gate_comment=$(with_login_home_for_github gh pr view "$PR" --json comments --jq '
+gate_comment_json=$(with_login_home_for_github gh pr view "$PR" --json comments --jq '
   [.comments[]?
    | select(.body | contains("<!-- studio:pr-review-gate v1 -->"))
    | select(.body | test("STUDIO_REVIEW_GATE=(approved|approved_with_fixes)"))
    | select(.body | contains("HEAD_SHA='"$head_sha"'"))
-  ] | last | .body // ""
+  ] | last // {}
 ') || { printf 'pr-merge-finalize: failed to read PR review gate comments\n' >&2; exit 1; }
+gate_comment=$(printf '%s' "$gate_comment_json" | jq -r '.body // ""')
+gate_comment_url=$(printf '%s' "$gate_comment_json" | jq -r '.url // ""')
 
 if [ -z "$gate_comment" ]; then
   if [ "$BYPASS_REVIEW" -ne 1 ]; then
@@ -243,9 +266,31 @@ if [ -z "$gate_comment" ]; then
 <!-- studio:pr-review-gate v1 -->
 STUDIO_REVIEW_GATE=bypassed
 USER_APPROVED_BYPASS=$USER_APPROVED_BYPASS
+HEAD_SHA=$head_sha
 NOTE=Review gate bypass was explicitly user-approved. Parent studio session performed the GitHub action.
 EOF
 )"
+  gate_comment_url="$USER_APPROVED_BYPASS"
+fi
+
+if [ -n "$RELEASE_ID" ]; then
+  release_approval_reference_url="${gate_comment_url:-$url}"
+  approval_actor="pr-merge-finalize"
+  [ -z "$gate_comment" ] && approval_actor="pr-merge-finalize:bypass"
+  approve_release_artifact "$RELEASE_ID" "$head_sha" "$release_approval_reference_url" "$approval_actor" || {
+    printf 'pr-merge-finalize: failed to record release approval for release %s at HEAD_SHA=%s\n' "$RELEASE_ID" "$head_sha" >&2
+    exit 1
+  }
+  release_approval_recorded=1
+fi
+
+if [ "$RECORD_RELEASE_APPROVAL_ONLY" -eq 1 ]; then
+  printf 'RELEASE_APPROVED=1\n'
+  printf 'RELEASE_ID=%s\n' "$RELEASE_ID"
+  printf 'HEAD_SHA=%s\n' "$head_sha"
+  printf 'APPROVAL_REFERENCE_URL=%s\n' "$release_approval_reference_url"
+  printf 'PR_MERGED=0\n'
+  exit 0
 fi
 
 if [ "$METHOD" = "auto" ]; then

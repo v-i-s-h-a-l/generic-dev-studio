@@ -6,7 +6,7 @@ type: reference
 
 # Release Schema (`release@1.4.0`)
 
-Per-release artifact written to `~/.dev-studio/<project>/plans/releases/<release-id>.yaml`. One file per build submitted to a release channel (TestFlight or App Store). Authored by `/achilles push-tf` or `/achilles app-store`; updated by `scripts/appstore-watch.sh` as the release transitions states.
+Per-release artifact written to `~/.dev-studio/<project>/plans/releases/<release-id>.yaml`. One file per build submitted to a release channel (TestFlight or App Store). Authored by `/achilles push-tf` or `/achilles app-store`; updated by `scripts/pr-merge-finalize.sh` when the HEAD_SHA-bound studio approval gate is recorded and by `scripts/appstore-watch.sh` as App Store Connect transitions are observed.
 
 Version 1.4.0 is non-breaking - adds an explicit `approved` lifecycle state plus approval metadata (`approved_at`, `approved_by`, `approval_review_head_sha`, `approval_review_comment_url`) so the release artifact can carry the studio approval gate without a parallel file. Existing 1.3.0 artifacts remain readable because the new fields are optional and default to `null`. `min_reader: 1.0.0` keeps the entire active fleet compatible.
 
@@ -125,7 +125,7 @@ Transitions emit `release_state_changed` (new event catalog entry landing alongs
 
 ## Replacement lineage
 
-`approved` is the studio approval gate. It is written by the release-manager after the approval review comment records the green light, and it is distinct from Apple's own `pending-developer-release` wording.
+`approved` is the studio approval gate. It is written by `scripts/pr-merge-finalize.sh` after the approval review comment records the green light for the PR HEAD SHA, and it is distinct from Apple's own `pending-developer-release` wording. The final App Store PR promotion path calls the same writer before merging, so a stale or missing review-gate comment cannot promote the source branch to `main`.
 
 Use `withdrawn` for a build the developer intentionally pulls before approval. This is distinct from `rejected` (Apple rejected it) and `cancelled` (local/user abort before the release train reached ASC terminal semantics). A withdrawn artifact remains audit-visible; the replacement artifact sets `replaces: <withdrawn-release-id>`, and the withdrawn artifact sets `superseded_by: <replacement-release-id>`.
 
