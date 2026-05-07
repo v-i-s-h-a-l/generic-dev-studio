@@ -10,6 +10,7 @@
 #   resolve_feedback_inbox_root prints the studio-self feedback inbox root
 #   resolve_analysis_root    prints the studio-self private analysis root
 #   resolve_runtime_global   prints the machine-global runtime root
+#   resolve_studio_home_for_login_home prints the durable Studio root for a login home
 #   resolve_push_queue       prints the per-project push-queue path
 #   detect_stack             prints ios|web|rust|python|go|mixed|unknown
 #   list_fleet_projects      prints every project with an active fleet
@@ -93,6 +94,11 @@ resolve_inbox_root_for() {
 
 resolve_runtime_global() {
   printf '%s\n' "$HOME/.dev-studio/.runtime"
+}
+
+resolve_studio_home_for_login_home() {
+  local login_home="${1:?usage: resolve_studio_home_for_login_home <login-home>}"
+  printf '%s\n' "$login_home/.dev-studio"
 }
 
 # Resolve the user's real login home, not the launcher shell's overridden HOME.
