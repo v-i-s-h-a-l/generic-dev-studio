@@ -13,7 +13,8 @@
 # On live state (READY_FOR_SALE):
 #   1. gh release edit <tag> --draft=false
 #   2. Replace the PR URL Slack thread reply with the GitHub release URL
-#   3. Merge the App Store PR with a merge commit
+#   3. Merge the App Store PR with a merge commit only after the release
+#      artifact carries HEAD_SHA-bound studio approval
 #   4. Delete marker
 #   5. Emit appstore_released
 # Steps 1 and 2 are tracked in marker.finalize_progress for idempotency —
@@ -48,7 +49,7 @@ if [ ! -f "$MARKER" ]; then
   if [ ! -d "$releases_dir" ]; then
     exit 0
   fi
-  active_count=$(yq -r 'select(.channel == "appstore" and (.state == "submitted" or .state == "in-review" or .state == "pending-developer-release")) | .id' "$releases_dir"/*.yaml 2>/dev/null | wc -l | tr -d ' ')
+  active_count=$(yq -r 'select(.channel == "appstore" and (.state == "submitted" or .state == "approved" or .state == "in-review" or .state == "pending-developer-release")) | .id' "$releases_dir"/*.yaml 2>/dev/null | wc -l | tr -d ' ')
   if [ "$active_count" = "0" ]; then
     exit 0
   fi
@@ -60,7 +61,7 @@ if [ ! -f "$MARKER" ]; then
   fi
   ACTIVE_RELEASE_FILE=$(grep -lE '^channel: appstore$' "$releases_dir"/*.yaml 2>/dev/null | while IFS= read -r f; do
     state=$(yq -r '.state // ""' "$f" 2>/dev/null)
-    if [ "$state" = "submitted" ] || [ "$state" = "in-review" ] || [ "$state" = "pending-developer-release" ]; then
+    if [ "$state" = "submitted" ] || [ "$state" = "approved" ] || [ "$state" = "in-review" ] || [ "$state" = "pending-developer-release" ]; then
       printf '%s\n' "$f"
     fi
   done | head -1)
@@ -76,6 +77,7 @@ read_field() {
   if [ "$MARKER_SOURCE" = "yaml" ]; then
     case "$1" in
       project) printf '%s\n' "$PROJECT" ;;
+      release_id) yq -r '.id // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       next_check_at) yq -r '.asc_metadata.next_check_at // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       tag) yq -r '.tag // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       version) yq -r '.version // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
@@ -112,6 +114,10 @@ PY
 
 MARKER_PROJECT=$(read_field project)
 [ "$MARKER_PROJECT" = "$PROJECT" ] || exit 0
+RELEASE_ID=$(read_field release_id)
+if [ "$MARKER_SOURCE" = "json" ] && [ -n "$RELEASE_ID" ] && [ "$RELEASE_ID" != "null" ]; then
+  ACTIVE_RELEASE_FILE="$ROOT/plans/releases/$RELEASE_ID.yaml"
+fi
 
 NEXT_CHECK=$(read_field next_check_at)
 NOW_EPOCH=$(date -u +%s)
@@ -243,12 +249,23 @@ update_slack_thread_reply() {
 
 merge_appstore_pr() {
   [ -n "$PR_NUMBER" ] || return 0
-  if with_login_home_for_github gh pr merge "$PR_NUMBER" --repo "$REPO" --merge >/dev/null 2>&1; then
+  if [ -z "${release_uuid:-}" ] || [ -z "${ACTIVE_RELEASE_FILE:-}" ] || [ ! -f "$ACTIVE_RELEASE_FILE" ]; then
+    printf '[appstore-watch] release approval artifact missing; refusing App Store PR merge for PR #%s\n' "$PR_NUMBER" >&2
+    return 1
+  fi
+
+  local pr_ref
+  pr_ref="${PR_URL:-$PR_NUMBER}"
+  if ACHILLES_PROJECT="$PROJECT" STUDIO_RELEASE_PROJECT="$STUDIO_RELEASE_PROJECT" \
+      "$SCRIPT_DIR/pr-merge-finalize.sh" "$pr_ref" \
+        --method merge \
+        --release-id "$release_uuid" >/dev/null 2>&1; then
     mark_json_finalize_field finalize_pr_merged true
+    set_release_finalize_progress "$release_uuid" finalize_pr_merged true || true
     return 0
   fi
 
-  local msg="PR merge failed — conflicts detected. Manual resolution needed."
+  local msg="PR merge failed — missing/stale studio review approval or conflicts detected. Manual resolution needed."
   printf '[appstore-watch] %s\n' "$msg" >&2
   if [ "$WATCHER_REPLIES" != "0" ] && [ "$WATCHER_REPLIES" != "false" ] && \
      [ "$WATCHER_REPLIES" != "FALSE" ] && [ -n "$PARENT_TS" ] && [ -n "$CHANNEL" ]; then
@@ -299,7 +316,7 @@ echo "[appstore-watch] $TAG → $STATE"
 
 release_uuid=""
 release_state=""
-if [ "$MARKER_SOURCE" = "yaml" ] && [ -n "$ACTIVE_RELEASE_FILE" ]; then
+if [ -n "$ACTIVE_RELEASE_FILE" ] && [ -f "$ACTIVE_RELEASE_FILE" ]; then
   release_uuid=$(yq -r '.id // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null)
   release_state=$(yq -r '.state // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null)
 fi
@@ -311,7 +328,10 @@ esac
 if [ -n "$release_uuid" ]; then
   case "$target_release_state" in
     in-review|pending-developer-release|released)
-      [ "$release_state" = "$target_release_state" ] || transition_release_state "$release_uuid" "$target_release_state" chanakya "ASC state $STATE" || true
+      approval_head=$(yq -r '.approval_review_head_sha // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null || echo "")
+      if [ -n "$approval_head" ] && [ "$approval_head" != "null" ]; then
+        [ "$release_state" = "$target_release_state" ] || transition_release_state "$release_uuid" "$target_release_state" chanakya "ASC state $STATE" || true
+      fi
       ;;
   esac
 fi

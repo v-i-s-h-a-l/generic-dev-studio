@@ -37,6 +37,7 @@
 #     transition_release_attempt_state <uuid> <to> <actor> <reason>
 #     transition_review_state  <uuid> <to> <actor> <reason>
 #     transition_round_state   <uuid> <to> <actor> <reason>
+#     approve_release_artifact <uuid> <head-sha> <comment-url> <actor>
 #
 #   Link mutations (task-side; no events — callers emit)
 #     set_task_link         <uuid> <brief|debrief|release> <target-uuid>
@@ -50,6 +51,7 @@
 #     write_review_artifact   <uuid> <subject-kind> <subject-uuid> <verdict> <findings-json>
 #     write_round_artifact    <uuid> <round-number> <scope> <tasks-csv> <body>
 #     write_release_artifact  <uuid> <channel> <version> <build> <tag> <tasks-csv>
+#     write_appstore_release_submission_artifact <uuid> <version> <build> <tag> <commit-sha> <github-release-url> <pr-number> <pr-url> <source-branch> <asc-app-id> <asc-build-id> <appstore-version-id> <slack-channel> <slack-parent-ts> <slack-pr-reply-ts> <release-notes-summary>
 #     write_release_attempt_artifact <uuid> <operation> <channel> <intent-json>
 #     append_release_attempt_transaction <uuid> <entry-type> <status> <actor> <data-json>
 #
@@ -382,6 +384,62 @@ transition_release_state() { _transition_artifact releases "$1" "$2" "$3" "${4:-
 transition_review_state()  { _transition_artifact reviews  "$1" "$2" "$3" "${4:-}"; }
 transition_round_state()   { _transition_artifact rounds   "$1" "$2" "$3" "${4:-}"; }
 
+approve_release_artifact() {
+  local uuid="${1:?approve_release_artifact <uuid> <head-sha> <comment-url> <actor>}"
+  local head_sha="${2:?}" comment_url="${3:?}" actor="${4:-release-manager}"
+  local f
+  f=$(_artifact_path releases "$uuid") || return 2
+  [ -f "$f" ] || { printf 'approve_release_artifact: no release at %s\n' "$f" >&2; return 2; }
+
+  case "$head_sha" in
+    ""|null) printf 'approve_release_artifact: head sha required\n' >&2; return 2 ;;
+  esac
+  case "$comment_url" in
+    ""|null) printf 'approve_release_artifact: review comment or bypass URL required\n' >&2; return 2 ;;
+  esac
+
+  local from_state current_head current_url
+  from_state=$(yq -r '.state // ""' "$f" 2>/dev/null || echo "")
+  current_head=$(yq -r '.approval_review_head_sha // ""' "$f" 2>/dev/null || echo "")
+  current_url=$(yq -r '.approval_review_comment_url // ""' "$f" 2>/dev/null || echo "")
+  case "$from_state" in
+    submitted|approved|in-review|pending-developer-release) ;;
+    *)
+      printf 'approve_release_artifact: release %s is in state %s; cannot record approval for promotion\n' \
+        "$uuid" "${from_state:-unknown}" >&2
+      return 2
+      ;;
+  esac
+  if [ "$from_state" = "approved" ] && [ "$current_head" = "$head_sha" ] && [ "$current_url" = "$comment_url" ]; then
+    return 0
+  fi
+
+  if [ "$from_state" = "submitted" ]; then
+    transition_release_state "$uuid" approved "$actor" "PR review gate approved HEAD_SHA=$head_sha" || return $?
+  fi
+
+  local ts idem
+  ts=$(iso_ts_now)
+  idem=$(idem_key "$actor" release "$uuid" "approval:$head_sha:$comment_url")
+
+  if [ "${DRY_RUN:-0}" = "1" ]; then
+    _dry_write_log "$f" "approval_review_head_sha=$head_sha" "$idem"
+  else
+    APPROVED_AT="$ts" \
+    APPROVED_BY="$actor" \
+    APPROVAL_REVIEW_HEAD_SHA="$head_sha" \
+    APPROVAL_REVIEW_COMMENT_URL="$comment_url" \
+      yq -i '
+        .approved_at = strenv(APPROVED_AT) |
+        .approved_by = strenv(APPROVED_BY) |
+        .approval_review_head_sha = strenv(APPROVAL_REVIEW_HEAD_SHA) |
+        .approval_review_comment_url = strenv(APPROVAL_REVIEW_COMMENT_URL) |
+        .updated_at = strenv(APPROVED_AT)
+      ' "$f" 2>/dev/null || return 2
+  fi
+  _maybe_rebuild_index
+}
+
 transition_release_attempt_state() {
   local uuid="${1:?transition_release_attempt_state <uuid> <to> <actor> <reason>}"
   local to_state="${2:?}" actor="${3:?}" reason="${4:-}"
@@ -485,7 +543,7 @@ set_release_finalize_progress() {
   local uuid="${1:?set_release_finalize_progress <release-uuid> <field> <value>}"
   local field="${2:?}" value="${3:?}"
   case "$field" in
-    finalize_draft_published|finalize_slack_posted|finalize_slack_skipped_reason) ;;
+    finalize_draft_published|finalize_slack_posted|finalize_pr_merged|finalize_slack_skipped_reason) ;;
     *) printf 'set_release_finalize_progress: unsupported field %s\n' "$field" >&2; return 2 ;;
   esac
   local f
@@ -1225,6 +1283,103 @@ write_release_artifact() {
   local data
   data=$(printf '{"from":null,"to":"released","channel":"%s","tag":"%s"}' \
     "$(_json_escape "$channel")" "$(_json_escape "$tag")")
+  emit_event_keyed achilles release release_state_changed "$uuid" "$data" --idem-key "$idem" >/dev/null || return $?
+  _maybe_rebuild_index
+}
+
+write_appstore_release_submission_artifact() {
+  local uuid="${1:?write_appstore_release_submission_artifact <uuid> <version> <build> <tag> <commit-sha> <github-release-url> <pr-number> <pr-url> <source-branch> <asc-app-id> <asc-build-id> <appstore-version-id> <slack-channel> <slack-parent-ts> <slack-pr-reply-ts> <release-notes-summary>}"
+  local version="${2:?}" build_num="${3:?}" tag="${4:?}" commit_sha="${5:?}" github_release_url="${6:-}"
+  local pr_number="${7:-}" pr_url="${8:-}" source_branch="${9:-}" asc_app_id="${10:-}" asc_build_id="${11:-}" appstore_version_id="${12:-}"
+  local slack_channel="${13:-}" slack_parent_ts="${14:-}" slack_pr_reply_ts="${15:-}" release_notes_summary="${16:-}"
+
+  local f ts idem payload
+  f=$(_artifact_path releases "$uuid") || return 2
+  ts=$(iso_ts_now)
+  idem=$(idem_key achilles release "$tag" "appstore-submitted:$version:$build_num:$commit_sha")
+
+  payload=$(jq -n \
+    --arg uuid "$uuid" \
+    --arg version "$version" \
+    --arg build "$build_num" \
+    --arg tag "$tag" \
+    --arg commit_sha "$commit_sha" \
+    --arg ts "$ts" \
+    --arg github_release_url "$github_release_url" \
+    --arg pr_number "$pr_number" \
+    --arg pr_url "$pr_url" \
+    --arg source_branch "$source_branch" \
+    --arg asc_app_id "$asc_app_id" \
+    --arg asc_build_id "$asc_build_id" \
+    --arg appstore_version_id "$appstore_version_id" \
+    --arg slack_channel "$slack_channel" \
+    --arg slack_parent_ts "$slack_parent_ts" \
+    --arg slack_pr_reply_ts "$slack_pr_reply_ts" \
+    --arg release_notes_summary "$release_notes_summary" \
+    '{
+      schema_version:{name:"release",version:"1.4.0",min_reader:"1.0.0",deprecated_at:null},
+      id:$uuid,
+      channel:"appstore",
+      state:"submitted",
+      build_number:($build | tonumber? // $build),
+      version:$version,
+      tag:$tag,
+      commit_sha:$commit_sha,
+      submitted_at:$ts,
+      last_state_checked_at:null,
+      released_at:null,
+      approved_at:null,
+      approved_by:null,
+      approval_review_head_sha:null,
+      approval_review_comment_url:null,
+      replaced_by:null,
+      cancelled_reason:null,
+      replaces:null,
+      superseded_by:null,
+      tasks:[],
+      reviews:[],
+      github_release_url:$github_release_url,
+      github_pr:{
+        number:($pr_number | tonumber? // null),
+        url:$pr_url,
+        source_branch:$source_branch
+      },
+      asc_metadata:{
+        asc_app_id:$asc_app_id,
+        asc_build_id:$asc_build_id,
+        appstore_version_id:$appstore_version_id,
+        app_store_state:"SUBMITTED",
+        last_poll_at:null,
+        next_check_at:null,
+        consecutive_failures:0,
+        stuck:false,
+        finalize_draft_published:false,
+        finalize_slack_posted:false,
+        finalize_pr_merged:false,
+        release_notes_summary:$release_notes_summary,
+        slack_watcher_replies:null
+      },
+      slack:{
+        channel_id:$slack_channel,
+        posted_to:$slack_channel,
+        message_ts:$slack_parent_ts,
+        pr_reply_ts:$slack_pr_reply_ts,
+        reply_ts:null
+      },
+      notes:null,
+      history:[],
+      created_at:$ts,
+      updated_at:$ts
+    }' | yq -P '.')
+
+  if [ "${DRY_RUN:-0}" = "1" ]; then
+    _dry_write_log "$f" "$payload" "$idem"
+  else
+    _atomic_write "$f" "$payload" || return 2
+  fi
+
+  local data
+  data=$(printf '{"from":null,"to":"submitted","channel":"appstore","tag":"%s"}' "$(_json_escape "$tag")")
   emit_event_keyed achilles release release_state_changed "$uuid" "$data" --idem-key "$idem" >/dev/null || return $?
   _maybe_rebuild_index
 }

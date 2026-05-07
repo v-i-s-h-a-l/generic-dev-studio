@@ -471,7 +471,7 @@ EOF
 }
 
 write_appstore_pending_marker() {
-  local build="$1" version="$2" tag="$3" version_id="$4" build_id="$5" release_url="$6" release_notes_summary="${7:-}"
+  local build="$1" version="$2" tag="$3" version_id="$4" build_id="$5" release_url="$6" release_notes_summary="${7:-}" release_id="${8:-}"
   local state_dir marker_path watcher_replies
   state_dir="$RELEASE_PROJECT_ROOT/.runtime/state"
   marker_path="$state_dir/pending-appstore-review.json"
@@ -499,6 +499,7 @@ write_appstore_pending_marker() {
     --arg slack_parent_ts "$APPSTORE_SLACK_PARENT_TS" \
     --arg slack_post_status "$APPSTORE_SLACK_STATUS" \
     --arg release_notes_summary "$release_notes_summary" \
+    --arg release_id "$release_id" \
     --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg build "$build" \
     --argjson watcher_replies "$watcher_replies" \
@@ -518,6 +519,7 @@ write_appstore_pending_marker() {
       slack_parent_ts:$slack_parent_ts,
       slack_post_status:$slack_post_status,
       release_notes_summary:$release_notes_summary,
+      release_id:$release_id,
       slack_watcher_replies:$watcher_replies,
       created_at:$created_at,
       next_check_at:null,
@@ -1213,16 +1215,27 @@ cmd_appstore() {
   appstore_notify_slack "$BUILD" "$VERSION" "$TAG" "$RELEASE_NOTES_FILE" "$WHATSNEW_FILE" "$RELEASE_URL" "$DRY_RUN_FLAG"
   local release_notes_summary
   release_notes_summary=$(release_notes_summary_from_file "$RELEASE_NOTES_FILE" || true)
-  write_appstore_pending_marker "$BUILD" "$VERSION" "$TAG" "$version_id" "$build_id" "$RELEASE_URL" "$release_notes_summary" \
-    || printf 'studio-tf-push: warning: pending App Store marker write failed; watcher will not thread lifecycle replies\n' >&2
   create_or_reuse_appstore_pr "$appstore_branch" "$GH_REPO" "$TAG" "$RELEASE_URL"
   notify_appstore_pending_pr_notice "$APPSTORE_PR_PENDING_NOTICE"
   post_appstore_pr_link "$APPSTORE_PR_URL"
+  local release_uuid source_sha
+  release_uuid=$(mint_uuidv7)
+  source_sha=$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || printf '')
+  write_appstore_release_submission_artifact \
+    "$release_uuid" "$VERSION" "$BUILD" "$TAG" "$source_sha" "$RELEASE_URL" \
+    "$APPSTORE_PR_NUMBER" "$APPSTORE_PR_URL" "$appstore_branch" \
+    "$APP_ID" "$build_id" "$version_id" \
+    "$APPSTORE_SLACK_CHANNEL_USED" "$APPSTORE_SLACK_PARENT_TS" "$APPSTORE_PR_SLACK_REPLY_TS" \
+    "$release_notes_summary" \
+    || halt_failed prereq "release artifact write failed after App Store submission; watcher cannot promote this release until the artifact exists"
+  write_appstore_pending_marker "$BUILD" "$VERSION" "$TAG" "$version_id" "$build_id" "$RELEASE_URL" "$release_notes_summary" "$release_uuid" \
+    || printf 'studio-tf-push: warning: pending App Store marker write failed; watcher will fall back to the release artifact when possible\n' >&2
   update_appstore_pending_marker_pr "$APPSTORE_PR_URL" "$APPSTORE_PR_NUMBER" "$appstore_branch" "$APPSTORE_PR_PENDING_NOTICE" "$APPSTORE_PR_SLACK_REPLY_TS" \
     || printf 'studio-tf-push: warning: pending App Store marker PR metadata update failed\n' >&2
 
   jq -nc \
     --arg release_tag "$RELEASE_TAG" \
+    --arg release_id "$release_uuid" \
     --arg tag "$TAG" \
     --arg github_release_url "$RELEASE_URL" \
     --arg github_pr_url "$APPSTORE_PR_URL" \
@@ -1233,7 +1246,7 @@ cmd_appstore() {
     --arg slack_channel "$APPSTORE_SLACK_CHANNEL_USED" \
     --arg slack_parent_ts "$APPSTORE_SLACK_PARENT_TS" \
     --argjson loc_count "$loc_count" \
-    '{release_tag:$release_tag, tag:$tag, github_release_url:$github_release_url, github_pr:{url:$github_pr_url, number:($github_pr_number | tonumber? // $github_pr_number)}, version_id:$version_id, build_id:$build_id, localizations:$loc_count, slack:{status:$slack_status, channel_id:$slack_channel, message_ts:$slack_parent_ts}}'
+    '{release_tag:$release_tag, release_id:$release_id, tag:$tag, github_release_url:$github_release_url, github_pr:{url:$github_pr_url, number:($github_pr_number | tonumber? // $github_pr_number)}, version_id:$version_id, build_id:$build_id, localizations:$loc_count, slack:{status:$slack_status, channel_id:$slack_channel, message_ts:$slack_parent_ts}}'
 }
 
 case "${1:-}" in
