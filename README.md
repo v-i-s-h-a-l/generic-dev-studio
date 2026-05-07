@@ -154,7 +154,7 @@ scripts/lint-chain-workflow-docs.sh --staged                # keep chain launche
 scripts/v2-profile.sh --profile ios-turnip --list           # A6 project-profile operation resolver
 scripts/v2-cutover.sh --status                              # A9 v1 archive / v2 traffic-switch status
 scripts/lint-build-release-message.sh --file draft.md --channel testflight # A11 build/release message shape + duplicate lint
-scripts/pr-headless-review.sh <pr>                          # run smoke-eligible no-secret reviewer gate, then merge if non-blocked
+scripts/pr-headless-review.sh <pr>                          # run smoke-eligible no-secret reviewer gate, then merge only if the reused chain-style feature-branch gate keeps head history linear relative to its base
 scripts/pr-headless-review.sh <pr> --no-require-cross-host   # opt out of the default independent-provider reviewer requirement
 scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-host claude-code  # resolve reviewer model from policy
 scripts/check-model-catalog.sh --print-refresh-checklist     # validate refreshable model IDs against official-source metadata

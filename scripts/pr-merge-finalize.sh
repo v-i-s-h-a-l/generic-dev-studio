@@ -56,6 +56,10 @@ case "$METHOD" in
 esac
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+# shellcheck source=lib-paths.sh
+. "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-feature-branch-policy.sh
+. "$SCRIPT_DIR/lib-feature-branch-policy.sh"
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh" 2>/dev/null || true
 
@@ -174,6 +178,20 @@ number=$(printf '%s' "$json" | jq -r '.number')
 head_sha=$(printf '%s' "$json" | jq -r '.headRefOid')
 commit_count=$(printf '%s' "$json" | jq -r '.commits | length')
 emit_pr_merge_event pr_merge_finalize_started started 0
+
+with_login_home_for_github git fetch origin "$base_ref" >/dev/null 2>&1 || true
+with_login_home_for_github git fetch origin "$head_ref" >/dev/null 2>&1 || true
+
+if ! feature_branch_policy_evaluate "$(current_worktree_path)" "$head_ref" "$base_ref" "PR head branch"; then
+  if [ "${STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE:-0}" = "1" ]; then
+    printf 'warning: %s (override STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1)\n' "$FEATURE_BRANCH_POLICY_DETAIL" >&2
+  else
+    printf 'pr-merge-finalize: %s\n' "$FEATURE_BRANCH_POLICY_DETAIL" >&2
+    printf 'pr-merge-finalize: rebase or retarget the branch before merging, or set STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 after explicit user approval\n' >&2
+    exit 1
+  fi
+fi
+
 [ -z "$EXPECTED_HEAD_SHA" ] || [ "$head_sha" = "$EXPECTED_HEAD_SHA" ] || {
   printf 'pr-merge-finalize: refusing merge for PR #%s; reviewed HEAD_SHA=%s but current HEAD_SHA=%s\n' "$number" "$EXPECTED_HEAD_SHA" "$head_sha" >&2
   exit 1
