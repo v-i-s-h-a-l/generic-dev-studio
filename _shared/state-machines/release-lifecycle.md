@@ -52,7 +52,7 @@ superseded            → archived                  : compact sweep.
 
 `/fullSendToAppStore` creates or reuses a PR from the submitted source branch to `main` immediately after the watcher marker is armed. PR creation is idempotent per source branch. If a different source branch already has a pending App Store PR, the submission continues and the user is notified that a separate PR is being raised.
 
-The watcher keeps the PR open through `PENDING_DEVELOPER_RELEASE`. On `READY_FOR_SALE`, it publishes the draft GitHub release, updates the Slack thread link from the PR URL to the GitHub release URL when possible, then merges the PR with a merge commit. If `gh pr merge --merge` fails, the watcher posts `PR merge failed — conflicts detected. Manual resolution needed.` to the Slack thread and stops without attempting a rebase.
+The watcher keeps the PR open through `PENDING_DEVELOPER_RELEASE`. On `READY_FOR_SALE`, it publishes the draft GitHub release, updates the Slack thread link from the PR URL to the GitHub release URL when possible, includes `release_notes_summary` in the final Slack reply when the marker has one, then merges the PR with a merge commit. If `gh pr merge --merge` fails, the watcher posts `PR merge failed — conflicts detected. Manual resolution needed.` to the Slack thread and stops without attempting a rebase.
 
 ## Required fields per transition event
 

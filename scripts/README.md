@@ -171,7 +171,7 @@ scripts/tests-diff-rounds.sh <A> <B>                    # markdown diff between 
 eval "$(scripts/task-load-spec.sh T001)"                # TASK_MODE/BRIEF_PATH/SIZE/TYPE/ACCEPTANCE_JSON
 scripts/task-build-debt-gate.sh [--override]            # exit 2 if blocked; emits build_debt_blocked
 scripts/task-claim.sh <task-uuid> <brief-uuid> <size>   # task + brief state transitions
-eval "$(scripts/task-worktree-setup.sh T001 /repo)"     # PROJECT/ORIG_BRANCH/ORIG_HEAD/WORKTREE
+eval "$(scripts/task-worktree-setup.sh T001 /repo)"     # PROJECT/ORIG_BRANCH/ORIG_HEAD/WORKTREE; reuses the chain runner's feature-branch gate so dependent branches rebase/retarget instead of merging feature-to-feature
 scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" [zaps-app/Turnip.xcodeproj] # xcodebuild + lock; 6th arg pins -project/-workspace in multi-project repos (#238); exit 4 = duplicate-invocation refused (#209)
 scripts/studio-tf-push.sh push [--version X.Y.Z]        # TestFlight push driver; creates/pushes tf-<version>-<build> anchor
 scripts/studio-tf-push.sh withdraw-tf-tag --version X.Y.Z --build N # rename TF anchor to tf-<version>-<build>-WITHDRAWN
@@ -200,6 +200,7 @@ scripts/pr-reviewer-eligibility.sh codex-reviewer       # no-prompt/no-secret re
 scripts/pr-reviewer-eligibility.sh claude-reviewer      # same reviewer floor for Claude Code; uses CLAUDE_REVIEWER_HOME + CLAUDE_REVIEWER_CONFIG_DIR
 scripts/phase-review.sh --review-host claude-reviewer --input phase-plan.md --output review.md   # sibling-host phase gate; tries alternate cross-host reviewers, then degraded same-host continuity when needed
 scripts/pre-commit-review.sh                            # manual reviewer gate for risky staged diffs; accepts approved/approved_with_fixes only
+scripts/lint-commit-message.sh --file .git/COMMIT_EDITMSG # validates studio commit messages for Change-Type and Studio-Host trailers; bypass with STUDIO_BYPASS_COMMIT_TRAILER_LINT=1
 scripts/lint-field-review-surfaces.sh --staged          # blocks raw cross-host review snippets outside phase-review wrappers
 scripts/v2-role-resolve.sh manager                      # resolve Studio v2 role aliases to canonical role names
 scripts/lint-v2-bootstrap.sh --staged                   # blocks pre-A0.5 substrate code outside the A0.4 bootstrap/meta boundary
@@ -210,10 +211,10 @@ scripts/v2-cutover.sh --status                          # report A9 v1 archive /
 scripts/v2-cutover.sh --validate                        # validate the A9 cutover manifest and rollback playbook
 scripts/lint-build-release-message.sh --file draft.md --channel appstore   # A11 message shape + duplicate lint
 scripts/lint-project-skill-links.sh [--host codex]      # repo-local project skill discovery link invariant + repair helper
-scripts/pr-headless-review.sh <pr>                      # run smoke-eligible reviewer, post gate with cross-host/fallback metadata, merge if non-blocked
+scripts/pr-headless-review.sh <pr>                      # run smoke-eligible reviewer, then merge only if the reused chain-style feature-branch gate keeps head history linear relative to its base
 scripts/pr-headless-review.sh <pr> --no-require-cross-host  # opt out of default independent-provider reviewer policy for explicit non-safety-floor runs
 scripts/pr-autopilot.sh <pr> --verdict approved         # post reviewer gate, then merge if non-blocked
-scripts/pr-merge-finalize.sh <pr> --method auto         # <4 commits=rebase, larger main=merge commit, then fetch/prune
+scripts/pr-merge-finalize.sh <pr> --method auto         # reuses the chain runner's feature-branch gate; <4 commits=rebase, larger main=merge commit, then fetch/prune
 scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-host claude-code  # policy-backed reviewer model/profile resolver
 scripts/check-model-catalog.sh --print-refresh-checklist # validate model catalog + print official-doc refresh checklist
 scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
@@ -222,6 +223,7 @@ scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-s
 scripts/detect-edits.sh --quiet                         # emits brief_edited + debrief_edited
 
 # App Store submission watcher (auto-invoked by every sweep):
+scripts/studio-tf-push.sh compose-message --channel testflight < commits.txt # taxonomy-aware release/TestFlight bullet composer
 scripts/appstore-watch.sh                               # idempotent; publishes release + merge-commit PR only at READY_FOR_SALE
 ```
 

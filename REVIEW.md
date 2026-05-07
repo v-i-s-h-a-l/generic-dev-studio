@@ -315,6 +315,29 @@ Legitimate mentions are allowed only when documenting the banned pattern, testin
 scripts/phase-review.sh --review-host claude-reviewer --kind plan --input phase-plan.md --output ~/.dev-studio/generic-dev-studio/analysis/<date>-<phase>-plan-review.md
 ```
 
+### R24 — Commit discipline and taxonomy (tier: **block + ask + warn**)
+
+Commit discipline is part of review quality for host-routed changes:
+
+- **Block (hard gate):**
+  - Commit messages are missing an explicit taxonomy label (`feature`, `bugfix-shipped`, `bugfix-wip`, `regression-fix`, `refactor`, `docs`, `test`, `chore`, `release`) in the subject or body.
+  - Feature-branch history includes merge commits before the PR merge/rebase path.
+
+- **Ask (investigate before merge):**
+  - Subject does not explain *why* the change was made.
+  - Non-trivial change lacks `Problem`, `Solution`, or `Implementation notes` sections in the commit body.
+  - Subject/body does not distinguish `bugfix-shipped` vs `bugfix-wip` for a bugfix change.
+
+- **Warn (note but proceed unless risk increases):**
+  - Missing or shallow `Caveats` for behavior-risky changes.
+  - Host identity is only inferred from `Co-authored-by:` text while machine-readable host metadata exists in `.studio/chain-task-start.json` / `.studio/chain-worker-summary.json`.
+
+**How to check:**
+- Prefer machine-readable host identity from `.studio/chain-task-start.json` / `.studio/chain-worker-summary.json` (`host`, `model`, `model_version`) over parsing `Co-authored-by:` in commit footers.
+- Verify the commit subject is imperative and change-oriented; use `git log`/`git show` on staged commits or PR payload to validate body structure.
+- Verify taxonomy labels stay within the canonical set above.
+- Block-and-ask findings should be explicit in review output; hard blocks must state the minimum fix.
+
 ## Deferred / known gaps
 
 Not rules yet — track here so we remember:

@@ -91,6 +91,7 @@ Every MINOR bump exists *because of* one specific feature (or closely related se
 - **Give it the top bullet** under What's new. Don't bury it under smaller wins.
 - **Add one example use case** — a short, concrete scenario showing how a user would actually reach for it. One example, one scenario, 1–2 lines. Use judgement: if the top bullet is already self-evident, skip the example. If the feature is abstract or might not be obvious *when* to use it, the example earns its keep.
 - **Don't example-spam.** Only the triggering feature gets an example. Supporting bullets stay clean one-liners. Readers scan — over-examples dilute the headline.
+- When commit metadata is available, start from `Changelog:` or the `Change-Type:` taxonomy (`feature`, `bugfix-shipped`, `bugfix-wip`, `regression-fix`, internal types) before hand-editing. If a release note falls back to subject/body because trailers are missing, mention that in the drafting notes.
 
 Example of the rule applied:
 

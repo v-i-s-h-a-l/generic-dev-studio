@@ -101,6 +101,7 @@ STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
 /dev-studio host-adapter nodes   # day-2 fleet management — status, add, remove, health, sync, schedule
 /dev-studio release-manager tf-push --background     # start TF archive/upload and keep session free for Slack drafting
 /dev-studio release-manager tf-push --version 26.5.0 # TestFlight push with explicit MARKETING_VERSION; live work needs STUDIO_TF_PUSH_LIVE=1
+scripts/studio-tf-push.sh compose-message --channel testflight < commits.txt # taxonomy-aware release/TestFlight bullet composer
 scripts/studio-tf-push.sh withdraw-tf-tag --version 26.4.17 --build 3162 # rename TF anchor to tf-<version>-<build>-WITHDRAWN
 scripts/release-manager-configure.sh --project turnip-ios --quick --appstore-slack-channel C... # configure opt-in App Store Slack release announcements
 /studio-setup                    # onboard THIS machine — auto-pilot, prompts for role only
@@ -154,7 +155,7 @@ scripts/lint-chain-workflow-docs.sh --staged                # keep chain launche
 scripts/v2-profile.sh --profile ios-turnip --list           # A6 project-profile operation resolver
 scripts/v2-cutover.sh --status                              # A9 v1 archive / v2 traffic-switch status
 scripts/lint-build-release-message.sh --file draft.md --channel testflight # A11 build/release message shape + duplicate lint
-scripts/pr-headless-review.sh <pr>                          # run smoke-eligible no-secret reviewer gate, then merge if non-blocked
+scripts/pr-headless-review.sh <pr>                          # run smoke-eligible no-secret reviewer gate, then merge only if the reused chain-style feature-branch gate keeps head history linear relative to its base
 scripts/pr-headless-review.sh <pr> --no-require-cross-host   # opt out of the default independent-provider reviewer requirement
 scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-host claude-code  # resolve reviewer model from policy
 scripts/check-model-catalog.sh --print-refresh-checklist     # validate refreshable model IDs against official-source metadata
@@ -222,6 +223,7 @@ scripts/                # multi-worker fleet (BETA)
   ingest-feedback.sh    # routes studio-feedback records to analysis + GH issue create/comment/defer
   analyze-feedback-ingest.sh # studio feedback triage: consolidate into existing/new GH issues before processed/
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
+  compose-build-release-message.sh # taxonomy-aware TestFlight/App Store bullet composer
   appstore-watch.sh     # polls ASC; publishes release + merge-commit PR only at READY_FOR_SALE
   backfill-orphan-debriefs.sh  # recover tasks that finished without landing in master plan (dry-run default)
   achilles-refresh-base.sh     # legacy worker helper: fetch + merge base before reviewer handoff
@@ -247,6 +249,7 @@ scripts/                # multi-worker fleet (BETA)
   README.md             # setup, on-disk layout, env vars, caveats
 
 .githooks/
+  commit-msg            # commit message trailer lint for studio-managed commits
   pre-commit            # architecture linter + privacy gate (enable via core.hooksPath)
 
 hooks/
@@ -310,6 +313,7 @@ git config core.hooksPath .githooks
 ```
 
 The hook blocks commits on local base branches (`main`, `master`, `trunk`, `develop`) so local `main` stays a mirror of `origin/main`; emergency bypass is explicit with `STUDIO_BYPASS_MAIN_COMMIT_GUARD=1 git commit ...`. It regenerates `docs-surface.json`, runs the architecture/privacy gates, and emits `precommit_hook_completed` with `duration_s`. It also runs `scripts/lint-v2-bootstrap.sh --staged`, which keeps the v2 substrate inside the A0.4 bootstrap/meta boundary until the A0.5 SPEC sign-off marker lands. `scripts/lint-chain-workflow-docs.sh --staged` keeps the chain launcher docs, `studio-chain-runner` usage banner, `manager-work-chain` defaults, and discovery fixtures aligned; bypass only for emergency drift triage with `STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1 git commit ...`. SessionStart emits `session_start_completed` against a 5s warning budget and stays quiet unless that budget is exceeded. It does not spawn an LLM reviewer by default. Run `scripts/pre-commit-review.sh` manually before committing risky local diffs; its bypass remains explicit (`STUDIO_BYPASS_REVIEW=1` or `--bypass-review`) and audited through `precommit_review_bypassed`. Multi-phase work uses `scripts/phase-review.sh --review-host <claude-reviewer|codex-reviewer> --input phase-plan.md --output ~/.dev-studio/<project>/analysis/...` so sibling-host reviews go through the same smoke-eligible reviewer profiles instead of raw host CLI calls and emit `PHASE_REVIEW_VERDICT=clean|blocked|ambiguous` for deterministic callers. If the requested reviewer fails eligibility, execution, timeout, or verdict parsing, `phase-review.sh` tries another cross-host reviewer first; if none returns usable output, it may use the parent host's reviewer profile as a degraded continuity path, emitting `PHASE_REVIEW_DEGRADED=1`, `PHASE_REVIEW_CROSS_HOST_SATISFIED=false`, and `PHASE_REVIEW_NEXT_CROSS_HOST_RETRY=next_boundary`. Claude subscription/403 fallback can be forced off with `STUDIO_DISABLE_PHASE_REVIEW_CLAUDE_403_FALLBACK=1`; degraded same-host continuity can be forced off with `STUDIO_DISABLE_PHASE_REVIEW_DEGRADED_SAME_HOST=1`. Chain manifests can opt issue phases into the same gate with `phase_review: required|auto|off`; clean outcome warnings, recommendations, and accepted plan adjustments are forwarded only as compact private context to later issue start envelopes. `scripts/lint-field-review-surfaces.sh` blocks new field-agent review setup that reintroduces raw host commands. PR integration still goes through `scripts/pr-headless-review.sh`, with timing split across reviewer, autopilot, and merge-finalize events; PR gate comments now expose parent host, smoke-eligible reviewer profiles, selected reviewer, cross-host status, fallback attempts, and selected reviewer model metadata. Reviewer model names resolve through `_shared/schemas/model-catalog.yaml` plus `_shared/rules/model-policy.yaml`; treat them as refreshable policy, not shell-script constants. Cross-provider PR review is required by default; same-host PR fallback requires `--allow-same-host-review --user-approved-bypass <github-url>`, and `--no-require-cross-host` is only for explicit non-safety-floor runs. Claude reviewers use `CLAUDE_REVIEWER_HOME` plus `CLAUDE_REVIEWER_CONFIG_DIR`; set the home to a locked-down reviewer account on fleet nodes. Use `scripts/studio-pr-baseline-report.sh <pr>` during retrospectives to compare phase timing, churn, and gate gaps across PR classes; use the numbers to tune workflow bottlenecks, not to score individual productivity. Error codes and fix recipes live in `_shared/rules/enforcement-contract.md`. Emergency lint bypass: `ARCH_LINT=0 git commit ...` (hotfixes only).
+`.githooks/commit-msg` also runs `scripts/lint-commit-message.sh` for all commit message edits and fails fast when `Change-Type` or `Studio-Host` trailers are invalid or missing in strict automation contexts. Set `STUDIO_BYPASS_COMMIT_TRAILER_LINT=1` to bypass this hook in an explicit emergency.
 
 ### Feature branches and grouped PRs
 

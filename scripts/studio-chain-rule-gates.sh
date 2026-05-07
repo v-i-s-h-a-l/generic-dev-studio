@@ -6,6 +6,10 @@ umask 022
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+# shellcheck source=lib-paths.sh
+. "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-feature-branch-policy.sh
+. "$SCRIPT_DIR/lib-feature-branch-policy.sh"
 
 PLAN=""
 MANIFEST=""
@@ -195,10 +199,13 @@ while IFS=$'\t' read -r chain_name base expected_sha branch; do
   fi
 
   if git -C "$REPO" show-ref --verify --quiet "refs/heads/$branch"; then
-    if git -C "$REPO" rev-list --merges "origin/$base..$branch" 2>/dev/null | grep -q .; then
-      gate_fail no_feature_branch_merge_commits hard STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE "feature branch $branch contains merge commits since origin/$base"
+    if feature_branch_policy_evaluate "$REPO" "$branch" "$base" "chain branch"; then
+      case "$FEATURE_BRANCH_POLICY_STATUS" in
+        skipped) gate_skip no_feature_branch_merge_commits hard STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE "$FEATURE_BRANCH_POLICY_DETAIL" ;;
+        *) gate_pass no_feature_branch_merge_commits hard STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE "$FEATURE_BRANCH_POLICY_DETAIL" ;;
+      esac
     else
-      gate_pass no_feature_branch_merge_commits hard STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE "feature branch $branch has no merge commits since origin/$base"
+      gate_fail no_feature_branch_merge_commits hard STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE "$FEATURE_BRANCH_POLICY_DETAIL"
     fi
   else
     gate_skip no_feature_branch_merge_commits hard STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE "feature branch $branch does not exist yet"

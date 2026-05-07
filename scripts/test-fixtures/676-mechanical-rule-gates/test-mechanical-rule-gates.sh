@@ -51,22 +51,53 @@ jq -e '.status == "ok" and ([.checks[] | select(.id == "dirty_tree_and_index" an
   || fail "clean gate path did not pass"
 [ "$(jq -c . "$audit" | wc -l | tr -d ' ')" -gt 0 ] || fail "audit log was not written"
 
+git -C "$repo" checkout -q -b feature/gate-fixture main
+printf 'feature\n' >"$repo/feature.txt"
+git -C "$repo" add feature.txt
+git -C "$repo" commit -q -m "feature work"
+"$GATES" --plan "$plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" --audit-log "$TMPROOT/feature-clean-audit.jsonl" >"$TMPROOT/feature-clean.json"
+jq -e '.status == "ok" and ([.checks[] | select(.id == "no_feature_branch_merge_commits" and .status == "passed")] | length == 1)' "$TMPROOT/feature-clean.json" >/dev/null \
+  || fail "clean feature branch did not pass merge-commit gate"
+
+git -C "$repo" checkout -q main
+git -C "$repo" checkout -q -b sibling/gate-fixture
+printf 'sibling\n' >"$repo/sibling.txt"
+git -C "$repo" add sibling.txt
+git -C "$repo" commit -q -m "sibling work"
+git -C "$repo" checkout -q feature/gate-fixture
+git -C "$repo" merge --no-ff sibling/gate-fixture -m "merge sibling into feature" >/dev/null
+
+if "$GATES" --plan "$plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" --audit-log "$TMPROOT/feature-merge-audit.jsonl" >"$TMPROOT/feature-merge.json"; then
+  cat "$TMPROOT/feature-merge.json" >&2
+  fail "feature branch with merge commit unexpectedly passed"
+fi
+jq -e '.status == "halt" and ([.failures[] | select(.id == "no_feature_branch_merge_commits")] | length == 1)' "$TMPROOT/feature-merge.json" >/dev/null \
+  || fail "feature merge branch did not fail the merge-commit gate"
+
+STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 \
+  "$GATES" --plan "$plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" --audit-log "$TMPROOT/feature-merge-override-audit.jsonl" >"$TMPROOT/feature-merge-override.json"
+jq -e '.status == "ok" and ([.overrides[] | select(.id == "no_feature_branch_merge_commits" and .override_env == "STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE")] | length == 1)' "$TMPROOT/feature-merge-override.json" >/dev/null \
+  || fail "feature merge override path did not pass with override evidence"
+
 printf 'dirty\n' >"$repo/dirty.txt"
-if "$GATES" --plan "$plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" --audit-log "$TMPROOT/dirty-audit.jsonl" --enforce-git-workflow >"$TMPROOT/dirty.json"; then
+if STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 \
+  "$GATES" --plan "$plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" --audit-log "$TMPROOT/dirty-audit.jsonl" --enforce-git-workflow >"$TMPROOT/dirty.json"; then
   cat "$TMPROOT/dirty.json" >&2
   fail "dirty tree unexpectedly passed"
 fi
 jq -e '.status == "halt" and ([.failures[] | select(.id == "dirty_tree_and_index")] | length == 1)' "$TMPROOT/dirty.json" >/dev/null \
   || fail "dirty tree did not produce typed halt"
 
-STUDIO_BYPASS_DIRTY_TREE_GATE=1 "$GATES" --plan "$plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" --audit-log "$TMPROOT/dirty-override-audit.jsonl" --enforce-git-workflow >"$TMPROOT/dirty-override.json"
+STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 STUDIO_BYPASS_DIRTY_TREE_GATE=1 \
+  "$GATES" --plan "$plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" --audit-log "$TMPROOT/dirty-override-audit.jsonl" --enforce-git-workflow >"$TMPROOT/dirty-override.json"
 jq -e '.status == "ok" and ([.overrides[] | select(.id == "dirty_tree_and_index" and .override_env == "STUDIO_BYPASS_DIRTY_TREE_GATE")] | length == 1)' "$TMPROOT/dirty-override.json" >/dev/null \
   || fail "dirty override path did not pass with override evidence"
 rm -f "$repo/dirty.txt"
 
 bad_plan="$TMPROOT/bad-plan.json"
 jq '.chains[0].expected_source_sha = "0000000000000000000000000000000000000000" | .chains[0].issues[0].issue_worktree = "/tmp/outside-gate-root"' "$plan" >"$bad_plan"
-if "$GATES" --plan "$bad_plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" --audit-log "$TMPROOT/bad-audit.jsonl" >"$TMPROOT/bad.json"; then
+if STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 \
+  "$GATES" --plan "$bad_plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" --audit-log "$TMPROOT/bad-audit.jsonl" >"$TMPROOT/bad.json"; then
   cat "$TMPROOT/bad.json" >&2
   fail "bad source SHA/artifact root unexpectedly passed"
 fi
@@ -76,7 +107,7 @@ jq -e '
   and ([.failures[] | select(.id == "artifact_root_construction")] | length == 1)
 ' "$TMPROOT/bad.json" >/dev/null || fail "bad plan did not fail expected gates"
 
-STUDIO_BYPASS_SOURCE_SHA_GATE=1 STUDIO_BYPASS_ARTIFACT_ROOT_GATE=1 \
+STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 STUDIO_BYPASS_SOURCE_SHA_GATE=1 STUDIO_BYPASS_ARTIFACT_ROOT_GATE=1 \
   "$GATES" --plan "$bad_plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" --audit-log "$TMPROOT/bad-override-audit.jsonl" >"$TMPROOT/bad-override.json"
 jq -e '
   .status == "ok"
@@ -84,9 +115,9 @@ jq -e '
   and ([.overrides[] | select(.id == "artifact_root_construction")] | length == 1)
 ' "$TMPROOT/bad-override.json" >/dev/null || fail "bad plan override path did not pass"
 
-STUDIO_DERIVED_DATA_CACHE_KEY="bad/key" \
+STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 STUDIO_DERIVED_DATA_CACHE_KEY="bad/key" \
   "$GATES" --plan "$plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" >"$TMPROOT/bad-cache.json" 2>/dev/null && fail "bad DerivedData cache key unexpectedly passed"
-STUDIO_BYPASS_DERIVED_DATA_CACHE_KEY_GATE=1 STUDIO_DERIVED_DATA_CACHE_KEY="bad/key" \
+STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 STUDIO_BYPASS_DERIVED_DATA_CACHE_KEY_GATE=1 STUDIO_DERIVED_DATA_CACHE_KEY="bad/key" \
   "$GATES" --plan "$plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" >"$TMPROOT/bad-cache-override.json"
 jq -e '.status == "ok" and ([.overrides[] | select(.id == "derived_data_cache_key")] | length == 1)' "$TMPROOT/bad-cache-override.json" >/dev/null \
   || fail "DerivedData cache key override path did not pass"
