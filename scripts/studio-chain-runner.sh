@@ -28,6 +28,7 @@ umask 022
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+CALLER_HOME="${HOME:-}"
 
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
@@ -1503,6 +1504,8 @@ codex_home_for_worker() {
     printf '%s\n' "$CODEX_WORKER_HOME"
   elif [ -n "${CODEX_HOME:-}" ]; then
     printf '%s\n' "$CODEX_HOME"
+  elif [ -n "${CALLER_HOME:-}" ] && [ -d "$CALLER_HOME/.codex" ]; then
+    printf '%s\n' "$CALLER_HOME/.codex"
   elif [ -n "$launch_home" ] && [ -d "$launch_home/.codex" ]; then
     printf '%s\n' "$launch_home/.codex"
   elif [ -n "${HOME:-}" ] && [ -d "$HOME/.codex" ]; then
@@ -2605,6 +2608,21 @@ host_launch_home() {
   resolve_user_login_home 2>/dev/null || true
 }
 
+codex_auth_home_for_worker_launch() {
+  local launch_home="${1:-}"
+  if [ -n "${CODEX_WORKER_HOME:-}" ]; then
+    printf '%s\n' "$CODEX_WORKER_HOME"
+  elif [ -n "${CODEX_HOME:-}" ]; then
+    printf '%s\n' "$CODEX_HOME"
+  elif [ -n "$CALLER_HOME" ] && [ -d "$CALLER_HOME/.codex" ]; then
+    printf '%s\n' "$CALLER_HOME/.codex"
+  elif [ -n "$launch_home" ] && [ -d "$launch_home/.codex" ]; then
+    printf '%s\n' "$launch_home/.codex"
+  elif [ -n "${HOME:-}" ] && [ -d "$HOME/.codex" ]; then
+    printf '%s\n' "$HOME/.codex"
+  fi
+}
+
 host_preflight() {
   local host="$1" repo="$2" launch_home
   launch_home=$(host_launch_home)
@@ -3284,7 +3302,7 @@ execute_issue_session() {
   local chain_name="$1" chain_branch="$2" issue="$3" host="$4" git_metadata_strategy="$5" worktree="$6" issue_branch="$7" chain_run_id="$8" issue_run_id="$9" before="${10}" phase_review_context="${11:-[]}" rule_pack_resolution="${12:-null}"
   local issue_json issue_title issue_body spawn prompt summary_path start_path
   local -a spawn_argv
-  local launch_home=""
+  local launch_home="" codex_auth_home=""
 
   issue_json=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,body,url,state)
   issue_title=$(printf '%s' "$issue_json" | jq -r '.title')
@@ -3299,6 +3317,9 @@ execute_issue_session() {
   # shellcheck disable=SC2206
   spawn_argv=( $spawn )
   launch_home=$(host_launch_home)
+  case "$host" in
+    codex*|*codex*) codex_auth_home=$(codex_auth_home_for_worker_launch "$launch_home") ;;
+  esac
 
   prompt=$(cat <<EOF
 Implement this studio issue in a fresh chain-runner session.
@@ -3369,15 +3390,24 @@ EOF
 
   if [ "$DRY_RUN" -eq 1 ]; then
     printf 'DRY-RUN cd %q && ' "$worktree"
+    [ -z "$codex_auth_home" ] || printf 'CODEX_HOME=%q ' "$codex_auth_home"
     printf '%q ' "${spawn_argv[@]}"
     printf '%q\n' "$prompt"
     return 0
   fi
 
   if [ -n "$launch_home" ] && [ -d "$launch_home" ]; then
-    (cd "$worktree" && env HOME="$launch_home" "${spawn_argv[@]}" "$prompt")
+    if [ -n "$codex_auth_home" ]; then
+      (cd "$worktree" && env HOME="$launch_home" CODEX_HOME="$codex_auth_home" "${spawn_argv[@]}" "$prompt")
+    else
+      (cd "$worktree" && env HOME="$launch_home" "${spawn_argv[@]}" "$prompt")
+    fi
   else
-    (cd "$worktree" && "${spawn_argv[@]}" "$prompt")
+    if [ -n "$codex_auth_home" ]; then
+      (cd "$worktree" && env CODEX_HOME="$codex_auth_home" "${spawn_argv[@]}" "$prompt")
+    else
+      (cd "$worktree" && "${spawn_argv[@]}" "$prompt")
+    fi
   fi
 }
 

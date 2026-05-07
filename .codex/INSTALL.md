@@ -62,12 +62,13 @@ codex --sandbox workspace-write --add-dir ~/.dev-studio --ask-for-approval never
 Studio-launched Codex workers use `scripts/codex-worker-exec.sh` instead of
 plain `codex exec`. The wrapper resolves the login `HOME`, adds
 `$HOME/.dev-studio` as the runtime writable root, forces
-`--sandbox workspace-write`, disables transcript/session persistence with
-`--ephemeral`, and runs with `approval_policy=never`.
+`--sandbox workspace-write`, exports an explicit `CODEX_HOME` for Codex auth,
+disables transcript/session persistence with `--ephemeral`, and runs with
+`approval_policy=never`.
 
 ## GitHub Auth Parity
 
-Codex worker sessions must launch with the same login `HOME`, keychain, ssh-agent, and GitHub credential-helper surface that Claude-backed sessions use. The studio chain runner sets `HOME` to the login home before spawning Codex so `gh` and `git` see the user's normal credentials instead of a scratch home. Parent-side studio scripts that run under a synthetic Codex home also normalize GitHub operations to the login `HOME` per command; set `STUDIO_BYPASS_PARENT_HOME_FLIP=1` only when intentionally testing synthetic-home isolation.
+Codex worker sessions split data/auth roots deliberately: `HOME` is set to the login home so `gh` and `git` see the user's normal credentials, while `CODEX_HOME` points at the Codex auth profile. This matters when the parent Codex session runs under a synthetic home such as `~/.codex-homes/...`; reusing login `HOME` alone would give the worker GitHub auth but drop Codex API auth. Parent-side studio scripts that run under a synthetic Codex home also normalize GitHub operations to the login `HOME` per command; set `STUDIO_BYPASS_PARENT_HOME_FLIP=1` only when intentionally testing synthetic-home isolation.
 
 Before task work starts, `scripts/host-preflight.sh <host> <repo-root>` runs:
 
