@@ -169,6 +169,18 @@ printf '%s\n' "$cost_refusal" | jq -e '
   fail "cost-threshold refusal did not keep the job local"
 }
 
+write_proof exclude-chain worker-a
+write_proof exclude-chain worker-b
+excluded=$(STUDIO_IOS_MANAGER_BUSY_BUILD_TEST=1 STUDIO_IOS_MANAGER_QUEUE_WAIT_S=1200 STUDIO_IOS_ROUTER_EXCLUDE_WORKERS=worker-a run_route exclude-chain)
+printf '%s\n' "$excluded" | jq -e '
+  .selected_executor == "worker-b"
+  and .reason_class == "worker_offload_beneficial"
+  and ([.rejected_executors[] | select(.id == "worker-a") | .reason_class] | index("excluded_by_failover"))
+' >/dev/null || {
+  printf '%s\n' "$excluded" >&2
+  fail "failover exclusion did not route to the alternate eligible worker"
+}
+
 write_proof override-chain worker-a
 forced=$(run_route override-chain --force-worker worker-a)
 printf '%s\n' "$forced" | jq -e '

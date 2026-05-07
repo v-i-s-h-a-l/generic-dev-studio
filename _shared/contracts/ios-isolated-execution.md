@@ -113,6 +113,59 @@ If two chains have build/test affinity to the same worker, their build/test jobs
 queue on that worker by default. Non-build work may still run on other eligible
 executors.
 
+## Worker-Routed Build/Test Failover
+
+Worker-routed build/test failures are classified by
+`scripts/studio-ios-check-failover.sh` before a retry or human halt is chosen.
+The decision is private runtime telemetry, not a review bypass and not a merge
+or issue-closure authority.
+
+Required failure classes:
+
+| Class | Signals | Retry path |
+|---|---|---|
+| `worker_unavailable` | Worker disappears, SSH/source-sync cannot reach the worker, or the remote harness cannot classify the run. | Retry another eligible worker first; otherwise retry local manager if eligible; otherwise halt. |
+| `worker_timeout` | Remote command exits 124 or exceeds the bounded worker timeout. | Retry another eligible worker first; otherwise retry local manager if eligible; otherwise halt. |
+| `remote_command_failed` | The command reached `xcodebuild`/test and returned non-zero. | Do not auto-rerun; halt as terminal build/test failure evidence. |
+| `artifact_missing` | Required result, summary, log, exit marker, or publication artifact is absent. | Preserve partial artifacts, then retry locally once when eligible; otherwise another worker; otherwise halt. |
+| `artifact_malformed` | Published JSON/summary/marker is unreadable or reporting disagrees with publication. | Preserve evidence and halt for operator reconciliation. |
+| `sync_drift` | Expected branch, SHA, manifest, run id, chain-run id, or issue-run id does not match worker/local state. | Missing/stale proof may refresh source sync under the same run identity; mismatches halt for human realignment. |
+
+Additional typed outcomes are allowed for policy edges: `stale_lock`,
+`cache_poisoning`, `simulator_slot_timeout`, `simulator_stuck_boot`,
+`simulator_erase_failure`, `simulator_runtime_mismatch`, and
+`simulator_stale_slot_reclaimed`.
+
+Retries are finite. The default retry budget is two failover retries
+(`STUDIO_IOS_FAILOVER_MAX_RETRIES=2`) and every retry keeps the original
+`run_id`, `chain_run_id`, and `issue_run_id`. A retry must publish its selected
+path (`retry_another_worker`, `retry_local`,
+`retry_same_worker_after_source_sync`, `reclaim_stale_lock_then_retry`,
+`quarantine_cache_then_retry_*`, or a halt path) and the final decision outcome
+(`retry_planned`, `terminal_failure`, or `halted`).
+Retry budget state is durable private runtime state keyed by chain-run id,
+issue-run id, task id, and operation; it must not derive only from a gate-local
+attempt counter that can reset between parent-triggered retries.
+
+Failover idempotency keys are separate so artifact publication and result
+reporting can be reconciled independently. They use the durable retry sequence
+from failover state, not the gate-local attempt counter:
+
+```
+ios-check:<chain-run-id>:<issue-run-id>:<task-id>:<operation>:failover:r<retry-count>:<failure-class>
+ios-check:<chain-run-id>:<issue-run-id>:<task-id>:<operation>:result:r<retry-count>
+ios-check:<chain-run-id>:<issue-run-id>:<task-id>:<operation>:artifact:r<retry-count>
+```
+
+A retry path that depends on executor eligibility requires a valid router
+decision or live router explanation. Missing, malformed, or failed routing
+context is a typed operator halt, not an implicit local retry.
+
+Failover never commits issue work, closes issues, posts duplicate PR comments,
+rewrites shared branch history, or bypasses plan/outcome/PR review gates. Those
+side effects remain parent-runner or reviewer-gate responsibilities keyed by
+their own idempotency surfaces.
+
 ## Chain Affinity State
 
 The manager owns chain affinity and queue policy. Workers may emit events about
@@ -257,6 +310,14 @@ cleanup/janitor path must not hold broad locks that block active build/test
 execution; it may use only narrow atomic moves or deletes against artifacts it
 has proven inactive.
 
+Every stale-lock reclamation path must have a lease, owner identity, heartbeat,
+and safe reclamation rule. The minimum lease record fields are `lock_kind`,
+`owner_host`, `owner_pid`, `owner_run_id`, `owner_chain_run_id`,
+`owner_issue_run_id`, `acquired_at`, `expires_at`, and `heartbeat_at`.
+Reclamation is allowed only when the lease expired and the owner PID is dead or
+the heartbeat is stale. This applies to scheduler, source-branch, worker slot,
+simulator slot, artifact publication, and cleanup locks.
+
 ## Simulator Slots
 
 A simulator slot is identified by executor id, runtime, device family, slot
@@ -273,6 +334,16 @@ A slot is reusable only when:
 
 Default cleanup is shutdown/release, not erase/delete. Erase/delete is explicit
 janitor work and must not run while the slot is leased.
+
+Simulator recovery outcomes are typed:
+
+| Outcome | Response |
+|---|---|
+| `simulator_slot_timeout` | Retry another eligible executor or local manager within the retry budget. |
+| `simulator_stuck_boot` | Release stale lease, retry once, then reroute or halt. |
+| `simulator_erase_failure` | Halt for operator review. |
+| `simulator_runtime_mismatch` | Halt for operator review. |
+| `simulator_stale_slot_reclaimed` | Continue only after lease expiry plus dead-owner or stale-heartbeat proof. |
 
 ## Overrides
 
