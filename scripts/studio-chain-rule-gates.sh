@@ -70,6 +70,7 @@ iso_ts_now() {
 audit_event() {
   local gate_id="$1" status="$2" severity="$3" override_env="$4" detail="$5"
   [ -n "$AUDIT_LOG" ] || return 0
+  [ "$DRY_RUN" -eq 0 ] || return 0
   mkdir -p "$(dirname "$AUDIT_LOG")"
   jq -cn \
     --arg schema_version "1" \

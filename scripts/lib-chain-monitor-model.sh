@@ -301,6 +301,18 @@ chain_monitor_claims_from_persisted_run_json() {
         elif (["available","queued","running","paused"] | index($base)) and (($updated | epoch) > 0) and ($now_epoch > 0) and (($now_epoch - ($updated | epoch)) >= $stale_threshold_s)
         then "stale"
         else $base end;
+    def rollup_status($base; $issue_statuses):
+      if $base == "unknown" then "unknown"
+      elif ($issue_statuses | index("unknown")) then "unknown"
+      elif $base == "archived" then "archived"
+      elif $base == "completed" then "completed"
+      elif ($issue_statuses | index("failed")) then "failed"
+      elif ($issue_statuses | index("blocked")) then "blocked"
+      elif ($issue_statuses | index("paused")) then "paused"
+      elif $base == "stale" then "stale"
+      elif ($issue_statuses | index("running")) then "running"
+      elif ($issue_statuses | index("queued")) and (["available","queued"] | index($base)) then "queued"
+      else $base end;
     . as $root
     | [
       (.chains // [])[]
@@ -312,7 +324,9 @@ chain_monitor_claims_from_persisted_run_json() {
       | [($chain.issues // [])[]? | .number? // .issue? // empty | tonumber?] as $issue_numbers
       | [($chain.issues // [])[]? | select((.status // "") == "completed" or (.integrated // false) == true)] as $completed_issues
       | (($chain.status // "unknown") | tostring) as $raw_status
-      | effective($raw_status; ($chain.updated_at // $root.updated_at // null); ($chain.completed_at // null)) as $status
+      | effective($raw_status; ($chain.updated_at // $root.updated_at // null); ($chain.completed_at // null)) as $base_status
+      | [($chain.issues // [])[]? | effective((.status // "unknown"); (.updated_at // $root.updated_at // null); (.completed_at // null))] as $issue_statuses
+      | rollup_status($base_status; $issue_statuses) as $status
       | {
           claim_kind:"chain",
           logical_key:$logical_key,
