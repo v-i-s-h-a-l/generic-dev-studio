@@ -73,6 +73,7 @@
             "metadata_path",
             "owner",
             "applicability",
+            "enforcement_policy",
             "enforcement_hooks",
             "fixture_refs"
           ],
@@ -82,6 +83,7 @@
             "metadata_path": { "type": "string", "minLength": 1 },
             "owner": { "type": "string", "minLength": 1 },
             "applicability": { "type": "string", "minLength": 1 },
+            "enforcement_policy": { "type": "string", "minLength": 1 },
             "enforcement_hooks": { "type": "string", "minLength": 1 },
             "fixture_refs": { "type": "string", "minLength": 1 }
           }
@@ -164,6 +166,7 @@
         "full_doc_path",
         "metadata_path",
         "applicability",
+        "enforcement_policy",
         "enforcement_hooks",
         "fixture_refs"
       ],
@@ -180,6 +183,23 @@
         "full_doc_path": { "type": "string", "minLength": 1 },
         "metadata_path": { "type": "string", "minLength": 1 },
         "applicability": { "$ref": "#/$defs/applicability" },
+        "enforcement_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["script_enforced", "llm_reviewed", "override_env"],
+          "properties": {
+            "script_enforced": { "$ref": "#/$defs/string_list" },
+            "llm_reviewed": { "$ref": "#/$defs/string_list" },
+            "override_env": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^STUDIO_[A-Z0-9_]+$"
+              }
+            }
+          }
+        },
         "enforcement_hooks": { "$ref": "#/$defs/non_empty_string_list" },
         "fixture_refs": { "$ref": "#/$defs/non_empty_string_list" }
       }

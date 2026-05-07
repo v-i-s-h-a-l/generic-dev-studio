@@ -30,6 +30,7 @@ pack_interface:
     metadata_path: pack-local metadata, or this catalog while catalog-only
     owner: owning role, team, or repo surface
     applicability: any_of/all_of/none_of predicates compatible with Argus rule frontmatter
+    enforcement_policy: script-enforced hard gates versus LLM-reviewed advisory checks, with override envs
     enforcement_hooks: scripts, hooks, or manual gates that enforce the pack
     fixture_refs: regression fixtures or examples proving expected selection
   materialized_layout:
@@ -58,7 +59,12 @@ packs:
       any_of: [touches_git, manifest_requires_git_workflow]
       all_of: []
       none_of: []
+    enforcement_policy:
+      script_enforced: [dirty_tree_and_index, expected_source_branch_sha, explicit_pr_base, source_branch_lock, no_raw_force_push, no_feature_branch_merge_commits, force_with_lease_requires_override]
+      llm_reviewed: [commit_message_quality, branch_naming_intent, emergency_bypass_rationale]
+      override_env: [STUDIO_BYPASS_DIRTY_TREE_GATE, STUDIO_BYPASS_SOURCE_SHA_GATE, STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE, STUDIO_BYPASS_SOURCE_BRANCH_LOCK_GATE, STUDIO_BYPASS_RAW_FORCE_PUSH_GATE, STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE, STUDIO_BYPASS_FORCE_WITH_LEASE_GATE]
     enforcement_hooks:
+      - scripts/studio-chain-rule-gates.sh
       - .githooks/pre-commit
       - scripts/lint-host-agnostic.sh
     fixture_refs:
@@ -75,7 +81,12 @@ packs:
       any_of: [manifest_chain_run, mode_chain_runner]
       all_of: []
       none_of: []
+    enforcement_policy:
+      script_enforced: [explicit_pr_base, artifact_root_construction, expected_source_branch_sha]
+      llm_reviewed: [phase_scope_alignment, worker_prompt_specificity, prior_review_feedback_handling]
+      override_env: [STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE, STUDIO_BYPASS_ARTIFACT_ROOT_GATE, STUDIO_BYPASS_SOURCE_SHA_GATE]
     enforcement_hooks:
+      - scripts/studio-chain-rule-gates.sh
       - scripts/studio-chain-runner.sh
       - scripts/studio-chain-reviewed.sh
     fixture_refs:
@@ -93,7 +104,12 @@ packs:
       any_of: [platform_ios, touches_xcode, touches_swift, release_job_testflight]
       all_of: []
       none_of: []
+    enforcement_policy:
+      script_enforced: [derived_data_cache_key]
+      llm_reviewed: [scheme_selection, simulator_destination_choice, signing_context]
+      override_env: [STUDIO_BYPASS_DERIVED_DATA_CACHE_KEY_GATE]
     enforcement_hooks:
+      - scripts/studio-chain-rule-gates.sh
       - profiles/ios-turnip/commands/xcode-operation
     fixture_refs:
       - scripts/test-fixtures/524-project-profile/test-v2-profile.sh
@@ -110,6 +126,10 @@ packs:
       any_of: [role_worker, manifest_task_assignment, phase_implementation]
       all_of: []
       none_of: []
+    enforcement_policy:
+      script_enforced: []
+      llm_reviewed: [role_scope_fit, implementation_boundary, summary_completeness]
+      override_env: []
     enforcement_hooks:
       - scripts/v2-role-contract.sh
       - scripts/v2-role-resolve.sh
@@ -128,7 +148,12 @@ packs:
       any_of: [manifest_chain_run, phase_outcome, touches_telemetry]
       all_of: []
       none_of: []
+    enforcement_policy:
+      script_enforced: [telemetry_redaction]
+      llm_reviewed: [completion_claim_quality, evidence_sufficiency, public_summary_privacy]
+      override_env: [STUDIO_BYPASS_TELEMETRY_REDACTION_GATE]
     enforcement_hooks:
+      - scripts/studio-chain-rule-gates.sh
       - scripts/studio-chain-telemetry-digest.sh
       - scripts/field-workflow-report.sh
     fixture_refs:
@@ -146,7 +171,12 @@ packs:
       any_of: [touches_runtime_artifacts, phase_cleanup, mode_chain_runner]
       all_of: []
       none_of: []
+    enforcement_policy:
+      script_enforced: [artifact_root_construction, cleanup_ttl_class]
+      llm_reviewed: [retention_reasonableness, private_artifact_lifecycle]
+      override_env: [STUDIO_BYPASS_ARTIFACT_ROOT_GATE, STUDIO_BYPASS_CLEANUP_TTL_GATE]
     enforcement_hooks:
+      - scripts/studio-chain-rule-gates.sh
       - scripts/studio-chain-runner.sh
     fixture_refs:
       - scripts/test-fixtures/651-chain-artifact-hygiene/test-chain-artifact-hygiene.sh
@@ -163,6 +193,10 @@ packs:
       any_of: [role_release_manager, release_job_testflight, release_job_app_store, release_job_tagging]
       all_of: []
       none_of: []
+    enforcement_policy:
+      script_enforced: []
+      llm_reviewed: [release_channel_fit, human_approval_boundary, notes_quality]
+      override_env: []
     enforcement_hooks:
       - scripts/release-manager-configure.sh
       - scripts/lint-build-release-message.sh
@@ -181,7 +215,12 @@ packs:
       any_of: [touches_public_output, touches_private_runtime, manifest_requires_privacy]
       all_of: []
       none_of: []
+    enforcement_policy:
+      script_enforced: [telemetry_redaction]
+      llm_reviewed: [public_private_boundary, anonymization_quality]
+      override_env: [STUDIO_BYPASS_TELEMETRY_REDACTION_GATE]
     enforcement_hooks:
+      - scripts/studio-chain-rule-gates.sh
       - scripts/lint-host-agnostic.sh
     fixture_refs:
       - scripts/test-fixtures/674-rule-pack-metadata/test-rule-pack-metadata.sh
@@ -197,6 +236,10 @@ packs:
       any_of: [role_reviewer, phase_review, mode_review]
       all_of: []
       none_of: []
+    enforcement_policy:
+      script_enforced: []
+      llm_reviewed: [review_rule_selection, finding_severity, test_adequacy_judgment]
+      override_env: []
     enforcement_hooks:
       - scripts/argus-select-rules.sh
       - scripts/pr-headless-review.sh

@@ -58,6 +58,7 @@ for required in \
   metadata_path \
   owner \
   applicability \
+  enforcement_policy \
   enforcement_hooks \
   fixture_refs
 do
@@ -97,6 +98,7 @@ jq -e '
   ([.packs[].id] | unique | length) == (.packs | length)
   and all(.packs[];
     (.applicability | has("any_of") and has("all_of") and has("none_of"))
+    and (.enforcement_policy | has("script_enforced") and has("llm_reviewed") and has("override_env"))
     and (.enforcement_hooks | length > 0)
     and (.fixture_refs | length > 0)
     and (.summary_path | length > 0)
