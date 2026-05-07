@@ -60,6 +60,13 @@ case "${GH_TOKEN:-}${GITHUB_TOKEN:-}${OPENAI_API_KEY:-}${ANTHROPIC_API_KEY:-}" i
 esac
 
 case " $* " in
+  *"outcome-review artifact"*)
+    printf 'Your organization has disabled Claude subscription access for Claude Code · 403\n' >&2
+    exit 17
+    ;;
+esac
+
+case " $* " in
   *"STUDIO_REVIEW_VERDICT"*) printf 'STUDIO_REVIEW_VERDICT=approved\n' ;;
   *)
     case " $* " in
@@ -72,8 +79,27 @@ esac
 SH
 chmod +x "$BIN/claude"
 
+cat > "$BIN/codex" <<'SH'
+#!/usr/bin/env bash
+case " $* " in
+  *" --help "*) printf 'codex fixture help\n'; exit 0 ;;
+esac
+[ -n "${CODEX_HOME:-}" ] || { printf 'missing CODEX_HOME\n' >&2; exit 20; }
+[ -n "${REVIEW_PAYLOAD:-}" ] && [ -f "$REVIEW_PAYLOAD" ] || { printf 'missing review payload\n' >&2; exit 21; }
+case "${GH_TOKEN:-}${GITHUB_TOKEN:-}${OPENAI_API_KEY:-}${ANTHROPIC_API_KEY:-}" in
+  "") ;;
+  *) printf 'secret leaked into codex reviewer env\n' >&2; exit 22 ;;
+esac
+case " $* " in
+  *"STUDIO_REVIEW_VERDICT"*) printf 'STUDIO_REVIEW_VERDICT=approved\n' ;;
+  *) printf 'PHASE_REVIEW_VERDICT=clean\ncodex fallback found nothing fatal.\n' ;;
+esac
+SH
+chmod +x "$BIN/codex"
+
 export PATH="$BIN:$PATH"
 export HOME="$TMPROOT/caller-home"
+export CODEX_HOME="$HOME/.codex"
 export CLAUDE_REVIEWER_HOME="$TMPROOT/reviewer-home"
 export CLAUDE_REVIEWER_CONFIG_DIR="$CLAUDE_REVIEWER_HOME/.claude-reviewer"
 export GH_TOKEN="must-not-leak"
@@ -81,7 +107,7 @@ export GITHUB_TOKEN="must-not-leak"
 export OPENAI_API_KEY="must-not-leak"
 export ANTHROPIC_API_KEY="must-not-leak"
 
-mkdir -p "$HOME/.config/gh" "$CLAUDE_REVIEWER_CONFIG_DIR"
+mkdir -p "$HOME/.config/gh" "$CODEX_HOME" "$CLAUDE_REVIEWER_CONFIG_DIR"
 printf 'github.com: token\n' > "$HOME/.config/gh/hosts.yml"
 
 input="$TMPROOT/plan.md"
@@ -111,4 +137,43 @@ grep -q 'PHASE_REVIEW_VERDICT=clean' "$out"
 grep -q 'nothing fatal' "$output"
 [ ! -s "$output.err" ]
 
-printf 'PASS: phase-review uses smoke-eligible Claude reviewer wrapper\n'
+fallback_output="$TMPROOT/fallback-review.md"
+fallback_out="$TMPROOT/phase-review-fallback.out"
+if ! bash "$ROOT/scripts/phase-review.sh" \
+  --review-host claude-reviewer \
+  --kind outcome \
+  --input "$input" \
+  --output "$fallback_output" >"$fallback_out" 2>"$fallback_out.err"; then
+  sed -n '1,120p' "$fallback_out" >&2 || true
+  sed -n '1,120p' "$fallback_out.err" >&2 || true
+  sed -n '1,120p' "$fallback_output" >&2 || true
+  sed -n '1,120p' "$fallback_output.err" >&2 || true
+  exit 1
+fi
+
+grep -q 'PHASE_REVIEW_FALLBACK_FROM=claude-reviewer' "$fallback_out"
+grep -q 'PHASE_REVIEW_FALLBACK_TO=codex-reviewer' "$fallback_out"
+grep -q 'PHASE_REVIEW_FALLBACK_REASON=claude_subscription_403' "$fallback_out"
+grep -q 'PHASE_REVIEW_HOST=codex-reviewer' "$fallback_out"
+grep -q 'PHASE_REVIEW_VERDICT=clean' "$fallback_out"
+grep -q 'codex fallback found nothing fatal' "$fallback_output"
+grep -q 'disabled Claude subscription access' "$fallback_output.err.claude-reviewer"
+[ ! -s "$fallback_output.err" ]
+
+disabled_output="$TMPROOT/disabled-fallback-review.md"
+disabled_out="$TMPROOT/phase-review-disabled-fallback.out"
+if STUDIO_DISABLE_PHASE_REVIEW_CLAUDE_403_FALLBACK=1 bash "$ROOT/scripts/phase-review.sh" \
+  --review-host claude-reviewer \
+  --kind outcome \
+  --input "$input" \
+  --output "$disabled_output" >"$disabled_out" 2>"$disabled_out.err"; then
+  printf 'FAIL: disabled Claude 403 fallback should preserve the failure\n' >&2
+  exit 1
+fi
+grep -q 'reviewer command failed for claude-reviewer' "$disabled_out.err"
+if grep -q 'PHASE_REVIEW_HOST=codex-reviewer' "$disabled_out"; then
+  printf 'FAIL: disabled fallback still selected codex-reviewer\n' >&2
+  exit 1
+fi
+
+printf 'PASS: phase-review uses reviewer wrapper and falls back on Claude 403\n'

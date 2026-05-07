@@ -303,6 +303,8 @@ Token/context savings are default only when the wall-clock delta is nominal. Any
 
 Field-agent review setup in mode packs, briefs, manifests, scripts, and issue acceptance criteria must not hand-compose raw `claude -p` or `codex exec` reviewer commands. Route sibling-host / cross-host review through `scripts/phase-review.sh` or a successor wrapper that preserves reviewer auth-home selection, no-secret env scrubbing, MCP isolation, sandbox-readable payload handoff, and failure-detail surfacing.
 
+If a Claude reviewer fails with Claude Code subscription/403 access errors, `scripts/phase-review.sh` may fall back to `codex-reviewer` and must surface `PHASE_REVIEW_FALLBACK_*` lines so callers record the degraded reviewer choice. User-controlled override: `STUDIO_DISABLE_PHASE_REVIEW_CLAUDE_403_FALLBACK=1`.
+
 Legitimate mentions are allowed only when documenting the banned pattern, testing wrapper behavior, or using an explicit `lint-field-review:allow next-line` annotation with a reason. `STUDIO_BYPASS_FIELD_REVIEW_WRAPPER=1` is the documented emergency/debug override; it must be user-controlled and recorded in the plan/outcome artifact, never used silently by an assistant.
 
 **How to check:** run `scripts/lint-field-review-surfaces.sh --staged`. The pre-commit hook runs it as Gate 2g.
