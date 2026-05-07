@@ -130,6 +130,13 @@ jq -n \
   def in_window: (date_part >= $since and date_part <= $until);
   def counts_by(key):
     reduce .[] as $item ({}; ($item | key // "unknown" | tostring) as $k | .[$k] = ((.[$k] // 0) + 1));
+  def timing_value($k):
+    (.execution_telemetry.timing[$k]
+     // .execution_telemetry.timings[$k]
+     // .execution_telemetry.phases[$k]
+     // (if $k == "control_plane_overhead_ms" then .execution_telemetry.routing.control_plane.scheduler_overhead_ms else null end)
+     // empty)
+    | tonumber? // empty;
   def token_total:
     (.tokens // null) as $t |
     if $t == null then null
@@ -226,7 +233,17 @@ jq -n \
         cleanup_outcomes: ($cleanup_outcomes | map({outcome: ., one: 1}) | counts_by(.outcome)),
         retention_classes: ($retention_classes | map({class: ., one: 1}) | counts_by(.class)),
         public_artifact_classes: ($artifact_classes | map({class: ., one: 1}) | counts_by(.class)),
-        gap_count: ($execution_gaps | length)
+        gap_count: ($execution_gaps | length),
+        timing: {
+          reports_with_timing: ([ $selected_summaries[] | select((.execution_telemetry.timing // .execution_telemetry.timings // .execution_telemetry.phases // .execution_telemetry.routing.control_plane // null) != null) ] | length),
+          control_plane_overhead_ms: ([ $selected_summaries[] | timing_value("control_plane_overhead_ms") ] | add // 0),
+          source_sync_s: ([ $selected_summaries[] | timing_value("source_sync_s") ] | add // 0),
+          simulator_boot_s: ([ $selected_summaries[] | timing_value("simulator_boot_s") ] | add // 0),
+          xcodebuild_s: ([ $selected_summaries[] | timing_value("xcodebuild_s") ] | add // 0),
+          tests_s: ([ $selected_summaries[] | timing_value("tests_s") ] | add // 0),
+          log_parsing_s: ([ $selected_summaries[] | timing_value("log_parsing_s") ] | add // 0),
+          cleanup_s: ([ $selected_summaries[] | timing_value("cleanup_s") ] | add // 0)
+        }
       },
       carryover_items: ([ $selected_summaries[] | lines(.carryover)[] ] | length),
       lesson_items: ([ $selected_summaries[] | lines(.lessons)[] ] | length)

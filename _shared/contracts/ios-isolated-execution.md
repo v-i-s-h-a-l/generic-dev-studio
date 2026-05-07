@@ -341,6 +341,8 @@ publishing private paths or exact node names. The private summary records:
 - `artifacts.private_roots[]` for local reconstruction and
   `artifacts.public_classes[]` for public-safe summaries.
 - `cleanup.outcome`, `cleanup.retention_class`, and `cleanup.ttl_class`.
+- `timing` split across control-plane overhead, source sync, simulator boot,
+  xcodebuild, tests, log parsing, and cleanup when those measurements exist.
 - `failover` retry path, reason class, and final outcome when a worker-routed
   build/test path failed over.
 

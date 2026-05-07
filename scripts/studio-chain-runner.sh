@@ -661,6 +661,13 @@ chain_efficiency_metrics_json() {
     def duration: (.duration_s // 0 | tonumber? // 0);
     def counts_by(key):
       reduce .[] as $item ({}; ($item | key // "unknown" | tostring) as $k | .[$k] = ((.[$k] // 0) + 1));
+    def timing_value($k):
+      (.execution_telemetry.timing[$k]
+       // .execution_telemetry.timings[$k]
+       // .execution_telemetry.phases[$k]
+       // (if $k == "control_plane_overhead_ms" then .execution_telemetry.routing.control_plane.scheduler_overhead_ms else null end)
+       // empty)
+      | tonumber? // empty;
     [ $summaries[] ] as $rows |
     [ $events[] ] as $events |
     [ $rows[] | token_total | select(. != null) ] as $tokens |
@@ -710,7 +717,17 @@ chain_efficiency_metrics_json() {
         cleanup_outcomes: ($cleanup_outcomes | map({outcome: ., one: 1}) | counts_by(.outcome)),
         retention_classes: ($retention_classes | map({class: ., one: 1}) | counts_by(.class)),
         public_artifact_classes: ($artifact_classes | map({class: ., one: 1}) | counts_by(.class)),
-        gap_count: ($execution_gaps | length)
+        gap_count: ($execution_gaps | length),
+        timing: {
+          reports_with_timing: ([ $rows[] | select((.execution_telemetry.timing // .execution_telemetry.timings // .execution_telemetry.phases // .execution_telemetry.routing.control_plane // null) != null) ] | length),
+          control_plane_overhead_ms: ([ $rows[] | timing_value("control_plane_overhead_ms") ] | add // 0),
+          source_sync_s: ([ $rows[] | timing_value("source_sync_s") ] | add // 0),
+          simulator_boot_s: ([ $rows[] | timing_value("simulator_boot_s") ] | add // 0),
+          xcodebuild_s: ([ $rows[] | timing_value("xcodebuild_s") ] | add // 0),
+          tests_s: ([ $rows[] | timing_value("tests_s") ] | add // 0),
+          log_parsing_s: ([ $rows[] | timing_value("log_parsing_s") ] | add // 0),
+          cleanup_s: ([ $rows[] | timing_value("cleanup_s") ] | add // 0)
+        }
       },
       bottlenecks: ([
         (if $slowest != null then {kind:"slowest_issue", issue_number: ($slowest.issue_number // null), duration_s: ($slowest.duration_s // null)} else empty end),
