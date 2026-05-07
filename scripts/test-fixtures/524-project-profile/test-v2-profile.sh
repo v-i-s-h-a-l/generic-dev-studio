@@ -85,8 +85,9 @@ if grep -q '/tmp/argus-\|/tmp/derived-data' "$TMPROOT/xcodebuild-build.args"; th
   cat "$TMPROOT/xcodebuild-build.args" >&2
   fail "build command leaked legacy global artifact paths"
 fi
-[ -f "$ARTIFACT_ROOT/logs/issue-run-524/2-build.log" ] || fail "build log was not written under artifact root"
+[ ! -e "$ARTIFACT_ROOT/logs/issue-run-524/2-build.log" ] || fail "passed build log should be deleted after summary extraction"
 [ -f "$ARTIFACT_ROOT/summaries/issue-run-524/2-build.summary.txt" ] || fail "build summary was not written under artifact root"
+[ -f "$ARTIFACT_ROOT/retention/issue-run-524/2-build.json" ] || fail "build retention record was not written"
 jq -e '
   .schema_version == 1
   and .kind == "studio-ios-derived-data-cache"
@@ -167,6 +168,10 @@ PATH="$BIN:$PATH" XCODEBUILD_CAPTURE="$capture" \
   STUDIO_IOS_RESULT_BUNDLE_PATH="$ARTIFACT_ROOT/debug/result.xcresult" \
   STUDIO_IOS_LOG_PATH="$ARTIFACT_ROOT/debug/build.log" \
   STUDIO_IOS_SUMMARY_PATH="$ARTIFACT_ROOT/debug/build.summary.txt" \
+  STUDIO_IOS_DEBUG_RETAIN=1 \
+  STUDIO_IOS_DEBUG_RETAIN_OWNER="fixture" \
+  STUDIO_IOS_DEBUG_RETAIN_REASON="verify debug overrides" \
+  STUDIO_IOS_DEBUG_RETAIN_UNTIL="2099-01-01T00:00:00Z" \
   STUDIO_IOS_SCHEME="Fixture" \
   "$ROOT/profiles/ios-turnip/commands/xcode-operation" build >/dev/null
 tr '\0' '\n' < "$capture" > "$TMPROOT/xcodebuild-override.args"

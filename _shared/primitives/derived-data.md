@@ -36,6 +36,13 @@ Each DerivedData root has a sibling `.metadata.json` file. Reuse fails closed
 to a fresh cold root when cache-key inputs are missing or metadata does not
 match.
 
+Passed profile operations do not delete DerivedData after each task. They delete
+passed result bundles, logs, and tmp paths only after the operation summary is
+written, then leave DerivedData for the chain to reuse. The chain runner and
+`scripts/studio-ios-artifact-janitor.sh` clean the scoped iOS artifact root at
+chain completion, or retain failed/blocking/debug/release/quarantined evidence
+until the class TTL expires.
+
 ### Existing legacy consumers
 
 Current non-profile consumers of older artifact locations are:

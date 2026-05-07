@@ -213,6 +213,34 @@ for individual paths. Raw `xcodebuild -derivedDataPath` and
 `-resultBundlePath` arguments are rejected by the profile command so ordinary
 invocations cannot silently leak artifacts outside the scoped root.
 
+## Artifact Retention And Janitor Policy
+
+`profiles/ios-turnip/commands/xcode-operation` writes a private retention
+record after the operation summary is extracted. The janitor owns deletes,
+compression, TTL sweeps, disk-pressure refusal, and redacted cleanup telemetry.
+It deletes only inside the scoped artifact root it was given.
+
+| Retention class | Trigger | Default behavior |
+|---|---|---|
+| `pass-summary-only` | Successful build/test | Delete result bundle, log, and tmp path after summary extraction. Keep DerivedData until the chain completes. |
+| `pass-short-retain` | Explicit short-retain override | Retain artifacts briefly, default 24h. |
+| `failed-retain` | Failed build/test | Retain evidence for 48h by default. |
+| `blocked-retain` | Caller marks blocked | Retain evidence for 48h by default. |
+| `aborted-retain` | Caller marks aborted | Retain evidence for 24h by default. |
+| `debug-pinned` | `STUDIO_IOS_DEBUG_RETAIN=1` | Requires owner, reason, and expiry. Unbounded pins are invalid. |
+| `release-retain` | Release/TestFlight operation | Retain for 30d by default unless a stricter release policy applies. |
+| `cache-quarantined` | Cache poisoning, metadata mismatch, or partial-write signal | Move evidence to `quarantine/` and retain 7d by default. |
+
+The chain runner supplies `STUDIO_CHAIN_ARTIFACT_ROOT` under the private
+chain-run root for worker sessions. It runs the janitor before new dispatch and
+after chain completion. Completed chains clean the iOS artifact root when only
+success-path artifacts remain; failed, blocked, debug-pinned, release, and
+quarantined artifacts survive until expiry.
+
+Cleanup telemetry is private and path-redacted. Public summaries may mention
+counts/classes such as deleted, retained, pinned, skipped, compressed, refused,
+and bytes freed, but must not include raw artifact paths.
+
 ## Locks
 
 Locks must be acquired in this order:

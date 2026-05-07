@@ -5,6 +5,10 @@
 set -euo pipefail
 umask 022
 
+COMMAND_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+REPO_ROOT=$(cd "$COMMAND_DIR/../../.." && pwd)
+IOS_ARTIFACT_JANITOR="$REPO_ROOT/scripts/studio-ios-artifact-janitor.sh"
+
 operation="${1:-}"
 [ -n "$operation" ] || {
   printf 'xcode-operation: missing operation\n' >&2
@@ -134,6 +138,46 @@ reject_artifact_path_args() {
   fi
 }
 
+epoch_from_retain_until() {
+  local value="$1"
+  case "$value" in
+    ''|*[!0-9]*)
+      date -u -j -f %Y-%m-%dT%H:%M:%SZ "$value" +%s 2>/dev/null \
+        || date -u -d "$value" +%s 2>/dev/null \
+        || return 1
+      ;;
+    *) printf '%s\n' "$value" ;;
+  esac
+}
+
+validate_debug_retain_env() {
+  local expires_epoch now_epoch
+  if [ "${STUDIO_IOS_DEBUG_RETAIN:-0}" != "1" ] && [ "${STUDIO_IOS_ARTIFACT_RETENTION_CLASS:-}" != "debug-pinned" ]; then
+    return 0
+  fi
+  [ -n "${STUDIO_IOS_DEBUG_RETAIN_OWNER:-}" ] || {
+    printf 'xcode-operation: STUDIO_IOS_DEBUG_RETAIN_OWNER is required when STUDIO_IOS_DEBUG_RETAIN=1\n' >&2
+    exit 2
+  }
+  [ -n "${STUDIO_IOS_DEBUG_RETAIN_REASON:-}" ] || {
+    printf 'xcode-operation: STUDIO_IOS_DEBUG_RETAIN_REASON is required when STUDIO_IOS_DEBUG_RETAIN=1\n' >&2
+    exit 2
+  }
+  [ -n "${STUDIO_IOS_DEBUG_RETAIN_UNTIL:-}" ] || {
+    printf 'xcode-operation: STUDIO_IOS_DEBUG_RETAIN_UNTIL is required when STUDIO_IOS_DEBUG_RETAIN=1\n' >&2
+    exit 2
+  }
+  expires_epoch=$(epoch_from_retain_until "$STUDIO_IOS_DEBUG_RETAIN_UNTIL") || {
+    printf 'xcode-operation: STUDIO_IOS_DEBUG_RETAIN_UNTIL must be an epoch or UTC ISO timestamp\n' >&2
+    exit 2
+  }
+  now_epoch=$(date -u +%s)
+  [ "$expires_epoch" -gt "$now_epoch" ] || {
+    printf 'xcode-operation: STUDIO_IOS_DEBUG_RETAIN_UNTIL must be in the future\n' >&2
+    exit 2
+  }
+}
+
 xcode_target_flags() {
   local workspace project scheme destination configuration sdk
   workspace="${STUDIO_IOS_WORKSPACE:-$(first_match '*.xcworkspace')}"
@@ -184,6 +228,7 @@ run_xcodebuild() {
   local -a flags
   shift
   reject_artifact_path_args "$@"
+  validate_debug_retain_env
 
   operation_attempt="$(safe_segment "${STUDIO_IOS_ARTIFACT_ATTEMPT:-${STUDIO_ARTIFACT_ATTEMPT:-1}}")-$(safe_segment "$operation")"
   issue_run_id="${STUDIO_IOS_ISSUE_RUN_ID:-${STUDIO_ISSUE_RUN_ID:-${STUDIO_ISSUE_RUN_UUID:-${ISSUE_RUN_ID:-${ISSUE_RUN_UUID:-}}}}}"
@@ -279,6 +324,7 @@ run_xcodebuild() {
   if [ "$cache_state" = "stable" ] && [ -d "$derived_data_path" ]; then
     candidate_metadata="$metadata_path"
     if ! command -v jq >/dev/null 2>&1 || ! jq -e --arg key "$cache_key" '.schema_version == 1 and .cache_key == $key' "$candidate_metadata" >/dev/null 2>&1; then
+      quarantine_cache_root "$artifact_root" "$derived_data_path" "$metadata_path" "$cache_key" "metadata_mismatch" "$issue_run_id" "$operation_attempt"
       cache_key="cold-$(safe_segment "$issue_run_id")-$(safe_segment "$operation_attempt")-metadata-mismatch-$(date -u +%Y%m%dT%H%M%SZ)-$$"
       cache_state="cold_metadata_mismatch"
       if [ "${STUDIO_IOS_DERIVED_DATA_SCOPE:-lane}" = "integration" ]; then
@@ -320,6 +366,7 @@ run_xcodebuild() {
     return "$tee_rc"
   }
   write_xcode_summary "$summary_path" "$rc" "$operation" "$action" "$derived_data_path" "$result_bundle_path" "$log_path" "$metadata_path" "$cache_state"
+  finalize_ios_artifacts "$rc" "$artifact_root" "$summary_path" "$result_bundle_path" "$log_path" "$tmp_path" "$derived_data_path" "$operation" "$operation_attempt" "$issue_run_id"
   return "$rc"
 }
 
@@ -407,6 +454,56 @@ write_xcode_summary() {
       grep -E '(\*\* (BUILD|TEST) (SUCCEEDED|FAILED) \*\*|error:|warning:|Failing tests:)' "$log_path" | tail -50 || true
     fi
   } > "$summary_path"
+}
+
+quarantine_cache_root() {
+  local artifact_root="$1" derived_data_path="$2" metadata_path="$3" cache_key="$4" reason="$5" issue_run_id="$6" operation_attempt="$7"
+  local quarantine_root telemetry_dir telemetry_file moved=0 stamp
+  [ -d "$derived_data_path" ] || [ -f "$metadata_path" ] || return 0
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  quarantine_root="$artifact_root/quarantine/cache/$(safe_segment "$cache_key")-$stamp-$$"
+  mkdir -p "$quarantine_root"
+  if [ -d "$derived_data_path" ]; then
+    mv "$derived_data_path" "$quarantine_root/DerivedData" 2>/dev/null && moved=1
+  fi
+  if [ -f "$metadata_path" ]; then
+    mv "$metadata_path" "$quarantine_root/metadata.json" 2>/dev/null && moved=1
+  fi
+  [ "$moved" -eq 1 ] || return 0
+  if [ -x "$IOS_ARTIFACT_JANITOR" ]; then
+    telemetry_dir="$artifact_root/cleanup-telemetry/$issue_run_id"
+    telemetry_file="$telemetry_dir/$operation_attempt-cache-quarantine.json"
+    mkdir -p "$telemetry_dir"
+    "$IOS_ARTIFACT_JANITOR" record-quarantine \
+      --root "$artifact_root" \
+      --quarantine "$quarantine_root" \
+      --cache-key "$cache_key" \
+      --reason "$reason" \
+      --issue-run-id "$issue_run_id" \
+      --attempt "$operation_attempt-cache-quarantine" \
+      --json > "$telemetry_file" 2>/dev/null || true
+  fi
+}
+
+finalize_ios_artifacts() {
+  local rc="$1" artifact_root="$2" summary_path="$3" result_bundle_path="$4" log_path="$5" tmp_path="$6" derived_data_path="$7" op="$8" operation_attempt="$9" issue_run_id="${10}"
+  local telemetry_dir telemetry_file
+  [ -x "$IOS_ARTIFACT_JANITOR" ] || return 0
+  telemetry_dir="$artifact_root/cleanup-telemetry/$issue_run_id"
+  telemetry_file="$telemetry_dir/$operation_attempt-cleanup.json"
+  mkdir -p "$telemetry_dir"
+  "$IOS_ARTIFACT_JANITOR" finalize-operation \
+    --root "$artifact_root" \
+    --summary "$summary_path" \
+    --result-bundle "$result_bundle_path" \
+    --log "$log_path" \
+    --tmp "$tmp_path" \
+    --derived-data "$derived_data_path" \
+    --exit-code "$rc" \
+    --operation "$op" \
+    --attempt "$operation_attempt" \
+    --issue-run-id "$issue_run_id" \
+    --json > "$telemetry_file" 2>/dev/null || true
 }
 
 case "$operation" in
