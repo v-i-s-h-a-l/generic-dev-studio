@@ -10,32 +10,61 @@ Per-task DerivedData paths and staleness rules. Argus reuses Achilles's DerivedD
 
 For Studio v2 iOS chain execution, the higher-level isolation contract lives in
 `_shared/contracts/ios-isolated-execution.md`. That contract defines the target
-chain/lane/executor cache scope; this primitive remains the legacy v1 path
-convention until the v2 routing and artifact implementation migrates callers.
+chain/lane/executor cache scope. The iOS project profile command layer now uses
+that contract for profile-owned `build`, `test:unit`, and `test:ui`
+operations; the older gates listed below keep their legacy paths until their
+own migration issues land.
 
 ## Path Convention
 
-All agents use the same path pattern:
+### Studio v2 profile operations
+
+`profiles/ios-turnip/commands/xcode-operation` scopes build/test outputs under
+`STUDIO_IOS_ARTIFACT_ROOT`, `STUDIO_CHAIN_ARTIFACT_ROOT`, or a run-scoped temp
+root derived from `.studio/chain-task-start.json`:
 
 ```
-/tmp/derived-data/<task-id>/
+<chain-artifact-root>/
+  DerivedData/lanes/<executor-or-lane-id>/<cache-key>/
+  result-bundles/<issue-run-id>/<attempt-operation>.xcresult
+  logs/<issue-run-id>/<attempt-operation>.log
+  summaries/<issue-run-id>/<attempt-operation>.summary.txt
+  tmp/<issue-run-id>/<attempt-operation>/
 ```
 
-Examples:
-- Achilles building T001 → `/tmp/derived-data/T001/`
-- Argus testing T001 → `/tmp/derived-data/T001/` (same directory, reuse)
-- Build-mode run → `/tmp/derived-data/build-20260418-143000/`
+Each DerivedData root has a sibling `.metadata.json` file. Reuse fails closed
+to a fresh cold root when cache-key inputs are missing or metadata does not
+match.
 
-**Why `/tmp/` (not `~/.dev-studio/`)?** DerivedData can be 2–8 GB per task. Keeping it in `/tmp/` puts it on the fastest available volume on macOS and avoids polluting the persistent dev-studio directory with multi-GB build caches. Cleanup is also simpler (OS sweeps `/tmp/` on reboot).
+### Existing legacy consumers
 
-Note: Achilles's SKILL.md Step 6 previously showed `~/.dev-studio/$PROJECT/derived-data/<task-id>`. The canonical path is now `/tmp/derived-data/<task-id>`. Both agents must use this form.
+Current non-profile consumers of older artifact locations are:
+
+| Consumer | Current artifact location |
+|---|---|
+| `scripts/task-build-gate.sh` | `resolve_derived_data_for "$TASK_ID"` (`~/.dev-studio/.runtime/derived-data/<worktree-slug>/`) |
+| `scripts/task-test-gate.sh` | same `resolve_derived_data_for "$TASK_ID"` DerivedData root |
+| `scripts/argus-run-tests.sh` | same DerivedData root, plus `/tmp/argus-<task-id>.xcresult` and `/tmp/argus-<task-id>-test-output.txt` |
+| `scripts/argus-emit-verdict.sh` | deletes `/tmp/argus-<task-id>.xcresult` on approved/flagged outcomes |
+| `scripts/sweep-janitor.sh` | prunes orphaned `~/.dev-studio/.runtime/derived-data/*` roots |
+| `_shared/rules/cleanup-policy.md` | still documents compact cleanup for legacy `/tmp/argus-*.xcresult` and older `/tmp/derived-data/*` paths |
+
+No existing consumer reads result bundles, logs, summaries, or temp outputs from
+the new v2 profile artifact root; those paths are produced by the profile
+command layer for chain-runner review and later telemetry ingestion.
+
+**Why scoped temp roots?** DerivedData can be 2-8 GB per task. Keeping v2
+profile artifacts under a chain/run root preserves incremental build value
+inside a chain while keeping concurrent lanes from sharing one writable Xcode
+cache. The root may still live on a fast temp volume by default; it is no
+longer a shared unqualified `/tmp/derived-data` or `/tmp/argus-*` location.
 
 ## Staleness Guard
 
 Argus must not run tests against stale build products. Before invoking `xcodebuild test`:
 
 ```bash
-DERIVED="/tmp/derived-data/<task-id>"
+DERIVED="$(resolve_derived_data_for "<task-id>")"
 WORKTREE_HEAD=$(git -C "$WORKTREE" rev-parse HEAD)
 HEAD_TS=$(git -C "$WORKTREE" log -1 --format=%ct "$WORKTREE_HEAD")   # Unix epoch of HEAD commit
 
@@ -54,7 +83,7 @@ if [ -z "$NEWEST_MTIME" ] || [ "$NEWEST_MTIME" -lt "$HEAD_TS" ]; then
 fi
 ```
 
-If `FORCE_REBUILD=yes`, Argus must run `xcodebuild build` first (acquiring the Achilles build lock is NOT required — Argus uses its own test-slot semaphore and `/tmp/derived-data` is per-task) before running tests.
+If `FORCE_REBUILD=yes`, Argus must run `xcodebuild build` first (acquiring the Achilles build lock is NOT required — Argus uses its own test-slot semaphore and its current DerivedData root is per task/worktree) before running tests.
 
 ## Simulator Convention
 
@@ -82,7 +111,7 @@ if ! xcrun simctl list devices | grep -q "$SIM_NAME"; then
 fi
 ```
 
-## Result Bundle Path
+## Legacy Argus Result Bundle Path
 
 Per-run result bundles use a deterministic path:
 

@@ -178,16 +178,40 @@ build products incompatible:
 - executor identity when paths, signing, toolchains, or simulator catalogs are
   executor-sensitive.
 
-Writable DerivedData roots must be safe path segments and scoped by policy:
+Writable DerivedData roots must be safe path segments and scoped by policy.
+The iOS project profile command layer implements the chain-scoped artifact
+shape as:
 
 ```
-<chain-artifact-root>/derived-data/<chain>/<lane>/<executor>/<cache-key>/
+<chain-artifact-root>/
+  DerivedData/
+    integration/<cache-key>/
+    lanes/<executor-or-lane-id>/<cache-key>/
+  result-bundles/<issue-run-id>/<attempt-operation>.xcresult
+  logs/<issue-run-id>/<attempt-operation>.log
+  summaries/<issue-run-id>/<attempt-operation>.summary.txt
+  tmp/<issue-run-id>/<attempt-operation>/
 ```
 
 Sequential build/test jobs in one chain may reuse a chain-lane root when the
 cache key matches. Concurrent lanes must not write the same DerivedData root.
 Read-only cache warming or artifact copying is allowed only through
 script-owned atomic publish/consume steps.
+
+Each DerivedData root has a sibling `<derived-data-path>.metadata.json` file
+with `schema_version`, `cache_key`, writer run identifiers, path pointers, and
+the cache-key inputs used by the writer. Reuse fails closed: if required inputs
+are missing, metadata is unreadable, schema version is unknown, or the stored
+cache key mismatches, the profile command uses a fresh cold root instead of
+sharing writable build products.
+
+Debugging overrides are explicit environment variables:
+`STUDIO_IOS_ARTIFACT_ROOT` or `STUDIO_CHAIN_ARTIFACT_ROOT` for the root,
+`STUDIO_IOS_DERIVED_DATA_PATH`, `STUDIO_IOS_RESULT_BUNDLE_PATH`,
+`STUDIO_IOS_LOG_PATH`, `STUDIO_IOS_SUMMARY_PATH`, and `STUDIO_IOS_TEMP_DIR`
+for individual paths. Raw `xcodebuild -derivedDataPath` and
+`-resultBundlePath` arguments are rejected by the profile command so ordinary
+invocations cannot silently leak artifacts outside the scoped root.
 
 ## Locks
 

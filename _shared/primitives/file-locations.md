@@ -69,7 +69,7 @@ Phase 2.6 introduced a uniform per-artifact YAML layout under `plans/` + a singl
 | Pre-migration archive | `~/.dev-studio/<project>/archive/2026-pre-2.6/` | frozen |
 | Worktrees | `~/.dev-studio/<project>/worktrees/<task-id>/` | — |
 | Locks | `~/.dev-studio/<project>/locks/` | — |
-| Per-task DerivedData | `/tmp/derived-data/<task-id>/` | — |
+| Per-task DerivedData | Legacy gates use `~/.dev-studio/.runtime/derived-data/<worktree-slug>/` via `scripts/lib-paths.sh::resolve_derived_data_for`; v2 iOS profile build/test operations use `<chain-artifact-root>/DerivedData/{integration,lanes/...}/<cache-key>/` | `_shared/primitives/derived-data.md`, `_shared/contracts/ios-isolated-execution.md` |
 | Project memory | `~/.claude/projects/<sluggified-repo-path>/memory/` — e.g. `/Users/you/work/foo-app` → `-Users-you-work-foo-app`. Claude Code manages this dir automatically per project. | — |
 | Review files (legacy archive) | `<project-memory>/reviews/review_<task-id>.md` | — |
 | Review archive (legacy) | `<project-memory>/reviews/archive/` | — |
@@ -83,7 +83,7 @@ Phase 2.6 introduced a uniform per-artifact YAML layout under `plans/` + a singl
 | Node registry (global) | `~/.dev-studio/.runtime/nodes.json` — worker nodes reachable over SSH; consumed by `scripts/node-dispatch.sh` / `node-health.sh` / `node-pick.sh`. Recognised fields: `id`, `machine_id`, `host`, `user`, `roles`, `enabled`, optional `parallel_build_slots` (integer, default 1; #268). | — |
 | Dispatch registry (global) | `~/.dev-studio/.runtime/dispatch-registry/<uuid>.json` — laptop-side per-dispatch entry (#270) joining `node-dispatch.sh`'s UUID (#269) to its `task_id`, `node`, `dispatched_at`, and terminal `status` (`in-flight` → `passed`/`failed`/`aborted`). Read by #147-C reconnect-and-harvest to recover the result of a dispatch whose laptop disappeared mid-build. R4-exempted: the UUID identifies a `(laptop, dispatch)` pair, not a project. | — |
 | Snapshot references | `~/.dev-studio/<project>/snapshots/references/` — canonical reference images for snapshot tests; generated on the node tagged `snapshot-canonical` and pulled locally via `scripts/snapshot-sync.sh` | — |
-| Argus result bundles | `/tmp/argus-<task-id>.xcresult` | — |
+| Argus result bundles | Legacy Argus uses `/tmp/argus-<task-id>.xcresult`; v2 iOS profile result bundles use `<chain-artifact-root>/result-bundles/<issue-run-id>/<attempt-operation>.xcresult` | `_shared/primitives/derived-data.md` |
 
 Queries against the ledger go through `scripts/query-plans.sh --kind=<artifact-kind>` (glob-free; joins via `plans/index.yaml`). Event reads go through `scripts/read-events.sh`. Never glob `plans/**` directly in new code.
 
