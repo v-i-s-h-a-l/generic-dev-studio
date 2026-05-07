@@ -64,11 +64,15 @@ SH
 chmod +x "$BIN/gh"
 
 PATH="$BIN:$PATH" HOME="$TMPROOT/home" "$RUN" prd-to-chain-automation --dry-run >"$TMPROOT/plan.out" 2>&1
-grep -q '"action":"start"' "$TMPROOT/plan.out" \
-  || fail "named manager work-chain should default to auto execution"
-grep -q 'DRY-RUN git worktree add' "$TMPROOT/plan.out" \
-  || fail "named manager work-chain should reach the auto execution path"
+grep -q '# Studio Chain Plan' "$TMPROOT/plan.out" \
+  || fail "named manager work-chain dry-run should preview the plan"
+grep -q -- '- Execution mode: `attended`' "$TMPROOT/plan.out" \
+  || fail "named manager work-chain dry-run should preserve default attended mode"
 grep -q 'prd-to-chain-automation' "$TMPROOT/plan.out" \
   || fail "named manager work-chain should preserve the chain name"
+
+PATH="$BIN:$PATH" HOME="$TMPROOT/home" "$RUN" prd-to-chain-automation --attended --yes --dry-run >"$TMPROOT/attended.out" 2>&1
+grep -q -- '- Execution mode: `attended`' "$TMPROOT/attended.out" \
+  || fail "explicit attended manager work-chain should not be rewritten to auto"
 
 printf 'PASS: manager work-chain front door\n'
