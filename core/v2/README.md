@@ -75,6 +75,10 @@ Current substrate artifacts:
 - `rule-packs/always-loaded-contract.md` defines the minimal always-loaded rule
   floor for selective rule-pack loading and its context budget. Its regression
   fixture is `scripts/test-fixtures/673-always-loaded-contract/`.
+- `rule-packs/pack-contract.md`, `rule-packs/catalog.yaml`, and
+  `schemas/rule-pack-catalog.schema.json` define script-readable rule-pack
+  summaries, applicability metadata, budgets, and the initial pack taxonomy.
+  Their regression fixture is `scripts/test-fixtures/674-rule-pack-metadata/`.
 
 Runtime event-log behavior is implemented by `scripts/v2-event-log.sh`:
 
