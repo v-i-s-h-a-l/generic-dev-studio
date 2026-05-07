@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "row_key": "chain:persisted-run:run-705:chain-run-705",
+  "row_type": "chain",
+  "source": {
+    "kind": "persisted-run",
+    "id": "run-705",
+    "precedence": 1
+  },
+  "fields": {
+    "title": "chain-monitor-reconciliation",
+    "status": "running",
+    "manifest": "chain-monitor-reconciliation.yaml",
+    "summary": "Slack reconciliation substrate",
+    "progress": "1/3 completed",
+    "blocker": ""
+  }
+}

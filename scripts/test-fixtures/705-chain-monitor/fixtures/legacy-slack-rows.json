@@ -1,0 +1,27 @@
+{
+  "rows": [
+    {
+      "row_id": "slack-row-1",
+      "row_key": "chain:repo-manifest:scripts-test-fixtures-705-chain-monitor-fixtures-repo-manifest.yaml:chain-monitor-reconciliation",
+      "fields": {
+        "title": "chain-monitor-reconciliation",
+        "status": "running",
+        "manifest": "legacy",
+        "summary": "Legacy Slack row",
+        "progress": "legacy",
+        "blocker": ""
+      }
+    },
+    {
+      "row_id": "slack-row-legacy-only",
+      "fields": {
+        "title": "legacy-only",
+        "status": "unknown",
+        "manifest": "legacy",
+        "summary": "Needs migration",
+        "progress": "",
+        "blocker": ""
+      }
+    }
+  ]
+}
