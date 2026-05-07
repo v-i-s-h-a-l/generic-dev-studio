@@ -217,7 +217,7 @@ scripts/lint-project-skill-links.sh [--host codex]      # repo-local project ski
 scripts/pr-headless-review.sh <pr>                      # run smoke-eligible reviewer, then merge only if the reused chain-style feature-branch gate keeps head history linear relative to its base
 scripts/pr-headless-review.sh <pr> --no-require-cross-host  # opt out of default independent-provider reviewer policy for explicit non-safety-floor runs
 scripts/pr-autopilot.sh <pr> --verdict approved         # post reviewer gate, then merge if non-blocked
-scripts/pr-merge-finalize.sh <pr> --method auto         # reuses the chain runner's feature-branch gate; <4 commits=rebase, larger main=merge commit, then fetch/prune
+scripts/pr-merge-finalize.sh <pr> --method auto         # reuses the chain runner's feature-branch gate; can record release approval with --release-id before merge
 scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-host claude-code  # policy-backed reviewer model/profile resolver
 scripts/check-model-catalog.sh --print-refresh-checklist # validate model catalog + print official-doc refresh checklist
 scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
@@ -227,7 +227,7 @@ scripts/detect-edits.sh --quiet                         # emits brief_edited + d
 
 # App Store submission watcher (auto-invoked by every sweep):
 scripts/studio-tf-push.sh compose-message --channel testflight < commits.txt # taxonomy-aware release/TestFlight bullet composer
-scripts/appstore-watch.sh                               # idempotent; publishes release + merge-commit PR only at READY_FOR_SALE
+scripts/appstore-watch.sh                               # idempotent; publishes release + promotes PR only at READY_FOR_SALE after release approval is recorded
 ```
 
 **Why work-stealing over upfront fan-out.** Task durations span 3–5× (XS LSP-only vs. M/L with full `xcodebuild`). Batch-assigning N+1…2N tasks to inboxes upfront leaves fast workers idle while slow ones still have a backlog. The queue hands one task at a time on each `task_completed` event, so every freed worker gets the next pending task.
