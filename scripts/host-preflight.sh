@@ -13,8 +13,8 @@ set -u
 umask 022
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=scripts/lib-paths.sh
-. "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=scripts/lib-studio-context.sh
+. "$SCRIPT_DIR/lib-studio-context.sh"
 
 HOST="${1:?usage: host-preflight.sh <host> <repo-root>}"
 REPO="${2:?repo-root required}"
@@ -36,14 +36,22 @@ command -v gh >/dev/null 2>&1 || {
   exit 2
 }
 
-github_home=$(resolve_parent_home_for_github)
-if [ -n "$github_home" ] && [ "$github_home" != "${HOME:-}" ]; then
-  printf 'host-preflight: normalized GitHub HOME for host=%s before auth probes\n' "$HOST" >&2
+_lp_load_project_env 2>/dev/null || true
+: "${STUDIO_CONTEXT_HOST_PROFILE:=$HOST}"
+
+if ! studio_context_resolve github-operation; then
+  printf 'host-preflight: GitHub context unavailable for host=%s before auth probes.\n' "$HOST" >&2
+  exit 1
 fi
 
-if ! with_login_home_for_github gh auth status >/dev/null 2>&1; then
-  printf 'host-preflight: GitHub auth unavailable for host=%s; `gh auth status` failed before task work.\n' "$HOST" >&2
-  printf 'host-preflight: repair in the login account HOME used by studio-gh, then rerun: scripts/studio-gh.sh auth login\n' >&2
+github_home=$(studio_context_get_cached github_home)
+if [ -n "$github_home" ] && [ "$github_home" != "${HOME:-}" ]; then
+  printf 'host-preflight: normalized GitHub HOME for host=%s via context github_home before auth probes\n' "$HOST" >&2
+fi
+
+if ! HOME="$github_home" gh auth status >/dev/null 2>&1; then
+  printf 'host-preflight: GitHub auth unavailable for host=%s; gh auth status failed before task work.\n' "$HOST" >&2
+  printf 'host-preflight: repair the context github_home used by studio-gh, then rerun: scripts/studio-gh.sh auth login\n' >&2
   exit 1
 fi
 
@@ -58,10 +66,10 @@ remote_url=$(git -C "$REPO" remote get-url origin 2>/dev/null || true)
 # including gh's credential helper for HTTPS remotes and ssh-agent/keychain
 # access for SSH remotes.
 ls_remote_err=$(mktemp 2>/dev/null || printf '/tmp/host-preflight-ls-remote-%s.err' "$$")
-if ! with_login_home_for_github git -C "$REPO" ls-remote --exit-code "$remote_url" HEAD > /dev/null 2>"$ls_remote_err"; then
+if ! HOME="$github_home" git -C "$REPO" ls-remote --exit-code "$remote_url" HEAD > /dev/null 2>"$ls_remote_err"; then
   detail=$(tail -n 5 "$ls_remote_err" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]\{1,\}/ /g')
   rm -f "$ls_remote_err" 2>/dev/null || true
-  printf 'host-preflight: git credential access failed for host=%s remote=%s; `git ls-remote ... HEAD` failed before task work.\n' "$HOST" "$remote_url" >&2
+  printf 'host-preflight: git credential access failed for host=%s remote=%s; git ls-remote ... HEAD failed before task work.\n' "$HOST" "$remote_url" >&2
   [ -n "$detail" ] && printf 'host-preflight: git detail: %s\n' "$detail" >&2
   printf 'host-preflight: ensure the host launches with the same HOME/keychain/ssh-agent or gh credential helper surface as Claude sessions.\n' >&2
   exit 1

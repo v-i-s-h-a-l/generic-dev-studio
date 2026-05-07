@@ -35,7 +35,7 @@ host auth selection.
 
 | Class | Meaning | Examples |
 |---|---|---|
-| Approved resolver | Existing compatibility layer already centralizes the behavior. | `scripts/lib-paths.sh`, `scripts/studio-gh.sh` |
+| Approved resolver | Existing resolver and compatibility layers centralize the behavior. | `scripts/lib-studio-context.sh`, `scripts/lib-paths.sh`, `scripts/studio-gh.sh` |
 | Migration target | Production code should move to the Studio context resolver once it exists. | Chain runner state roots, manager analyze/reconcile data-home rebinding, review wrapper auth-home selection |
 | Bug | Current behavior is unsafe or already failed under the chain. | Child Codex worker launch can lose model auth when the launch home lacks usable Codex credentials |
 | Doc example | Placeholder prose or examples; keep abstract or point at the contract. | README and contract examples using `~/.dev-studio/<project>` |
@@ -48,7 +48,7 @@ host auth selection.
 |---|---|---|
 | Feedback ingest/analyze | Migration target | Resolve durable Studio feedback and analysis roots from `studio_home`; keep GitHub mutations behind `scripts/studio-gh.sh`. |
 | Manager analyze/reconcile | Migration target | Replace ad hoc `HOME="$data_home"` rebinding with a context envelope carrying `studio_home`, `project_slug`, and visibility. |
-| GitHub wrapper | Approved resolver now, future resolver owner | `scripts/studio-gh.sh` is the correct entry point; its `with_login_home_for_github` dependency should become context-backed. |
+| GitHub wrapper | Approved resolver owner | `scripts/studio-gh.sh` is the correct entry point; it consumes the context-backed `github_home` accessor while legacy call sites await migration. |
 | PR review wrapper | Migration target | Reviewer auth homes are explicit today; move reviewer host profile selection into the context envelope and keep no-secret floors. |
 | Phase review wrapper | Migration target | Same reviewer-profile migration as PR review, with degraded-review metadata preserved. |
 | Chain runner state | Migration target plus bug | Durable run state belongs under `studio_home`; temporary worktree paths must not be the only resume-critical manifest references. Worker launch auth must use a host profile, not incidental `HOME`. |

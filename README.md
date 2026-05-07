@@ -144,7 +144,7 @@ scripts/studio-pr-baseline-report.sh 366                    # PR-level timing, c
 scripts/studio-weekly.sh --post                             # weekly GitHub PM digest; cron posts to the pinned summary issue
 scripts/host-preflight.sh codex /repo                       # prove gh + git credential access before host task work
 scripts/studio-project-state.sh --status Todo               # Project-field backlog reader for Status / Track / Phase / Size / review state
-scripts/studio-gh.sh issue list --state open                # assistant-safe GitHub CLI wrapper for narrow issue lookups; normalizes synthetic Codex HOME
+scripts/studio-gh.sh issue list --state open                # assistant-safe GitHub CLI wrapper; uses context github_home for auth
 scripts/manager-reconcile.sh --cwd "$PWD"                   # project report/debrief sync into the project task ledger
 scripts/manager-analyze.sh --cwd "$PWD"                     # studio-checkout analysis and feedback triage
 scripts/studio-dependency-export.sh --issue 443             # Mermaid graph from native GitHub blocked_by dependencies
@@ -220,7 +220,7 @@ scripts/                # multi-worker fleet (BETA)
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   studio-staleness-triage.sh # scheduled GitHub issue staleness labels + escalation comments for the PM surface
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
-  studio-gh.sh          # GitHub CLI wrapper for assistant/interactive calls; normalizes synthetic Codex HOME
+  studio-gh.sh          # GitHub CLI wrapper for assistant/interactive calls; uses context github_home for auth
   dev-studio-ingest-resolve.sh # resolves /dev-studio manager ingest destination as JSON
   manager-reconcile.sh  # /dev-studio manager reconcile: project debrief/report sync into task state
   manager-analyze.sh    # /dev-studio manager analyze: studio-checkout analysis + feedback triage
