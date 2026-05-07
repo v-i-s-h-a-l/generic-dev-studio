@@ -56,6 +56,93 @@ case "$1 $2" in
       "totalCount": 2
     }'
     ;;
+  "issue list")
+    case "$*" in
+      *"--search PM surface"*)
+        printf '%s\n' '[{"number":443}]'
+        ;;
+      *"--search reader lag"*)
+        printf '%s\n' '[{"number":694}]'
+        ;;
+      *)
+        printf '%s\n' '[]'
+        ;;
+    esac
+    ;;
+  "api graphql")
+    case "$*" in
+      *"number=443"*)
+        printf '%s\n' '{
+          "data": {
+            "repository": {
+              "issue": {
+                "number": 443,
+                "title": "Adopt GitHub as primary PM surface",
+                "url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/443",
+                "repository": {"nameWithOwner": "v-i-s-h-a-l/generic-dev-studio"},
+                "labels": {"nodes": [{"name": "enhancement"}, {"name": "track:pm-surface"}]},
+                "milestone": null,
+                "projectItems": {
+                  "nodes": [
+                    {
+                      "type": "ISSUE",
+                      "project": {"number": 1, "owner": {"login": "v-i-s-h-a-l"}},
+                      "fieldValues": {
+                        "nodes": [
+                          {"name": "Todo", "field": {"name": "Status"}},
+                          {"name": "B PM surface", "field": {"name": "Track"}},
+                          {"name": "B1", "field": {"name": "Phase"}},
+                          {"name": "M", "field": {"name": "Size"}},
+                          {"name": "Needs review", "field": {"name": "Sibling host reviewed"}}
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }'
+        ;;
+      *"number=694"*)
+        printf '%s\n' '{
+          "data": {
+            "repository": {
+              "issue": {
+                "number": 694,
+                "title": "Fix Project reader lag for newly added items",
+                "url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/694",
+                "repository": {"nameWithOwner": "v-i-s-h-a-l/generic-dev-studio"},
+                "labels": {"nodes": [{"name": "bug"}, {"name": "track:pm-surface"}]},
+                "milestone": null,
+                "projectItems": {
+                  "nodes": [
+                    {
+                      "type": "ISSUE",
+                      "project": {"number": 1, "owner": {"login": "v-i-s-h-a-l"}},
+                      "fieldValues": {
+                        "nodes": [
+                          {"name": "Todo", "field": {"name": "Status"}},
+                          {"name": "B PM surface", "field": {"name": "Track"}},
+                          {"name": "B1", "field": {"name": "Phase"}},
+                          {"name": "S", "field": {"name": "Size"}},
+                          {"name": "Needs review", "field": {"name": "Sibling host reviewed"}}
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }'
+        ;;
+      *)
+        printf 'unexpected graphql call: %s\n' "$*" >&2
+        exit 2
+        ;;
+    esac
+    ;;
   *)
     printf 'unexpected gh call: %s\n' "$*" >&2
     exit 2
@@ -86,6 +173,13 @@ assert "search exits zero" "[ '$search_rc' -eq 0 ]"
 assert "search prints project fields" "grep -q '#443 \\[Todo\\].* -- track=B PM surface phase=B1 size=M review=Needs review' '$TMPROOT/search.out'"
 assert "search filters non-matches" "! grep -q '#446' '$TMPROOT/search.out'"
 assert "uses project item-list" "grep -q '^project item-list 1 --owner v-i-s-h-a-l' '$GH_STUB_LOG'"
+
+bash "$ROOT/scripts/studio-project-state.sh" --search "reader lag" >"$TMPROOT/fallback.out" 2>"$TMPROOT/fallback.err"
+fallback_rc=$?
+assert "fallback search exits zero" "[ '$fallback_rc' -eq 0 ]"
+assert "fallback finds item-list miss" "grep -q '#694 \\[Todo\\] Fix Project reader lag for newly added items -- track=B PM surface phase=B1 size=S review=Needs review' '$TMPROOT/fallback.out'"
+assert "fallback uses issue search" "grep -q '^issue list --repo v-i-s-h-a-l/generic-dev-studio --search reader lag' '$GH_STUB_LOG'"
+assert "fallback verifies project fields through graphql" "grep -q '^api graphql' '$GH_STUB_LOG' && grep -q 'number=694' '$GH_STUB_LOG'"
 
 bash "$ROOT/scripts/studio-project-state.sh" --json --status Done >"$TMPROOT/status.json" 2>"$TMPROOT/status.err"
 status_rc=$?
