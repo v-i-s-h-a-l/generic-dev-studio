@@ -99,6 +99,12 @@ For fleet nodes, set `CLAUDE_REVIEWER_HOME` to a locked-down reviewer account
 home that contains no GitHub tokens or project secrets. Codex-based reviewers
 keep using scratch `HOME` plus `CODEX_HOME`.
 
+Codex worker profiles use the same split-root pattern for a different reason:
+the worker needs normal GitHub credentials through login `HOME`, but Codex API
+auth must come from an explicit `CODEX_HOME`/`CODEX_WORKER_HOME`. Do not treat
+ambient `HOME` as the Codex auth source when the parent host may be running
+under a synthetic Codex home.
+
 Do not make a normal worker profile eligible by relaxing the gate. Add a
 dedicated `<host>-reviewer` adapter with its own manifest and enforcement.
 
