@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # manager-work-chain.sh — repo-side front door for work-chain discovery/start/resume.
 #
-# This stays thin on purpose: the manager shapes intent, then delegates the
-# actual execution and resumable-run machinery to studio-chain-runner.sh.
+# This stays thin on purpose: /dev-studio manager shapes intent, then delegates
+# the actual execution and resumable-run machinery to studio-chain-runner.sh.
 
 set -euo pipefail
 
@@ -31,6 +31,9 @@ can suggest runnable chains and resumable runs. Named chains default to
 unattended supervisor selection through scripts/studio-chain-runner.sh --auto.
 Use --discover [<manifest|chain-name>] for filtered, non-mutating discovery.
 All runner flags are passed through to scripts/studio-chain-runner.sh.
+
+Preferred user-facing entrypoint:
+  /dev-studio manager work-chain [<manifest|chain-name>] [runner-flags...]
 EOF
   exit 2
 }
