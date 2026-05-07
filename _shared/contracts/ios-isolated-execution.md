@@ -328,6 +328,27 @@ Cleanup telemetry is private and path-redacted. Public summaries may mention
 counts/classes such as deleted, retained, pinned, skipped, compressed, refused,
 and bytes freed, but must not include raw artifact paths.
 
+## Chain Execution Telemetry Roll-up
+
+Worker completion summaries for iOS chain work may include
+`execution_telemetry` so chain reports can explain where work ran without
+publishing private paths or exact node names. The private summary records:
+
+- `executors.implementation`, `executors.build`, `executors.test`,
+  `executors.review`, and `executors.release` when the role was applicable.
+- `routing.reason_class`, `routing.cost_summary`, `routing.economics`, queue
+  wait, affinity/cache state, and scheduler/control-plane timing.
+- `artifacts.private_roots[]` for local reconstruction and
+  `artifacts.public_classes[]` for public-safe summaries.
+- `cleanup.outcome`, `cleanup.retention_class`, and `cleanup.ttl_class`.
+- `failover` retry path, reason class, and final outcome when a worker-routed
+  build/test path failed over.
+
+Missing iOS execution evidence is a telemetry gap, not a task-failure override.
+Use named gaps such as `implementation_executor`, `build_executor`,
+`test_executor`, `review_executor`, `release_executor`, `worker_routing`,
+`artifact_evidence`, and `cleanup_telemetry`.
+
 ## Locks
 
 Locks must be acquired in this order:

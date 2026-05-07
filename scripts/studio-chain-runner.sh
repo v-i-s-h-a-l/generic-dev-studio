@@ -582,7 +582,7 @@ event_stage() {
     chain_run_started|chain_plan_prepared|chain_phase_review_completed) printf 'plan\n' ;;
     chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed|chain_rule_gate_completed) printf 'preflight\n' ;;
     chain_started|chain_issue_started|chain_issue_completed|chain_issue_validated|chain_parent_commit_finalized|chain_issue_scheduler_blocked) printf 'execute\n' ;;
-    chain_worker_summary_ingested|chain_telemetry_gap|checkpoint_auto_created|checkpoint_auto_loaded|checkpoint_context_savings_estimated) printf 'ingest\n' ;;
+    chain_worker_summary_ingested|chain_telemetry_gap|checkpoint_auto_created|checkpoint_auto_loaded|checkpoint_context_savings_estimated|chain_ios_artifact_cleanup_completed) printf 'ingest\n' ;;
     chain_pr_opened|chain_review_completed) printf 'review\n' ;;
     chain_completed|chain_issue_merged) printf 'merge\n' ;;
     chain_issue_closed) printf 'close\n' ;;
@@ -667,6 +667,12 @@ chain_efficiency_metrics_json() {
     [ $rows[] | (.tests // [])[]? ] as $tests |
     [ $rows[] | (.lints // [])[]? ] as $lints |
     [ $rows[] | (.builds // [])[]? ] as $builds |
+    [ $rows[] | .execution_telemetry? // empty ] as $execution_rows |
+    [ $rows[].execution_telemetry.routing.reason_class? // empty ] as $routing_reasons |
+    [ $rows[].execution_telemetry.cleanup.outcome? // empty ] as $cleanup_outcomes |
+    [ $rows[].execution_telemetry.cleanup.retention_class? // empty ] as $retention_classes |
+    [ $rows[].execution_telemetry.artifacts.public_classes[]? ] as $artifact_classes |
+    [ $rows[].telemetry_gaps[]? | select(test("executor|worker_routing|artifact_evidence|cleanup_telemetry")) ] as $execution_gaps |
     ($rows | max_by(duration)?) as $slowest |
     {
       schema_version: 1,
@@ -693,10 +699,24 @@ chain_efficiency_metrics_json() {
       lints: {total: ($lints | length), bad: ([ $lints[] | select(bad_outcome) ] | length), outcomes: ($lints | counts_by(.outcome // .status))},
       builds: {total: ($builds | length), bad: ([ $builds[] | select(bad_outcome) ] | length), outcomes: ($builds | counts_by(.outcome // .status))},
       telemetry_gap_counts: ([ $rows[].telemetry_gaps[]? ] | map({gap: ., one: 1}) | counts_by(.gap)),
+      execution_telemetry: {
+        reports: ($execution_rows | length),
+        implementation_executors: ([ $rows[] | (.execution_telemetry.executors.implementation.executor // .execution_telemetry.executors.implementation.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        build_executors: ([ $rows[] | (.execution_telemetry.executors.build.executor // .execution_telemetry.executors.build.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        test_executors: ([ $rows[] | (.execution_telemetry.executors.test.executor // .execution_telemetry.executors.test.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        review_executors: ([ $rows[] | (.execution_telemetry.executors.review.executor // .execution_telemetry.executors.review.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        release_executors: ([ $rows[] | (.execution_telemetry.executors.release.executor // .execution_telemetry.executors.release.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        routing_reason_classes: ($routing_reasons | map({reason: ., one: 1}) | counts_by(.reason)),
+        cleanup_outcomes: ($cleanup_outcomes | map({outcome: ., one: 1}) | counts_by(.outcome)),
+        retention_classes: ($retention_classes | map({class: ., one: 1}) | counts_by(.class)),
+        public_artifact_classes: ($artifact_classes | map({class: ., one: 1}) | counts_by(.class)),
+        gap_count: ($execution_gaps | length)
+      },
       bottlenecks: ([
         (if $slowest != null then {kind:"slowest_issue", issue_number: ($slowest.issue_number // null), duration_s: ($slowest.duration_s // null)} else empty end),
         (if ([ $tests[] | select(bad_outcome) ] | length) > 0 then {kind:"test_failures_or_flakes", count: ([ $tests[] | select(bad_outcome) ] | length)} else empty end),
-        (if ([ $rows[].telemetry_gaps[]? | select(. == "tokens") ] | length) > 0 then {kind:"missing_token_telemetry", count: ([ $rows[].telemetry_gaps[]? | select(. == "tokens") ] | length)} else empty end)
+        (if ([ $rows[].telemetry_gaps[]? | select(. == "tokens") ] | length) > 0 then {kind:"missing_token_telemetry", count: ([ $rows[].telemetry_gaps[]? | select(. == "tokens") ] | length)} else empty end),
+        (if ($execution_gaps | length) > 0 then {kind:"ios_execution_telemetry_gaps", count:($execution_gaps | length)} else empty end)
       ])
     }'
   rm -f "$summaries_file" "$events_file"
@@ -1942,6 +1962,7 @@ ingest_worker_summary() {
       --arg chain_run_id "$chain_run_id" \
       --arg issue_run_id "$issue_run_id" \
       --arg created_at "$created_at" \
+      --arg chain_name "$chain_name" \
       --arg host "$host" \
       --argjson exit_code "$exit_code" \
       --arg before "$before" \
@@ -1958,8 +1979,64 @@ ingest_worker_summary() {
        | (.model // .model_name // .model_version // $telemetry_model) as $final_model
        | (.model_version // $telemetry_model_version) as $final_model_version
        | (.effort // .reasoning_effort // $telemetry_effort) as $final_effort
+       | (.execution_telemetry // .ios_execution // null) as $exec_telemetry
        | def has_model: ($final_model != null);
        def has_checks: (((.tests // []) | length) + ((.lints // []) | length) + ((.builds // []) | length)) > 0;
+       def is_ios_execution:
+         (($chain_name | test("ios"; "i"))
+          or ((.chain // "") | test("ios"; "i"))
+          or (($exec_telemetry.profile // "") | test("ios"; "i"))
+          or ($exec_telemetry != null));
+       def executor_present($name):
+         (($exec_telemetry.executors[$name].executor
+           // $exec_telemetry.executors[$name].node
+           // $exec_telemetry[($name + "_executor")]
+           // null) != null);
+       def routing_present:
+         (($exec_telemetry.routing.reason_class
+           // $exec_telemetry.routing.reason
+           // $exec_telemetry.routing.cost_summary
+           // null) != null);
+       def artifact_present:
+         (((($exec_telemetry.artifacts.private_roots
+             // $exec_telemetry.private_artifact_roots
+             // []) | length)
+           + (($exec_telemetry.artifacts.public_classes
+             // $exec_telemetry.public_artifact_classes
+             // []) | length)) > 0);
+       def cleanup_present:
+         (($exec_telemetry.cleanup.outcome
+           // $exec_telemetry.cleanup.status
+           // null) != null
+          and (($exec_telemetry.cleanup.retention_class
+            // $exec_telemetry.cleanup.ttl_class
+            // null) != null));
+       def review_applicable:
+         ((.review_pass_count // .review_passes // null) != null
+          or (((.reviews // []) | length) > 0));
+       def release_applicable:
+         (($exec_telemetry.executors.release // null) != null
+          or (($exec_telemetry.release.applicable // false) == true));
+       def ios_execution_gaps:
+         if is_ios_execution then
+           []
+           + (if executor_present("implementation") then [] else ["implementation_executor"] end)
+           + (if (((.builds // []) | length) > 0 and (executor_present("build") | not)) then ["build_executor"] else [] end)
+           + (if (((.tests // []) | length) > 0 and (executor_present("test") | not)) then ["test_executor"] else [] end)
+           + (if (review_applicable and (executor_present("review") | not)) then ["review_executor"] else [] end)
+           + (if (release_applicable and (executor_present("release") | not)) then ["release_executor"] else [] end)
+           + (if routing_present then [] else ["worker_routing"] end)
+           + (if artifact_present then [] else ["artifact_evidence"] end)
+           + (if cleanup_present then [] else ["cleanup_telemetry"] end)
+         else [] end;
+       def normalized_execution_telemetry:
+         if $exec_telemetry == null then null
+         else $exec_telemetry
+           | .schema_version = (.schema_version // 1)
+           | .profile = (.profile // (if (($chain_name | test("ios"; "i")) or (((.chain // "") | test("ios"; "i")))) then "ios" else null end))
+           | .artifacts.public_classes = ((.artifacts.public_classes // .public_artifact_classes // []) | unique)
+           | .artifacts.private_roots = (.artifacts.private_roots // .private_artifact_roots // [])
+         end;
        def gap_active($gap):
          if $gap == "tokens" or $gap == "token_usage" then $final_tokens == null
          elif $gap == "model" then (has_model | not)
@@ -1993,10 +2070,12 @@ ingest_worker_summary() {
         model_version: $final_model_version,
         effort: $final_effort,
         telemetry_sources: (((.telemetry_sources // []) + (if (($session_telemetry.source // "") == "") then [] else [$session_telemetry.source] end)) | unique),
+        execution_telemetry: normalized_execution_telemetry,
         functionality_delivered: (.functionality_delivered // null),
         carryover: (.carryover // null),
         lessons: (.lessons // null),
         telemetry_gaps: (((.telemetry_gaps // [])
+          + ios_execution_gaps
           + (if $final_tokens == null then ["tokens"] else [] end)
           + (if has_model then [] else ["model"] end)
           + (if has_checks then [] else ["tests_lints_builds"] end)) | unique | map(select(gap_active(.))))
@@ -2034,7 +2113,11 @@ ingest_worker_summary() {
       --arg worktree_state "$worktree_state" \
       --arg next_safe_action "$next_safe_action" \
       --argjson session_telemetry "$session_telemetry_json" \
-      '{
+      'def ios_execution_gaps:
+         if ($chain | test("ios"; "i")) then
+           ["implementation_executor", "worker_routing", "artifact_evidence", "cleanup_telemetry"]
+         else [] end;
+      {
         schema_version: 1,
         kind: "completion",
         created_at: $created_at,
@@ -2071,10 +2154,11 @@ ingest_worker_summary() {
         effort: ($session_telemetry.effort // null),
         model_recommendation: null,
         telemetry_sources: (if (($session_telemetry.source // "") == "") then [] else [$session_telemetry.source] end),
+        execution_telemetry: null,
         functionality_delivered: null,
         carryover: null,
         lessons: null,
-        telemetry_gaps: ([$summary_gap, "tests_lints_builds"]
+        telemetry_gaps: (([$summary_gap, "tests_lints_builds"] + ios_execution_gaps)
           + (if ($session_telemetry.model // $session_telemetry.model_version // null) == null then ["model"] else [] end)
           + (if ($session_telemetry.tokens // null) == null then ["tokens"] else [] end))
       }' > "$dest"
@@ -2191,6 +2275,31 @@ generate_run_report() {
     else
       printf -- '- Worker summaries: 0\n'
       printf -- '- Event counters: unavailable without worker summaries.\n'
+    fi
+    printf '\n## iOS Execution Telemetry\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        def et: (.execution_telemetry // .ios_execution // null);
+        def cell($v): if $v == null or $v == "" then "missing" else ($v | tostring | gsub("\\|"; "\\|")) end;
+        def executor($name): (et.executors[$name].executor // et.executors[$name].node // null);
+        def cost_summary:
+          (et.routing.cost_summary // (if (et.routing.economics // null) == null then null else (et.routing.economics | tojson) end));
+        [
+          .[] |
+          select((et != null) or (([.telemetry_gaps[]? | select(test("executor|worker_routing|artifact_evidence|cleanup_telemetry"))] | length) > 0))
+        ] as $rows |
+        if ($rows | length) == 0 then
+          "No iOS execution telemetry was supplied."
+        else
+          "| Issue | Implementation | Build | Test | Review | Release | Routing | Cost/Economics | Public Artifact Classes | Private Roots | Cleanup | Retention | TTL | Gaps |",
+          "|---:|---|---|---|---|---|---|---|---|---:|---|---|---|---|",
+          ($rows[] |
+            "| #\(.issue_number // "unknown") | \(cell(executor("implementation"))) | \(cell(executor("build"))) | \(cell(executor("test"))) | \(cell(executor("review"))) | \(cell(executor("release"))) | \(cell(et.routing.reason_class)) | \(cell(cost_summary)) | \(cell((et.artifacts.public_classes // []) | join(", "))) | \((et.artifacts.private_roots // []) | length) | \(cell(et.cleanup.outcome // et.cleanup.status)) | \(cell(et.cleanup.retention_class)) | \(cell(et.cleanup.ttl_class)) | \((.telemetry_gaps // []) | map(select(test("executor|worker_routing|artifact_evidence|cleanup_telemetry"))) | join(", ")) |"
+          )
+        end
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf 'No worker summaries were ingested.\n'
     fi
     if [ -s "$EVENTS_JSONL" ] && [ "$EVENTS_JSONL" != "/dev/null" ]; then
       printf '\nEvent counters:\n'
@@ -2446,10 +2555,15 @@ generate_run_report() {
     if [ "$summary_count" -gt 0 ]; then
       jq -r -s '
         def gap_count($g): [.[].telemetry_gaps[]? | select(. == $g)] | length;
+        def gap_regex_count($r): [.[].telemetry_gaps[]? | select(test($r))] | length;
         [
           (if gap_count("worker_summary_missing") > 0 then "- Require worker hosts to write `.studio/chain-worker-summary.json` before exit." else empty end),
           (if gap_count("tokens") > 0 or gap_count("token_usage") > 0 then "- Add host-specific token extraction to worker summaries." else empty end),
-          (if gap_count("tests_lints_builds") > 0 then "- Standardize test/lint/build outcome capture in worker summaries." else empty end)
+          (if gap_count("tests_lints_builds") > 0 then "- Standardize test/lint/build outcome capture in worker summaries." else empty end),
+          (if gap_regex_count("executor") > 0 then "- Add iOS executor fields for each applicable implementation, build, test, review, or release role." else empty end),
+          (if gap_count("worker_routing") > 0 then "- Attach iOS routing decisions with reason class and economics to worker summaries." else empty end),
+          (if gap_count("artifact_evidence") > 0 then "- Attach private iOS artifact roots and public-safe artifact classes to worker summaries." else empty end),
+          (if gap_count("cleanup_telemetry") > 0 then "- Attach iOS cleanup outcome and retained TTL class to worker summaries." else empty end)
         ] | if length == 0 then "No threshold-based candidates from this run." else .[] end
       ' "$SUMMARY_ROOT"/*.json
     else
@@ -4091,6 +4205,7 @@ Summary JSON fields:
 - commit_after
 - files_changed/additions/deletions/generated_file_count
 - tests/lints/builds arrays with command/outcome when run
+- execution_telemetry optional object for iOS work: implementation/build/test/review/release executors when applicable, routing reason class, economics/cost summary, private artifact roots, public artifact classes, cleanup outcome, retained TTL class, and control-plane timing
 - tokens object when available, otherwise null
 - functionality_delivered optional string or array describing what users/agents can now do
 - refactoring_needed_now optional array for cleanup required by this task
@@ -4487,6 +4602,27 @@ run_issue_job() {
     --argjson parent_finalized "$parent_finalized" \
     'def bad_outcome: ((.outcome // .status // "") | tostring | test("fail|error|flaky"; "i"));
      def bad_count($arr): [($arr // [])[]? | select(bad_outcome)] | length;
+     def compact_execution:
+       (.execution_telemetry // null) as $et |
+       if $et == null then null
+       else {
+         executors: ($et.executors // {}),
+         routing: {
+           reason_class: ($et.routing.reason_class // null),
+           cost_summary: ($et.routing.cost_summary // null),
+           economics: ($et.routing.economics // null)
+         },
+         artifacts: {
+           public_classes: ($et.artifacts.public_classes // []),
+           private_root_count: (($et.artifacts.private_roots // []) | length)
+         },
+         cleanup: {
+           outcome: ($et.cleanup.outcome // $et.cleanup.status // null),
+           retention_class: ($et.cleanup.retention_class // null),
+           ttl_class: ($et.cleanup.ttl_class // null)
+         }
+       }
+       end;
      {
        summary:$summary,
        commit_after:$after,
@@ -4501,7 +4637,8 @@ run_issue_job() {
          builds:{total:((.builds // []) | length), bad:bad_count(.builds)}
        },
        token_telemetry:(if (.tokens // null) == null then "missing" else "present" end),
-       telemetry_gaps:(.telemetry_gaps // [])
+       telemetry_gaps:(.telemetry_gaps // []),
+       execution_telemetry: compact_execution
      }' "$summary_file")
 
   if [ "$auto_retry_performed" = "true" ]; then
@@ -4822,6 +4959,27 @@ summary_reconciliation_payload() {
     --arg after "$commit_after" \
     'def bad_outcome: ((.outcome // .status // "") | tostring | test("fail|error|flaky"; "i"));
      def bad_count($arr): [($arr // [])[]? | select(bad_outcome)] | length;
+     def compact_execution:
+       (.execution_telemetry // null) as $et |
+       if $et == null then null
+       else {
+         executors: ($et.executors // {}),
+         routing: {
+           reason_class: ($et.routing.reason_class // null),
+           cost_summary: ($et.routing.cost_summary // null),
+           economics: ($et.routing.economics // null)
+         },
+         artifacts: {
+           public_classes: ($et.artifacts.public_classes // []),
+           private_root_count: (($et.artifacts.private_roots // []) | length)
+         },
+         cleanup: {
+           outcome: ($et.cleanup.outcome // $et.cleanup.status // null),
+           retention_class: ($et.cleanup.retention_class // null),
+           ttl_class: ($et.cleanup.ttl_class // null)
+         }
+       }
+       end;
      {
        summary:$summary,
        commit_after:$after,
@@ -4836,7 +4994,8 @@ summary_reconciliation_payload() {
          builds:{total:((.builds // []) | length), bad:bad_count(.builds)}
        },
        token_telemetry:(if (.tokens // null) == null then "missing" else "present" end),
-       telemetry_gaps:(.telemetry_gaps // [])
+       telemetry_gaps:(.telemetry_gaps // []),
+       execution_telemetry: compact_execution
      }' "$summary_file"
 }
 
