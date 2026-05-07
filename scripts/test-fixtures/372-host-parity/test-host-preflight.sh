@@ -9,9 +9,10 @@ BIN="$TMPROOT/bin"
 HOME_DIR="$TMPROOT/home"
 LOGIN_HOME="$TMPROOT/login-home"
 SYNTH_HOME="$TMPROOT/.codex-homes/personal"
+CONTEXT_GITHUB_HOME="$TMPROOT/context-gh-home"
 REPO="$TMPROOT/repo"
 REAL_GIT=$(command -v git)
-mkdir -p "$BIN" "$HOME_DIR" "$LOGIN_HOME" "$SYNTH_HOME" "$REPO"
+mkdir -p "$BIN" "$HOME_DIR" "$LOGIN_HOME" "$SYNTH_HOME" "$CONTEXT_GITHUB_HOME" "$REPO"
 
 cat > "$BIN/dscl" <<SH
 #!/usr/bin/env bash
@@ -88,17 +89,40 @@ grep -qx "$LOGIN_HOME" "$GH_HOME_LOG" || { printf 'FAIL: gh did not use login HO
 grep -qx "$LOGIN_HOME" "$GIT_HOME_LOG" || { printf 'FAIL: git did not use login HOME under synthetic HOME\n' >&2; cat "$GIT_HOME_LOG" >&2; exit 1; }
 grep -q 'normalized GitHub HOME' "$TMPROOT/synth.err" || { printf 'FAIL: missing HOME normalization diagnostic\n' >&2; cat "$TMPROOT/synth.err" >&2; exit 1; }
 
-if ! grep -q 'host_preflight "$host" "$REPO_ROOT"' "$ROOT/scripts/studio-chain-runner.sh"; then
+: > "$GH_HOME_LOG"
+: > "$GIT_HOME_LOG"
+PATH="$BIN:$PATH" HOME="$HOME_DIR" GH_AUTH_STATUS=ok LS_REMOTE_STATUS=ok \
+  STUDIO_CONTEXT_GITHUB_HOME="$CONTEXT_GITHUB_HOME" \
+  "$ROOT/scripts/host-preflight.sh" codex "$REPO" >"$TMPROOT/context.out" 2>"$TMPROOT/context.err"
+grep -qx "$CONTEXT_GITHUB_HOME" "$GH_HOME_LOG" || { printf 'FAIL: gh did not use context github_home\n' >&2; cat "$GH_HOME_LOG" >&2; exit 1; }
+grep -qx "$CONTEXT_GITHUB_HOME" "$GIT_HOME_LOG" || { printf 'FAIL: git did not use context github_home\n' >&2; cat "$GIT_HOME_LOG" >&2; exit 1; }
+grep -q 'context github_home' "$TMPROOT/context.err" || { printf 'FAIL: missing context github_home diagnostic\n' >&2; cat "$TMPROOT/context.err" >&2; exit 1; }
+
+set +e
+PATH="$BIN:$PATH" HOME="$HOME_DIR" GH_AUTH_STATUS=ok LS_REMOTE_STATUS=ok \
+  STUDIO_CONTEXT_GITHUB_HOME="$TMPROOT/missing-gh-home" \
+  "$ROOT/scripts/host-preflight.sh" codex "$REPO" >"$TMPROOT/context-fail.out" 2>"$TMPROOT/context-fail.err"
+rc=$?
+set -e
+[ "$rc" -ne 0 ] || { printf 'FAIL: missing context github_home passed\n' >&2; exit 1; }
+grep -q 'github_home is not a directory' "$TMPROOT/context-fail.err" || { printf 'FAIL: missing context failure detail\n' >&2; cat "$TMPROOT/context-fail.err" >&2; exit 1; }
+grep -q 'GitHub context unavailable' "$TMPROOT/context-fail.err" || { printf 'FAIL: missing host-preflight context failure diagnostic\n' >&2; cat "$TMPROOT/context-fail.err" >&2; exit 1; }
+
+preflight_call="host_preflight \"\$host\" \"\$REPO_ROOT\""
+preflight_launch="HOME=\"\$launch_home\" \"\$SCRIPT_DIR/host-preflight.sh\""
+launch_home_resolution="launch_home=\$(host_launch_home)"
+
+if ! grep -q "$preflight_call" "$ROOT/scripts/studio-chain-runner.sh"; then
   printf 'FAIL: studio-chain-runner does not call host preflight before chain work\n' >&2
   exit 1
 fi
 
-if ! grep -q 'HOME="$launch_home" "$SCRIPT_DIR/host-preflight.sh"' "$ROOT/scripts/studio-chain-runner.sh"; then
+if ! grep -q "$preflight_launch" "$ROOT/scripts/studio-chain-runner.sh"; then
   printf 'FAIL: studio-chain-runner preflight does not use the worker launch HOME\n' >&2
   exit 1
 fi
 
-if ! grep -q 'launch_home=$(host_launch_home)' "$ROOT/scripts/studio-chain-runner.sh"; then
+if ! grep -q "$launch_home_resolution" "$ROOT/scripts/studio-chain-runner.sh"; then
   printf 'FAIL: worker spawn and preflight do not share host launch HOME resolution\n' >&2
   exit 1
 fi

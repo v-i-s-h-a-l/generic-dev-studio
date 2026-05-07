@@ -6,7 +6,7 @@ Status: A0c specification for issue #444. This document is the v2 target contrac
 
 Studio v1 already has several auth and permission safety floors:
 
-- `scripts/studio-gh.sh` normalizes GitHub CLI calls through the user's login home.
+- `scripts/studio-gh.sh` runs GitHub CLI calls under the context-backed `github_home`.
 - `scripts/phase-review.sh` centralizes reviewer auth-home selection, no-secret environment scrubbing, MCP isolation, sandbox-readable payload handoff, and failure-detail surfacing.
 - `hosts/ADAPTER-SPEC.md` defines host adapter security floors such as sandbox profile and secret scope.
 - `_shared/contracts/release-tf-push.md` defines release-action secret requirements for App Store Connect and Slack.
@@ -69,7 +69,7 @@ GitHub operations are split by mutation scope:
 | `git:remote-read` | `git ls-remote`, fetch, dry-run credential probe | credential manager access without prompting |
 | `git:remote-write` | push branch, push tags | credential manager access without prompting and explicit branch/tag target |
 
-Assistant-initiated GitHub CLI calls route through `scripts/studio-gh.sh`. Scripts that call GitHub or credential-probing git commands source `scripts/lib-paths.sh` and wrap calls with the login-home helper. Raw `gh` is not a v2 load-bearing path.
+Assistant-initiated GitHub CLI calls route through `scripts/studio-gh.sh`. Migrated GitHub/auth probes source `scripts/lib-studio-context.sh` and run GitHub or credential-probing git commands under the context-backed `github_home`; legacy call sites use the login-home helper only until their context migration lands. Raw `gh` is not a v2 load-bearing path.
 
 GitHub credential failures must halt before mutation. Non-interactive tasks set no-prompt behavior for git credential probes and report `github_auth_unavailable`, `github_home_mismatch`, `github_rate_limited`, or `network_partition` instead of opening an interactive prompt.
 

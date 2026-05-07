@@ -10,7 +10,8 @@ trap 'rm -rf "$TMPROOT"' EXIT
 BIN="$TMPROOT/bin"
 LOGIN_HOME="$TMPROOT/login-home"
 SYNTH_HOME="$TMPROOT/.codex-homes/personal"
-mkdir -p "$BIN" "$LOGIN_HOME" "$SYNTH_HOME"
+CONTEXT_GITHUB_HOME="$TMPROOT/context-gh-home"
+mkdir -p "$BIN" "$LOGIN_HOME" "$SYNTH_HOME" "$CONTEXT_GITHUB_HOME"
 
 cat > "$BIN/dscl" <<SH
 #!/usr/bin/env bash
@@ -49,6 +50,26 @@ PATH="$BIN:$PATH" HOME="$SYNTH_HOME" "$ROOT/scripts/studio-gh.sh" auth status \
 
 grep -qx "$LOGIN_HOME" "$GH_HOME_LOG"
 grep -q 'studio: HOME normalized for GitHub op (parent=codex)' "$TMPROOT/studio-gh.err"
+
+: > "$GH_HOME_LOG"
+PATH="$BIN:$PATH" HOME="$SYNTH_HOME" STUDIO_CONTEXT_GITHUB_HOME="$CONTEXT_GITHUB_HOME" \
+  "$ROOT/scripts/studio-gh.sh" auth status \
+  >"$TMPROOT/studio-gh-context.out" 2>"$TMPROOT/studio-gh-context.err"
+
+grep -qx "$CONTEXT_GITHUB_HOME" "$GH_HOME_LOG"
+grep -q 'studio: HOME normalized for GitHub op (parent=codex)' "$TMPROOT/studio-gh-context.err"
+
+: > "$GH_HOME_LOG"
+PATH="$BIN:$PATH" HOME="$SYNTH_HOME" STUDIO_BYPASS_PARENT_HOME_FLIP=1 \
+  "$ROOT/scripts/studio-gh.sh" auth status \
+  >"$TMPROOT/studio-gh-bypass.out" 2>"$TMPROOT/studio-gh-bypass.err"
+
+grep -qx "$SYNTH_HOME" "$GH_HOME_LOG"
+grep -q 'STUDIO_BYPASS_PARENT_HOME_FLIP active' "$TMPROOT/studio-gh-bypass.err"
+if grep -q 'HOME normalized' "$TMPROOT/studio-gh-bypass.err"; then
+  printf 'studio-gh bypass still emitted HOME normalization log\n' >&2
+  exit 1
+fi
 
 : > "$GH_HOME_LOG"
 PATH="$BIN:$PATH" HOME="$SYNTH_HOME" STUDIO_BYPASS_PARENT_HOME_FLIP=1 bash -c "

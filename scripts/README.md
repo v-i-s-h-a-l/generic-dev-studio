@@ -100,13 +100,14 @@ scripts/codex-worker-exec.sh "<prompt>"                                    # int
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
 scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
 scripts/studio-project-state.sh --status Todo         # field-aware backlog reader for the Studio v2 Projects board
-scripts/studio-gh.sh issue list --state open          # gh wrapper for narrow issue lookups; normalizes synthetic Codex HOME to login HOME
+scripts/studio-gh.sh issue list --state open          # gh wrapper for narrow issue lookups; uses context github_home for auth
 scripts/studio-dependency-export.sh --issue 443       # Mermaid graph from native GitHub blocked_by dependencies; no body parsing
 scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply; STUDIO_BYPASS_ISSUE_BODY_GUARD=1 is user-controlled emergency/debug bypass
 scripts/studio-staleness-triage.sh --json             # dry-run PM issue staleness plan; --apply labels stale/escalated/archive-candidate issues and posts idempotent comments
 
 # Parent-side GitHub auth:
-# assistant-initiated calls use scripts/studio-gh.sh; scripts that own gh/PR/issue mutations call with_login_home_for_github
+# assistant-initiated calls use scripts/studio-gh.sh; migrated auth probes use context github_home
+# legacy gh/PR/issue call sites use with_login_home_for_github until their context migration lands
 # STUDIO_BYPASS_PARENT_HOME_FLIP=1   preserve caller HOME for intentional isolation tests
 
 # Chain runner pool sizing:
