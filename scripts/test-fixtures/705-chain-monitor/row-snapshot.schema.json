@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/schemas/chain-monitor-row-snapshot.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "row_key", "row_type", "source", "fields"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "row_key": {
+      "type": "string",
+      "pattern": "^(chain|task):"
+    },
+    "row_type": {
+      "enum": ["chain", "task"]
+    },
+    "parent_row_key": {
+      "type": "string",
+      "pattern": "^chain:"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "precedence"],
+      "properties": {
+        "kind": {
+          "enum": ["persisted-run", "runtime-manifest", "repo-manifest", "slack-legacy"]
+        },
+        "id": { "type": "string", "minLength": 1 },
+        "precedence": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "status", "manifest", "summary", "progress", "blocker"],
+      "properties": {
+        "title": { "type": "string" },
+        "status": {
+          "enum": ["available", "queued", "running", "paused", "blocked", "failed", "completed", "archived", "stale", "unknown"]
+        },
+        "manifest": { "type": "string" },
+        "summary": { "type": "string" },
+        "progress": { "type": "string" },
+        "blocker": { "type": "string" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "row_type": { "const": "task" } },
+        "required": ["row_type"]
+      },
+      "then": {
+        "required": ["parent_row_key"]
+      }
+    }
+  ]
+}

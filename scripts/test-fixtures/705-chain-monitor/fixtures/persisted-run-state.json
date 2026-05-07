@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "run_id": "run-705",
+  "manifest": "/private/var/folders/project/chains/chain-monitor-reconciliation.yaml",
+  "status": "running",
+  "started_at": "2026-05-07T20:00:00Z",
+  "updated_at": "2026-05-07T20:20:00Z",
+  "chains": [
+    {
+      "name": "chain-monitor-reconciliation",
+      "chain_run_id": "chain-run-705",
+      "status": "running",
+      "summary": "Slack reconciliation substrate",
+      "issues": [
+        {
+          "number": 727,
+          "title": "Build chain monitor config and row model substrate",
+          "status": "running",
+          "summary": "Config and row model",
+          "private_prompt": "do not publish this prompt",
+          "tokens": {
+            "total": 120000
+          },
+          "raw_run_path": "/private/var/folders/d1/studio-chain-runner/run-705",
+          "project_branch": "feature/private-project-branch",
+          "proprietary_detail": "client-only implementation detail"
+        },
+        {
+          "number": 728,
+          "title": "Reconcile monitor state",
+          "status": "queued"
+        },
+        {
+          "number": 729,
+          "title": "Wire sync integration",
+          "status": "completed",
+          "completed_at": "2026-05-07T20:10:00Z",
+          "integrated": true
+        }
+      ]
+    },
+    {
+      "name": "archived-chain",
+      "chain_run_id": "chain-archived",
+      "status": "completed",
+      "completed_at": "2026-05-07T19:00:00Z",
+      "issues": [
+        {
+          "number": 930,
+          "title": "Old completed task",
+          "status": "completed",
+          "completed_at": "2026-05-07T19:00:00Z"
+        }
+      ]
+    },
+    {
+      "name": "stale-chain",
+      "chain_run_id": "chain-stale",
+      "status": "running",
+      "updated_at": "2026-05-07T18:00:00Z",
+      "issues": [
+        {
+          "number": 940,
+          "title": "Stale running task",
+          "status": "running",
+          "updated_at": "2026-05-07T18:00:00Z"
+        }
+      ]
+    },
+    {
+      "name": "failed-chain",
+      "chain_run_id": "chain-failed",
+      "status": "failed",
+      "failure_reason": "phase_review_failed",
+      "issues": [
+        {
+          "number": 950,
+          "title": "Failed task",
+          "status": "failed",
+          "failure_reason": "test failed"
+        }
+      ]
+    },
+    {
+      "name": "unknown-chain",
+      "chain_run_id": "chain-unknown",
+      "status": "mystery",
+      "issues": [
+        {
+          "number": 960,
+          "title": "Unknown task",
+          "status": "mystery"
+        }
+      ]
+    }
+  ]
+}

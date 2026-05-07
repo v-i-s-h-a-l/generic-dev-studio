@@ -1,0 +1,19 @@
+schema_version: 1
+chains:
+  - name: chain-monitor-reconciliation
+    base: main
+    branch: feature/private-project-branch
+    host: auto
+    summary: Repo manifest claim
+    issues:
+      - 727
+      - 728
+      - 729
+  - name: checked-in-only
+    issues:
+      - number: 801
+        title: Checked-in task
+  - name: runtime-over-repo
+    issues:
+      - number: 902
+        title: Repo copy of runtime task
