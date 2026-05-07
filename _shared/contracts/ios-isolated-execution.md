@@ -113,6 +113,40 @@ If two chains have build/test affinity to the same worker, their build/test jobs
 queue on that worker by default. Non-build work may still run on other eligible
 executors.
 
+## Release/TestFlight Priority Routing
+
+Release and TestFlight jobs use a stricter routing predicate than normal
+build/test work:
+
+| Predicate | Requirement |
+|---|---|
+| Capability | Candidate declares the `release` role. TestFlight archive routes also require `xcodebuild`. |
+| Secret scope | Candidate `secret_scopes` must include every requested release scope, currently `asc` and `slack` for TF/AS work. Missing or empty scopes are a refusal, not a local fallback. |
+| Priority | Candidate participates in the shared build queue with `priority: release`, so queued normal task/background entries sort behind the release entry. |
+| Approval boundary | Routing can select a capable machine, but external or irreversible release actions still require the release-manager/operator approval gates. |
+
+The release router bypasses ordinary chain affinity with reason
+`release_secret_scope_routing`; release jobs are selected capability/secret/
+priority-first rather than by generic warm-cache affinity. If no capable
+secret-scoped executor exists, the decision is a typed refusal with
+`selected_executor: null` and no secret-bearing work starts.
+
+Priority may displace only work that has not started yet. Safe boundaries are:
+before job start, after artifact publication, after simulator shutdown, or
+after an explicit checkpoint. The queue implementation can prove only the first
+case: lower-priority entries still waiting in `build-queue/<node>/` may be
+displaced with `safe_boundary: before_job_start` and
+`displaced_work_retains_cache_artifacts: true`. If all physical slots are held
+by running work, release routing reports `preemption.status: waiting` and
+`preemption.refused: true`; it must not kill a running job mid-write.
+
+Required private telemetry:
+
+| Event | Required payload |
+|---|---|
+| `release_priority_routing_decision` | selected executor or refusal, release channel, required secret scopes, routing reason, queue priority, selected queue wait, preemption status, displaced queued work, and operator approval boundary |
+| `build_queue_promoted` | release task, node, skipped queued jobs, skipped count, and wait time when a release entry moves ahead of lower-priority queue entries |
+
 ## Worker-Routed Build/Test Failover
 
 Worker-routed build/test failures are classified by
