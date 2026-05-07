@@ -667,6 +667,25 @@ mark_issue_state() {
      | if $reason == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .failure_reason) = $reason end'
 }
 
+mark_issue_retry_attempt() {
+  local issue_run_id="$1" retry_reason="$2"
+  update_state_jq \
+    --arg issue_run_id "$issue_run_id" \
+    --arg retry_reason "$retry_reason" \
+    '(.chains[].issues[] | select(.issue_run_id == $issue_run_id)) |= (
+       .auto_retry_attempts = ((.auto_retry_attempts // 0) + 1)
+       | .last_retry_reason = $retry_reason
+     )'
+}
+
+mark_issue_exit_code() {
+  local issue_run_id="$1" exit_code="$2"
+  update_state_jq \
+    --arg issue_run_id "$issue_run_id" \
+    --argjson exit_code "$exit_code" \
+    '(.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .exit_code) = $exit_code'
+}
+
 mark_issue_integrated() {
   local issue_run_id="$1"
   update_state_jq \
@@ -1548,7 +1567,7 @@ ingest_worker_summary() {
   local chain_name="$1" issue="$2" host="$3" worktree="$4" before="$5" after="$6" exit_code="$7" started_at="$8" chain_run_id="$9" issue_run_id="${10}" telemetry_file="${11:-}"
   local summary_path="$worktree/.studio/chain-worker-summary.json"
   local dest="$SUMMARY_ROOT/${chain_name}-issue-${issue}-${issue_run_id}.json"
-  local ended_at created_at duration_s stats changed_artifacts session_telemetry_json
+  local ended_at created_at duration_s stats changed_artifacts session_telemetry_json worktree_state next_safe_action
   ended_at=$(now_epoch)
   created_at=$(iso_ts_now)
   duration_s=$(duration_since "$started_at" "$ended_at")
@@ -1633,6 +1652,12 @@ ingest_worker_summary() {
     else
       summary_gap="worker_summary_missing"
     fi
+    worktree_state="clean"
+    next_safe_action="retry in a fresh issue worktree is safe only if no public diff exists"
+    if chain_git_parent_finalize_has_public_diff "$worktree"; then
+      worktree_state="dirty"
+      next_safe_action="preserve the issue worktree and inspect uncommitted changes before retry"
+    fi
     jq -n \
       --arg run_id "$RUN_ID" \
       --arg chain_run_id "$chain_run_id" \
@@ -1648,6 +1673,8 @@ ingest_worker_summary() {
       --argjson stats "$stats" \
       --argjson changed_artifacts "$changed_artifacts" \
       --arg summary_gap "$summary_gap" \
+      --arg worktree_state "$worktree_state" \
+      --arg next_safe_action "$next_safe_action" \
       --argjson session_telemetry "$session_telemetry_json" \
       '{
         schema_version: 1,
@@ -1673,6 +1700,13 @@ ingest_worker_summary() {
         tests: [],
         lints: [],
         builds: [],
+        summary_validation: $summary_gap,
+        worktree_state: $worktree_state,
+        blocked_reason: (if $summary_gap == "worker_summary_missing"
+          then "worker exited without writing .studio/chain-worker-summary.json"
+          else "worker wrote malformed .studio/chain-worker-summary.json" end),
+        failure_summary: "Worker exited without a valid completion summary; parent synthesized this minimal failure summary from exit code, git state, and available telemetry.",
+        next_safe_action: $next_safe_action,
         tokens: ($session_telemetry.tokens // null),
         model: ($session_telemetry.model // null),
         model_version: ($session_telemetry.model_version // $session_telemetry.model // null),
@@ -1699,6 +1733,31 @@ ingest_worker_summary() {
 worker_summary_tracked() {
   local worktree="$1"
   git -C "$worktree" ls-tree -r --name-only HEAD -- .studio/chain-worker-summary.json 2>/dev/null | grep -q .
+}
+
+summary_validation_reason() {
+  local summary_file="$1"
+  jq -r '.summary_validation // ([.telemetry_gaps[]? | select(. == "worker_summary_missing" or . == "telemetry_artifact_malformed")] | first) // empty' "$summary_file" 2>/dev/null || true
+}
+
+missing_summary_retry_eligible() {
+  local summary_file="$1" worker_rc="$2" before="$3" after="$4" worktree="$5"
+  [ "$worker_rc" -ne 0 ] || return 1
+  [ "$before" = "$after" ] || return 1
+  [ "$(summary_validation_reason "$summary_file")" = "worker_summary_missing" ] || return 1
+  ! chain_git_parent_finalize_has_public_diff "$worktree"
+}
+
+issue_failure_summary_text() {
+  local issue="$1" worker_rc="$2" summary_file="$3" issue_worktree="$4"
+  jq -r \
+    --arg issue "$issue" \
+    --argjson rc "$worker_rc" \
+    --arg summary_file "$summary_file" \
+    --arg worktree "$issue_worktree" \
+    '"issue #\($issue) worker failed: exit_code=\($rc); summary_status=\(.summary_validation // "valid"); worktree_state=\(.worktree_state // "unknown"); summary=\($summary_file); worktree=\($worktree); next_safe_action=\(.next_safe_action // "inspect the worker summary and halt record before resuming")"' \
+    "$summary_file" 2>/dev/null \
+    || printf 'issue #%s worker failed: exit_code=%s; summary=%s; worktree=%s' "$issue" "$worker_rc" "$summary_file" "$issue_worktree"
 }
 
 generate_run_report() {
@@ -3507,10 +3566,12 @@ write_issue_phase_outcome_artifact() {
 
 run_issue_job() {
   local name="$1" branch="$2" chain_worktree="$3" issue="$4" host="$5" git_metadata_strategy="$6" issue_worktree="$7" issue_branch="$8" chain_run_id="$9" issue_run_id="${10}" result_file="${11}" phase_review_mode="${12:-auto}" issue_count_for_review="${13:-1}"
-  local before after worker_rc child_worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason parent_finalized effective_worker_rc
+  local before after worker_rc child_worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason parent_finalized effective_worker_rc failure_summary
   local phase_context boundary_id phase_plan_artifact phase_outcome_artifact phase_review_rc phase_review_reason worker_telemetry_file worker_launch_home rule_pack_resolution
+  local auto_retry_performed
   issue_started_at=$(now_epoch)
   parent_finalized=false
+  auto_retry_performed=false
 
   log "issue #$issue -> $issue_branch"
   if [ "$DRY_RUN" -eq 0 ]; then
@@ -3585,6 +3646,28 @@ run_issue_job() {
   collect_codex_worker_session_telemetry "$host" "$issue_worktree" "$issue_started_at" "$worker_launch_home" > "$worker_telemetry_file" || printf '{}\n' > "$worker_telemetry_file"
   summary_file=$(ingest_worker_summary "$name" "$issue" "$host" "$issue_worktree" "$before" "$after" "$worker_rc" "$issue_started_at" "$chain_run_id" "$issue_run_id" "$worker_telemetry_file")
   effective_worker_rc=$(chain_git_parent_finalize_effective_worker_rc "$worker_rc" "$summary_file")
+
+  if missing_summary_retry_eligible "$summary_file" "$worker_rc" "$before" "$after" "$issue_worktree"; then
+    auto_retry_performed=true
+    log "issue #$issue exited $worker_rc with no summary and no public diff; retrying once in a fresh issue worktree"
+    mark_issue_retry_attempt "$issue_run_id" "worker_summary_missing_no_changes"
+    chain_git_prepare_issue_workspace "$REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy"
+    before=$(git -C "$issue_worktree" rev-parse HEAD)
+    mark_issue_state "$issue_run_id" running "$before"
+    issue_started_at=$(now_epoch)
+    set +e
+    execute_issue_session "$name" "$branch" "$issue" "$host" "$git_metadata_strategy" "$issue_worktree" "$issue_branch" "$chain_run_id" "$issue_run_id" "$before" "$phase_context" "$rule_pack_resolution"
+    worker_rc=$?
+    set -e
+    child_worker_rc=$worker_rc
+    after=$(git -C "$issue_worktree" rev-parse HEAD)
+    worker_telemetry_file="$CHAIN_RUN_ROOT/worker-telemetry-$issue_run_id-retry-1.json"
+    worker_launch_home=$(host_launch_home)
+    collect_codex_worker_session_telemetry "$host" "$issue_worktree" "$issue_started_at" "$worker_launch_home" > "$worker_telemetry_file" || printf '{}\n' > "$worker_telemetry_file"
+    summary_file=$(ingest_worker_summary "$name" "$issue" "$host" "$issue_worktree" "$before" "$after" "$worker_rc" "$issue_started_at" "$chain_run_id" "$issue_run_id" "$worker_telemetry_file")
+    effective_worker_rc=$(chain_git_parent_finalize_effective_worker_rc "$worker_rc" "$summary_file")
+  fi
+
   write_decision_escrows_from_summary "$summary_file" || log "decision escrow extraction failed for $summary_file"
   issue_duration=$(duration_since "$issue_started_at")
 
@@ -3632,6 +3715,7 @@ run_issue_job() {
        child_exit_code:$child_exit_code,
        worker_duration_s:$duration_s,
        parent_finalized:$parent_finalized,
+       auto_retry_performed:false,
        check_counts:{
          tests:{total:((.tests // []) | length), bad:bad_count(.tests)},
          lints:{total:((.lints // []) | length), bad:bad_count(.lints)},
@@ -3641,16 +3725,25 @@ run_issue_job() {
        telemetry_gaps:(.telemetry_gaps // [])
      }' "$summary_file")
 
+  if [ "$auto_retry_performed" = "true" ]; then
+    summary_payload=$(printf '%s\n' "$summary_payload" | jq -c '.auto_retry_performed = true')
+  fi
+
   if [ "$worker_rc" -ne 0 ]; then
     child_reason_id=$(jq -r '.halt_reason_id // empty' "$summary_file")
+    if [ -z "$child_reason_id" ] && [ "$(summary_validation_reason "$summary_file")" = "worker_summary_missing" ]; then
+      child_reason_id="missing_child_summary"
+    fi
     if [ -z "$child_reason_id" ]; then
       child_blocked_reason=$(jq -r '.blocked_reason // empty' "$summary_file")
       child_reason_id=$(halt_reason_for_text "${child_blocked_reason:-worker exited $worker_rc}")
     fi
-    write_halt_record "$child_reason_id" "issue #$issue worker exited $worker_rc" "$chain_run_id" "$issue_run_id" "$name" "$issue" "child-worker" >/dev/null || log "halt record write failed for issue #$issue"
+    failure_summary=$(issue_failure_summary_text "$issue" "$worker_rc" "$summary_file" "$issue_worktree")
+    write_halt_record "$child_reason_id" "$failure_summary" "$chain_run_id" "$issue_run_id" "$name" "$issue" "child-worker" >/dev/null || log "halt record write failed for issue #$issue"
     emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" "$summary_payload"
     mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "worker_exited_$worker_rc"
-    jq -n --arg issue "$issue" --argjson rc "$worker_rc" --arg reason "issue #$issue worker exited $worker_rc" \
+    mark_issue_exit_code "$issue_run_id" "$worker_rc"
+    jq -n --arg issue "$issue" --argjson rc "$worker_rc" --arg reason "$failure_summary" \
       '{status:"failed", issue:($issue|tonumber), exit_code:$rc, reason:$reason}' > "$result_file"
     return 0
   fi
@@ -4047,6 +4140,53 @@ pending_issue_count() {
   jq -r --argjson chain_idx "$chain_idx" '[.chains[$chain_idx].issues[] | select((.status // "pending") == "pending")] | length' "$RUN_STATE_JSON"
 }
 
+failed_dependency_blocker_json() {
+  local chain_idx="$1"
+  jq -c --argjson chain_idx "$chain_idx" '
+    (.chains[$chain_idx].issues // []) as $issues
+    | [ $issues[] | select((.status // "pending") == "failed") ] as $failed
+    | [ $issues[] as $pending
+        | select(($pending.status // "pending") == "pending")
+        | ($pending.dependencies // [])[]? as $dep
+        | $failed[] as $failure
+        | select($failure.number == $dep)
+        | {
+            failed_issue: $failure.number,
+            failed_issue_run_id: ($failure.issue_run_id // null),
+            failed_reason: ($failure.failure_reason // "failed"),
+            exit_code: ($failure.exit_code // null),
+            summary: ($failure.summary // null),
+            worktree: ($failure.issue_worktree // null),
+            blocked_issue: $pending.number,
+            blocked_issue_run_id: ($pending.issue_run_id // null)
+          }
+      ] as $blocked
+    | if ($blocked | length) == 0 then empty
+      else
+        ($blocked[0].failed_issue) as $root
+        | ($failed[] | select(.number == $root)) as $failure
+        | {
+            failed_issue: $root,
+            failed_issue_run_id: ($failure.issue_run_id // null),
+            failed_reason: ($failure.failure_reason // "failed"),
+            exit_code: ($failure.exit_code // null),
+            summary: ($failure.summary // null),
+            worktree: ($failure.issue_worktree // null),
+            blocked_issues: ([ $blocked[] | select(.failed_issue == $root) | .blocked_issue ] | unique)
+          }
+      end
+  ' "$RUN_STATE_JSON" 2>/dev/null || true
+}
+
+failed_dependency_blocker_reason() {
+  local blocker_json="$1"
+  [ -n "$blocker_json" ] || return 1
+  jq -r '
+    . as $b
+    | "chain blocked by failed prerequisite #\($b.failed_issue): failure_reason=\($b.failed_reason // "failed"); exit_code=\($b.exit_code // "unknown"); summary=\($b.summary // "missing"); worktree=\($b.worktree // "unknown"); blocked_by #\($b.failed_issue) -> " + (($b.blocked_issues // []) | map("#" + tostring) | join(", ")) + "; next_safe_action=inspect the failed issue summary/halt record and preserved worktree, then resume after correcting the root cause"
+  ' <<<"$blocker_json"
+}
+
 issue_job_is_running() {
   local target_pid="$1" pid
   while IFS= read -r pid; do
@@ -4118,7 +4258,7 @@ wait_for_running_issue_jobs() {
 
 run_chain_issue_scheduler() {
   local chain_idx="$1" chain_name="$2" branch="$3" chain_worktree="$4" host="$5" git_metadata_strategy="$6" chain_run_id="$7" phase_review_mode="$8" checkpoint_mode="$9" issue_count="${10}" chain_results_dir="${11}"
-  local scheduled_any pending_count running_count i issue issue_branch issue_worktree issue_run_id issue_status issue_commit_after result_file result_reason
+  local scheduled_any pending_count running_count i issue issue_branch issue_worktree issue_run_id issue_status issue_commit_after result_file result_reason blocker_json blocker_issue blocker_issue_run_id
 
   ISSUE_PIDS=()
   ISSUE_RESULT_FILES=()
@@ -4186,6 +4326,17 @@ run_chain_issue_scheduler() {
       return 0
     fi
     if [ "$running_count" -eq 0 ]; then
+      blocker_json=$(failed_dependency_blocker_json "$chain_idx")
+      if [ -n "$blocker_json" ]; then
+        result_reason=$(failed_dependency_blocker_reason "$blocker_json")
+        blocker_issue=$(jq -r '.failed_issue // ""' <<<"$blocker_json")
+        blocker_issue_run_id=$(jq -r '.failed_issue_run_id // ""' <<<"$blocker_json")
+        emit_chain_event chain_issue_scheduler_blocked "$blocker_issue" "$RUN_ID" "$chain_run_id" "$blocker_issue_run_id" blocked 0 \
+          "$(jq -cn --arg chain "$chain_name" --arg reason "$result_reason" --argjson blocker "$blocker_json" '{chain:$chain, reason:$reason, blocked_by:$blocker}')"
+        write_halt_record "implementation_scope_blocked" "$result_reason" "$chain_run_id" "$blocker_issue_run_id" "$chain_name" "$blocker_issue" "parent-runner" >/dev/null || true
+        log "$result_reason"
+        abort_run "$result_reason"
+      fi
       result_reason="chain graph blocked: no pending issue has all dependencies completed"
       emit_chain_event chain_issue_scheduler_blocked "" "$RUN_ID" "$chain_run_id" "" blocked 0 \
         "$(jq -cn --arg chain "$chain_name" --arg reason "$result_reason" '{chain:$chain, reason:$reason}')"
