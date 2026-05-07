@@ -19,6 +19,8 @@
 #              update whatsNew per localization. Inputs (release notes, what's
 #              new) come from files prepared by the wrapper after user
 #              approval.
+#   compose-message — Convert git-log-style commit blocks into taxonomy-aware
+#              TestFlight or App Store bullets.
 #   withdraw-tf-tag — rename a TF anchor tag to tf-<version>-<build>-WITHDRAWN.
 #   emit       — emit one release event (`slack_drafted` / `slack_sent` /
 #              `release_failed`) with the same release-tag the wrapper
@@ -31,6 +33,7 @@
 #                              --release-notes-file <path> --whatsnew-file <path> \
 #                              [--dry-run]
 #   scripts/studio-tf-push.sh withdraw-tf-tag --build <n> --version <v> [--dry-run]
+#   scripts/studio-tf-push.sh compose-message --channel testflight|appstore [--input <path>] [--json]
 #   scripts/studio-tf-push.sh emit <event> --release-tag <tag> --data <json>
 #
 # Env:
@@ -68,6 +71,11 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-build-queue.sh"
 # shellcheck source=lib-release-config.sh
 . "$SCRIPT_DIR/lib-release-config.sh"
+
+if [ "${1:-}" = "compose-message" ]; then
+  shift
+  exec "$SCRIPT_DIR/compose-build-release-message.sh" "$@"
+fi
 
 STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-${STUDIO_TF_PROJECT_SLUG:-}}"
 load_release_config || {
@@ -463,7 +471,7 @@ EOF
 }
 
 write_appstore_pending_marker() {
-  local build="$1" version="$2" tag="$3" version_id="$4" build_id="$5" release_url="$6"
+  local build="$1" version="$2" tag="$3" version_id="$4" build_id="$5" release_url="$6" release_notes_summary="${7:-}"
   local state_dir marker_path watcher_replies
   state_dir="$RELEASE_PROJECT_ROOT/.runtime/state"
   marker_path="$state_dir/pending-appstore-review.json"
@@ -490,6 +498,7 @@ write_appstore_pending_marker() {
     --arg slack_channel "$APPSTORE_SLACK_CHANNEL_USED" \
     --arg slack_parent_ts "$APPSTORE_SLACK_PARENT_TS" \
     --arg slack_post_status "$APPSTORE_SLACK_STATUS" \
+    --arg release_notes_summary "$release_notes_summary" \
     --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg build "$build" \
     --argjson watcher_replies "$watcher_replies" \
@@ -508,6 +517,7 @@ write_appstore_pending_marker() {
       slack_channel:$slack_channel,
       slack_parent_ts:$slack_parent_ts,
       slack_post_status:$slack_post_status,
+      release_notes_summary:$release_notes_summary,
       slack_watcher_replies:$watcher_replies,
       created_at:$created_at,
       next_check_at:null,
@@ -517,6 +527,25 @@ write_appstore_pending_marker() {
     }' >"$marker_path"
   chmod 600 "$marker_path" 2>/dev/null || true
   printf 'studio-tf-push: pending App Store marker: %s\n' "$marker_path" >&2
+}
+
+release_notes_summary_from_file() {
+  local file="$1"
+  awk '
+    /^[[:space:]]*$/ { next }
+    /^[[:space:]]*\*[^*]+[[:space:]]*$/ { next }
+    {
+      line=$0
+      sub(/^[[:space:]]*[-*][[:space:]]*/, "", line)
+      sub(/^[[:space:]]*•[[:space:]]*/, "", line)
+      gsub(/[[:space:]]+/, " ", line)
+      if (length(line) > 160) {
+        line=substr(line, 1, 157) "..."
+      }
+      print line
+      exit
+    }
+  ' "$file"
 }
 
 update_appstore_pending_marker_pr() {
@@ -1182,7 +1211,9 @@ cmd_appstore() {
     "$BUILD" "$VERSION" "$loc_count" >&2
 
   appstore_notify_slack "$BUILD" "$VERSION" "$TAG" "$RELEASE_NOTES_FILE" "$WHATSNEW_FILE" "$RELEASE_URL" "$DRY_RUN_FLAG"
-  write_appstore_pending_marker "$BUILD" "$VERSION" "$TAG" "$version_id" "$build_id" "$RELEASE_URL" \
+  local release_notes_summary
+  release_notes_summary=$(release_notes_summary_from_file "$RELEASE_NOTES_FILE" || true)
+  write_appstore_pending_marker "$BUILD" "$VERSION" "$TAG" "$version_id" "$build_id" "$RELEASE_URL" "$release_notes_summary" \
     || printf 'studio-tf-push: warning: pending App Store marker write failed; watcher will not thread lifecycle replies\n' >&2
   create_or_reuse_appstore_pr "$appstore_branch" "$GH_REPO" "$TAG" "$RELEASE_URL"
   notify_appstore_pending_pr_notice "$APPSTORE_PR_PENDING_NOTICE"
@@ -1210,6 +1241,7 @@ case "${1:-}" in
     [ "${1:-}" = "push" ] && shift
     cmd_push "$@" ;;
   appstore) shift; cmd_appstore "$@" ;;
+  compose-message) shift; exec "$SCRIPT_DIR/compose-build-release-message.sh" "$@" ;;
   withdraw-tf-tag) shift; cmd_withdraw_tf_tag "$@" ;;
   emit) shift; cmd_emit "$@" ;;
   -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;

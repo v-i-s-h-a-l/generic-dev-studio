@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# commit-msg hook: validate commit trailers for studio-managed commits.
+
+set -u
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+SCRIPTS="$REPO_ROOT/scripts"
+
+if [ "${1:-}" = "" ]; then
+  printf 'commit-msg: usage: .githooks/commit-msg <commit-message-file>\n' >&2
+  exit 1
+fi
+
+if [ ! -f "$1" ]; then
+  printf 'commit-msg: missing commit message file: %s\n' "$1" >&2
+  exit 1
+fi
+
+if [ -x "$SCRIPTS/lint-commit-message.sh" ]; then
+  "$SCRIPTS/lint-commit-message.sh" --file "$1"
+  exit $?
+fi
+
+printf 'commit-msg: lint script missing: %s\n' "$SCRIPTS/lint-commit-message.sh" >&2
+exit 1

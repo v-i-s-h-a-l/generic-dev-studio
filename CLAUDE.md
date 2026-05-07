@@ -55,6 +55,43 @@ pre-commit hook blocks base-branch commits unless the user explicitly sets
 
 **Worktree lifecycle for interactive sessions:** create before the first write; push/merge after the session's logical unit of work is done; remove immediately after. If the session ends without writing anything, the worktree cleanup is a no-op.
 
+## Commit discipline policy (initial taxonomy + message discipline)
+
+Use this policy for assistant-authored commits in this repository.
+
+### Machine-readable host identity (prefer over parsing `Co-authored-by:`)
+
+Use machine-readable host metadata as the source of truth whenever it is present:
+
+- task start artifact: `.studio/chain-task-start.json` (`host`, `model`, `model_version`, related effort fields when present)
+- completion artifact: `.studio/chain-worker-summary.json` (`host`, `model`, `model_version`, related effort fields when present)
+
+Do not infer host identity only from a `Co-authored-by:` footer. If host metadata is not available from tooling, assistant-authored commits should append a `Co-authored-by:` footer for the host identity.
+
+### Commit-taxonomy values (initial set)
+
+The initial taxonomy values are:
+
+- `feature`
+- `bugfix-shipped`
+- `bugfix-wip`
+- `regression-fix`
+- `refactor`
+- `docs`
+- `test`
+- `chore`
+- `release`
+
+`bugfix-shipped` marks shipped code-path bugfixes; `bugfix-wip` marks fixes to unreleased WIP work.
+
+### Commit message discipline
+
+- **Subject:** should state why the change was made and include one taxonomy label via a subject prefix or explicit body marker.
+- **Body:** include `Problem`, `Solution`, `Implementation notes`, and `Caveats` when useful.
+- **Churn rules:** XS WIP feature tasks may be one commit; larger independent changes should be split by logical behavior/tests/docs/workflow boundaries.
+- **Branch shape:** feature branches should not contain merge commits. Existing chain integration already enforces this via rebase + fast-forward-only merge paths in `scripts/lib-chain-git.sh`; do not treat this as greenfield.
+- **Dependencies:** dependent branches should rebase or retarget rather than feature-to-feature merge.
+
 ## Studio router (systematic triggers)
 
 The `dev-studio` router is shipped at `core/v2/skills/dev-studio/` and exposed to Claude Code through the global `/dev-studio` command wrapper. It is the canonical role router for studio-level operations after A10 removed the v1 top-level router surfaces. When any of the phrases below fire, route through `/dev-studio manager ...` unless a more specific canonical role is explicit:

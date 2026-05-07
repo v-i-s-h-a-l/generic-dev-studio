@@ -15,6 +15,18 @@ channels. Both channels use the same three-section shape: `*New*` / `*Fixed*`
 skimmability — the channel is the changelog index; readers want to know what
 changed without reading prose.
 
+## Commit Taxonomy Input
+
+When drafting from commits, prefer explicit trailers over subject guessing:
+`Change-Type: feature|bugfix-shipped|bugfix-wip|regression-fix|refactor|docs|test|chore|release`,
+plus `Problem:`, `Solution:`, `Caveat:`, or `Changelog:`. `feature` maps to
+`*New*`, shipped bug fixes map to `*Fixed*`, and internal work maps to
+`*Technical notes*` for TestFlight only. `bugfix-wip` is visible in TestFlight
+as a work-in-progress testing note and is omitted from App Store copy so the
+release does not overstate an unshipped fix. Missing trailers must fall back to
+the subject/body without leaking raw trailer names into Slack or App Store
+bullets.
+
 ## Headline
 
 - **TF:** `[iOS] build <NEW_BUILD_NUMBER> is available on TestFlight`. `<!here>` is opt-in via release config and is off by default.
