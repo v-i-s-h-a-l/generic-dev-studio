@@ -3551,6 +3551,138 @@ process_completed_issue_result() {
   return 0
 }
 
+summary_for_issue_run() {
+  local chain_name="$1" issue="$2" issue_run_id="$3" expected summary
+  expected="$SUMMARY_ROOT/${chain_name}-issue-${issue}-${issue_run_id}.json"
+  if [ -f "$expected" ]; then
+    printf '%s\n' "$expected"
+    return 0
+  fi
+  [ -d "$SUMMARY_ROOT" ] || return 1
+  while IFS= read -r summary; do
+    [ -n "$summary" ] || continue
+    if jq -e --arg issue_run_id "$issue_run_id" '.issue_run_id == $issue_run_id' "$summary" >/dev/null 2>&1; then
+      printf '%s\n' "$summary"
+      return 0
+    fi
+  done < <(find "$SUMMARY_ROOT" -type f -name '*.json' 2>/dev/null | sort)
+  return 1
+}
+
+summary_completed_successfully() {
+  local summary_file="$1" issue_run_id="$2"
+  jq -e --arg issue_run_id "$issue_run_id" '
+    .issue_run_id == $issue_run_id
+    and (.status // "") == "completed"
+    and ((.exit_code // 1) == 0)
+    and ((.commit_after // "") != "")
+    and ((.commit_after // "") != "null")
+  ' "$summary_file" >/dev/null 2>&1
+}
+
+summary_commit_is_recoverable() {
+  local issue_worktree="$1" commit_after="$2" head
+  [ -n "$commit_after" ] && [ "$commit_after" != "null" ] || return 1
+  git_checkout_exists "$issue_worktree" || return 1
+  git -C "$issue_worktree" cat-file -e "$commit_after^{commit}" 2>/dev/null || return 1
+  head=$(git -C "$issue_worktree" rev-parse HEAD 2>/dev/null || true)
+  [ "$head" = "$commit_after" ]
+}
+
+summary_reconciliation_payload() {
+  local summary_file="$1" commit_after="$2"
+  jq -c \
+    --arg summary "$summary_file" \
+    --arg after "$commit_after" \
+    'def bad_outcome: ((.outcome // .status // "") | tostring | test("fail|error|flaky"; "i"));
+     def bad_count($arr): [($arr // [])[]? | select(bad_outcome)] | length;
+     {
+       summary:$summary,
+       commit_after:$after,
+       exit_code:(.exit_code // 0),
+       child_exit_code:(.exit_code // 0),
+       worker_duration_s:(.duration_s // 0),
+       parent_finalized:(.parent_finalized // false),
+       reconciled_from_summary:true,
+       check_counts:{
+         tests:{total:((.tests // []) | length), bad:bad_count(.tests)},
+         lints:{total:((.lints // []) | length), bad:bad_count(.lints)},
+         builds:{total:((.builds // []) | length), bad:bad_count(.builds)}
+       },
+       token_telemetry:(if (.tokens // null) == null then "missing" else "present" end),
+       telemetry_gaps:(.telemetry_gaps // [])
+     }' "$summary_file"
+}
+
+reconcile_resume_issue_summary() {
+  local chain_name="$1" chain_run_id="$2" issue="$3" issue_run_id="$4" issue_worktree="$5" phase_review_mode="$6" issue_count_for_review="$7"
+  local summary_file before after duration_s payload boundary_id phase_outcome_artifact phase_review_rc phase_review_reason
+
+  summary_file=$(summary_for_issue_run "$chain_name" "$issue" "$issue_run_id" || true)
+  [ -n "$summary_file" ] || return 1
+  summary_completed_successfully "$summary_file" "$issue_run_id" || return 1
+
+  before=$(jq -r '.commit_before // ""' "$summary_file")
+  after=$(jq -r '.commit_after // ""' "$summary_file")
+  summary_commit_is_recoverable "$issue_worktree" "$after" || return 1
+
+  duration_s=$(jq -r '.duration_s // 0' "$summary_file")
+  case "$duration_s" in ''|*[!0-9]*) duration_s=0 ;; esac
+  payload=$(summary_reconciliation_payload "$summary_file" "$after")
+
+  if phase_review_required_for_issue "$phase_review_mode" "$issue_count_for_review"; then
+    boundary_id="$chain_run_id-$issue_run_id"
+    phase_outcome_artifact="$PHASE_REVIEW_ROOT/$boundary_id-outcome.md"
+    write_issue_phase_outcome_artifact "$phase_outcome_artifact" "$chain_name" "$issue" "$issue_run_id" "$before" "$after" "$summary_file"
+    set +e
+    run_phase_review_gate outcome "$boundary_id" "$phase_outcome_artifact" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue"
+    phase_review_rc=$?
+    set -e
+    if [ "$phase_review_rc" -ne 0 ]; then
+      case "$phase_review_rc" in
+        70) phase_review_reason="reviewer_host_ineligible" ;;
+        71) phase_review_reason="reviewer_blocked" ;;
+        72) phase_review_reason="reviewer_ambiguous" ;;
+        *) phase_review_reason="required_review_failed" ;;
+      esac
+      emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$duration_s" "$payload"
+      mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "phase_review_failed"
+      SCHEDULER_FAILURE_REASON="$phase_review_reason"
+      return 2
+    fi
+  fi
+
+  log "resume reconciled completed issue #$issue from worker summary"
+  emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed "$duration_s" "$payload"
+  mark_issue_state "$issue_run_id" completed "$before" "$after" "$summary_file"
+  return 0
+}
+
+reconcile_resume_issue_summaries() {
+  local chain_idx="$1" chain_name="$2" chain_run_id="$3" phase_review_mode="$4" issue_count="$5"
+  local i issue issue_run_id issue_status issue_worktree rc
+  [ -n "$RESUME_ID" ] || return 0
+  [ "$DRY_RUN" -eq 0 ] || return 0
+
+  for ((i = 0; i < issue_count; i++)); do
+    issue=$(jq -r ".chains[$chain_idx].issues[$i].number" "$PLAN_JSON")
+    issue_worktree=$(jq -r ".chains[$chain_idx].issues[$i].issue_worktree" "$PLAN_JSON")
+    issue_run_id=$(jq -r ".chains[$chain_idx].issues[$i].issue_run_id" "$PLAN_JSON")
+    issue_status=$(jq -r --arg id "$issue_run_id" '.chains[].issues[] | select(.issue_run_id == $id) | .status // "pending"' "$RUN_STATE_JSON" 2>/dev/null || printf 'pending')
+    [ "$issue_status" = "running" ] || continue
+
+    set +e
+    reconcile_resume_issue_summary "$chain_name" "$chain_run_id" "$issue" "$issue_run_id" "$issue_worktree" "$phase_review_mode" "$issue_count"
+    rc=$?
+    set -e
+    case "$rc" in
+      0|1) ;;
+      *) return 1 ;;
+    esac
+  done
+  return 0
+}
+
 issue_dependencies_satisfied() {
   local chain_idx="$1" issue_idx="$2"
   jq -e --argjson chain_idx "$chain_idx" --argjson issue_idx "$issue_idx" '
@@ -3643,6 +3775,8 @@ run_chain_issue_scheduler() {
   ISSUE_CHAIN_RUN_IDS=()
   ISSUE_RUN_IDS=()
   SCHEDULER_FAILURE_REASON=""
+
+  reconcile_resume_issue_summaries "$chain_idx" "$chain_name" "$chain_run_id" "$phase_review_mode" "$issue_count" || abort_run "$SCHEDULER_FAILURE_REASON"
 
   while :; do
     collect_finished_issue_jobs "$chain_name" "$branch" "$chain_worktree" "$git_metadata_strategy" "$checkpoint_mode" || {
