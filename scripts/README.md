@@ -182,7 +182,7 @@ eval "$(scripts/task-load-spec.sh T001)"                # TASK_MODE/BRIEF_PATH/S
 scripts/task-build-debt-gate.sh [--override]            # exit 2 if blocked; emits build_debt_blocked
 scripts/task-claim.sh <task-uuid> <brief-uuid> <size>   # task + brief state transitions
 eval "$(scripts/task-worktree-setup.sh T001 /repo)"     # PROJECT/ORIG_BRANCH/ORIG_HEAD/WORKTREE; reuses the chain runner's feature-branch gate so dependent branches rebase/retarget instead of merging feature-to-feature
-scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" [zaps-app/Turnip.xcodeproj] # xcodebuild + lock; 6th arg pins -project/-workspace in multi-project repos (#238); exit 4 = duplicate-invocation refused (#209)
+scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" [zaps-app/Turnip.xcodeproj] # lsp-only stays local; full-green xcodebuild routes through studio-ios-check-router.sh, then queue/lock; exit 4 = duplicate-invocation refused (#209)
 scripts/studio-tf-push.sh push [--version X.Y.Z]        # TestFlight push driver; creates/pushes tf-<version>-<build> anchor
 scripts/studio-tf-push.sh withdraw-tf-tag --version X.Y.Z --build N # rename TF anchor to tf-<version>-<build>-WITHDRAWN
 scripts/node-parity.sh [--fix|--dry-run]                # probe + cache toolchain versions; optionally install missing brew packages and print manual Xcode/runtime fixes (#126/#131)
@@ -218,6 +218,7 @@ scripts/lint-v2-bootstrap.sh --staged                   # blocks pre-A0.5 substr
 scripts/lint-v2-enforcement.sh --staged                 # A0.6 Studio v2 SPEC-derived substrate/profile gates
 scripts/v2-profile.sh --profile ios-turnip --validate   # validate the A6 project-profile layer and iOS profile
 scripts/v2-profile.sh --profile ios-turnip --operation build --project-root /path/to/project --dry-run  # resolve an abstract operation without running it
+scripts/studio-ios-check-router.sh explain --operation build --chain my-chain --task-id T001 --source-branch main # local-first iOS build/test route explanation with affinity/economics
 scripts/v2-cutover.sh --status                          # report A9 v1 archive / v2 traffic-switch status
 scripts/v2-cutover.sh --validate                        # validate the A9 cutover manifest and rollback playbook
 scripts/lint-build-release-message.sh --file draft.md --channel appstore   # A11 message shape + duplicate lint
@@ -287,6 +288,14 @@ dispatched_from=user@host
 | `NODE_SOURCE_SYNC_MODE` | `auto` | Remote source sync mode: `auto` does one full rsync per session/path, then git-diff selective rsync; `full` and `selective` force either path. |
 | `NODE_SOURCE_SYNC_SMOKE` | `0` | Set to `1` to dry-run compare selective sync against a full rsync and fall back to full when they diverge. |
 | `NODE_WARMUP_TIMEOUT` | `900` (15m) | Max async node warm-up command stream. The first remote gate invocation per session/node launches warm-up in the background and continues. |
+| `STUDIO_IOS_ROUTER_FORCE_LOCAL` | `0` | Force iOS build/test routing to the local manager when scheduler safety checks allow it. |
+| `STUDIO_IOS_ROUTER_FORCE_WORKER` | empty | Force iOS build/test routing to a named eligible worker; capability, source-sync, simulator, and secret checks still apply. |
+| `STUDIO_IOS_ROUTER_BREAK_AFFINITY` | `0` | Ignore the current chain's preferred build/test executor for one routing decision and record the break reason. |
+| `STUDIO_IOS_ROUTER_CLEAR_AFFINITY` | `0` | Clear stale iOS build/test affinity before making the next routing decision. |
+| `STUDIO_IOS_ROUTER_REMOTE_SETUP_COST_S` | `120` | Scheduler estimate for remote sync/setup cost in offload economics. |
+| `STUDIO_IOS_ROUTER_RETRY_COST_S` | `180` | Scheduler estimate for retry cost when offloaded build/test work fails. |
+| `STUDIO_IOS_ROUTER_MIN_SAVINGS_S` | `120` | Minimum manager-wait savings required before offloading away from local. |
+| `STUDIO_IOS_ROUTER_OVERHEAD_BUDGET_MS` | `2000` | Routing-script overhead budget recorded in scheduler telemetry. |
 | `ACHILLES_UNATTENDED` | `0` | Set to `1` to pass `--dangerously-skip-permissions` for fully unattended overnight runs. |
 | `ACHILLES_AUTONOMOUS` | `0` (set to `1` automatically by the worker per task) | Tells the worker subprocess there is no user to answer clarifying questions; it must pick obvious defaults and document them in the debrief. Exported by `achilles-worker.sh` for every `claude -p` subprocess. Do not set manually unless testing. |
 | `ACHILLES_DISPLAY_NAME` | derived (see below) | Friendly name for panes / logs. Override per-shell, or pre-bake per-project via `~/.dev-studio/<project>/.display_name` (first non-comment line wins). |

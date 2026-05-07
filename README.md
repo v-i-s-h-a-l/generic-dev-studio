@@ -162,6 +162,7 @@ scripts/v2-role-contract.sh --resolve --role shipper         # resolve migrated 
 scripts/lint-v2-enforcement.sh --staged                     # A0.6 Studio v2 SPEC-derived substrate/profile gates
 scripts/lint-chain-workflow-docs.sh --staged                # keep chain launcher docs, usage text, and fixtures aligned
 scripts/v2-profile.sh --profile ios-turnip --list           # A6 project-profile operation resolver
+scripts/studio-ios-check-router.sh explain --operation build --chain my-chain --task-id T001 # local-first iOS build/test routing explanation
 scripts/studio-ios-artifact-janitor.sh sweep --base /tmp/studio-ios-artifacts --json # redacted iOS artifact retention cleanup
 scripts/v2-cutover.sh --status                              # A9 v1 archive / v2 traffic-switch status
 scripts/lint-build-release-message.sh --file draft.md --channel testflight # A11 build/release message shape + duplicate lint
@@ -251,6 +252,7 @@ scripts/                # multi-worker fleet (BETA)
   lint-v2-enforcement.sh # A0.6 Studio v2 SPEC-derived substrate/profile gates
   lint-chain-workflow-docs.sh # guards chain launcher docs, usage text, and regression fixtures
   v2-profile.sh          # A6 resolver/runner for profile-owned build/test/lint/release operations
+  studio-ios-check-router.sh # local-manager-first iOS build/test scheduler with affinity, overrides, dry-run explanations, and routing telemetry
   studio-ios-artifact-janitor.sh # retention records, pass cleanup, TTL sweeps, and redacted telemetry for scoped iOS build/test artifacts
   lint-build-release-message.sh # A11 build/release message shape + duplicate linter
   test-mode-pack.sh     # skill-testing driver — runs fixtures against mode packs (on-demand, spawns claude -p)

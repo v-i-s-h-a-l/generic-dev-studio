@@ -134,27 +134,52 @@ printf '%s\n' "$ATTEMPT" > "$ATTEMPTS_FILE" 2>/dev/null || true
 # Pre-flight dispatch decision (issue #137 — every build_check_* event
 # carries the studio.dispatch.* tags). LSP doesn't dispatch — empty
 # fragment for that mode keeps the start-event shape unchanged. For
-# full-green, run node-pick BEFORE the start emit so analytics can join
-# fallback rate to first-try success without a separate stream.
+# full-green, run the iOS check router BEFORE the start emit so analytics can
+# join local/offload reason classes to first-try success without a separate
+# stream.
 NODE_ID=""
 DISPATCH_FIELDS=""
 if [ "$MODE" = "full-green" ]; then
-  REASON_FILE=$(mktemp 2>/dev/null || printf '/tmp/dispatch-reason-%s' "$$")
-  : > "$REASON_FILE" 2>/dev/null || true
-  NODE_ID=$(STUDIO_DISPATCH_REASON_FILE="$REASON_FILE" \
-    "$SCRIPT_DIR/node-pick.sh" xcodebuild 2>/dev/null || echo local)
-  DISPATCH_REASON=$(tr -d '\n' < "$REASON_FILE" 2>/dev/null)
-  rm -f "$REASON_FILE" 2>/dev/null || true
-  [ -z "$DISPATCH_REASON" ] && DISPATCH_REASON="healthy"
-  # Best-effort xcode_version pull from the parity cache. Cache miss is
-  # routine on cold setups — emit empty rather than block on the lookup.
-  XCODE_VER=""
-  PARITY_CACHE="$(resolve_runtime_global)/node-parity-cache.json"
-  if [ -r "$PARITY_CACHE" ] && command -v jq >/dev/null 2>&1; then
-    XCODE_VER=$(jq -r --arg id "$NODE_ID" '.nodes[$id].xcodebuild.version // ""' "$PARITY_CACHE" 2>/dev/null)
+  ROUTE_FILE=$(mktemp 2>/dev/null || printf '/tmp/ios-route-%s.json' "$$")
+  ROUTE_ARGS=(pick --operation build --role xcodebuild --task-id "$TASK_ID" --worktree "$WORKTREE")
+  [ -n "${STUDIO_IOS_REQUIRED_XCODE_VERSION:-}" ] && ROUTE_ARGS+=(--xcode-version "$STUDIO_IOS_REQUIRED_XCODE_VERSION")
+  [ -n "${STUDIO_IOS_SIMULATOR_RUNTIME:-}" ] && ROUTE_ARGS+=(--simulator-runtime "$STUDIO_IOS_SIMULATOR_RUNTIME")
+  [ -n "${STUDIO_IOS_USER_BLOCKED:-}" ] && ROUTE_ARGS+=(--user-blocked "$STUDIO_IOS_USER_BLOCKED")
+  [ "${DRY_RUN:-0}" = "1" ] && ROUTE_ARGS+=(--dry-run)
+  if ! NODE_ID=$(STUDIO_IOS_ROUTING_DECISION_FILE="$ROUTE_FILE" "$SCRIPT_DIR/studio-ios-check-router.sh" "${ROUTE_ARGS[@]}"); then
+    printf 'task-build-gate: iOS routing decision failed\n' >&2
+    rm -f "$ROUTE_FILE" 2>/dev/null || true
+    exit 2
   fi
-  DISPATCH_FIELDS=$(printf ',"studio.dispatch.node":"%s","studio.dispatch.role":"xcodebuild","studio.dispatch.reason":"%s","studio.dispatch.xcode_version":"%s"' \
-    "$NODE_ID" "$DISPATCH_REASON" "$XCODE_VER")
+  ROUTE_JSON=$(cat "$ROUTE_FILE" 2>/dev/null || printf '{}')
+  rm -f "$ROUTE_FILE" 2>/dev/null || true
+  if [ "${DRY_RUN:-0}" != "1" ]; then
+    SYNC_BOOTSTRAP_NODE=$(printf '%s\n' "$ROUTE_JSON" | jq -r 'select(.source_sync_remediation.required == true) | .source_sync_remediation.candidate_executor // empty' 2>/dev/null)
+    if [ -n "$SYNC_BOOTSTRAP_NODE" ] && [ "$SYNC_BOOTSTRAP_NODE" != "local" ]; then
+      # shellcheck source=lib-source-sync.sh
+      . "$SCRIPT_DIR/lib-source-sync.sh"
+      if sourcesync_push "$SYNC_BOOTSTRAP_NODE" "$WORKTREE" >/dev/null; then
+        ROUTE_FILE=$(mktemp 2>/dev/null || printf '/tmp/ios-route-%s.json' "$$")
+        if ! NODE_ID=$(STUDIO_IOS_ROUTING_DECISION_FILE="$ROUTE_FILE" "$SCRIPT_DIR/studio-ios-check-router.sh" "${ROUTE_ARGS[@]}"); then
+          printf 'task-build-gate: iOS routing decision failed after source-sync bootstrap\n' >&2
+          rm -f "$ROUTE_FILE" 2>/dev/null || true
+          exit 2
+        fi
+        ROUTE_JSON=$(cat "$ROUTE_FILE" 2>/dev/null || printf '{}')
+        rm -f "$ROUTE_FILE" 2>/dev/null || true
+      else
+        printf 'task-build-gate: source-sync bootstrap to %s failed; keeping initial routing decision\n' "$SYNC_BOOTSTRAP_NODE" >&2
+      fi
+    fi
+  fi
+  DISPATCH_REASON=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.reason_class // "routing_unknown"' 2>/dev/null)
+  XCODE_VER=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.selected_candidate.predicates.xcode_toolchain.xcode_version // ""' 2>/dev/null)
+  MANAGER_SAVINGS_S=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.manager_savings_s // 0' 2>/dev/null)
+  REMOTE_LATENCY_COST_S=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.remote_latency_cost_s // 0' 2>/dev/null)
+  RETRY_COST_S=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.retry_cost_s // 0' 2>/dev/null)
+  USER_BLOCKED_JSON=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.user_blocked // false' 2>/dev/null)
+  DISPATCH_FIELDS=$(printf ',"studio.dispatch.node":"%s","studio.dispatch.role":"xcodebuild","studio.dispatch.reason":"%s","studio.dispatch.xcode_version":"%s","studio.dispatch.manager_savings_s":%s,"studio.dispatch.remote_latency_cost_s":%s,"studio.dispatch.retry_cost_s":%s,"studio.dispatch.user_blocked":%s' \
+    "$NODE_ID" "$DISPATCH_REASON" "$XCODE_VER" "$MANAGER_SAVINGS_S" "$REMOTE_LATENCY_COST_S" "$RETRY_COST_S" "$USER_BLOCKED_JSON")
 fi
 
 # #270 — populated by the remote-dispatch branch via STUDIO_DISPATCH_UUID_FILE
@@ -304,7 +329,7 @@ fi
 # carry studio.dispatch.* tags. The lock is scoped per node: two workers
 # dispatching to `mini` still serialize on the mini's cache + simulator
 # resources; a laptop-local build runs in parallel with a mini build.
-# #215 — when node-pick returns the current machine (either synthetic
+# #215 — when the router returns the current machine (either synthetic
 # `local` or a registered self-id like `laptop`), run inline. Source-sync
 # + SSH would loop back through the network stack, and ssh to self is not
 # guaranteed (no sshd at home is the common case).
