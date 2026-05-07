@@ -1181,7 +1181,7 @@ append_phase_review_feedback() {
 
 run_phase_review_gate() {
   local kind="$1" boundary_id="$2" artifact="$3" chain_run_id="$4" issue_run_id="$5" chain_name="$6" issue="$7"
-  local review_host review_file review_meta review_rc verdict feedback review_started_at review_duration
+  local review_host actual_review_host fallback_from fallback_to fallback_reason review_file review_meta review_rc verdict feedback review_started_at review_duration
   review_host="${STUDIO_REVIEW_HOST:-claude-reviewer}"
   review_file="$PHASE_REVIEW_ROOT/$boundary_id-$kind-review.md"
 
@@ -1208,13 +1208,31 @@ run_phase_review_gate() {
 
   verdict=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_VERDICT=//p' | tail -1)
   [ -n "$verdict" ] || verdict="ambiguous"
+  actual_review_host=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_HOST=//p' | tail -1)
+  [ -n "$actual_review_host" ] || actual_review_host="$review_host"
+  fallback_from=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_FALLBACK_FROM=//p' | tail -1)
+  fallback_to=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_FALLBACK_TO=//p' | tail -1)
+  fallback_reason=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_FALLBACK_REASON=//p' | tail -1)
   feedback="[]"
   if [ "$kind" = "outcome" ] && [ -f "$review_file" ]; then
     feedback=$(compact_phase_review_feedback_json "$review_file")
   fi
-  record_phase_review "$boundary_id" "$kind" "$verdict" "$artifact" "$review_file" "$review_host" "$chain_run_id" "$issue_run_id" "$feedback"
+  record_phase_review "$boundary_id" "$kind" "$verdict" "$artifact" "$review_file" "$actual_review_host" "$chain_run_id" "$issue_run_id" "$feedback"
   emit_chain_event chain_phase_review_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" "$verdict" "$review_duration" \
-    "$(jq -cn --arg kind "$kind" --arg boundary_id "$boundary_id" --arg verdict "$verdict" --arg review_host "$review_host" --arg artifact "$artifact" --arg review "$review_file" --argjson feedback "$feedback" '{kind:$kind, boundary_id:$boundary_id, verdict:$verdict, review_host:$review_host, artifact:$artifact, review:$review, feedback:$feedback}')"
+    "$(jq -cn \
+      --arg kind "$kind" \
+      --arg boundary_id "$boundary_id" \
+      --arg verdict "$verdict" \
+      --arg requested_review_host "$review_host" \
+      --arg review_host "$actual_review_host" \
+      --arg fallback_from "$fallback_from" \
+      --arg fallback_to "$fallback_to" \
+      --arg fallback_reason "$fallback_reason" \
+      --arg artifact "$artifact" \
+      --arg review "$review_file" \
+      --argjson feedback "$feedback" \
+      '{kind:$kind, boundary_id:$boundary_id, verdict:$verdict, requested_review_host:$requested_review_host, review_host:$review_host, artifact:$artifact, review:$review, feedback:$feedback}
+       | if $fallback_from != "" then . + {fallback_from:$fallback_from, fallback_to:$fallback_to, fallback_reason:$fallback_reason} else . end')"
 
   case "$verdict" in
     clean)
