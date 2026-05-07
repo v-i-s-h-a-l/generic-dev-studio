@@ -55,10 +55,12 @@ fail() { errs=$((errs + 1)); printf 'lint-commit-message: ERROR: %s\n' "$1" >&2;
 
 change_type=""
 studio_host=""
+coauthored_by_seen=0
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
     Change-Type:*) change_type=$(trim "${line#Change-Type:}") ;;
     Studio-Host:*) studio_host=$(trim "${line#Studio-Host:}") ;;
+    Co-authored-by:*) coauthored_by_seen=1 ;;
   esac
 done < "$COMMIT_FILE"
 
@@ -105,7 +107,7 @@ if [ -z "$studio_host" ]; then
   fi
 fi
 
-if [ "$warns" -gt 0 ] && [ "$errs" -eq 0 ]; then
+if [ "$coauthored_by_seen" -eq 1 ] && [ -z "$studio_host" ] && [ "$errs" -eq 0 ]; then
   warn "Co-authored-by is for human-visible credit and is not used for host attribution."
 fi
 
