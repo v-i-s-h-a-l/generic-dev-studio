@@ -192,7 +192,7 @@ packs:
     owner: reviewer
     summary_path: core/v2/rule-packs/summaries/review.md
     full_doc_path: REVIEW.md
-    metadata_path: core/v2/reviewer/rules
+    metadata_path: core/v2/rule-packs/review/pack.yaml
     applicability:
       any_of: [role_reviewer, phase_review, mode_review]
       all_of: []
