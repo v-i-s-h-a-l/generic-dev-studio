@@ -1,0 +1,37 @@
+# Commit discipline and release-taxonomy chain from the 2026-05-07 studio session.
+#
+# Discover:
+#   scripts/studio-chain-runner.sh --discover commit-discipline-taxonomy
+#
+# Dry-run:
+#   scripts/studio-chain-runner.sh commit-discipline-taxonomy --dry-run
+#
+# Reviewed dry-run:
+#   scripts/studio-chain-reviewed.sh commit-discipline-taxonomy --dry-run
+#
+# Manager front door:
+#   /dev-studio manager work-chain commit-discipline-taxonomy
+#
+# Scope:
+# - #689 is the umbrella and is intentionally excluded; the runner closes leaf
+#   issues after reviewed PR merges.
+# - #694 is a PM-surface reader bug discovered during verification and is
+#   intentionally outside this chain.
+# - #690 defines the policy vocabulary. #691, #692, and #693 depend on that
+#   vocabulary but can proceed independently after #690 lands.
+
+schema_version: 1
+chains:
+  - name: commit-discipline-taxonomy
+    base: main
+    branch: feature/commit-discipline-taxonomy
+    host: auto
+    phase_review: required
+    issues:
+      - 690
+      - number: 691
+        dependencies: [690]
+      - number: 692
+        dependencies: [690]
+      - number: 693
+        dependencies: [690]
