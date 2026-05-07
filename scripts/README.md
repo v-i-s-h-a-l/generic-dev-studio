@@ -80,7 +80,7 @@ scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show the supervisor's next action without mutating state
 scripts/prd-intake-normalize.sh prd.md                                     # normalize PRD/transcript/issue brief language into a requirement packet
 scripts/prd-task-graph-synthesize.sh packet.md                             # synthesize deterministic scheduler graph; flags missing prereqs and write races
-scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from ~/.dev-studio/generic-dev-studio/chain-runs/<run_id>/state.json
+scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from state.json; reconciles completed worker summaries before scheduling dependents
 scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
 scripts/studio-chain-telemetry-digest.sh --days 7                          # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run telemetry
@@ -89,7 +89,7 @@ scripts/studio-checkpoint.sh create --role worker --goal "..." --next "..." # co
 scripts/studio-checkpoint.sh resume --latest --role worker                  # load manifest.json + context.md first, then inspect drift lazily
 scripts/codex-worker-exec.sh "<prompt>"                                    # internal Codex worker launcher: workspace-write + ~/.dev-studio + ephemeral + no prompts
 # Chain dry-runs show the selected git metadata strategy; sandboxed hosts use issue-local clones so commits stay inside the worker root.
-# Chain worktrees/results are namespaced under the run UUID; resume continues only the selected run and surfaces skipped/integrated/pending issue semantics.
+# Chain worktrees/results are namespaced under the run UUID; resume continues only the selected run, reconciles stale running issues from completed private summaries after required outcome review, and surfaces skipped/integrated/pending issue semantics.
 # Chain startup sweeps stale state locks, old temporary run roots, and oversized private artifacts; tune with STUDIO_CHAIN_TMP_RETENTION_DAYS, STUDIO_CHAIN_RUN_RETENTION_DAYS, and STUDIO_CHAIN_ARTIFACT_MAX_BYTES.
 # Chain reports include compact efficiency metrics, test/lint/build outcomes, typed halt records, and decision escrow when automation pauses or continues on a low-risk default.
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
