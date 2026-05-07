@@ -167,7 +167,7 @@ This rule applies retroactively: when touching any doc surface, if existing cros
 
 ## GitHub CLI home normalization (hard rule)
 
-Assistant-initiated GitHub CLI calls in this repo MUST go through `scripts/studio-gh.sh ...`, not raw `gh ...`. Codex and other hosts can launch with synthetic `HOME` values; `scripts/studio-gh.sh` sources `scripts/lib-paths.sh` and uses `with_login_home_for_github` so `gh` sees the user's real login keychain/config. Inside scripts, source `scripts/lib-paths.sh` and wrap GitHub/PR/issue mutations or remote credential probes with `with_login_home_for_github gh ...` or `with_login_home_for_github git ...`.
+Assistant-initiated GitHub CLI calls in this repo MUST go through `scripts/studio-gh.sh ...`, not raw `gh ...`. Codex and other hosts can launch with synthetic `HOME` values; `scripts/studio-gh.sh` sources `scripts/lib-studio-context.sh` and runs `gh` with `HOME` set from the context-backed `github_home`. Inside scripts, migrated GitHub/auth surfaces should source `scripts/lib-studio-context.sh` and run `gh` or credential-probing `git` under `github_home`; legacy call sites use `with_login_home_for_github` only until their context migration lands.
 
 User-controlled override for intentional isolation tests: `STUDIO_BYPASS_PARENT_HOME_FLIP=1`. Assistants must not set it to bypass a failing GitHub operation.
 

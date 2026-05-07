@@ -146,9 +146,10 @@ session to a child process, worker, reviewer, release helper, or host-native
 subagent.
 
 GitHub CLI calls initiated by assistants route through `scripts/studio-gh.sh` or
-the v2 successor wrapper. Scripts that perform GitHub mutations or remote
-credential probes use login-home normalization. Raw `gh` is not a load-bearing
-path.
+the v2 successor wrapper. Migrated GitHub mutations and remote credential
+probes use the context-backed `github_home`; legacy login-home normalization is
+only a bridge for call sites awaiting migration. Raw `gh` is not a
+load-bearing path.
 
 Release actions are higher-risk boundaries. TestFlight, App Store, Slack,
 signing, and GitHub release mutation scopes are distinct. Fallback from an
