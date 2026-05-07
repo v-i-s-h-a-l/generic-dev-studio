@@ -4,11 +4,11 @@ description: YAML shape for TestFlight / App Store release artifacts under plans
 type: reference
 ---
 
-# Release Schema (`release@1.3.0`)
+# Release Schema (`release@1.4.0`)
 
 Per-release artifact written to `~/.dev-studio/<project>/plans/releases/<release-id>.yaml`. One file per build submitted to a release channel (TestFlight or App Store). Authored by `/achilles push-tf` or `/achilles app-store`; updated by `scripts/appstore-watch.sh` as the release transitions states.
 
-Version 1.3.0 is non-breaking — adds `withdrawn` and `superseded` lifecycle states plus optional replacement-lineage fields for withdrawn-build hotfixes and post-release corrections. `min_reader: 1.0.0` keeps the entire active fleet compatible.
+Version 1.4.0 is non-breaking - adds an explicit `approved` lifecycle state plus approval metadata (`approved_at`, `approved_by`, `approval_review_head_sha`, `approval_review_comment_url`) so the release artifact can carry the studio approval gate without a parallel file. Existing 1.3.0 artifacts remain readable because the new fields are optional and default to `null`. `min_reader: 1.0.0` keeps the entire active fleet compatible.
 
 Release state transitions governed by `state-machines/release-lifecycle.md` (landed alongside this schema in Phase 2.6 Commit B).
 
@@ -22,7 +22,7 @@ schema_version:
   deprecated_at: null
 id: 0190f52a-9000-7f01-8aaa-77fe8fa99bbb        # UUIDv7
 channel: testflight                              # testflight | appstore
-state: submitted                                 # drafted | submitted | in-review | pending-developer-release | released | withdrawn | superseded | rejected | cancelled | archived
+state: submitted                                 # drafted | submitted | approved | in-review | pending-developer-release | released | withdrawn | superseded | rejected | cancelled | archived
 build_number: 3047
 version: "1.12.0"
 tag: "TF-3047"                                   # GitHub release tag
@@ -30,6 +30,10 @@ commit_sha: "a1b2c3d4e5f60718293a4b5c6d7e8f90"
 submitted_at: 2026-04-22T14:00:00Z
 last_state_checked_at: 2026-04-22T14:32:11Z
 released_at: null
+approved_at: null
+approved_by: null
+approval_review_head_sha: null
+approval_review_comment_url: null
 replaced_by: null                                # 1.1.0; release-id of the build that replaced this one (cancel→replace flow); null otherwise
 cancelled_reason: null                           # 1.1.0; free-text reason populated when state == cancelled; null otherwise
 replaces: null                                   # 1.3.0; release-id this build replaces; null for first submission in a lineage
@@ -75,6 +79,10 @@ notes: null
 | `submitted_at` | RFC3339 UTC | yes | When the build was submitted to ASC. |
 | `last_state_checked_at` | RFC3339 UTC \| null | yes | Null until first watcher poll. |
 | `released_at` | RFC3339 UTC \| null | yes | Set when state transitions to `released`. |
+| `approved_at` | RFC3339 UTC \| null | no (1.4.0) | Set when state transitions to `approved`; null until the studio approval gate passes. |
+| `approved_by` | string \| null | no (1.4.0) | Writer identity that recorded the approval transition. Use the release-manager or operator handle that marked the release approved. |
+| `approval_review_head_sha` | string \| null | no (1.4.0) | HEAD SHA reviewed by the approval gate. |
+| `approval_review_comment_url` | string \| null | no (1.4.0) | Canonical URL for the review-gate comment, or an equivalent stable audit reference. |
 | `tasks` | array of UUIDv7 | yes | Task-ids shipped in this release. Bidirectional with `task.links.release`. |
 | `reviews` | array of UUIDv7 | yes | Pre-release review artifacts (e.g. release-gate reviews). |
 | `github_pr` | object \| null | no | App Store source PR opened from the submitted branch to `main`; merged with a merge commit only after `READY_FOR_SALE`. Null for TestFlight and for legacy artifacts. |
@@ -90,30 +98,34 @@ notes: null
 
 ### `testflight`
 
-External / internal testing. State machine typically: `drafted → submitted → released` (TestFlight processes builds without review). `appstore_state` field from ASC is still meaningful (build-processing states — `PROCESSING`, `INVALID_BINARY`, etc.).
+External / internal testing. State machine typically: `drafted → submitted → approved → released` (TestFlight processes builds without formal App Store review once the studio approval gate has passed). `appstore_state` field from ASC is still meaningful (build-processing states — `PROCESSING`, `INVALID_BINARY`, etc.).
 
 ### `appstore`
 
-Production submission. Full state machine including `in-review`, `pending-developer-release`, `rejected`. `scripts/appstore-watch.sh` polls and drives state transitions.
+Production submission. Full state machine including `approved`, `in-review`, `pending-developer-release`, `rejected`. `scripts/appstore-watch.sh` polls and drives state transitions.
 
 ## Lifecycle
 
 See `state-machines/release-lifecycle.md`. Summary:
 
 ```
-drafted → submitted → in-review → pending-developer-release → released
+drafted → submitted → approved → in-review → pending-developer-release → released
                                                                 → superseded
                                                                 → archived
 submitted → withdrawn  (developer withdrew before approval; terminal for that artifact)
+submitted → approved   (release-manager records the studio approval gate)
+approved → released    (TestFlight may skip formal App Store review after approval)
                                 → rejected
 any non-terminal → cancelled
-submitted → released   (TestFlight processes without formal review)
+approved → in-review   (App Store review begins after studio approval)
 any terminal → archived (compact sweep)
 ```
 
 Transitions emit `release_state_changed` (new event catalog entry landing alongside the state machine).
 
 ## Replacement lineage
+
+`approved` is the studio approval gate. It is written by the release-manager after the approval review comment records the green light, and it is distinct from Apple's own `pending-developer-release` wording.
 
 Use `withdrawn` for a build the developer intentionally pulls before approval. This is distinct from `rejected` (Apple rejected it) and `cancelled` (local/user abort before the release train reached ASC terminal semantics). A withdrawn artifact remains audit-visible; the replacement artifact sets `replaces: <withdrawn-release-id>`, and the withdrawn artifact sets `superseded_by: <replacement-release-id>`.
 
@@ -157,6 +169,7 @@ Active watcher state files (`pending-appstore-review.json`) migrate into the per
 
 | Version | Landed | Changes |
 |---|---|---|
+| 1.4.0 | 2026-05-07 | Non-breaking: add `approved` plus approval metadata (`approved_at`, `approved_by`, `approval_review_head_sha`, `approval_review_comment_url`) so release artifacts can carry the studio approval gate in-file (#700). |
 | 1.3.0 | 2026-05-06 | Non-breaking: add `withdrawn` and `superseded` states plus optional `replaces` / `superseded_by` lineage fields for withdrawn-build hotfixes and released-build corrections (#190). |
 | 1.2.0 | 2026-05-05 | Non-breaking: add optional `github_pr`, `asc_metadata.finalize_pr_merged`, and `slack.pr_reply_ts` fields for App Store submission PR lifecycle (#164). |
 | 1.1.0 | 2026-04-27 | Non-breaking: add optional `replaced_by` (release-id pointer) and `cancelled_reason` (free text) fields for the cancel-and-replace flow that Nabu (#214) consumes (#247 Stage C deliverable 2). |

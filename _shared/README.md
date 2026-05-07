@@ -35,7 +35,7 @@ Post Phase 2.5 Commit C, layout is frozen: later phases land new files in existi
 | `task-lifecycle.md` | Proposed → briefed → dispatched → in-progress → reviewed → merged → verified / rejected → archived. |
 | `brief-lifecycle.md` | Draft → ready → dispatched → debriefed → superseded / archived. |
 | `review-lifecycle.md` | Pending → in-progress → approved / flagged / blocked → acknowledged. |
-| `release-lifecycle.md` | Drafted → submitted → in-review → pending-developer-release → released / rejected / cancelled → archived. Phase 2.6. |
+| `release-lifecycle.md` | Drafted → submitted → approved → in-review → pending-developer-release → released / rejected / cancelled → archived. |
 | `feedback-lifecycle.md` | Ingested → triaged → linked → resolved / dismissed → archived. Minimal landing in 2.6; knowledge-layer expansion in 2.7. |
 
 ## `schemas/` — structured data shapes

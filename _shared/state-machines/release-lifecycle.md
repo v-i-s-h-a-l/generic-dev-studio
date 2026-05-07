@@ -14,8 +14,9 @@ Every release routed through the studio — TestFlight or App Store — traverse
 |---|---|---|
 | `drafted` | Release artifact created but not yet submitted to ASC. | Achilles `push-tf` / `app-store` modes pre-upload. |
 | `submitted` | Build uploaded to App Store Connect; ASC processing begins. | Achilles release modes post-upload. |
+| `approved` | Studio approval recorded for the submitted release. This is the release-manager gate, not Apple review. | `release-manager` after the approval review gate records the green light and approval metadata. |
 | `in-review` | Apple has started formal review (App Store channel only). | `scripts/appstore-watch.sh` on ASC state `IN_REVIEW`. |
-| `pending-developer-release` | Apple approved; awaiting developer release (App Store channel only). This is not live and must not merge the source PR. | `scripts/appstore-watch.sh` on ASC state `PENDING_DEVELOPER_RELEASE`. |
+| `pending-developer-release` | Apple has approved the submission in ASC; awaiting the developer release action. This is the Apple holdpoint, not the studio approval gate. | `scripts/appstore-watch.sh` on ASC state `PENDING_DEVELOPER_RELEASE`. |
 | `released` | Live on the channel. TestFlight: processed + available to testers. App Store: shipped to production. App Store source PR merge and GitHub release publication happen only here. | `scripts/appstore-watch.sh` on ASC state `READY_FOR_SALE` (App Store) or `PROCESSED` for TestFlight. |
 | `withdrawn` | Developer withdrew the submitted build before approval or release. The artifact is terminal but remains the audit anchor for a replacement. | Explicit withdrawal by release-manager/user after ASC submission. |
 | `superseded` | Previously released artifact preserved for audit after a later release replaces the active pointer. | Release-manager correction path after the replacement is live. |
@@ -27,8 +28,9 @@ Every release routed through the studio — TestFlight or App Store — traverse
 
 ```
 drafted               → submitted                 : build uploaded to ASC.
-submitted             → in-review                 : ASC state IN_REVIEW (App Store only).
-submitted             → released                  : ASC state PROCESSED / READY_FOR_SALE.
+submitted             → approved                  : release-manager records the studio approval gate.
+approved              → in-review                 : ASC state IN_REVIEW (App Store only).
+approved              → released                  : ASC state PROCESSED / READY_FOR_SALE (TestFlight only).
 submitted             → withdrawn                 : developer withdrew before approval/release.
 in-review             → pending-developer-release : ASC state PENDING_DEVELOPER_RELEASE.
 in-review             → rejected                  : ASC state DEVELOPER_REJECTED / REJECTED.
@@ -45,14 +47,19 @@ superseded            → archived                  : compact sweep.
 
 **Channel-specific notes:**
 
-- **TestFlight channel** typically transitions `drafted → submitted → released`. ASC may emit build-processing states (`PROCESSING`, `INVALID_BINARY`) during `submitted`; these stay inside `submitted` until a terminal TF state is observed.
-- **App Store channel** has the full review flow. `pending-developer-release` is the holdpoint where the release awaits the developer to push the "Release" button; it is not a merge signal. `READY_FOR_SALE` is the first unambiguous live signal and triggers the source PR merge with `gh pr merge --merge`.
+- **TestFlight channel** typically transitions `drafted → submitted → approved → released`. ASC may emit build-processing states (`PROCESSING`, `INVALID_BINARY`) during `submitted`; these stay inside `submitted` until a terminal TF state is observed.
+- **App Store channel** has the full review flow. `approved` records the studio gate before App Store review begins. `pending-developer-release` is the holdpoint where ASC has approved the build and the developer must push the "Release" button; it is not a merge signal. `READY_FOR_SALE` is the first unambiguous live signal and triggers the source PR merge with `gh pr merge --merge`.
 
 ## App Store PR Lifecycle
 
 `/fullSendToAppStore` creates or reuses a PR from the submitted source branch to `main` immediately after the watcher marker is armed. PR creation is idempotent per source branch. If a different source branch already has a pending App Store PR, the submission continues and the user is notified that a separate PR is being raised.
 
 The watcher keeps the PR open through `PENDING_DEVELOPER_RELEASE`. On `READY_FOR_SALE`, it publishes the draft GitHub release, updates the Slack thread link from the PR URL to the GitHub release URL when possible, includes `release_notes_summary` in the final Slack reply when the marker has one, then merges the PR with a merge commit. If `gh pr merge --merge` fails, the watcher posts `PR merge failed — conflicts detected. Manual resolution needed.` to the Slack thread and stops without attempting a rebase.
+
+`submitted → approved` owns the studio approval side effects:
+
+- Release-manager writes `approved_at`, `approved_by`, `approval_review_head_sha`, and `approval_review_comment_url` into the release artifact.
+- The approval review comment must identify the gate result and the release head SHA that was reviewed.
 
 ## Required fields per transition event
 
@@ -100,8 +107,9 @@ Announcement continuity: update the existing announcement parent/thread when a b
 stateDiagram-v2
   [*] --> drafted
   drafted --> submitted: upload complete
-  submitted --> in_review: ASC IN_REVIEW
-  submitted --> released: TF PROCESSED / AS READY_FOR_SALE
+  submitted --> approved: studio approval gate recorded
+  approved --> in_review: ASC IN_REVIEW
+  approved --> released: TF PROCESSED / AS READY_FOR_SALE
   submitted --> withdrawn: developer withdrew
   in_review --> pending_developer_release: ASC PENDING_DEVELOPER_RELEASE
   in_review --> rejected: ASC DEVELOPER_REJECTED
