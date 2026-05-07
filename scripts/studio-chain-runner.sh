@@ -2992,7 +2992,7 @@ explain_plan() {
     "- Checkpoint automation: `\(.checkpoint // "off")`\n" +
     "- Worker pool: `\(.worker_pool)`\n" +
     "- Issue scheduler: `dependency-ready nodes up to worker_pool; scalar issue lists preserve manifest order`\n" +
-    "- Rule-pack status: `\(.rule_pack_resolution.status // "not-resolved")`; selected `\((.rule_pack_resolution.selected_packs // []) | length)`, skipped `\((.rule_pack_resolution.skipped_packs // []) | length)`, estimated summary tokens `\(.rule_pack_resolution.estimated_context_cost.summary_tokens_estimated // "unknown")`\n" +
+    "- Rule-pack status: `\(.rule_pack_resolution.status // "not-resolved")`; selected `\((.rule_pack_resolution.selected_packs // []) | length)`, skipped `\((.rule_pack_resolution.skipped_packs // []) | length)`, estimated summary tokens `\(.rule_pack_resolution.estimated_context_cost.summary_tokens_estimated // "unknown")`, skipped full-doc tokens `\(.rule_pack_resolution.context_budget.skipped_full_doc_tokens_estimated // "unknown")`, cold-context delta `\(.rule_pack_resolution.context_budget.cold_context_delta_tokens_estimated // "unknown")`\n" +
     "- Planned PR: base `\(.base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
     "| Issue | Depends On | State | Status | Rule Packs | Issue-run UUID | Branch | Worktree |\n|---:|---|---|---|---:|---|---|---|\n" +
     ([.issues[] | "| #\(.number) \(.title) | \(if ((.dependencies // []) | length) == 0 then "-" else ((.dependencies // []) | map("#" + tostring) | join(", ")) end) | \(.state) | \(.status) | \((.rule_pack_resolution.selected_packs // []) | length) | `\(.issue_run_id)` | `\(.issue_branch)` | `\(.issue_worktree)` |"] | join("\n")) +

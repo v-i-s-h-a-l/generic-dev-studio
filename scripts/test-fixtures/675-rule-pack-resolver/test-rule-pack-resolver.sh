@@ -62,6 +62,10 @@ jq -e '
   and ([.selected_packs[] | select(.id == "review" and .metadata_path == "core/v2/rule-packs/review/pack.yaml")] | length == 1)
   and ([.warnings[] | select(.pack_id == "missing-advisory")] | length == 1)
   and (.estimated_context_cost.summary_tokens_estimated > 0)
+  and (.estimated_context_cost.summary_bytes > 0)
+  and (.estimated_context_cost.skipped_full_doc_tokens_estimated > 0)
+  and (.context_budget.surface == "rule-pack-resolution")
+  and (.timing.llm_reasoning_s == null)
 ' "$TMPROOT/resolve.json" >/dev/null || {
   cat "$TMPROOT/resolve.json" >&2
   fail "resolver did not select explicit, optional, overlay, and advisory packs"
@@ -121,6 +125,7 @@ grep -q '### Rule Packs' "$TMPROOT/dry-run.out" || fail "dry-run did not print r
 grep -q 'privacy | selected' "$TMPROOT/dry-run.out" || fail "dry-run did not list selected required pack"
 grep -q 'review | selected' "$TMPROOT/dry-run.out" || fail "dry-run did not list selected optional pack"
 grep -q 'estimated summary tokens' "$TMPROOT/dry-run.out" || fail "dry-run did not list estimated context cost"
+grep -q 'cold-context delta' "$TMPROOT/dry-run.out" || fail "dry-run did not list context-budget delta"
 grep -q 'missing-advisory | warning' "$TMPROOT/dry-run.out" || fail "dry-run did not list advisory warning"
 
 if PATH="$BIN:$PATH" HOME="$HOME_DIR" "$RUNNER" "$missing_required" --dry-run >"$TMPROOT/dry-run-blocked.out" 2>&1; then

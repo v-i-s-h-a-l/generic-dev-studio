@@ -74,6 +74,21 @@ summaries target 180 estimated tokens each, and the selected summary bundle
 targets 1200 estimated tokens before full docs. Token estimates use `chars / 4`
 rounded up.
 
+Resolver output extends the Studio v2 context-budget surface instead of adding a
+parallel unit. Each `studio-v2-rule-pack-resolution` must include:
+
+- `selected_packs[].summary_bytes` and `summary_tokens_estimated`.
+- `selected_packs[].full_doc_bytes`, `full_doc_tokens_estimated`, and
+  `full_doc_loaded`.
+- `skipped_packs[].full_doc_bytes` and `full_doc_tokens_estimated`.
+- `context_budget.selected_summary_*`,
+  `context_budget.skipped_full_doc_*`,
+  `context_budget.full_doc_escalation_*`, and
+  `context_budget.cold_context_delta_tokens_estimated`.
+- `timing.control_plane_rule_selection_s`, with LLM reasoning and task
+  execution left `null` because they occur outside deterministic resolution.
+- `public_summary`, containing pack ids and aggregate token counts only.
+
 Load a full doc only when one of these triggers fires:
 
 - A blocking or ask-tier decision depends on exact wording.

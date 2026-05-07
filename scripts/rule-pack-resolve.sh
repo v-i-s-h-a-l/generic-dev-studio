@@ -16,6 +16,9 @@ MODE="chain_runner"
 PHASE="implementation"
 CLASSIFIER_JSON="{}"
 CATALOG="$REPO_ROOT/core/v2/rule-packs/catalog.yaml"
+CONTEXT_BUDGET_MANIFEST="$REPO_ROOT/core/v2/context-budget/manifest.json"
+RESOLVE_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+SECONDS=0
 
 usage() {
   cat >&2 <<'EOF'
@@ -321,7 +324,8 @@ jq -n \
           source:(if ($disabled | index($pack.id)) then "manifest" else "applicability" end),
           reason:(if ($disabled | index($pack.id)) then "disabled_by_manifest" else "applicability_predicates_not_matched" end),
           status:$pack.status,
-          summary_path:$pack.summary_path
+          summary_path:$pack.summary_path,
+          full_doc_path:$pack.full_doc_path
         }
     ]) as $skipped
   | ($missing_required + $inactive_required + $missing_summary_required) as $blockers
@@ -343,7 +347,47 @@ jq -n \
         per_pack_summary_budget_tokens:($cat.budget_policy.per_pack_summary_budget_tokens // null),
         selected_summary_bundle_budget_tokens:($cat.budget_policy.selected_summary_bundle_budget_tokens // null),
         selected_pack_count:($selected_raw | length),
-        summary_tokens_estimated:null
+        summary_bytes:null,
+        summary_tokens_estimated:null,
+        selected_full_doc_bytes:0,
+        selected_full_doc_tokens_estimated:0,
+        skipped_full_doc_bytes:null,
+        skipped_full_doc_tokens_estimated:null,
+        cold_context_all_full_doc_bytes:null,
+        cold_context_all_full_doc_tokens_estimated:null,
+        cold_context_delta_tokens_estimated:null
+      },
+      context_budget:{
+        surface:"rule-pack-resolution",
+        estimator:($cat.budget_policy.token_estimate // "chars_div_4_rounded_up"),
+        role_budget_tokens:null,
+        warning_threshold_tokens:null,
+        selected_summary_bytes:null,
+        selected_summary_tokens_estimated:null,
+        skipped_full_doc_bytes:null,
+        skipped_full_doc_tokens_estimated:null,
+        full_doc_escalation_bytes:0,
+        full_doc_escalation_tokens_estimated:0,
+        cold_context_all_full_doc_bytes:null,
+        cold_context_all_full_doc_tokens_estimated:null,
+        cold_context_delta_tokens_estimated:null,
+        status:"unmeasured",
+        warnings:[]
+      },
+      timing:{
+        control_plane_rule_selection_s:null,
+        llm_reasoning_s:null,
+        task_execution_s:null,
+        boundary:"resolver measures deterministic rule selection only; LLM reasoning and task execution are outside this control-plane process"
+      },
+      public_summary:{
+        selected_pack_ids:($selected_raw | map(.id)),
+        skipped_pack_ids:($skipped | map(.id)),
+        warnings:[],
+        selected_summary_tokens_estimated:null,
+        skipped_full_doc_tokens_estimated:null,
+        full_doc_escalation_tokens_estimated:0,
+        cold_context_delta_tokens_estimated:null
       },
       halt:(if ($blockers | length) > 0 then {
         reason_id:"rule_pack_resolution_blocked",
@@ -360,32 +404,179 @@ jq -n \
 
 cp "$TMPROOT/result.base.json" "$TMPROOT/result.json"
 
-# jq cannot stat files portably, so fill summary estimates in shell while keeping
-# the JSON shape deterministic.
+# jq cannot stat files portably, so fill byte/token estimates in shell while
+# keeping the JSON shape deterministic.
+summary_bytes=0
 summary_tokens=0
+selected_full_doc_bytes=0
+selected_full_doc_tokens=0
+skipped_full_doc_bytes=0
+skipped_full_doc_tokens=0
+cold_context_all_full_doc_bytes=0
+cold_context_all_full_doc_tokens=0
 missing_selected_paths="$TMPROOT/missing-required-paths"
 missing_optional_paths="$TMPROOT/missing-optional-paths"
+pack_metrics="$TMPROOT/pack-metrics.jsonl"
 : >"$missing_selected_paths"
 : >"$missing_optional_paths"
-while IFS=$'\t' read -r pack_id requirement path; do
-  [ -n "$path" ] || continue
-  if [ -f "$REPO_ROOT/$path" ]; then
-    chars=$(wc -c < "$REPO_ROOT/$path" | tr -d ' ')
-    summary_tokens=$((summary_tokens + ((chars + 3) / 4)))
-  else
-    case "$requirement" in
-      optional|advisory)
-        printf '%s\t%s\t%s\n' "$pack_id" "$requirement" "$path" >>"$missing_optional_paths"
-        ;;
-      *)
-        printf '%s\t%s\t%s\n' "$pack_id" "$requirement" "$path" >>"$missing_selected_paths"
-        ;;
-    esac
-  fi
-done < <(jq -r '.selected_packs[] | [.id, (.requirement // "auto"), (.summary_path // "")] | @tsv' "$TMPROOT/result.json")
+while IFS=$'\t' read -r pack_id decision requirement summary_path full_doc_path; do
+  [ -n "$pack_id" ] || continue
+  summary_path="${summary_path:-}"
+  full_doc_path="${full_doc_path:-}"
+  pack_summary_bytes=0
+  pack_summary_tokens=0
+  pack_full_doc_bytes=0
+  pack_full_doc_tokens=0
 
-jq --argjson tokens "$summary_tokens" --rawfile missing "$missing_selected_paths" --rawfile optional_missing "$missing_optional_paths" '
-  .estimated_context_cost.summary_tokens_estimated = $tokens
+  if [ -n "$summary_path" ] && [ -f "$REPO_ROOT/$summary_path" ]; then
+    pack_summary_bytes=$(wc -c < "$REPO_ROOT/$summary_path" | tr -d ' ')
+    pack_summary_tokens=$(((pack_summary_bytes + 3) / 4))
+    if [ "$decision" = "selected" ]; then
+      summary_bytes=$((summary_bytes + pack_summary_bytes))
+      summary_tokens=$((summary_tokens + pack_summary_tokens))
+    fi
+  else
+    if [ "$decision" = "selected" ]; then
+      case "$requirement" in
+        optional|advisory)
+          printf '%s\t%s\t%s\n' "$pack_id" "$requirement" "$summary_path" >>"$missing_optional_paths"
+          ;;
+        *)
+          printf '%s\t%s\t%s\n' "$pack_id" "$requirement" "$summary_path" >>"$missing_selected_paths"
+          ;;
+      esac
+    fi
+  fi
+
+  if [ -n "$full_doc_path" ] && [ -f "$REPO_ROOT/$full_doc_path" ]; then
+    pack_full_doc_bytes=$(wc -c < "$REPO_ROOT/$full_doc_path" | tr -d ' ')
+    pack_full_doc_tokens=$(((pack_full_doc_bytes + 3) / 4))
+    cold_context_all_full_doc_bytes=$((cold_context_all_full_doc_bytes + pack_full_doc_bytes))
+    cold_context_all_full_doc_tokens=$((cold_context_all_full_doc_tokens + pack_full_doc_tokens))
+    if [ "$decision" = "skipped" ]; then
+      skipped_full_doc_bytes=$((skipped_full_doc_bytes + pack_full_doc_bytes))
+      skipped_full_doc_tokens=$((skipped_full_doc_tokens + pack_full_doc_tokens))
+    fi
+  fi
+
+  jq -n \
+    --arg id "$pack_id" \
+    --argjson summary_bytes "$pack_summary_bytes" \
+    --argjson summary_tokens "$pack_summary_tokens" \
+    --argjson full_doc_bytes "$pack_full_doc_bytes" \
+    --argjson full_doc_tokens "$pack_full_doc_tokens" \
+    '{id:$id, summary_bytes:$summary_bytes, summary_tokens_estimated:$summary_tokens, full_doc_bytes:$full_doc_bytes, full_doc_tokens_estimated:$full_doc_tokens}' >>"$pack_metrics"
+done < <(jq -r '
+  (.selected_packs[] | [.id, "selected", (.requirement // "auto"), (.summary_path // ""), (.full_doc_path // "")]),
+  (.skipped_packs[] | [.id, "skipped", "skipped", (.summary_path // ""), (.full_doc_path // "")])
+  | @tsv
+' "$TMPROOT/result.json")
+
+cold_context_delta_tokens=$((cold_context_all_full_doc_tokens - summary_tokens - selected_full_doc_tokens))
+if [ "$cold_context_delta_tokens" -lt 0 ]; then
+  cold_context_delta_tokens=0
+fi
+
+role_budget_tokens=null
+warning_threshold_tokens=null
+if [ -f "$CONTEXT_BUDGET_MANIFEST" ]; then
+  role_budget_tokens=$(jq -r --arg role "$ROLE" '
+    (.roles[]? | select(.role == $role) | .max_context_tokens) // .defaults.max_context_tokens // null
+  ' "$CONTEXT_BUDGET_MANIFEST")
+  warning_threshold_tokens=$(jq -r --arg role "$ROLE" '
+    (.roles[]? | select(.role == $role) | .max_context_tokens) as $role_budget
+    | (($role_budget // .defaults.max_context_tokens) * .defaults.warning_ratio | floor)
+  ' "$CONTEXT_BUDGET_MANIFEST")
+fi
+case "$role_budget_tokens" in ""|null) role_budget_tokens=null ;; esac
+case "$warning_threshold_tokens" in ""|null) warning_threshold_tokens=null ;; esac
+
+selection_status="ok"
+if [ "$role_budget_tokens" != "null" ] && [ "$summary_tokens" -ge "$role_budget_tokens" ]; then
+  selection_status="exceeded"
+elif [ "$warning_threshold_tokens" != "null" ] && [ "$summary_tokens" -ge "$warning_threshold_tokens" ]; then
+  selection_status="warning"
+fi
+
+RESOLVE_ENDED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+selection_duration_s=$SECONDS
+
+jq --argjson bytes "$summary_bytes" \
+  --argjson tokens "$summary_tokens" \
+  --argjson selected_full_doc_bytes "$selected_full_doc_bytes" \
+  --argjson selected_full_doc_tokens "$selected_full_doc_tokens" \
+  --argjson skipped_full_doc_bytes "$skipped_full_doc_bytes" \
+  --argjson skipped_full_doc_tokens "$skipped_full_doc_tokens" \
+  --argjson cold_full_doc_bytes "$cold_context_all_full_doc_bytes" \
+  --argjson cold_full_doc_tokens "$cold_context_all_full_doc_tokens" \
+  --argjson cold_delta_tokens "$cold_context_delta_tokens" \
+  --argjson role_budget "$role_budget_tokens" \
+  --argjson warning_threshold "$warning_threshold_tokens" \
+  --arg status "$selection_status" \
+  --arg started_at "$RESOLVE_STARTED_AT" \
+  --arg ended_at "$RESOLVE_ENDED_AT" \
+  --argjson duration_s "$selection_duration_s" \
+  --slurpfile metrics "$pack_metrics" \
+  --rawfile missing "$missing_selected_paths" \
+  --rawfile optional_missing "$missing_optional_paths" '
+  def metric_for($id): (first($metrics[] | select(.id == $id)) // {});
+  .selected_packs |= map(. as $pack | (metric_for($pack.id)) as $m | . + {
+      summary_bytes:($m.summary_bytes // 0),
+      summary_tokens_estimated:($m.summary_tokens_estimated // 0),
+      full_doc_bytes:($m.full_doc_bytes // 0),
+      full_doc_tokens_estimated:($m.full_doc_tokens_estimated // 0),
+      full_doc_loaded:false,
+      full_doc_load_reason:"summary_only_default"
+    })
+  | .skipped_packs |= map(. as $pack | (metric_for($pack.id)) as $m | . + {
+      summary_bytes:($m.summary_bytes // 0),
+      summary_tokens_estimated:($m.summary_tokens_estimated // 0),
+      full_doc_bytes:($m.full_doc_bytes // 0),
+      full_doc_tokens_estimated:($m.full_doc_tokens_estimated // 0),
+      full_doc_loaded:false
+    })
+  | .estimated_context_cost.summary_bytes = $bytes
+  | .estimated_context_cost.summary_tokens_estimated = $tokens
+  | .estimated_context_cost.selected_full_doc_bytes = $selected_full_doc_bytes
+  | .estimated_context_cost.selected_full_doc_tokens_estimated = $selected_full_doc_tokens
+  | .estimated_context_cost.skipped_full_doc_bytes = $skipped_full_doc_bytes
+  | .estimated_context_cost.skipped_full_doc_tokens_estimated = $skipped_full_doc_tokens
+  | .estimated_context_cost.cold_context_all_full_doc_bytes = $cold_full_doc_bytes
+  | .estimated_context_cost.cold_context_all_full_doc_tokens_estimated = $cold_full_doc_tokens
+  | .estimated_context_cost.cold_context_delta_tokens_estimated = $cold_delta_tokens
+  | .context_budget.role_budget_tokens = $role_budget
+  | .context_budget.warning_threshold_tokens = $warning_threshold
+  | .context_budget.selected_summary_bytes = $bytes
+  | .context_budget.selected_summary_tokens_estimated = $tokens
+  | .context_budget.skipped_full_doc_bytes = $skipped_full_doc_bytes
+  | .context_budget.skipped_full_doc_tokens_estimated = $skipped_full_doc_tokens
+  | .context_budget.full_doc_escalation_bytes = $selected_full_doc_bytes
+  | .context_budget.full_doc_escalation_tokens_estimated = $selected_full_doc_tokens
+  | .context_budget.cold_context_all_full_doc_bytes = $cold_full_doc_bytes
+  | .context_budget.cold_context_all_full_doc_tokens_estimated = $cold_full_doc_tokens
+  | .context_budget.cold_context_delta_tokens_estimated = $cold_delta_tokens
+  | .context_budget.status = $status
+  | .context_budget.warnings = (
+      (if (($tokens > (.estimated_context_cost.selected_summary_bundle_budget_tokens // 999999999))) then [{
+        type:"selected_summary_bundle_budget_warning",
+        limit_tokens:(.estimated_context_cost.selected_summary_bundle_budget_tokens // null),
+        estimated_tokens:$tokens
+      }] else [] end)
+      + (if ($warning_threshold != null and $tokens >= $warning_threshold) then [{
+        type:"role_context_budget_warning",
+        limit_tokens:$role_budget,
+        warning_threshold_tokens:$warning_threshold,
+        estimated_tokens:$tokens
+      }] else [] end)
+    )
+  | .public_summary.warnings = (.context_budget.warnings | map(.type))
+  | .public_summary.selected_summary_tokens_estimated = $tokens
+  | .public_summary.skipped_full_doc_tokens_estimated = $skipped_full_doc_tokens
+  | .public_summary.full_doc_escalation_tokens_estimated = $selected_full_doc_tokens
+  | .public_summary.cold_context_delta_tokens_estimated = $cold_delta_tokens
+  | .timing.control_plane_rule_selection_s = $duration_s
+  | .timing.started_at = $started_at
+  | .timing.ended_at = $ended_at
   | .warnings += (
       $optional_missing
       | split("\n")
