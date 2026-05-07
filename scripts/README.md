@@ -96,6 +96,7 @@ scripts/codex-worker-exec.sh "<prompt>"                                    # int
 # Chain worktrees/results are namespaced under the run UUID; resume continues only the selected run, reconciles stale running issues from completed private summaries after required outcome review, and surfaces skipped/integrated/pending issue semantics.
 # Chain startup sweeps stale state locks, old temporary run roots, and oversized private artifacts; tune with STUDIO_CHAIN_TMP_RETENTION_DAYS, STUDIO_CHAIN_RUN_RETENTION_DAYS, and STUDIO_CHAIN_ARTIFACT_MAX_BYTES.
 # Chain reports include compact efficiency metrics, test/lint/build outcomes, typed halt records, and decision escrow when automation pauses or continues on a low-risk default.
+# Release-bearing chain manifests declare approved_release_id plus sync_strategy; rebase is the default, and squash is used only when the manifest explicitly opts in.
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
 scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
 scripts/studio-project-state.sh --status Todo         # field-aware backlog reader for the Studio v2 Projects board
@@ -282,6 +283,10 @@ dispatched_from=user@host
 | `ACHILLES_AUTONOMOUS` | `0` (set to `1` automatically by the worker per task) | Tells the worker subprocess there is no user to answer clarifying questions; it must pick obvious defaults and document them in the debrief. Exported by `achilles-worker.sh` for every `claude -p` subprocess. Do not set manually unless testing. |
 | `ACHILLES_DISPLAY_NAME` | derived (see below) | Friendly name for panes / logs. Override per-shell, or pre-bake per-project via `~/.dev-studio/<project>/.display_name` (first non-comment line wins). |
 | `STUDIO_CHAIN_EXECUTION_MODE` | `attended` | Default chain execution mode. `--auto` switches to `unattended`; explicit `--attended` or `--unattended` wins for normal runner calls. |
+| `STUDIO_BYPASS_CHAIN_SYNC_STRATEGY_GATE` | `0` | Set to `1` only for emergency/debug bypass of unsupported chain `sync_strategy` gate rows. |
+| `STUDIO_BYPASS_RELEASE_CHAIN_MANIFEST_POLICY_GATE` | `0` | Set to `1` only for emergency/debug bypass of release-bearing manifest policy gate rows. |
+| `STUDIO_BYPASS_CHAIN_LEAF_ANCESTRY_GATE` | `0` | Set to `1` only after explicit approval to integrate a release-bearing leaf that no longer descends from its launch chain commit. |
+| `STUDIO_BYPASS_CHAIN_LEAF_MERGE_COMMIT_GATE` | `0` | Set to `1` only after explicit approval to integrate a release-bearing leaf containing post-launch merge commits. |
 | `STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS` | `0` | Set to `1` to bypass the chain workflow docs guard in emergency commits; update README, scripts docs, runner usage, and fixtures together instead when possible. |
 
 **Display-name resolution:** `ACHILLES_DISPLAY_NAME` env var → `~/.dev-studio/<project>/.display_name` file → git-remote basename → project slug.

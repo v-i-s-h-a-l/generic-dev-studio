@@ -381,6 +381,10 @@ Studio chain issue sessions do not need write access to the main checkout's
 linked-worktree metadata. For `workspace-write` hosts, `studio-chain-runner`
 uses a per-issue local clone so normal `git add` and `git commit` write inside
 the issue working directory plus `~/.dev-studio`.
+Release-bearing chain manifests declare `approved_release_id`; those issue
+leaves are checked for launch-commit ancestry and post-launch merge commits
+before the runner applies the manifest's `sync_strategy` (`rebase` by default,
+`squash` only when explicitly declared).
 When `--checkpoint auto` or manifest `checkpoint: auto` is enabled, chain
 checkpoints stay under the same private runtime root and resume only through
 the manager role plus the active chain branch after drift checks.

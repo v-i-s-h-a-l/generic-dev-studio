@@ -26,26 +26,90 @@ chain_git_prepare_issue_workspace() {
   esac
 }
 
+# shellcheck disable=SC2034 # CHAIN_GIT_RELEASE_LEAF_DETAIL is consumed by callers.
+chain_git_release_leaf_ancestry_ok() {
+  local issue_worktree="${1:?usage: chain_git_release_leaf_ancestry_ok <issue-worktree> <commit-before> [context]}"
+  local commit_before="${2:?commit before required}"
+  local context="${3:-release-bearing leaf}"
+
+  CHAIN_GIT_RELEASE_LEAF_DETAIL=""
+  if ! git -C "$issue_worktree" cat-file -e "$commit_before^{commit}" 2>/dev/null; then
+    CHAIN_GIT_RELEASE_LEAF_DETAIL="$context cannot resolve launch chain commit $commit_before"
+    return 1
+  fi
+  if git -C "$issue_worktree" merge-base --is-ancestor "$commit_before" HEAD 2>/dev/null; then
+    CHAIN_GIT_RELEASE_LEAF_DETAIL="$context descends from launch chain commit $commit_before"
+    return 0
+  fi
+  CHAIN_GIT_RELEASE_LEAF_DETAIL="$context no longer descends from launch chain commit $commit_before"
+  return 1
+}
+
+# shellcheck disable=SC2034 # CHAIN_GIT_RELEASE_LEAF_DETAIL is consumed by callers.
+chain_git_release_leaf_merge_commits_ok() {
+  local issue_worktree="${1:?usage: chain_git_release_leaf_merge_commits_ok <issue-worktree> <commit-before> [context]}"
+  local commit_before="${2:?commit before required}"
+  local context="${3:-release-bearing leaf}"
+
+  CHAIN_GIT_RELEASE_LEAF_DETAIL=""
+  if ! git -C "$issue_worktree" cat-file -e "$commit_before^{commit}" 2>/dev/null; then
+    CHAIN_GIT_RELEASE_LEAF_DETAIL="$context cannot resolve launch chain commit $commit_before"
+    return 1
+  fi
+  if git -C "$issue_worktree" rev-list --merges "$commit_before..HEAD" 2>/dev/null | grep -q .; then
+    CHAIN_GIT_RELEASE_LEAF_DETAIL="$context contains merge commits after launch chain commit $commit_before"
+    return 1
+  fi
+  CHAIN_GIT_RELEASE_LEAF_DETAIL="$context has no merge commits after launch chain commit $commit_before"
+  return 0
+}
+
 chain_git_integrate_issue_workspace() {
-  local repo_root="${1:?usage: chain_git_integrate_issue_workspace <repo-root> <chain-worktree> <chain-branch> <issue-worktree> <issue-branch> <strategy>}"
+  local repo_root="${1:?usage: chain_git_integrate_issue_workspace <repo-root> <chain-worktree> <chain-branch> <issue-worktree> <issue-branch> <strategy> [sync-strategy]}"
   local chain_worktree="${2:?chain worktree required}"
   local chain_branch="${3:?chain branch required}"
   local issue_worktree="${4:?issue worktree required}"
   local issue_branch="${5:?issue branch required}"
   local strategy="${6:?git metadata strategy required}"
+  local sync_strategy="${7:-rebase}"
+
+  case "$sync_strategy" in
+    rebase|squash) ;;
+    *)
+      printf 'chain-git: unknown issue sync strategy: %s\n' "$sync_strategy" >&2
+      return 2
+      ;;
+  esac
 
   case "$strategy" in
     linked-worktree)
-      git -C "$issue_worktree" rebase "$chain_branch" || return 1
-      git -C "$chain_worktree" merge --ff-only "$issue_branch" || return 1
+      case "$sync_strategy" in
+        rebase)
+          git -C "$issue_worktree" rebase "$chain_branch" || return 1
+          git -C "$chain_worktree" merge --ff-only "$issue_branch" || return 1
+          ;;
+        squash)
+          git -C "$chain_worktree" merge --squash "$issue_branch" || return 1
+          git -C "$chain_worktree" commit -m "Squash $issue_branch into $chain_branch" || return 1
+          ;;
+      esac
       git -C "$repo_root" worktree remove "$issue_worktree" || return 1
       git -C "$repo_root" branch -D "$issue_branch" || return 1
       ;;
     local-clone)
-      git -C "$issue_worktree" fetch "$chain_worktree" "$chain_branch" || return 1
-      git -C "$issue_worktree" rebase FETCH_HEAD || return 1
-      git -C "$chain_worktree" fetch "$issue_worktree" "$issue_branch" || return 1
-      git -C "$chain_worktree" merge --ff-only FETCH_HEAD || return 1
+      case "$sync_strategy" in
+        rebase)
+          git -C "$issue_worktree" fetch "$chain_worktree" "$chain_branch" || return 1
+          git -C "$issue_worktree" rebase FETCH_HEAD || return 1
+          git -C "$chain_worktree" fetch "$issue_worktree" "$issue_branch" || return 1
+          git -C "$chain_worktree" merge --ff-only FETCH_HEAD || return 1
+          ;;
+        squash)
+          git -C "$chain_worktree" fetch "$issue_worktree" "$issue_branch" || return 1
+          git -C "$chain_worktree" merge --squash FETCH_HEAD || return 1
+          git -C "$chain_worktree" commit -m "Squash $issue_branch into $chain_branch" || return 1
+          ;;
+      esac
       rm -rf "$issue_worktree" || return 1
       ;;
     *)
