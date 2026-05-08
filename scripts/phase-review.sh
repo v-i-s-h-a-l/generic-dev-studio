@@ -35,6 +35,8 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=scripts/lib-studio-context.sh
 . "$SCRIPT_DIR/lib-studio-context.sh"
+# shellcheck source=scripts/lib-review-host.sh
+. "$SCRIPT_DIR/lib-review-host.sh"
 # shellcheck source=scripts/lib-review-budget.sh
 . "$SCRIPT_DIR/lib-review-budget.sh"
 
@@ -61,30 +63,6 @@ failure_detail() {
 
 text_mentions_claude_subscription_403() {
   grep -Eiq 'disabled Claude subscription access|Claude subscription access|subscription access for Claude Code|((^|[^0-9])403([^0-9]|$).*(Claude|subscription|access|Anthropic))|((Claude|subscription|access|Anthropic).*(^|[^0-9])403([^0-9]|$))'
-}
-
-host_family() {
-  case "$1" in
-    codex*|*codex*) printf 'openai\n' ;;
-    claude-code|claude|claude-*|*claude*) printf 'anthropic\n' ;;
-    unknown|"") printf 'unknown\n' ;;
-    *) printf '%s\n' "$1" ;;
-  esac
-}
-
-hosts_are_cross_family() {
-  local parent="$1" reviewer="$2" parent_family reviewer_family
-  parent_family=$(host_family "$parent")
-  reviewer_family=$(host_family "$reviewer")
-  [ "$parent_family" != "unknown" ] && [ "$reviewer_family" != "unknown" ] && [ "$parent_family" != "$reviewer_family" ]
-}
-
-same_family_reviewer_for_parent() {
-  case "$1" in
-    codex*|*codex*) printf 'codex-reviewer\n' ;;
-    claude-code|claude|claude-*|*claude*) printf 'claude-reviewer\n' ;;
-    *) return 1 ;;
-  esac
 }
 
 claude_subscription_403_present() {
@@ -119,19 +97,19 @@ phase_review_has_usable_verdict() {
 fallback_host_list() {
   local parent_host="$1" preferred_host="$2" configured candidate seen same_host parent_family
   configured="${STUDIO_PHASE_REVIEW_FALLBACK_HOSTS:-claude-reviewer,codex-reviewer}"
-  parent_family=$(host_family "$parent_host")
+  parent_family=$(review_host_family "$parent_host")
   seen=" $preferred_host "
   IFS=',' read -r -a configured_hosts <<< "$configured"
   for candidate in "${configured_hosts[@]}"; do
     [ -n "$candidate" ] || continue
     case "$seen" in *" $candidate "*) continue ;; esac
-    if [ "$parent_family" = "unknown" ] || hosts_are_cross_family "$parent_host" "$candidate"; then
+    if [ "$parent_family" = "unknown" ] || review_host_is_cross_family "$parent_host" "$candidate"; then
       printf '%s\t0\n' "$candidate"
       seen="$seen$candidate "
     fi
   done
   if [ "${STUDIO_DISABLE_PHASE_REVIEW_DEGRADED_SAME_HOST:-0}" != "1" ]; then
-    same_host=$(same_family_reviewer_for_parent "$parent_host" 2>/dev/null || true)
+    same_host=$(review_host_same_family_reviewer_for_parent "$parent_host" 2>/dev/null || true)
     if [ -n "$same_host" ]; then
       case "$seen" in
         *" $same_host "*) ;;
@@ -244,11 +222,7 @@ esac
 
 if [ -z "$review_host" ]; then
   parent_host=$(resolve_current_studio_host "")
-  case "$parent_host" in
-    *codex*) review_host="claude-reviewer" ;;
-    *claude*) review_host="codex-reviewer" ;;
-    *) review_host="${STUDIO_REVIEW_HOST:-claude-reviewer}" ;;
-  esac
+  review_host=$(review_host_default_for_parent_host "$parent_host")
 fi
 
 mkdir -p "$(dirname "$output")"
@@ -289,29 +263,6 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 reviewer_home="$tmpdir/reviewer-home"
 mkdir -p "$reviewer_home"
-
-reviewer_codex_home=""
-reviewer_claude_home=""
-reviewer_claude_config_dir=""
-
-export STUDIO_CONTEXT_HOST_PROFILE="$review_host"
-studio_context_resolve delegated-host-spawn || fail "reviewer auth home unavailable via Studio context for $review_host"
-
-case "$review_host" in
-  codex*|*codex*)
-    reviewer_codex_home="$STUDIO_CONTEXT_AUTH_HOME"
-    [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] \
-      || fail "codex reviewer auth home not found via Studio context"
-    ;;
-  claude*|*claude*)
-    reviewer_claude_home="$STUDIO_CONTEXT_AUTH_HOME"
-    [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] \
-      || fail "claude reviewer auth home not found via Studio context"
-    reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-$reviewer_claude_home/.claude-reviewer}"
-    mkdir -p "$reviewer_claude_config_dir" \
-      || fail "failed to create claude reviewer config dir: $reviewer_claude_config_dir"
-    ;;
-esac
 
 # shellcheck disable=SC2206
 spawn_argv=( $spawn_command )
@@ -361,50 +312,13 @@ Use:
 EOF
 )
 
+review_argv=("${spawn_argv[@]}")
 case "$review_host" in
-  codex*|*codex*)
-    # See pr-reviewer-eligibility.sh: codex 0.130+ ChatGPT-OAuth fails 401 with
-    # HOME reassigned to a tmpdir OR with CODEX_HOME set explicitly even to
-    # the default $HOME/.codex. When the resolved auth_home equals the
-    # default, drop both overrides so codex auth resolves through the user's
-    # real environment. Real isolation (seeded `.codex-reviewer/`) still
-    # uses the override path.
-    if [ "$reviewer_codex_home" = "$HOME/.codex" ]; then
-      review_cmd=(env -i \
-        PATH="$PATH" \
-        HOME="$HOME" \
-        LANG="${LANG:-C.UTF-8}" \
-        USER="${USER:-}" \
-        STUDIO_HOST="$review_host" \
-        REVIEW_PAYLOAD="$input" \
-        "${spawn_argv[@]}" "$prompt")
-    else
-      review_cmd=(env -i \
-        PATH="$PATH" \
-        HOME="$reviewer_home" \
-        LANG="${LANG:-C.UTF-8}" \
-        USER="${USER:-}" \
-        ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
-        STUDIO_HOST="$review_host" \
-        REVIEW_PAYLOAD="$input" \
-        "${spawn_argv[@]}" "$prompt")
-    fi
-    ;;
-  *)
-    review_cmd=(env -i \
-      PATH="$PATH" \
-      HOME="$reviewer_claude_home" \
-      LANG="${LANG:-C.UTF-8}" \
-      USER="${USER:-}" \
-      ${reviewer_claude_config_dir:+CLAUDE_CONFIG_DIR="$reviewer_claude_config_dir"} \
-      CLAUDE_REVIEWER_HOME="$reviewer_claude_home" \
-      STUDIO_HOST="$review_host" \
-      REVIEW_PAYLOAD="$input" \
-      "${spawn_argv[@]}" "--add-dir=$input_dir" "$prompt")
-    ;;
+  claude*|*claude*) review_argv+=("--add-dir=$input_dir") ;;
 esac
+review_cmd=(review_host_run_command "$review_host" "$reviewer_home" --env REVIEW_PAYLOAD "$input" -- "${review_argv[@]}" "$prompt")
 
-if ! ( cd "$REPO_ROOT" && "${review_cmd[@]}" </dev/null > "$output" 2>"$err_output" ); then
+if ! "${review_cmd[@]}" > "$output" 2>"$err_output"; then
   detail=$(failure_detail "$err_output")
   [ -n "$detail" ] || detail=$(failure_detail "$output")
   if claude_subscription_403_present; then
@@ -434,7 +348,7 @@ printf 'PHASE_REVIEW_OUTPUT=%s\n' "$output"
 printf 'PHASE_REVIEW_ERR=%s\n' "$err_output"
 printf 'PHASE_REVIEW_VERDICT=%s\n' "$verdict"
 printf 'PHASE_REVIEW_CONTEXT_TOKENS=%s\n' "$input_estimated_tokens"
-if hosts_are_cross_family "$parent_host_for_meta" "$review_host"; then
+if review_host_is_cross_family "$parent_host_for_meta" "$review_host"; then
   printf 'PHASE_REVIEW_CROSS_HOST_SATISFIED=true\n'
 else
   printf 'PHASE_REVIEW_CROSS_HOST_SATISFIED=false\n'

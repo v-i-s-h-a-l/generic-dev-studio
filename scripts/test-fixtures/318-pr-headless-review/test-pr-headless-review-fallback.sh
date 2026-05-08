@@ -60,10 +60,12 @@ export PATH="$BIN:$PATH"
 export PR_HEADLESS_REVIEW_AUTOPILOT="$BIN/autopilot"
 export AUTOPILOT_LOG="$TMPROOT/autopilot.log"
 export HOME="$TMPROOT/home"
-export CODEX_HOME="$HOME/.codex"
-export CLAUDE_REVIEWER_CONFIG_DIR="$TMPROOT/.claude-reviewer"
+export CODEX_REVIEWER_HOME="$TMPROOT/codex-reviewer-home"
+export CLAUDE_REVIEWER_HOME="$TMPROOT/claude-reviewer-home"
+export CLAUDE_REVIEWER_CONFIG_DIR="$CLAUDE_REVIEWER_HOME/.claude-reviewer"
 export STUDIO_REQUIRE_CROSS_HOST_REVIEW=0
-mkdir -p "$CODEX_HOME"
+mkdir -p "$HOME" "$HOME/.config/gh" "$CODEX_REVIEWER_HOME" "$CLAUDE_REVIEWER_HOME" "$CLAUDE_REVIEWER_CONFIG_DIR"
+printf 'github.com: token\n' > "$HOME/.config/gh/hosts.yml"
 
 out="$TMPROOT/out"
 if ! bash "$ROOT/scripts/pr-headless-review.sh" 124 --method auto >"$out" 2>"$out.err"; then

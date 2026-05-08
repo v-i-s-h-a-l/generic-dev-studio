@@ -87,6 +87,8 @@ AUTOPILOT="${PR_HEADLESS_REVIEW_AUTOPILOT:-$SCRIPT_DIR/pr-autopilot.sh}"
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=scripts/lib-studio-context.sh
 . "$SCRIPT_DIR/lib-studio-context.sh"
+# shellcheck source=scripts/lib-review-host.sh
+. "$SCRIPT_DIR/lib-review-host.sh"
 # shellcheck source=scripts/lib-review-budget.sh
 . "$SCRIPT_DIR/lib-review-budget.sh"
 # shellcheck source=scripts/lib-ledger.sh
@@ -160,33 +162,6 @@ yaml_field() {
     | tr -d '"'"'"
 }
 
-host_family() {
-  local host="$1" family
-  if command -v yq >/dev/null 2>&1 && [ -f "$REPO_ROOT/_shared/schemas/model-catalog.yaml" ]; then
-    family=$(HOST_NAME="$host" yq -r '
-      (.adapter_profiles[strenv(HOST_NAME)].provider_family // "") as $direct
-      | if $direct != "" then $direct
-        else ((.provider_families | to_entries | map(select((.value.adapters // []) | contains([strenv(HOST_NAME)])) | .key) | .[0]) // "")
-        end
-    ' "$REPO_ROOT/_shared/schemas/model-catalog.yaml" 2>/dev/null || true)
-    [ -n "$family" ] && [ "$family" != "null" ] && { printf '%s\n' "$family"; return 0; }
-  fi
-  case "$host" in
-    claude*|*claude*) printf 'anthropic\n' ;;
-    codex*|*codex*) printf 'openai\n' ;;
-    unknown|"") printf 'unknown\n' ;;
-    *) printf '%s\n' "$host" ;;
-  esac
-}
-
-is_cross_host() {
-  local parent="$1" reviewer="$2" parent_family reviewer_family
-  [ -n "$parent" ] && [ "$parent" != "unknown" ] || return 1
-  parent_family=$(host_family "$parent")
-  reviewer_family=$(host_family "$reviewer")
-  [ "$parent_family" != "$reviewer_family" ]
-}
-
 join_csv() {
   local sep="" item
   for item in "$@"; do
@@ -225,8 +200,8 @@ print_reviewer_failure() {
 }
 
 collect_codex_review_tokens() {
-  [ -n "$reviewer_codex_home" ] || return 0
-  local session_dir="$reviewer_codex_home/sessions"
+  [ -n "${REVIEW_HOST_CODEX_HOME:-}" ] || return 0
+  local session_dir="$REVIEW_HOST_CODEX_HOME/sessions"
   [ -d "$session_dir" ] || return 0
 
   local best_file="" best_mtime=0 candidate mtime
@@ -336,7 +311,7 @@ fi
 cross_host_available=0
 if [ "${#hosts[@]}" -gt 0 ]; then
   for host in "${hosts[@]}"; do
-    if is_cross_host "$PARENT_HOST" "$host"; then
+    if review_host_is_cross_family "$PARENT_HOST" "$host"; then
       cross_host_available=1
       break
     fi
@@ -352,7 +327,7 @@ if [ "$CROSS_HOST_REQUIRED" -eq 1 ] && [ "$cross_host_available" -eq 0 ] && [ "$
   exit 1
 fi
 if [ "$CROSS_HOST_REQUIRED" -eq 1 ] && [ "$EXPLICIT_REVIEW_HOST" -eq 1 ] \
-    && ! is_cross_host "$PARENT_HOST" "$REVIEW_HOST" \
+    && ! review_host_is_cross_family "$PARENT_HOST" "$REVIEW_HOST" \
     && [ "$ALLOW_SAME_HOST_REVIEW" -eq 0 ]; then
   printf 'pr-headless-review: cross-host review required; %s is same-family as parent host %s\n' "$REVIEW_HOST" "$PARENT_HOST" >&2
   printf 'Use an alternate --review-host, or pass --allow-same-host-review --user-approved-bypass <url> after explicit user approval.\n' >&2
@@ -368,9 +343,6 @@ diff_payload="$tmpdir/pr.diff"
 summary="$tmpdir/reviewer-summary.md"
 reviewer_home="$tmpdir/reviewer-home"
 mkdir -p "$reviewer_home"
-reviewer_codex_home=""
-reviewer_claude_home=""
-reviewer_claude_config_dir=""
 
 "$SCRIPT_DIR/studio-gh.sh" pr diff "$PR" --patch > "$diff_payload"
 
@@ -379,7 +351,9 @@ write_pr_payload() {
   local line_cap
   line_cap=$(printf '%s\n' "$policy_json" | jq -r '.budget.payload_diff_line_cap')
   printf '# Studio PR Review Payload\n\n'
+  # shellcheck disable=SC2016
   printf 'Review context policy:\n\n```json\n%s\n```\n\n' "$(printf '%s' "$policy_json" | jq -c '.')"
+  # shellcheck disable=SC2016
   printf 'Metadata:\n\n```json\n%s\n```\n\n' "$(printf '%s' "$pr_json" | jq -c '{number,title,url,baseRefName,headRefName,headRefOid,author}')"
   cat <<'PROMPT'
 Review this studio PR against REVIEW.md and the repository-specific rules.
@@ -443,12 +417,6 @@ run_review_candidate() {
     append_failure "$REVIEW_HOST" "$summary" "$summary.err"
     return 1
   }
-  export STUDIO_CONTEXT_HOST_PROFILE="$REVIEW_HOST"
-  studio_context_resolve delegated-host-spawn || {
-    printf 'pr-headless-review: failed to resolve reviewer auth home for %s\n' "$REVIEW_HOST" > "$summary.err"
-    append_failure "$REVIEW_HOST" "$summary" "$summary.err"
-    return 1
-  }
   resolver_args=(--review-host "$REVIEW_HOST" --implementation-host "$PARENT_HOST" --role reviewer.heavyweight)
   [ "$ALLOW_SAME_HOST_REVIEW" -eq 0 ] || resolver_args+=(--allow-same-family)
   model_resolution=$("$SCRIPT_DIR/resolve-reviewer-model.sh" "${resolver_args[@]}" 2>&1) || {
@@ -458,40 +426,6 @@ run_review_candidate() {
   }
   # resolve-reviewer-model.sh is repo-owned and emits only %q-quoted shell assignments.
   eval "$model_resolution"
-
-  reviewer_codex_home=""
-  reviewer_claude_home=""
-  reviewer_claude_config_dir=""
-  case "$REVIEW_HOST" in
-    codex*|*codex*)
-      reviewer_codex_home="$STUDIO_CONTEXT_AUTH_HOME"
-      [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] || {
-        printf 'pr-headless-review: codex reviewer auth home not found via Studio context\n' > "$summary.err"
-        append_failure "$REVIEW_HOST" "$summary" "$summary.err"
-        return 1
-      }
-      ;;
-    claude*|*claude*)
-      reviewer_claude_home="$STUDIO_CONTEXT_AUTH_HOME"
-      [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] || {
-        printf 'pr-headless-review: claude reviewer auth home not found via Studio context\n' > "$summary.err"
-        append_failure "$REVIEW_HOST" "$summary" "$summary.err"
-        return 1
-      }
-      reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-$reviewer_claude_home/.claude-reviewer}"
-      [ -n "$reviewer_claude_config_dir" ] || {
-        printf 'pr-headless-review: claude reviewer config dir not found; set CLAUDE_REVIEWER_CONFIG_DIR or HOME\n' > "$summary.err"
-        append_failure "$REVIEW_HOST" "$summary" "$summary.err"
-        return 1
-      }
-      mkdir -p "$reviewer_claude_config_dir"
-      [ -d "$reviewer_claude_config_dir" ] || {
-        printf 'pr-headless-review: failed to create claude reviewer config dir: %s\n' "$reviewer_claude_config_dir" > "$summary.err"
-        append_failure "$REVIEW_HOST" "$summary" "$summary.err"
-        return 1
-      }
-      ;;
-  esac
 
   # shellcheck disable=SC2206
   spawn_argv=( $spawn_command )
@@ -504,50 +438,22 @@ run_review_candidate() {
       ;;
   esac
   review_prompt="Read $payload, review PR $pr_url at HEAD $head_sha, and print STUDIO_REVIEW_VERDICT=<approved|approved_with_fixes|blocked>. If context is insufficient, print REVIEW_CONTEXT_FALLBACK=expanded instead."
-
+  review_argv=("${spawn_argv[@]}")
   case "$REVIEW_HOST" in
-    codex*|*codex*)
-      if ( cd "$REPO_ROOT" && env -i \
-        PATH="$PATH" \
-        HOME="$reviewer_home" \
-        LANG="${LANG:-C.UTF-8}" \
-        USER="${USER:-}" \
-        ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
-        STUDIO_HOST="$REVIEW_HOST" \
-        STUDIO_REVIEW_MODEL_ID="$REVIEWER_MODEL_ID" \
-        STUDIO_REVIEW_REASONING_EFFORT="$REVIEWER_MODEL_REASONING_EFFORT" \
-        STUDIO_REVIEW_PROVIDER_FAMILY="$REVIEWER_MODEL_PROVIDER_FAMILY" \
-        REVIEW_PAYLOAD="$payload" \
-        PR_URL="$pr_url" \
-        PR_HEAD_SHA="$head_sha" \
-        "${spawn_argv[@]}" "$review_prompt" > "$summary" 2>"$summary.err" ); then
-        review_rc=0
-      else
-        review_rc=$?
-      fi
-      ;;
-    *)
-      if ( cd "$REPO_ROOT" && env -i \
-        PATH="$PATH" \
-        HOME="$reviewer_claude_home" \
-        LANG="${LANG:-C.UTF-8}" \
-        USER="${USER:-}" \
-        ${reviewer_claude_config_dir:+CLAUDE_CONFIG_DIR="$reviewer_claude_config_dir"} \
-        CLAUDE_REVIEWER_HOME="$reviewer_claude_home" \
-        STUDIO_HOST="$REVIEW_HOST" \
-        STUDIO_REVIEW_MODEL_ID="$REVIEWER_MODEL_ID" \
-        STUDIO_REVIEW_REASONING_EFFORT="$REVIEWER_MODEL_REASONING_EFFORT" \
-        STUDIO_REVIEW_PROVIDER_FAMILY="$REVIEWER_MODEL_PROVIDER_FAMILY" \
-        REVIEW_PAYLOAD="$payload" \
-        PR_URL="$pr_url" \
-        PR_HEAD_SHA="$head_sha" \
-        "${spawn_argv[@]}" "--add-dir=$tmpdir" "$review_prompt" </dev/null > "$summary" 2>"$summary.err" ); then
-        review_rc=0
-      else
-        review_rc=$?
-      fi
-      ;;
+    claude*|*claude*) review_argv+=("--add-dir=$tmpdir") ;;
   esac
+  if review_host_run_command "$REVIEW_HOST" "$reviewer_home" \
+      --env STUDIO_REVIEW_MODEL_ID "$REVIEWER_MODEL_ID" \
+      --env STUDIO_REVIEW_REASONING_EFFORT "$REVIEWER_MODEL_REASONING_EFFORT" \
+      --env STUDIO_REVIEW_PROVIDER_FAMILY "$REVIEWER_MODEL_PROVIDER_FAMILY" \
+      --env REVIEW_PAYLOAD "$payload" \
+      --env PR_URL "$pr_url" \
+      --env PR_HEAD_SHA "$head_sha" \
+      -- "${review_argv[@]}" "$review_prompt" > "$summary" 2>"$summary.err"; then
+    review_rc=0
+  else
+    review_rc=$?
+  fi
   if [ "$review_rc" -ne 0 ]; then
     append_failure "$REVIEW_HOST" "$summary" "$summary.err"
     return 1
@@ -597,11 +503,11 @@ else
   done
   if [ "$CROSS_HOST_REQUIRED" -eq 1 ] && [ "$cross_host_available" -eq 1 ]; then
     for host in "${rotated[@]}"; do
-      is_cross_host "$PARENT_HOST" "$host" && candidates+=("$host")
+      review_host_is_cross_family "$PARENT_HOST" "$host" && candidates+=("$host")
     done
     if [ "$ALLOW_SAME_HOST_REVIEW" -eq 1 ]; then
       for host in "${rotated[@]}"; do
-        is_cross_host "$PARENT_HOST" "$host" || candidates+=("$host")
+        review_host_is_cross_family "$PARENT_HOST" "$host" || candidates+=("$host")
       done
     fi
   else
@@ -642,7 +548,7 @@ if [ "${#failed_hosts[@]}" -gt 0 ]; then
 else
   FALLBACK_FROM_CSV=""
 fi
-if is_cross_host "$PARENT_HOST" "$REVIEW_HOST"; then
+if review_host_is_cross_family "$PARENT_HOST" "$REVIEW_HOST"; then
   CROSS_HOST_FOR_EVENT="true"
 else
   CROSS_HOST_FOR_EVENT="false"
