@@ -10,11 +10,36 @@
     "schema_version": { "const": 1 },
     "target_repo_root": { "type": "string", "minLength": 1 },
     "repo_root": { "type": "string", "minLength": 1 },
+    "issue_repo": {
+      "type": "string",
+      "minLength": 3,
+      "pattern": "^[^/\\s]+/[^/\\s]+$"
+    },
     "repo": {
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "root": { "type": "string", "minLength": 1 }
+        "root": { "type": "string", "minLength": 1 },
+        "issue_repo": {
+          "type": "string",
+          "minLength": 3,
+          "pattern": "^[^/\\s]+/[^/\\s]+$"
+        },
+        "issue": {
+          "type": "string",
+          "minLength": 3,
+          "pattern": "^[^/\\s]+/[^/\\s]+$"
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 3,
+          "pattern": "^[^/\\s]+/[^/\\s]+$"
+        },
+        "name_with_owner": {
+          "type": "string",
+          "minLength": 3,
+          "pattern": "^[^/\\s]+/[^/\\s]+$"
+        }
       }
     },
     "rule_packs": { "$ref": "#/$defs/rule_packs" },

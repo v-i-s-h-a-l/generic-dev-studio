@@ -13,12 +13,15 @@
 #              version, archives, exports + uploads to ASC, uploads dSYMs.
 #              Outputs a one-line JSON context blob on stdout for the wrapper
 #              (release_tag, build, version, scheme, branch, archive_path,
-#              prev_build, tf_tag).
+#              prev_build, tf_tag). Slack draft, reporter tagging, approval,
+#              and Slack send stay in /pushTFBuild or /postSlackTesting.
 #   appstore   — App Store submission: tag + push tag, GH draft release,
 #              find build on ASC, create/update version, set MANUAL release,
 #              update whatsNew per localization. Inputs (release notes, what's
-#              new) come from files prepared by the wrapper after user
-#              approval.
+#              new) come from files prepared by /fullSendToAppStore after user
+#              approval. Configured Slack posting, PR handoff, and release
+#              artifact state live here; publication waits for appstore-watch
+#              after READY_FOR_SALE and release approval.
 #   compose-message — Convert git-log-style commit blocks into taxonomy-aware
 #              TestFlight or App Store bullets.
 #   withdraw-tf-tag — rename a TF anchor tag to tf-<version>-<build>-WITHDRAWN.

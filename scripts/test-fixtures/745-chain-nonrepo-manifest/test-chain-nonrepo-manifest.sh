@@ -4,6 +4,7 @@
 set -eu
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+CANON_ROOT=$(git -C "$ROOT" rev-parse --show-toplevel)
 TMPROOT=$(mktemp -d -t chain-nonrepo-manifest.XXXXXX)
 trap 'rm -rf "$TMPROOT"' EXIT
 
@@ -41,7 +42,7 @@ chmod +x "$BIN/gh"
 manifest="$TMPROOT/nonrepo/chain.yaml"
 cat > "$manifest" <<YAML
 schema_version: 1
-target_repo_root: $ROOT
+target_repo_root: $CANON_ROOT
 chains:
   - name: nonrepo-manifest-fixture
     base: main
@@ -56,17 +57,17 @@ fi
 
 PATH="$BIN:$PATH" HOME="$HOME_DIR" "$ROOT/scripts/studio-chain-runner.sh" "$manifest" --dry-run > "$TMPROOT/out" 2>&1
 
-grep -q "Target repo root: \`$ROOT\`" "$TMPROOT/out" || {
+grep -q "Target repo root: \`$CANON_ROOT\`" "$TMPROOT/out" || {
   cat "$TMPROOT/out" >&2
   fail "plan did not report the manifest-selected target repo root"
 }
 
-grep -q "DRY-RUN HOME=.* scripts/host-preflight.sh codex $ROOT" "$TMPROOT/out" || {
+grep -q "DRY-RUN HOME=.* scripts/host-preflight.sh codex $CANON_ROOT" "$TMPROOT/out" || {
   cat "$TMPROOT/out" >&2
   fail "host preflight did not use the target repo root"
 }
 
-grep -q "DRY-RUN retry\\[network_partition\\].* git -C $ROOT fetch origin --prune" "$TMPROOT/out" || {
+grep -q "DRY-RUN retry\\[network_partition\\].* git -C $CANON_ROOT fetch origin --prune" "$TMPROOT/out" || {
   cat "$TMPROOT/out" >&2
   fail "fetch did not use the target repo root"
 }
@@ -83,7 +84,7 @@ chains:
 YAML
 
 PATH="$BIN:$PATH" HOME="$HOME_DIR" "$ROOT/scripts/studio-chain-runner.sh" "$fallback_manifest" --dry-run > "$TMPROOT/fallback.out" 2>&1
-grep -q "Target repo root: \`$ROOT\`" "$TMPROOT/fallback.out" || {
+grep -q "Target repo root: \`$CANON_ROOT\`" "$TMPROOT/fallback.out" || {
   cat "$TMPROOT/fallback.out" >&2
   fail "non-repo manifest without a target did not fall back to the studio repo root"
 }

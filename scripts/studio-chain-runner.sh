@@ -30,6 +30,9 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 CALLER_HOME="${HOME:-}"
 TARGET_REPO_ROOT=""
+REPO_SLUG_DEFAULT="v-i-s-h-a-l/generic-dev-studio"
+REPO_SLUG="$REPO_SLUG_DEFAULT"
+RUN_PATHS_CONFIGURED=0
 
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
@@ -233,9 +236,138 @@ EOF
   rm -f "$rows_tmp"
 }
 
+manifest_diagnostics_json() {
+  local manifest="$1" manifest_json
+  if ! manifest_json=$(yq -o=json '.' "$manifest" 2>/dev/null); then
+    jq -cn --arg manifest "$manifest" '{
+      status: "schema_mismatch",
+      reason_id: "manifest_schema_mismatch",
+      reason: "manifest is not parseable YAML or JSON",
+      manifest: $manifest
+    }'
+    return 0
+  fi
+
+  printf '%s\n' "$manifest_json" | jq -c --arg manifest "$manifest" '
+    def issue_entry_valid:
+      (type == "number" and . >= 1) or
+      (type == "object" and (((.number? // .issue?) | type) == "number") and ((.number? // .issue?) >= 1));
+    def chain_valid:
+      type == "object"
+      and ((.name? | type) == "string")
+      and ((.name? | length) > 0)
+      and ((.issues? | type) == "array")
+      and ((.issues? | length) > 0)
+      and ([.issues[]? | select(issue_entry_valid | not)] | length) == 0;
+    def planning_markers:
+      ((.nodes? | type) == "array")
+      or ((.tasks? | type) == "array")
+      or ((.ready_node_ids? | type) == "array")
+      or ((.validation? | type) == "object")
+      or ((.requirements? | type) == "array")
+      or ((.work_items? | type) == "array")
+      or ((.kind? // "" | tostring) | test("task-graph|requirement|planner|planning|work-chain-plan|chain-plan"; "i"))
+      or ((.artifact_kind? // "" | tostring) | test("task-graph|requirement|planner|planning"; "i"));
+    def planning_items:
+      [
+        (if ((.tasks? | type) == "array") then .tasks[] else empty end),
+        (if ((.nodes? | type) == "array") then .nodes[] else empty end),
+        (if ((.work_items? | type) == "array") then .work_items[] else empty end),
+        (if ((.requirements? | type) == "array") then .requirements[] else empty end)
+      ];
+    def doneish:
+      (((.status? // .state? // .stage? // .result? // .report_state? // "") | tostring) | test("done|completed|merged|closed|validated|implemented|shipped"; "i"))
+      or (.done? == true)
+      or (.completed? == true);
+    def issue_mapping_present:
+      [
+        .issue?,
+        .issue_number?,
+        .github_issue?,
+        .github_issue_number?,
+        .gh_issue?,
+        .issue_url?,
+        .url?
+      ]
+      | map(select(. != null) | tostring)
+      | map(select(test("(^#?[0-9]+$)|(issues/[0-9]+$)")))
+      | length > 0;
+    def done_without_issue_mapping:
+      ([planning_items[]? | select((type == "object") and doneish and (issue_mapping_present | not))] | length) > 0;
+    def runnable:
+      .schema_version == 1
+      and ((.chains? | type) == "array")
+      and ((.chains? | length) > 0)
+      and ([.chains[]? | select(chain_valid | not)] | length) == 0;
+    def mismatch_reason:
+      if .schema_version != 1 then "schema_version must be 1"
+      elif ((.chains? | type) != "array") then "missing chains[] runnable chain list"
+      elif ((.chains? | length) == 0) then "chains[] must contain at least one runnable chain"
+      elif ([.chains[]? | select(((.name? | type) != "string") or ((.name? | length) == 0))] | length) > 0 then "each chain must have a non-empty name"
+      elif ([.chains[]? | select(((.issues? | type) != "array") or ((.issues? | length) == 0))] | length) > 0 then "each chain must map to chains[].issues[] GitHub issue numbers"
+      elif ([.chains[]?.issues[]? | select(issue_entry_valid | not)] | length) > 0 then "chains[].issues[] entries must be issue numbers or objects with number/issue"
+      else "manifest does not match chain-manifest@1"
+      end;
+    if runnable then {
+      status: "runnable",
+      reason_id: null,
+      reason: "runner-compatible chain manifest",
+      manifest: $manifest
+    }
+    elif done_without_issue_mapping then {
+      status: "audit_gap",
+      reason_id: "planning_done_without_issue_mapping",
+      reason: "planning artifact marks work done without durable issue mapping",
+      manifest: $manifest
+    }
+    elif planning_markers then {
+      status: "planning",
+      reason_id: "manifest_schema_mismatch",
+      reason: "planning manifest is not executable by the issue-backed chain runner",
+      manifest: $manifest
+    }
+    else {
+      status: "schema_mismatch",
+      reason_id: "manifest_schema_mismatch",
+      reason: mismatch_reason,
+      manifest: $manifest
+    }
+    end
+  '
+}
+
+print_manifest_preflight_failure() {
+  local diagnostics="$1" status reason manifest
+  status=$(jq -r '.status' <<<"$diagnostics")
+  reason=$(jq -r '.reason' <<<"$diagnostics")
+  manifest=$(jq -r '.manifest' <<<"$diagnostics")
+
+  printf 'studio-chain-runner: manifest/schema mismatch: %s\n' "$reason" >&2
+  printf 'studio-chain-runner: manifest: %s\n' "$manifest" >&2
+  if [ "$status" = "audit_gap" ]; then
+    printf 'studio-chain-runner: audit gap: done/implemented planning tasks without issue mappings are not authoritative. Create or map GitHub issues first, then preserve implementation provenance with the issue number, run/session reference, commit, and validation point.\n' >&2
+  elif [ "$status" = "planning" ]; then
+    printf 'studio-chain-runner: planning artifacts must be converted before execution: create or map GitHub issues for each task, then write a runner manifest with schema_version: 1, chains[].issues[] issue numbers, target_repo_root, and issue_repo: owner/repo.\n' >&2
+  else
+    printf 'studio-chain-runner: runnable manifests must follow chain-manifest@1 with schema_version: 1 and non-empty chains[].issues[] issue numbers.\n' >&2
+  fi
+}
+
+preflight_runnable_manifest() {
+  local manifest="$1" diagnostics status
+  diagnostics=$(manifest_diagnostics_json "$manifest")
+  status=$(jq -r '.status' <<<"$diagnostics")
+  if [ "$status" != "runnable" ]; then
+    print_manifest_preflight_failure "$diagnostics"
+    return 2
+  fi
+  return 0
+}
+
 discover_chain_manifests() {
-  local manifest chain_count idx name issues command rel_manifest manifest_filter manifest_list_tmp rows_tmp candidate
+  local manifest chain_count idx name issues command rel_manifest manifest_filter manifest_list_tmp rows_tmp nonrunnable_tmp candidate diagnostics status reason
   command -v yq >/dev/null 2>&1 || { printf 'studio-chain-runner: yq required\n' >&2; exit 2; }
+  command -v jq >/dev/null 2>&1 || { printf 'studio-chain-runner: jq required\n' >&2; exit 2; }
   printf '\n## Runnable Work Chains\n\n'
   if [ ! -d "$REPO_ROOT/chains" ]; then
     printf -- '- No chain manifests found under `%s`.\n' "$REPO_ROOT/chains"
@@ -266,10 +398,20 @@ discover_chain_manifests() {
   fi
 
   rows_tmp=$(mktemp -t studio-chain-discovery-chains.XXXXXX)
+  nonrunnable_tmp=$(mktemp -t studio-chain-discovery-nonrunnable.XXXXXX)
   while IFS= read -r manifest; do
     [ -n "$manifest" ] || continue
     [ -f "$manifest" ] || continue
     rel_manifest=${manifest#"$REPO_ROOT/"}
+    diagnostics=$(manifest_diagnostics_json "$manifest")
+    status=$(jq -r '.status' <<<"$diagnostics")
+    if [ "$status" != "runnable" ]; then
+      if [ -n "$manifest_filter" ]; then
+        reason=$(jq -r '.reason' <<<"$diagnostics")
+        printf '| `%s` | `%s` | `%s` |\n' "$rel_manifest" "$status" "$reason" >> "$nonrunnable_tmp"
+      fi
+      continue
+    fi
     chain_count=$(yq -r '.chains | length' "$manifest" 2>/dev/null || printf '0')
     case "$chain_count" in
       ''|null|*[!0-9]*|0) continue ;;
@@ -286,12 +428,20 @@ discover_chain_manifests() {
   if [ ! -s "$rows_tmp" ]; then
     printf -- '- No runnable work chains matched the current filter.\n'
     rm -f "$rows_tmp"
+    if [ -s "$nonrunnable_tmp" ]; then
+      printf '\n## Non-Runnable Manifest Matches\n\n'
+      printf '| Manifest | Classification | Reason |\n'
+      printf '|---|---|---|\n'
+      cat "$nonrunnable_tmp"
+      printf '\nPlanning artifacts must be converted before execution: create or map GitHub issues for each task, then write a runner manifest with `schema_version: 1`, `chains[].issues[]` issue numbers, `target_repo_root`, and `issue_repo: owner/repo`.\n'
+    fi
+    rm -f "$nonrunnable_tmp"
     return 0
   fi
   printf '| Manifest | Chain | Issues | Suggested command |\n'
   printf '|---|---|---|---|\n'
   cat "$rows_tmp"
-  rm -f "$rows_tmp"
+  rm -f "$rows_tmp" "$nonrunnable_tmp"
 }
 
 print_discovery() {
@@ -340,9 +490,7 @@ esac
 
 command -v yq >/dev/null 2>&1 || { printf 'studio-chain-runner: yq required\n' >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || { printf 'studio-chain-runner: jq required\n' >&2; exit 2; }
-command -v gh >/dev/null 2>&1 || { printf 'studio-chain-runner: gh required\n' >&2; exit 2; }
 
-REPO_SLUG="v-i-s-h-a-l/generic-dev-studio"
 RUN_ROOT="${TMPDIR:-/tmp}/studio-chain-runner"
 mkdir -p "$RUN_ROOT"
 FINAL_PR_URL=""
@@ -389,9 +537,8 @@ configure_run_paths() {
   else
     EVENTS_JSONL="/dev/null"
   fi
+  RUN_PATHS_CONFIGURED=1
 }
-
-configure_run_paths
 
 log() {
   printf 'studio-chain-runner: %s\n' "$*" >&2
@@ -571,6 +718,8 @@ write_run_state() {
   jq -n \
     --arg run_id "$RUN_ID" \
     --arg manifest "$MANIFEST" \
+    --arg target_repo_root "$TARGET_REPO_ROOT" \
+    --arg issue_repo "$REPO_SLUG" \
     --arg status "$status" \
     --arg started_at "$RUN_STARTED_TS" \
     --arg updated_at "$(iso_ts_now)" \
@@ -592,6 +741,8 @@ write_run_state() {
       schema_version: 1,
       run_id: $run_id,
       manifest: $manifest,
+      target_repo_root: $target_repo_root,
+      issue_repo: $issue_repo,
       status: $status,
       started_at: $started_at,
       updated_at: $updated_at,
@@ -697,18 +848,96 @@ mark_chain_state() {
 
 mark_issue_state() {
   local issue_run_id="$1" status="$2" before="${3:-}" after="${4:-}" summary="${5:-}" reason="${6:-}"
+  local lifecycle transition_at
+  transition_at=$(iso_ts_now)
+  case "$status" in
+    pending) lifecycle="issue-created" ;;
+    running) lifecycle="implementation-running" ;;
+    completed) lifecycle="smoke-passed" ;;
+    failed) lifecycle="failed" ;;
+    *) lifecycle="$status" ;;
+  esac
   update_state_jq \
     --arg issue_run_id "$issue_run_id" \
     --arg status "$status" \
+    --arg lifecycle "$lifecycle" \
     --arg before "$before" \
     --arg after "$after" \
     --arg summary "$summary" \
     --arg reason "$reason" \
-    '(.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .status) = $status
-     | if $before == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .commit_before) = $before end
-     | if $after == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .commit_after) = $after end
-     | if $summary == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .summary) = $summary end
-     | if $reason == "" then . else (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .failure_reason) = $reason end'
+    --arg run_id "$RUN_ID" \
+    --arg issue_repo "$REPO_SLUG" \
+    --arg transition_at "$transition_at" \
+    'def append_lifecycle($state; $reason):
+       .lifecycle_state = $state
+       | .lifecycle_history = (
+           (.lifecycle_history // []) as $history
+           | if (($history | length) > 0 and ($history[-1].state // "") == $state) then $history
+             else $history + [{state:$state, at:$transition_at, reason:$reason}]
+             end
+         );
+     (.chains[].issues[] | select(.issue_run_id == $issue_run_id)) |= (
+       .status = $status
+       | append_lifecycle($lifecycle; $status)
+       | .provenance.issue = ((.provenance.issue // {}) + {
+           number:(.number // .issue // null),
+           title:(.title // null),
+           state:(.state // null),
+           url:(.url // .issue_url // null),
+           repo:$issue_repo
+         })
+       | .provenance.session = ((.provenance.session // {}) + {
+           run_id:$run_id,
+           chain_run_id:(.chain_run_id // null),
+           issue_run_id:$issue_run_id,
+           issue_branch:(.issue_branch // null),
+           issue_worktree:(.issue_worktree // null)
+         })
+       | if $before == "" then . else .commit_before = $before | .provenance.implementation.commit_before = $before end
+       | if $after == "" then . else .commit_after = $after | .provenance.implementation.commit_after = $after end
+       | if $summary == "" then . else .summary = $summary | .provenance.implementation.summary = $summary | .provenance.validation.summary = $summary end
+       | if $status == "completed" then .provenance.validation = ((.provenance.validation // {}) + {validated_at:$transition_at, validation_point:(if $summary == "" then "runner-state" else "worker-summary" end)}) else . end
+       | if $reason == "" then del(.failure_reason) else .failure_reason = $reason end
+     )'
+  chain_monitor_notify_issue_state_change "$issue_run_id" state-updated
+}
+
+mark_issue_implemented_local() {
+  local issue_run_id="$1" before="$2" after="$3" summary="${4:-}" parent_finalized="${5:-false}"
+  local transition_at
+  transition_at=$(iso_ts_now)
+  update_state_jq \
+    --arg issue_run_id "$issue_run_id" \
+    --arg before "$before" \
+    --arg after "$after" \
+    --arg summary "$summary" \
+    --arg run_id "$RUN_ID" \
+    --arg transition_at "$transition_at" \
+    --argjson parent_finalized "$parent_finalized" \
+    'def append_lifecycle($state; $reason):
+       .lifecycle_state = $state
+       | .lifecycle_history = (
+           (.lifecycle_history // []) as $history
+           | if (($history | length) > 0 and ($history[-1].state // "") == $state) then $history
+             else $history + [{state:$state, at:$transition_at, reason:$reason}]
+             end
+         );
+     (.chains[].issues[] | select(.issue_run_id == $issue_run_id)) |= (
+       append_lifecycle("implemented-local"; "worker-commit")
+       | .commit_before = $before
+       | .commit_after = $after
+       | if $summary == "" then . else .summary = $summary end
+       | .provenance.implementation = ((.provenance.implementation // {}) + {
+           run_id:$run_id,
+           chain_run_id:(.chain_run_id // null),
+           issue_run_id:$issue_run_id,
+           commit_before:$before,
+           commit_after:$after,
+           summary:(if $summary == "" then null else $summary end),
+           implemented_at:$transition_at,
+           parent_finalized:$parent_finalized
+         })
+     )'
   chain_monitor_notify_issue_state_change "$issue_run_id" state-updated
 }
 
@@ -732,25 +961,91 @@ mark_issue_exit_code() {
 }
 
 mark_issue_integrated() {
-  local issue_run_id="$1"
+  local issue_run_id="$1" chain_commit="${2:-}"
+  local transition_at
+  transition_at=$(iso_ts_now)
   update_state_jq \
     --arg issue_run_id "$issue_run_id" \
-    '(.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .integrated) = true'
+    --arg chain_commit "$chain_commit" \
+    --arg transition_at "$transition_at" \
+    'def append_lifecycle($state; $reason):
+       .lifecycle_state = $state
+       | .lifecycle_history = (
+           (.lifecycle_history // []) as $history
+           | if (($history | length) > 0 and ($history[-1].state // "") == $state) then $history
+             else $history + [{state:$state, at:$transition_at, reason:$reason}]
+             end
+         );
+     (.chains[].issues[] | select(.issue_run_id == $issue_run_id)) |= (
+       .integrated = true
+       | append_lifecycle("merged"; "chain-branch-integration")
+       | .provenance.merge = ((.provenance.merge // {}) + {
+           merged_at:$transition_at,
+           chain_commit:(if $chain_commit == "" then null else $chain_commit end)
+         })
+     )'
   chain_monitor_notify_issue_state_change "$issue_run_id" state-updated
 }
 
 mark_chain_issues_completed_after_pr() {
   local chain_run_id="$1" commit_after="${2:-}"
+  local transition_at
+  transition_at=$(iso_ts_now)
   update_state_jq \
     --arg chain_run_id "$chain_run_id" \
     --arg after "$commit_after" \
+    --arg transition_at "$transition_at" \
     '(.chains[] | select(.chain_run_id == $chain_run_id) | .issues[]) |= (
        .status = "completed"
        | .integrated = true
+       | .lifecycle_state = "merged"
+       | .lifecycle_history = (
+           (.lifecycle_history // []) as $history
+           | if (($history | length) > 0 and ($history[-1].state // "") == "merged") then $history
+             else $history + [{state:"merged", at:$transition_at, reason:"chain-pr-finalized"}]
+             end
+         )
        | if $after == "" then . else .commit_after = $after end
+       | .provenance.merge = ((.provenance.merge // {}) + {
+           finalized_at:$transition_at,
+           chain_pr_commit_after:(if $after == "" then null else $after end)
+         })
        | del(.failure_reason)
      )'
   chain_monitor_notify_chain_state_change "$chain_run_id" state-updated
+}
+
+mark_issue_closed() {
+  local chain_run_id="$1" issue_run_id="$2" issue="$3" pr_url="${4:-}"
+  local transition_at
+  transition_at=$(iso_ts_now)
+  update_state_jq \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg issue "$issue" \
+    --arg pr_url "$pr_url" \
+    --arg transition_at "$transition_at" \
+    'def append_lifecycle($state; $reason):
+       .lifecycle_state = $state
+       | .lifecycle_history = (
+           (.lifecycle_history // []) as $history
+           | if (($history | length) > 0 and ($history[-1].state // "") == $state) then $history
+             else $history + [{state:$state, at:$transition_at, reason:$reason}]
+             end
+         );
+     (.chains[] | select(.chain_run_id == $chain_run_id) | .issues[] | select((.issue_run_id // "") == $issue_run_id or ((.number // .issue // 0) | tostring) == $issue)) |= (
+       .status = "completed"
+       | .integrated = true
+       | .closed = true
+       | .closed_at = $transition_at
+       | append_lifecycle("closed"; "issue-closed")
+       | .provenance.closure = {
+           closed_at:$transition_at,
+           pr_url:(if $pr_url == "" then null else $pr_url end),
+           issue_number:(($issue | tonumber?) // (.number // .issue // null))
+         }
+     )'
+  chain_monitor_notify_issue_state_change "$issue_run_id" state-updated
 }
 
 sanitize_checkpoint_component() {
@@ -911,7 +1206,7 @@ halt_class_for_reason() {
   case "$1" in
     github_auth_unavailable|github_home_mismatch|github_rate_limited|network_partition|child_timeout|disk_runtime_pressure)
       printf 'retryable\n' ;;
-    parent_host_unknown|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_crash|issue_body_changed|partial_github_operation|test_build_infra_unavailable|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|implementation_scope_blocked)
+    parent_host_unknown|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_crash|issue_body_changed|partial_github_operation|test_build_infra_unavailable|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|manifest_schema_mismatch|implementation_scope_blocked)
       printf 'recoverable\n' ;;
     reviewer_blocked|reviewer_ambiguous)
       printf 'review-needed\n' ;;
@@ -935,6 +1230,7 @@ halt_reason_for_text() {
     *rebase*|*base\ branch*) printf 'base_branch_advanced\n' ;;
     *worker_summary_missing*|*summary*missing*|*produced\ no\ runner\ result*) printf 'missing_child_summary\n' ;;
     *worker\ exited*|*unexpected_exit*) printf 'child_crash\n' ;;
+    *manifest/schema\ mismatch*|*planning\ manifest*|*chain-manifest*) printf 'manifest_schema_mismatch\n' ;;
     *gh\ issue\ close*|*PR\ telemetry\ comment*|*GitHub\ operation*) printf 'partial_github_operation\n' ;;
     *host\ preflight*|*test*infra*|*build*infra*) printf 'test_build_infra_unavailable\n' ;;
     *permission*) printf 'model_tool_permission_prompt\n' ;;
@@ -1247,7 +1543,16 @@ record_phase_review() {
         chain_run_id: $chain_run_id,
         issue_run_id: $issue_run_id,
         feedback: $feedback
-       }])'
+       }])
+     | if $kind != "outcome" or $issue_run_id == "" then .
+       else
+         (.chains[].issues[] | select(.issue_run_id == $issue_run_id) | .provenance.validation) |= ((. // {}) + {
+           phase_review_artifact:$artifact,
+           phase_review:$review,
+           phase_review_verdict:$verdict,
+           review_host:$review_host
+         })
+       end'
 }
 
 append_phase_review_feedback() {
@@ -2200,7 +2505,7 @@ abort_run_with_reason() {
 
 finish_unexpected_exit() {
   local rc=$?
-  if [ "$rc" -ne 0 ] && [ "${RUN_FINISHED:-0}" != "1" ] && [ "${DRY_RUN:-0}" -eq 0 ]; then
+  if [ "$rc" -ne 0 ] && [ "${RUN_FINISHED:-0}" != "1" ] && [ "${DRY_RUN:-0}" -eq 0 ] && [ "${RUN_PATHS_CONFIGURED:-0}" -eq 1 ]; then
     write_halt_record "$(halt_reason_for_text "unexpected_exit_$rc")" "unexpected exit $rc" >/dev/null || log "halt record write failed for unexpected exit $rc"
     finish_run failed "unexpected_exit_$rc"
   fi
@@ -2280,6 +2585,37 @@ resolve_existing_path() {
   printf '%s/%s\n' "$dir" "$base_name"
 }
 
+github_repo_slug_from_hint() {
+  local hint="$1" slug owner repo
+  [ -n "$hint" ] && [ "$hint" != "null" ] || return 1
+  slug=$(printf '%s' "$hint" \
+    | sed -E 's#^[[:space:]]+|[[:space:]]+$##g; s#^git@github\.com:##; s#^ssh://git@github\.com/##; s#^https://github\.com/##; s#^http://github\.com/##; s#^git://github\.com/##; s#\.git$##; s#/$##')
+  case "$slug" in
+    */*)
+      owner=${slug%%/*}
+      repo=${slug#*/}
+      repo=${repo%%/*}
+      [ -n "$owner" ] && [ -n "$repo" ] || return 1
+      printf '%s/%s\n' "$owner" "$repo"
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+github_repo_slug_from_remote() {
+  local root="$1" remote
+  remote=$(git -C "$root" config --get remote.origin.url 2>/dev/null || true)
+  github_repo_slug_from_hint "$remote"
+}
+
+same_git_root() {
+  local a="$1" b="$2" a_root b_root
+  a_root=$(git -C "$a" rev-parse --show-toplevel 2>/dev/null || true)
+  b_root=$(git -C "$b" rev-parse --show-toplevel 2>/dev/null || true)
+  [ -n "$a_root" ] && [ -n "$b_root" ] && [ "$a_root" = "$b_root" ]
+}
+
 resolve_target_repo_root() {
   local manifest="${1:?usage: resolve_target_repo_root <manifest>}" manifest_dir hint env_hint root
   manifest_dir=$(cd "$(dirname "$manifest")" && pwd -P) || return 1
@@ -2308,6 +2644,44 @@ resolve_target_repo_root() {
     exit 2
   fi
   git -C "$root" rev-parse --show-toplevel
+}
+
+resolve_issue_repo_slug() {
+  local manifest="${1:?usage: resolve_issue_repo_slug <manifest> <target_repo_root>}" target_root="${2:?usage: resolve_issue_repo_slug <manifest> <target_repo_root>}"
+  local hint slug
+  hint=$(yq -r '.issue_repo // .repo.issue_repo // .repo.issue // .repo.slug // .repo.name_with_owner // .github.repository // .github.repo // ""' "$manifest" 2>/dev/null || true)
+  if [ -n "$hint" ] && [ "$hint" != "null" ]; then
+    slug=$(github_repo_slug_from_hint "$hint" || true)
+    if [ -z "$slug" ]; then
+      printf 'studio-chain-runner: issue_repo must be a GitHub owner/repo slug or github.com URL: %s\n' "$hint" >&2
+      exit 2
+    fi
+    printf '%s\n' "$slug"
+    return 0
+  fi
+
+  slug=$(github_repo_slug_from_remote "$target_root" || true)
+  if [ -n "$slug" ]; then
+    printf '%s\n' "$slug"
+    return 0
+  fi
+
+  if same_git_root "$target_root" "$REPO_ROOT"; then
+    printf '%s\n' "$REPO_SLUG_DEFAULT"
+    return 0
+  fi
+
+  printf 'studio-chain-runner: issue repository is not explicit and could not be resolved for target repo root: %s\n' "$target_root" >&2
+  printf 'studio-chain-runner: add issue_repo: owner/repo to the manifest, set repo.issue_repo, or configure origin to a GitHub repository before execution.\n' >&2
+  exit 2
+}
+
+resolve_new_run_manifest_context() {
+  MANIFEST=$(resolve_manifest "$MANIFEST")
+  MANIFEST=$(canonical_path "$MANIFEST")
+  preflight_runnable_manifest "$MANIFEST"
+  TARGET_REPO_ROOT=$(resolve_target_repo_root "$MANIFEST")
+  REPO_SLUG=$(resolve_issue_repo_slug "$MANIFEST" "$TARGET_REPO_ROOT")
 }
 
 state_manifest_matches() {
@@ -2507,7 +2881,8 @@ acquire_state_lock() {
 supervisor_decide_next() {
   local manifest="$1" mode="$2" states completed=0 eligible=0 hard_stop=0 escrow=0
   local state run_id selected_state="" selected_run_id="" candidates_json action reason_id
-  MANIFEST=$(canonical_path "$(resolve_manifest "$manifest")")
+  MANIFEST="$manifest"
+  resolve_new_run_manifest_context
   states=$(supervisor_matching_states "$MANIFEST" || true)
   candidates_json='[]'
   while IFS= read -r state; do
@@ -2835,9 +3210,9 @@ resolve_resume_state() {
 }
 
 build_plan_json() {
-  local out="$1" chain_count idx name base branch host approved_release_id sync_strategy phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state
+  local out="$1" chain_count idx name base branch host approved_release_id sync_strategy phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state issue_url
   local chain_run_id issue_run_id issue_slug issue_branch issue_worktree chain_slug chain_worktree worker_pool issue_kind dependencies_json previous_issue
-  local tmp chains_tmp issues_tmp
+  local tmp chains_tmp issues_tmp mapped_at
   tmp="$out.tmp.$$"
   chains_tmp="$out.chains.$$"
   printf '[]\n' > "$chains_tmp"
@@ -2917,6 +3292,7 @@ build_plan_json() {
       issue_json=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,state,url)
       issue_title=$(printf '%s' "$issue_json" | jq -r '.title')
       issue_state=$(printf '%s' "$issue_json" | jq -r '.state')
+      issue_url=$(printf '%s' "$issue_json" | jq -r '.url // ""')
       if [ "$ALLOW_CLOSED_ISSUES" -eq 0 ] && [ "$issue_state" != "OPEN" ]; then
         printf 'studio-chain-runner: issue #%s is %s; use --allow-closed-issues to include it\n' "$issue" "$issue_state" >&2
         exit 2
@@ -2926,15 +3302,50 @@ build_plan_json() {
       validate_branch_ref "$issue_branch" "issue"
       issue_worktree="$RUN_WORK_ROOT/$chain_slug-issue-$issue_slug"
       issue_run_id=$(mint_uuidv7)
+      mapped_at=$(iso_ts_now)
       jq \
         --argjson issue "$issue" \
         --arg title "$issue_title" \
         --arg state "$issue_state" \
+        --arg url "$issue_url" \
+        --arg issue_repo "$REPO_SLUG" \
+        --arg chain_run_id "$chain_run_id" \
         --arg branch "$issue_branch" \
         --arg worktree "$issue_worktree" \
         --arg issue_run_id "$issue_run_id" \
+        --arg mapped_at "$mapped_at" \
         --argjson dependencies "$dependencies_json" \
-        '. + [{number:$issue,title:$title,state:$state,dependencies:$dependencies,issue_branch:$branch,issue_worktree:$worktree,issue_run_id:$issue_run_id,status:"pending"}]' \
+        '. + [{
+          number:$issue,
+          title:$title,
+          state:$state,
+          url:(if $url == "" then null else $url end),
+          issue_repo:$issue_repo,
+          dependencies:$dependencies,
+          chain_run_id:$chain_run_id,
+          issue_branch:$branch,
+          issue_worktree:$worktree,
+          issue_run_id:$issue_run_id,
+          status:"pending",
+          lifecycle_state:"issue-created",
+          lifecycle_history:[{state:"issue-created", at:$mapped_at, reason:"github-issue-mapping"}],
+          provenance:{
+            issue:{
+              number:$issue,
+              title:$title,
+              state:$state,
+              url:(if $url == "" then null else $url end),
+              repo:$issue_repo,
+              mapped_at:$mapped_at
+            },
+            session:{
+              chain_run_id:$chain_run_id,
+              issue_run_id:$issue_run_id,
+              issue_branch:$branch,
+              issue_worktree:$worktree
+            }
+          }
+        }]' \
         "$issues_tmp" > "$issues_tmp.next"
       mv "$issues_tmp.next" "$issues_tmp"
       previous_issue="$issue"
@@ -2963,6 +3374,7 @@ build_plan_json() {
     --arg run_id "$RUN_ID" \
     --arg manifest "$MANIFEST" \
     --arg target_repo_root "$TARGET_REPO_ROOT" \
+    --arg issue_repo "$REPO_SLUG" \
     --arg only_chain "$ONLY_CHAIN" \
     --arg host_override "$HOST_OVERRIDE" \
     --arg parallel_chains "$PARALLEL_CHAINS" \
@@ -2976,6 +3388,7 @@ build_plan_json() {
       run_id:$run_id,
       manifest:$manifest,
       target_repo_root:$target_repo_root,
+      issue_repo:$issue_repo,
       only_chain:(if $only_chain == "" then null else $only_chain end),
       host_override:(if $host_override == "" then null else $host_override end),
       parallel_chains:$parallel_chains,
@@ -3006,7 +3419,26 @@ build_plan_json() {
 
 validate_execution_graph() {
   local plan="$1"
-  local duplicate_issues duplicate_branches protected_targets dependency_conflicts invalid_issue_dependencies
+  local provenance_audit_gaps duplicate_issues duplicate_branches protected_targets dependency_conflicts invalid_issue_dependencies
+  provenance_audit_gaps=$(jq -r '
+    def doneish:
+      (((.status? // .lifecycle_state? // .state? // "") | tostring) | test("done|completed|implemented|smoke-passed|merged|closed"; "i"))
+      or (.done? == true)
+      or (.completed? == true);
+    [
+      .chains[]? as $chain
+      | $chain.issues[]? as $issue
+      | select(($issue | type) == "object")
+      | select($issue | doneish)
+      | select((($issue.number // $issue.issue // $issue.provenance.issue.number // null) == null))
+      | "\($chain.name // "unknown"):index-\(([$chain.issues[]?] | index($issue)) // "unknown")"
+    ] | join(", ")
+  ' "$plan")
+  [ -z "$provenance_audit_gaps" ] || {
+    printf 'studio-chain-runner: audit gap: completed/imported issue state lacks durable issue mapping: %s\n' "$provenance_audit_gaps" >&2
+    printf 'studio-chain-runner: map each done task to a GitHub issue before treating implementation state as authoritative.\n' >&2
+    exit 2
+  }
   duplicate_issues=$(jq -r '[.chains[].issues[].number] | group_by(.)[] | select(length > 1) | .[0]' "$plan" | paste -sd, -)
   [ -z "$duplicate_issues" ] || { printf 'studio-chain-runner: duplicate issue IDs across chains: %s\n' "$duplicate_issues" >&2; exit 2; }
   duplicate_branches=$(jq -r '[.chains[].branch, (.chains[].issues[].issue_branch)] | group_by(.)[] | select(length > 1) | .[0]' "$plan" | paste -sd, -)
@@ -3263,6 +3695,7 @@ explain_plan() {
   printf -- '- Run UUID: `%s`\n' "$RUN_ID"
   printf -- '- Manifest: `%s`\n' "$MANIFEST"
   printf -- '- Target repo root: `%s`\n' "$TARGET_REPO_ROOT"
+  printf -- '- Issue repo: `%s`\n' "$(jq -r '.issue_repo // "unknown"' "$plan")"
   printf -- '- State: `%s`\n' "$RUN_STATE_JSON"
   printf -- '- Parallel chains: `%s` effective `%s`\n' "$PARALLEL_CHAINS" "$effective_parallel"
   printf -- '- Execution mode: `%s`\n' "$execution_mode"
@@ -3271,6 +3704,7 @@ explain_plan() {
   [ -z "$gates" ] || printf -- '- Review gates: %s\n' "$gates"
   printf -- '- Mechanical rule gates: `%s`; audit `%s`\n' "$(jq -r '.mechanical_rule_gates.status // "not-run"' "$plan")" "$(jq -r '.mechanical_rule_gates.audit_log // "none"' "$plan")"
   printf -- '- Host/model policy: manifest host, overridden by `--host`; `auto` resolves to `%s`\n' "${HOST_OVERRIDE:-codex}"
+  printf -- '- Issue lifecycle: `issue-created -> implementation-running -> implemented-local -> smoke-passed -> merged -> closed`; scheduler status remains separate for resume compatibility\n'
   printf -- '- Risk notes: %s\n\n' "$risk"
   jq -r '
     .chains[] |
@@ -3290,8 +3724,8 @@ explain_plan() {
     "- Issue scheduler: `dependency-ready nodes up to worker_pool; scalar issue lists preserve manifest order`\n" +
     "- Rule-pack status: `\(.rule_pack_resolution.status // "not-resolved")`; selected `\((.rule_pack_resolution.selected_packs // []) | length)`, skipped `\((.rule_pack_resolution.skipped_packs // []) | length)`, estimated summary tokens `\(.rule_pack_resolution.estimated_context_cost.summary_tokens_estimated // "unknown")`, skipped full-doc tokens `\(.rule_pack_resolution.context_budget.skipped_full_doc_tokens_estimated // "unknown")`, cold-context delta `\(.rule_pack_resolution.context_budget.cold_context_delta_tokens_estimated // "unknown")`\n" +
     "- Planned PR: base `\(.base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
-    "| Issue | Depends On | State | Status | Rule Packs | Issue-run UUID | Branch | Worktree |\n|---:|---|---|---|---:|---|---|---|\n" +
-    ([.issues[] | "| #\(.number) \(.title) | \(if ((.dependencies // []) | length) == 0 then "-" else ((.dependencies // []) | map("#" + tostring) | join(", ")) end) | \(.state) | \(.status) | \((.rule_pack_resolution.selected_packs // []) | length) | `\(.issue_run_id)` | `\(.issue_branch)` | `\(.issue_worktree)` |"] | join("\n")) +
+    "| Issue | Depends On | Issue State | Runner Status | Lifecycle | Rule Packs | Issue-run UUID | Branch | Worktree |\n|---:|---|---|---|---|---:|---|---|---|\n" +
+    ([.issues[] | "| #\(.number) \(.title) | \(if ((.dependencies // []) | length) == 0 then "-" else ((.dependencies // []) | map("#" + tostring) | join(", ")) end) | \(.state) | \(.status) | \(.lifecycle_state // "unknown") | \((.rule_pack_resolution.selected_packs // []) | length) | `\(.issue_run_id)` | `\(.issue_branch)` | `\(.issue_worktree)` |"] | join("\n")) +
     "\n\n### Rule Packs\n\n" +
     "| Scope | Pack | Decision | Reason | Summary |\n|---|---|---|---|---|\n" +
     ([
@@ -3338,13 +3772,15 @@ prepare_plan() {
       printf 'studio-chain-runner: target repo root is not a git checkout: %s\n' "$TARGET_REPO_ROOT" >&2
       exit 2
     fi
+    REPO_SLUG=$(jq -r '.issue_repo // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
+    [ -n "$REPO_SLUG" ] || REPO_SLUG=$(resolve_issue_repo_slug "$MANIFEST" "$TARGET_REPO_ROOT")
     cp "$RUN_STATE_JSON" "$PLAN_JSON"
-    jq --arg target_repo_root "$TARGET_REPO_ROOT" '.target_repo_root = $target_repo_root' "$PLAN_JSON" > "$PLAN_JSON.tmp.$$"
+    jq --arg target_repo_root "$TARGET_REPO_ROOT" --arg issue_repo "$REPO_SLUG" '.target_repo_root = $target_repo_root | .issue_repo = $issue_repo' "$PLAN_JSON" > "$PLAN_JSON.tmp.$$"
     mv "$PLAN_JSON.tmp.$$" "$PLAN_JSON"
   else
-    MANIFEST=$(resolve_manifest "$MANIFEST")
-    MANIFEST=$(canonical_path "$MANIFEST")
-    TARGET_REPO_ROOT=$(resolve_target_repo_root "$MANIFEST")
+    if [ -z "$TARGET_REPO_ROOT" ]; then
+      resolve_new_run_manifest_context
+    fi
     build_plan_json "$PLAN_JSON"
   fi
   attach_rule_pack_resolutions "$PLAN_JSON"
@@ -3381,9 +3817,15 @@ if [ -n "$RESUME_ID" ]; then
   if [ "$YES" -eq 1 ]; then
     acquire_state_lock
   fi
-elif [ "$YES" -eq 1 ]; then
-  acquire_state_lock
+else
+  resolve_new_run_manifest_context
+  configure_run_paths
+  if [ "$YES" -eq 1 ]; then
+    acquire_state_lock
+  fi
 fi
+
+command -v gh >/dev/null 2>&1 || { printf 'studio-chain-runner: gh required\n' >&2; exit 2; }
 
 chain_artifact_hygiene_sweep
 prepare_plan
@@ -3776,6 +4218,7 @@ run_issue_job() {
   child_worker_rc=$worker_rc
 
   if [ "$DRY_RUN" -eq 1 ]; then
+    mark_issue_implemented_local "$issue_run_id" "$before" "dry-run-after" "" false
     mark_issue_state "$issue_run_id" completed "$before" "dry-run-after"
     jq -n \
       --arg issue "$issue" \
@@ -3902,6 +4345,8 @@ run_issue_job() {
       '{status:"failed", issue:($issue|tonumber), reason:$reason}' > "$result_file"
     return 0
   fi
+
+  mark_issue_implemented_local "$issue_run_id" "$before" "$after" "$summary_file" "$parent_finalized"
 
   if phase_review_required_for_issue "$phase_review_mode" "$issue_count_for_review"; then
     boundary_id="$chain_run_id-$issue_run_id"
@@ -4112,7 +4557,7 @@ print_issue_progress_recap() {
 
 process_completed_issue_result() {
   local chain_name="$1" branch="$2" chain_worktree="$3" issue="$4" git_metadata_strategy="$5" result_file="$6" chain_run_id="$7" issue_run_id="$8" checkpoint_mode="$9"
-  local result_status result_reason summary_file
+  local result_status result_reason summary_file chain_commit
 
   result_status=$(jq -r '.status // "failed"' "$result_file")
   if [ "$result_status" != "completed" ]; then
@@ -4126,7 +4571,8 @@ process_completed_issue_result() {
     CHAIN_INTEGRATION_FAILURE_REASON=""
     return 1
   fi
-  mark_issue_integrated "$issue_run_id"
+  chain_commit=$(git -C "$chain_worktree" rev-parse HEAD 2>/dev/null || true)
+  mark_issue_integrated "$issue_run_id" "$chain_commit"
   summary_file=$(jq -r '.summary // empty' "$result_file" 2>/dev/null || true)
   print_issue_progress_recap "$chain_name" "$chain_run_id" "$issue_run_id" "$issue" "$summary_file"
   if [ "$checkpoint_mode" = "auto" ]; then
@@ -4559,6 +5005,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
 
   for ((i = 0; i < issue_count; i++)); do
     issue=$(jq -r ".chains[$idx].issues[$i].number" "$PLAN_JSON")
+    issue_run_id=$(jq -r ".chains[$idx].issues[$i].issue_run_id" "$PLAN_JSON")
     if [ "$DRY_RUN" -eq 0 ]; then
       issue_comment="Chain issue integrated.
 
@@ -4568,11 +5015,12 @@ Chain run: $RUN_ID"
 PR: $FINAL_PR_URL"
       with_login_home_for_github gh issue close "$issue" --repo "$REPO_SLUG" --comment "$issue_comment" \
         || with_login_home_for_github gh issue comment "$issue" --repo "$REPO_SLUG" --body "$issue_comment"
-      emit_chain_event chain_issue_closed "$issue" "$RUN_ID" "$chain_run_id" "" completed 0 \
+      emit_chain_event chain_issue_closed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed 0 \
         "$(jq -cn --arg pr_url "$FINAL_PR_URL" --arg issue_number "$issue" '{pr_url:(if $pr_url == "" then null else $pr_url end), issue_number:($issue_number|tonumber)}')"
     else
       printf 'DRY-RUN gh issue close %q --repo %q --comment %q\n' "$issue" "$REPO_SLUG" "Merged through chain PR: ${FINAL_PR_URL:-<pr-url>}"
     fi
+    mark_issue_closed "$chain_run_id" "$issue_run_id" "$issue" "$FINAL_PR_URL"
   done
 
   if [ "$DRY_RUN" -eq 0 ]; then

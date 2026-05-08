@@ -94,12 +94,13 @@ scripts/schedule-chain-monitor.sh --install --project generic-dev-studio --inter
 scripts/studio-chain-telemetry-digest.sh --days 7                          # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run telemetry
 scripts/lint-chain-workflow-docs.sh --staged                               # guard chain launcher docs, usage text, and fixtures; bypass with STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1
 scripts/studio-checkpoint.sh create --role worker --goal "..." --next "..." # compact private checkpoint; stdout prints the checkpoint id
-scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker      # load manifest.json + context.md first, then inspect drift lazily
+scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker      # load by id, falling back to durable project indexes, then inspect drift lazily
 scripts/codex-worker-exec.sh "<prompt>"                                    # internal Codex worker launcher: workspace-write + ~/.dev-studio + ephemeral + no prompts
 # Chain dry-runs show the selected git metadata strategy; sandboxed hosts use issue-local clones so commits stay inside the worker root.
 # Chain worktrees/results are namespaced under the run UUID; resume continues only the selected run, reconciles stale running issues from completed private summaries after required outcome review, and surfaces skipped/integrated/pending issue semantics.
 # Chain startup sweeps stale state locks, old temporary run roots, and oversized private artifacts; tune with STUDIO_CHAIN_TMP_RETENTION_DAYS, STUDIO_CHAIN_RUN_RETENTION_DAYS, and STUDIO_CHAIN_ARTIFACT_MAX_BYTES.
 # Chain reports include compact efficiency metrics, test/lint/build outcomes, typed halt records, and decision escrow when automation pauses or continues on a low-risk default.
+# Chain manifest preflight rejects planning artifacts before run creation; project-scoped manifests declare issue_repo or resolve it from the target repo remote.
 # Release-bearing chain manifests declare approved_release_id plus sync_strategy; rebase is the default, and squash is used only when the manifest explicitly opts in.
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
 scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
@@ -195,6 +196,7 @@ scripts/install-node-janitor-launchagent.sh             # render + load every-6h
 scripts/monitor-install.sh install                      # opt-in laptop LaunchAgent; hourly node-health monitor + notifications for >6h unreachable nodes (#132)
 scripts/node-monitor.sh                                 # one-shot monitor check; tracks streak/cooldown state and emits node_unreachable alerts (#132)
 scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # YAML debrief + state flips
+scripts/studio-tf-push.sh appstore --build N --version X.Y.Z --release-notes-file notes.txt --whatsnew-file whatsnew.txt # backend for /fullSendToAppStore; creates GitHub draft, submits ASC, and records Slack/PR handoff
 
 # Manager reconcile/analyze + studio-feedback ingestion:
 scripts/manager-reconcile.sh --cwd "$PWD"               # project repo: sync emitted debriefs/reports into the project task ledger

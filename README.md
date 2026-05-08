@@ -103,12 +103,13 @@ scripts/manager-chain-monitor.sh status --project generic-dev-studio --json # no
 scripts/schedule-chain-monitor.sh --install --project generic-dev-studio --interval-s 300 # login-home macOS LaunchAgent for background monitor sync
 scripts/rule-pack-resolve.sh --manifest chain.yaml --chain my-chain --issue 123 --role worker # selective rule-pack selection with context-budget telemetry
 scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters, efficiency ratios, and bottlenecks from private chain-run telemetry
-scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker # compact session resume by id; add --latest for branch-scoped lookup
+scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker # compact resume by id, with durable index fallback; add --latest for branch-scoped lookup
 scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
 STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
 /dev-studio host-adapter nodes   # day-2 fleet management — status, add, remove, health, sync, schedule
 /dev-studio release-manager tf-push --background     # start TF archive/upload and keep session free for Slack drafting
 /dev-studio release-manager tf-push --version 26.5.0 # TestFlight push with explicit MARKETING_VERSION; live work needs STUDIO_TF_PUSH_LIVE=1
+/fullSendToAppStore              # App Store submit: wrapper approves copy; script owns GitHub/ASC/Slack handoff
 scripts/studio-tf-push.sh compose-message --channel testflight < commits.txt # taxonomy-aware release/TestFlight bullet composer
 scripts/studio-tf-push.sh withdraw-tf-tag --version 26.4.17 --build 3162 # rename TF anchor to tf-<version>-<build>-WITHDRAWN
 scripts/release-manager-configure.sh --project turnip-ios --quick --appstore-slack-channel C... # configure opt-in App Store Slack release announcements
@@ -201,7 +202,7 @@ core/v2/handoffs/
 commands/               # globally-installed slash commands (see scripts/install.sh)
   dev-studio.md         # /dev-studio — v2 umbrella role router from any project
   pushTFBuild.md        # /pushTFBuild — archive + upload to TestFlight; --background keeps Slack drafting live
-  fullSendToAppStore.md # /fullSendToAppStore — submit build to App Store review
+  fullSendToAppStore.md # /fullSendToAppStore — approve release copy, then submit via GitHub/ASC/Slack handoff
 
 scripts/                # multi-worker fleet (BETA)
   achilles-worker.sh    # long-running worker pane; atomic slot claim via mkdir+PID-token
@@ -337,6 +338,12 @@ one chain branch from the manifest, launches every issue leaf from that branch,
 and integrates completed leaves back into that same manager-owned branch before
 the final PR targets the manifest base. Leaf sessions should not retarget
 themselves to `main` or another integration branch.
+
+Before a chain run starts, `manager work-chain` rejects planning artifacts and
+schema-mismatched YAML with a manifest/schema mismatch explanation. Runnable
+project-scoped manifests must map tasks to GitHub issue numbers in
+`chains[].issues[]` and either declare `issue_repo: owner/repo` or let the
+target repo remote resolve to GitHub.
 
 The default leaf integration strategy is `sync_strategy: rebase`: the runner
 rebases the issue leaf onto the current chain branch and fast-forwards the chain

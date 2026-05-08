@@ -11,6 +11,24 @@ Authoritative recipe for the studio-owned TF/AS push procedure. Stage C (`script
 
 Project-specific knobs (paths, scheme, ASC key id/issuer, App ID, Crashlytics plist) live in `_shared/primitives/turnip-project-config.md`. Read those there; this contract names the *steps*, not the values.
 
+## Entrypoints and ownership
+
+The split between slash-command wrappers and `scripts/studio-tf-push.sh` is
+intentional. Operator-facing release paths start from the wrapper because
+drafting, reporter attribution, and approval need LLM judgment plus explicit
+human consent. The script is the mechanical backend for mutation, event
+emission, and durable release handoff state.
+
+| Path | Wrapper owns | Script owns | Watcher/finalizer owns |
+|---|---|---|---|
+| TestFlight push (`/dev-studio release-manager tf-push` or `/pushTFBuild`) | Slack draft, recent-thread reporter `cc:` tagging, human approval, Slack send | build/version bump, TF tag, archive, ASC upload, dSYM upload, pre-Slack events, `emit` primitive for wrapper Slack events | none |
+| TestFlight Slack recovery (`/postSlackTesting`) | Slack draft, reporter `cc:` tagging, human approval, Slack send for an already uploaded build | Slack read/write primitives only | none |
+| App Store submission (`/fullSendToAppStore`) | GitHub/Slack release-notes body, App Store "What's New", human approval | tag push, GitHub draft release, ASC submission, optional configured Slack parent/thread post, PR handoff, release artifact, pending marker | publish GitHub release, update Slack release link, and promote the PR only after `READY_FOR_SALE` and HEAD-bound release approval |
+
+App Store release notes deliberately omit reporter `cc:` mentions. Reporter
+tagging belongs to the TestFlight drafting paths where thread replies identify
+tester feedback to call out.
+
 ## Dispatch declaration
 
 The release driver declares:
