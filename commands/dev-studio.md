@@ -69,14 +69,18 @@ supplies the task context and runtime slug.
      planner-owned work. For `manager plan-chain`, call
      `$STUDIO_REPO/scripts/manager-plan-chain.sh` so source/issue/plan input
      is normalized, reviewed through `scripts/phase-review.sh`, converted to
-     durable GitHub issues after a clean verdict, and handed off as a runnable
-     work-chain manifest. For `manager work-chain`, prefer the
+     durable GitHub issues after a clean verdict, linked under native
+     parent/sub-issues when available, populated on the configured Project
+     board, and handed off as a runnable work-chain manifest. Add `--execute`
+     for one-command unattended launch and `--interactive` for attended mode.
+     For `manager work-chain`, prefer the
      `/dev-studio manager work-chain ...` command in user-facing next steps,
      especially after ingest or attended planning; script paths are secondary
      automation/debug equivalents. `manager work-chain --from-plan <path>`
      calls `$STUDIO_REPO/scripts/manager-work-chain.sh --from-plan <path>` and
      routes existing planner/task-graph artifacts through the same plan-chain
-     gate before execution. For `manager config`, call
+     gate, then launches the generated chain unattended by default unless
+     `--plan-only` or `--interactive` is supplied. For `manager config`, call
      `$STUDIO_REPO/scripts/manager-feature-config.sh` for project-scoped
      feature enable/disable/set/list/doctor operations. For `manager branch`,
      call `$STUDIO_REPO/scripts/manager-release-branch.sh` for release branch
@@ -118,7 +122,7 @@ supplies the task context and runtime slug.
    | `reconcile` | manager | `reconcile` in a project repo |
    | `config` | manager | `/dev-studio manager config list` |
    | `branch` | manager | `/dev-studio manager branch status --source feature/foo --target release/26.5.0` |
-   | `plan-chain` | manager | `/dev-studio manager plan-chain 758 --repo v-i-s-h-a-l/generic-dev-studio` |
+   | `plan-chain` | manager | `/dev-studio manager plan-chain 758 --repo v-i-s-h-a-l/generic-dev-studio --execute` |
    | `work-chain` | manager | `/dev-studio manager work-chain --from-plan task-graph.json --chain my-chain` |
    | `add` | manager | `/dev-studio manager add <url>` |
    | `sync` | host-adapter | `/dev-studio host-adapter sync` |
@@ -171,7 +175,7 @@ supplies the task context and runtime slug.
      `add`; examples:
      `/dev-studio manager ingest "capture this"`, `/dev-studio manager
      config list`, `/dev-studio manager branch status --source feature/foo
-     --target release/26.5.0`, `/dev-studio manager plan-chain 758`.
+     --target release/26.5.0`, `/dev-studio manager plan-chain 758 --execute`.
    - `worker`: bounded contract execution plus `checkpoint` and
      `resume-checkpoint`; example: `/dev-studio worker T123`.
    - `reviewer`: `review`, plan/outcome/diff/PR/release-packet review plus
