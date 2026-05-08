@@ -185,11 +185,11 @@ while IFS=$'\t' read -r chain_name base expected_sha branch approved_release_id 
   fi
 
   if [ -z "$base" ] || [ "$base" = "null" ]; then
-    gate_fail explicit_pr_base hard STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE "chain $chain_name has no explicit PR base"
+    gate_fail explicit_pr_base hard STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE "chain $chain_name has no explicit PR base/source branch"
   elif git check-ref-format --branch "$base" >/dev/null 2>&1; then
-    gate_pass explicit_pr_base hard STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE "chain $chain_name base is $base"
+    gate_pass explicit_pr_base hard STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE "chain $chain_name PR base/source branch is $base"
   else
-    gate_fail explicit_pr_base hard STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE "chain $chain_name base is not a valid branch ref: $base"
+    gate_fail explicit_pr_base hard STUDIO_BYPASS_EXPLICIT_PR_BASE_GATE "chain $chain_name PR base/source branch is not a valid branch ref: $base"
   fi
 
   if [ -n "$expected_sha" ] && [ "$expected_sha" != "null" ]; then
@@ -197,7 +197,7 @@ while IFS=$'\t' read -r chain_name base expected_sha branch approved_release_id 
     if [ "$actual_sha" = "$expected_sha" ]; then
       gate_pass expected_source_branch_sha hard STUDIO_BYPASS_SOURCE_SHA_GATE "chain $chain_name source SHA matches $expected_sha"
     else
-      gate_fail expected_source_branch_sha hard STUDIO_BYPASS_SOURCE_SHA_GATE "chain $chain_name expected $expected_sha for $base, got ${actual_sha:-missing}"
+      gate_fail expected_source_branch_sha hard STUDIO_BYPASS_SOURCE_SHA_GATE "chain $chain_name expected $expected_sha for source branch $base, got ${actual_sha:-missing}"
     fi
   else
     gate_skip expected_source_branch_sha hard STUDIO_BYPASS_SOURCE_SHA_GATE "chain $chain_name does not declare expected_source_sha/source_sha"
@@ -232,7 +232,7 @@ while IFS=$'\t' read -r chain_name base expected_sha branch approved_release_id 
   else
     gate_skip no_feature_branch_merge_commits hard STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE "feature branch $branch does not exist yet"
   fi
-done < <(jq -r '.chains[] | [.name, (.base // "__none__"), (.expected_source_sha // .source_sha // "__none__"), (.branch // "__none__"), (.approved_release_id // "__none__"), (.sync_strategy // "rebase")] | @tsv' "$PLAN")
+done < <(jq -r '.chains[] | [.name, (.source_branch // .base // "__none__"), (.expected_source_sha // .source_sha // "__none__"), (.branch // "__none__"), (.approved_release_id // "__none__"), (.sync_strategy // "rebase")] | @tsv' "$PLAN")
 
 if command -v rg >/dev/null 2>&1; then
   if rg -n 'git[[:space:]].*push([^#\n]*[[:space:]])--force([[:space:]=]|$)' "$REPO/scripts" | grep -v 'studio-chain-rule-gates.sh:' >/dev/null 2>&1; then

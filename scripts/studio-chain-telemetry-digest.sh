@@ -130,6 +130,13 @@ jq -n \
   def in_window: (date_part >= $since and date_part <= $until);
   def counts_by(key):
     reduce .[] as $item ({}; ($item | key // "unknown" | tostring) as $k | .[$k] = ((.[$k] // 0) + 1));
+  def timing_value($k):
+    (.execution_telemetry.timing[$k]
+     // .execution_telemetry.timings[$k]
+     // .execution_telemetry.phases[$k]
+     // (if $k == "control_plane_overhead_ms" then .execution_telemetry.routing.control_plane.scheduler_overhead_ms else null end)
+     // empty)
+    | tonumber? // empty;
   def token_total:
     (.tokens // null) as $t |
     if $t == null then null
@@ -162,6 +169,12 @@ jq -n \
   [ $selected_summaries[] | (.tests // [])[]? ] as $tests |
   [ $selected_summaries[] | (.lints // [])[]? ] as $lints |
   [ $selected_summaries[] | (.builds // [])[]? ] as $builds |
+  [ $selected_summaries[].execution_telemetry? // empty ] as $execution_rows |
+  [ $selected_summaries[].execution_telemetry.routing.reason_class? // empty ] as $routing_reasons |
+  [ $selected_summaries[].execution_telemetry.cleanup.outcome? // empty ] as $cleanup_outcomes |
+  [ $selected_summaries[].execution_telemetry.cleanup.retention_class? // empty ] as $retention_classes |
+  [ $selected_summaries[].execution_telemetry.artifacts.public_classes[]? ] as $artifact_classes |
+  [ $selected_summaries[].telemetry_gaps[]? | select(test("executor|worker_routing|artifact_evidence|cleanup_telemetry")) ] as $execution_gaps |
   ($selected_summaries | max_by(.duration_s // -1)?) as $slowest_summary |
   ([ $selected_summaries[].duration_s? // empty ] | add // 0) as $worker_duration_s |
   ([ $selected_summaries[].files_changed? // empty ] | add // 0) as $files_changed |
@@ -209,13 +222,37 @@ jq -n \
       event_counts: ($selected_events | counts_by(.event)),
       stage_counts: ($selected_events | counts_by(.stage)),
       telemetry_gap_counts: (($summary_gaps + $event_gaps) | map({gap: ., one: 1}) | counts_by(.gap)),
+      execution_telemetry: {
+        reports: ($execution_rows | length),
+        implementation_executors: ([ $selected_summaries[] | (.execution_telemetry.executors.implementation.executor // .execution_telemetry.executors.implementation.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        build_executors: ([ $selected_summaries[] | (.execution_telemetry.executors.build.executor // .execution_telemetry.executors.build.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        test_executors: ([ $selected_summaries[] | (.execution_telemetry.executors.test.executor // .execution_telemetry.executors.test.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        review_executors: ([ $selected_summaries[] | (.execution_telemetry.executors.review.executor // .execution_telemetry.executors.review.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        release_executors: ([ $selected_summaries[] | (.execution_telemetry.executors.release.executor // .execution_telemetry.executors.release.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        routing_reason_classes: ($routing_reasons | map({reason: ., one: 1}) | counts_by(.reason)),
+        cleanup_outcomes: ($cleanup_outcomes | map({outcome: ., one: 1}) | counts_by(.outcome)),
+        retention_classes: ($retention_classes | map({class: ., one: 1}) | counts_by(.class)),
+        public_artifact_classes: ($artifact_classes | map({class: ., one: 1}) | counts_by(.class)),
+        gap_count: ($execution_gaps | length),
+        timing: {
+          reports_with_timing: ([ $selected_summaries[] | select((.execution_telemetry.timing // .execution_telemetry.timings // .execution_telemetry.phases // .execution_telemetry.routing.control_plane // null) != null) ] | length),
+          control_plane_overhead_ms: ([ $selected_summaries[] | timing_value("control_plane_overhead_ms") ] | add // 0),
+          source_sync_s: ([ $selected_summaries[] | timing_value("source_sync_s") ] | add // 0),
+          simulator_boot_s: ([ $selected_summaries[] | timing_value("simulator_boot_s") ] | add // 0),
+          xcodebuild_s: ([ $selected_summaries[] | timing_value("xcodebuild_s") ] | add // 0),
+          tests_s: ([ $selected_summaries[] | timing_value("tests_s") ] | add // 0),
+          log_parsing_s: ([ $selected_summaries[] | timing_value("log_parsing_s") ] | add // 0),
+          cleanup_s: ([ $selected_summaries[] | timing_value("cleanup_s") ] | add // 0)
+        }
+      },
       carryover_items: ([ $selected_summaries[] | lines(.carryover)[] ] | length),
       lesson_items: ([ $selected_summaries[] | lines(.lessons)[] ] | length)
     },
     bottlenecks: ([
       (if $slowest_summary != null then {kind:"slowest_issue", issue_number: ($slowest_summary.issue_number // null), duration_s: ($slowest_summary.duration_s // null), run_id: ($slowest_summary.run_id // null)} else empty end),
       (if ([ $tests[] | select(bad_outcome) ] | length) > 0 then {kind:"test_failures_or_flakes", count: ([ $tests[] | select(bad_outcome) ] | length)} else empty end),
-      (if ([ ($summary_gaps + $event_gaps)[] | select(. == "tokens") ] | length) > 0 then {kind:"missing_token_telemetry", count: ([ ($summary_gaps + $event_gaps)[] | select(. == "tokens") ] | length)} else empty end)
+      (if ([ ($summary_gaps + $event_gaps)[] | select(. == "tokens") ] | length) > 0 then {kind:"missing_token_telemetry", count: ([ ($summary_gaps + $event_gaps)[] | select(. == "tokens") ] | length)} else empty end),
+      (if ($execution_gaps | length) > 0 then {kind:"ios_execution_telemetry_gaps", count:($execution_gaps | length)} else empty end)
     ]),
     runs: [
       $selected_states[] |
@@ -255,6 +292,7 @@ jq -r '
   "- Tokens: \(if .counters.tokens_total == null then "missing" else (.counters.tokens_total | tostring) end) across \(.counters.token_reports) summaries",
   "- Churn: \(.counters.files_changed) files, +\(.counters.additions)/-\(.counters.deletions), generated \(.counters.generated_file_count)",
   "- Efficiency: avg \(.counters.avg_worker_duration_s // "missing")s/issue, \(if .counters.seconds_per_file_changed == null then "missing" else (.counters.seconds_per_file_changed | tostring) end)s/file, \(if .counters.tokens_per_file_changed == null then "missing" else (.counters.tokens_per_file_changed | tostring) end) tokens/file",
+  "- iOS execution telemetry: \(.counters.execution_telemetry.reports) reports, \(.counters.execution_telemetry.gap_count) routing/cleanup/executor/artifact gaps",
   "",
   "## Bottlenecks",
   "",
@@ -266,6 +304,35 @@ jq -r '
      else "- \(.kind): \(.count // "n/a")"
      end
    end),
+  "",
+  "## iOS Execution",
+  "",
+  "Implementation executors:",
+  count_table(.counters.execution_telemetry.implementation_executors),
+  "",
+  "Build executors:",
+  count_table(.counters.execution_telemetry.build_executors),
+  "",
+  "Test executors:",
+  count_table(.counters.execution_telemetry.test_executors),
+  "",
+  "Review executors:",
+  count_table(.counters.execution_telemetry.review_executors),
+  "",
+  "Release executors:",
+  count_table(.counters.execution_telemetry.release_executors),
+  "",
+  "Routing reason classes:",
+  count_table(.counters.execution_telemetry.routing_reason_classes),
+  "",
+  "Cleanup outcomes:",
+  count_table(.counters.execution_telemetry.cleanup_outcomes),
+  "",
+  "Retention classes:",
+  count_table(.counters.execution_telemetry.retention_classes),
+  "",
+  "Public artifact classes:",
+  count_table(.counters.execution_telemetry.public_artifact_classes),
   "",
   "## Status Counters",
   "",

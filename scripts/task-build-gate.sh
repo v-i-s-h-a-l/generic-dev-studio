@@ -134,27 +134,52 @@ printf '%s\n' "$ATTEMPT" > "$ATTEMPTS_FILE" 2>/dev/null || true
 # Pre-flight dispatch decision (issue #137 — every build_check_* event
 # carries the studio.dispatch.* tags). LSP doesn't dispatch — empty
 # fragment for that mode keeps the start-event shape unchanged. For
-# full-green, run node-pick BEFORE the start emit so analytics can join
-# fallback rate to first-try success without a separate stream.
+# full-green, run the iOS check router BEFORE the start emit so analytics can
+# join local/offload reason classes to first-try success without a separate
+# stream.
 NODE_ID=""
 DISPATCH_FIELDS=""
 if [ "$MODE" = "full-green" ]; then
-  REASON_FILE=$(mktemp 2>/dev/null || printf '/tmp/dispatch-reason-%s' "$$")
-  : > "$REASON_FILE" 2>/dev/null || true
-  NODE_ID=$(STUDIO_DISPATCH_REASON_FILE="$REASON_FILE" \
-    "$SCRIPT_DIR/node-pick.sh" xcodebuild 2>/dev/null || echo local)
-  DISPATCH_REASON=$(tr -d '\n' < "$REASON_FILE" 2>/dev/null)
-  rm -f "$REASON_FILE" 2>/dev/null || true
-  [ -z "$DISPATCH_REASON" ] && DISPATCH_REASON="healthy"
-  # Best-effort xcode_version pull from the parity cache. Cache miss is
-  # routine on cold setups — emit empty rather than block on the lookup.
-  XCODE_VER=""
-  PARITY_CACHE="$(resolve_runtime_global)/node-parity-cache.json"
-  if [ -r "$PARITY_CACHE" ] && command -v jq >/dev/null 2>&1; then
-    XCODE_VER=$(jq -r --arg id "$NODE_ID" '.nodes[$id].xcodebuild.version // ""' "$PARITY_CACHE" 2>/dev/null)
+  ROUTE_FILE=$(mktemp 2>/dev/null || printf '/tmp/ios-route-%s.json' "$$")
+  ROUTE_ARGS=(pick --operation build --role xcodebuild --task-id "$TASK_ID" --worktree "$WORKTREE")
+  [ -n "${STUDIO_IOS_REQUIRED_XCODE_VERSION:-}" ] && ROUTE_ARGS+=(--xcode-version "$STUDIO_IOS_REQUIRED_XCODE_VERSION")
+  [ -n "${STUDIO_IOS_SIMULATOR_RUNTIME:-}" ] && ROUTE_ARGS+=(--simulator-runtime "$STUDIO_IOS_SIMULATOR_RUNTIME")
+  [ -n "${STUDIO_IOS_USER_BLOCKED:-}" ] && ROUTE_ARGS+=(--user-blocked "$STUDIO_IOS_USER_BLOCKED")
+  [ "${DRY_RUN:-0}" = "1" ] && ROUTE_ARGS+=(--dry-run)
+  if ! NODE_ID=$(STUDIO_IOS_ROUTING_DECISION_FILE="$ROUTE_FILE" "$SCRIPT_DIR/studio-ios-check-router.sh" "${ROUTE_ARGS[@]}"); then
+    printf 'task-build-gate: iOS routing decision failed\n' >&2
+    rm -f "$ROUTE_FILE" 2>/dev/null || true
+    exit 2
   fi
-  DISPATCH_FIELDS=$(printf ',"studio.dispatch.node":"%s","studio.dispatch.role":"xcodebuild","studio.dispatch.reason":"%s","studio.dispatch.xcode_version":"%s"' \
-    "$NODE_ID" "$DISPATCH_REASON" "$XCODE_VER")
+  ROUTE_JSON=$(cat "$ROUTE_FILE" 2>/dev/null || printf '{}')
+  rm -f "$ROUTE_FILE" 2>/dev/null || true
+  if [ "${DRY_RUN:-0}" != "1" ]; then
+    SYNC_BOOTSTRAP_NODE=$(printf '%s\n' "$ROUTE_JSON" | jq -r 'select(.source_sync_remediation.required == true) | .source_sync_remediation.candidate_executor // empty' 2>/dev/null)
+    if [ -n "$SYNC_BOOTSTRAP_NODE" ] && [ "$SYNC_BOOTSTRAP_NODE" != "local" ]; then
+      # shellcheck source=lib-source-sync.sh
+      . "$SCRIPT_DIR/lib-source-sync.sh"
+      if sourcesync_push "$SYNC_BOOTSTRAP_NODE" "$WORKTREE" >/dev/null; then
+        ROUTE_FILE=$(mktemp 2>/dev/null || printf '/tmp/ios-route-%s.json' "$$")
+        if ! NODE_ID=$(STUDIO_IOS_ROUTING_DECISION_FILE="$ROUTE_FILE" "$SCRIPT_DIR/studio-ios-check-router.sh" "${ROUTE_ARGS[@]}"); then
+          printf 'task-build-gate: iOS routing decision failed after source-sync bootstrap\n' >&2
+          rm -f "$ROUTE_FILE" 2>/dev/null || true
+          exit 2
+        fi
+        ROUTE_JSON=$(cat "$ROUTE_FILE" 2>/dev/null || printf '{}')
+        rm -f "$ROUTE_FILE" 2>/dev/null || true
+      else
+        printf 'task-build-gate: source-sync bootstrap to %s failed; keeping initial routing decision\n' "$SYNC_BOOTSTRAP_NODE" >&2
+      fi
+    fi
+  fi
+  DISPATCH_REASON=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.reason_class // "routing_unknown"' 2>/dev/null)
+  XCODE_VER=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.selected_candidate.predicates.xcode_toolchain.xcode_version // ""' 2>/dev/null)
+  MANAGER_SAVINGS_S=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.manager_savings_s // 0' 2>/dev/null)
+  REMOTE_LATENCY_COST_S=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.remote_latency_cost_s // 0' 2>/dev/null)
+  RETRY_COST_S=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.retry_cost_s // 0' 2>/dev/null)
+  USER_BLOCKED_JSON=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.user_blocked // false' 2>/dev/null)
+  DISPATCH_FIELDS=$(printf ',"studio.dispatch.node":"%s","studio.dispatch.role":"xcodebuild","studio.dispatch.reason":"%s","studio.dispatch.xcode_version":"%s","studio.dispatch.manager_savings_s":%s,"studio.dispatch.remote_latency_cost_s":%s,"studio.dispatch.retry_cost_s":%s,"studio.dispatch.user_blocked":%s' \
+    "$NODE_ID" "$DISPATCH_REASON" "$XCODE_VER" "$MANAGER_SAVINGS_S" "$REMOTE_LATENCY_COST_S" "$RETRY_COST_S" "$USER_BLOCKED_JSON")
 fi
 
 # #270 — populated by the remote-dispatch branch via STUDIO_DISPATCH_UUID_FILE
@@ -227,6 +252,61 @@ _emit_build_harness_failed() {
   data=$(printf '{"mode":"full-green","node":"%s","scheme":"%s","attempt":%s,"reason":"%s","xcode_exit_code":%s,"log_tail":%s%s}' \
     "$NODE_ID" "$SCHEME" "$ATTEMPT" "$reason" "$exit_code" "$log_tail_json" "$DISPATCH_FIELDS")
   emit_event_keyed achilles task build_harness_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
+}
+
+_failover_json_for_failure() {
+  local signal="${1:?}" exit_code="${2:?}" log_path="${3:-}" artifact_path="${4:-}" route_file decision compact
+  local -a failover_args
+  if [ "${IS_LOCAL:-1}" = "1" ]; then
+    printf 'null'
+    return 0
+  fi
+  route_file=$(mktemp 2>/dev/null || printf '/tmp/ios-failover-route-%s.json' "$$")
+  printf '%s\n' "${ROUTE_JSON:-{\}}" >"$route_file" 2>/dev/null || true
+  failover_args=(
+    decide
+    --operation build
+    --role xcodebuild
+    --task-id "$TASK_ID"
+    --worktree "$WORKTREE"
+    --selected-executor "$NODE_ID"
+    --failure-signal "$signal"
+    --exit-code "$exit_code"
+    --attempt "$ATTEMPT"
+    --route-decision-file "$route_file"
+  )
+  [ -n "$log_path" ] && failover_args+=(--log "$log_path")
+  [ -n "$artifact_path" ] && failover_args+=(--artifact "$artifact_path")
+  if ! decision=$("$SCRIPT_DIR/studio-ios-check-failover.sh" "${failover_args[@]}"); then
+    printf 'task-build-gate: failover decision failed for %s on %s; publishing halt_operator_review\n' "$signal" "$NODE_ID" >&2
+    rm -f "$route_file" 2>/dev/null || true
+    jq -cn \
+      --arg signal "$signal" \
+      --arg key "ios-check:${TASK_ID}:build:failover-policy-error:${ATTEMPT}:${signal}" \
+      '{failure_class:"failover_policy_error",failure_signal:$signal,selected_retry_path:"halt_operator_review",target_executor:null,retry_count:null,max_retries:null,final_outcome:"halted",retention_class:"blocked-retain",idempotency_key:$key}'
+    return 0
+  fi
+  rm -f "$route_file" 2>/dev/null || true
+  if ! printf '%s\n' "$decision" | jq -e '.kind == "studio-ios-check-failover-decision"' >/dev/null 2>&1; then
+    printf 'task-build-gate: failover decision malformed for %s on %s; publishing halt_operator_review\n' "$signal" "$NODE_ID" >&2
+    jq -cn \
+      --arg signal "$signal" \
+      --arg key "ios-check:${TASK_ID}:build:failover-policy-malformed:${ATTEMPT}:${signal}" \
+      '{failure_class:"failover_policy_error",failure_signal:$signal,selected_retry_path:"halt_operator_review",target_executor:null,retry_count:null,max_retries:null,final_outcome:"halted",retention_class:"blocked-retain",idempotency_key:$key}'
+    return 0
+  fi
+  compact=$(printf '%s\n' "$decision" | jq -c '{
+    failure_class: .failure.class,
+    selected_retry_path: .retry.selected_path,
+    target_executor: .retry.target_executor,
+    retry_count: .retry.retry_count,
+    max_retries: .retry.max_retries,
+    final_outcome,
+    retention_class: .retention.retention_class,
+    idempotency_key: .idempotency_keys.failover
+  }' 2>/dev/null || printf 'null')
+  [ -n "$compact" ] || compact="null"
+  printf '%s' "$compact"
 }
 
 # Announce the attempt so analysis can bucket red gates by mode + retry.
@@ -304,7 +384,7 @@ fi
 # carry studio.dispatch.* tags. The lock is scoped per node: two workers
 # dispatching to `mini` still serialize on the mini's cache + simulator
 # resources; a laptop-local build runs in parallel with a mini build.
-# #215 — when node-pick returns the current machine (either synthetic
+# #215 — when the router returns the current machine (either synthetic
 # `local` or a registered self-id like `laptop`), run inline. Source-sync
 # + SSH would loop back through the network stack, and ssh to self is not
 # guaranteed (no sshd at home is the common case).
@@ -387,8 +467,10 @@ if [ "$HARVESTED" = "1" ]; then
     if [ "$BUILD_STATUS" -eq 124 ]; then
       failure_reason="remote_timeout"
     fi
+    failover_json=$(_failover_json_for_failure "$failure_reason" "$BUILD_STATUS" "$build_log")
     data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"%s","xcode_exit_code":%s,"log_tail":%s,"harvested":true%s}' \
       "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$failure_reason" "$BUILD_STATUS" "$log_tail_json" "$DISPATCH_FIELDS")
+    data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
     _emit_terminal build_check_failed "$data"
     gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
     rm -f "$build_log" 2>/dev/null || true
@@ -397,8 +479,10 @@ if [ "$HARVESTED" = "1" ]; then
   if [ "$success_marker_present" -eq 0 ]; then
     log_tail_json=$(_json_string_from_file_tail "$build_log" 200)
     _emit_build_harness_failed success_marker_absent "$BUILD_STATUS" "$log_tail_json"
+    failover_json=$(_failover_json_for_failure success_marker_absent "$BUILD_STATUS" "$build_log")
     data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"success_marker_absent","xcode_exit_code":%s,"log_tail":%s,"harvested":true%s}' \
       "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$BUILD_STATUS" "$log_tail_json" "$DISPATCH_FIELDS")
+    data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
     _emit_terminal build_check_failed "$data"
     gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
     rm -f "$build_log" 2>/dev/null || true
@@ -467,6 +551,10 @@ trap '_emit_aborted_if_open; _release_queue_entry; _release_task_lock' EXIT INT 
 # queue_locked_out. With slots=1 the head set is just {head}, so behaviour
 # is identical to the pre-#268 strict-head wait.
 bq_wait "$QUEUE_DIR" "$QUEUE_ENTRY" "$PARALLEL_SLOTS" 1800 "$TASK_ID" "$NODE_ID" || {
+  failover_json=$(_failover_json_for_failure stale_lock 3 "" "")
+  data=$(printf '{"mode":"full-green","reason":"queue_locked_out","waited_s":1800,"slots":%s,"attempt":%s%s}' "$PARALLEL_SLOTS" "$ATTEMPT" "$DISPATCH_FIELDS")
+  data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
+  _emit_terminal build_check_failed "$data"
   gate_announce_done build "$NODE_ID" "$TASK_ID" locked-out 1800
   exit 3
 }
@@ -515,7 +603,9 @@ while [ -z "$LOCK" ]; do
   [ -n "$LOCK" ] && break
   if [ "$wait_seconds" -ge "$wait_cap" ]; then
     printf 'error: xcodebuild lock wait exceeded %ss (slots=%s)\n' "$wait_cap" "$PARALLEL_SLOTS" >&2
+    failover_json=$(_failover_json_for_failure stale_lock 3 "" "")
     data=$(printf '{"mode":"full-green","reason":"locked_out","waited_s":%s,"slots":%s,"attempt":%s%s}' "$wait_seconds" "$PARALLEL_SLOTS" "$ATTEMPT" "$DISPATCH_FIELDS")
+    data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
     _emit_terminal build_check_failed "$data"
     gate_announce_done build "$NODE_ID" "$TASK_ID" locked-out "$wait_seconds"
     exit 3
@@ -575,8 +665,10 @@ else
   sourcesync_start_warmup_once "$NODE_ID" "$PROJECT" "$WORKTREE" "$SCHEME" "$DESTINATION" "$PROJECT_RELPATH"
   REL_WORKTREE=$(sourcesync_push "$NODE_ID" "$WORKTREE") || {
     printf 'task-build-gate: source sync to %s failed\n' "$NODE_ID" >&2
+    failover_json=$(_failover_json_for_failure source_sync_failed 2 "" "")
     data=$(printf '{"mode":"full-green","node":"%s","reason":"source_sync_failed","scheme":"%s","attempt":%s%s}' \
       "$NODE_ID" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
     _emit_terminal build_check_failed "$data"
     exit 2
   }
@@ -587,8 +679,10 @@ else
   remote_derived_abs=$(sourcesync_remote_abs "$NODE_ID" "$REL_DERIVED" 2>/dev/null || printf '')
   sourcesync_mkdir_remote "$NODE_ID" "$REL_DERIVED" || {
     printf 'task-build-gate: failed to mkdir DerivedData on %s\n' "$NODE_ID" >&2
+    failover_json=$(_failover_json_for_failure remote_shell_path_failed 2 "" "")
     data=$(printf '{"mode":"full-green","node":"%s","reason":"remote_shell_path_failed","scheme":"%s","attempt":%s%s}' \
       "$NODE_ID" "$SCHEME" "$ATTEMPT" "$DISPATCH_FIELDS")
+    data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
     _emit_terminal build_check_failed "$data"
     exit 2
   }
@@ -706,6 +800,7 @@ if [ "$BUILD_STATUS" -ne 0 ]; then
       failure_reason=$(remote_failure_reason "$build_log")
     fi
   fi
+  failover_json=$(_failover_json_for_failure "$failure_reason" "$BUILD_STATUS" "$build_log")
   log_tail_json="null"
   if [ "$err_count" -eq 0 ]; then
     log_tail_json=$(_json_string_from_file_tail "$build_log" 200)
@@ -713,6 +808,7 @@ if [ "$BUILD_STATUS" -ne 0 ]; then
   data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"xcode_exit_code":%s,"log_tail":%s,"errors_json":%s%s}' \
     "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$BUILD_STATUS" "$log_tail_json" "$errors_json" "$DISPATCH_FIELDS")
   data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" '. + {reason:$reason}')
+  data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
   if [ "$failure_reason" = "remote_marker_writer_failed" ]; then
     data=$(remote_enrich_marker_failure "$data" "$build_log")
   fi
@@ -725,8 +821,10 @@ fi
 if [ "$success_marker_present" -eq 0 ]; then
   log_tail_json=$(_json_string_from_file_tail "$build_log" 200)
   _emit_build_harness_failed success_marker_absent "$BUILD_STATUS" "$log_tail_json"
+  failover_json=$(_failover_json_for_failure success_marker_absent "$BUILD_STATUS" "$build_log")
   data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"success_marker_absent","xcode_exit_code":%s,"log_tail":%s,"errors_json":%s%s}' \
     "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$BUILD_STATUS" "$log_tail_json" "$errors_json" "$DISPATCH_FIELDS")
+  data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
   _emit_terminal build_check_failed "$data"
   gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
   rm -f "$build_log" "$build_json" 2>/dev/null || true

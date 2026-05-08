@@ -13,7 +13,8 @@
 #   schema_version: 1
 #   chains:
 #     - name: ios-v2-execution
-#       base: main
+#       source_branch: main
+#       # base remains accepted as a backwards-compatible alias for source_branch.
 #       branch: feature/ios-v2-execution
 #       host: auto
 #       approved_release_id: 0190f52a-9000-7f01-8aaa-77fe8fa99bbb
@@ -581,7 +582,7 @@ event_stage() {
     chain_run_started|chain_plan_prepared|chain_phase_review_completed) printf 'plan\n' ;;
     chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed|chain_rule_gate_completed) printf 'preflight\n' ;;
     chain_started|chain_issue_started|chain_issue_completed|chain_issue_validated|chain_parent_commit_finalized|chain_issue_scheduler_blocked) printf 'execute\n' ;;
-    chain_worker_summary_ingested|chain_telemetry_gap|checkpoint_auto_created|checkpoint_auto_loaded|checkpoint_context_savings_estimated) printf 'ingest\n' ;;
+    chain_worker_summary_ingested|chain_telemetry_gap|checkpoint_auto_created|checkpoint_auto_loaded|checkpoint_context_savings_estimated|chain_ios_artifact_cleanup_completed) printf 'ingest\n' ;;
     chain_pr_opened|chain_review_completed) printf 'review\n' ;;
     chain_completed|chain_issue_merged) printf 'merge\n' ;;
     chain_issue_closed) printf 'close\n' ;;
@@ -660,12 +661,25 @@ chain_efficiency_metrics_json() {
     def duration: (.duration_s // 0 | tonumber? // 0);
     def counts_by(key):
       reduce .[] as $item ({}; ($item | key // "unknown" | tostring) as $k | .[$k] = ((.[$k] // 0) + 1));
+    def timing_value($k):
+      (.execution_telemetry.timing[$k]
+       // .execution_telemetry.timings[$k]
+       // .execution_telemetry.phases[$k]
+       // (if $k == "control_plane_overhead_ms" then .execution_telemetry.routing.control_plane.scheduler_overhead_ms else null end)
+       // empty)
+      | tonumber? // empty;
     [ $summaries[] ] as $rows |
     [ $events[] ] as $events |
     [ $rows[] | token_total | select(. != null) ] as $tokens |
     [ $rows[] | (.tests // [])[]? ] as $tests |
     [ $rows[] | (.lints // [])[]? ] as $lints |
     [ $rows[] | (.builds // [])[]? ] as $builds |
+    [ $rows[] | .execution_telemetry? // empty ] as $execution_rows |
+    [ $rows[].execution_telemetry.routing.reason_class? // empty ] as $routing_reasons |
+    [ $rows[].execution_telemetry.cleanup.outcome? // empty ] as $cleanup_outcomes |
+    [ $rows[].execution_telemetry.cleanup.retention_class? // empty ] as $retention_classes |
+    [ $rows[].execution_telemetry.artifacts.public_classes[]? ] as $artifact_classes |
+    [ $rows[].telemetry_gaps[]? | select(test("executor|worker_routing|artifact_evidence|cleanup_telemetry")) ] as $execution_gaps |
     ($rows | max_by(duration)?) as $slowest |
     {
       schema_version: 1,
@@ -692,10 +706,34 @@ chain_efficiency_metrics_json() {
       lints: {total: ($lints | length), bad: ([ $lints[] | select(bad_outcome) ] | length), outcomes: ($lints | counts_by(.outcome // .status))},
       builds: {total: ($builds | length), bad: ([ $builds[] | select(bad_outcome) ] | length), outcomes: ($builds | counts_by(.outcome // .status))},
       telemetry_gap_counts: ([ $rows[].telemetry_gaps[]? ] | map({gap: ., one: 1}) | counts_by(.gap)),
+      execution_telemetry: {
+        reports: ($execution_rows | length),
+        implementation_executors: ([ $rows[] | (.execution_telemetry.executors.implementation.executor // .execution_telemetry.executors.implementation.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        build_executors: ([ $rows[] | (.execution_telemetry.executors.build.executor // .execution_telemetry.executors.build.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        test_executors: ([ $rows[] | (.execution_telemetry.executors.test.executor // .execution_telemetry.executors.test.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        review_executors: ([ $rows[] | (.execution_telemetry.executors.review.executor // .execution_telemetry.executors.review.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        release_executors: ([ $rows[] | (.execution_telemetry.executors.release.executor // .execution_telemetry.executors.release.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
+        routing_reason_classes: ($routing_reasons | map({reason: ., one: 1}) | counts_by(.reason)),
+        cleanup_outcomes: ($cleanup_outcomes | map({outcome: ., one: 1}) | counts_by(.outcome)),
+        retention_classes: ($retention_classes | map({class: ., one: 1}) | counts_by(.class)),
+        public_artifact_classes: ($artifact_classes | map({class: ., one: 1}) | counts_by(.class)),
+        gap_count: ($execution_gaps | length),
+        timing: {
+          reports_with_timing: ([ $rows[] | select((.execution_telemetry.timing // .execution_telemetry.timings // .execution_telemetry.phases // .execution_telemetry.routing.control_plane // null) != null) ] | length),
+          control_plane_overhead_ms: ([ $rows[] | timing_value("control_plane_overhead_ms") ] | add // 0),
+          source_sync_s: ([ $rows[] | timing_value("source_sync_s") ] | add // 0),
+          simulator_boot_s: ([ $rows[] | timing_value("simulator_boot_s") ] | add // 0),
+          xcodebuild_s: ([ $rows[] | timing_value("xcodebuild_s") ] | add // 0),
+          tests_s: ([ $rows[] | timing_value("tests_s") ] | add // 0),
+          log_parsing_s: ([ $rows[] | timing_value("log_parsing_s") ] | add // 0),
+          cleanup_s: ([ $rows[] | timing_value("cleanup_s") ] | add // 0)
+        }
+      },
       bottlenecks: ([
         (if $slowest != null then {kind:"slowest_issue", issue_number: ($slowest.issue_number // null), duration_s: ($slowest.duration_s // null)} else empty end),
         (if ([ $tests[] | select(bad_outcome) ] | length) > 0 then {kind:"test_failures_or_flakes", count: ([ $tests[] | select(bad_outcome) ] | length)} else empty end),
-        (if ([ $rows[].telemetry_gaps[]? | select(. == "tokens") ] | length) > 0 then {kind:"missing_token_telemetry", count: ([ $rows[].telemetry_gaps[]? | select(. == "tokens") ] | length)} else empty end)
+        (if ([ $rows[].telemetry_gaps[]? | select(. == "tokens") ] | length) > 0 then {kind:"missing_token_telemetry", count: ([ $rows[].telemetry_gaps[]? | select(. == "tokens") ] | length)} else empty end),
+        (if ($execution_gaps | length) > 0 then {kind:"ios_execution_telemetry_gaps", count:($execution_gaps | length)} else empty end)
       ])
     }'
   rm -f "$summaries_file" "$events_file"
@@ -1695,7 +1733,7 @@ phase_review_required_for_issue() {
 }
 
 write_chain_task_start_envelope() {
-  local chain_name="$1" chain_branch="$2" issue_branch="$3" issue_json="$4" host="$5" git_metadata_strategy="$6" worktree="$7" chain_run_id="$8" issue_run_id="$9" summary_path="${10}" start_path="${11}" phase_review_context="${12:-[]}" rule_pack_resolution="${13:-null}"
+  local chain_name="$1" chain_branch="$2" source_branch="$3" issue_branch="$4" issue_json="$5" host="$6" git_metadata_strategy="$7" worktree="$8" chain_run_id="$9" issue_run_id="${10}" summary_path="${11}" start_path="${12}" phase_review_context="${13:-[]}" rule_pack_resolution="${14:-null}"
   mkdir -p "$(dirname "$start_path")"
   jq -n \
     --argjson source_issue "$issue_json" \
@@ -1705,6 +1743,7 @@ write_chain_task_start_envelope() {
     --arg issue_run_id "$issue_run_id" \
     --arg chain "$chain_name" \
     --arg branch "$chain_branch" \
+    --arg source_branch "$source_branch" \
     --arg issue_branch "$issue_branch" \
     --arg worktree "$worktree" \
     --arg host "$host" \
@@ -1732,6 +1771,7 @@ write_chain_task_start_envelope() {
       ownership: {
         chain: $chain,
         branch: $branch,
+        source_branch: $source_branch,
         issue_branch: $issue_branch,
         worktree: $worktree,
         host: $host,
@@ -1771,7 +1811,7 @@ write_chain_task_start_envelope() {
       ],
       allowed_assumptions: [
         "The source issue body is the authoritative scoped brief.",
-        "The chain runner owns PR creation, main merge, issue closure, and worktree cleanup.",
+        "The chain runner owns PR creation, source-branch merge, issue closure, and worktree cleanup.",
         "Runtime handoff artifacts under .studio are private and disposable.",
         "Prior phase-review feedback in this envelope is private context from a clean outcome review, not human acceptance."
       ],
@@ -1780,7 +1820,7 @@ write_chain_task_start_envelope() {
       stop_conditions: [
         "Required scope cannot be implemented safely from the source issue.",
         "Verification needed for an unqualified completion claim cannot be run or captured.",
-        "The worker would need to change unrelated issues, open a PR, merge to main, close the issue, or commit private .studio artifacts."
+        "The worker would need to change unrelated issues, open a PR, merge to the source branch, close the issue, or commit private .studio artifacts."
       ],
       privacy: {
         classification: "private-runtime",
@@ -1939,6 +1979,7 @@ ingest_worker_summary() {
       --arg chain_run_id "$chain_run_id" \
       --arg issue_run_id "$issue_run_id" \
       --arg created_at "$created_at" \
+      --arg chain_name "$chain_name" \
       --arg host "$host" \
       --argjson exit_code "$exit_code" \
       --arg before "$before" \
@@ -1955,8 +1996,64 @@ ingest_worker_summary() {
        | (.model // .model_name // .model_version // $telemetry_model) as $final_model
        | (.model_version // $telemetry_model_version) as $final_model_version
        | (.effort // .reasoning_effort // $telemetry_effort) as $final_effort
+       | (.execution_telemetry // .ios_execution // null) as $exec_telemetry
        | def has_model: ($final_model != null);
        def has_checks: (((.tests // []) | length) + ((.lints // []) | length) + ((.builds // []) | length)) > 0;
+       def is_ios_execution:
+         (($chain_name | test("ios"; "i"))
+          or ((.chain // "") | test("ios"; "i"))
+          or (($exec_telemetry.profile // "") | test("ios"; "i"))
+          or ($exec_telemetry != null));
+       def executor_present($name):
+         (($exec_telemetry.executors[$name].executor
+           // $exec_telemetry.executors[$name].node
+           // $exec_telemetry[($name + "_executor")]
+           // null) != null);
+       def routing_present:
+         (($exec_telemetry.routing.reason_class
+           // $exec_telemetry.routing.reason
+           // $exec_telemetry.routing.cost_summary
+           // null) != null);
+       def artifact_present:
+         (((($exec_telemetry.artifacts.private_roots
+             // $exec_telemetry.private_artifact_roots
+             // []) | length)
+           + (($exec_telemetry.artifacts.public_classes
+             // $exec_telemetry.public_artifact_classes
+             // []) | length)) > 0);
+       def cleanup_present:
+         (($exec_telemetry.cleanup.outcome
+           // $exec_telemetry.cleanup.status
+           // null) != null
+          and (($exec_telemetry.cleanup.retention_class
+            // $exec_telemetry.cleanup.ttl_class
+            // null) != null));
+       def review_applicable:
+         ((.review_pass_count // .review_passes // null) != null
+          or (((.reviews // []) | length) > 0));
+       def release_applicable:
+         (($exec_telemetry.executors.release // null) != null
+          or (($exec_telemetry.release.applicable // false) == true));
+       def ios_execution_gaps:
+         if is_ios_execution then
+           []
+           + (if executor_present("implementation") then [] else ["implementation_executor"] end)
+           + (if (((.builds // []) | length) > 0 and (executor_present("build") | not)) then ["build_executor"] else [] end)
+           + (if (((.tests // []) | length) > 0 and (executor_present("test") | not)) then ["test_executor"] else [] end)
+           + (if (review_applicable and (executor_present("review") | not)) then ["review_executor"] else [] end)
+           + (if (release_applicable and (executor_present("release") | not)) then ["release_executor"] else [] end)
+           + (if routing_present then [] else ["worker_routing"] end)
+           + (if artifact_present then [] else ["artifact_evidence"] end)
+           + (if cleanup_present then [] else ["cleanup_telemetry"] end)
+         else [] end;
+       def normalized_execution_telemetry:
+         if $exec_telemetry == null then null
+         else $exec_telemetry
+           | .schema_version = (.schema_version // 1)
+           | .profile = (.profile // (if (($chain_name | test("ios"; "i")) or (((.chain // "") | test("ios"; "i")))) then "ios" else null end))
+           | .artifacts.public_classes = ((.artifacts.public_classes // .public_artifact_classes // []) | unique)
+           | .artifacts.private_roots = (.artifacts.private_roots // .private_artifact_roots // [])
+         end;
        def gap_active($gap):
          if $gap == "tokens" or $gap == "token_usage" then $final_tokens == null
          elif $gap == "model" then (has_model | not)
@@ -1990,10 +2087,12 @@ ingest_worker_summary() {
         model_version: $final_model_version,
         effort: $final_effort,
         telemetry_sources: (((.telemetry_sources // []) + (if (($session_telemetry.source // "") == "") then [] else [$session_telemetry.source] end)) | unique),
+        execution_telemetry: normalized_execution_telemetry,
         functionality_delivered: (.functionality_delivered // null),
         carryover: (.carryover // null),
         lessons: (.lessons // null),
         telemetry_gaps: (((.telemetry_gaps // [])
+          + ios_execution_gaps
           + (if $final_tokens == null then ["tokens"] else [] end)
           + (if has_model then [] else ["model"] end)
           + (if has_checks then [] else ["tests_lints_builds"] end)) | unique | map(select(gap_active(.))))
@@ -2031,7 +2130,11 @@ ingest_worker_summary() {
       --arg worktree_state "$worktree_state" \
       --arg next_safe_action "$next_safe_action" \
       --argjson session_telemetry "$session_telemetry_json" \
-      '{
+      'def ios_execution_gaps:
+         if ($chain | test("ios"; "i")) then
+           ["implementation_executor", "worker_routing", "artifact_evidence", "cleanup_telemetry"]
+         else [] end;
+      {
         schema_version: 1,
         kind: "completion",
         created_at: $created_at,
@@ -2068,10 +2171,11 @@ ingest_worker_summary() {
         effort: ($session_telemetry.effort // null),
         model_recommendation: null,
         telemetry_sources: (if (($session_telemetry.source // "") == "") then [] else [$session_telemetry.source] end),
+        execution_telemetry: null,
         functionality_delivered: null,
         carryover: null,
         lessons: null,
-        telemetry_gaps: ([$summary_gap, "tests_lints_builds"]
+        telemetry_gaps: (([$summary_gap, "tests_lints_builds"] + ios_execution_gaps)
           + (if ($session_telemetry.model // $session_telemetry.model_version // null) == null then ["model"] else [] end)
           + (if ($session_telemetry.tokens // null) == null then ["tokens"] else [] end))
       }' > "$dest"
@@ -2188,6 +2292,31 @@ generate_run_report() {
     else
       printf -- '- Worker summaries: 0\n'
       printf -- '- Event counters: unavailable without worker summaries.\n'
+    fi
+    printf '\n## iOS Execution Telemetry\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        def et: (.execution_telemetry // .ios_execution // null);
+        def cell($v): if $v == null or $v == "" then "missing" else ($v | tostring | gsub("\\|"; "\\|")) end;
+        def executor($name): (et.executors[$name].executor // et.executors[$name].node // null);
+        def cost_summary:
+          (et.routing.cost_summary // (if (et.routing.economics // null) == null then null else (et.routing.economics | tojson) end));
+        [
+          .[] |
+          select((et != null) or (([.telemetry_gaps[]? | select(test("executor|worker_routing|artifact_evidence|cleanup_telemetry"))] | length) > 0))
+        ] as $rows |
+        if ($rows | length) == 0 then
+          "No iOS execution telemetry was supplied."
+        else
+          "| Issue | Implementation | Build | Test | Review | Release | Routing | Cost/Economics | Public Artifact Classes | Private Roots | Cleanup | Retention | TTL | Gaps |",
+          "|---:|---|---|---|---|---|---|---|---|---:|---|---|---|---|",
+          ($rows[] |
+            "| #\(.issue_number // "unknown") | \(cell(executor("implementation"))) | \(cell(executor("build"))) | \(cell(executor("test"))) | \(cell(executor("review"))) | \(cell(executor("release"))) | \(cell(et.routing.reason_class)) | \(cell(cost_summary)) | \(cell((et.artifacts.public_classes // []) | join(", "))) | \((et.artifacts.private_roots // []) | length) | \(cell(et.cleanup.outcome // et.cleanup.status)) | \(cell(et.cleanup.retention_class)) | \(cell(et.cleanup.ttl_class)) | \((.telemetry_gaps // []) | map(select(test("executor|worker_routing|artifact_evidence|cleanup_telemetry"))) | join(", ")) |"
+          )
+        end
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf 'No worker summaries were ingested.\n'
     fi
     if [ -s "$EVENTS_JSONL" ] && [ "$EVENTS_JSONL" != "/dev/null" ]; then
       printf '\nEvent counters:\n'
@@ -2443,10 +2572,15 @@ generate_run_report() {
     if [ "$summary_count" -gt 0 ]; then
       jq -r -s '
         def gap_count($g): [.[].telemetry_gaps[]? | select(. == $g)] | length;
+        def gap_regex_count($r): [.[].telemetry_gaps[]? | select(test($r))] | length;
         [
           (if gap_count("worker_summary_missing") > 0 then "- Require worker hosts to write `.studio/chain-worker-summary.json` before exit." else empty end),
           (if gap_count("tokens") > 0 or gap_count("token_usage") > 0 then "- Add host-specific token extraction to worker summaries." else empty end),
-          (if gap_count("tests_lints_builds") > 0 then "- Standardize test/lint/build outcome capture in worker summaries." else empty end)
+          (if gap_count("tests_lints_builds") > 0 then "- Standardize test/lint/build outcome capture in worker summaries." else empty end),
+          (if gap_regex_count("executor") > 0 then "- Add iOS executor fields for each applicable implementation, build, test, review, or release role." else empty end),
+          (if gap_count("worker_routing") > 0 then "- Attach iOS routing decisions with reason class and economics to worker summaries." else empty end),
+          (if gap_count("artifact_evidence") > 0 then "- Attach private iOS artifact roots and public-safe artifact classes to worker summaries." else empty end),
+          (if gap_count("cleanup_telemetry") > 0 then "- Attach iOS cleanup outcome and retained TTL class to worker summaries." else empty end)
         ] | if length == 0 then "No threshold-based candidates from this run." else .[] end
       ' "$SUMMARY_ROOT"/*.json
     else
@@ -2850,6 +2984,59 @@ EOF
   done <<EOF
 $(find "$CHAIN_RUNS_ROOT" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null)
 EOF
+
+  ios_artifact_janitor_startup_sweep
+}
+
+ios_artifact_tmp_base() {
+  local tmp_base
+  tmp_base="${TMPDIR:-/tmp}"
+  tmp_base="${tmp_base%/}"
+  [ -n "$tmp_base" ] || tmp_base="/tmp"
+  printf '%s/studio-ios-artifacts\n' "$tmp_base"
+}
+
+ios_artifact_janitor_startup_sweep() {
+  local janitor tmp_base persisted_base
+  janitor="$SCRIPT_DIR/studio-ios-artifact-janitor.sh"
+  [ -x "$janitor" ] || return 0
+  tmp_base=$(ios_artifact_tmp_base)
+  if [ -d "$tmp_base" ]; then
+    "$janitor" sweep --base "$tmp_base" --json >/dev/null 2>&1 || true
+  fi
+  if [ -d "$CHAIN_RUNS_ROOT" ]; then
+    while IFS= read -r persisted_base; do
+      [ -n "$persisted_base" ] || continue
+      "$janitor" sweep --base "$persisted_base" --json >/dev/null 2>&1 || true
+    done <<EOF
+$(find "$CHAIN_RUNS_ROOT" -mindepth 2 -maxdepth 2 -type d -name ios-artifacts 2>/dev/null)
+EOF
+  fi
+}
+
+ios_chain_artifact_root() {
+  local chain_run_id="$1"
+  printf '%s/ios-artifacts/%s\n' "$CHAIN_RUN_ROOT" "$chain_run_id"
+}
+
+run_ios_artifact_chain_cleanup() {
+  local chain_name="$1" chain_run_id="$2" chain_status="$3"
+  local janitor root telemetry_file telemetry rc=0
+  janitor="$SCRIPT_DIR/studio-ios-artifact-janitor.sh"
+  [ -x "$janitor" ] || return 0
+  root=$(ios_chain_artifact_root "$chain_run_id")
+  [ -d "$root" ] || return 0
+  telemetry_file="$CHAIN_RUN_ROOT/ios-artifact-cleanup-$chain_run_id.json"
+  set +e
+  telemetry=$("$janitor" complete-chain --root "$root" --status "$chain_status" --json 2>/dev/null)
+  rc=$?
+  set -e
+  if [ -n "$telemetry" ]; then
+    printf '%s\n' "$telemetry" > "$telemetry_file"
+    emit_chain_event chain_ios_artifact_cleanup_completed "" "$RUN_ID" "$chain_run_id" "" completed 0 \
+      "$(jq -c --arg chain "$chain_name" --arg artifact "$telemetry_file" --argjson janitor_rc "$rc" '. + {chain:$chain, telemetry_artifact:$artifact, janitor_exit_code:$janitor_rc}' "$telemetry_file")"
+  fi
+  return 0
 }
 
 acquire_state_lock() {
@@ -3020,14 +3207,21 @@ validate_branch_ref() {
 }
 
 validate_chain_branch() {
-  local branch="$1" base="$2"
-  validate_branch_ref "$base" "base"
+  local branch="$1" source_branch="$2"
+  validate_branch_ref "$source_branch" "source"
   validate_branch_ref "$branch" "chain"
 
-  if [ "$branch" = "$base" ]; then
-    printf 'studio-chain-runner: chain branch must not equal base branch: %s\n' "$branch" >&2
+  if [ "$branch" = "$source_branch" ]; then
+    printf 'studio-chain-runner: chain branch must not equal source branch: %s\n' "$branch" >&2
     exit 2
   fi
+
+  case "$source_branch" in
+    feature|production|develop|trunk)
+      printf 'studio-chain-runner: protected source branch targets are not allowed: %s\n' "$source_branch" >&2
+      exit 2
+      ;;
+  esac
 
   case "$branch" in
     main|master|trunk|develop|production)
@@ -3057,6 +3251,52 @@ host_spawn_command() {
 
 yaml_field() {
   yq -r ".${2} // \"\"" "$1" 2>/dev/null
+}
+
+normalize_manifest_value() {
+  case "${1:-}" in
+    ""|null) return 0 ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+manifest_chain_field() {
+  local chain_idx="$1" field="$2" value
+  value=$(yq -r ".chains[$chain_idx].$field // \"\"" "$MANIFEST")
+  normalize_manifest_value "$value"
+}
+
+resolve_chain_source_branch() {
+  local chain_idx="$1" chain_name="$2"
+  local source_branch target_base base selected="" label value
+  source_branch=$(manifest_chain_field "$chain_idx" source_branch)
+  target_base=$(manifest_chain_field "$chain_idx" target_base)
+  base=$(manifest_chain_field "$chain_idx" base)
+
+  for label in source_branch target_base base; do
+    case "$label" in
+      source_branch) value="$source_branch" ;;
+      target_base) value="$target_base" ;;
+      base) value="$base" ;;
+    esac
+    [ -n "$value" ] || continue
+    if [ -z "$selected" ]; then
+      selected="$value"
+    elif [ "$selected" != "$value" ]; then
+      printf 'studio-chain-runner: conflicting source branch fields for chain %s: %s=%s conflicts with selected source %s\n' \
+        "$chain_name" "$label" "$value" "$selected" >&2
+      exit 2
+    fi
+  done
+
+  [ -n "$selected" ] || selected="main"
+  printf '%s\n' "$selected"
+}
+
+resolve_chain_expected_source_sha() {
+  local chain_idx="$1" value
+  value=$(yq -r ".chains[$chain_idx].expected_source_sha // .chains[$chain_idx].source_sha // \"\"" "$MANIFEST")
+  normalize_manifest_value "$value"
 }
 
 host_sandbox_profile() {
@@ -3211,7 +3451,7 @@ resolve_resume_state() {
 }
 
 build_plan_json() {
-  local out="$1" chain_count idx name base branch host approved_release_id sync_strategy phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state issue_url
+  local out="$1" chain_count idx name base source_branch expected_source_sha branch host approved_release_id sync_strategy phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state issue_url
   local chain_run_id issue_run_id issue_slug issue_branch issue_worktree chain_slug chain_worktree worker_pool issue_kind dependencies_json previous_issue
   local tmp chains_tmp issues_tmp mapped_at
   tmp="$out.tmp.$$"
@@ -3230,7 +3470,9 @@ build_plan_json() {
   for ((idx = 0; idx < chain_count; idx++)); do
     name=$(yq -r ".chains[$idx].name" "$MANIFEST")
     [ -n "$ONLY_CHAIN" ] && [ "$name" != "$ONLY_CHAIN" ] && continue
-    base=$(yq -r ".chains[$idx].base // \"main\"" "$MANIFEST")
+    source_branch=$(resolve_chain_source_branch "$idx" "$name")
+    base="$source_branch"
+    expected_source_sha=$(resolve_chain_expected_source_sha "$idx")
     branch=$(yq -r ".chains[$idx].branch // (\"feature/\" + .chains[$idx].name)" "$MANIFEST")
     host=$(yq -r ".chains[$idx].host // \"auto\"" "$MANIFEST")
     approved_release_id=$(yq -r ".chains[$idx].approved_release_id // \"\"" "$MANIFEST")
@@ -3354,6 +3596,8 @@ build_plan_json() {
     jq \
       --arg name "$name" \
       --arg base "$base" \
+      --arg source_branch "$source_branch" \
+      --arg expected_source_sha "$expected_source_sha" \
       --arg branch "$branch" \
       --arg host "$host" \
       --arg approved_release_id "$approved_release_id" \
@@ -3365,7 +3609,24 @@ build_plan_json() {
       --arg worktree "$chain_worktree" \
       --argjson worker_pool "$worker_pool" \
       --slurpfile issues "$issues_tmp" \
-      '. + [{name:$name,base:$base,branch:$branch,host:$host,approved_release_id:(if $approved_release_id == "" then null else $approved_release_id end),sync_strategy:$sync_strategy,phase_review:$phase_review_mode,checkpoint:$checkpoint_mode,git_metadata_strategy:$git_metadata_strategy,chain_run_id:$chain_run_id,chain_worktree:$worktree,worker_pool:$worker_pool,status:"pending",issues:$issues[0]}]' \
+      '. + [{
+        name:$name,
+        base:$base,
+        source_branch:$source_branch,
+        expected_source_sha:(if $expected_source_sha == "" then null else $expected_source_sha end),
+        branch:$branch,
+        host:$host,
+        approved_release_id:(if $approved_release_id == "" then null else $approved_release_id end),
+        sync_strategy:$sync_strategy,
+        phase_review:$phase_review_mode,
+        checkpoint:$checkpoint_mode,
+        git_metadata_strategy:$git_metadata_strategy,
+        chain_run_id:$chain_run_id,
+        chain_worktree:$worktree,
+        worker_pool:$worker_pool,
+        status:"pending",
+        issues:$issues[0]
+      }]' \
       "$chains_tmp" > "$chains_tmp.next"
     mv "$chains_tmp.next" "$chains_tmp"
     rm -f "$issues_tmp"
@@ -3440,12 +3701,15 @@ validate_execution_graph() {
     printf 'studio-chain-runner: map each done task to a GitHub issue before treating implementation state as authoritative.\n' >&2
     exit 2
   }
+  local same_source_chain
   duplicate_issues=$(jq -r '[.chains[].issues[].number] | group_by(.)[] | select(length > 1) | .[0]' "$plan" | paste -sd, -)
   [ -z "$duplicate_issues" ] || { printf 'studio-chain-runner: duplicate issue IDs across chains: %s\n' "$duplicate_issues" >&2; exit 2; }
   duplicate_branches=$(jq -r '[.chains[].branch, (.chains[].issues[].issue_branch)] | group_by(.)[] | select(length > 1) | .[0]' "$plan" | paste -sd, -)
   [ -z "$duplicate_branches" ] || { printf 'studio-chain-runner: duplicate branch refs in plan: %s\n' "$duplicate_branches" >&2; exit 2; }
-  protected_targets=$(jq -r '.chains[].base | select(. == "feature" or . == "production" or . == "develop" or . == "trunk")' "$plan" | paste -sd, -)
-  [ -z "$protected_targets" ] || { printf 'studio-chain-runner: protected base targets are not allowed: %s\n' "$protected_targets" >&2; exit 2; }
+  protected_targets=$(jq -r '.chains[] | (.source_branch // .base) | select(. == "feature" or . == "production" or . == "develop" or . == "trunk")' "$plan" | paste -sd, -)
+  [ -z "$protected_targets" ] || { printf 'studio-chain-runner: protected source branch targets are not allowed: %s\n' "$protected_targets" >&2; exit 2; }
+  same_source_chain=$(jq -r '.chains[] | select(.branch == (.source_branch // .base)) | .name' "$plan" | paste -sd, -)
+  [ -z "$same_source_chain" ] || { printf 'studio-chain-runner: chain branch must not equal source branch for chains: %s\n' "$same_source_chain" >&2; exit 2; }
   invalid_issue_dependencies=$(jq -r '
     .chains[] as $chain
     | ($chain.issues | map(.number)) as $numbers
@@ -3541,10 +3805,14 @@ apply_mechanical_rule_gates() {
     --plan "$plan"
     --manifest "$MANIFEST"
     --repo "$TARGET_REPO_ROOT"
-    --audit-log "$audit_log"
     --expected-run-work-root "$RUN_WORK_ROOT"
   )
-  [ "$DRY_RUN" -eq 0 ] || gate_args+=(--dry-run)
+  if [ "$DRY_RUN" -eq 0 ]; then
+    gate_args+=(--audit-log "$audit_log")
+  else
+    audit_log=""
+    gate_args+=(--dry-run)
+  fi
 
   set +e
   "$SCRIPT_DIR/studio-chain-rule-gates.sh" "${gate_args[@]}" >"$gate_result"
@@ -3644,8 +3912,25 @@ validate_release_chain_leaf_policy() {
   fi
 }
 
+verify_expected_source_sha_or_abort() {
+  local chain_name="$1" source_branch="$2" expected_sha="$3" phase="$4"
+  local actual_sha
+  [ -n "$expected_sha" ] && [ "$expected_sha" != "null" ] || return 0
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf 'DRY-RUN verify origin/%q matches expected source SHA %q before %s\n' "$source_branch" "$expected_sha" "$phase"
+    return 0
+  fi
+  actual_sha=$(with_login_home_for_github git ls-remote --heads origin "$source_branch" 2>/dev/null | awk 'NR == 1 { print $1 }') || actual_sha=""
+  if [ -z "$actual_sha" ]; then
+    abort_run_with_reason network_partition "cannot verify origin/$source_branch before $phase for chain $chain_name"
+  fi
+  if [ "$actual_sha" != "$expected_sha" ]; then
+    abort_run_with_reason base_branch_advanced "source branch $source_branch for chain $chain_name changed before $phase: expected $expected_sha, got $actual_sha"
+  fi
+}
+
 live_preflight() {
-  local plan="$1" reviewer_host branch issue_branch base
+  local plan="$1" reviewer_host chain_name branch issue_branch base expected_source_sha
   run_retryable_or_abort github_auth_unavailable "GitHub auth is not available" \
     with_login_home_for_github gh auth status
   emit_chain_event chain_auth_normalized "" "$RUN_ID" "" "" completed 0 \
@@ -3655,9 +3940,11 @@ live_preflight() {
     printf 'studio-chain-runner: reviewer host unavailable: %s\n' "$reviewer_host" >&2
     exit 2
   }
-  while IFS=$'\t' read -r branch base; do
+  while IFS=$'\t' read -r chain_name branch base expected_source_sha; do
+    [ "$expected_source_sha" = "__none__" ] && expected_source_sha=""
     run_retryable_or_abort network_partition "cannot verify origin/$base" \
       with_login_home_for_github git ls-remote --exit-code --heads origin "$base"
+    verify_expected_source_sha_or_abort "$chain_name" "$base" "$expected_source_sha" "chain worktree creation"
     if [ -z "$RESUME_ID" ] && git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/heads/$branch"; then
       printf 'studio-chain-runner: local chain branch already exists: %s\n' "$branch" >&2
       exit 2
@@ -3667,7 +3954,7 @@ live_preflight() {
       exit 2
     fi
   done <<EOF
-$(jq -r '.chains[] | [.branch, .base] | @tsv' "$plan")
+$(jq -r '.chains[] | [.name, .branch, (.source_branch // .base), (.expected_source_sha // .source_sha // "__none__")] | @tsv' "$plan")
 EOF
   while IFS= read -r issue_branch; do
     [ -n "$issue_branch" ] || continue
@@ -3712,6 +3999,8 @@ explain_plan() {
     "## Chain \(.name)\n\n" +
     "- Chain-run UUID: `\(.chain_run_id)`\n" +
     "- Base: `\(.base)`\n" +
+    "- Source branch: `\(.source_branch // .base)`\n" +
+    "- Expected source SHA: `\(.expected_source_sha // .source_sha // "not pinned")`\n" +
     "- Branch: `\(.branch)`\n" +
     "- Approved release: `\(.approved_release_id // "none")`\n" +
     "- Leaf sync strategy: `\(.sync_strategy // "rebase")`\n" +
@@ -3724,7 +4013,7 @@ explain_plan() {
     "- Worker pool: `\(.worker_pool)`\n" +
     "- Issue scheduler: `dependency-ready nodes up to worker_pool; scalar issue lists preserve manifest order`\n" +
     "- Rule-pack status: `\(.rule_pack_resolution.status // "not-resolved")`; selected `\((.rule_pack_resolution.selected_packs // []) | length)`, skipped `\((.rule_pack_resolution.skipped_packs // []) | length)`, estimated summary tokens `\(.rule_pack_resolution.estimated_context_cost.summary_tokens_estimated // "unknown")`, skipped full-doc tokens `\(.rule_pack_resolution.context_budget.skipped_full_doc_tokens_estimated // "unknown")`, cold-context delta `\(.rule_pack_resolution.context_budget.cold_context_delta_tokens_estimated // "unknown")`\n" +
-    "- Planned PR: base `\(.base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
+    "- Planned PR: base `\(.source_branch // .base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
     "| Issue | Depends On | Issue State | Runner Status | Lifecycle | Rule Packs | Issue-run UUID | Branch | Worktree |\n|---:|---|---|---|---|---:|---|---|---|\n" +
     ([.issues[] | "| #\(.number) \(.title) | \(if ((.dependencies // []) | length) == 0 then "-" else ((.dependencies // []) | map("#" + tostring) | join(", ")) end) | \(.state) | \(.status) | \(.lifecycle_state // "unknown") | \((.rule_pack_resolution.selected_packs // []) | length) | `\(.issue_run_id)` | `\(.issue_branch)` | `\(.issue_worktree)` |"] | join("\n")) +
     "\n\n### Rule Packs\n\n" +
@@ -3858,17 +4147,20 @@ chain_count=$(jq '.chains | length' "$PLAN_JSON")
 
 execute_issue_session() {
   local chain_name="$1" chain_branch="$2" issue="$3" host="$4" git_metadata_strategy="$5" worktree="$6" issue_branch="$7" chain_run_id="$8" issue_run_id="$9" before="${10}" phase_review_context="${11:-[]}" rule_pack_resolution="${12:-null}"
-  local issue_json issue_title issue_body spawn prompt summary_path start_path
+  local issue_json issue_title issue_body spawn prompt summary_path start_path source_branch chain_artifact_root
   local -a spawn_argv
   local launch_home="" codex_auth_home=""
 
   issue_json=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,body,url,state)
   issue_title=$(printf '%s' "$issue_json" | jq -r '.title')
   issue_body=$(printf '%s' "$issue_json" | jq -r '.body // ""')
+  source_branch=$(jq -r --arg id "$chain_run_id" '.chains[] | select(.chain_run_id == $id) | .source_branch // .base // "main"' "$PLAN_JSON")
   summary_path="$worktree/.studio/chain-worker-summary.json"
   start_path="$worktree/.studio/chain-task-start.json"
+  chain_artifact_root=$(ios_chain_artifact_root "$chain_run_id")
   if [ "$DRY_RUN" -eq 0 ]; then
-    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$issue_branch" "$issue_json" "$host" "$git_metadata_strategy" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context" "$rule_pack_resolution"
+    mkdir -p "$chain_artifact_root"
+    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$source_branch" "$issue_branch" "$issue_json" "$host" "$git_metadata_strategy" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context" "$rule_pack_resolution"
   fi
 
   spawn=$(host_spawn_command "$host")
@@ -3890,6 +4182,7 @@ Chain-run UUID: $chain_run_id
 Issue-run UUID: $issue_run_id
 Chain: $chain_name
 Chain branch: $chain_branch
+Source branch / PR base: $source_branch
 Issue: #$issue - $issue_title
 Working directory: $worktree
 Git metadata strategy: $git_metadata_strategy
@@ -3906,7 +4199,7 @@ Rules:
 - Before exit, write $summary_path as valid JSON.
 - Do not add or commit $summary_path; it is a private parent-runner artifact.
 - Do not open a PR.
-- Do not merge to main.
+- Do not merge to the source branch ($source_branch) or main.
 - Do not close the issue; the chain runner owns issue closure after integration.
 - If blocked, exit non-zero after writing a concise reason.
 
@@ -3929,6 +4222,7 @@ Summary JSON fields:
 - commit_after
 - files_changed/additions/deletions/generated_file_count
 - tests/lints/builds arrays with command/outcome when run
+- execution_telemetry optional object for iOS work: implementation/build/test/review/release executors when applicable, routing reason class, economics/cost summary, private artifact roots, public artifact classes, cleanup outcome, retained TTL class, and control-plane timing
 - tokens object when available, otherwise null
 - functionality_delivered optional string or array describing what users/agents can now do
 - refactoring_needed_now optional array for cleanup required by this task
@@ -3956,27 +4250,55 @@ EOF
 
   if [ -n "$launch_home" ] && [ -d "$launch_home" ]; then
     if [ -n "$codex_auth_home" ]; then
-      (cd "$worktree" && env HOME="$launch_home" CODEX_HOME="$codex_auth_home" "${spawn_argv[@]}" "$prompt")
+      (cd "$worktree" && env \
+        HOME="$launch_home" \
+        CODEX_HOME="$codex_auth_home" \
+        STUDIO_RUN_ID="$RUN_ID" \
+        STUDIO_CHAIN_RUN_ID="$chain_run_id" \
+        STUDIO_ISSUE_RUN_ID="$issue_run_id" \
+        STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
+        "${spawn_argv[@]}" "$prompt")
     else
-      (cd "$worktree" && env HOME="$launch_home" "${spawn_argv[@]}" "$prompt")
+      (cd "$worktree" && env \
+        HOME="$launch_home" \
+        STUDIO_RUN_ID="$RUN_ID" \
+        STUDIO_CHAIN_RUN_ID="$chain_run_id" \
+        STUDIO_ISSUE_RUN_ID="$issue_run_id" \
+        STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
+        "${spawn_argv[@]}" "$prompt")
     fi
   else
     if [ -n "$codex_auth_home" ]; then
-      (cd "$worktree" && env CODEX_HOME="$codex_auth_home" "${spawn_argv[@]}" "$prompt")
+      (cd "$worktree" && env \
+        CODEX_HOME="$codex_auth_home" \
+        STUDIO_RUN_ID="$RUN_ID" \
+        STUDIO_CHAIN_RUN_ID="$chain_run_id" \
+        STUDIO_ISSUE_RUN_ID="$issue_run_id" \
+        STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
+        "${spawn_argv[@]}" "$prompt")
     else
-      (cd "$worktree" && "${spawn_argv[@]}" "$prompt")
+      (cd "$worktree" && env \
+        STUDIO_RUN_ID="$RUN_ID" \
+        STUDIO_CHAIN_RUN_ID="$chain_run_id" \
+        STUDIO_ISSUE_RUN_ID="$issue_run_id" \
+        STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
+        "${spawn_argv[@]}" "$prompt")
     fi
   fi
 }
 
 finalize_chain_pr() {
-  local chain_name="$1" chain_branch="$2" chain_worktree="$3" base="$4" chain_run_id="$5" implementation_host="${6:-}"
+  local chain_name="$1" chain_branch="$2" chain_worktree="$3" base="$4" chain_run_id="$5" implementation_host="${6:-}" expected_source_sha="${7:-}"
   local pr_url pr_number review_started_at review_rc review_duration review_out review_verdict review_model review_effort review_host review_parent_host
   [ -n "$implementation_host" ] || implementation_host=$(resolve_current_studio_host unknown)
 
+  if [ "$chain_branch" = "$base" ]; then
+    abort_run_with_reason branch_worktree_conflict "chain branch $chain_branch must not equal PR base/source branch"
+  fi
   log "rebasing $chain_branch on origin/$base"
   run_retryable_or_abort network_partition "fetch origin failed for $chain_branch" \
     with_login_home_for_github git -C "$chain_worktree" fetch origin --prune
+  verify_expected_source_sha_or_abort "$chain_name" "$base" "$expected_source_sha" "PR finalization"
   run git -C "$chain_worktree" rebase "origin/$base"
   run_retryable_or_abort network_partition "push failed for $chain_branch" \
     with_login_home_for_github git -C "$chain_worktree" push -u origin "$chain_branch"
@@ -4006,7 +4328,7 @@ Review gate: \`scripts/pr-headless-review.sh <pr> --method auto\`.")
   FINAL_PR_URL="$pr_url"
   log "opened PR $pr_url"
   emit_chain_event chain_pr_opened "$pr_number" "$RUN_ID" "$chain_run_id" "" completed 0 \
-    "$(jq -cn --arg pr_url "$pr_url" --arg pr_number "$pr_number" --arg branch "$chain_branch" '{pr_url:$pr_url, pr_number:$pr_number, branch:$branch}')"
+    "$(jq -cn --arg pr_url "$pr_url" --arg pr_number "$pr_number" --arg branch "$chain_branch" --arg base "$base" '{pr_url:$pr_url, pr_number:$pr_number, branch:$branch, base:$base, source_branch:$base}')"
   if ! with_login_home_for_github gh pr comment "$pr_number" --repo "$REPO_SLUG" --body "Chain run: \`$RUN_ID\`
 
 Private telemetry report: local only; resolve by run ID on the machine that ran the chain.
@@ -4078,7 +4400,7 @@ write_issue_phase_plan_artifact() {
     printf 'Execute exactly this issue in its isolated worktree and commit the result on the issue branch.\n\n'
     printf '## Scope\n\n'
     printf -- '- In: bounded issue implementation, private worker summary, focused verification evidence.\n'
-    printf -- '- Out: PR creation, merge to main, issue closure, unrelated issue work, public copy of private review prose.\n\n'
+    printf -- '- Out: PR creation, merge to the source/base branch, issue closure, unrelated issue work, public copy of private review prose.\n\n'
     printf '## Prior Clean Outcome Feedback\n\n'
     if [ "$(printf '%s' "$context" | jq 'length')" -gt 0 ]; then
       printf '%s\n' "$context" | jq -r '.[] | "- \(.kind): \(.text)"'
@@ -4297,6 +4619,27 @@ run_issue_job() {
     --argjson parent_finalized "$parent_finalized" \
     'def bad_outcome: ((.outcome // .status // "") | tostring | test("fail|error|flaky"; "i"));
      def bad_count($arr): [($arr // [])[]? | select(bad_outcome)] | length;
+     def compact_execution:
+       (.execution_telemetry // null) as $et |
+       if $et == null then null
+       else {
+         executors: ($et.executors // {}),
+         routing: {
+           reason_class: ($et.routing.reason_class // null),
+           cost_summary: ($et.routing.cost_summary // null),
+           economics: ($et.routing.economics // null)
+         },
+         artifacts: {
+           public_classes: ($et.artifacts.public_classes // []),
+           private_root_count: (($et.artifacts.private_roots // []) | length)
+         },
+         cleanup: {
+           outcome: ($et.cleanup.outcome // $et.cleanup.status // null),
+           retention_class: ($et.cleanup.retention_class // null),
+           ttl_class: ($et.cleanup.ttl_class // null)
+         }
+       }
+       end;
      {
        summary:$summary,
        commit_after:$after,
@@ -4311,7 +4654,8 @@ run_issue_job() {
          builds:{total:((.builds // []) | length), bad:bad_count(.builds)}
        },
        token_telemetry:(if (.tokens // null) == null then "missing" else "present" end),
-       telemetry_gaps:(.telemetry_gaps // [])
+       telemetry_gaps:(.telemetry_gaps // []),
+       execution_telemetry: compact_execution
      }' "$summary_file")
 
   if [ "$auto_retry_performed" = "true" ]; then
@@ -4632,6 +4976,27 @@ summary_reconciliation_payload() {
     --arg after "$commit_after" \
     'def bad_outcome: ((.outcome // .status // "") | tostring | test("fail|error|flaky"; "i"));
      def bad_count($arr): [($arr // [])[]? | select(bad_outcome)] | length;
+     def compact_execution:
+       (.execution_telemetry // null) as $et |
+       if $et == null then null
+       else {
+         executors: ($et.executors // {}),
+         routing: {
+           reason_class: ($et.routing.reason_class // null),
+           cost_summary: ($et.routing.cost_summary // null),
+           economics: ($et.routing.economics // null)
+         },
+         artifacts: {
+           public_classes: ($et.artifacts.public_classes // []),
+           private_root_count: (($et.artifacts.private_roots // []) | length)
+         },
+         cleanup: {
+           outcome: ($et.cleanup.outcome // $et.cleanup.status // null),
+           retention_class: ($et.cleanup.retention_class // null),
+           ttl_class: ($et.cleanup.ttl_class // null)
+         }
+       }
+       end;
      {
        summary:$summary,
        commit_after:$after,
@@ -4646,7 +5011,8 @@ summary_reconciliation_payload() {
          builds:{total:((.builds // []) | length), bad:bad_count(.builds)}
        },
        token_telemetry:(if (.tokens // null) == null then "missing" else "present" end),
-       telemetry_gaps:(.telemetry_gaps // [])
+       telemetry_gaps:(.telemetry_gaps // []),
+       execution_telemetry: compact_execution
      }' "$summary_file"
 }
 
@@ -4942,9 +5308,10 @@ run_chain_issue_scheduler() {
 
 for ((idx = 0; idx < chain_count; idx++)); do
   name=$(jq -r ".chains[$idx].name" "$PLAN_JSON")
-  base=$(jq -r ".chains[$idx].base" "$PLAN_JSON")
+  base=$(jq -r ".chains[$idx].source_branch // .chains[$idx].base" "$PLAN_JSON")
   branch=$(jq -r ".chains[$idx].branch" "$PLAN_JSON")
   host=$(jq -r ".chains[$idx].host" "$PLAN_JSON")
+  expected_source_sha=$(jq -r ".chains[$idx].expected_source_sha // .chains[$idx].source_sha // \"\"" "$PLAN_JSON")
   approved_release_id=$(jq -r ".chains[$idx].approved_release_id // \"\"" "$PLAN_JSON")
   sync_strategy=$(jq -r ".chains[$idx].sync_strategy // \"rebase\"" "$PLAN_JSON")
   phase_review_mode=$(jq -r ".chains[$idx].phase_review // \"auto\"" "$PLAN_JSON")
@@ -4968,10 +5335,11 @@ for ((idx = 0; idx < chain_count; idx++)); do
   log "starting chain $name on $branch from latest $base using host=$host git_metadata_strategy=$git_metadata_strategy sync_strategy=$sync_strategy checkpoint=$checkpoint_mode worker_pool=$CHAIN_WORKER_POOL"
   mark_chain_state "$chain_run_id" running
   emit_chain_event chain_started "" "$RUN_ID" "$chain_run_id" "" running 0 \
-    "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --arg git_metadata_strategy "$git_metadata_strategy" --arg sync_strategy "$sync_strategy" --arg approved_release_id "$approved_release_id" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, host:$host, git_metadata_strategy:$git_metadata_strategy, sync_strategy:$sync_strategy, approved_release_id:(if $approved_release_id == "" then null else $approved_release_id end), issue_count:$issue_count, worker_pool:$worker_pool}')"
+    "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --arg git_metadata_strategy "$git_metadata_strategy" --arg sync_strategy "$sync_strategy" --arg approved_release_id "$approved_release_id" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, source_branch:$base, host:$host, git_metadata_strategy:$git_metadata_strategy, sync_strategy:$sync_strategy, approved_release_id:(if $approved_release_id == "" then null else $approved_release_id end), issue_count:$issue_count, worker_pool:$worker_pool}')"
   host_preflight "$host" "$TARGET_REPO_ROOT" || abort_run "host preflight failed for $host"
   run_retryable_or_abort network_partition "fetch origin failed before chain $name" \
     with_login_home_for_github git -C "$TARGET_REPO_ROOT" fetch origin --prune
+  verify_expected_source_sha_or_abort "$name" "$base" "$expected_source_sha" "chain worktree creation"
   if [ "$DRY_RUN" -eq 0 ]; then
     mkdir -p "$chain_results_dir"
     if [ -n "$RESUME_ID" ] && git_checkout_exists "$chain_worktree"; then
@@ -4996,13 +5364,14 @@ for ((idx = 0; idx < chain_count; idx++)); do
 
   run_chain_issue_scheduler "$idx" "$name" "$branch" "$chain_worktree" "$host" "$git_metadata_strategy" "$chain_run_id" "$phase_review_mode" "$checkpoint_mode" "$issue_count" "$chain_results_dir"
 
-  finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id" "$host"
+  finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id" "$host" "$expected_source_sha"
   chain_duration=$(duration_since "$chain_started_at")
   final_chain_head=$(git -C "$chain_worktree" rev-parse HEAD 2>/dev/null || true)
   mark_chain_state "$chain_run_id" completed "$FINAL_PR_URL"
   mark_chain_issues_completed_after_pr "$chain_run_id" "$final_chain_head"
   emit_chain_event chain_completed "" "$RUN_ID" "$chain_run_id" "" completed "$chain_duration" \
     "$(jq -cn --arg name "$name" --arg pr_url "$FINAL_PR_URL" '{chain:$name, pr_url:(if $pr_url == "" then null else $pr_url end)}')"
+  run_ios_artifact_chain_cleanup "$name" "$chain_run_id" completed
 
   for ((i = 0; i < issue_count; i++)); do
     issue=$(jq -r ".chains[$idx].issues[$i].number" "$PLAN_JSON")

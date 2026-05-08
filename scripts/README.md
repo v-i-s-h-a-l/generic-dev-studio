@@ -87,6 +87,8 @@ scripts/studio-chain-runner.sh --resume <run_id> --yes                     # res
 scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
 scripts/studio-chain-rule-gates.sh --plan plan.json --dry-run              # deterministic rule-pack gates with typed JSON result + audit JSONL
+scripts/studio-ios-artifact-janitor.sh sweep --base /tmp/studio-ios-artifacts --json # redacted iOS artifact TTL sweep for scoped build/test roots
+scripts/studio-ios-check-failover.sh decide --operation build --task-id T001 --selected-executor worker-a --failure-signal remote_timeout # typed retry/halt policy for worker-routed iOS checks
 scripts/rule-pack-resolve.sh --manifest chain.yaml --chain my-chain --issue 123 --role worker # selective rule-pack selection with context-budget telemetry
 scripts/manager-chain-monitor.sh status --project generic-dev-studio --json # non-mutating monitor status with owner/list/pending-write counts
 scripts/manager-chain-monitor.sh recovery --full-rewrite --project generic-dev-studio --dry-run # explicit recovery front door; execution requires approval
@@ -98,7 +100,7 @@ scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker      # lo
 scripts/codex-worker-exec.sh "<prompt>"                                    # internal Codex worker launcher: workspace-write + ~/.dev-studio + ephemeral + no prompts
 # Chain dry-runs show the selected git metadata strategy; sandboxed hosts use issue-local clones so commits stay inside the worker root.
 # Chain worktrees/results are namespaced under the run UUID; resume continues only the selected run, reconciles stale running issues from completed private summaries after required outcome review, and surfaces skipped/integrated/pending issue semantics.
-# Chain startup sweeps stale state locks, old temporary run roots, and oversized private artifacts; tune with STUDIO_CHAIN_TMP_RETENTION_DAYS, STUDIO_CHAIN_RUN_RETENTION_DAYS, and STUDIO_CHAIN_ARTIFACT_MAX_BYTES.
+# Chain startup sweeps stale state locks, old temporary run roots, scoped iOS artifact roots, and oversized private artifacts; tune with STUDIO_CHAIN_TMP_RETENTION_DAYS, STUDIO_CHAIN_RUN_RETENTION_DAYS, STUDIO_CHAIN_ARTIFACT_MAX_BYTES, and STUDIO_IOS_ARTIFACT_* TTL/pressure settings.
 # Chain reports include compact efficiency metrics, test/lint/build outcomes, typed halt records, and decision escrow when automation pauses or continues on a low-risk default.
 # Chain manifest preflight rejects planning artifacts before run creation; project-scoped manifests declare issue_repo or resolve it from the target repo remote.
 # Release-bearing chain manifests declare approved_release_id plus sync_strategy; rebase is the default, and squash is used only when the manifest explicitly opts in.
@@ -181,7 +183,8 @@ eval "$(scripts/task-load-spec.sh T001)"                # TASK_MODE/BRIEF_PATH/S
 scripts/task-build-debt-gate.sh [--override]            # exit 2 if blocked; emits build_debt_blocked
 scripts/task-claim.sh <task-uuid> <brief-uuid> <size>   # task + brief state transitions
 eval "$(scripts/task-worktree-setup.sh T001 /repo)"     # PROJECT/ORIG_BRANCH/ORIG_HEAD/WORKTREE; reuses the chain runner's feature-branch gate so dependent branches rebase/retarget instead of merging feature-to-feature
-scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" [zaps-app/Turnip.xcodeproj] # xcodebuild + lock; 6th arg pins -project/-workspace in multi-project repos (#238); exit 4 = duplicate-invocation refused (#209)
+scripts/task-build-gate.sh lsp-only T001 /wt MyScheme "platform=iOS Simulator" [zaps-app/Turnip.xcodeproj] # lsp-only stays local; full-green xcodebuild routes through studio-ios-check-router.sh, then queue/lock; exit 4 = duplicate-invocation refused (#209)
+scripts/studio-ios-check-failover.sh decide --operation test --task-id T001 --selected-executor worker-a --failure-signal artifact_missing # emits finite retry/halt telemetry and retains partial logs when STUDIO_CHAIN_ARTIFACT_ROOT is set
 scripts/studio-tf-push.sh push [--version X.Y.Z]        # TestFlight push driver; creates/pushes tf-<version>-<build> anchor
 scripts/studio-tf-push.sh withdraw-tf-tag --version X.Y.Z --build N # rename TF anchor to tf-<version>-<build>-WITHDRAWN
 scripts/node-parity.sh [--fix|--dry-run]                # probe + cache toolchain versions; optionally install missing brew packages and print manual Xcode/runtime fixes (#126/#131)
@@ -217,6 +220,9 @@ scripts/lint-v2-bootstrap.sh --staged                   # blocks pre-A0.5 substr
 scripts/lint-v2-enforcement.sh --staged                 # A0.6 Studio v2 SPEC-derived substrate/profile gates
 scripts/v2-profile.sh --profile ios-turnip --validate   # validate the A6 project-profile layer and iOS profile
 scripts/v2-profile.sh --profile ios-turnip --operation build --project-root /path/to/project --dry-run  # resolve an abstract operation without running it
+scripts/studio-ios-check-router.sh explain --operation build --chain my-chain --task-id T001 --source-branch main # local-first iOS build/test route explanation with affinity/economics
+scripts/studio-ios-check-router.sh explain --operation release:testflight --role release --requires-secret-scope asc,slack # release/TestFlight capability + secret + queue-priority route explanation
+scripts/studio-ios-check-failover.sh decide --operation build --task-id T001 --selected-executor worker-a --failure-signal remote_timeout # classify failover and publish the selected retry or halt path
 scripts/v2-cutover.sh --status                          # report A9 v1 archive / v2 traffic-switch status
 scripts/v2-cutover.sh --validate                        # validate the A9 cutover manifest and rollback playbook
 scripts/lint-build-release-message.sh --file draft.md --channel appstore   # A11 message shape + duplicate lint
@@ -286,6 +292,14 @@ dispatched_from=user@host
 | `NODE_SOURCE_SYNC_MODE` | `auto` | Remote source sync mode: `auto` does one full rsync per session/path, then git-diff selective rsync; `full` and `selective` force either path. |
 | `NODE_SOURCE_SYNC_SMOKE` | `0` | Set to `1` to dry-run compare selective sync against a full rsync and fall back to full when they diverge. |
 | `NODE_WARMUP_TIMEOUT` | `900` (15m) | Max async node warm-up command stream. The first remote gate invocation per session/node launches warm-up in the background and continues. |
+| `STUDIO_IOS_ROUTER_FORCE_LOCAL` | `0` | Force iOS build/test routing to the local manager when scheduler safety checks allow it. |
+| `STUDIO_IOS_ROUTER_FORCE_WORKER` | empty | Force iOS build/test routing to a named eligible worker; capability, source-sync, simulator, and secret checks still apply. |
+| `STUDIO_IOS_ROUTER_BREAK_AFFINITY` | `0` | Ignore the current chain's preferred build/test executor for one routing decision and record the break reason. |
+| `STUDIO_IOS_ROUTER_CLEAR_AFFINITY` | `0` | Clear stale iOS build/test affinity before making the next routing decision. |
+| `STUDIO_IOS_ROUTER_REMOTE_SETUP_COST_S` | `120` | Scheduler estimate for remote sync/setup cost in offload economics. |
+| `STUDIO_IOS_ROUTER_RETRY_COST_S` | `180` | Scheduler estimate for retry cost when offloaded build/test work fails. |
+| `STUDIO_IOS_ROUTER_MIN_SAVINGS_S` | `120` | Minimum manager-wait savings required before offloading away from local. |
+| `STUDIO_IOS_ROUTER_OVERHEAD_BUDGET_MS` | `2000` | Routing-script overhead budget recorded in scheduler telemetry. |
 | `ACHILLES_UNATTENDED` | `0` | Set to `1` to pass `--dangerously-skip-permissions` for fully unattended overnight runs. |
 | `ACHILLES_AUTONOMOUS` | `0` (set to `1` automatically by the worker per task) | Tells the worker subprocess there is no user to answer clarifying questions; it must pick obvious defaults and document them in the debrief. Exported by `achilles-worker.sh` for every `claude -p` subprocess. Do not set manually unless testing. |
 | `ACHILLES_DISPLAY_NAME` | derived (see below) | Friendly name for panes / logs. Override per-shell, or pre-bake per-project via `~/.dev-studio/<project>/.display_name` (first non-comment line wins). |

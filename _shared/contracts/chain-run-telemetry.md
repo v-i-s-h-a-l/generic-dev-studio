@@ -79,6 +79,8 @@ closure PR when available.
 |---|---|
 | Supervisor: `chain_supervisor_decision` | Emitted for mutating `--auto` decisions; `--auto --dry-run` and `--explain-next` print the decision envelope without writing telemetry. Include `action`; include `selected_run_id` for resume/start when available, `candidate_run_ids` for ambiguity/refusals, `reason_id` for refusals, and `lock_path` for lock-held refusals. |
 | Lifecycle: `chain_run_started`, `chain_started`, `chain_issue_started`, `chain_issue_completed`, `chain_issue_merged`, `chain_issue_closed`, `chain_completed`, `chain_run_completed` | `status`, `duration_s`; scoped IDs in the envelope; stage-specific fields such as `chain`, `host`, `commit_before`, `commit_after`, `pr_url`, or `report` when available. `chain_issue_completed` also carries compact `check_counts`, token presence, and telemetry gaps when a worker summary exists. |
+| iOS execution summary on worker summaries | Optional `execution_telemetry` records implementation/build/test/review/release executors when applicable, routing reason class, cost/economics summary, private artifact roots, public-safe artifact classes, cleanup outcome, retained TTL class, failover outcome, and timing split across control-plane overhead, source sync, simulator boot, xcodebuild, tests, log parsing, and cleanup. Missing required iOS evidence is emitted as named telemetry gaps (`implementation_executor`, `build_executor`, `test_executor`, `review_executor`, `release_executor`, `worker_routing`, `artifact_evidence`, `cleanup_telemetry`) without failing an otherwise completed task. |
+| iOS cleanup: `chain_ios_artifact_cleanup_completed` | `chain`, janitor `status`, redacted cleanup `counts`, `bytes_freed`, retained `retention_class`/TTL evidence when present, `paths_redacted`, and a private `telemetry_artifact` pointer. |
 | Resume: `chain_resume_attempt_started`, `chain_resume_attempt_completed` | `attempt_id`; completed event also includes `failure_reason` when non-empty. |
 | Halt: `chain_halt_recorded` | `reason_id`, `halt_class`, `halt_record`. |
 | Escrow: `chain_decision_escrow_opened` | `decision_id`, `risk_class`, `status`, `escrow_record`. |
@@ -94,6 +96,7 @@ Public issue and PR comments may mention only this allowlist:
 
 ```text
 issue_number, chain_name, stage, verdict, status, gap_kind, reason_id, run_id, PR/issue URLs
+artifact_class, retention_class, cleanup_outcome, routing_reason_class, executor_role
 ```
 
-Do not publish local paths, branch/work-project details, prompts, token totals, cache totals, velocity data, private task details, or raw reviewer output. Detailed reconstruction lives in the private report under the run directory.
+Do not publish local paths, exact node or machine names, branch/work-project details, prompts, token totals, cache totals, velocity data, private task details, or raw reviewer output. Detailed reconstruction lives in the private report under the run directory.

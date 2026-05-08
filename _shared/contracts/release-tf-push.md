@@ -36,11 +36,12 @@ The release driver declares:
 ```
 requires_secret_scope: ["asc", "slack"]
 role: release
+operation: release:testflight | release:appstore
 ```
 
-`scripts/node-pick.sh --requires-secret-scope asc,slack release` filters the registry (`~/.dev-studio/.runtime/nodes.json`) to nodes whose `secret_scopes` array is a superset of `["asc", "slack"]`. Nodes with a missing or empty `secret_scopes` advertise no scopes and are filtered out. Today only the laptop entry advertises both scopes; mini's entry does not — TF/AS work routes to laptop, period. New machines join with `secret_scopes: []` by default and stay out of the release path until explicitly granted.
+`scripts/studio-ios-check-router.sh --operation release:testflight --role release --requires-secret-scope asc,slack` filters the registry (`~/.dev-studio/.runtime/nodes.json`) to machines whose `roles` include `release`, whose archive path also has `xcodebuild`, and whose `secret_scopes` array is a superset of `["asc", "slack"]`. Nodes with a missing or empty `secret_scopes` advertise no scopes and are filtered out. Today only the laptop entry advertises both scopes; mini's entry does not — TF/AS work routes to laptop, period. New machines join with `secret_scopes: []` by default and stay out of the release path until explicitly granted.
 
-When no candidate qualifies, `node-pick.sh` falls back to `local` and emits `node_fallback` with `reason: fallback:secret-scope` (see `events.md` §Dispatch events). The driver halts on `local` rather than running secret-bearing code on an unauthorized host — the fallback exists for diagnostic visibility, not for permission inheritance.
+When no candidate qualifies, release routing returns a refusal (`selected_executor: null`, `reason_class: release_no_capable_secret_scoped_executor`) and emits `release_priority_routing_decision`. The driver halts rather than running secret-bearing code on an unauthorized host. Local fallback is allowed only when the local machine is explicitly registered with the release role and required scopes; the documented fallback override only authorizes choosing that already-capable local machine when no remote is better.
 
 ## Prerequisites
 
@@ -157,7 +158,7 @@ Run `xcodebuild archive` against the project, scheme, and configuration declared
 
 When running in background mode, write `prepared-context.json` after Step 2 and before this archive starts. The file carries `release_tag`, `build`, `version`, `scheme`, `branch`, `archive_path`, `tf_tag`, and `prev_build`, allowing the wrapper to draft the Slack message while archive/upload continue. The wrapper must still wait for final `status.json` to reach `state=="succeeded"` before sending Slack.
 
-Before invoking `xcodebuild archive`, enqueue the archive with `priority: "release"` in `~/.dev-studio/.runtime/build-queue/<node-id>/`, then acquire an `xcodebuild-lock/<node-id>/slot-<n>/` lock before starting the archive. The queue grants up to the node's `parallel_build_slots` and moves release entries ahead of queued task/background work without stopping any in-flight holder.
+Before invoking `xcodebuild archive`, enqueue the archive with `priority: "release"` in `~/.dev-studio/.runtime/build-queue/<node-id>/`, then acquire an `xcodebuild-lock/<node-id>/slot-<n>/` lock before starting the archive. The queue grants up to the node's `parallel_build_slots` and moves release entries ahead of queued task/background work only before that work starts. It does not stop an in-flight holder; the release job remains waiting and telemetry records that mid-write preemption was refused.
 
 Authentication is JWT-based via `-authenticationKeyPath` / `-authenticationKeyID` / `-authenticationKeyIssuerID`. `CODE_SIGN_STYLE=Automatic`, with `OTHER_CODE_SIGN_FLAGS="--keychain <repo-local signing keychain>"` so archive signing resolves through the checked keychain. Pipe through `xcpretty` for human-readable progress; raw output is preserved on a failure path.
 
