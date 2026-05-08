@@ -231,6 +231,7 @@ preflight_push_release() {
   require_cmd jq
   require_cmd curl
   require_cmd python3
+  require_cmd security
 
   [ -d "$PROJECT_ROOT/.git" ] || halt_failed prereq "project git checkout missing at $PROJECT_ROOT; no mutation occurred"
   [ -r "$PBXPROJ" ] || halt_failed prereq "pbxproj unreadable at $PBXPROJ; no mutation occurred"
@@ -260,6 +261,7 @@ PY
   then
     halt_failed prereq "Python jwt dependency missing before mutation; install PyJWT in the release environment"
   fi
+
   if [ "${STUDIO_TF_SLACK_DEFERRED:-0}" != "1" ]; then
     [ -r "$SLACK_TOKEN_FILE" ] || halt_failed prereq "Slack token unreadable at $SLACK_TOKEN_FILE; no mutation occurred. Set STUDIO_TF_SLACK_DEFERRED=1 only for an intentionally upload-only run."
     [ -s "$SLACK_TOKEN_FILE" ] || halt_failed prereq "Slack token file is empty at $SLACK_TOKEN_FILE; no mutation occurred. Set STUDIO_TF_SLACK_DEFERRED=1 only for an intentionally upload-only run."
