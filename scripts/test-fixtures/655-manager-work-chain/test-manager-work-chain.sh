@@ -6,7 +6,8 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 RUN="$ROOT/scripts/manager-work-chain.sh"
 TMPROOT=$(mktemp -d -t manager-work-chain.XXXXXX)
-trap 'rm -rf "$TMPROOT"' EXIT
+SELECTOR_MANIFEST="$ROOT/chains/zz-698-manager-selector-fixture.yaml"
+trap 'rm -rf "$TMPROOT"; rm -f "$SELECTOR_MANIFEST"' EXIT
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -70,6 +71,25 @@ grep -q -- '- Execution mode: `attended`' "$TMPROOT/plan.out" \
   || fail "named manager work-chain dry-run should preserve default attended mode"
 grep -q 'ios-v2-execution' "$TMPROOT/plan.out" \
   || fail "named manager work-chain should preserve the chain name"
+
+cat > "$SELECTOR_MANIFEST" <<'YAML'
+schema_version: 1
+chains:
+  - id: manager-selector-id
+    name: manager-selector-name
+    base: main
+    branch: feature/manager-selector-name
+    issues: [698]
+YAML
+
+PATH="$BIN:$PATH" HOME="$TMPROOT/home" "$RUN" manager-selector-id --dry-run >"$TMPROOT/plan-by-id.out" 2>&1
+grep -q '# Studio Chain Plan' "$TMPROOT/plan-by-id.out" \
+  || fail "chain-id manager work-chain dry-run should preview the plan"
+grep -q 'manager-selector-name' "$TMPROOT/plan-by-id.out" \
+  || fail "chain-id manager work-chain should resolve the matching chain name"
+if grep -q 'ios-v2-execution' "$TMPROOT/plan-by-id.out"; then
+  fail "chain-id manager work-chain should not select an unrelated manifest"
+fi
 
 PATH="$BIN:$PATH" HOME="$TMPROOT/home" "$RUN" ios-v2-execution --attended --yes --dry-run >"$TMPROOT/attended.out" 2>&1
 grep -q -- '- Execution mode: `attended`' "$TMPROOT/attended.out" \

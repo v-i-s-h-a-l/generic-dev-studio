@@ -3,9 +3,9 @@
 #
 # Usage:
 #   scripts/studio-chain-runner.sh [--discover [<manifest|chain-name>] [--only <chain>]]
-#   scripts/studio-chain-runner.sh <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--yes] [--parallel-chains <n|auto|1>] [--checkpoint auto|off] [--attended|--unattended]
-#   scripts/studio-chain-runner.sh --auto <manifest|chain-name> [--only <chain>] [--host <host>] [--dry-run] [--checkpoint auto|off] [--unattended]
-#   scripts/studio-chain-runner.sh --explain-next <manifest|chain-name> [--only <chain>]
+#   scripts/studio-chain-runner.sh <manifest|chain-name|chain-id> [--only <chain>] [--host <host>] [--dry-run] [--yes] [--parallel-chains <n|auto|1>] [--checkpoint auto|off] [--attended|--unattended]
+#   scripts/studio-chain-runner.sh --auto <manifest|chain-name|chain-id> [--only <chain>] [--host <host>] [--dry-run] [--checkpoint auto|off] [--unattended]
+#   scripts/studio-chain-runner.sh --explain-next <manifest|chain-name|chain-id> [--only <chain>]
 #   scripts/studio-chain-runner.sh --resume <run_id> [--yes]
 #   scripts/studio-chain-runner.sh --list
 #
@@ -228,7 +228,7 @@ discover_persisted_runs() {
     projected_state_for_read "$state" "$view"
     run_id=$(jq -r '.run_id // "unknown"' "$view" 2>/dev/null || printf 'unknown')
     status=$(jq -r '.status // "unknown"' "$view" 2>/dev/null || printf 'unknown')
-    if [ "$status" = "completed" ]; then
+    if [ "$status" = "completed" ] || [ "$status" = "archived" ]; then
       rm -f "$view"
       continue
     fi
@@ -256,6 +256,120 @@ EOF
   printf '|---|---|---|---|\n'
   cat "$rows_tmp"
   rm -f "$rows_tmp"
+}
+
+RESOLVED_MANIFEST_SELECTOR_KIND=""
+RESOLVED_MANIFEST_PATH=""
+RESOLVED_CHAIN_SELECTOR_NAME=""
+RESOLVED_CHAIN_SELECTOR_ID=""
+
+manifest_chain_identifier() {
+  local manifest="$1" idx="$2"
+  yq -r ".chains[$idx].id // .chains[$idx].chain_id // .chains[$idx].chain_run_id // .chains[$idx].name // \"\"" "$manifest" 2>/dev/null
+}
+
+manifest_chain_status() {
+  local manifest="$1" idx="$2" raw
+  raw=$(yq -r ".chains[$idx].status // .chains[$idx].state // \"available\"" "$manifest" 2>/dev/null || printf 'available')
+  printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr '_ ' '--'
+}
+
+chain_status_hidden_from_default_discovery() {
+  case "$1" in
+    completed|merged|closed|done|success|archived) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+resolve_manifest_by_chain_selector() {
+  local input="$1" matches_tmp manifest chain_count idx name chain_id count row
+  [ -d "$REPO_ROOT/chains" ] || return 1
+  matches_tmp=$(mktemp -t studio-chain-selector.XXXXXX) || return 1
+  while IFS= read -r manifest; do
+    [ -n "$manifest" ] || continue
+    [ -f "$manifest" ] || continue
+    chain_count=$(yq -r '.chains | length' "$manifest" 2>/dev/null || printf '0')
+    case "$chain_count" in ''|null|*[!0-9]*|0) continue ;; esac
+    for ((idx = 0; idx < chain_count; idx++)); do
+      name=$(yq -r ".chains[$idx].name // \"\"" "$manifest" 2>/dev/null || printf '')
+      chain_id=$(manifest_chain_identifier "$manifest" "$idx")
+      if [ "$input" = "$name" ] || { [ -n "$chain_id" ] && [ "$input" = "$chain_id" ]; }; then
+        printf '%s\t%s\t%s\n' "$manifest" "$name" "$chain_id" >> "$matches_tmp"
+      fi
+    done
+  done <<EOF
+$(find "$REPO_ROOT/chains" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null | sort)
+EOF
+  count=$(wc -l < "$matches_tmp" | tr -d ' ')
+  case "$count" in
+    0)
+      rm -f "$matches_tmp"
+      return 1
+      ;;
+    1)
+      row=$(cat "$matches_tmp")
+      rm -f "$matches_tmp"
+      IFS=$'\t' read -r manifest RESOLVED_CHAIN_SELECTOR_NAME RESOLVED_CHAIN_SELECTOR_ID <<EOF
+$row
+EOF
+      RESOLVED_MANIFEST_SELECTOR_KIND="chain"
+      RESOLVED_MANIFEST_PATH="$manifest"
+      if [ -z "$ONLY_CHAIN" ]; then
+        ONLY_CHAIN="$RESOLVED_CHAIN_SELECTOR_NAME"
+      fi
+      return 0
+      ;;
+    *)
+      printf 'studio-chain-runner: chain selector matched multiple manifests: %s\n' "$input" >&2
+      cat "$matches_tmp" >&2
+      rm -f "$matches_tmp"
+      return 2
+      ;;
+  esac
+}
+
+resolve_manifest() {
+  local input="$1" candidate rc
+  RESOLVED_MANIFEST_SELECTOR_KIND="manifest"
+  RESOLVED_MANIFEST_PATH=""
+  RESOLVED_CHAIN_SELECTOR_NAME=""
+  RESOLVED_CHAIN_SELECTOR_ID=""
+  if [ -f "$input" ]; then
+    RESOLVED_MANIFEST_PATH="$input"
+    printf '%s\n' "$input"
+    return 0
+  fi
+
+  candidate="$REPO_ROOT/chains/$input.yaml"
+  if [ -f "$candidate" ]; then
+    RESOLVED_MANIFEST_PATH="$candidate"
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  candidate="$REPO_ROOT/chains/$input.yml"
+  if [ -f "$candidate" ]; then
+    RESOLVED_MANIFEST_PATH="$candidate"
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  set +e
+  resolve_manifest_by_chain_selector "$input"
+  rc=$?
+  set -e
+  if [ "$rc" -eq 0 ]; then
+    printf '%s\n' "$RESOLVED_MANIFEST_PATH"
+    return 0
+  fi
+  if [ "$rc" -eq 2 ]; then
+    exit 2
+  fi
+
+  printf 'studio-chain-runner: manifest not found: %s\n' "$input" >&2
+  printf 'studio-chain-runner: tried %s and %s\n' "$REPO_ROOT/chains/$input.yaml" "$REPO_ROOT/chains/$input.yml" >&2
+  printf 'studio-chain-runner: also searched chain names and chain ids under %s\n' "$REPO_ROOT/chains" >&2
+  exit 2
 }
 
 manifest_diagnostics_json() {
@@ -387,7 +501,7 @@ preflight_runnable_manifest() {
 }
 
 discover_chain_manifests() {
-  local manifest chain_count idx name issues command rel_manifest manifest_filter manifest_list_tmp rows_tmp nonrunnable_tmp candidate diagnostics status reason
+  local manifest chain_count idx name chain_id chain_status issues command rel_manifest manifest_filter manifest_list_tmp rows_tmp nonrunnable_tmp candidate diagnostics status reason command_selector
   command -v yq >/dev/null 2>&1 || { printf 'studio-chain-runner: yq required\n' >&2; exit 2; }
   command -v jq >/dev/null 2>&1 || { printf 'studio-chain-runner: jq required\n' >&2; exit 2; }
   printf '\n## Runnable Work Chains\n\n'
@@ -399,17 +513,12 @@ discover_chain_manifests() {
   manifest_filter="${MANIFEST:-}"
   manifest_list_tmp=$(mktemp -t studio-chain-discovery-manifests.XXXXXX)
   if [ -n "$manifest_filter" ]; then
-    candidate=""
-    if [ -f "$manifest_filter" ]; then
-      candidate="$manifest_filter"
-    elif [ -f "$REPO_ROOT/$manifest_filter" ]; then
-      candidate="$REPO_ROOT/$manifest_filter"
-    elif [ -f "$REPO_ROOT/chains/$manifest_filter.yaml" ]; then
-      candidate="$REPO_ROOT/chains/$manifest_filter.yaml"
-    elif [ -f "$REPO_ROOT/chains/$manifest_filter.yml" ]; then
-      candidate="$REPO_ROOT/chains/$manifest_filter.yml"
-    fi
-    if [ -z "$candidate" ]; then
+    set +e
+    resolve_manifest "$manifest_filter" >/dev/null
+    candidate_rc=$?
+    set -e
+    candidate="$RESOLVED_MANIFEST_PATH"
+    if [ "$candidate_rc" -ne 0 ] || [ -z "$candidate" ]; then
       printf 'studio-chain-runner: chain manifest not found for discovery: %s\n' "$manifest_filter" >&2
       rm -f "$manifest_list_tmp"
       exit 2
@@ -440,11 +549,19 @@ discover_chain_manifests() {
     esac
     for ((idx = 0; idx < chain_count; idx++)); do
       name=$(yq -r ".chains[$idx].name" "$manifest")
+      chain_id=$(manifest_chain_identifier "$manifest" "$idx")
+      [ -n "$chain_id" ] && [ "$chain_id" != "null" ] || chain_id="$name"
+      chain_status=$(manifest_chain_status "$manifest" "$idx")
       [ -n "$ONLY_CHAIN" ] && [ "$name" != "$ONLY_CHAIN" ] && continue
+      if [ -z "$manifest_filter" ] && chain_status_hidden_from_default_discovery "$chain_status"; then
+        continue
+      fi
       issues=$(yq -o=json ".chains[$idx].issues // []" "$manifest" \
         | jq -r 'map(if type == "object" then (.number // .issue // .id // empty) else . end) | map(tostring) | join(",")')
-      command="/dev-studio manager work-chain $name --dry-run"
-      printf '| `%s` | `%s` | `%s` | `%s` |\n' "$rel_manifest" "$name" "${issues:-"-"}" "$command" >> "$rows_tmp"
+      command_selector="$chain_id"
+      [ -n "$command_selector" ] && [ "$command_selector" != "null" ] || command_selector="$name"
+      command="/dev-studio manager work-chain $command_selector --dry-run"
+      printf '| `%s` | `%s` | `%s` | `%s` | `%s` | `%s` |\n' "$rel_manifest" "$name" "$chain_id" "$chain_status" "${issues:-"-"}" "$command" >> "$rows_tmp"
     done
   done < "$manifest_list_tmp"
   rm -f "$manifest_list_tmp"
@@ -461,8 +578,8 @@ discover_chain_manifests() {
     rm -f "$nonrunnable_tmp"
     return 0
   fi
-  printf '| Manifest | Chain | Issues | Suggested command |\n'
-  printf '|---|---|---|---|\n'
+  printf '| Manifest | Chain | Chain ID | Status | Issues | Suggested command |\n'
+  printf '|---|---|---|---|---|---|\n'
   cat "$rows_tmp"
   rm -f "$rows_tmp" "$nonrunnable_tmp"
 }
@@ -471,7 +588,7 @@ print_discovery() {
   printf '# Studio Chain Discovery\n\n'
   printf -- '- Bare invocation is discovery-only; it never starts or resumes work.\n'
   printf -- '- Preferred user entrypoint: `/dev-studio manager work-chain`.\n'
-  printf -- '- Add a manifest or chain name to filter suggestions: `/dev-studio manager work-chain --discover ios-v2-execution`.\n\n'
+  printf -- '- Add a manifest or chain name to filter suggestions: `/dev-studio manager work-chain --discover ios-v2-execution`; chain IDs are also exact selectors.\n\n'
   printf '## Next Actions\n\n'
   printf -- '- Preview a chain: `/dev-studio manager work-chain <chain> --dry-run`\n'
   printf -- '- Attended run: `/dev-studio manager work-chain <manifest|chain-name> --attended --yes`\n'
@@ -2703,30 +2820,6 @@ slugify() {
   printf '%s' "$1" | tr '/[:space:]' '--' | tr -cd '[:alnum:]_.-'
 }
 
-resolve_manifest() {
-  local input="$1" candidate
-  if [ -f "$input" ]; then
-    printf '%s\n' "$input"
-    return 0
-  fi
-
-  candidate="$REPO_ROOT/chains/$input.yaml"
-  if [ -f "$candidate" ]; then
-    printf '%s\n' "$candidate"
-    return 0
-  fi
-
-  candidate="$REPO_ROOT/chains/$input.yml"
-  if [ -f "$candidate" ]; then
-    printf '%s\n' "$candidate"
-    return 0
-  fi
-
-  printf 'studio-chain-runner: manifest not found: %s\n' "$input" >&2
-  printf 'studio-chain-runner: tried %s and %s\n' "$REPO_ROOT/chains/$input.yaml" "$REPO_ROOT/chains/$input.yml" >&2
-  exit 2
-}
-
 canonical_path() {
   local path="$1" dir base
   if [ -z "$path" ]; then
@@ -2864,7 +2957,8 @@ resolve_issue_repo_slug() {
 }
 
 resolve_new_run_manifest_context() {
-  MANIFEST=$(resolve_manifest "$MANIFEST")
+  resolve_manifest "$MANIFEST" >/dev/null
+  MANIFEST="$RESOLVED_MANIFEST_PATH"
   MANIFEST=$(canonical_path "$MANIFEST")
   preflight_runnable_manifest "$MANIFEST"
   TARGET_REPO_ROOT=$(resolve_target_repo_root "$MANIFEST")

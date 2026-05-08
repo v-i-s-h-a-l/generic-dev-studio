@@ -13,6 +13,7 @@ usage() {
   cat >&2 <<'EOF'
 Usage:
   scripts/chain-monitor-sync.sh [--project <slug>] [--repo <repo-root>] [--list-id <id>]
+                                [--archived-list-id <id>]
                                 [--repo-manifest <yaml>] [--runtime-manifest <yaml>]
                                 [--persisted-run <state.json>] [--legacy-slack <rows.json>]
                                 [--event-payload <payload.json>] [--desired-output <json>]
@@ -30,7 +31,9 @@ PROJECT=""
 REPO_ROOT="$REPO_ROOT_DEFAULT"
 OWNER_HOME=""
 STATE_PATH=""
+ARCHIVED_STATE_PATH=""
 LIST_ID="${STUDIO_CHAIN_MONITOR_SLACK_LIST_ID:-${CHAIN_MONITOR_SLACK_LIST_ID:-}}"
+ARCHIVED_LIST_ID="${STUDIO_CHAIN_MONITOR_ARCHIVED_SLACK_LIST_ID:-${CHAIN_MONITOR_ARCHIVED_SLACK_LIST_ID:-}}"
 NOW_EPOCH=$(date -u +%s)
 STALE_THRESHOLD_S="$CHAIN_MONITOR_STALE_THRESHOLD_S"
 COMPLETED_RETENTION_S="$CHAIN_MONITOR_COMPLETED_RETENTION_S"
@@ -99,8 +102,12 @@ while [ "$#" -gt 0 ]; do
     --owner-home=*) OWNER_HOME="${1#--owner-home=}"; shift ;;
     --state) STATE_PATH="${2:?--state requires a path}"; shift 2 ;;
     --state=*) STATE_PATH="${1#--state=}"; shift ;;
+    --archived-state) ARCHIVED_STATE_PATH="${2:?--archived-state requires a path}"; shift 2 ;;
+    --archived-state=*) ARCHIVED_STATE_PATH="${1#--archived-state=}"; shift ;;
     --list-id) LIST_ID="${2:?--list-id requires a value}"; shift 2 ;;
     --list-id=*) LIST_ID="${1#--list-id=}"; shift ;;
+    --archived-list-id) ARCHIVED_LIST_ID="${2:?--archived-list-id requires a value}"; shift 2 ;;
+    --archived-list-id=*) ARCHIVED_LIST_ID="${1#--archived-list-id=}"; shift ;;
     --now-epoch) NOW_EPOCH="${2:?--now-epoch requires a value}"; shift 2 ;;
     --now-epoch=*) NOW_EPOCH="${1#--now-epoch=}"; shift ;;
     --stale-threshold-s) STALE_THRESHOLD_S="${2:?--stale-threshold-s requires a value}"; shift 2 ;;
@@ -162,6 +169,20 @@ else
     mkdir -p "$(dirname "$STATE_PATH")"
   fi
 fi
+if [ -n "$ARCHIVED_LIST_ID" ]; then
+  if [ -z "$ARCHIVED_STATE_PATH" ]; then
+    if [ "$DRY_RUN_SYNC" = "true" ]; then
+      ARCHIVED_STATE_PATH=$(HOME="$OWNER_HOME" chain_monitor_archived_state_path_for_project "$PROJECT")
+    else
+      ARCHIVED_STATE_PATH=$(HOME="$OWNER_HOME" chain_monitor_prepare_archived_state_mutation_for_project "$PROJECT")
+    fi
+  else
+    if [ "$DRY_RUN_SYNC" != "true" ]; then
+      chain_monitor_refuse_synthetic_state_mutation "$ARCHIVED_STATE_PATH"
+      mkdir -p "$(dirname "$ARCHIVED_STATE_PATH")"
+    fi
+  fi
+fi
 LOCK_PATH=$(HOME="$OWNER_HOME" chain_monitor_lock_path_for_project "$PROJECT")
 
 append_colon_list repo "${STUDIO_CHAIN_MONITOR_REPO_MANIFESTS:-}"
@@ -213,6 +234,7 @@ if [ "$EMIT_DESIRED" -eq 0 ] && [ -z "$LIST_ID" ]; then
 fi
 
 validate_live_column_mapping() {
+  [ "$EMIT_DESIRED" -eq 0 ] || return 0
   [ "$DRY_RUN_SYNC" != "true" ] || return 0
   [ -z "${STUDIO_CHAIN_MONITOR_SLACK_LIST_API_COMMAND:-}" ] || return 0
   [ -z "${STUDIO_CHAIN_MONITOR_SLACK_LIST_API_FUNCTION:-}" ] || return 0
@@ -274,7 +296,10 @@ release_lock() {
 trap release_lock EXIT
 
 desired_tmp=$(mktemp -t chain-monitor-desired.XXXXXX)
-reconcile_tmp=$(mktemp -t chain-monitor-reconcile.XXXXXX)
+active_desired_tmp=$(mktemp -t chain-monitor-active-desired.XXXXXX)
+archived_desired_tmp=$(mktemp -t chain-monitor-archived-desired.XXXXXX)
+active_reconcile_tmp=$(mktemp -t chain-monitor-active-reconcile.XXXXXX)
+archived_reconcile_tmp=$(mktemp -t chain-monitor-archived-reconcile.XXXXXX)
 summary_tmp=$(mktemp -t chain-monitor-sync-summary.XXXXXX)
 payload_tmp=""
 if [ -n "$EVENT_PAYLOAD" ] && [ -f "$EVENT_PAYLOAD" ]; then
@@ -294,6 +319,23 @@ chain_monitor_build_rows_json \
   --completed-retention-s "$COMPLETED_RETENTION_S" \
   "${BUILD_ARGS[@]}" > "$desired_tmp"
 
+if [ "$FULL_REWRITE" = "true" ]; then
+  jq '.rows = ((.rows // []) | map(select((.fields.status // "") != "archived")))' "$desired_tmp" > "$active_desired_tmp"
+else
+  cp "$desired_tmp" "$active_desired_tmp"
+fi
+jq '
+  (.rows // []) as $rows
+  | ($rows | map(select(.row_type == "chain" and (.fields.status // "") == "archived") | .row_key)) as $archived_chain_keys
+  | .rows = (
+      $rows
+      | map(. as $row | select(
+          ($row.fields.status // "") == "archived"
+          and ($row.row_type == "chain" or ($archived_chain_keys | index($row.parent_row_key // "")))
+        ))
+    )
+' "$desired_tmp" > "$archived_desired_tmp"
+
 if [ -n "$DESIRED_OUTPUT" ]; then
   mkdir -p "$(dirname "$DESIRED_OUTPUT")"
   cp "$desired_tmp" "$DESIRED_OUTPUT"
@@ -302,12 +344,12 @@ fi
 if [ "$EMIT_DESIRED" -eq 1 ]; then
   cat "$desired_tmp"
   release_lock
-  rm -f "$desired_tmp" "$reconcile_tmp" "$summary_tmp"
+  rm -f "$desired_tmp" "$active_desired_tmp" "$archived_desired_tmp" "$active_reconcile_tmp" "$archived_reconcile_tmp" "$summary_tmp"
   exit 0
 fi
 
 declare -a RECONCILE_ARGS=(
-  --desired "$desired_tmp"
+  --desired "$active_desired_tmp"
   --state "$STATE_PATH"
   --list-id "$LIST_ID"
   --owner-home "$OWNER_HOME"
@@ -315,22 +357,50 @@ declare -a RECONCILE_ARGS=(
   --source-fingerprint "$source_fingerprint"
   --now-epoch "$NOW_EPOCH"
   --archive-retention-s "$ARCHIVE_RETENTION_S"
+  --list-role active
 )
 [ "$DRY_RUN_SYNC" = "true" ] && RECONCILE_ARGS+=(--dry-run)
 [ "$FULL_REWRITE" = "true" ] && RECONCILE_ARGS+=(--full-rewrite)
 [ "$REPAIR_ORPHANS" = "true" ] && RECONCILE_ARGS+=(--repair-orphans)
 
 set +e
-chain_monitor_slack_list_reconcile_json "${RECONCILE_ARGS[@]}" > "$reconcile_tmp"
-reconcile_rc=$?
+chain_monitor_slack_list_reconcile_json "${RECONCILE_ARGS[@]}" > "$active_reconcile_tmp"
+active_reconcile_rc=$?
+archived_reconcile_rc=0
+if [ -n "$ARCHIVED_LIST_ID" ]; then
+  declare -a ARCHIVE_RECONCILE_ARGS=(
+    --desired "$archived_desired_tmp"
+    --state "$ARCHIVED_STATE_PATH"
+    --list-id "$ARCHIVED_LIST_ID"
+    --owner-home "$OWNER_HOME"
+    --owner-project "$PROJECT"
+    --source-fingerprint "$source_fingerprint"
+    --now-epoch "$NOW_EPOCH"
+    --archive-retention-s "$ARCHIVE_RETENTION_S"
+    --list-role archived
+  )
+  [ "$DRY_RUN_SYNC" = "true" ] && ARCHIVE_RECONCILE_ARGS+=(--dry-run)
+  [ "$FULL_REWRITE" = "true" ] && ARCHIVE_RECONCILE_ARGS+=(--full-rewrite)
+  [ "$REPAIR_ORPHANS" = "true" ] && ARCHIVE_RECONCILE_ARGS+=(--repair-orphans)
+  chain_monitor_slack_list_reconcile_json "${ARCHIVE_RECONCILE_ARGS[@]}" > "$archived_reconcile_tmp"
+  archived_reconcile_rc=$?
+else
+  jq -n '{schema_version:1, kind:"chain_monitor_slack_list_reconcile", list_role:"archived", skipped:true, reason:"archived_list_id_not_configured"}' > "$archived_reconcile_tmp"
+fi
 set -e
+reconcile_rc=0
+if [ "$active_reconcile_rc" -ne 0 ] || [ "$archived_reconcile_rc" -ne 0 ]; then
+  reconcile_rc=1
+fi
 
 jq -n \
   --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg project "$PROJECT" \
   --arg state_path "$STATE_PATH" \
+  --arg archived_state_path "$ARCHIVED_STATE_PATH" \
   --arg lock_path "$LOCK_PATH" \
   --arg list_id "$LIST_ID" \
+  --arg archived_list_id "$ARCHIVED_LIST_ID" \
   --arg source_fingerprint "$source_fingerprint" \
   --argjson dry_run "$DRY_RUN_SYNC" \
   --argjson now_epoch "$NOW_EPOCH" \
@@ -343,7 +413,10 @@ jq -n \
   --argjson persisted_run_count "${#PERSISTED_RUNS[@]}" \
   --argjson legacy_slack_count "${#LEGACY_SLACK_ROWS[@]}" \
   --slurpfile desired "$desired_tmp" \
-  --slurpfile reconcile "$reconcile_tmp" \
+  --slurpfile active_desired "$active_desired_tmp" \
+  --slurpfile archived_desired "$archived_desired_tmp" \
+  --slurpfile active_reconcile "$active_reconcile_tmp" \
+  --slurpfile archived_reconcile "$archived_reconcile_tmp" \
   --slurpfile event "${payload_tmp:-/dev/null}" \
   '{
     schema_version: 1,
@@ -352,8 +425,10 @@ jq -n \
     status: (if $exit_code == 0 then "completed" else "failed" end),
     project: $project,
     state_path: $state_path,
+    archived_state_path: (if $archived_state_path == "" then null else $archived_state_path end),
     lock_path: $lock_path,
     list_id: $list_id,
+    archived_list_id: (if $archived_list_id == "" then null else $archived_list_id end),
     dry_run: $dry_run,
     source_fingerprint: $source_fingerprint,
     source_counts: {
@@ -370,11 +445,15 @@ jq -n \
     },
     desired: {
       row_count: (($desired[0].rows // []) | length),
+      active_row_count: (($active_desired[0].rows // []) | length),
+      archived_row_count: (($archived_desired[0].rows // []) | length),
       collision_count: (($desired[0].collisions // []) | length),
       recovery_count: (($desired[0].recoveries // []) | length)
     },
     event: ($event[0] // null),
-    reconcile: ($reconcile[0] // {}),
+    reconcile: ($active_reconcile[0] // {}),
+    active_reconcile: ($active_reconcile[0] // {}),
+    archived_reconcile: ($archived_reconcile[0] // {}),
     exit_code: $exit_code
   }' > "$summary_tmp"
 
@@ -385,5 +464,5 @@ fi
 cat "$summary_tmp"
 
 release_lock
-rm -f "$desired_tmp" "$reconcile_tmp" "$summary_tmp"
+rm -f "$desired_tmp" "$active_desired_tmp" "$archived_desired_tmp" "$active_reconcile_tmp" "$archived_reconcile_tmp" "$summary_tmp"
 exit "$reconcile_rc"

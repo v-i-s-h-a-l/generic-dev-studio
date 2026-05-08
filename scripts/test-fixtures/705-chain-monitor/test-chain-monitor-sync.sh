@@ -35,6 +35,7 @@ export STUDIO_CHAIN_MONITOR_SLACK_LIST_API_COMMAND="$MOCK_API"
 export CHAIN_MONITOR_SLACK_LIST_MOCK_STORE="$TMPROOT/mock-store.json"
 export CHAIN_MONITOR_SLACK_LIST_MOCK_LOG="$TMPROOT/mock.log"
 export STUDIO_CHAIN_MONITOR_SLACK_LIST_ID="FCHAINMONITOR"
+export STUDIO_CHAIN_MONITOR_ARCHIVED_SLACK_LIST_ID="FCHAINARCHIVE"
 export STUDIO_CHAIN_MONITOR_SYNC_ON_NOTIFY=1
 export STUDIO_CHAIN_MONITOR_NOTIFY=1
 mkdir -p "$HOME"
@@ -42,6 +43,7 @@ mkdir -p "$HOME"
 NOW=$(jq -nr '"2026-05-07T20:40:00Z" | fromdateiso8601')
 RUN_STATE="$FIXTURE_DIR/fixtures/persisted-run-state.json"
 SYNC_STATE="$HOME/.dev-studio/generic-dev-studio/.runtime/state/chain-monitor-slack-list-state.json"
+ARCHIVED_SYNC_STATE="$HOME/.dev-studio/generic-dev-studio/.runtime/state/chain-monitor-slack-list-archived-state.json"
 
 reset_mock "$CHAIN_MONITOR_SLACK_LIST_MOCK_STORE" "$CHAIN_MONITOR_SLACK_LIST_MOCK_LOG"
 rm -f "$SYNC_STATE"
@@ -150,16 +152,71 @@ desired_status="$TMPROOT/status-desired.json"
   --completed-retention-s 300 \
   --emit-desired > "$desired_status"
 assert_jq "persisted run status precedence is applied" "$desired_status" '
-  any(.rows[]; .fields.title == "blocked-over-running" and .fields.status == "blocked")
-  and any(.rows[]; .fields.title == "paused-over-running" and .fields.status == "paused")
-  and any(.rows[]; .fields.title == "failed-over-queued" and .fields.status == "failed")
-  and any(.rows[]; .fields.title == "unknown-conflict" and .fields.status == "unknown")
+  any(.rows[]; .fields.title == "blocked-over-running [blocked]" and .fields.status == "blocked")
+  and any(.rows[]; .fields.title == "paused-over-running [paused]" and .fields.status == "paused")
+  and any(.rows[]; .fields.title == "failed-over-queued [failed]" and .fields.status == "failed")
+  and any(.rows[]; .fields.title == "unknown-conflict [unknown]" and .fields.status == "unknown")
 '
 assert_jq "stale and completion retention thresholds are honored" "$desired_status" '
   any(.rows[]; .fields.title == "fresh-completed" and .fields.status == "completed")
   and any(.rows[]; .fields.title == "retained-completed" and .fields.status == "archived")
-  and any(.rows[]; .fields.title == "stale-running" and .fields.status == "stale")
+  and any(.rows[]; .fields.title == "stale-running [stale]" and .fields.status == "stale")
   and any(.rows[]; .fields.title == "fresh-running" and .fields.status == "running")
+'
+assert_jq "chain ids render in monitor titles when they differ from names" "$desired_status" '
+  any(.rows[]; .fields.title == "blocked-over-running [blocked]")
+'
+assert_jq "completed rows sort below live chain rows" "$desired_status" '
+  ([.rows[] | select(.row_type == "chain") | .fields.status] | index("completed")) >
+  ([.rows[] | select(.row_type == "chain") | .fields.status] | index("running"))
+'
+
+ageing_run="$TMPROOT/ageing-run.json"
+cat > "$ageing_run" <<JSON
+{
+  "schema_version": 1,
+  "run_id": "ageing-run",
+  "manifest": "ageing.yaml",
+  "status": "running",
+  "updated_at": "2026-05-07T20:39:00Z",
+  "chains": [
+    {"name":"ageing-completed","chain_run_id":"ageing-id","status":"completed","completed_at":"2026-05-07T20:38:30Z","issues":[{"number":10,"status":"completed","completed_at":"2026-05-07T20:38:30Z"}]}
+  ]
+}
+JSON
+reset_mock "$CHAIN_MONITOR_SLACK_LIST_MOCK_STORE" "$CHAIN_MONITOR_SLACK_LIST_MOCK_LOG"
+rm -f "$SYNC_STATE" "$ARCHIVED_SYNC_STATE"
+"$ROOT/scripts/chain-monitor-sync.sh" \
+  --project generic-dev-studio \
+  --no-discover \
+  --persisted-run "$ageing_run" \
+  --now-epoch "$NOW" \
+  --stale-threshold-s 3600 \
+  --completed-retention-s 300 \
+  --archive-retention-s 10 \
+  --summary-output "$TMPROOT/ageing-active.json" >/dev/null
+assert_jq "freshly completed row remains on active list" "$CHAIN_MONITOR_SLACK_LIST_MOCK_STORE" '
+  any(.active[]; .list_id == "FCHAINMONITOR" and .fields.title == "ageing-completed [ageing-id]" and .fields.status == "completed")
+  and ([.active[] | select(.list_id == "FCHAINARCHIVE")] | length) == 0
+'
+"$ROOT/scripts/chain-monitor-sync.sh" \
+  --project generic-dev-studio \
+  --no-discover \
+  --persisted-run "$ageing_run" \
+  --now-epoch "$((NOW + 400))" \
+  --stale-threshold-s 3600 \
+  --completed-retention-s 300 \
+  --archive-retention-s 10 \
+  --summary-output "$TMPROOT/ageing-archived.json" >/dev/null
+assert_jq "retained completed row moves from active list to archived list" "$CHAIN_MONITOR_SLACK_LIST_MOCK_STORE" '
+  ([.active[] | select(.list_id == "FCHAINMONITOR" and .row_key == "chain:persisted-run:ageing-run:ageing-id")] | length) == 0
+  and any(.active[]; .list_id == "FCHAINARCHIVE" and .row_key == "chain:persisted-run:ageing-run:ageing-id" and .fields.status == "archived")
+  and any(.archived[]; .list_id == "FCHAINMONITOR" and .row_key == "chain:persisted-run:ageing-run:ageing-id")
+'
+assert_jq "sync summary reports separate archived reconcile" "$TMPROOT/ageing-archived.json" '
+  .archived_list_id == "FCHAINARCHIVE"
+  and .desired.archived_row_count == 2
+  and .archived_reconcile.list_role == "archived"
 '
 
 default_threshold=$(

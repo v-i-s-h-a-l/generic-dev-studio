@@ -32,6 +32,7 @@ snapshot_tree() {
 
 RUN_STATE="$FIXTURE_DIR/fixtures/persisted-run-state.json"
 LIST_ID="FCHAINMONITOR"
+ARCHIVED_LIST_ID="FCHAINARCHIVE"
 LOGIN_HOME="$TMPROOT/login-home"
 SYNTH_HOME="$TMPROOT/.codex-homes/synthetic"
 mkdir -p "$LOGIN_HOME" "$SYNTH_HOME"
@@ -46,7 +47,8 @@ HOME="$SYNTH_HOME" "$MANAGER" status \
   --json \
   --no-discover \
   --persisted-run "$RUN_STATE" \
-  --list-id "$LIST_ID" > "$status_json"
+  --list-id "$LIST_ID" \
+  --archived-list-id "$ARCHIVED_LIST_ID" > "$status_json"
 snapshot_tree "$LOGIN_HOME" > "$status_after"
 cmp "$status_before" "$status_after" >/dev/null || fail "status mutated login-home state"
 assert_jq "status reports owner and non-secret counts" "$status_json" \
@@ -55,8 +57,11 @@ assert_jq "status reports owner and non-secret counts" "$status_json" \
     and .owner_project == "generic-dev-studio"
     and (.state_path | startswith($owner + "/.dev-studio/generic-dev-studio/.runtime/state/"))
     and .list_id == $list
+    and .archived_list_id == "FCHAINARCHIVE"
+    and (.archived_state_path | startswith($owner + "/.dev-studio/generic-dev-studio/.runtime/state/"))
     and (.dry_run_collision_count | type) == "number"
     and (.pending_write_count | type) == "number"
+    and (.pending_archive_write_count | type) == "number"
   '
 
 configure_json="$TMPROOT/configure.json"
@@ -64,12 +69,14 @@ HOME="$SYNTH_HOME" "$MANAGER" configure \
   --project generic-dev-studio \
   --owner-home "$LOGIN_HOME" \
   --list-id "$LIST_ID" \
+  --archived-list-id "$ARCHIVED_LIST_ID" \
   --dry-run \
   --json > "$configure_json"
 assert_jq "configure dry-run reports login-owned config without writing" "$configure_json" \
   --arg owner "$LOGIN_HOME" --arg list "$LIST_ID" '
     .owner_home == $owner
     and .list_id == $list
+    and .archived_list_id == "FCHAINARCHIVE"
     and .dry_run == true
     and .wrote_config == false
   '
@@ -132,6 +139,7 @@ HOME="$SYNTH_HOME" "$MANAGER" recovery \
   --project generic-dev-studio \
   --owner-home "$LOGIN_HOME" \
   --list-id "$LIST_ID" \
+  --archived-list-id "$ARCHIVED_LIST_ID" \
   --full-rewrite \
   --json \
   --no-discover \
@@ -149,6 +157,7 @@ if HOME="$SYNTH_HOME" "$MANAGER" recovery \
   --project generic-dev-studio \
   --owner-home "$LOGIN_HOME" \
   --list-id "$LIST_ID" \
+  --archived-list-id "$ARCHIVED_LIST_ID" \
   --full-rewrite \
   --execute \
   --json \
@@ -165,11 +174,14 @@ STUDIO_CHAIN_MONITOR_UNAME=Darwin "$SCHEDULER" --install \
   --project generic-dev-studio \
   --owner-home "$LOGIN_HOME" \
   --list-id "$LIST_ID" \
+  --archived-list-id "$ARCHIVED_LIST_ID" \
   --dry-run > "$plist_stdout" 2> "$plist_stderr"
 grep -q "$LOGIN_HOME/Library/LaunchAgents/dev.studio.chain-monitor-sync.generic-dev-studio.plist" "$plist_stderr" \
   || fail "scheduler dry-run did not target login-home LaunchAgent"
 grep -q '<key>STUDIO_CHAIN_MONITOR_SLACK_LIST_ID</key>' "$plist_stdout" \
   || fail "scheduler plist did not carry non-secret List ID"
+grep -q '<key>STUDIO_CHAIN_MONITOR_ARCHIVED_SLACK_LIST_ID</key>' "$plist_stdout" \
+  || fail "scheduler plist did not carry archived List ID"
 
 if STUDIO_CHAIN_MONITOR_UNAME=Darwin "$SCHEDULER" --install \
   --project generic-dev-studio \
