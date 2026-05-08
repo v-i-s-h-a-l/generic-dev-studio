@@ -83,6 +83,26 @@ dependency scheduling (`pending`, `running`, `completed`, `failed`).
 runner/session identifiers, local commit/summary references, merge point, and
 closure PR when available.
 
+Worker session telemetry extraction writes a structured sidecar before summary
+ingestion. The sidecar uses a closed `status` enum: `present`, `partial`,
+`missing`, `failed`, or `unsupported`. `reason_id` is an open string set with
+reserved v1 values:
+
+| Reason | Meaning |
+|---|---|
+| `host_telemetry_unsupported` | The selected worker host does not emit parser-compatible session telemetry. |
+| `codex_home_mismatch` | The runner could not find a usable Codex session root for the worker launch HOME/CODEX home. |
+| `codex_session_log_not_found` | A session root existed, but no post-start session log matched the worker worktree. |
+| `codex_session_log_parse_failed` | A matching session log existed but was not parseable JSONL. |
+| `codex_session_log_schema_miss` | The log contained a recognized telemetry event whose payload no longer matched the parser schema. |
+| `codex_session_context_absent` | The log lacked recognized model/effort session context. |
+| `codex_usage_absent` | The log parsed but did not contain token usage. |
+
+Worker summaries keep legacy `telemetry_gaps` as strings for compatibility and
+add `worker_telemetry_extraction` plus `telemetry_gap_reasons[]` for structured
+grouping. Reports and digests group gaps by `gap_kind:reason_id`; readers that
+do not understand the detail array may keep using `telemetry_gaps`.
+
 ## Required Event Data
 
 | Event family | Required `data` fields |
@@ -98,7 +118,7 @@ closure PR when available.
 | Escrow: `chain_decision_escrow_opened` | `decision_id`, `risk_class`, `status`, `escrow_record`. |
 | Validation failure: `chain_artifact_validation_failed` | `artifact`, `reason_id`, `summary`. |
 | Reviewer: `chain_review_completed` | `pr_url`, `exit_code`, `verdict` when wrapper output supplied it, `model`/`effort` when available, `wrapper_output`. |
-| Gap: `chain_telemetry_gap` | `gap_kind`, `stage`, `reason`. Missing token/model/check data is a gap, never numeric zero. |
+| Gap: `chain_telemetry_gap` | `gap_kind`, `stage`, `reason`/`reason_id`. Missing token/model/check data is a gap, never numeric zero. |
 | HOME/auth normalization: `chain_auth_normalized` | `home_source`, `github_auth`, `secrets`. Do not emit actual HOME paths or secret material. |
 | Automated checkpoints: `checkpoint_auto_created`, `checkpoint_auto_loaded`, `checkpoint_context_savings_estimated` | `checkpoint_id`, `role`, `branch`, compact size/token counters, drift status for loads, loaded file names, and private artifact pointers. Automated checkpoint events are private chain-run telemetry and do not replace worker summaries, phase reviews, PR reviews, halt records, decision escrows, event logs, or reports. |
 
