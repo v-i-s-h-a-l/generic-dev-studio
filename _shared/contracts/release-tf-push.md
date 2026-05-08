@@ -33,6 +33,7 @@ Before Step 1:
 - Project release config is readable at `~/.dev-studio/<project>/config/release.env`.
 - ASC private key is readable at `~/.dev-studio/<project>/secrets/appstoreconnect/AuthKey_<key-id>.p8` or the `STUDIO_TF_ASC_KEY_PATH` configured in `release.env`.
 - Slack bot token is readable per `_shared/primitives/slack-post.md` (`~/.dev-studio/<project>/secrets/slack-bot-token`, chmod 600).
+- The repo-local signing keychain is readable at `<project-root>/.dev-studio/signing/zap-dev.keychain-db` or `STUDIO_TF_SIGNING_KEYCHAIN_PATH`, and contains a usable Apple Development / iPhone Developer identity. This check runs after live-version resolution and version-state preflight, but before any pbxproj mutation, so signing setup cannot mask version-resolution failures or strand a build-number commit.
 - `python3` resolves and the `pyjwt` package is importable (used to mint the ASC JWT — see `_shared/primitives/appstore-connect-jwt.md`).
 - Non-interactive GitHub push works for the active branch: `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never git push --dry-run --porcelain -u origin HEAD` succeeds. This preflight runs before any build-number or version mutation; auth failures must not open a credential prompt or create a stranded release commit.
 - Slack notification credentials are verified before mutation unless `STUDIO_TF_SLACK_DEFERRED=1` explicitly marks the run as upload-only/deferred-notification.
@@ -140,7 +141,7 @@ When running in background mode, write `prepared-context.json` after Step 2 and 
 
 Before invoking `xcodebuild archive`, enqueue the archive with `priority: "release"` in `~/.dev-studio/.runtime/build-queue/<node-id>/`, then acquire an `xcodebuild-lock/<node-id>/slot-<n>/` lock before starting the archive. The queue grants up to the node's `parallel_build_slots` and moves release entries ahead of queued task/background work without stopping any in-flight holder.
 
-Authentication is JWT-based via `-authenticationKeyPath` / `-authenticationKeyID` / `-authenticationKeyIssuerID`. `CODE_SIGN_STYLE=Automatic`. Pipe through `xcpretty` for human-readable progress; raw output is preserved on a failure path.
+Authentication is JWT-based via `-authenticationKeyPath` / `-authenticationKeyID` / `-authenticationKeyIssuerID`. `CODE_SIGN_STYLE=Automatic`, with `OTHER_CODE_SIGN_FLAGS="--keychain <repo-local signing keychain>"` so archive signing resolves through the checked keychain. Pipe through `xcpretty` for human-readable progress; raw output is preserved on a failure path.
 
 Verify the `.xcarchive` directory exists at the expected path. If absent, halt — do not export, do not upload, do not draft Slack.
 
@@ -148,7 +149,7 @@ Emit `archive_completed` with `data: { build: NEW_BUILD_NUMBER, version, scheme,
 
 ### Step 5 — Export and upload
 
-Write a transient `ExportOptions.plist` with `method=app-store-connect`, `destination=upload`, `signingStyle=automatic`. Run `xcodebuild -exportArchive` against the archive. The plist's `destination=upload` means xcodebuild posts the build directly to ASC — there is no separate upload step and no local IPA.
+Write a transient `ExportOptions.plist` with `method=app-store-connect`, `destination=upload`, `signingStyle=automatic`. Run `xcodebuild -exportArchive` against the archive with the same repo-local keychain flag used for archive. The plist's `destination=upload` means xcodebuild posts the build directly to ASC — there is no separate upload step and no local IPA.
 
 Do not pipe this command through `xcpretty`. The raw output is short and load-bearing for diagnosis.
 
