@@ -7,6 +7,7 @@
 #   scripts/studio-chain-runner.sh --auto <manifest|chain-name|chain-id> [--only <chain>] [--host <host>] [--dry-run] [--checkpoint auto|off] [--unattended]
 #   scripts/studio-chain-runner.sh --explain-next <manifest|chain-name|chain-id> [--only <chain>]
 #   scripts/studio-chain-runner.sh --resume <run_id> [--yes]
+#   scripts/studio-chain-runner.sh --regenerate-report <run_id>
 #   scripts/studio-chain-runner.sh --list
 #
 # Manifest shape:
@@ -55,6 +56,7 @@ HOST_OVERRIDE=""
 DRY_RUN=0
 YES=0
 RESUME_ID=""
+REGENERATE_REPORT_ID=""
 DISCOVER_MODE=0
 ALLOW_CLOSED_ISSUES=0
 PARALLEL_CHAINS="auto"
@@ -87,6 +89,8 @@ while [ $# -gt 0 ]; do
     --host=*) HOST_OVERRIDE="${1#--host=}"; shift ;;
     --resume) RESUME_ID="${2:?--resume requires a run id}"; shift 2 ;;
     --resume=*) RESUME_ID="${1#--resume=}"; shift ;;
+    --regenerate-report) REGENERATE_REPORT_ID="${2:?--regenerate-report requires a run id}"; shift 2 ;;
+    --regenerate-report=*) REGENERATE_REPORT_ID="${1#--regenerate-report=}"; shift ;;
     --parallel-chains) PARALLEL_CHAINS="${2:?--parallel-chains requires n, auto, or 1}"; shift 2 ;;
     --parallel-chains=*) PARALLEL_CHAINS="${1#--parallel-chains=}"; shift ;;
     --checkpoint) CHECKPOINT_OVERRIDE="${2:?--checkpoint requires auto or off}"; shift 2 ;;
@@ -112,7 +116,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$DISCOVER_MODE" -eq 0 ] && [ "$LIST_RUNS" -eq 0 ] && [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ]; then
+if [ "$DISCOVER_MODE" -eq 0 ] && [ "$LIST_RUNS" -eq 0 ] && [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ] && [ -z "$REGENERATE_REPORT_ID" ]; then
   DISCOVER_MODE=1
 fi
 
@@ -121,6 +125,7 @@ if [ "$DISCOVER_MODE" -eq 1 ] && {
   [ "$EXPLAIN_NEXT" -eq 1 ] ||
   [ "$LIST_RUNS" -eq 1 ] ||
   [ -n "$RESUME_ID" ] ||
+  [ -n "$REGENERATE_REPORT_ID" ] ||
   [ -n "$HOST_OVERRIDE" ] ||
   [ "$DRY_RUN" -eq 1 ] ||
   [ "$YES" -eq 1 ] ||
@@ -151,6 +156,22 @@ fi
 
 if { [ "$AUTO_MODE" -eq 1 ] || [ "$EXPLAIN_NEXT" -eq 1 ]; } && [ -n "$RESUME_ID" ]; then
   printf 'studio-chain-runner: supervisor flags cannot be combined with --resume; use --resume <run_id> --yes as the manual override path\n' >&2
+  usage
+fi
+
+if [ -n "$REGENERATE_REPORT_ID" ] && {
+  [ "$AUTO_MODE" -eq 1 ] ||
+  [ "$EXPLAIN_NEXT" -eq 1 ] ||
+  [ "$LIST_RUNS" -eq 1 ] ||
+  [ "$DISCOVER_MODE" -eq 1 ] ||
+  [ -n "$RESUME_ID" ] ||
+  [ -n "$MANIFEST" ] ||
+  [ -n "$HOST_OVERRIDE" ] ||
+  [ "$DRY_RUN" -eq 1 ] ||
+  [ "$ALLOW_CLOSED_ISSUES" -eq 1 ] ||
+  [ "$PARALLEL_CHAINS" != "auto" ]
+}; then
+  printf 'studio-chain-runner: --regenerate-report cannot be combined with run, resume, discovery, or supervisor flags\n' >&2
   usage
 fi
 
@@ -605,7 +626,7 @@ if [ "$DISCOVER_MODE" -eq 1 ]; then
   exit 0
 fi
 
-if [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ]; then
+if [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ] && [ -z "$REGENERATE_REPORT_ID" ]; then
   usage
 fi
 
@@ -892,6 +913,7 @@ chain_efficiency_metrics_json() {
 write_run_state() {
   local status="$1" failure_reason="${2:-}"
   local chains_json="[]" halt_records_json="[]" decision_escrows_json="[]" phase_reviews_json="[]" phase_review_feedback_json="[]" checkpoints_json="[]"
+  local report_generated_at=""
   local efficiency_metrics_json
   efficiency_metrics_json=$(chain_efficiency_metrics_json "$status" "$failure_reason")
   if [ -f "$RUN_STATE_JSON" ]; then
@@ -901,6 +923,7 @@ write_run_state() {
     phase_reviews_json=$(jq -c '.phase_reviews // []' "$RUN_STATE_JSON")
     phase_review_feedback_json=$(jq -c '.phase_review_feedback // []' "$RUN_STATE_JSON")
     checkpoints_json=$(jq -c '.checkpoints // []' "$RUN_STATE_JSON")
+    report_generated_at=$(jq -r '.report_generated_at // empty' "$RUN_STATE_JSON")
   elif [ -f "$PLAN_JSON" ]; then
     chains_json=$(jq -c '.chains // []' "$PLAN_JSON")
   fi
@@ -915,6 +938,7 @@ write_run_state() {
     --arg started_at "$RUN_STARTED_TS" \
     --arg updated_at "$(iso_ts_now)" \
     --arg report "$RUN_REPORT" \
+    --arg report_generated_at "$report_generated_at" \
     --arg plan "$PLAN_JSON" \
     --arg parallel_chains "$PARALLEL_CHAINS" \
     --arg execution_mode "$EXECUTION_MODE" \
@@ -938,6 +962,7 @@ write_run_state() {
       started_at: $started_at,
       updated_at: $updated_at,
       report: $report,
+      report_generated_at: (if $report_generated_at == "" then null else $report_generated_at end),
       plan: $plan,
       parallel_chains: $parallel_chains,
       execution_mode: $execution_mode,
@@ -2446,6 +2471,7 @@ issue_failure_summary_text() {
 
 generate_run_report() {
   local status="$1" failure_reason="${2:-}" ended_ts ended_epoch duration_s summary_count halt_count halt_dir digest_script
+  local latest_event_at state_status state_updated_at tmp_state
   ended_ts=$(iso_ts_now)
   ended_epoch=$(now_epoch)
   duration_s=$(duration_since "$RUN_STARTED_AT" "$ended_epoch")
@@ -2457,12 +2483,29 @@ generate_run_report() {
   elif [ -n "${ROOT:-}" ]; then
     digest_script="$ROOT/scripts/studio-chain-telemetry-digest.sh"
   fi
+  latest_event_at=""
+  if [ -s "${EVENTS_JSONL:-}" ] && [ "$EVENTS_JSONL" != "/dev/null" ]; then
+    latest_event_at=$(jq -r -s '[ .[] | .created_at? // empty | select(. != "") ] | max // ""' "$EVENTS_JSONL" 2>/dev/null || true)
+  fi
+  state_status="$status"
+  state_updated_at=""
+  if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ]; then
+    state_status=$(jq -r '.status // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
+    state_updated_at=$(jq -r '.updated_at // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
+  fi
+  [ -n "$state_status" ] || state_status="$status"
+  [ -n "$state_updated_at" ] || state_updated_at="unknown"
+  [ -n "$latest_event_at" ] || latest_event_at="none"
 
   {
     printf '# Studio Chain Run Report\n\n'
     printf -- '- Run UUID: `%s`\n' "$RUN_ID"
     printf -- '- Manifest: `%s`\n' "$MANIFEST"
     printf -- '- Status: `%s`\n' "$status"
+    printf -- '- Report generated: `%s`\n' "$ended_ts"
+    printf -- '- Latest event: `%s`\n' "$latest_event_at"
+    printf -- '- State status: `%s`\n' "$state_status"
+    printf -- '- State updated: `%s`\n' "$state_updated_at"
     printf -- '- Started: `%s`\n' "$RUN_STARTED_TS"
     printf -- '- Ended: `%s`\n' "$ended_ts"
     printf -- '- Duration: `%ss`\n' "$duration_s"
@@ -2828,6 +2871,14 @@ generate_run_report() {
     printf -- '- Phase reviews: `%s`\n\n' "${PHASE_REVIEW_ROOT:-missing}"
     printf 'This report is private local telemetry under `~/.dev-studio/generic-dev-studio/chain-runs/`. Public PR and issue comments should include run IDs, PR URLs, issue numbers, and abstract gap names only, not private project file paths or velocity details.\n'
   } > "$RUN_REPORT"
+  if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ]; then
+    tmp_state="$RUN_STATE_JSON.report-generated.$$"
+    # Only finish_run and --regenerate-report write reports; any new caller must hold the run-state lock or be fixture-local.
+    jq --arg report_generated_at "$ended_ts" \
+      '.report_generated_at = $report_generated_at' \
+      "$RUN_STATE_JSON" > "$tmp_state"
+    mv "$tmp_state" "$RUN_STATE_JSON"
+  fi
 }
 
 render_run_finish_summary() {
@@ -2935,7 +2986,6 @@ finish_run() {
   if [ "$status" = "completed" ]; then
     supersede_completed_halt_records
   fi
-  generate_run_report "$status" "$reason"
   duration_s=$(duration_since "$RUN_STARTED_AT")
   emit_chain_event chain_run_completed "" "$RUN_ID" "" "" "$status" "$duration_s" \
     "$(jq -cn --arg report "$RUN_REPORT" --arg reason "$reason" '{report:$report, failure_reason:(if $reason == "" then null else $reason end)}')"
@@ -2943,6 +2993,7 @@ finish_run() {
     emit_chain_event chain_resume_attempt_completed "" "$RUN_ID" "" "" "$status" "$duration_s" \
       "$(jq -cn --arg attempt_id "$ATTEMPT_ID" --arg reason "$reason" '{attempt_id:$attempt_id, failure_reason:(if $reason == "" then null else $reason end)}')"
   fi
+  generate_run_report "$status" "$reason"
   if [ "$status" = "completed" ] && [ -n "${RUN_WORK_ROOT:-}" ]; then
     rm -rf "$RUN_WORK_ROOT" 2>/dev/null || true
   fi
@@ -4557,6 +4608,28 @@ prepare_plan() {
 }
 
 trap finish_unexpected_exit EXIT
+
+if [ -n "$REGENERATE_REPORT_ID" ]; then
+  RUN_FINISHED=1
+  RUN_ID="$REGENERATE_REPORT_ID"
+  configure_run_paths
+  if [ ! -f "$RUN_STATE_JSON" ]; then
+    printf 'studio-chain-runner: regenerate state not found: %s\n' "$RUN_STATE_JSON" >&2
+    exit 2
+  fi
+  acquire_state_lock
+  resolve_resume_state
+  RUN_STATUS=$(jq -r '.status // "unknown"' "$RUN_STATE_JSON" 2>/dev/null || printf 'unknown')
+  RUN_FAILURE_REASON=$(jq -r '.failure_reason // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
+  if command -v ts_to_epoch >/dev/null 2>&1; then
+    RUN_STARTED_AT=$(ts_to_epoch "$RUN_STARTED_TS" 2>/dev/null || now_epoch)
+  else
+    RUN_STARTED_AT=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$RUN_STARTED_TS" +%s 2>/dev/null || date -u -d "$RUN_STARTED_TS" +%s 2>/dev/null || now_epoch)
+  fi
+  generate_run_report "$RUN_STATUS" "$RUN_FAILURE_REASON"
+  log "report regenerated for $RUN_ID at $RUN_REPORT"
+  exit 0
+fi
 
 if [ "$EXPLAIN_NEXT" -eq 1 ]; then
   supervisor_decide_next "$MANIFEST" explain

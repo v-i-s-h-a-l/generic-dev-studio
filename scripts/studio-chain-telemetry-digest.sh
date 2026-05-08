@@ -127,7 +127,7 @@ digest_json="$TMPDIR_DIGEST/digest.json"
 : > "$reports_jsonl"
 
 append_run() {
-  local run_root="$1" state events summaries halts report_path report_exists report_mtime_epoch report_mtime_iso report_size
+  local run_root="$1" state events summaries halts report_path report_exists report_mtime_epoch report_mtime_iso report_size report_generated_at report_generated_at_source latest_event_at
   state="$run_root/state.json"
   events="$run_root/events.jsonl"
   summaries="$run_root/worker-summaries"
@@ -152,20 +152,35 @@ append_run() {
   report_mtime_epoch=0
   report_mtime_iso=""
   report_size=0
+  report_generated_at=$(jq -r '.report_generated_at // empty' "$state" 2>/dev/null || true)
+  report_generated_at_source=""
+  latest_event_at=""
   if [ -n "$report_path" ] && [ -f "$report_path" ]; then
     report_exists=true
     report_mtime_epoch=$(file_mtime_epoch "$report_path")
     report_mtime_iso=$(epoch_to_iso "$report_mtime_epoch")
     report_size=$(wc -c < "$report_path" | tr -d ' ')
   fi
+  if [ -z "$report_generated_at" ] && [ "$report_exists" = true ] && [ -n "$report_mtime_iso" ]; then
+    report_generated_at="$report_mtime_iso"
+    report_generated_at_source="filesystem_mtime"
+  elif [ -n "$report_generated_at" ]; then
+    report_generated_at_source="state.report_generated_at"
+  fi
+  if [ -f "$events" ]; then
+    latest_event_at=$(jq -r -s '[ .[] | .created_at? // empty | select(. != "") ] | max // ""' "$events" 2>/dev/null || true)
+  fi
   jq -cn \
     --arg run_root "$run_root" \
     --arg path "$report_path" \
     --arg mtime "$report_mtime_iso" \
+    --arg generated_at "$report_generated_at" \
+    --arg generated_at_source "$report_generated_at_source" \
+    --arg latest_event_at "$latest_event_at" \
     --argjson exists "$report_exists" \
     --argjson mtime_epoch "$report_mtime_epoch" \
     --argjson size "$report_size" \
-    '{__run_root:$run_root, path:(if $path == "" then null else $path end), exists:$exists, mtime:(if $mtime == "" then null else $mtime end), mtime_epoch:$mtime_epoch, size_bytes:$size}' \
+    '{__run_root:$run_root, path:(if $path == "" then null else $path end), exists:$exists, mtime:(if $mtime == "" then null else $mtime end), mtime_epoch:$mtime_epoch, generated_at:(if $generated_at == "" then null else $generated_at end), generated_at_source:(if $generated_at_source == "" then null else $generated_at_source end), latest_event_at:(if $latest_event_at == "" then null else $latest_event_at end), size_bytes:$size}' \
     >> "$reports_jsonl"
 }
 
@@ -255,6 +270,16 @@ jq -n \
     elif ($v | type) == "array" then [$v[] | tostring]
     elif ($v | type) == "object" then [$v | tojson]
     else [$v | tostring]
+    end;
+  def latest_report_source_at($state; $report):
+    [($state.updated_at // ""), ($report.latest_event_at // "")]
+    | map(select(. != ""))
+    | max // "";
+  def report_freshness($state; $report):
+    if (($report.exists // false) | not) then "missing"
+    elif (($report.generated_at // "") == "") then "unknown"
+    elif (latest_report_source_at($state; $report) != "" and (($report.generated_at // "") < latest_report_source_at($state; $report))) then "stale"
+    else "fresh"
     end;
 
   [ $states[] | select((.started_at // .updated_at // .created_at // "") | in_window) ] as $window_states |
@@ -403,9 +428,10 @@ jq -n \
       },
       reports: {
         total: ($selected_reports | length),
-        fresh: ([ $selected_states[] as $state | ($selected_reports[] | select(.__run_root == $state.__run_root)) as $report | select(($report.exists // false) and (($state.updated_at // "") == "" or (($report.mtime // "") >= ($state.updated_at // "")))) ] | length),
-        stale: ([ $selected_states[] as $state | ($selected_reports[] | select(.__run_root == $state.__run_root)) as $report | select(($report.exists // false) and (($state.updated_at // "") != "" and (($report.mtime // "") < ($state.updated_at // "")))) ] | length),
-        missing: ([ $selected_reports[] | select((.exists // false) | not) ] | length)
+        fresh: ([ $selected_states[] as $state | ($selected_reports[] | select(.__run_root == $state.__run_root)) as $report | select(report_freshness($state; $report) == "fresh") ] | length),
+        stale: ([ $selected_states[] as $state | ($selected_reports[] | select(.__run_root == $state.__run_root)) as $report | select(report_freshness($state; $report) == "stale") ] | length),
+        missing: ([ $selected_states[] as $state | ($selected_reports[] | select(.__run_root == $state.__run_root)) as $report | select(report_freshness($state; $report) == "missing") ] | length),
+        unknown: ([ $selected_states[] as $state | ($selected_reports[] | select(.__run_root == $state.__run_root)) as $report | select(report_freshness($state; $report) == "unknown") ] | length)
       },
       checkpoint_auto_created: ($checkpoint_creates | length),
       checkpoint_auto_loaded: ($checkpoint_loads | length),
@@ -461,7 +487,8 @@ jq -n \
       [ $phase_review_rows[] | select(.__run_root == $root) ] as $run_phase_reviews |
       [ $review_rows[] | select(.__run_root == $root) ] as $run_reviews |
       [ $selected_reports[] | select(.__run_root == $root) ] as $run_reports |
-      ($run_reports[0] // {path:($state.report // null), exists:false, mtime:null, size_bytes:0}) as $report |
+      ($run_reports[0] // {path:($state.report // null), exists:false, mtime:null, generated_at:null, generated_at_source:null, latest_event_at:null, size_bytes:0}) as $report |
+      (report_freshness($state; $report)) as $report_freshness |
       [ $run_summaries[].telemetry_gaps[]? ] as $run_summary_gaps |
       [ $run_events[] | select((.event // "") == "chain_telemetry_gap") | (.data.gap_kind // .gap_kind // "unknown") ] as $run_event_gaps |
       {
@@ -481,9 +508,14 @@ jq -n \
           path:($report.path | safe_path),
           exists:($report.exists // false),
           mtime:($report.mtime // null),
-          freshness:(if (($report.exists // false) | not) then "missing"
-                     elif (($state.updated_at // "") != "" and (($report.mtime // "") < ($state.updated_at // ""))) then "stale"
-                     else "fresh" end)
+          generated_at:($report.generated_at // null),
+          generated_at_source:($report.generated_at_source // null),
+          latest_event_at:($report.latest_event_at // null),
+          state_status:($state.status // null),
+          state_updated_at:($state.updated_at // null),
+          latest_source_at:(latest_report_source_at($state; $report)),
+          stale:($report_freshness == "stale"),
+          freshness:$report_freshness
         },
         issues: ([ $state.chains[]?.issues[]? ] | length),
         halt_counts: {
@@ -528,7 +560,7 @@ jq -r '
   "- Reviews: \(.counters.review_passes) pass / \(.counters.review_failures) fail",
   "- Halt records: \(.counters.halt_records_total) total / \(.counters.halt_records_active) active",
   "- Retries: \(.counters.retry_counts.issue_auto_retries) issue auto / \(.counters.retry_counts.chain_retry_events) chain / \(.counters.retry_counts.resume_attempts) resume",
-  "- Reports: \(.counters.reports.fresh) fresh / \(.counters.reports.stale) stale / \(.counters.reports.missing) missing",
+  "- Reports: \(.counters.reports.fresh) fresh / \(.counters.reports.stale) stale / \(.counters.reports.missing) missing / \(.counters.reports.unknown) unknown",
   "- Checkpoints: \(.counters.checkpoint_auto_created) created / \(.counters.checkpoint_auto_loaded) loaded, \(.counters.checkpoint_drift_confirmed) confirmed drift, ~\(.counters.checkpoint_estimated_saved_tokens) tokens saved",
   "- Tests/lints/builds: \(.counters.tests_bad)/\(.counters.tests_total) bad tests, \(.counters.lints_bad)/\(.counters.lints_total) bad lints, \(.counters.builds_bad)/\(.counters.builds_total) bad builds",
   "- Tokens: \(if .counters.tokens_total == null then "missing" else (.counters.tokens_total | tostring) end) across \(.counters.token_reports) summaries",
@@ -605,11 +637,11 @@ jq -r '
   "",
   (if (.runs | length) == 0 then "No chain runs matched the window."
    else
-     "| Run | Status | Manifest | Issues | Halts | Retries | Gaps | Report | Project Match |",
-     "|---|---|---|---:|---:|---:|---|---|---|",
+     "| Run | Status | Manifest | Issues | Halts | Retries | Gaps | Report | Report Generated | Latest Event | State Status | Project Match |",
+     "|---|---|---|---:|---:|---:|---|---|---|---|---|---|",
      (.runs[] |
        ([.telemetry_gap_counts // {} | to_entries[] | "\(.key):\(.value)"] | join(", ")) as $gaps |
-       "| \(.run_id) | \(.status) | \(.manifest // "missing") | \(.issues) | \(.halt_counts.total) | \(.retry_counts.issue_auto_retries + .retry_counts.chain_retry_events + .retry_counts.resume_attempts) | \(if $gaps == "" then "none" else $gaps end) | \(.report.freshness) | \(.project_match.type):\(.project_match.source // "none") |")
+       "| \(.run_id) | \(.status) | \(.manifest // "missing") | \(.issues) | \(.halt_counts.total) | \(.retry_counts.issue_auto_retries + .retry_counts.chain_retry_events + .retry_counts.resume_attempts) | \(if $gaps == "" then "none" else $gaps end) | \(.report.freshness) | \(.report.generated_at // "missing") | \(.report.latest_event_at // "none") | \(.report.state_status // "unknown") | \(.project_match.type):\(.project_match.source // "none") |")
    end)
   ,
   "",
