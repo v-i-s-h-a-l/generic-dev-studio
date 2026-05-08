@@ -6,6 +6,8 @@
 CHAIN_MONITOR_MODEL_LIB_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-chain-monitor-config.sh disable=SC1091
 . "$CHAIN_MONITOR_MODEL_LIB_DIR/lib-chain-monitor-config.sh"
+# shellcheck source=lib-chain-run-state.sh disable=SC1091
+. "$CHAIN_MONITOR_MODEL_LIB_DIR/lib-chain-run-state.sh"
 
 chain_monitor_key_component() {
   printf '%s' "$1" | tr '\n\r\t:' '____'
@@ -269,8 +271,14 @@ chain_monitor_claims_from_persisted_run_json() {
   local source_id="${1:?usage: chain_monitor_claims_from_persisted_run_json <source-id> <state-json> <now-epoch> <stale-threshold-s> <completed-retention-s>}"
   local state_json_path="${2:?usage: chain_monitor_claims_from_persisted_run_json <source-id> <state-json> <now-epoch> <stale-threshold-s> <completed-retention-s>}"
   local now_epoch="${3:-0}" stale_threshold_s="${4:-$CHAIN_MONITOR_STALE_THRESHOLD_S}" completed_retention_s="${5:-$CHAIN_MONITOR_COMPLETED_RETENTION_S}"
-  local precedence
+  local precedence events_json_path projection_json_path jq_rc
   precedence=$(chain_monitor_source_precedence_rank persisted-run)
+  events_json_path=$(chain_run_state_events_path_for_state "$state_json_path")
+  projection_json_path=$(mktemp -t chain-monitor-run-projection.XXXXXX)
+  if ! chain_run_state_projection_file "$state_json_path" "$events_json_path" "$projection_json_path" 2>/dev/null; then
+    rm -f "$projection_json_path"
+    return 1
+  fi
   jq -c \
     --arg source_kind "persisted-run" \
     --arg source_id "$source_id" \
@@ -377,7 +385,10 @@ chain_monitor_claims_from_persisted_run_json() {
               }
             })
     ] | flatten
-    ' "$state_json_path"
+    ' "$projection_json_path"
+  jq_rc=$?
+  rm -f "$projection_json_path"
+  return "$jq_rc"
 }
 
 chain_monitor_claims_from_legacy_slack_json() {
