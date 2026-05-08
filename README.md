@@ -103,7 +103,7 @@ scripts/manager-chain-monitor.sh status --project generic-dev-studio --json # no
 scripts/schedule-chain-monitor.sh --install --project generic-dev-studio --interval-s 300 # login-home macOS LaunchAgent for background monitor sync
 scripts/rule-pack-resolve.sh --manifest chain.yaml --chain my-chain --issue 123 --role worker # selective rule-pack selection with context-budget telemetry
 scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters, efficiency ratios, and bottlenecks from private chain-run telemetry
-scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker # compact session resume by id; add --latest for branch-scoped lookup
+scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker # compact resume by id, with durable index fallback; add --latest for branch-scoped lookup
 scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
 STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
 /dev-studio host-adapter nodes   # day-2 fleet management — status, add, remove, health, sync, schedule
