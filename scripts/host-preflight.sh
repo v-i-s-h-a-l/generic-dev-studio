@@ -4,10 +4,10 @@
 # Usage:
 #   scripts/host-preflight.sh <host> <repo-root>
 #
-# Verifies the GitHub auth surface used by studio worker hosts. This is a
-# pre-edit gate: if gh or git cannot reach the project remote, host-backed
-# sessions must fail here instead of discovering the problem after work has
-# started.
+# Verifies the GitHub auth surface used by studio worker hosts and reports
+# conditional lint-tool availability. This is a pre-edit gate: if gh or git
+# cannot reach the project remote, host-backed sessions must fail here instead
+# of discovering the problem after work has started.
 
 set -u
 umask 022
@@ -85,5 +85,21 @@ case "$remote_url" in
     ;;
 esac
 
+report_shellcheck_preflight() {
+  local shellcheck_cmd resolved version
+  shellcheck_cmd="${STUDIO_SHELLCHECK_BIN:-shellcheck}"
+  if resolved=$(command -v "$shellcheck_cmd" 2>/dev/null); then
+    version=$("$resolved" --version 2>/dev/null | awk -F': ' '/^version:/ { print $2; exit }' || true)
+    if [ -n "$version" ]; then
+      printf 'host-preflight: ShellCheck available for host=%s version=%s\n' "$HOST" "$version" >&2
+    else
+      printf 'host-preflight: ShellCheck available for host=%s\n' "$HOST" >&2
+    fi
+  else
+    printf 'host-preflight: ShellCheck unavailable for host=%s; expected only when workers record lint outcome=skipped reason_id=shellcheck_expected_unavailable and run substitutes: bash -n plus relevant repo lints/fixtures.\n' "$HOST" >&2
+  fi
+}
+
+report_shellcheck_preflight
 printf 'host-preflight: PASS host=%s remote=%s\n' "$HOST" "$remote_url" >&2
 exit 0

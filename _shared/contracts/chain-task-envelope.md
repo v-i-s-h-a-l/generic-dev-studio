@@ -40,6 +40,10 @@ Required fields:
 | `stop_conditions` | String array describing when the child must stop and write a blocked completion envelope. |
 | `privacy` | `{classification:"private-runtime",rules:[...]}`. |
 
+New runner-written start envelopes also include optional `tool_preflight` with
+non-blocking tool availability observed by the parent runner before child
+launch. Older envelopes can omit it.
+
 The start envelope is a private runtime artifact. It stays under `.studio` in the issue worktree and is removed by the chain runner during cleanup. `phase_review_context` is not human acceptance and must not include raw reviewer prose; it is only the compact subset needed to prevent stale assumptions in the next issue phase.
 
 Issue worktrees live below the parent run UUID temporary root, not directly
@@ -50,6 +54,21 @@ are integrated before new work starts, and pending dependency-ready issues are
 relaunched with a fresh child session.
 
 `execution_policy.mode` is `attended` or `unattended`. Attended mode allows questions only for real design, implementation, permission, destructive-change, test, or review judgment blockers. Unattended mode proceeds through routine boundaries until such a blocker appears. `execution_policy.retry` carries a finite auto-retry limit and backoff; exhausted retryable failures become typed halt records. `execution_policy.escalation.routine_continue_prompts` must remain `false`.
+
+### ShellCheck Policy
+
+`tool_preflight.tools.shellcheck.status` is `available` when the runner can see
+ShellCheck on the worker launch path and `unavailable` otherwise. ShellCheck is
+conditional evidence for touched shell or release scripts, not a universal
+chain precondition.
+
+When ShellCheck is unavailable, workers can still complete shell-script changes
+only by recording the attempted ShellCheck lint as skipped with
+`reason_id: shellcheck_expected_unavailable` and running accepted substitutes:
+`bash -n` on touched shell scripts plus repo-specific lints or fixtures that
+exercise the touched shell/release surface. That skipped lint is expected
+unavailability. Omitting both ShellCheck and substitute evidence remains
+verification drift.
 
 ## Completion Envelope
 
@@ -68,7 +87,7 @@ Required normalized fields:
 | `commit_before`, `commit_after` | Git boundary for the issue slice. |
 | `files_changed`, `additions`, `deletions`, `generated_file_count` | Diff stats computed by the parent when absent. |
 | `changed_artifacts` | Changed file list when the parent can compute it. |
-| `tests`, `lints`, `builds` | Arrays of command/outcome objects; empty means no evidence supplied. |
+| `tests`, `lints`, `builds` | Arrays of command/outcome objects; empty means no evidence supplied. `lints[]` may include skipped expected tool unavailability with `reason_id` and `substitutes_run`. |
 | `tokens` | Token telemetry object, number, or `null`. |
 | `telemetry_gaps` | String array of missing telemetry fields. |
 

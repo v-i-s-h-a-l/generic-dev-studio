@@ -154,7 +154,7 @@ scripts/forge-latency-report.sh --days 14                   # stage-level Forge 
 scripts/field-workflow-report.sh --days 14                  # Field loop timing, tokens, gate pass rates, review coverage, improvement candidates
 scripts/studio-pr-baseline-report.sh 366                    # PR-level timing, churn, gate, and generated-file baselines
 scripts/studio-weekly.sh --post                             # weekly GitHub PM digest; cron posts to the pinned summary issue
-scripts/host-preflight.sh codex /repo                       # prove gh + git credential access before host task work
+scripts/host-preflight.sh codex /repo                       # prove gh/git credential access and report ShellCheck availability before host task work
 scripts/studio-project-state.sh --status Todo               # Project-field backlog reader for Status / Track / Phase / Size / review state
 scripts/studio-gh.sh issue list --state open                # assistant-safe GitHub CLI wrapper; uses context github_home for auth
 scripts/manager-reconcile.sh --cwd "$PWD"                   # project report/debrief sync into the project task ledger
@@ -242,7 +242,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-checkpoint.sh # compact create/update/resume checkpoints under per-project .runtime/v2/checkpoints
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   studio-staleness-triage.sh # scheduled GitHub issue staleness labels + escalation comments for the PM surface
-  host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
+  host-preflight.sh    # pre-task host parity gate: gh auth, git ls-remote credential access, and ShellCheck availability
   studio-gh.sh          # GitHub CLI wrapper for assistant/interactive calls; uses context github_home for auth
   manager-feature-config.sh # /dev-studio manager config: project-scoped feature enable/disable/set/list/doctor
   manager-release-branch.sh # /dev-studio manager branch: release branch status/prepare/sync/PR preflight
