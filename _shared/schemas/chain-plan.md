@@ -12,6 +12,12 @@ or an explicit manifest path. The structural JSON Schema lives at
 operational contract the runner enforces when it projects a manifest into
 private `plan.json` and `state.json` artifacts.
 
+Runtime persistence and worktree-independent discovery are planned in
+`_shared/contracts/chain-manifest-registry.md`. Repo `chains/` remains a shared
+manifest source, while the planned local registry under
+`~/.dev-studio/<project>/chain-manifests/` becomes the durable source for
+imported or in-flight manifests before worktrees are created.
+
 ## Shape
 
 ```yaml
@@ -84,6 +90,11 @@ manifest before creating a run. Planning artifacts such as requirement packets
 or task graphs are not executable by the issue-backed runner; convert them by
 creating or mapping GitHub issues, then write `chains[].issues[]` with those
 issue numbers plus the intended `target_repo_root` and `issue_repo`.
+
+When the selected manifest is not a repo-committed shared manifest, the planned
+registry substrate imports it into project runtime first and records source
+metadata. Worktrees are execution artifacts derived from the selected manifest;
+they are not the manifest home.
 
 ## Execution Policy Block
 
