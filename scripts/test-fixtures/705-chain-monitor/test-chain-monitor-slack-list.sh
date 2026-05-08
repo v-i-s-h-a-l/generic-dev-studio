@@ -329,6 +329,29 @@ run_reconcile "$summary" \
 after_log_lines=$(wc -l < "$CHAIN_MONITOR_SLACK_LIST_MOCK_LOG" | tr -d ' ')
 [ "$before_log_lines" = "$after_log_lines" ] || fail "already archived rows caused repeat Slack writes"
 
+archived_list_state="$TMPROOT/archived-list-state.json"
+reset_mock "$CHAIN_MONITOR_SLACK_LIST_MOCK_STORE" "$CHAIN_MONITOR_SLACK_LIST_MOCK_LOG"
+run_reconcile "$summary" \
+  --desired "$archive_desired" \
+  --state "$archived_list_state" \
+  --list-id "FCHAINARCHIVE" \
+  --owner-home "$OWNER_HOME" \
+  --owner-project "$OWNER_PROJECT" \
+  --source-fingerprint "archive-list-v1" \
+  --now-epoch "$NOW" \
+  --archive-retention-s 10 \
+  --list-role archived || fail "archived list reconcile failed"
+assert_jq "archived list creates archived desired rows instead of deleting them" "$summary" '
+  .list_role == "archived"
+  and .writes.create == 2
+  and .writes.archive == 0
+  and (.failed | length) == 0
+'
+assert_jq "archived list store keeps rows under archived List ID" "$CHAIN_MONITOR_SLACK_LIST_MOCK_STORE" '
+  ([.active[] | select(.list_id == "FCHAINARCHIVE")] | length) == 2
+  and any(.active[]; .list_id == "FCHAINARCHIVE" and .fields.status == "archived")
+'
+
 orphan_state="$TMPROOT/orphan-state.json"
 empty_desired="$TMPROOT/empty-desired.json"
 jq -n '{schema_version:1, rows:[]}' > "$empty_desired"

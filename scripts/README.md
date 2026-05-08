@@ -73,7 +73,7 @@ scripts/studio-chain-runner.sh my-chain --dry-run                          # obj
 STUDIO_CHAIN_TARGET_REPO_ROOT=/repo scripts/studio-chain-runner.sh /tmp/chain.yaml --dry-run # run a non-repo manifest against an explicit checkout
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview role/branch-scoped checkpoint hooks
 scripts/studio-chain-runner.sh --discover                                  # bare invocation lists runnable chains, resumable runs, and next actions
-scripts/studio-chain-runner.sh --discover ios-v2-execution                 # filtered discovery for one chain or manifest
+scripts/studio-chain-runner.sh --discover ios-v2-execution                 # filtered discovery for one chain, chain id, or manifest
 /dev-studio manager work-chain ios-v2-execution --dry-run                  # preferred user-facing preview path
 /dev-studio manager work-chain --resume <run_id> --yes                     # preferred user-facing resume path from summaries/halt records
 scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute # reviewed source/issue to unattended issue-backed work-chain execution
@@ -92,7 +92,7 @@ scripts/studio-chain-rule-gates.sh --plan plan.json --dry-run              # det
 scripts/studio-ios-artifact-janitor.sh sweep --base /tmp/studio-ios-artifacts --json # redacted iOS artifact TTL sweep for scoped build/test roots
 scripts/studio-ios-check-failover.sh decide --operation build --task-id T001 --selected-executor worker-a --failure-signal remote_timeout # typed retry/halt policy for worker-routed iOS checks
 scripts/rule-pack-resolve.sh --manifest chain.yaml --chain my-chain --issue 123 --role worker # selective rule-pack selection with context-budget telemetry
-scripts/manager-chain-monitor.sh status --project generic-dev-studio --json # non-mutating monitor status with owner/list/pending-write counts
+scripts/manager-chain-monitor.sh status --project generic-dev-studio --json # non-mutating monitor status with owner/list/archive pending-write counts
 scripts/manager-chain-monitor.sh recovery --full-rewrite --project generic-dev-studio --dry-run # explicit recovery front door; execution requires approval
 scripts/schedule-chain-monitor.sh --install --project generic-dev-studio --interval-s 300 # login-home macOS LaunchAgent for background monitor sync
 scripts/studio-chain-telemetry-digest.sh --days 7                          # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run telemetry

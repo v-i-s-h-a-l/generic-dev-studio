@@ -42,6 +42,19 @@ chain_monitor_slack_list_normalize_desired_rows() {
   local input_path="${1:?usage: chain_monitor_slack_list_normalize_desired_rows <input-json> <output-json>}"
   local output_path="${2:?usage: chain_monitor_slack_list_normalize_desired_rows <input-json> <output-json>}"
   jq --arg fields "$CHAIN_MONITOR_SLACK_FIELDS" '
+    def status_rank:
+      ((.fields.status // "unknown") | tostring) as $status
+      | if $status == "running" then 0
+        elif $status == "blocked" then 1
+        elif $status == "failed" then 2
+        elif $status == "paused" then 3
+        elif $status == "queued" then 4
+        elif $status == "available" then 5
+        elif $status == "stale" then 6
+        elif $status == "unknown" then 7
+        elif $status == "completed" then 8
+        elif $status == "archived" then 9
+        else 10 end;
     def closed_fields($row):
       reduce ($fields | split(" "))[] as $key
         ({}; .[$key] = (($row.fields[$key] // "") | tostring));
@@ -58,7 +71,7 @@ chain_monitor_slack_list_normalize_desired_rows() {
         }
       | if .parent_row_key == null then del(.parent_row_key) else . end
     ]
-    | sort_by(if .row_type == "chain" then 0 else 1 end, .row_key)
+    | sort_by(if .row_type == "chain" then status_rank else 100 end, if .row_type == "chain" then 0 else 1 end, (.parent_row_key // .row_key), .row_key)
   ' "$input_path" > "$output_path"
 }
 
@@ -188,17 +201,19 @@ chain_monitor_slack_list_api_call() {
 }
 
 chain_monitor_slack_list_summary_init() {
-  local summary_path="${1:?usage: chain_monitor_slack_list_summary_init <summary-path> <list-id> <dry-run> <full-rewrite>}"
-  local list_id="${2:?usage: chain_monitor_slack_list_summary_init <summary-path> <list-id> <dry-run> <full-rewrite>}"
-  local dry_run="${3:-false}" full_rewrite="${4:-false}"
+  local summary_path="${1:?usage: chain_monitor_slack_list_summary_init <summary-path> <list-id> <dry-run> <full-rewrite> [list-role]}"
+  local list_id="${2:?usage: chain_monitor_slack_list_summary_init <summary-path> <list-id> <dry-run> <full-rewrite> [list-role]}"
+  local dry_run="${3:-false}" full_rewrite="${4:-false}" list_role="${5:-active}"
   jq -n \
     --arg list_id "$list_id" \
+    --arg list_role "$list_role" \
     --argjson dry_run "$dry_run" \
     --argjson full_rewrite "$full_rewrite" \
     '{
       schema_version: 1,
       kind: "chain_monitor_slack_list_reconcile",
       list_id: $list_id,
+      list_role: $list_role,
       dry_run: $dry_run,
       full_rewrite_requested: $full_rewrite,
       bootstrapped_from_live: false,
@@ -313,6 +328,8 @@ chain_monitor_slack_list_state_from_live() {
       else
         reduce key_list[] as $key ({}; .[$key] = "")
       end;
+    def title_without_rendered_id($title):
+      (($title // "") | tostring | sub(" \\[[^]]+\\]$"; ""));
     def row_id_for($item; $idx): (($item.id // $item.row_id // "live-\($idx)") | tostring);
     ($desired[0] // []) as $desired_rows
       | {
@@ -330,7 +347,10 @@ chain_monitor_slack_list_state_from_live() {
               if $live_key != "" then
                 ($desired_rows | map(select(.row_key == $live_key))[0] // null)
               else
-                ($desired_rows | map(select(.fields.title == ($display.title // "")))) as $title_matches
+                ($desired_rows | map(select(
+                  .fields.title == ($display.title // "")
+                  or (title_without_rendered_id(.fields.title) == (($display.title // "") | tostring))
+                ))) as $title_matches
                 | if ($title_matches | length) == 1 then $title_matches[0] else null end
               end
             ) as $match
@@ -398,11 +418,13 @@ chain_monitor_slack_list_state_get_row() {
 }
 
 chain_monitor_slack_list_state_parent_row_id() {
-  local state_path="${1:?usage: chain_monitor_slack_list_state_parent_row_id <state-json> <parent-row-key>}"
-  local parent_row_key="${2:?usage: chain_monitor_slack_list_state_parent_row_id <state-json> <parent-row-key>}"
-  jq -r --arg row_key "$parent_row_key" '
+  local state_path="${1:?usage: chain_monitor_slack_list_state_parent_row_id <state-json> <parent-row-key> [include-archived]}"
+  local parent_row_key="${2:?usage: chain_monitor_slack_list_state_parent_row_id <state-json> <parent-row-key> [include-archived]}"
+  local include_archived="${3:-false}"
+  jq -r --arg row_key "$parent_row_key" --argjson include_archived "$include_archived" '
     .rows[]?
-    | select(.row_key == $row_key and ((.archived_at // null) == null) and (.status != "archived"))
+    | select(.row_key == $row_key)
+    | select($include_archived or (((.archived_at // null) == null) and (.status != "archived")))
     | .row_id // ""
   ' "$state_path" | head -n 1
 }
@@ -588,7 +610,7 @@ chain_monitor_slack_list_extract_created_row_id() {
 chain_monitor_slack_list_reconcile_json() {
   local desired_path="" state_path="" list_id="" owner_home="" owner_project="" source_fingerprint=""
   local now_epoch=0 archive_retention_s="$CHAIN_MONITOR_ARCHIVE_RETENTION_S"
-  local dry_run=false full_rewrite=false repair_orphans=false
+  local dry_run=false full_rewrite=false repair_orphans=false list_role=active
   local tmpdir desired_rows state_work summary live_response rc failed_count would_fetch=false
 
   while [ "$#" -gt 0 ]; do
@@ -601,6 +623,8 @@ chain_monitor_slack_list_reconcile_json() {
       --source-fingerprint) source_fingerprint="${2:-}"; shift 2 ;;
       --now-epoch) now_epoch="${2:?--now-epoch requires a value}"; shift 2 ;;
       --archive-retention-s) archive_retention_s="${2:?--archive-retention-s requires a value}"; shift 2 ;;
+      --list-role) list_role="${2:?--list-role requires active or archived}"; shift 2 ;;
+      --list-role=*) list_role="${1#--list-role=}"; shift ;;
       --dry-run) dry_run=true; shift ;;
       --full-rewrite) full_rewrite=true; shift ;;
       --repair-orphans) repair_orphans=true; shift ;;
@@ -616,6 +640,10 @@ chain_monitor_slack_list_reconcile_json() {
   [ -n "$list_id" ] || { printf 'chain-monitor: --list-id required\n' >&2; return 2; }
   [ -n "$owner_home" ] || { printf 'chain-monitor: --owner-home required\n' >&2; return 2; }
   [ -n "$owner_project" ] || { printf 'chain-monitor: --owner-project required\n' >&2; return 2; }
+  case "$list_role" in
+    active|archived) ;;
+    *) printf 'chain-monitor: --list-role must be active or archived: %s\n' "$list_role" >&2; return 2 ;;
+  esac
 
   tmpdir=$(mktemp -d -t chain-monitor-slack-list.XXXXXX) || return 1
   desired_rows="$tmpdir/desired-rows.json"
@@ -628,7 +656,7 @@ chain_monitor_slack_list_reconcile_json() {
     rm -rf "$tmpdir"
     return 1
   }
-  chain_monitor_slack_list_summary_init "$summary" "$list_id" "$dry_run" "$full_rewrite" || {
+  chain_monitor_slack_list_summary_init "$summary" "$list_id" "$dry_run" "$full_rewrite" "$list_role" || {
     rm -rf "$tmpdir"
     return 1
   }
@@ -714,10 +742,14 @@ chain_monitor_slack_list_reconcile_json() {
     if [ -n "$existing_json" ]; then
       existing_row_id=$(printf '%s\n' "$existing_json" | jq -r '.row_id // ""')
       existing_hash=$(printf '%s\n' "$existing_json" | jq -r '.last_synced_hash // ""')
-      existing_archived=$(printf '%s\n' "$existing_json" | jq -r 'if ((.archived_at // null) != null or .status == "archived") then "true" else "false" end')
+      if [ "$list_role" = "archived" ]; then
+        existing_archived=$(printf '%s\n' "$existing_json" | jq -r 'if ((.archived_at // null) != null) then "true" else "false" end')
+      else
+        existing_archived=$(printf '%s\n' "$existing_json" | jq -r 'if ((.archived_at // null) != null or .status == "archived") then "true" else "false" end')
+      fi
     fi
 
-    if [ "$row_status" = "archived" ]; then
+    if [ "$list_role" = "active" ] && [ "$row_status" = "archived" ]; then
       if [ -n "$existing_row_id" ] && [ "$existing_archived" != "true" ]; then
         if [ "$dry_run" = "true" ]; then
           chain_monitor_slack_list_summary_add_operation "$summary" "would_archive" "$row_key" "$existing_row_id" "ok" "dry-run"
@@ -742,7 +774,11 @@ chain_monitor_slack_list_reconcile_json() {
     fi
 
     if [ -n "$parent_row_key" ]; then
-      parent_row_id=$(chain_monitor_slack_list_state_parent_row_id "$state_work" "$parent_row_key")
+      if [ "$list_role" = "archived" ]; then
+        parent_row_id=$(chain_monitor_slack_list_state_parent_row_id "$state_work" "$parent_row_key" true)
+      else
+        parent_row_id=$(chain_monitor_slack_list_state_parent_row_id "$state_work" "$parent_row_key" false)
+      fi
       if [ -z "$parent_row_id" ]; then
         rc=1
         chain_monitor_slack_list_summary_add_operation "$summary" "skip_missing_parent" "$row_key" "" "failed" "$parent_row_key"

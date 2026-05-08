@@ -8,6 +8,7 @@ CHAIN_MONITOR_CONFIG_LIB_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$CHAIN_MONITOR_CONFIG_LIB_DIR/lib-paths.sh"
 
 CHAIN_MONITOR_STATE_FILENAME="chain-monitor-slack-list-state.json"
+CHAIN_MONITOR_ARCHIVED_STATE_FILENAME="chain-monitor-slack-list-archived-state.json"
 CHAIN_MONITOR_LOCK_FILENAME="chain-monitor-slack-list-state.json.lock"
 CHAIN_MONITOR_SCHEDULER_INTERVAL_S="${CHAIN_MONITOR_SCHEDULER_INTERVAL_S:-60}"
 CHAIN_MONITOR_STALE_THRESHOLD_EXPLICIT="${CHAIN_MONITOR_STALE_THRESHOLD_S+x}"
@@ -48,6 +49,14 @@ chain_monitor_state_path_for_project() {
   data_home=$(chain_monitor_data_home) || return 1
   project_root=$(HOME="$data_home" resolve_project_root_for "$project") || return 1
   printf '%s\n' "$project_root/.runtime/state/$CHAIN_MONITOR_STATE_FILENAME"
+}
+
+chain_monitor_archived_state_path_for_project() {
+  local project="${1:?usage: chain_monitor_archived_state_path_for_project <project>}"
+  local data_home project_root
+  data_home=$(chain_monitor_data_home) || return 1
+  project_root=$(HOME="$data_home" resolve_project_root_for "$project") || return 1
+  printf '%s\n' "$project_root/.runtime/state/$CHAIN_MONITOR_ARCHIVED_STATE_FILENAME"
 }
 
 chain_monitor_state_path() {
@@ -102,15 +111,27 @@ chain_monitor_prepare_state_mutation_for_project() {
   printf '%s\n' "$state_path"
 }
 
+chain_monitor_prepare_archived_state_mutation_for_project() {
+  local project="${1:?usage: chain_monitor_prepare_archived_state_mutation_for_project <project>}"
+  local state_path
+  state_path=$(chain_monitor_archived_state_path_for_project "$project") || return 1
+  chain_monitor_refuse_synthetic_state_mutation "$state_path" || return 1
+  mkdir -p "$(dirname "$state_path")" || return 1
+  printf '%s\n' "$state_path"
+}
+
 chain_monitor_config_json_for_project() {
   local project="${1:?usage: chain_monitor_config_json_for_project <project>}"
-  local state_path lock_path
+  local state_path archived_state_path lock_path
   state_path=$(chain_monitor_state_path_for_project "$project") || return 1
+  archived_state_path=$(chain_monitor_archived_state_path_for_project "$project") || return 1
   lock_path=$(chain_monitor_lock_path_for_project "$project") || return 1
   jq -n \
     --arg state_path "$state_path" \
+    --arg archived_state_path "$archived_state_path" \
     --arg lock_path "$lock_path" \
     --arg state_filename "$CHAIN_MONITOR_STATE_FILENAME" \
+    --arg archived_state_filename "$CHAIN_MONITOR_ARCHIVED_STATE_FILENAME" \
     --arg lock_filename "$CHAIN_MONITOR_LOCK_FILENAME" \
     --argjson scheduler_interval_s "$CHAIN_MONITOR_SCHEDULER_INTERVAL_S" \
     --argjson stale_threshold_s "$CHAIN_MONITOR_STALE_THRESHOLD_S" \
@@ -125,6 +146,8 @@ chain_monitor_config_json_for_project() {
       state: {
         path: $state_path,
         filename: $state_filename,
+        archived_path: $archived_state_path,
+        archived_filename: $archived_state_filename,
         lock_path: $lock_path,
         lock_filename: $lock_filename
       },

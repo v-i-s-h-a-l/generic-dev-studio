@@ -25,13 +25,14 @@ has_explicit_mode_flag() {
 usage() {
   cat <<'EOF' >&2
 Usage:
-  scripts/manager-work-chain.sh [<manifest|chain-name>] [runner-flags...]
+  scripts/manager-work-chain.sh [<manifest|chain-name|chain-id>] [runner-flags...]
   scripts/manager-work-chain.sh --from-plan <task-graph|planner-output> [plan-chain-flags...]
 
 When no chain is named, this defaults to discovery so the manager front door
 can suggest runnable chains and resumable runs. Named chains default to
 unattended supervisor selection through scripts/studio-chain-runner.sh --auto.
-Use --discover [<manifest|chain-name>] for filtered, non-mutating discovery.
+Use --discover [<manifest|chain-name|chain-id>] for filtered, non-mutating discovery.
+Chain IDs are accepted anywhere a chain name is accepted.
 Use --from-plan to route a reviewed planner/task-graph artifact through the
 manager plan-chain workflow, then launch the generated issue-backed chain
 unattended by default. Pass --plan-only to stop after manifest creation, or
@@ -39,7 +40,7 @@ unattended by default. Pass --plan-only to stop after manifest creation, or
 All runner flags are passed through to scripts/studio-chain-runner.sh.
 
 Preferred user-facing entrypoint:
-  /dev-studio manager work-chain [<manifest|chain-name>] [runner-flags...]
+  /dev-studio manager work-chain [<manifest|chain-name|chain-id>] [runner-flags...]
 EOF
   exit 2
 }

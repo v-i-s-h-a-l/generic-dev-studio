@@ -14,6 +14,7 @@ fi
 payload=$(jq -c . "$payload_path")
 row_key=$(printf '%s\n' "$payload" | jq -r '.row_key // .row.row_key // ""')
 row_id=$(printf '%s\n' "$payload" | jq -r '.row_id // .id // .cells[0].row_id // ""')
+list_id=$(printf '%s\n' "$payload" | jq -r '.list_id // ""')
 
 if [ -n "$log_path" ]; then
   mkdir -p "$(dirname "$log_path")"
@@ -46,9 +47,9 @@ case "$method" in
   slackLists.items.list)
     archived=$(printf '%s\n' "$payload" | jq -r 'if (.archived // false) then "true" else "false" end')
     if [ "$archived" = "true" ]; then
-      jq -c '{ok:true,items:(.archived // []),next_cursor:""}' "$store_path"
+      jq -c --arg list_id "$list_id" '{ok:true,items:((.archived // []) | map(select(($list_id == "") or (.list_id == $list_id)))),next_cursor:""}' "$store_path"
     else
-      jq -c '{ok:true,items:(.active // []),next_cursor:""}' "$store_path"
+      jq -c --arg list_id "$list_id" '{ok:true,items:((.active // []) | map(select(($list_id == "") or (.list_id == $list_id)))),next_cursor:""}' "$store_path"
     fi
     ;;
   slackLists.items.create)

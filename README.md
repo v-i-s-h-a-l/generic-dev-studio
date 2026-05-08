@@ -93,7 +93,7 @@ scripts/prd-task-graph-synthesize.sh packet.md # turn a requirement packet into 
 /dev-studio worker resume-checkpoint # resume worker checkpoint via manifest.json + context.md first
 /studio-help                     # open the v2 router docs
 scripts/studio-chain-runner.sh --discover # bare invocation lists runnable chains, resumable runs, and next actions
-scripts/studio-chain-runner.sh --discover ios-v2-execution # filtered discovery for one chain or manifest
+scripts/studio-chain-runner.sh --discover ios-v2-execution # filtered discovery for one chain, chain id, or manifest
 scripts/manager-work-chain.sh ios-v2-execution --dry-run # preview the named chain through the manager front door
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
 scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes # attended run with explicit confirmation bypass
@@ -103,8 +103,8 @@ STUDIO_CHAIN_TARGET_REPO_ROOT=/repo scripts/studio-chain-runner.sh /tmp/chain.ya
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview checkpoint-aware safe-boundary hooks
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
 scripts/studio-chain-rule-gates.sh --plan plan.json --dry-run # deterministic rule-pack workflow gates with JSON audit output
-scripts/chain-monitor-sync.sh --project generic-dev-studio --dry-run # locked/idempotent Slack List row sync from chain manifests and run state
-scripts/manager-chain-monitor.sh status --project generic-dev-studio --json # non-mutating monitor status with owner/list/pending-write counts
+scripts/chain-monitor-sync.sh --project generic-dev-studio --dry-run # locked/idempotent active/archived Slack List row sync from chain manifests and run state
+scripts/manager-chain-monitor.sh status --project generic-dev-studio --json # non-mutating monitor status with owner/list/archive pending-write counts
 scripts/schedule-chain-monitor.sh --install --project generic-dev-studio --interval-s 300 # login-home macOS LaunchAgent for background monitor sync
 scripts/rule-pack-resolve.sh --manifest chain.yaml --chain my-chain --issue 123 --role worker # selective rule-pack selection with context-budget telemetry
 scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters, efficiency ratios, and bottlenecks from private chain-run telemetry
@@ -232,7 +232,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-chain-rule-gates.sh # deterministic chain workflow gates for git hygiene, artifact roots, cache keys, cleanup TTLs, and telemetry redaction
   manager-plan-chain.sh # manager-owned source/issue/plan to reviewed issue-backed work-chain orchestration with native issue links, Project fields, telemetry, and optional execution
   manager-work-chain.sh # manager front door for work-chain discovery/start/resume plus --from-plan unattended execution routing
-  chain-monitor-sync.sh # locked/idempotent chain monitor Slack List row sync from manifests, runtime manifests, and event-derived persisted chain-run state
+  chain-monitor-sync.sh # locked/idempotent chain monitor active/archived Slack List row sync from manifests, runtime manifests, and event-derived persisted chain-run state
   manager-chain-monitor.sh # manager front door for monitor configure/sync/status/recovery while preserving login-home ownership
   schedule-chain-monitor.sh # login-home macOS LaunchAgent installer for background chain monitor sync
   studio-chain-telemetry-digest.sh # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run reports/events
