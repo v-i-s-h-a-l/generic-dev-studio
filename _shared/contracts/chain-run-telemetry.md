@@ -106,6 +106,19 @@ add `worker_telemetry_extraction` plus `telemetry_gap_reasons[]` for structured
 grouping. Reports and digests group gaps by `gap_kind:reason_id`; readers that
 do not understand the detail array may keep using `telemetry_gaps`.
 
+When a child exits before writing a valid worker summary, the runner writes a
+private `chain-child-startup-diagnostics` artifact under
+`chain-runs/<run_id>/startup-diagnostics/`. The artifact has
+`schema_version: 1` and records the child exit code, launch-stage enum,
+abstract startup failure class, host profile/sandbox class, prompt-boundary
+detection when available, and redacted bounded stdout/stderr tail artifact
+paths. Stream tails are best-effort for fast exits. It stores environment shape
+only (counts and expected key names), not a full environment dump or secret
+values. `STUDIO_CHAIN_CHILD_STARTUP_CAPTURE` controls stream capture
+(`auto` = unattended only, `on`/`always` = force, `off`/`never` = disable).
+Synthesized missing-summary records and halt records may point to this private
+artifact; public summaries must use only the abstract failure class.
+
 ShellCheck availability is reported as worker verification evidence, not as a
 telemetry gap. For shell or release script changes, workers record ShellCheck in
 `lints[]` when it runs. If the chain-runner tool preflight marks ShellCheck
@@ -141,6 +154,7 @@ Public issue and PR comments may mention only this allowlist:
 ```text
 issue_number, chain_name, stage, verdict, status, gap_kind, reason_id, run_id, PR/issue URLs
 artifact_class, retention_class, cleanup_outcome, routing_reason_class, executor_role
+startup_failure_class, launch_stage, prompt_boundary_status
 ```
 
 Do not publish local paths, exact node or machine names, branch/work-project details, prompts, token totals, cache totals, velocity data, private task details, or raw reviewer output. Detailed reconstruction lives in the private report under the run directory.
