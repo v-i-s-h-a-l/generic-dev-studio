@@ -17,9 +17,9 @@ COMMAND="${1:-}"
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  scripts/manager-chain-monitor.sh configure [--project <slug>] [--list-id <id>] [--dry-run] [--json]
+  scripts/manager-chain-monitor.sh configure [--project <slug>] [--list-id <id>] [--archived-list-id <id>] [--dry-run] [--json]
   scripts/manager-chain-monitor.sh sync [--project <slug>] [chain-monitor-sync flags...]
-  scripts/manager-chain-monitor.sh status [--project <slug>] [--list-id <id>] [--json] [source flags...]
+  scripts/manager-chain-monitor.sh status [--project <slug>] [--list-id <id>] [--archived-list-id <id>] [--json] [source flags...]
   scripts/manager-chain-monitor.sh recovery --adopt-login-home-state [--execute] [--json]
   scripts/manager-chain-monitor.sh recovery --adopt-synthetic-home-state [--execute] [--json]
   scripts/manager-chain-monitor.sh recovery --merge-home-state [--execute] [--json]
@@ -124,9 +124,18 @@ current_list_id() {
   printf '%s\n' "${STUDIO_CHAIN_MONITOR_SLACK_LIST_ID:-${CHAIN_MONITOR_SLACK_LIST_ID:-}}"
 }
 
+current_archived_list_id() {
+  printf '%s\n' "${STUDIO_CHAIN_MONITOR_ARCHIVED_SLACK_LIST_ID:-${CHAIN_MONITOR_ARCHIVED_SLACK_LIST_ID:-}}"
+}
+
 state_path_for_home() {
   local home="$1" project="$2"
   HOME="$home" chain_monitor_state_path_for_project "$project"
+}
+
+archived_state_path_for_home() {
+  local home="$1" project="$2"
+  HOME="$home" chain_monitor_archived_state_path_for_project "$project"
 }
 
 synthetic_state_path_for_home() {
@@ -136,7 +145,7 @@ synthetic_state_path_for_home() {
 }
 
 json_owner_summary() {
-  local kind="$1" owner_home="$2" project="$3" state_path="$4" list_id="$5" config_file="$6"
+  local kind="$1" owner_home="$2" project="$3" state_path="$4" list_id="$5" config_file="$6" archived_state_path="${7:-}" archived_list_id="${8:-}"
   jq -n \
     --arg kind "$kind" \
     --arg owner_home "$owner_home" \
@@ -144,6 +153,8 @@ json_owner_summary() {
     --arg state_path "$state_path" \
     --arg list_id "$list_id" \
     --arg config_file "$config_file" \
+    --arg archived_state_path "$archived_state_path" \
+    --arg archived_list_id "$archived_list_id" \
     '{
       schema_version: 1,
       kind: $kind,
@@ -151,6 +162,8 @@ json_owner_summary() {
       owner_project: $owner_project,
       state_path: $state_path,
       list_id: $list_id,
+      archived_state_path: (if $archived_state_path == "" then null else $archived_state_path end),
+      archived_list_id: (if $archived_list_id == "" then null else $archived_list_id end),
       config_file: $config_file
     }'
 }
@@ -247,7 +260,7 @@ parse_common_source_arg() {
 }
 
 cmd_configure() {
-  local project="" owner_override="" list_id_arg="" dry_run=0 json=0 owner_home state_path config_file wrote=0
+  local project="" owner_override="" list_id_arg="" archived_list_id_arg="" dry_run=0 json=0 owner_home state_path archived_state_path config_file wrote=0
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --project) project="${2:?--project requires a value}"; shift 2 ;;
@@ -256,6 +269,8 @@ cmd_configure() {
       --owner-home=*) owner_override="${1#--owner-home=}"; shift ;;
       --list-id) list_id_arg="${2:?--list-id requires a value}"; shift 2 ;;
       --list-id=*) list_id_arg="${1#--list-id=}"; shift ;;
+      --archived-list-id) archived_list_id_arg="${2:?--archived-list-id requires a value}"; shift 2 ;;
+      --archived-list-id=*) archived_list_id_arg="${1#--archived-list-id=}"; shift ;;
       --dry-run) dry_run=1; shift ;;
       --json) json=1; shift ;;
       -h|--help) usage ;;
@@ -268,24 +283,34 @@ cmd_configure() {
   load_manager_config "$owner_home" "$project"
   config_file=$(config_file_for "$owner_home" "$project")
   state_path=$(state_path_for_home "$owner_home" "$project")
+  archived_state_path=$(archived_state_path_for_home "$owner_home" "$project")
   if [ -z "$list_id_arg" ]; then
     list_id_arg=$(current_list_id)
+  fi
+  if [ -z "$archived_list_id_arg" ]; then
+    archived_list_id_arg=$(current_archived_list_id)
   fi
 
   if [ -n "$list_id_arg" ] && [ "$dry_run" -eq 0 ]; then
     upsert_env_line "$config_file" STUDIO_CHAIN_MONITOR_SLACK_LIST_ID "$(quote_env_value "$list_id_arg")"
     wrote=1
   fi
+  if [ -n "$archived_list_id_arg" ] && [ "$dry_run" -eq 0 ]; then
+    upsert_env_line "$config_file" STUDIO_CHAIN_MONITOR_ARCHIVED_SLACK_LIST_ID "$(quote_env_value "$archived_list_id_arg")"
+    wrote=1
+  fi
 
   if [ "$json" -eq 1 ]; then
-    json_owner_summary "chain_monitor_manager_configure" "$owner_home" "$project" "$state_path" "$list_id_arg" "$config_file" |
+    json_owner_summary "chain_monitor_manager_configure" "$owner_home" "$project" "$state_path" "$list_id_arg" "$config_file" "$archived_state_path" "$archived_list_id_arg" |
       jq --argjson dry_run "$(bool_json "$dry_run")" --argjson wrote_config "$(bool_json "$wrote")" \
         '. + {dry_run:$dry_run,wrote_config:$wrote_config}'
   else
     printf 'owner_home=%s\n' "$owner_home"
     printf 'owner_project=%s\n' "$project"
     printf 'state_path=%s\n' "$state_path"
+    printf 'archived_state_path=%s\n' "$archived_state_path"
     printf 'list_id=%s\n' "$list_id_arg"
+    printf 'archived_list_id=%s\n' "$archived_list_id_arg"
     printf 'config_file=%s\n' "$config_file"
     if [ "$dry_run" -eq 1 ]; then
       printf 'dry_run=1\n'
@@ -296,7 +321,7 @@ cmd_configure() {
 }
 
 cmd_sync() {
-  local project="" owner_override="" list_id_arg="" arg owner_home list_id
+  local project="" owner_override="" list_id_arg="" archived_list_id_arg="" arg owner_home list_id archived_list_id
   local -a passthrough=()
 
   while [ "$#" -gt 0 ]; do
@@ -306,8 +331,10 @@ cmd_sync() {
       --project=*) project="${1#--project=}"; passthrough+=("$1"); shift ;;
       --owner-home) owner_override="${2:?--owner-home requires a path}"; shift 2 ;;
       --owner-home=*) owner_override="${1#--owner-home=}"; shift ;;
-      --list-id) list_id_arg="${2:?--list-id requires a value}"; passthrough+=("$1" "$2"); shift 2 ;;
-      --list-id=*) list_id_arg="${1#--list-id=}"; passthrough+=("$1"); shift ;;
+      --list-id) list_id_arg="${2:?--list-id requires a value}"; shift 2 ;;
+      --list-id=*) list_id_arg="${1#--list-id=}"; shift ;;
+      --archived-list-id) archived_list_id_arg="${2:?--archived-list-id requires a value}"; shift 2 ;;
+      --archived-list-id=*) archived_list_id_arg="${1#--archived-list-id=}"; shift ;;
       -h|--help) "$SYNC_SCRIPT" --help ;;
       *) passthrough+=("$1"); shift ;;
     esac
@@ -317,15 +344,17 @@ cmd_sync() {
   owner_home=$(resolve_owner_home "$owner_override")
   load_manager_config "$owner_home" "$project"
   list_id="${list_id_arg:-$(current_list_id)}"
+  archived_list_id="${archived_list_id_arg:-$(current_archived_list_id)}"
 
   local -a sync_args=(--project "$project" --owner-home "$owner_home")
   [ -n "$list_id" ] && sync_args+=(--list-id "$list_id")
+  [ -n "$archived_list_id" ] && sync_args+=(--archived-list-id "$archived_list_id")
   exec env HOME="$owner_home" "$SYNC_SCRIPT" "${sync_args[@]}" "${passthrough[@]}"
 }
 
 cmd_status() {
-  local project="" owner_override="" list_id_arg="" json=0 owner_home state_path config_file desired_tmp state_tmp reconcile_tmp
-  local collision_count pending_write_count status="ok" source_count
+  local project="" owner_override="" list_id_arg="" archived_list_id_arg="" json=0 owner_home state_path archived_state_path config_file desired_tmp active_desired_tmp archived_desired_tmp state_tmp archived_state_tmp reconcile_tmp archived_reconcile_tmp
+  local collision_count pending_write_count pending_archive_write_count status="ok" source_count
   REPO_FOR_DISCOVERY="$REPO_ROOT"
   DISCOVER=1
   NOW_EPOCH=$(date -u +%s)
@@ -347,6 +376,8 @@ cmd_status() {
       --owner-home=*) owner_override="${1#--owner-home=}"; shift ;;
       --list-id) list_id_arg="${2:?--list-id requires a value}"; shift 2 ;;
       --list-id=*) list_id_arg="${1#--list-id=}"; shift ;;
+      --archived-list-id) archived_list_id_arg="${2:?--archived-list-id requires a value}"; shift 2 ;;
+      --archived-list-id=*) archived_list_id_arg="${1#--archived-list-id=}"; shift ;;
       --json) json=1; shift ;;
       -h|--help) usage ;;
       *)
@@ -363,8 +394,10 @@ cmd_status() {
   owner_home=$(resolve_owner_home "$owner_override")
   load_manager_config "$owner_home" "$project"
   list_id_arg="${list_id_arg:-$(current_list_id)}"
+  archived_list_id_arg="${archived_list_id_arg:-$(current_archived_list_id)}"
   config_file=$(config_file_for "$owner_home" "$project")
   state_path=$(state_path_for_home "$owner_home" "$project")
+  archived_state_path=$(archived_state_path_for_home "$owner_home" "$project")
 
   discover_sources "$REPO_FOR_DISCOVERY" "$owner_home" "$project"
   build_source_args
@@ -375,9 +408,13 @@ cmd_status() {
     ${#LEGACY_SLACK_ROWS[@]}
   ))
   desired_tmp=$(mktemp -t chain-monitor-status-desired.XXXXXX)
+  active_desired_tmp=$(mktemp -t chain-monitor-status-active-desired.XXXXXX)
+  archived_desired_tmp=$(mktemp -t chain-monitor-status-archived-desired.XXXXXX)
   state_tmp=$(mktemp -t chain-monitor-status-state.XXXXXX)
+  archived_state_tmp=$(mktemp -t chain-monitor-status-archived-state.XXXXXX)
   reconcile_tmp=$(mktemp -t chain-monitor-status-reconcile.XXXXXX)
-  trap 'rm -f "$desired_tmp" "$state_tmp" "$reconcile_tmp"' RETURN
+  archived_reconcile_tmp=$(mktemp -t chain-monitor-status-archived-reconcile.XXXXXX)
+  trap 'rm -f "$desired_tmp" "$active_desired_tmp" "$archived_desired_tmp" "$state_tmp" "$archived_state_tmp" "$reconcile_tmp" "$archived_reconcile_tmp"' RETURN
 
   if [ "$source_count" -eq 0 ]; then
     jq -n '{schema_version:1, rows:[], collisions:[], recoveries:[]}' > "$desired_tmp"
@@ -389,6 +426,18 @@ cmd_status() {
       --completed-retention-s "$COMPLETED_RETENTION_S" \
       "${BUILD_ARGS[@]}" > "$desired_tmp"
   fi
+  cp "$desired_tmp" "$active_desired_tmp"
+  jq '
+    (.rows // []) as $rows
+    | ($rows | map(select(.row_type == "chain" and (.fields.status // "") == "archived") | .row_key)) as $archived_chain_keys
+    | .rows = (
+        $rows
+        | map(. as $row | select(
+            ($row.fields.status // "") == "archived"
+            and ($row.row_type == "chain" or ($archived_chain_keys | index($row.parent_row_key // "")))
+          ))
+      )
+  ' "$desired_tmp" > "$archived_desired_tmp"
 
   collision_count=$(jq -r '(.collisions // []) | length' "$desired_tmp")
   if [ -s "$state_path" ]; then
@@ -396,12 +445,18 @@ cmd_status() {
   else
     : > "$state_tmp"
   fi
+  if [ -s "$archived_state_path" ]; then
+    cp "$archived_state_path" "$archived_state_tmp"
+  else
+    : > "$archived_state_tmp"
+  fi
 
   pending_write_count="null"
+  pending_archive_write_count="null"
   if [ -n "$list_id_arg" ]; then
     set +e
     chain_monitor_slack_list_reconcile_json \
-      --desired "$desired_tmp" \
+      --desired "$active_desired_tmp" \
       --state "$state_tmp" \
       --list-id "$list_id_arg" \
       --owner-home "$owner_home" \
@@ -409,6 +464,7 @@ cmd_status() {
       --source-fingerprint "status-dry-run" \
       --now-epoch "$NOW_EPOCH" \
       --archive-retention-s "$ARCHIVE_RETENTION_S" \
+      --list-role active \
       --dry-run > "$reconcile_tmp"
     reconcile_rc=$?
     set -e
@@ -423,27 +479,54 @@ cmd_status() {
   else
     status="missing_list_id"
   fi
+  if [ -n "$archived_list_id_arg" ]; then
+    set +e
+    chain_monitor_slack_list_reconcile_json \
+      --desired "$archived_desired_tmp" \
+      --state "$archived_state_tmp" \
+      --list-id "$archived_list_id_arg" \
+      --owner-home "$owner_home" \
+      --owner-project "$project" \
+      --source-fingerprint "status-dry-run" \
+      --now-epoch "$NOW_EPOCH" \
+      --archive-retention-s "$ARCHIVE_RETENTION_S" \
+      --list-role archived \
+      --dry-run > "$archived_reconcile_tmp"
+    archived_reconcile_rc=$?
+    set -e
+    if [ -s "$archived_reconcile_tmp" ]; then
+      pending_archive_write_count=$(jq -r '[.operations[]? | select((.action // "") | startswith("would_"))] | length' "$archived_reconcile_tmp")
+    fi
+    if [ "$archived_reconcile_rc" -ne 0 ]; then
+      status="dry_run_failed"
+    fi
+  fi
 
   if [ "$json" -eq 1 ]; then
-    json_owner_summary "chain_monitor_manager_status" "$owner_home" "$project" "$state_path" "$list_id_arg" "$config_file" |
+    json_owner_summary "chain_monitor_manager_status" "$owner_home" "$project" "$state_path" "$list_id_arg" "$config_file" "$archived_state_path" "$archived_list_id_arg" |
       jq \
         --arg status "$status" \
         --argjson dry_run_collision_count "$collision_count" \
         --argjson pending_write_count "$pending_write_count" \
+        --argjson pending_archive_write_count "$pending_archive_write_count" \
         --argjson source_arg_count "$source_count" \
         '. + {
           status: $status,
           dry_run_collision_count: $dry_run_collision_count,
           pending_write_count: $pending_write_count,
+          pending_archive_write_count: $pending_archive_write_count,
           source_arg_count: $source_arg_count
         }'
   else
     printf 'owner_home=%s\n' "$owner_home"
     printf 'owner_project=%s\n' "$project"
     printf 'state_path=%s\n' "$state_path"
+    printf 'archived_state_path=%s\n' "$archived_state_path"
     printf 'list_id=%s\n' "$list_id_arg"
+    printf 'archived_list_id=%s\n' "$archived_list_id_arg"
     printf 'dry_run_collision_count=%s\n' "$collision_count"
     printf 'pending_write_count=%s\n' "$pending_write_count"
+    printf 'pending_archive_write_count=%s\n' "$pending_archive_write_count"
     printf 'status=%s\n' "$status"
   fi
 }
@@ -496,7 +579,7 @@ atomic_copy() {
 }
 
 cmd_recovery() {
-  local project="" owner_override="" synthetic_home_arg="" list_id_arg="" mode="" execute=0 json=0 approval=""
+  local project="" owner_override="" synthetic_home_arg="" list_id_arg="" archived_list_id_arg="" mode="" execute=0 json=0 approval=""
   local owner_home login_home synthetic_home login_state synthetic_state target_state config_file work_tmp sync_summary
   local dry_run=1 would_write=0 wrote=0 source_state="" source_exists=0 target_exists=0
   REPO_FOR_DISCOVERY="$REPO_ROOT"
@@ -522,6 +605,8 @@ cmd_recovery() {
       --synthetic-home=*) synthetic_home_arg="${1#--synthetic-home=}"; shift ;;
       --list-id) list_id_arg="${2:?--list-id requires a value}"; shift 2 ;;
       --list-id=*) list_id_arg="${1#--list-id=}"; shift ;;
+      --archived-list-id) archived_list_id_arg="${2:?--archived-list-id requires a value}"; shift 2 ;;
+      --archived-list-id=*) archived_list_id_arg="${1#--archived-list-id=}"; shift ;;
       --adopt-login-home-state) mode="adopt-login-home-state"; shift ;;
       --adopt-synthetic-home-state) mode="adopt-synthetic-home-state"; shift ;;
       --merge-home-state) mode="merge-home-state"; shift ;;
@@ -557,6 +642,7 @@ cmd_recovery() {
   synthetic_home="${synthetic_home_arg:-${STUDIO_CHAIN_MONITOR_SYNTHETIC_HOME:-${HOME:-}}}"
   load_manager_config "$login_home" "$project"
   list_id_arg="${list_id_arg:-$(current_list_id)}"
+  archived_list_id_arg="${archived_list_id_arg:-$(current_archived_list_id)}"
   config_file=$(config_file_for "$login_home" "$project")
   login_state=$(state_path_for_home "$login_home" "$project")
   synthetic_state=$(synthetic_state_path_for_home "$synthetic_home" "$project")
@@ -583,6 +669,7 @@ cmd_recovery() {
       exit 2
     fi
     local -a sync_args=(--project "$project" --owner-home "$login_home" --list-id "$list_id_arg" --summary-output "$sync_summary" --full-rewrite)
+    [ -n "$archived_list_id_arg" ] && sync_args+=(--archived-list-id "$archived_list_id_arg")
     [ "$dry_run" -eq 1 ] && sync_args+=(--dry-run)
     set +e
     STUDIO_CHAIN_MONITOR_IMPORT_RECOVERY=1 HOME="$login_home" "$SYNC_SCRIPT" "${sync_args[@]}" "${BUILD_ARGS[@]}" >/dev/null
@@ -595,6 +682,7 @@ cmd_recovery() {
         --arg owner_project "$project" \
         --arg state_path "$login_state" \
         --arg list_id "$list_id_arg" \
+        --arg archived_list_id "$archived_list_id_arg" \
         --argjson dry_run "$(bool_json "$dry_run")" \
         --argjson execute "$(bool_json "$execute")" \
         --argjson exit_code "$sync_rc" \
@@ -607,6 +695,7 @@ cmd_recovery() {
           owner_project: $owner_project,
           state_path: $state_path,
           list_id: $list_id,
+          archived_list_id: (if $archived_list_id == "" then null else $archived_list_id end),
           dry_run: $dry_run,
           execute: $execute,
           sync: ($sync[0] // null),

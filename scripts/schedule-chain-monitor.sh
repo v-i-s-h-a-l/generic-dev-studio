@@ -14,13 +14,14 @@ ACTION=""
 PROJECT=""
 OWNER_HOME_OVERRIDE=""
 LIST_ID="${STUDIO_CHAIN_MONITOR_SLACK_LIST_ID:-${CHAIN_MONITOR_SLACK_LIST_ID:-}}"
+ARCHIVED_LIST_ID="${STUDIO_CHAIN_MONITOR_ARCHIVED_SLACK_LIST_ID:-${CHAIN_MONITOR_ARCHIVED_SLACK_LIST_ID:-}}"
 INTERVAL_S="${CHAIN_MONITOR_SCHEDULER_INTERVAL_S:-60}"
 DRY_RUN=0
 
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  scripts/schedule-chain-monitor.sh --install [--project <slug>] [--list-id <id>] [--interval-s <seconds>] [--dry-run]
+  scripts/schedule-chain-monitor.sh --install [--project <slug>] [--list-id <id>] [--archived-list-id <id>] [--interval-s <seconds>] [--dry-run]
   scripts/schedule-chain-monitor.sh --uninstall [--project <slug>] [--dry-run]
   scripts/schedule-chain-monitor.sh --status [--project <slug>]
   scripts/schedule-chain-monitor.sh --run-now [--project <slug>] [--list-id <id>]
@@ -74,12 +75,13 @@ xml_escape() {
 }
 
 plist_xml() {
-  local label="$1" owner_home="$2" project="$3" log_dir="$4" list_id="$5" escaped_manager escaped_home escaped_project escaped_log escaped_list
+  local label="$1" owner_home="$2" project="$3" log_dir="$4" list_id="$5" archived_list_id="${6:-}" escaped_manager escaped_home escaped_project escaped_log escaped_list escaped_archived_list
   escaped_manager=$(printf '%s' "$MANAGER" | xml_escape)
   escaped_home=$(printf '%s' "$owner_home" | xml_escape)
   escaped_project=$(printf '%s' "$project" | xml_escape)
   escaped_log=$(printf '%s' "$log_dir" | xml_escape)
   escaped_list=$(printf '%s' "$list_id" | xml_escape)
+  escaped_archived_list=$(printf '%s' "$archived_list_id" | xml_escape)
   cat <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -115,6 +117,12 @@ PLIST
     <string>${escaped_list}</string>
 PLIST
   fi
+  if [ -n "$archived_list_id" ]; then
+    cat <<PLIST
+    <key>STUDIO_CHAIN_MONITOR_ARCHIVED_SLACK_LIST_ID</key>
+    <string>${escaped_archived_list}</string>
+PLIST
+  fi
   cat <<'PLIST'
   </dict>
 </dict>
@@ -134,6 +142,8 @@ while [ "$#" -gt 0 ]; do
     --owner-home=*) OWNER_HOME_OVERRIDE="${1#--owner-home=}"; shift ;;
     --list-id) LIST_ID="${2:?--list-id requires a value}"; shift 2 ;;
     --list-id=*) LIST_ID="${1#--list-id=}"; shift ;;
+    --archived-list-id) ARCHIVED_LIST_ID="${2:?--archived-list-id requires a value}"; shift 2 ;;
+    --archived-list-id=*) ARCHIVED_LIST_ID="${1#--archived-list-id=}"; shift ;;
     --interval-s) INTERVAL_S="${2:?--interval-s requires a value}"; shift 2 ;;
     --interval-s=*) INTERVAL_S="${1#--interval-s=}"; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -161,11 +171,11 @@ case "$ACTION" in
     if [ "$DRY_RUN" -eq 1 ]; then
       printf 'owner_home=%s\n' "$OWNER_HOME" >&2
       printf 'plist=%s\n' "$PLIST_PATH" >&2
-      plist_xml "$LABEL" "$OWNER_HOME" "$PROJECT" "$LOG_DIR" "$LIST_ID"
+      plist_xml "$LABEL" "$OWNER_HOME" "$PROJECT" "$LOG_DIR" "$LIST_ID" "$ARCHIVED_LIST_ID"
       exit 0
     fi
     mkdir -p "$LOG_DIR" "$(dirname "$PLIST_PATH")"
-    plist_xml "$LABEL" "$OWNER_HOME" "$PROJECT" "$LOG_DIR" "$LIST_ID" > "$PLIST_PATH"
+    plist_xml "$LABEL" "$OWNER_HOME" "$PROJECT" "$LOG_DIR" "$LIST_ID" "$ARCHIVED_LIST_ID" > "$PLIST_PATH"
     launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH" 2>/dev/null \
       || launchctl load "$PLIST_PATH"
     printf 'installed=%s\n' "$LABEL"
@@ -204,6 +214,7 @@ case "$ACTION" in
   run-now)
     run_args=(sync --project "$PROJECT")
     [ -n "$LIST_ID" ] && run_args+=(--list-id "$LIST_ID")
+    [ -n "$ARCHIVED_LIST_ID" ] && run_args+=(--archived-list-id "$ARCHIVED_LIST_ID")
     exec env HOME="$OWNER_HOME" "$MANAGER" "${run_args[@]}"
     ;;
   *) usage ;;

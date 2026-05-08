@@ -165,6 +165,8 @@ chain_monitor_claims_from_manifest_json() {
         elif (["available","queued","running","paused"] | index($base)) and (($updated | epoch) > 0) and ($now_epoch > 0) and (($now_epoch - ($updated | epoch)) >= $stale_threshold_s)
         then "stale"
         else $base end;
+    def title_with_id($name; $id):
+      if (($id // "") != "" and ($id // "") != ($name // "")) then "\($name) [\($id)]" else $name end;
     def issue_number($item):
       if ($item | type) == "number" then $item
       elif ($item | type) == "object" then ($item.number // $item.issue // empty)
@@ -180,7 +182,7 @@ chain_monitor_claims_from_manifest_json() {
       (.chains // [])[]
       | . as $chain
       | ($chain.name // $chain.id // "unknown-chain" | tostring) as $chain_name
-      | ($chain.chain_run_id // $chain.id // $chain_name | tostring) as $chain_id
+      | ($chain.chain_run_id // $chain.chain_id // $chain.id // $chain_name | tostring) as $chain_id
       | "chain:\($source_kind | clean):\($source_id | clean):\($chain_id | clean)" as $chain_key
       | "chain:\($chain_name | clean)" as $logical_key
       | [($chain.issues // [])[]? | issue_number(.) | tonumber?] as $issue_numbers
@@ -200,7 +202,7 @@ chain_monitor_claims_from_manifest_json() {
             row_type:"chain",
             source:{kind:$source_kind,id:$source_id,precedence:$precedence},
             fields:{
-              title:$chain_name,
+              title:title_with_id($chain_name; $chain_id),
               status:$status,
               manifest:$manifest_label,
               summary:($chain.summary // ""),
@@ -321,12 +323,14 @@ chain_monitor_claims_from_persisted_run_json() {
       elif ($issue_statuses | index("running")) then "running"
       elif ($issue_statuses | index("queued")) and (["available","queued"] | index($base)) then "queued"
       else $base end;
+    def title_with_id($name; $id):
+      if (($id // "") != "" and ($id // "") != ($name // "")) then "\($name) [\($id)]" else $name end;
     . as $root
     | [
       (.chains // [])[]
       | . as $chain
       | ($chain.name // $chain.chain_run_id // "unknown-chain" | tostring) as $chain_name
-      | ($chain.chain_run_id // $chain.name // "unknown-chain" | tostring) as $chain_id
+      | ($chain.chain_run_id // $chain.chain_id // $chain.id // $chain.name // "unknown-chain" | tostring) as $chain_id
       | "chain:\($source_kind | clean):\($source_id | clean):\($chain_id | clean)" as $chain_key
       | "chain:\($chain_name | clean)" as $logical_key
       | [($chain.issues // [])[]? | .number? // .issue? // empty | tonumber?] as $issue_numbers
@@ -348,7 +352,7 @@ chain_monitor_claims_from_persisted_run_json() {
             row_type:"chain",
             source:{kind:$source_kind,id:$source_id,precedence:$precedence},
             fields:{
-              title:$chain_name,
+              title:title_with_id($chain_name; $chain_id),
               status:$status,
               manifest:(($root.manifest // "") | tostring | split("/") | last),
               summary:($chain.summary // ""),
@@ -438,6 +442,19 @@ chain_monitor_reconcile_claims_json() {
   local claims_path="${1:?usage: chain_monitor_reconcile_claims_json <claims-json-array>}"
   jq -n --slurpfile claims "$claims_path" '
     def claim_summary: {source:.source,row_key:.row_key,issue_numbers:(.issue_numbers // [])};
+    def status_rank:
+      ((.fields.status // "unknown") | tostring) as $status
+      | if $status == "running" then 0
+        elif $status == "blocked" then 1
+        elif $status == "failed" then 2
+        elif $status == "paused" then 3
+        elif $status == "queued" then 4
+        elif $status == "available" then 5
+        elif $status == "stale" then 6
+        elif $status == "unknown" then 7
+        elif $status == "completed" then 8
+        elif $status == "archived" then 9
+        else 10 end;
     ($claims[0] // []) as $claims
     | reduce ([ $claims[] | select(.claim_kind == "chain") | .logical_key ] | unique[]) as $logical_key
         ({schema_version:1, rows:[], collisions:[], recoveries:[]};
@@ -473,7 +490,7 @@ chain_monitor_reconcile_claims_json() {
               | .rows += ($claims | map(select(.claim_kind == "task" and .parent_row_key == $selected.row_key) | .snapshot))
             end
         )
-    | .rows |= sort_by(.row_key)
+    | .rows |= sort_by(if .row_type == "chain" then status_rank else 100 end, if .row_type == "chain" then 0 else 1 end, (.parent_row_key // .row_key), .row_key)
     | .collisions |= sort_by(.logical_key, .kind)
     | .recoveries |= sort_by(.legacy_row_key)
   '
