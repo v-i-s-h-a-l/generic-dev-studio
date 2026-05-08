@@ -351,8 +351,11 @@ jq -n \
       chain:($chain.name // $chain.chain // "unknown"),
       issue_number:($issue_no_s | maybe_number),
       issue_run_id:(if $issue_run_id == "" then null else $issue_run_id end),
+      issue_title:($issue.issue_title // $issue.title // $issue.provenance.issue.title // $issue_summaries[-1].issue_title // null),
       status:($issue.status // "unknown"),
       lifecycle_state:($issue.lifecycle_state // null),
+      dependencies:($issue.dependencies // []),
+      commit_after:($issue.commit_after // $issue.provenance.implementation.commit_after // $issue_summaries[-1].commit_after // null),
       exit_code:($issue.exit_code // $issue_summaries[-1].exit_code // null),
       retry_count:(($issue.auto_retry_attempts // 0) | tonumber? // 0),
       halt_count:($issue_halts | length),
@@ -573,6 +576,10 @@ jq -r '
     if (($obj // {}) | length) == 0 then "- none"
     else ($obj | to_entries | sort_by(.key)[] | "- \(.key): \(.value)")
     end;
+  def cell($v):
+    if $v == null or $v == "" then "missing"
+    else ($v | tostring | gsub("\\|"; "\\|"))
+    end;
   "# Studio Chain Telemetry Digest",
   "",
   "- Window: \(.window.since) through \(.window.until)",
@@ -679,9 +686,9 @@ jq -r '
   "",
   (if (.issues | length) == 0 then "No issues matched the selected runs."
    else
-     "| Run | Chain | Issue | Status | Retries | Halts | Gaps | Phase Reviews | Summary |",
-     "|---|---|---:|---|---:|---:|---|---|---|",
+     "| Run | Chain | Issue | Title | Issue-run UUID | Status | Depends On | Commit After | Retries | Halts | Gaps | Phase Reviews | Summary |",
+     "|---|---|---:|---|---|---|---|---|---:|---:|---|---|---|",
      (.issues[] |
-       "| \(.run_id) | \(.chain) | #\(.issue_number // "unknown") | \(.status) | \(.retry_count) | \(.halt_count) | \(if ((.telemetry_gaps // []) | length) == 0 then "none" else ((.telemetry_gaps // []) | join(", ")) end) | \(if ((.phase_review_verdicts // []) | length) == 0 then "none" else ((.phase_review_verdicts // []) | join(", ")) end) | \(if .summary_present then "present" else "missing" end) |")
+       "| \(.run_id) | \(.chain) | #\(.issue_number // "unknown") | \(cell(.issue_title)) | \(cell(.issue_run_id)) | \(.status) | \(if ((.dependencies // []) | length) == 0 then "-" else ((.dependencies // []) | map("#" + tostring) | join(", ")) end) | \(cell(.commit_after)) | \(.retry_count) | \(.halt_count) | \(if ((.telemetry_gaps // []) | length) == 0 then "none" else ((.telemetry_gaps // []) | join(", ")) end) | \(if ((.phase_review_verdicts // []) | length) == 0 then "none" else ((.phase_review_verdicts // []) | join(", ")) end) | \(if .summary_present then "present" else "missing" end) |")
    end)
 ' "$digest_json"
