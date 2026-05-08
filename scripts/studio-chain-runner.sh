@@ -673,6 +673,7 @@ SUMMARY_ROOT=""
 HALT_ROOT=""
 ESCROW_ROOT=""
 PHASE_REVIEW_ROOT=""
+STARTUP_DIAGNOSTICS_ROOT=""
 EVENTS_JSONL="/dev/null"
 RUN_STATE_JSON=""
 RUN_REPORT=""
@@ -685,6 +686,7 @@ configure_run_paths() {
   HALT_ROOT="$CHAIN_RUN_ROOT/halt-records"
   ESCROW_ROOT="$CHAIN_RUN_ROOT/decision-escrows"
   PHASE_REVIEW_ROOT="$ANALYSIS_ROOT/$RUN_ID-phase-reviews"
+  STARTUP_DIAGNOSTICS_ROOT="$CHAIN_RUN_ROOT/startup-diagnostics"
   EVENTS_JSONL="$CHAIN_RUN_ROOT/events.jsonl"
   RUN_STATE_JSON="$CHAIN_RUN_ROOT/state.json"
   RUN_REPORT="$CHAIN_RUN_ROOT/report.md"
@@ -694,7 +696,7 @@ configure_run_paths() {
     RUN_STATE_JSON="$RUN_ROOT/$RUN_ID-state.json"
   fi
   if { [ "$DRY_RUN" -eq 0 ] || [ -n "$RESUME_ID" ]; } && [ "$EXPLAIN_NEXT" -eq 0 ]; then
-    mkdir -p "$SUMMARY_ROOT" "$HALT_ROOT" "$ESCROW_ROOT" "$PHASE_REVIEW_ROOT"
+    mkdir -p "$SUMMARY_ROOT" "$HALT_ROOT" "$ESCROW_ROOT" "$PHASE_REVIEW_ROOT" "$STARTUP_DIAGNOSTICS_ROOT"
   else
     EVENTS_JSONL="/dev/null"
   fi
@@ -1803,7 +1805,10 @@ write_halt_record() {
       next_safe_action: $next_safe_action,
       affected_artifacts: ([$run_state, $report]
         + (if ($detail_obj.drift_artifact // null) == null then [] else [$detail_obj.drift_artifact] end)
-        + (if ($detail_obj.read_set_artifact // null) == null then [] else [$detail_obj.read_set_artifact] end)),
+        + (if ($detail_obj.read_set_artifact // null) == null then [] else [$detail_obj.read_set_artifact] end)
+        + (if ($detail_obj.startup_diagnostics_artifact // null) == null then [] else [$detail_obj.startup_diagnostics_artifact] end)
+        + (if ($detail_obj.stdout_tail_artifact // null) == null then [] else [$detail_obj.stdout_tail_artifact] end)
+        + (if ($detail_obj.stderr_tail_artifact // null) == null then [] else [$detail_obj.stderr_tail_artifact] end)),
       rollback_path: "Inspect the halt record and resume with the next_command after correcting the cause; fatal records require a fresh human-authored plan.",
       retry_policy: {
         auto_retry_limit: $retry_limit,
@@ -2443,6 +2448,446 @@ $(jq -c '
 EOF
 }
 
+startup_diagnostics_artifact_path() {
+  local issue_run_id="$1"
+  printf '%s/%s-startup-diagnostics.json\n' "$STARTUP_DIAGNOSTICS_ROOT" "$issue_run_id"
+}
+
+startup_launch_context_path() {
+  local issue_run_id="$1"
+  printf '%s/%s-launch-context.json\n' "$STARTUP_DIAGNOSTICS_ROOT" "$issue_run_id"
+}
+
+startup_stdout_raw_path() {
+  local issue_run_id="$1"
+  printf '%s/%s.stdout.raw.log\n' "$STARTUP_DIAGNOSTICS_ROOT" "$issue_run_id"
+}
+
+startup_stderr_raw_path() {
+  local issue_run_id="$1"
+  printf '%s/%s.stderr.raw.log\n' "$STARTUP_DIAGNOSTICS_ROOT" "$issue_run_id"
+}
+
+startup_stdout_tail_path() {
+  local issue_run_id="$1"
+  printf '%s/%s.stdout.tail.txt\n' "$STARTUP_DIAGNOSTICS_ROOT" "$issue_run_id"
+}
+
+startup_stderr_tail_path() {
+  local issue_run_id="$1"
+  printf '%s/%s.stderr.tail.txt\n' "$STARTUP_DIAGNOSTICS_ROOT" "$issue_run_id"
+}
+
+startup_tail_bytes() {
+  local value="${STUDIO_CHAIN_STARTUP_TAIL_BYTES:-16384}"
+  case "$value" in
+    ''|*[!0-9]*) printf '16384\n' ;;
+    *) printf '%s\n' "$value" ;;
+  esac
+}
+
+startup_capture_enabled() {
+  case "${STUDIO_CHAIN_CHILD_STARTUP_CAPTURE:-auto}" in
+    1|true|TRUE|yes|YES|always|on|ON) return 0 ;;
+    0|false|FALSE|no|NO|never|off|OFF) return 1 ;;
+    auto|"") [ "${EXECUTION_MODE:-attended}" = "unattended" ] ;;
+    *) [ "${EXECUTION_MODE:-attended}" = "unattended" ] ;;
+  esac
+}
+
+startup_redact_stream() {
+  if command -v perl >/dev/null 2>&1; then
+    perl -pe 's/([A-Za-z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD)[A-Za-z0-9_]*\s*[:=]\s*)\S+/${1}[REDACTED]/ig; s/(Authorization:\s*).*/${1}[REDACTED]/ig; s/gh[pousr]_[A-Za-z0-9_]+/[REDACTED_GITHUB_TOKEN]/g; s/AKIA[0-9A-Z]{16}/[REDACTED_AWS_ACCESS_KEY]/g'
+  else
+    sed -E \
+      -e 's/([A-Za-z0-9_]*(TOKEN|KEY|SECRET|PASSWORD)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*)[^[:space:]]+/\1[REDACTED]/g' \
+      -e 's/([Aa]uthorization:[[:space:]]*).*/\1[REDACTED]/g' \
+      -e 's/gh[pousr]_[A-Za-z0-9_]+/[REDACTED_GITHUB_TOKEN]/g' \
+      -e 's/AKIA[0-9A-Z]{16}/[REDACTED_AWS_ACCESS_KEY]/g'
+  fi
+}
+
+startup_write_tail_artifact() {
+  local source="$1" dest="$2" bytes
+  [ -f "$source" ] || return 1
+  bytes=$(startup_tail_bytes)
+  mkdir -p "$(dirname "$dest")"
+  tail -c "$bytes" "$source" 2>/dev/null | startup_redact_stream > "$dest"
+}
+
+startup_env_shape_json() {
+  local env_count path_entry_count secret_like_count studio_prefix_count
+  env_count=$(env | wc -l | tr -d ' ')
+  path_entry_count=$(printf '%s' "${PATH:-}" | awk -F: '{ if ($0 == "") print 0; else print NF }')
+  secret_like_count=$(env | awk -F= 'BEGIN { count=0 } { name=toupper($1); if (name ~ /(TOKEN|SECRET|PASSWORD|KEY|CREDENTIAL|AUTH)/) count++ } END { print count }')
+  studio_prefix_count=$(env | awk -F= 'BEGIN { count=0 } $1 ~ /^STUDIO_/ { count++ } END { print count }')
+  case "$env_count" in ''|*[!0-9]*) env_count=0 ;; esac
+  case "$path_entry_count" in ''|*[!0-9]*) path_entry_count=0 ;; esac
+  case "$secret_like_count" in ''|*[!0-9]*) secret_like_count=0 ;; esac
+  case "$studio_prefix_count" in ''|*[!0-9]*) studio_prefix_count=0 ;; esac
+  jq -cn \
+    --argjson env_count "$env_count" \
+    --argjson path_entry_count "$path_entry_count" \
+    --argjson secret_like_count "$secret_like_count" \
+    --argjson studio_prefix_count "$studio_prefix_count" \
+    '{
+      env_var_count: $env_count,
+      path_entry_count: $path_entry_count,
+      studio_prefix_count: $studio_prefix_count,
+      secret_like_var_count: $secret_like_count,
+      full_env_persisted: false,
+      secret_values_persisted: false
+    }'
+}
+
+startup_host_profile_json() {
+  local host="$1" spawn_argv0="${2:-}" manifest sandbox secret_scope tool_dialect block_strategy
+  manifest=$(resolve_capabilities_manifest "$host" "$REPO_ROOT" 2>/dev/null || true)
+  if [ -n "$manifest" ] && [ -f "$manifest" ]; then
+    sandbox=$(yq -r '.sandbox_profile // ""' "$manifest" 2>/dev/null || true)
+    secret_scope=$(yq -r '.secret_scope // ""' "$manifest" 2>/dev/null || true)
+    tool_dialect=$(yq -r '.tool_dialect // ""' "$manifest" 2>/dev/null || true)
+    block_strategy=$(yq -r '.block_for_event_strategy // ""' "$manifest" 2>/dev/null || true)
+  else
+    sandbox=""
+    secret_scope=""
+    tool_dialect=""
+    block_strategy=""
+  fi
+  jq -cn \
+    --arg host "$host" \
+    --arg manifest "$manifest" \
+    --arg sandbox "$sandbox" \
+    --arg secret_scope "$secret_scope" \
+    --arg tool_dialect "$tool_dialect" \
+    --arg block_strategy "$block_strategy" \
+    --arg spawn_argv0 "$spawn_argv0" \
+    '{
+      host: $host,
+      capabilities_manifest: (if $manifest == "" then null else $manifest end),
+      sandbox_profile: (if $sandbox == "" then null else $sandbox end),
+      secret_scope: (if $secret_scope == "" then null else $secret_scope end),
+      tool_dialect: (if $tool_dialect == "" then null else $tool_dialect end),
+      block_for_event_strategy: (if $block_strategy == "" then null else $block_strategy end),
+      spawn_argv0: (if $spawn_argv0 == "" then null else $spawn_argv0 end)
+    }'
+}
+
+write_child_launch_context() {
+  local context_path="$1" chain_name="$2" issue="$3" host="$4" worktree="$5" issue_branch="$6" summary_path="$7" start_path="$8" launch_home="$9" codex_auth_home="${10:-}" spawn_argv0="${11:-}" capture_streams="${12:-false}"
+  local created_at host_profile env_shape worktree_exists start_exists summary_exists launch_home_status codex_auth_home_status tail_bytes
+  created_at=$(iso_ts_now)
+  tail_bytes=$(startup_tail_bytes)
+  host_profile=$(startup_host_profile_json "$host" "$spawn_argv0")
+  env_shape=$(startup_env_shape_json)
+  [ -d "$worktree" ] && worktree_exists=true || worktree_exists=false
+  [ -f "$start_path" ] && start_exists=true || start_exists=false
+  [ -f "$summary_path" ] && summary_exists=true || summary_exists=false
+  [ -n "$launch_home" ] && [ -d "$launch_home" ] && launch_home_status=present || launch_home_status=missing
+  case "$host" in
+    codex*|*codex*)
+      [ -n "$codex_auth_home" ] && [ -d "$codex_auth_home" ] && codex_auth_home_status=present || codex_auth_home_status=missing
+      ;;
+    *)
+      codex_auth_home_status=not_applicable
+      ;;
+  esac
+  mkdir -p "$(dirname "$context_path")"
+  jq -n \
+    --arg created_at "$created_at" \
+    --arg run_id "$RUN_ID" \
+    --arg chain "$chain_name" \
+    --arg issue "$issue" \
+    --arg host "$host" \
+    --arg worktree "$worktree" \
+    --arg issue_branch "$issue_branch" \
+    --arg summary_path "$summary_path" \
+    --arg start_path "$start_path" \
+    --arg launch_home "$launch_home" \
+    --arg launch_home_status "$launch_home_status" \
+    --arg codex_auth_home "$codex_auth_home" \
+    --arg codex_auth_home_status "$codex_auth_home_status" \
+    --argjson worktree_exists "$worktree_exists" \
+    --argjson start_exists "$start_exists" \
+    --argjson summary_exists "$summary_exists" \
+    --argjson host_profile "$host_profile" \
+    --argjson env_shape "$env_shape" \
+    --argjson capture_streams "$capture_streams" \
+    --argjson tail_bytes "$tail_bytes" \
+    '{
+      schema_version: 1,
+      kind: "chain-child-launch-context",
+      created_at: $created_at,
+      run_id: $run_id,
+      chain: $chain,
+      issue_number: ($issue | tonumber),
+      host: $host,
+      launch_stage: "pre_spawn",
+      cwd: $worktree,
+      cwd_exists: $worktree_exists,
+      issue_branch: $issue_branch,
+      worker_summary_path: $summary_path,
+      worker_summary_preexisting: $summary_exists,
+      task_start_envelope: $start_path,
+      task_start_envelope_written: $start_exists,
+      host_profile: $host_profile,
+      auth_profile: {
+        launch_home: (if $launch_home == "" then null else $launch_home end),
+        launch_home_status: $launch_home_status,
+        codex_auth_home: (if $codex_auth_home == "" then null else $codex_auth_home end),
+        codex_auth_home_status: $codex_auth_home_status
+      },
+      environment_shape: ($env_shape + {
+        explicit_env_keys: (["STUDIO_RUN_ID", "STUDIO_CHAIN_RUN_ID", "STUDIO_ISSUE_RUN_ID", "STUDIO_CHAIN_ARTIFACT_ROOT"]
+          + (if $launch_home == "" then [] else ["HOME"] end)
+          + (if $codex_auth_home == "" then [] else ["CODEX_HOME"] end)),
+        explicit_env_key_count: ((["STUDIO_RUN_ID", "STUDIO_CHAIN_RUN_ID", "STUDIO_ISSUE_RUN_ID", "STUDIO_CHAIN_ARTIFACT_ROOT"]
+          + (if $launch_home == "" then [] else ["HOME"] end)
+          + (if $codex_auth_home == "" then [] else ["CODEX_HOME"] end)) | length)
+      }),
+      stream_capture: {
+        enabled: $capture_streams,
+        mode: (if $capture_streams then "bounded-redacted-tail-on-failure" else "disabled" end),
+        tail_bytes: $tail_bytes,
+        tail_bytes_override_env: "STUDIO_CHAIN_STARTUP_TAIL_BYTES"
+      },
+      privacy: {
+        classification: "private-runtime",
+        full_env_persisted: false,
+        secret_values_persisted: false
+      }
+    }' > "$context_path"
+}
+
+update_child_launch_context_exit() {
+  local context_path="$1" exit_code="$2" exited_at stage tmp
+  [ -f "$context_path" ] || return 0
+  exited_at=$(iso_ts_now)
+  stage=child_exited
+  case "$exit_code" in
+    126|127) stage=spawn_failed ;;
+  esac
+  tmp="$context_path.$$"
+  jq \
+    --arg exited_at "$exited_at" \
+    --arg stage "$stage" \
+    --argjson exit_code "$exit_code" \
+    '.launch_stage = $stage
+     | .child_exit_code = $exit_code
+     | .child_exited_at = $exited_at' \
+    "$context_path" > "$tmp" && mv "$tmp" "$context_path"
+}
+
+run_child_with_optional_startup_capture() {
+  local capture_streams="$1" stdout_raw="$2" stderr_raw="$3"
+  shift 3
+  if [ "$capture_streams" = "true" ]; then
+    : > "$stdout_raw"
+    : > "$stderr_raw"
+    # Process-substitution tee preserves parent output, but stream flush is best-effort for fast child exits.
+    "$@" > >(tee "$stdout_raw") 2> >(tee "$stderr_raw" >&2)
+  else
+    "$@"
+  fi
+}
+
+startup_prompt_boundary_status() {
+  local session_telemetry_json="$1"
+  local status
+  status=$(printf '%s\n' "$session_telemetry_json" | jq -r '
+    if (.source // "") == "codex_session_log" and (.session_log_present // false) == true then "detected"
+    elif (.source // "") == "codex_session_log" and ((.reason_id // "") == "codex_session_log_not_found" or (.reason_id // "") == "codex_home_mismatch") then "not_detected"
+    elif (.source // "") == "none" or (.status // "") == "unsupported" then "unknown"
+    else "unknown" end
+  ' 2>/dev/null) || status=unknown
+  case "$status" in
+    detected|not_detected|unknown) printf '%s\n' "$status" ;;
+    *) printf 'unknown\n' ;;
+  esac
+}
+
+startup_failure_class_for_context() {
+  local summary_gap="$1" exit_code="$2" context_file="$3" session_telemetry_json="$4" stderr_tail="$5"
+  local prompt_status session_reason cwd_exists auth_status
+  if [ "$summary_gap" = "telemetry_artifact_malformed" ]; then
+    printf 'worker_summary_malformed\n'
+    return 0
+  fi
+  prompt_status=$(startup_prompt_boundary_status "$session_telemetry_json")
+  session_reason=$(printf '%s\n' "$session_telemetry_json" | jq -r '.reason_id // ""' 2>/dev/null || true)
+  cwd_exists=true
+  auth_status=""
+  if [ -f "$context_file" ]; then
+    cwd_exists=$(jq -r '.cwd_exists // true' "$context_file" 2>/dev/null || printf 'true')
+    auth_status=$(jq -r '.auth_profile.codex_auth_home_status // ""' "$context_file" 2>/dev/null || true)
+  fi
+  if [ "$cwd_exists" = "false" ] || [ "$auth_status" = "missing" ] || [ "$session_reason" = "codex_home_mismatch" ] || grep -Eiq 'auth[ _-]*home not found|auth unavailable|CODEX_HOME|credential|auth[ _-]*profile|codex[ _-]*profile|credential.*profile' "$stderr_tail" 2>/dev/null; then
+    printf 'cwd_auth_profile_mismatch\n'
+  elif [ "$exit_code" = "126" ] || [ "$exit_code" = "127" ] || grep -Eiq 'command not found|no such file or directory|permission denied' "$stderr_tail" 2>/dev/null; then
+    printf 'host_launch_failure\n'
+  elif [ "$prompt_status" = "detected" ]; then
+    printf 'worker_runtime_crash\n'
+  elif [ "$prompt_status" = "not_detected" ]; then
+    printf 'prompt_handoff_failure\n'
+  else
+    printf 'unknown\n'
+  fi
+}
+
+write_child_startup_diagnostics() {
+  local chain_name="$1" issue="$2" host="$3" worktree="$4" summary_path="$5" exit_code="$6" chain_run_id="$7" issue_run_id="$8" summary_gap="$9" session_telemetry_json="${10:-}"
+  local context_path artifact stdout_raw stderr_raw stdout_tail stderr_tail created_at prompt_status failure_class launch_stage tail_bytes
+  local stdout_tail_present=false stderr_tail_present=false stdout_bytes=0 stderr_bytes=0 context_json
+  context_path=$(startup_launch_context_path "$issue_run_id")
+  artifact=$(startup_diagnostics_artifact_path "$issue_run_id")
+  stdout_raw=$(startup_stdout_raw_path "$issue_run_id")
+  stderr_raw=$(startup_stderr_raw_path "$issue_run_id")
+  stdout_tail=$(startup_stdout_tail_path "$issue_run_id")
+  stderr_tail=$(startup_stderr_tail_path "$issue_run_id")
+  created_at=$(iso_ts_now)
+  tail_bytes=$(startup_tail_bytes)
+  mkdir -p "$STARTUP_DIAGNOSTICS_ROOT"
+  [ -n "$session_telemetry_json" ] || session_telemetry_json="{}"
+  if ! printf '%s\n' "$session_telemetry_json" | jq -e . >/dev/null 2>&1; then
+    session_telemetry_json="{}"
+  fi
+
+  if startup_write_tail_artifact "$stdout_raw" "$stdout_tail"; then
+    stdout_tail_present=true
+    stdout_bytes=$(wc -c < "$stdout_tail" | tr -d ' ')
+  fi
+  if startup_write_tail_artifact "$stderr_raw" "$stderr_tail"; then
+    stderr_tail_present=true
+    stderr_bytes=$(wc -c < "$stderr_tail" | tr -d ' ')
+  fi
+  rm -f "$stdout_raw" "$stderr_raw" 2>/dev/null || true
+
+  prompt_status=$(startup_prompt_boundary_status "$session_telemetry_json")
+  failure_class=$(startup_failure_class_for_context "$summary_gap" "$exit_code" "$context_path" "$session_telemetry_json" "$stderr_tail")
+  if [ -f "$context_path" ] && jq -e . "$context_path" >/dev/null 2>&1; then
+    context_json=$(jq -c . "$context_path")
+    launch_stage=$(jq -r '.launch_stage // "child_exited"' "$context_path" 2>/dev/null || printf 'child_exited')
+  else
+    context_json="{}"
+    launch_stage=child_exited
+  fi
+
+  jq -n \
+    --arg created_at "$created_at" \
+    --arg run_id "$RUN_ID" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg chain "$chain_name" \
+    --arg issue "$issue" \
+    --arg host "$host" \
+    --arg worktree "$worktree" \
+    --arg summary_path "$summary_path" \
+    --arg summary_gap "$summary_gap" \
+    --arg failure_class "$failure_class" \
+    --arg launch_stage "$launch_stage" \
+    --arg prompt_status "$prompt_status" \
+    --arg context_path "$context_path" \
+    --arg stdout_tail "$stdout_tail" \
+    --arg stderr_tail "$stderr_tail" \
+    --argjson stdout_tail_present "$stdout_tail_present" \
+    --argjson stderr_tail_present "$stderr_tail_present" \
+    --argjson stdout_bytes "$stdout_bytes" \
+    --argjson stderr_bytes "$stderr_bytes" \
+    --argjson exit_code "$exit_code" \
+    --argjson context "$context_json" \
+    --argjson session_telemetry "$session_telemetry_json" \
+    --argjson tail_bytes "$tail_bytes" \
+    '{
+      schema_version: 1,
+      kind: "chain-child-startup-diagnostics",
+      created_at: $created_at,
+      run_id: $run_id,
+      chain_run_id: $chain_run_id,
+      issue_run_id: $issue_run_id,
+      chain: $chain,
+      issue_number: ($issue | tonumber),
+      host: $host,
+      startup_failure_class: $failure_class,
+      launch_stage: $launch_stage,
+      exit_code: $exit_code,
+      summary_validation: $summary_gap,
+      cwd: $worktree,
+      worker_summary_path: $summary_path,
+      launch_context_artifact: $context_path,
+      host_profile: ($context.host_profile // {host:$host}),
+      auth_profile: ($context.auth_profile // {}),
+      environment_shape: (($context.environment_shape // {}) + {full_env_persisted:false, secret_values_persisted:false}),
+      prompt_boundary: {
+        status: $prompt_status,
+        detector: ($session_telemetry.source // "none"),
+        reason_id: ($session_telemetry.reason_id // null)
+      },
+      worker_start_boundary: {
+        status: (if $prompt_status == "detected" then "observed" elif $prompt_status == "not_detected" then "not_detected" else "unknown" end),
+        detector: ($session_telemetry.source // "none")
+      },
+      streams: {
+        stdout: {
+          tail_artifact: (if $stdout_tail_present then $stdout_tail else null end),
+          tail_bytes: $stdout_bytes,
+          tail_limit_bytes: $tail_bytes,
+          synchronization: "best_effort",
+          redacted: true,
+          full_log_retained: false
+        },
+        stderr: {
+          tail_artifact: (if $stderr_tail_present then $stderr_tail else null end),
+          tail_bytes: $stderr_bytes,
+          tail_limit_bytes: $tail_bytes,
+          synchronization: "best_effort",
+          redacted: true,
+          full_log_retained: false
+        }
+      },
+      telemetry_extraction: $session_telemetry,
+      public_summary: {
+        failure_class: $failure_class,
+        launch_stage: $launch_stage,
+        prompt_boundary_status: $prompt_status
+      },
+      privacy: {
+        classification: "private-runtime",
+        full_env_persisted: false,
+        secret_values_persisted: false,
+        stream_tails_redacted: true,
+        public_outputs_use_abstract_failure_class: true
+      }
+    }' > "$artifact"
+
+  printf '%s\n' "$artifact"
+}
+
+cleanup_child_startup_capture_artifacts() {
+  local issue_run_id="$1"
+  rm -f "$(startup_stdout_raw_path "$issue_run_id")" "$(startup_stderr_raw_path "$issue_run_id")" 2>/dev/null || true
+  if [ ! -f "$(startup_diagnostics_artifact_path "$issue_run_id")" ]; then
+    rm -f \
+      "$(startup_launch_context_path "$issue_run_id")" \
+      "$(startup_stdout_tail_path "$issue_run_id")" \
+      "$(startup_stderr_tail_path "$issue_run_id")" 2>/dev/null || true
+  fi
+}
+
+startup_halt_details_json() {
+  local summary_file="$1"
+  jq -c '
+    {
+      startup_diagnostics_artifact: (.startup_diagnostics.artifact // .startup_diagnostics_artifact // null),
+      startup_failure_class: (.startup_diagnostics.failure_class // .startup_failure_class // null),
+      startup_launch_stage: (.startup_diagnostics.launch_stage // null),
+      prompt_boundary_status: (.startup_diagnostics.prompt_boundary_status // null),
+      stdout_tail_artifact: (.startup_diagnostics.stdout_tail_artifact // null),
+      stderr_tail_artifact: (.startup_diagnostics.stderr_tail_artifact // null)
+    }
+    | with_entries(select(.value != null))
+  ' "$summary_file" 2>/dev/null || printf '{}\n'
+}
+
 codex_home_for_worker() {
   local launch_home="$1"
   if [ -n "${CODEX_WORKER_HOME:-}" ]; then
@@ -2579,6 +3024,7 @@ ingest_worker_summary() {
   local summary_path="$worktree/.studio/chain-worker-summary.json"
   local dest="$SUMMARY_ROOT/${chain_name}-issue-${issue}-${issue_run_id}.json"
   local ended_at created_at duration_s stats changed_artifacts session_telemetry_json worktree_state next_safe_action
+  local startup_diagnostics_file startup_diagnostics_json startup_failure_class startup_launch_stage startup_prompt_boundary
   ended_at=$(now_epoch)
   created_at=$(iso_ts_now)
   duration_s=$(duration_since "$started_at" "$ended_at")
@@ -2742,6 +3188,9 @@ ingest_worker_summary() {
           + (if has_checks then [] else [{gap_kind:"tests_lints_builds", reason_id:"worker_summary_check_data_absent", source:"worker_summary", status:"missing"}] end))
           | unique_by(gap_reason_key))
       }' "$summary_path" > "$dest"
+    if declare -F cleanup_child_startup_capture_artifacts >/dev/null 2>&1; then
+      cleanup_child_startup_capture_artifacts "$issue_run_id"
+    fi
     emit_chain_event chain_worker_summary_ingested "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed "$duration_s" \
       "$(jq -cn --arg summary "$dest" '{summary:$summary, validation:"valid"}')"
   else
@@ -2756,6 +3205,16 @@ ingest_worker_summary() {
     if chain_git_parent_finalize_has_public_diff "$worktree"; then
       worktree_state="dirty"
       next_safe_action="preserve the issue worktree and inspect uncommitted changes before retry"
+    fi
+    startup_diagnostics_file=$(write_child_startup_diagnostics "$chain_name" "$issue" "$host" "$worktree" "$summary_path" "$exit_code" "$chain_run_id" "$issue_run_id" "$summary_gap" "$session_telemetry_json")
+    startup_diagnostics_json=$(jq -c . "$startup_diagnostics_file" 2>/dev/null || printf '{}')
+    startup_failure_class=$(printf '%s\n' "$startup_diagnostics_json" | jq -r '.startup_failure_class // "unknown"' 2>/dev/null || printf 'unknown')
+    startup_launch_stage=$(printf '%s\n' "$startup_diagnostics_json" | jq -r '.launch_stage // "unknown"' 2>/dev/null || printf 'unknown')
+    startup_prompt_boundary=$(printf '%s\n' "$startup_diagnostics_json" | jq -r '.prompt_boundary.status // "unknown"' 2>/dev/null || printf 'unknown')
+    if [ "$worktree_state" = "dirty" ]; then
+      next_safe_action="inspect startup diagnostics at $startup_diagnostics_file and preserve the issue worktree before retry or resume"
+    else
+      next_safe_action="inspect startup diagnostics at $startup_diagnostics_file before retry or resume"
     fi
     jq -n \
       --arg run_id "$RUN_ID" \
@@ -2774,6 +3233,11 @@ ingest_worker_summary() {
       --arg summary_gap "$summary_gap" \
       --arg worktree_state "$worktree_state" \
       --arg next_safe_action "$next_safe_action" \
+      --arg startup_diagnostics_file "$startup_diagnostics_file" \
+      --arg startup_failure_class "$startup_failure_class" \
+      --arg startup_launch_stage "$startup_launch_stage" \
+      --arg startup_prompt_boundary "$startup_prompt_boundary" \
+      --argjson startup_diagnostics "$startup_diagnostics_json" \
       --argjson session_telemetry "$session_telemetry_json" \
       'def worker_telemetry_extraction:
          if (($session_telemetry.status // null) != null) then {
@@ -2822,10 +3286,21 @@ ingest_worker_summary() {
         builds: [],
         summary_validation: $summary_gap,
         worktree_state: $worktree_state,
+        startup_diagnostics_artifact: $startup_diagnostics_file,
+        startup_failure_class: $startup_failure_class,
+        startup_diagnostics: {
+          schema_version: ($startup_diagnostics.schema_version // 1),
+          artifact: $startup_diagnostics_file,
+          failure_class: $startup_failure_class,
+          launch_stage: $startup_launch_stage,
+          prompt_boundary_status: $startup_prompt_boundary,
+          stdout_tail_artifact: ($startup_diagnostics.streams.stdout.tail_artifact // null),
+          stderr_tail_artifact: ($startup_diagnostics.streams.stderr.tail_artifact // null)
+        },
         blocked_reason: (if $summary_gap == "worker_summary_missing"
           then "worker exited without writing .studio/chain-worker-summary.json"
           else "worker wrote malformed .studio/chain-worker-summary.json" end),
-        failure_summary: "Worker exited without a valid completion summary; parent synthesized this minimal failure summary from exit code, git state, and available telemetry.",
+        failure_summary: ("Worker exited without a valid completion summary; parent synthesized this minimal failure summary from exit code, git state, available telemetry, and startup diagnostics. startup_failure_class=" + $startup_failure_class),
         next_safe_action: $next_safe_action,
         tokens: ($session_telemetry.tokens // null),
         model: ($session_telemetry.model // null),
@@ -2885,7 +3360,7 @@ issue_failure_summary_text() {
     --argjson rc "$worker_rc" \
     --arg summary_file "$summary_file" \
     --arg worktree "$issue_worktree" \
-    '"issue #\($issue) worker failed: exit_code=\($rc); summary_status=\(.summary_validation // "valid"); worktree_state=\(.worktree_state // "unknown"); summary=\($summary_file); worktree=\($worktree); next_safe_action=\(.next_safe_action // "inspect the worker summary and halt record before resuming")"' \
+    '"issue #\($issue) worker failed: exit_code=\($rc); summary_status=\(.summary_validation // "valid"); startup_failure_class=\(.startup_diagnostics.failure_class // .startup_failure_class // "unknown"); startup_diagnostics=\(.startup_diagnostics.artifact // .startup_diagnostics_artifact // "missing"); worktree_state=\(.worktree_state // "unknown"); summary=\($summary_file); worktree=\($worktree); next_safe_action=\(.next_safe_action // "inspect the worker summary and halt record before resuming")"' \
     "$summary_file" 2>/dev/null \
     || printf 'issue #%s worker failed: exit_code=%s; summary=%s; worktree=%s' "$issue" "$worker_rc" "$summary_file" "$issue_worktree"
 }
@@ -3143,6 +3618,37 @@ generate_run_report() {
     else
       printf 'Validation failure summary unavailable: no event log was written.\n'
     fi
+    printf '\n## Startup Diagnostics\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        def cell($v):
+          if $v == null or $v == "" then "missing"
+          else ($v | tostring | gsub("\\|"; "\\|"))
+          end;
+        [
+          .[] |
+          select((.startup_diagnostics.artifact // .startup_diagnostics_artifact // null) != null)
+          | {
+              issue: (.issue_number // "unknown"),
+              failure_class: (.startup_diagnostics.failure_class // .startup_failure_class // "unknown"),
+              launch_stage: (.startup_diagnostics.launch_stage // "unknown"),
+              prompt_boundary: (.startup_diagnostics.prompt_boundary_status // "unknown"),
+              artifact: (.startup_diagnostics.artifact // .startup_diagnostics_artifact // null),
+              stdout_tail: (.startup_diagnostics.stdout_tail_artifact // null),
+              stderr_tail: (.startup_diagnostics.stderr_tail_artifact // null)
+            }
+        ] as $rows |
+        if ($rows | length) == 0 then
+          "No child startup diagnostics were recorded."
+        else
+          "| Issue | Failure Class | Launch Stage | Prompt Boundary | Artifact | Stdout Tail | Stderr Tail |",
+          "|---:|---|---|---|---|---|---|",
+          ($rows[] | "| #\(cell(.issue)) | \(cell(.failure_class)) | \(cell(.launch_stage)) | \(cell(.prompt_boundary)) | \(cell(.artifact)) | \(cell(.stdout_tail)) | \(cell(.stderr_tail)) |")
+        end
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf 'No child startup diagnostics were recorded.\n'
+    fi
     printf '\n## Quality Signals\n\n'
     if [ "$summary_count" -gt 0 ]; then
       jq -r -s '
@@ -3356,6 +3862,7 @@ generate_run_report() {
     printf -- '- Event log: `%s`\n' "${EVENTS_JSONL:-missing}"
     printf -- '- Worker summaries: `%s`\n' "${SUMMARY_ROOT:-missing}"
     printf -- '- Halt records: `%s`\n' "${HALT_ROOT:-missing}"
+    printf -- '- Startup diagnostics: `%s`\n' "${STARTUP_DIAGNOSTICS_ROOT:-missing}"
     printf -- '- Decision escrows: `%s`\n' "${ESCROW_ROOT:-missing}"
     printf -- '- Phase reviews: `%s`\n\n' "${PHASE_REVIEW_ROOT:-missing}"
     printf 'This report is private local telemetry under `~/.dev-studio/generic-dev-studio/chain-runs/`. Public PR and issue comments should include run IDs, PR URLs, issue numbers, and abstract gap names only, not private project file paths or velocity details.\n'
@@ -5185,6 +5692,7 @@ chain_count=$(jq '.chains | length' "$PLAN_JSON")
 execute_issue_session() {
   local chain_name="$1" chain_branch="$2" issue="$3" host="$4" git_metadata_strategy="$5" worktree="$6" issue_branch="$7" chain_run_id="$8" issue_run_id="$9" before="${10}" phase_review_context="${11:-[]}" rule_pack_resolution="${12:-null}"
   local issue_json issue_title issue_body spawn prompt summary_path start_path source_branch chain_artifact_root tool_preflight_prompt
+  local startup_context stdout_raw stderr_raw capture_streams child_rc restore_errexit
   local -a spawn_argv
   local launch_home="" codex_auth_home=""
 
@@ -5208,6 +5716,16 @@ execute_issue_session() {
   case "$host" in
     codex*|*codex*) codex_auth_home=$(codex_auth_home_for_worker_launch "$launch_home") ;;
   esac
+  capture_streams=false
+  if startup_capture_enabled; then
+    capture_streams=true
+  fi
+  startup_context=$(startup_launch_context_path "$issue_run_id")
+  stdout_raw=$(startup_stdout_raw_path "$issue_run_id")
+  stderr_raw=$(startup_stderr_raw_path "$issue_run_id")
+  if [ "$DRY_RUN" -eq 0 ]; then
+    write_child_launch_context "$startup_context" "$chain_name" "$issue" "$host" "$worktree" "$issue_branch" "$summary_path" "$start_path" "$launch_home" "$codex_auth_home" "${spawn_argv[0]:-}" "$capture_streams"
+  fi
 
   prompt=$(cat <<EOF
 Implement this studio issue in a fresh chain-runner session.
@@ -5302,9 +5820,15 @@ EOF
     return 0
   fi
 
+  restore_errexit=0
+  case "$-" in
+    *e*) restore_errexit=1; set +e ;;
+  esac
+
   if [ -n "$launch_home" ] && [ -d "$launch_home" ]; then
     if [ -n "$codex_auth_home" ]; then
-      (cd "$worktree" && env \
+      (cd "$worktree" && run_child_with_optional_startup_capture "$capture_streams" "$stdout_raw" "$stderr_raw" \
+        env \
         HOME="$launch_home" \
         CODEX_HOME="$codex_auth_home" \
         STUDIO_RUN_ID="$RUN_ID" \
@@ -5312,33 +5836,45 @@ EOF
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
         STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
         "${spawn_argv[@]}" "$prompt")
+      child_rc=$?
     else
-      (cd "$worktree" && env \
+      (cd "$worktree" && run_child_with_optional_startup_capture "$capture_streams" "$stdout_raw" "$stderr_raw" \
+        env \
         HOME="$launch_home" \
         STUDIO_RUN_ID="$RUN_ID" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
         STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
         "${spawn_argv[@]}" "$prompt")
+      child_rc=$?
     fi
   else
     if [ -n "$codex_auth_home" ]; then
-      (cd "$worktree" && env \
+      (cd "$worktree" && run_child_with_optional_startup_capture "$capture_streams" "$stdout_raw" "$stderr_raw" \
+        env \
         CODEX_HOME="$codex_auth_home" \
         STUDIO_RUN_ID="$RUN_ID" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
         STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
         "${spawn_argv[@]}" "$prompt")
+      child_rc=$?
     else
-      (cd "$worktree" && env \
+      (cd "$worktree" && run_child_with_optional_startup_capture "$capture_streams" "$stdout_raw" "$stderr_raw" \
+        env \
         STUDIO_RUN_ID="$RUN_ID" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
         STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
         "${spawn_argv[@]}" "$prompt")
+      child_rc=$?
     fi
   fi
+  if [ "$restore_errexit" -eq 1 ]; then
+    set -e
+  fi
+  update_child_launch_context_exit "$startup_context" "$child_rc"
+  return "$child_rc"
 }
 
 finalize_chain_pr() {
@@ -5598,6 +6134,7 @@ write_issue_phase_outcome_artifact() {
 run_issue_job() {
   local name="$1" branch="$2" chain_worktree="$3" issue="$4" host="$5" git_metadata_strategy="$6" issue_worktree="$7" issue_branch="$8" chain_run_id="$9" issue_run_id="${10}" result_file="${11}" phase_review_mode="${12:-auto}" issue_count_for_review="${13:-1}"
   local before after worker_rc child_worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason parent_finalized effective_worker_rc failure_summary
+  local halt_details_json halt_next_safe_action
   local phase_context boundary_id phase_plan_artifact phase_outcome_artifact phase_review_rc phase_review_reason worker_telemetry_file worker_launch_home rule_pack_resolution phase_issue_json
   local auto_retry_performed
   issue_started_at=$(now_epoch)
@@ -5794,7 +6331,9 @@ run_issue_job() {
       child_reason_id=$(halt_reason_for_text "${child_blocked_reason:-worker exited $worker_rc}")
     fi
     failure_summary=$(issue_failure_summary_text "$issue" "$worker_rc" "$summary_file" "$issue_worktree")
-    write_halt_record "$child_reason_id" "$failure_summary" "$chain_run_id" "$issue_run_id" "$name" "$issue" "child-worker" >/dev/null || log "halt record write failed for issue #$issue"
+    halt_details_json=$(startup_halt_details_json "$summary_file")
+    halt_next_safe_action=$(jq -r '.next_safe_action // empty' "$summary_file" 2>/dev/null || true)
+    write_halt_record "$child_reason_id" "$failure_summary" "$chain_run_id" "$issue_run_id" "$name" "$issue" "child-worker" "$halt_details_json" "$halt_next_safe_action" >/dev/null || log "halt record write failed for issue #$issue"
     emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" "$summary_payload"
     mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "worker_exited_$worker_rc"
     mark_issue_exit_code "$issue_run_id" "$worker_rc"
