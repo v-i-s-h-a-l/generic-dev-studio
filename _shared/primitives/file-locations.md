@@ -66,6 +66,7 @@ Phase 2.6 introduced a uniform per-artifact YAML layout under `plans/` + a singl
 | Crash artifacts | `~/.dev-studio/<project>/plans/crashes/<crash-id>.yaml` | `_shared/schemas/crash.md` |
 | Event log | `~/.dev-studio/<project>/events/<YYYY-MM-DD>.jsonl` | `_shared/contracts/events.md` |
 | Events index | `~/.dev-studio/<project>/events/index.yaml` | — |
+| Chain manifest registry | `~/.dev-studio/<project>/chain-manifests/` | `_shared/contracts/chain-manifest-registry.md` |
 | Pre-migration archive | `~/.dev-studio/<project>/archive/2026-pre-2.6/` | frozen |
 | Worktrees | `~/.dev-studio/<project>/worktrees/<task-id>/` | — |
 | Locks | `~/.dev-studio/<project>/locks/` | — |
