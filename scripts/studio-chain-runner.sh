@@ -30,6 +30,9 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 CALLER_HOME="${HOME:-}"
 TARGET_REPO_ROOT=""
+REPO_SLUG_DEFAULT="v-i-s-h-a-l/generic-dev-studio"
+REPO_SLUG="$REPO_SLUG_DEFAULT"
+RUN_PATHS_CONFIGURED=0
 
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
@@ -233,9 +236,104 @@ EOF
   rm -f "$rows_tmp"
 }
 
+manifest_diagnostics_json() {
+  local manifest="$1" manifest_json
+  if ! manifest_json=$(yq -o=json '.' "$manifest" 2>/dev/null); then
+    jq -cn --arg manifest "$manifest" '{
+      status: "schema_mismatch",
+      reason_id: "manifest_schema_mismatch",
+      reason: "manifest is not parseable YAML or JSON",
+      manifest: $manifest
+    }'
+    return 0
+  fi
+
+  printf '%s\n' "$manifest_json" | jq -c --arg manifest "$manifest" '
+    def issue_entry_valid:
+      (type == "number" and . >= 1) or
+      (type == "object" and (((.number? // .issue?) | type) == "number") and ((.number? // .issue?) >= 1));
+    def chain_valid:
+      type == "object"
+      and ((.name? | type) == "string")
+      and ((.name? | length) > 0)
+      and ((.issues? | type) == "array")
+      and ((.issues? | length) > 0)
+      and ([.issues[]? | select(issue_entry_valid | not)] | length) == 0;
+    def planning_markers:
+      ((.nodes? | type) == "array")
+      or ((.tasks? | type) == "array")
+      or ((.ready_node_ids? | type) == "array")
+      or ((.validation? | type) == "object")
+      or ((.requirements? | type) == "array")
+      or ((.work_items? | type) == "array")
+      or ((.kind? // "" | tostring) | test("task-graph|requirement|planner|planning|work-chain-plan|chain-plan"; "i"))
+      or ((.artifact_kind? // "" | tostring) | test("task-graph|requirement|planner|planning"; "i"));
+    def runnable:
+      .schema_version == 1
+      and ((.chains? | type) == "array")
+      and ((.chains? | length) > 0)
+      and ([.chains[]? | select(chain_valid | not)] | length) == 0;
+    def mismatch_reason:
+      if .schema_version != 1 then "schema_version must be 1"
+      elif ((.chains? | type) != "array") then "missing chains[] runnable chain list"
+      elif ((.chains? | length) == 0) then "chains[] must contain at least one runnable chain"
+      elif ([.chains[]? | select(((.name? | type) != "string") or ((.name? | length) == 0))] | length) > 0 then "each chain must have a non-empty name"
+      elif ([.chains[]? | select(((.issues? | type) != "array") or ((.issues? | length) == 0))] | length) > 0 then "each chain must map to chains[].issues[] GitHub issue numbers"
+      elif ([.chains[]?.issues[]? | select(issue_entry_valid | not)] | length) > 0 then "chains[].issues[] entries must be issue numbers or objects with number/issue"
+      else "manifest does not match chain-manifest@1"
+      end;
+    if runnable then {
+      status: "runnable",
+      reason_id: null,
+      reason: "runner-compatible chain manifest",
+      manifest: $manifest
+    }
+    elif planning_markers then {
+      status: "planning",
+      reason_id: "manifest_schema_mismatch",
+      reason: "planning manifest is not executable by the issue-backed chain runner",
+      manifest: $manifest
+    }
+    else {
+      status: "schema_mismatch",
+      reason_id: "manifest_schema_mismatch",
+      reason: mismatch_reason,
+      manifest: $manifest
+    }
+    end
+  '
+}
+
+print_manifest_preflight_failure() {
+  local diagnostics="$1" status reason manifest
+  status=$(jq -r '.status' <<<"$diagnostics")
+  reason=$(jq -r '.reason' <<<"$diagnostics")
+  manifest=$(jq -r '.manifest' <<<"$diagnostics")
+
+  printf 'studio-chain-runner: manifest/schema mismatch: %s\n' "$reason" >&2
+  printf 'studio-chain-runner: manifest: %s\n' "$manifest" >&2
+  if [ "$status" = "planning" ]; then
+    printf 'studio-chain-runner: planning artifacts must be converted before execution: create or map GitHub issues for each task, then write a runner manifest with schema_version: 1, chains[].issues[] issue numbers, target_repo_root, and issue_repo: owner/repo.\n' >&2
+  else
+    printf 'studio-chain-runner: runnable manifests must follow chain-manifest@1 with schema_version: 1 and non-empty chains[].issues[] issue numbers.\n' >&2
+  fi
+}
+
+preflight_runnable_manifest() {
+  local manifest="$1" diagnostics status
+  diagnostics=$(manifest_diagnostics_json "$manifest")
+  status=$(jq -r '.status' <<<"$diagnostics")
+  if [ "$status" != "runnable" ]; then
+    print_manifest_preflight_failure "$diagnostics"
+    return 2
+  fi
+  return 0
+}
+
 discover_chain_manifests() {
-  local manifest chain_count idx name issues command rel_manifest manifest_filter manifest_list_tmp rows_tmp candidate
+  local manifest chain_count idx name issues command rel_manifest manifest_filter manifest_list_tmp rows_tmp nonrunnable_tmp candidate diagnostics status reason
   command -v yq >/dev/null 2>&1 || { printf 'studio-chain-runner: yq required\n' >&2; exit 2; }
+  command -v jq >/dev/null 2>&1 || { printf 'studio-chain-runner: jq required\n' >&2; exit 2; }
   printf '\n## Runnable Work Chains\n\n'
   if [ ! -d "$REPO_ROOT/chains" ]; then
     printf -- '- No chain manifests found under `%s`.\n' "$REPO_ROOT/chains"
@@ -266,10 +364,20 @@ discover_chain_manifests() {
   fi
 
   rows_tmp=$(mktemp -t studio-chain-discovery-chains.XXXXXX)
+  nonrunnable_tmp=$(mktemp -t studio-chain-discovery-nonrunnable.XXXXXX)
   while IFS= read -r manifest; do
     [ -n "$manifest" ] || continue
     [ -f "$manifest" ] || continue
     rel_manifest=${manifest#"$REPO_ROOT/"}
+    diagnostics=$(manifest_diagnostics_json "$manifest")
+    status=$(jq -r '.status' <<<"$diagnostics")
+    if [ "$status" != "runnable" ]; then
+      if [ -n "$manifest_filter" ]; then
+        reason=$(jq -r '.reason' <<<"$diagnostics")
+        printf '| `%s` | `%s` | `%s` |\n' "$rel_manifest" "$status" "$reason" >> "$nonrunnable_tmp"
+      fi
+      continue
+    fi
     chain_count=$(yq -r '.chains | length' "$manifest" 2>/dev/null || printf '0')
     case "$chain_count" in
       ''|null|*[!0-9]*|0) continue ;;
@@ -286,12 +394,20 @@ discover_chain_manifests() {
   if [ ! -s "$rows_tmp" ]; then
     printf -- '- No runnable work chains matched the current filter.\n'
     rm -f "$rows_tmp"
+    if [ -s "$nonrunnable_tmp" ]; then
+      printf '\n## Non-Runnable Manifest Matches\n\n'
+      printf '| Manifest | Classification | Reason |\n'
+      printf '|---|---|---|\n'
+      cat "$nonrunnable_tmp"
+      printf '\nPlanning artifacts must be converted before execution: create or map GitHub issues for each task, then write a runner manifest with `schema_version: 1`, `chains[].issues[]` issue numbers, `target_repo_root`, and `issue_repo: owner/repo`.\n'
+    fi
+    rm -f "$nonrunnable_tmp"
     return 0
   fi
   printf '| Manifest | Chain | Issues | Suggested command |\n'
   printf '|---|---|---|---|\n'
   cat "$rows_tmp"
-  rm -f "$rows_tmp"
+  rm -f "$rows_tmp" "$nonrunnable_tmp"
 }
 
 print_discovery() {
@@ -340,9 +456,7 @@ esac
 
 command -v yq >/dev/null 2>&1 || { printf 'studio-chain-runner: yq required\n' >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || { printf 'studio-chain-runner: jq required\n' >&2; exit 2; }
-command -v gh >/dev/null 2>&1 || { printf 'studio-chain-runner: gh required\n' >&2; exit 2; }
 
-REPO_SLUG="v-i-s-h-a-l/generic-dev-studio"
 RUN_ROOT="${TMPDIR:-/tmp}/studio-chain-runner"
 mkdir -p "$RUN_ROOT"
 FINAL_PR_URL=""
@@ -389,9 +503,8 @@ configure_run_paths() {
   else
     EVENTS_JSONL="/dev/null"
   fi
+  RUN_PATHS_CONFIGURED=1
 }
-
-configure_run_paths
 
 log() {
   printf 'studio-chain-runner: %s\n' "$*" >&2
@@ -571,6 +684,8 @@ write_run_state() {
   jq -n \
     --arg run_id "$RUN_ID" \
     --arg manifest "$MANIFEST" \
+    --arg target_repo_root "$TARGET_REPO_ROOT" \
+    --arg issue_repo "$REPO_SLUG" \
     --arg status "$status" \
     --arg started_at "$RUN_STARTED_TS" \
     --arg updated_at "$(iso_ts_now)" \
@@ -592,6 +707,8 @@ write_run_state() {
       schema_version: 1,
       run_id: $run_id,
       manifest: $manifest,
+      target_repo_root: $target_repo_root,
+      issue_repo: $issue_repo,
       status: $status,
       started_at: $started_at,
       updated_at: $updated_at,
@@ -911,7 +1028,7 @@ halt_class_for_reason() {
   case "$1" in
     github_auth_unavailable|github_home_mismatch|github_rate_limited|network_partition|child_timeout|disk_runtime_pressure)
       printf 'retryable\n' ;;
-    parent_host_unknown|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_crash|issue_body_changed|partial_github_operation|test_build_infra_unavailable|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|implementation_scope_blocked)
+    parent_host_unknown|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_crash|issue_body_changed|partial_github_operation|test_build_infra_unavailable|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|manifest_schema_mismatch|implementation_scope_blocked)
       printf 'recoverable\n' ;;
     reviewer_blocked|reviewer_ambiguous)
       printf 'review-needed\n' ;;
@@ -935,6 +1052,7 @@ halt_reason_for_text() {
     *rebase*|*base\ branch*) printf 'base_branch_advanced\n' ;;
     *worker_summary_missing*|*summary*missing*|*produced\ no\ runner\ result*) printf 'missing_child_summary\n' ;;
     *worker\ exited*|*unexpected_exit*) printf 'child_crash\n' ;;
+    *manifest/schema\ mismatch*|*planning\ manifest*|*chain-manifest*) printf 'manifest_schema_mismatch\n' ;;
     *gh\ issue\ close*|*PR\ telemetry\ comment*|*GitHub\ operation*) printf 'partial_github_operation\n' ;;
     *host\ preflight*|*test*infra*|*build*infra*) printf 'test_build_infra_unavailable\n' ;;
     *permission*) printf 'model_tool_permission_prompt\n' ;;
@@ -2200,7 +2318,7 @@ abort_run_with_reason() {
 
 finish_unexpected_exit() {
   local rc=$?
-  if [ "$rc" -ne 0 ] && [ "${RUN_FINISHED:-0}" != "1" ] && [ "${DRY_RUN:-0}" -eq 0 ]; then
+  if [ "$rc" -ne 0 ] && [ "${RUN_FINISHED:-0}" != "1" ] && [ "${DRY_RUN:-0}" -eq 0 ] && [ "${RUN_PATHS_CONFIGURED:-0}" -eq 1 ]; then
     write_halt_record "$(halt_reason_for_text "unexpected_exit_$rc")" "unexpected exit $rc" >/dev/null || log "halt record write failed for unexpected exit $rc"
     finish_run failed "unexpected_exit_$rc"
   fi
@@ -2280,6 +2398,37 @@ resolve_existing_path() {
   printf '%s/%s\n' "$dir" "$base_name"
 }
 
+github_repo_slug_from_hint() {
+  local hint="$1" slug owner repo
+  [ -n "$hint" ] && [ "$hint" != "null" ] || return 1
+  slug=$(printf '%s' "$hint" \
+    | sed -E 's#^[[:space:]]+|[[:space:]]+$##g; s#^git@github\.com:##; s#^ssh://git@github\.com/##; s#^https://github\.com/##; s#^http://github\.com/##; s#^git://github\.com/##; s#\.git$##; s#/$##')
+  case "$slug" in
+    */*)
+      owner=${slug%%/*}
+      repo=${slug#*/}
+      repo=${repo%%/*}
+      [ -n "$owner" ] && [ -n "$repo" ] || return 1
+      printf '%s/%s\n' "$owner" "$repo"
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+github_repo_slug_from_remote() {
+  local root="$1" remote
+  remote=$(git -C "$root" config --get remote.origin.url 2>/dev/null || true)
+  github_repo_slug_from_hint "$remote"
+}
+
+same_git_root() {
+  local a="$1" b="$2" a_root b_root
+  a_root=$(git -C "$a" rev-parse --show-toplevel 2>/dev/null || true)
+  b_root=$(git -C "$b" rev-parse --show-toplevel 2>/dev/null || true)
+  [ -n "$a_root" ] && [ -n "$b_root" ] && [ "$a_root" = "$b_root" ]
+}
+
 resolve_target_repo_root() {
   local manifest="${1:?usage: resolve_target_repo_root <manifest>}" manifest_dir hint env_hint root
   manifest_dir=$(cd "$(dirname "$manifest")" && pwd -P) || return 1
@@ -2308,6 +2457,44 @@ resolve_target_repo_root() {
     exit 2
   fi
   git -C "$root" rev-parse --show-toplevel
+}
+
+resolve_issue_repo_slug() {
+  local manifest="${1:?usage: resolve_issue_repo_slug <manifest> <target_repo_root>}" target_root="${2:?usage: resolve_issue_repo_slug <manifest> <target_repo_root>}"
+  local hint slug
+  hint=$(yq -r '.issue_repo // .repo.issue_repo // .repo.issue // .repo.slug // .repo.name_with_owner // .github.repository // .github.repo // ""' "$manifest" 2>/dev/null || true)
+  if [ -n "$hint" ] && [ "$hint" != "null" ]; then
+    slug=$(github_repo_slug_from_hint "$hint" || true)
+    if [ -z "$slug" ]; then
+      printf 'studio-chain-runner: issue_repo must be a GitHub owner/repo slug or github.com URL: %s\n' "$hint" >&2
+      exit 2
+    fi
+    printf '%s\n' "$slug"
+    return 0
+  fi
+
+  slug=$(github_repo_slug_from_remote "$target_root" || true)
+  if [ -n "$slug" ]; then
+    printf '%s\n' "$slug"
+    return 0
+  fi
+
+  if same_git_root "$target_root" "$REPO_ROOT"; then
+    printf '%s\n' "$REPO_SLUG_DEFAULT"
+    return 0
+  fi
+
+  printf 'studio-chain-runner: issue repository is not explicit and could not be resolved for target repo root: %s\n' "$target_root" >&2
+  printf 'studio-chain-runner: add issue_repo: owner/repo to the manifest, set repo.issue_repo, or configure origin to a GitHub repository before execution.\n' >&2
+  exit 2
+}
+
+resolve_new_run_manifest_context() {
+  MANIFEST=$(resolve_manifest "$MANIFEST")
+  MANIFEST=$(canonical_path "$MANIFEST")
+  preflight_runnable_manifest "$MANIFEST"
+  TARGET_REPO_ROOT=$(resolve_target_repo_root "$MANIFEST")
+  REPO_SLUG=$(resolve_issue_repo_slug "$MANIFEST" "$TARGET_REPO_ROOT")
 }
 
 state_manifest_matches() {
@@ -2507,7 +2694,8 @@ acquire_state_lock() {
 supervisor_decide_next() {
   local manifest="$1" mode="$2" states completed=0 eligible=0 hard_stop=0 escrow=0
   local state run_id selected_state="" selected_run_id="" candidates_json action reason_id
-  MANIFEST=$(canonical_path "$(resolve_manifest "$manifest")")
+  MANIFEST="$manifest"
+  resolve_new_run_manifest_context
   states=$(supervisor_matching_states "$MANIFEST" || true)
   candidates_json='[]'
   while IFS= read -r state; do
@@ -2963,6 +3151,7 @@ build_plan_json() {
     --arg run_id "$RUN_ID" \
     --arg manifest "$MANIFEST" \
     --arg target_repo_root "$TARGET_REPO_ROOT" \
+    --arg issue_repo "$REPO_SLUG" \
     --arg only_chain "$ONLY_CHAIN" \
     --arg host_override "$HOST_OVERRIDE" \
     --arg parallel_chains "$PARALLEL_CHAINS" \
@@ -2976,6 +3165,7 @@ build_plan_json() {
       run_id:$run_id,
       manifest:$manifest,
       target_repo_root:$target_repo_root,
+      issue_repo:$issue_repo,
       only_chain:(if $only_chain == "" then null else $only_chain end),
       host_override:(if $host_override == "" then null else $host_override end),
       parallel_chains:$parallel_chains,
@@ -3263,6 +3453,7 @@ explain_plan() {
   printf -- '- Run UUID: `%s`\n' "$RUN_ID"
   printf -- '- Manifest: `%s`\n' "$MANIFEST"
   printf -- '- Target repo root: `%s`\n' "$TARGET_REPO_ROOT"
+  printf -- '- Issue repo: `%s`\n' "$(jq -r '.issue_repo // "unknown"' "$plan")"
   printf -- '- State: `%s`\n' "$RUN_STATE_JSON"
   printf -- '- Parallel chains: `%s` effective `%s`\n' "$PARALLEL_CHAINS" "$effective_parallel"
   printf -- '- Execution mode: `%s`\n' "$execution_mode"
@@ -3338,13 +3529,15 @@ prepare_plan() {
       printf 'studio-chain-runner: target repo root is not a git checkout: %s\n' "$TARGET_REPO_ROOT" >&2
       exit 2
     fi
+    REPO_SLUG=$(jq -r '.issue_repo // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
+    [ -n "$REPO_SLUG" ] || REPO_SLUG=$(resolve_issue_repo_slug "$MANIFEST" "$TARGET_REPO_ROOT")
     cp "$RUN_STATE_JSON" "$PLAN_JSON"
-    jq --arg target_repo_root "$TARGET_REPO_ROOT" '.target_repo_root = $target_repo_root' "$PLAN_JSON" > "$PLAN_JSON.tmp.$$"
+    jq --arg target_repo_root "$TARGET_REPO_ROOT" --arg issue_repo "$REPO_SLUG" '.target_repo_root = $target_repo_root | .issue_repo = $issue_repo' "$PLAN_JSON" > "$PLAN_JSON.tmp.$$"
     mv "$PLAN_JSON.tmp.$$" "$PLAN_JSON"
   else
-    MANIFEST=$(resolve_manifest "$MANIFEST")
-    MANIFEST=$(canonical_path "$MANIFEST")
-    TARGET_REPO_ROOT=$(resolve_target_repo_root "$MANIFEST")
+    if [ -z "$TARGET_REPO_ROOT" ]; then
+      resolve_new_run_manifest_context
+    fi
     build_plan_json "$PLAN_JSON"
   fi
   attach_rule_pack_resolutions "$PLAN_JSON"
@@ -3381,9 +3574,15 @@ if [ -n "$RESUME_ID" ]; then
   if [ "$YES" -eq 1 ]; then
     acquire_state_lock
   fi
-elif [ "$YES" -eq 1 ]; then
-  acquire_state_lock
+else
+  resolve_new_run_manifest_context
+  configure_run_paths
+  if [ "$YES" -eq 1 ]; then
+    acquire_state_lock
+  fi
 fi
+
+command -v gh >/dev/null 2>&1 || { printf 'studio-chain-runner: gh required\n' >&2; exit 2; }
 
 chain_artifact_hygiene_sweep
 prepare_plan
