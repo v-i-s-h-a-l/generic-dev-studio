@@ -338,6 +338,12 @@ and integrates completed leaves back into that same manager-owned branch before
 the final PR targets the manifest base. Leaf sessions should not retarget
 themselves to `main` or another integration branch.
 
+Before a chain run starts, `manager work-chain` rejects planning artifacts and
+schema-mismatched YAML with a manifest/schema mismatch explanation. Runnable
+project-scoped manifests must map tasks to GitHub issue numbers in
+`chains[].issues[]` and either declare `issue_repo: owner/repo` or let the
+target repo remote resolve to GitHub.
+
 The default leaf integration strategy is `sync_strategy: rebase`: the runner
 rebases the issue leaf onto the current chain branch and fast-forwards the chain
 branch. `sync_strategy: squash` is opt-in for release-bearing chains that need a
