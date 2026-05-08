@@ -327,6 +327,9 @@
         "functionality_delivered": {
           "$ref": "#/$defs/narrative"
         },
+        "user_visible_change": {
+          "$ref": "#/$defs/narrative"
+        },
         "refactoring_needed_now": {
           "type": "array",
           "items": {
