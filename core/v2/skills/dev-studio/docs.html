@@ -544,9 +544,10 @@ scripts/manager-chain-monitor.sh status --project generic-dev-studio --json</cod
           </article>
           <article class="role">
             <h3>Release Handoff</h3>
-            <p>Use the wrapper as the operator path. TestFlight Slack drafting and reporter tagging stay with <code>/pushTFBuild</code>; App Store copy approval stays with <code>/fullSendToAppStore</code>. The script owns GitHub, ASC, configured Slack, artifact, and PR handoff after approval.</p>
+            <p>Use the wrapper as the operator path. TestFlight Slack drafting runs through <code>scripts/studio-tf-slack.sh</code> for durable draft artifacts, format lint, approval-gated posting, and release events; App Store copy approval stays with <code>/fullSendToAppStore</code>.</p>
             <code class="shell">/dev-studio release-manager tf-push --background
 /fullSendToAppStore
+scripts/studio-tf-slack.sh draft --context ctx.json --commits commits.txt
 scripts/studio-tf-push.sh appstore --build N --version X.Y.Z --release-notes-file notes.txt --whatsnew-file whatsnew.txt</code>
           </article>
           <article class="role">
@@ -826,7 +827,7 @@ scripts/v2-multispawn-pilot.sh run</code>
           </article>
           <article class="role">
             <h3>release-manager</h3>
-            <p>Assembles release readiness, blocker state, notes, tag state, TestFlight/App Store state, and approval gates. Live Slack/GitHub/App Store handoff uses the release wrappers and backend scripts after approval.</p>
+            <p>Assembles release readiness, blocker state, notes, tag state, TestFlight/App Store state, and approval gates. TestFlight Slack handoff is script-backed for draft artifacts, lint, approval, posting, and release events.</p>
             <div class="meta"><span class="pill status-contract">approval-gated</span><span class="pill">handoff: release-packet</span></div>
             <code class="shell">/dev-studio release-manager help
 /dev-studio release-manager

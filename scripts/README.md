@@ -145,6 +145,8 @@ scripts/push-queue.sh mark-displayed <id>...            # clear after surfacing
 scripts/status-domain.sh rounds                         # one-line round summary (prefers YAML; legacy fallback)
 scripts/status-domain.sh releases                       # one-line release summary + push-tf suggestion
 scripts/release-manager-configure.sh --project <slug> --quick --tf-slack-channel C... # release notification setup
+scripts/studio-tf-slack.sh draft --context ctx.json --commits commits.txt # durable, linted TestFlight Slack draft artifact
+scripts/studio-tf-slack.sh send --draft draft.json --approve              # approval-gated parent/thread Slack post + events
 
 # Reviewer pipeline — mechanical extractions from the v2 reviewer role contract:
 eval "$(scripts/argus-setup.sh T001 S /path/to/worktree)"           # marker + review_requested + trap line

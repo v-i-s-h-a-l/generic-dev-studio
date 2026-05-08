@@ -21,8 +21,8 @@ emission, and durable release handoff state.
 
 | Path | Wrapper owns | Script owns | Watcher/finalizer owns |
 |---|---|---|---|
-| TestFlight push (`/dev-studio release-manager tf-push` or `/pushTFBuild`) | Slack draft, recent-thread reporter `cc:` tagging, human approval, Slack send | build/version bump, TF tag, archive, ASC upload, dSYM upload, pre-Slack events, `emit` primitive for wrapper Slack events | none |
-| TestFlight Slack recovery (`/postSlackTesting`) | Slack draft, reporter `cc:` tagging, human approval, Slack send for an already uploaded build | Slack read/write primitives only | none |
+| TestFlight push (`/dev-studio release-manager tf-push` or `/pushTFBuild`) | Natural-language polish, recent-thread reporter `cc:` tagging, human approval | `studio-tf-push.sh`: build/version bump, TF tag, archive, ASC upload, dSYM upload, pre-Slack events. `studio-tf-slack.sh`: draft artifacts, format lint, approval-gated send, Slack events. | none |
+| TestFlight Slack recovery (`/postSlackTesting`) | Reporter `cc:` tagging and human approval for an already uploaded build | Slack read/write primitives plus `studio-tf-slack.sh` draft/send when release context is available | none |
 | App Store submission (`/fullSendToAppStore`) | GitHub/Slack release-notes body, App Store "What's New", human approval | tag push, GitHub draft release, ASC submission, optional configured Slack parent/thread post, PR handoff, release artifact, pending marker | publish GitHub release, update Slack release link, and promote the PR only after `READY_FOR_SALE` and HEAD-bound release approval |
 
 App Store release notes deliberately omit reporter `cc:` mentions. Reporter
@@ -221,6 +221,10 @@ and TF anchor, submits the replacement build, sets `replaces` /
 `superseded_by`, and updates the existing announcement thread.
 
 Format the parent and thread per `_shared/contracts/build-message-format.md`.
+The deterministic draft/send rail is `scripts/studio-tf-slack.sh`: `draft`
+calls the taxonomy-aware composer, persists parent/thread/combined metadata,
+runs the TestFlight message linter, and emits `slack_drafted`; `send` refuses
+without explicit approval, posts parent then thread, and emits `slack_sent`.
 The default parent is brief: headline, one tester-facing summary, then
 `Details in thread.` The detailed tester checklist goes in the first thread
 reply. Group by product area/module when useful; otherwise use the standard

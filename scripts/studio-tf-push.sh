@@ -3,10 +3,9 @@
 #
 # Implements `_shared/contracts/release-tf-push.md` Steps 1–6 (TF push) and
 # the App Store Connect submission path. Step 7–9 (Slack draft + human
-# approval + send) live in the slash-command wrapper because they need LLM
-# judgment and a user-approval gate; the wrapper emits `slack_drafted` /
-# `slack_sent` via `studio-tf-push.sh emit` so the event taxonomy stays
-# under one roof.
+# approval + send) are handled by `studio-tf-slack.sh` plus the operator
+# wrapper: the script owns deterministic artifacts/events/posting, while the
+# wrapper owns language judgment and explicit approval.
 #
 # Subcommands:
 #   push       (default) — Steps 1–6 of release-tf-push.md. Bumps build /
@@ -14,7 +13,7 @@
 #              Outputs a one-line JSON context blob on stdout for the wrapper
 #              (release_tag, build, version, scheme, branch, archive_path,
 #              prev_build, tf_tag). Slack draft, reporter tagging, approval,
-#              and Slack send stay in /pushTFBuild or /postSlackTesting.
+#              and Slack send go through `studio-tf-slack.sh`.
 #   appstore   — App Store submission: tag + push tag, GH draft release,
 #              find build on ASC, create/update version, set MANUAL release,
 #              update whatsNew per localization. Inputs (release notes, what's
