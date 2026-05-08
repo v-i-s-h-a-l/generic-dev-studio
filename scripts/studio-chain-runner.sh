@@ -588,11 +588,11 @@ print_discovery() {
   printf '# Studio Chain Discovery\n\n'
   printf -- '- Bare invocation is discovery-only; it never starts or resumes work.\n'
   printf -- '- Preferred user entrypoint: `/dev-studio manager work-chain`.\n'
-  printf -- '- Add a manifest or chain name to filter suggestions: `/dev-studio manager work-chain --discover ios-v2-execution`; chain IDs are also exact selectors.\n\n'
+  printf -- '- Add a manifest, chain name, or chain id to filter suggestions: `/dev-studio manager work-chain --discover ios-v2-execution`.\n\n'
   printf '## Next Actions\n\n'
   printf -- '- Preview a chain: `/dev-studio manager work-chain <chain> --dry-run`\n'
-  printf -- '- Attended run: `/dev-studio manager work-chain <manifest|chain-name> --attended --yes`\n'
-  printf -- '- Unattended run or safe resume: `/dev-studio manager work-chain <manifest|chain-name>`\n'
+  printf -- '- Attended run: `/dev-studio manager work-chain <manifest|chain-name|chain-id> --attended --yes`\n'
+  printf -- '- Unattended run or safe resume: `/dev-studio manager work-chain <manifest|chain-name|chain-id>`\n'
   printf -- '- Resume a known run: `/dev-studio manager work-chain --resume <run_id> --yes`\n\n'
   printf 'Script equivalents remain available for automation: `scripts/manager-work-chain.sh ...` and `scripts/studio-chain-runner.sh ...`.\n\n'
   discover_persisted_runs
@@ -2258,6 +2258,7 @@ ingest_worker_summary() {
         telemetry_sources: (((.telemetry_sources // []) + (if (($session_telemetry.source // "") == "") then [] else [$session_telemetry.source] end)) | unique),
         execution_telemetry: normalized_execution_telemetry,
         functionality_delivered: (.functionality_delivered // null),
+        user_visible_change: (.user_visible_change // .user_facing_change // .change_for_user // .user_change // null),
         carryover: (.carryover // null),
         lessons: (.lessons // null),
         telemetry_gaps: (((.telemetry_gaps // [])
@@ -2342,6 +2343,7 @@ ingest_worker_summary() {
         telemetry_sources: (if (($session_telemetry.source // "") == "") then [] else [$session_telemetry.source] end),
         execution_telemetry: null,
         functionality_delivered: null,
+        user_visible_change: null,
         carryover: null,
         lessons: null,
         telemetry_gaps: (([$summary_gap, "tests_lints_builds"] + ios_execution_gaps)
@@ -2411,6 +2413,8 @@ generate_run_report() {
     printf -- '- Ended: `%s`\n' "$ended_ts"
     printf -- '- Duration: `%ss`\n' "$duration_s"
     [ -n "$failure_reason" ] && printf -- '- Failure reason: `%s`\n' "$failure_reason"
+    printf '\n'
+    render_run_finish_summary "$status" "$failure_reason"
     printf '\n## Functionality Delivered\n\n'
     if [ "$summary_count" -gt 0 ]; then
       jq -r -s '
@@ -2766,6 +2770,98 @@ generate_run_report() {
   } > "$RUN_REPORT"
 }
 
+render_run_finish_summary() {
+  local status="$1" failure_reason="${2:-}" summary_count run_state_json
+  summary_count=0
+  [ -n "${SUMMARY_ROOT:-}" ] && summary_count=$(find "$SUMMARY_ROOT" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+  run_state_json="${RUN_STATE_JSON:-}"
+
+  printf '## Work-Chain Finish Summary\n\n'
+  printf -- '- Status: `%s`\n' "$status"
+  printf -- '- Run UUID: `%s`\n' "${RUN_ID:-unknown}"
+  [ -n "${FINAL_PR_URL:-}" ] && printf -- '- PR URL: %s\n' "$FINAL_PR_URL"
+  [ -n "${RUN_REPORT:-}" ] && printf -- '- Private report: `%s`\n' "$RUN_REPORT"
+  [ -n "$failure_reason" ] && printf -- '- Failure reason: `%s`\n' "$failure_reason"
+  if [ -n "$run_state_json" ] && [ -f "$run_state_json" ]; then
+    jq -r '
+      def issue_total: [ .chains[]?.issues[]? ] | length;
+      def issue_completed: [ .chains[]?.issues[]? | select((.status // "") == "completed") ] | length;
+      def issue_closed: [ .chains[]?.issues[]? | select((.lifecycle_state // "") == "closed") ] | length;
+      "- Chains completed: \([ .chains[]? | select((.status // "") == "completed") ] | length)/\((.chains // []) | length)",
+      "- Issues completed: \(issue_completed)/\(issue_total)",
+      "- Issues closed: \(issue_closed)/\(issue_total)"
+    ' "$run_state_json" 2>/dev/null || true
+  fi
+
+  printf '\n### What Was Accomplished\n\n'
+  if [ "$summary_count" -gt 0 ]; then
+    jq -r -s '
+      def lines($v):
+        if $v == null then []
+        elif ($v | type) == "array" then [$v[] | tostring]
+        elif ($v | type) == "object" then [$v | tojson]
+        else [$v | tostring]
+        end;
+      [ .[] | {issue:(.issue_number // "unknown"), title:(.issue_title // ""), lines: lines(.functionality_delivered // .summary)} | select(.lines | length > 0) ] as $items |
+      if ($items | length) == 0 then "- No accomplishment narrative was supplied by worker summaries."
+      else $items[] | . as $item | $item.lines[] | "- #\($item.issue): \(.)"
+      end
+    ' "$SUMMARY_ROOT"/*.json
+  elif [ -n "$run_state_json" ] && [ -f "$run_state_json" ]; then
+    jq -r '
+      [ .chains[]?.issues[]? | select((.status // "") == "completed") ] as $issues |
+      if ($issues | length) == 0 then "- No completed issues were recorded."
+      else $issues[] | "- #\(.number): \(.title // "completed")"
+      end
+    ' "$run_state_json" 2>/dev/null || printf -- '- No worker summaries were ingested.\n'
+  else
+    printf -- '- No worker summaries were ingested.\n'
+  fi
+
+  printf '\n### User-Facing Change\n\n'
+  if [ "$summary_count" -gt 0 ]; then
+    jq -r -s '
+      def lines($v):
+        if $v == null then []
+        elif ($v | type) == "array" then [$v[] | tostring]
+        elif ($v | type) == "object" then [$v | tojson]
+        else [$v | tostring]
+        end;
+      def user_change:
+        .user_visible_change
+        // .user_facing_change
+        // .change_for_user
+        // .user_change
+        // .functionality_delivered
+        // null;
+      [ .[] | {issue:(.issue_number // "unknown"), lines: lines(user_change)} | select(.lines | length > 0) ] as $items |
+      if ($items | length) == 0 then "- No user-facing change narrative was supplied by worker summaries."
+      else $items[] | . as $item | $item.lines[] | "- #\($item.issue): \(.)"
+      end
+    ' "$SUMMARY_ROOT"/*.json
+  else
+    printf -- '- No user-facing change narrative was supplied by worker summaries.\n'
+  fi
+
+  printf '\n### Follow-Up\n\n'
+  if [ "$summary_count" -gt 0 ]; then
+    jq -r -s '
+      def lines($v):
+        if $v == null then []
+        elif ($v | type) == "array" then [$v[] | tostring]
+        elif ($v | type) == "object" then [$v | tojson]
+        else [$v | tostring]
+        end;
+      [ .[] | {issue:(.issue_number // "unknown"), lines: lines(.carryover // .next_recommended_action)} | select(.lines | length > 0) ] as $items |
+      if ($items | length) == 0 then "- No carryover was supplied by worker summaries."
+      else $items[] | . as $item | $item.lines[] | "- #\($item.issue): \(.)"
+      end
+    ' "$SUMMARY_ROOT"/*.json
+  else
+    printf -- '- No carryover was supplied by worker summaries.\n'
+  fi
+}
+
 finish_run() {
   local status="${1:-$RUN_STATUS}" reason="${2:-$RUN_FAILURE_REASON}" duration_s
   RUN_FINISHED=1
@@ -2791,6 +2887,7 @@ finish_run() {
     rm -rf "$RUN_WORK_ROOT" 2>/dev/null || true
   fi
   log "report written to $RUN_REPORT"
+  render_run_finish_summary "$status" "$reason"
 }
 
 abort_run() {
@@ -4465,6 +4562,7 @@ Summary JSON fields:
 - execution_telemetry optional object for iOS work: implementation/build/test/review/release executors when applicable, routing reason class, economics/cost summary, private artifact roots, public artifact classes, cleanup outcome, retained TTL class, and control-plane timing
 - tokens object when available, otherwise null
 - functionality_delivered optional string or array describing what users/agents can now do
+- user_visible_change optional string or array describing what changes for the human user or operator
 - refactoring_needed_now optional array for cleanup required by this task
 - refactoring_follow_ups optional array for deferred design debt with reason, affected area, risk, and suggested timing
 - carryover optional string or array for follow-up issues, parking-lot adds, or uncaptured asks

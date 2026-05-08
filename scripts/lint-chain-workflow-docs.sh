@@ -58,7 +58,7 @@ check_public_docs() {
     require_file_contains "$doc" 'scripts/studio-chain-runner.sh --discover' \
       E_CHAIN_DOC_DISCOVER 'document bare discovery before chain work starts'
     require_file_contains "$doc" 'scripts/studio-chain-runner.sh --discover ios-v2-execution' \
-      E_CHAIN_DOC_FILTERED_DISCOVER 'document filtered discovery for a manifest or chain name'
+      E_CHAIN_DOC_FILTERED_DISCOVER 'document filtered discovery for a manifest, chain name, or chain id'
     require_file_contains "$doc" '/dev-studio manager work-chain ios-v2-execution --dry-run' \
       E_CHAIN_DOC_DEV_STUDIO_PREVIEW 'document preferred dev-studio work-chain preview'
     require_file_contains "$doc" '/dev-studio manager work-chain --resume <run_id> --yes' \
@@ -77,7 +77,7 @@ check_public_docs() {
 check_router_docs() {
   require_file_contains core/v2/skills/dev-studio/SKILL.md 'manager work-chain' \
     E_CHAIN_ROUTER_WORK_CHAIN 'dev-studio skill must route the manager work-chain front door'
-  require_file_contains core/v2/skills/dev-studio/SKILL.md '`--discover <manifest|chain-name>`' \
+  require_file_contains core/v2/skills/dev-studio/SKILL.md '`--discover <manifest|chain-name|chain-id>`' \
     E_CHAIN_ROUTER_FILTERED_DISCOVER 'dev-studio skill must name the filtered discovery contract'
   require_file_contains core/v2/skills/dev-studio/SKILL.md '`--attended` and `--unattended`' \
     E_CHAIN_ROUTER_EXECUTION_MODE 'dev-studio skill must name execution modes'
@@ -88,7 +88,7 @@ check_runner_contract() {
     E_CHAIN_RUNNER_USAGE_DISCOVER 'runner usage must expose filtered discovery and --only'
   require_file_contains scripts/studio-chain-runner.sh 'Bare invocation is discovery-only; it never starts or resumes work.' \
     E_CHAIN_RUNNER_DISCOVERY_ONLY 'bare runner invocation must remain non-mutating discovery'
-  require_file_contains scripts/studio-chain-runner.sh 'Add a manifest or chain name to filter suggestions' \
+  require_file_contains scripts/studio-chain-runner.sh 'Add a manifest, chain name, or chain id to filter suggestions' \
     E_CHAIN_RUNNER_FILTER_COPY 'discovery output must explain filtered suggestions'
   require_file_contains scripts/studio-chain-runner.sh '/dev-studio manager work-chain <chain> --dry-run' \
     E_CHAIN_RUNNER_DEV_STUDIO_PREVIEW 'discovery output must prefer dev-studio manager preview commands'
@@ -103,7 +103,7 @@ check_manager_wrapper_contract() {
     E_CHAIN_MANAGER_BARE_DISCOVER 'bare manager work-chain must land in discovery'
   require_file_contains scripts/manager-work-chain.sh 'exec "$RUNNER" --auto "$@"' \
     E_CHAIN_MANAGER_NAMED_AUTO 'named manager work-chain must default to supervisor auto mode'
-  require_file_contains scripts/manager-work-chain.sh 'Use --discover [<manifest|chain-name>] for filtered, non-mutating discovery.' \
+  require_file_contains scripts/manager-work-chain.sh 'Use --discover [<manifest|chain-name|chain-id>] for filtered, non-mutating discovery.' \
     E_CHAIN_MANAGER_FILTERED_USAGE 'manager wrapper help must document filtered non-mutating discovery'
   require_file_contains scripts/manager-work-chain.sh 'exec "$PLAN_CHAIN" --from-plan "${1:?--from-plan requires a planner artifact}" --execute --unattended' \
     E_CHAIN_MANAGER_FROM_PLAN_EXECUTE 'manager --from-plan must default to unattended end-to-end execution'
