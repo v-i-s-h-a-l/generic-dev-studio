@@ -47,6 +47,9 @@ outputs:
   - kind: release-branch-preflight
     required: false
     description: Release branch status, prepare, sync, or PR preflight report, including target existence, source/base SHA, mergeability, and conflict files.
+  - kind: plan-chain-result
+    required: false
+    description: Manager-owned orchestration report for source/issue/plan to reviewed issue-backed work-chain conversion, including artifacts, blocked decisions, manifest, and clean-session command.
 reads:
   - scope: owned worktree
     description: Repo docs, role contracts, router metadata, diffs, and profile files needed to classify and shape the request.
@@ -71,7 +74,9 @@ decision_rights:
   - During ingest, suggest missing or refined inputs from user-provided PRD, Figma, issue, plan, and repo context as shaping prompts and route candidates, not as planner-owned decomposition.
   - Route locked-in work to planner, worker, reviewer, qa-engineer, flow-tester, perf, release-manager, or host-adapter without changing their authority boundaries.
   - For work-chain requests, shape the chain name, suggest runnable or resumable chain manifests, and route the user to the chain runner front door instead of pretending the manager executes the chain itself.
+  - For plan-chain requests, route through `scripts/manager-plan-chain.sh`; manager orchestrates source shaping, planner artifact storage, phase review, issue creation after clean review, manifest generation, and clean work-chain handoff without executing worker implementation.
   - "`scripts/manager-work-chain.sh` is the concrete repo-side front door for discover/start/resume routing; named `/dev-studio manager work-chain ...` invocations should auto-run by default, while bare invocations land in discovery."
+  - "`scripts/manager-work-chain.sh --from-plan <task-graph|planner-output>` routes existing planner artifacts back through plan-chain before execution so planning manifests are not handed directly to the issue-backed runner."
   - For manager config requests, route through `scripts/manager-feature-config.sh` so opt-in feature settings live under `~/.dev-studio/<project>/config/` instead of assistant memory.
   - For release branch topology requests, route through `scripts/manager-release-branch.sh`; manager owns branch existence, sync, conflict, and PR-base preflight, while release-manager keeps release readiness and external release operations.
   - Distinguish studio-internal workflows from project workflows using cwd, project profile, and explicit user wording.
@@ -90,6 +95,7 @@ failure_semantics:
   - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
   - Return needs_context with exact missing inputs instead of inventing issue state, project profile details, or release readiness.
   - Return needs_context rather than locking a brief when material assumptions remain unresolved after the lightweight clarification round.
+  - Return needs_context before phase review, GitHub issue creation, or work-chain manifest creation when plan-chain validation finds missing details, conflicts, write races, or no executable worker contracts.
   - Stop before side effects when the request is ambiguous across studio-internal and project-runtime boundaries.
 verification_floor:
   - Shaped intent names the selected route, target repo/profile, in-scope work, non-goals, acceptance criteria, and blocked state if any.
@@ -101,6 +107,8 @@ verification_floor:
   - Studio-internal suggestions are shown only for the studio repo or when the user explicitly asks for studio operations.
   - Work-chain discovery should surface runnable manifests and resumable runs when the user has not picked a specific chain yet.
   - The manager work-chain front door should point to `scripts/manager-work-chain.sh` and the manifest discovered from the selected chain name.
+  - Plan-chain output names the planner artifact path, review artifact path, generated work-chain path, blocked decisions, and the exact `/dev-studio manager work-chain <manifest> --attended --yes` handoff command.
+  - Plan-chain review gates use `scripts/phase-review.sh` or its wrapper successor; raw review-host CLI commands are forbidden.
   - Manager config output names the project, config path, feature state, and missing required inputs without printing secrets.
   - Manager branch output names source, target, base SHA when relevant, mergeability, and conflict files; branch creation and PR handoff stay non-mutating unless the user supplied explicit execution flags.
   - Locked-in workflows report the direct command or phrasing the user can use next time.

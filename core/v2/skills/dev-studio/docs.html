@@ -515,10 +515,12 @@
           </article>
           <article class="role">
             <h3>Parallel Chains</h3>
-            <p>Use chain manifests when the repo already has an issue chain. Bare invocation discovers runnable manifests and resumable runs; dry-run first, then launch one independent chain per shell session. The manager front door for the iOS v2 execution chain is <code>/dev-studio manager work-chain ios-v2-execution</code>, which auto-runs the chain through the repo-side manager wrapper. Unattended chain runs avoid routine continue prompts and stop only on typed blockers after finite retries.</p>
+            <p>Use chain manifests when the repo already has an issue chain. For a fresh goal or planner artifact, start with <code>/dev-studio manager plan-chain</code>; it stores planner and review artifacts, returns <code>needs_context</code> before issue creation when the input is too rough, and prints the clean work-chain handoff after a clean review. Bare work-chain invocation discovers runnable manifests and resumable runs; dry-run first, then launch one independent chain per shell session. The manager front door for the iOS v2 execution chain is <code>/dev-studio manager work-chain ios-v2-execution</code>, which auto-runs the chain through the repo-side manager wrapper.</p>
             <code class="shell">scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt; --dry-run
 scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt; --unattended --yes
 scripts/studio-chain-runner.sh --discover
+scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio
+scripts/manager-work-chain.sh --from-plan task-graph.json --chain my-chain
 scripts/manager-work-chain.sh ios-v2-execution
 scripts/manager-chain-monitor.sh status --project generic-dev-studio --json</code>
           </article>
@@ -767,11 +769,13 @@ scripts/worker-status.sh</code>
         <div class="workflow-grid">
           <article class="role">
             <h3>manager</h3>
-            <p>Shapes intent, resumes arcs, routes work, guards against repeats, captures patterns, and escalates operator decisions. Work-chain requests route to the repo-side manager wrapper before they reach the chain runner, and named work-chains auto-run unless the user chooses a discovery or resume flag.</p>
+            <p>Shapes intent, resumes arcs, routes work, guards against repeats, captures patterns, and escalates operator decisions. Plan-chain requests route through the manager orchestration wrapper before work-chain execution, and work-chain requests route to the repo-side manager wrapper before they reach the chain runner.</p>
             <div class="meta"><span class="pill status-live">direct use</span><span class="pill">contract-backed landing</span></div>
             <code class="shell">/dev-studio manager
 /dev-studio manager help
 /dev-studio manager resume-plan
+/dev-studio manager plan-chain 758 --repo v-i-s-h-a-l/generic-dev-studio
+/dev-studio manager work-chain --from-plan task-graph.json --chain my-chain
 /dev-studio manager work-chain ios-v2-execution
 /dev-studio manager guard "has this shipped?"
 /dev-studio manager analyze
@@ -868,8 +872,8 @@ scripts/host-preflight.sh codex /repo</code>
             <tbody>
               <tr>
                 <td><code>/dev-studio manager help</code></td>
-                <td><code>status</code>, <code>resume-plan</code>, <code>ingest</code>, <code>guard</code>, <code>audit</code>, <code>analyze</code>, <code>reconcile</code>, <code>config</code>, <code>branch</code>, <code>add</code></td>
-                <td><code>/dev-studio manager config list</code></td>
+                <td><code>status</code>, <code>resume-plan</code>, <code>ingest</code>, <code>guard</code>, <code>audit</code>, <code>analyze</code>, <code>reconcile</code>, <code>config</code>, <code>branch</code>, <code>plan-chain</code>, <code>work-chain</code>, <code>add</code></td>
+                <td><code>/dev-studio manager plan-chain 758</code></td>
               </tr>
               <tr>
                 <td><code>/dev-studio worker help</code></td>
@@ -939,7 +943,7 @@ scripts/host-preflight.sh codex /repo</code>
         <div class="grid">
           <article class="role">
             <h3>manager</h3>
-            <p>Owns intake, prioritization, lifecycle state, dispatch, status, user escalation, and final acceptance routing. It clarifies material assumptions before lock-in, can suggest missing PRD, Figma, issue, plan, or repo inputs during ingest when those sources are already available, and can front work-chain discovery by surfacing runnable manifests and resumable runs. If key assumptions remain unresolved, it returns needs_context instead of inventing scope; it does not auto-fetch unavailable PRD or Figma sources.</p>
+            <p>Owns intake, prioritization, lifecycle state, dispatch, status, user escalation, and final acceptance routing. It clarifies material assumptions before lock-in, can suggest missing PRD, Figma, issue, plan, or repo inputs during ingest when those sources are already available, and can turn shaped source or planner artifacts into reviewed issue-backed work-chains. If key assumptions remain unresolved, it returns needs_context instead of inventing scope; it does not auto-fetch unavailable PRD or Figma sources.</p>
             <div class="meta"><span class="pill status-live">direct use</span><span class="pill">aliases: chanakya, coordinator, orchestrator</span></div>
           </article>
           <article class="role">

@@ -66,10 +66,17 @@ supplies the task context and runtime slug.
      role routing. Manager ingest may suggest missing/refined inputs from
      PRD, Figma, issue, plan, or repo context already provided in the
      session/repo; it does not auto-fetch unavailable sources or decompose
-     planner-owned work. For `manager work-chain`, prefer the
+     planner-owned work. For `manager plan-chain`, call
+     `$STUDIO_REPO/scripts/manager-plan-chain.sh` so source/issue/plan input
+     is normalized, reviewed through `scripts/phase-review.sh`, converted to
+     durable GitHub issues after a clean verdict, and handed off as a runnable
+     work-chain manifest. For `manager work-chain`, prefer the
      `/dev-studio manager work-chain ...` command in user-facing next steps,
      especially after ingest or attended planning; script paths are secondary
-     automation/debug equivalents. For `manager config`, call
+     automation/debug equivalents. `manager work-chain --from-plan <path>`
+     calls `$STUDIO_REPO/scripts/manager-work-chain.sh --from-plan <path>` and
+     routes existing planner/task-graph artifacts through the same plan-chain
+     gate before execution. For `manager config`, call
      `$STUDIO_REPO/scripts/manager-feature-config.sh` for project-scoped
      feature enable/disable/set/list/doctor operations. For `manager branch`,
      call `$STUDIO_REPO/scripts/manager-release-branch.sh` for release branch
@@ -111,6 +118,8 @@ supplies the task context and runtime slug.
    | `reconcile` | manager | `reconcile` in a project repo |
    | `config` | manager | `/dev-studio manager config list` |
    | `branch` | manager | `/dev-studio manager branch status --source feature/foo --target release/26.5.0` |
+   | `plan-chain` | manager | `/dev-studio manager plan-chain 758 --repo v-i-s-h-a-l/generic-dev-studio` |
+   | `work-chain` | manager | `/dev-studio manager work-chain --from-plan task-graph.json --chain my-chain` |
    | `add` | manager | `/dev-studio manager add <url>` |
    | `sync` | host-adapter | `/dev-studio host-adapter sync` |
    | `nodes` | host-adapter | `/dev-studio host-adapter nodes` |
@@ -158,10 +167,11 @@ supplies the task context and runtime slug.
    from this index:
 
    - `manager`: `status`, `resume-plan`, `ingest`, `guard`, `audit`,
-     `analyze`, `reconcile`, `config`, `branch`, `add`; examples:
+     `analyze`, `reconcile`, `config`, `branch`, `plan-chain`, `work-chain`,
+     `add`; examples:
      `/dev-studio manager ingest "capture this"`, `/dev-studio manager
      config list`, `/dev-studio manager branch status --source feature/foo
-     --target release/26.5.0`.
+     --target release/26.5.0`, `/dev-studio manager plan-chain 758`.
    - `worker`: bounded contract execution plus `checkpoint` and
      `resume-checkpoint`; example: `/dev-studio worker T123`.
    - `reviewer`: `review`, plan/outcome/diff/PR/release-packet review plus

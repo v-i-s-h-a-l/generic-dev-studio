@@ -15,6 +15,8 @@ invocation:
     - "/dev-studio <role> resume-checkpoint"
     - "/dev-studio help"
     - "/dev-studio <role> help"
+    - "/dev-studio manager plan-chain"
+    - "/dev-studio manager work-chain --from-plan"
     - "active dev-studio role"
     - "session-local dev-studio role"
 domains:
