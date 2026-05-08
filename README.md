@@ -110,6 +110,7 @@ STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
 /dev-studio release-manager tf-push --background     # start TF archive/upload and keep session free for Slack drafting
 /dev-studio release-manager tf-push --version 26.5.0 # TestFlight push with explicit MARKETING_VERSION; live work needs STUDIO_TF_PUSH_LIVE=1
 /fullSendToAppStore              # App Store submit: wrapper approves copy; script owns GitHub/ASC/Slack handoff
+scripts/studio-tf-slack.sh draft --context ctx.json --commits commits.txt # durable, linted TestFlight Slack draft artifact
 scripts/studio-tf-push.sh compose-message --channel testflight < commits.txt # taxonomy-aware release/TestFlight bullet composer
 scripts/studio-tf-push.sh withdraw-tf-tag --version 26.4.17 --build 3162 # rename TF anchor to tf-<version>-<build>-WITHDRAWN
 scripts/release-manager-configure.sh --project turnip-ios --quick --appstore-slack-channel C... # configure opt-in App Store Slack release announcements
@@ -215,6 +216,7 @@ scripts/                # multi-worker fleet (BETA)
   chanakya-task-train.sh # manual single-train runner with sibling plan/outcome reviews and resume state
   analyze-collect.sh    # mechanical stats for usage-analysis passes (see ANALYSIS.md)
   release-manager-configure.sh # project release notification setup (Slack first)
+  studio-tf-slack.sh # script-backed TF Slack draft/send bridge with lint + approval gate
   forge-latency-report.sh  # stage-level task latency + review-gate comparison from event logs
   field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
