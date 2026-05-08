@@ -109,6 +109,7 @@ STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
 /dev-studio host-adapter nodes   # day-2 fleet management — status, add, remove, health, sync, schedule
 /dev-studio release-manager tf-push --background     # start TF archive/upload and keep session free for Slack drafting
 /dev-studio release-manager tf-push --version 26.5.0 # TestFlight push with explicit MARKETING_VERSION; live work needs STUDIO_TF_PUSH_LIVE=1
+/fullSendToAppStore              # App Store submit: wrapper approves copy; script owns GitHub/ASC/Slack handoff
 scripts/studio-tf-push.sh compose-message --channel testflight < commits.txt # taxonomy-aware release/TestFlight bullet composer
 scripts/studio-tf-push.sh withdraw-tf-tag --version 26.4.17 --build 3162 # rename TF anchor to tf-<version>-<build>-WITHDRAWN
 scripts/release-manager-configure.sh --project turnip-ios --quick --appstore-slack-channel C... # configure opt-in App Store Slack release announcements
@@ -201,7 +202,7 @@ core/v2/handoffs/
 commands/               # globally-installed slash commands (see scripts/install.sh)
   dev-studio.md         # /dev-studio — v2 umbrella role router from any project
   pushTFBuild.md        # /pushTFBuild — archive + upload to TestFlight; --background keeps Slack drafting live
-  fullSendToAppStore.md # /fullSendToAppStore — submit build to App Store review
+  fullSendToAppStore.md # /fullSendToAppStore — approve release copy, then submit via GitHub/ASC/Slack handoff
 
 scripts/                # multi-worker fleet (BETA)
   achilles-worker.sh    # long-running worker pane; atomic slot claim via mkdir+PID-token

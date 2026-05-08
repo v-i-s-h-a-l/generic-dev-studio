@@ -543,6 +543,13 @@ scripts/manager-chain-monitor.sh status --project generic-dev-studio --json</cod
             <code class="shell">/dev-studio release-manager prepare beta readiness for the latest merged fixes</code>
           </article>
           <article class="role">
+            <h3>Release Handoff</h3>
+            <p>Use the wrapper as the operator path. TestFlight Slack drafting and reporter tagging stay with <code>/pushTFBuild</code>; App Store copy approval stays with <code>/fullSendToAppStore</code>. The script owns GitHub, ASC, configured Slack, artifact, and PR handoff after approval.</p>
+            <code class="shell">/dev-studio release-manager tf-push --background
+/fullSendToAppStore
+scripts/studio-tf-push.sh appstore --build N --version X.Y.Z --release-notes-file notes.txt --whatsnew-file whatsnew.txt</code>
+          </article>
+          <article class="role">
             <h3>Checkpoint Resume</h3>
             <p>Use bare checkpoint only for manager-shaped routing. Put the role before checkpoint when the role already owns the state; checkpoint artifacts do not replace summaries, verdicts, packets, checklists, or event logs. Create/update print the checkpoint id, and that id is enough for resume-checkpoint.</p>
             <code class="shell">/dev-studio checkpoint
@@ -819,13 +826,14 @@ scripts/v2-multispawn-pilot.sh run</code>
           </article>
           <article class="role">
             <h3>release-manager</h3>
-            <p>Assembles release readiness, blocker state, notes, tag state, TestFlight/App Store state, and approval gates.</p>
+            <p>Assembles release readiness, blocker state, notes, tag state, TestFlight/App Store state, and approval gates. Live Slack/GitHub/App Store handoff uses the release wrappers and backend scripts after approval.</p>
             <div class="meta"><span class="pill status-contract">approval-gated</span><span class="pill">handoff: release-packet</span></div>
             <code class="shell">/dev-studio release-manager help
 /dev-studio release-manager
 /dev-studio release-manager prepare beta readiness
 /dev-studio release-manager configure
-/dev-studio release-manager tf-push --background</code>
+/dev-studio release-manager tf-push --background
+/fullSendToAppStore</code>
           </article>
           <article class="role">
             <h3>host-adapter</h3>
@@ -885,8 +893,8 @@ scripts/host-preflight.sh codex /repo</code>
               </tr>
               <tr>
                 <td><code>/dev-studio release-manager help</code></td>
-                <td><code>release</code>, <code>configure</code>, <code>tf-push</code>, release packets, lifecycle actions</td>
-                <td><code>/dev-studio release-manager configure</code></td>
+                <td><code>release</code>, <code>configure</code>, <code>tf-push</code>, release packets, lifecycle actions, App Store handoff wrapper</td>
+                <td><code>/dev-studio release-manager tf-push --background</code></td>
               </tr>
               <tr>
                 <td><code>/dev-studio host-adapter help</code></td>
@@ -956,7 +964,7 @@ scripts/host-preflight.sh codex /repo</code>
           </article>
           <article class="role">
             <h3>release-manager</h3>
-            <p>Active contract for release packets, blocker state, notes, tags, TestFlight, and App Store readiness.</p>
+            <p>Active contract for release packets, blocker state, notes, tags, TestFlight, and App Store readiness. It routes live release handoff to approval-gated wrappers instead of mutating external channels directly.</p>
             <div class="meta"><span class="pill status-contract">contracted, approval-gated</span><span class="pill">aliases: release, shipper</span></div>
           </article>
           <article class="role">
