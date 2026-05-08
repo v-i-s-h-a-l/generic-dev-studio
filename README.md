@@ -77,6 +77,8 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio manager ingest       # capture one idea in the current repo context; --scope studio crosses to Forge
 /dev-studio manager reconcile    # project repo: sync emitted debriefs/reports into the task ledger
 /dev-studio manager analyze      # studio repo: telemetry/log analysis plus studio feedback triage
+/dev-studio manager config list  # project-scoped opt-in feature settings and doctor checks
+/dev-studio manager branch status --source feature/foo --target release/26.5.0 # release branch preflight
 /dev-studio manager work-chain ios-v2-execution # auto-run the iOS v2 execution chain; bare call discovers available chains
 /dev-studio manager work-chain ios-v2-execution --dry-run # preferred preview path for attended planning
 /dev-studio manager work-chain --resume <run_id> --yes # preferred resume path from chain summaries/halt records
@@ -235,6 +237,8 @@ scripts/                # multi-worker fleet (BETA)
   studio-staleness-triage.sh # scheduled GitHub issue staleness labels + escalation comments for the PM surface
   host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
   studio-gh.sh          # GitHub CLI wrapper for assistant/interactive calls; uses context github_home for auth
+  manager-feature-config.sh # /dev-studio manager config: project-scoped feature enable/disable/set/list/doctor
+  manager-release-branch.sh # /dev-studio manager branch: release branch status/prepare/sync/PR preflight
   dev-studio-ingest-resolve.sh # resolves /dev-studio manager ingest destination as JSON
   manager-reconcile.sh  # /dev-studio manager reconcile: project debrief/report sync into task state
   manager-analyze.sh    # /dev-studio manager analyze: studio-checkout analysis + feedback triage
