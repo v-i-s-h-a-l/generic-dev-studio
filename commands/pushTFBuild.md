@@ -5,7 +5,12 @@ allowed-tools: [Bash, Read, Edit, Grep]
 
 # Push iOS Build to TestFlight
 
-Hybrid wrapper around `scripts/studio-tf-push.sh` (studio repo at `~/Documents/v-i-s-h-a-l/github/generic-dev-studio`). The studio script owns all mechanical work — bump, archive, export+upload, dSYMs — and emits the four pre-Slack events. This wrapper drives Slack composition + the human-approval gate, then emits `slack_drafted` / `slack_sent` via the same script's `emit` subcommand so all six events share one release-tag.
+Hybrid wrapper around `scripts/studio-tf-push.sh` and
+`scripts/studio-tf-slack.sh` (studio repo at
+`~/Documents/v-i-s-h-a-l/github/generic-dev-studio`). The push script owns all
+mechanical work — bump, archive, export+upload, dSYMs — and emits the four
+pre-Slack events. The Slack bridge owns draft artifacts, format lint,
+approval-gated send, and `slack_drafted` / `slack_sent` event emission.
 
 Operator path: use `/dev-studio release-manager tf-push ...` or this
 `/pushTFBuild` wrapper for a full TestFlight push. The split is intentional:
@@ -22,8 +27,9 @@ channel and notification shape with `/dev-studio release-manager configure`.
 | Surface | Owner |
 |---|---|
 | Build/version bump, archive, ASC upload, dSYM upload, TF anchor tag, pre-Slack events | `scripts/studio-tf-push.sh push` |
-| Slack draft composition, recent-thread reporter `cc:` tagging, human approval, Slack parent/thread send | `/pushTFBuild` wrapper |
-| `slack_drafted`, `slack_sent`, and notification failure events | `/pushTFBuild` via `scripts/studio-tf-push.sh emit` |
+| Slack draft artifact, taxonomy composer, format lint, approval-gated parent/thread send | `scripts/studio-tf-slack.sh` |
+| Natural-language polish and recent-thread reporter `cc:` judgment | `/pushTFBuild` wrapper before approval |
+| `slack_drafted`, `slack_sent`, and notification failure events | `scripts/studio-tf-slack.sh` |
 | Notification-only recovery for an already uploaded build | `/postSlackTesting`, not `push` |
 
 ## Arguments
@@ -102,7 +108,7 @@ PREV_BUILD=$(echo "$CTX" | jq -r .prev_build)
 
 Proceed to Slack drafting while the background run continues. Before sending Slack, require `STATUS_PATH` to show `state=="succeeded"` and load final `CTX` from `CONTEXT_PATH`; if it shows `failed`, surface `LOG_PATH` and stop.
 
-## Step 3: Compose the Slack message
+## Step 3: Draft the Slack message artifact
 
 Compose from the user's commits since the last shared TF build, per `_shared/contracts/build-message-format.md`.
 
@@ -129,10 +135,29 @@ if [ -n "$LAST_SHARED_TF_TAG" ]; then
 else
   LOWER_BOUND=$(git log --oneline --all --grep="Bump build number to $LAST_SHARED_BUILD" | head -1 | cut -d' ' -f1)
 fi
-git log --no-merges --author="vishal" --format="%h | %s%n%b%n---" ${LOWER_BOUND}..HEAD | grep -viE "Bump (build|version)"
+git log --no-merges --author="vishal" --format="%h | %s%n%b%n---" ${LOWER_BOUND}..HEAD \
+  | grep -viE "Bump (build|version)" > /tmp/tf-commits.txt
 ```
 
-Read full commit messages (subject + body). Compose per `build-message-format.md`:
+Then render and lint a durable draft:
+
+```bash
+cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
+DRAFT_JSON=$(./scripts/studio-tf-slack.sh draft \
+  --context "${CONTEXT_PATH:-$PREPARED_CONTEXT_PATH}" \
+  --commits /tmp/tf-commits.txt \
+  --summary "<one tester-facing summary>")
+PARENT_PATH=$(jq -r .parent_path "$DRAFT_JSON")
+THREAD_PATH=$(jq -r .thread_path "$DRAFT_JSON")
+```
+
+The script calls `studio-tf-push.sh compose-message --channel testflight`, runs
+`lint-build-release-message.sh --channel testflight`, persists the parent,
+thread, combined message, and metadata under
+`~/.dev-studio/<project>/state/release-drafts/<release-tag>/`, then emits
+`slack_drafted`.
+
+Before approval, improve the generated parent/thread files when needed:
 
 - Parent: brief tester-facing summary since the last posted TF build, then `Details in thread.`
 - Thread detail: grouped tester checklist. Prefer module/product-area groups when useful; otherwise use `*New*` / `*Fixed*` / `*Crash fixes*`.
@@ -142,7 +167,7 @@ Read full commit messages (subject + body). Compose per `build-message-format.md
 - Headline: `[iOS] build <NEW_BUILD_NUMBER> is available on TestFlight`. Prefix `<!here>` only when `STUDIO_TF_SLACK_NOTIFY_HERE=1`.
 - Technical notes go at the end of the thread under `*Technical notes*`, only when they materially affect testing or product expectations.
 
-## Step 4: Scan recent threads for cc-tag attribution
+## Step 4: Scan recent threads for cc-tag attribution and polish
 
 ```bash
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
@@ -155,50 +180,32 @@ cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
 
 Append `cc: <@USER_ID>` inline on bullets that match a thread reply. Show parenthesised display name to the user only — strip before sending.
 
-## Step 5: Emit `slack_drafted`
+After editing the generated files, re-run:
 
 ```bash
-BULLETS=$(echo "$BODY" | grep -c '^•')
-CCS=$(echo "$BODY" | grep -oE 'cc: <@[A-Z0-9]+>' | wc -l | tr -d ' ')
-cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
-./scripts/studio-tf-push.sh emit slack_drafted --release-tag "$RELEASE_TAG" \
-  --data "$(jq -nc --argjson b "$NEW_BUILD_NUMBER" --argjson bc "$BULLETS" --argjson cc "$CCS" \
-              --arg ch "${STUDIO_TF_SLACK_CHANNEL_NAME:-$TF_CHANNEL}" \
-              '{build:$b, channel:$ch, bullet_count:$bc, cc_count:$cc}')"
+cat "$PARENT_PATH" "$THREAD_PATH" > "$(jq -r .combined_path "$DRAFT_JSON")"
+./scripts/lint-build-release-message.sh --file "$(jq -r .combined_path "$DRAFT_JSON")" --channel testflight
 ```
 
-## Step 6: Human-approval gate
+## Step 5: Human-approval gate
 
 Show the draft to the user verbatim — include parenthesised display names next to each `<@USER_ID>` for review readability. Ask: **"Send this, or edit first?"**
 
-If the user edits, update the draft and re-emit `slack_drafted` with the same `--release-tag` (the ledger keys on it; consumers see one drafted span with the latest content). Wait for explicit approval before Step 7.
+If the user edits, update the parent/thread files and re-show the result. Wait
+for explicit approval before Step 6.
 
-## Step 7: Send to Slack
+## Step 6: Send to Slack
 
-Strip parenthesised display names from the body, then:
+Strip parenthesised display names from the parent/thread files, then:
 
 ```bash
 cd ~/Documents/v-i-s-h-a-l/github/generic-dev-studio
-RESP=$(./scripts/slack-post.sh --channel "$TF_CHANNEL" --text "$FINAL_PARENT_BODY")
-PARENT_TS=$(echo "$RESP" | jq -r .ts)
-[ -n "$PARENT_TS" ] && [ "$PARENT_TS" != "null" ] || { echo "slack-post returned no ts"; exit 1; }
-./scripts/slack-post.sh --channel "$TF_CHANNEL" --thread-ts "$PARENT_TS" --text "$FINAL_THREAD_BODY" >/dev/null
-
-CHARS=$(printf '%s%s' "$FINAL_PARENT_BODY" "$FINAL_THREAD_BODY" | wc -c | tr -d ' ')
-./scripts/studio-tf-push.sh emit slack_sent --release-tag "$RELEASE_TAG" \
-  --data "$(jq -nc --argjson b "$NEW_BUILD_NUMBER" --arg ts "$PARENT_TS" --argjson c "$CHARS" \
-              --arg ch "${STUDIO_TF_SLACK_CHANNEL_NAME:-$TF_CHANNEL}" \
-              '{build:$b, channel:$ch, parent_ts:$ts, message_chars:$c}')"
+./scripts/studio-tf-slack.sh send --draft "$DRAFT_JSON" --approve
 ```
 
-If the post fails:
-
-```bash
-./scripts/studio-tf-push.sh emit release_failed --release-tag "$RELEASE_TAG" \
-  --data "$(jq -nc --arg r "$REASON" '{stage:"slack_send", reason:$r}')"
-```
-
-The build is already on TestFlight; the failure is in notification, not delivery. Do not re-run upload.
+If the post fails, the bridge emits `release_failed` with `stage:"slack_send"`.
+The build is already on TestFlight; the failure is in notification, not
+delivery. Do not re-run upload.
 
 ## Rollback
 

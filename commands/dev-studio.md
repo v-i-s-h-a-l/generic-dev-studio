@@ -78,9 +78,11 @@ supplies the task context and runtime slug.
      call `$STUDIO_REPO/scripts/release-manager-configure.sh` after shaping
      quick/custom/descriptive Slack options with the user.
    - `release-manager tf-push` -> TestFlight operator path. Use
-     `/pushTFBuild` semantics: the wrapper owns Slack drafting, reporter
-     tagging, approval, and send; `$STUDIO_REPO/scripts/studio-tf-push.sh push`
-     owns build/upload mechanics only.
+     `/pushTFBuild` semantics: `$STUDIO_REPO/scripts/studio-tf-push.sh push`
+     owns build/upload mechanics, and
+     `$STUDIO_REPO/scripts/studio-tf-slack.sh` owns draft artifacts, format
+     lint, approval-gated Slack send, and Slack release events. The wrapper
+     may polish wording and reporter `cc:` attribution before approval.
    - App Store submission remains `/fullSendToAppStore`: the wrapper approves
      release copy, then `$STUDIO_REPO/scripts/studio-tf-push.sh appstore`
      owns tag/GitHub draft/ASC/configured-Slack/PR handoff. The watcher

@@ -64,6 +64,7 @@ verification_floor:
   - Release packet names release scope, anchor issues including #214, notes state, tag state, GitHub release state, TestFlight/App Store state, and blockers.
   - "Release notes inspect `Changelog:` trailers per `_shared/contracts/definition-of-done.md`; if trailers are ignored or rewritten, the release packet records why."
   - Build/release message lint and external-channel states are represented as explicit evidence states.
+  - TestFlight Slack draft/send flows use the script-backed bridge (`scripts/studio-tf-slack.sh`) for draft artifacts, format lint, approval-gated posting, and Slack event emission.
   - Notification setup writes project-scoped config only; Slack is optional, `<!here>` is opt-in, and TestFlight details default to a thread.
   - Any release-blocking item names the missing evidence or required operator decision.
   - Release-manager checkpoints may summarize packet progress, but release-packet remains the release readiness artifact.
