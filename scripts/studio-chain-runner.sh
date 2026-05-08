@@ -12,9 +12,9 @@
 # Manifest shape:
 #   schema_version: 1
 #   chains:
-#     - name: field-telemetry-mvp
+#     - name: ios-v2-execution
 #       base: main
-#       branch: feature/field-telemetry-mvp
+#       branch: feature/ios-v2-execution
 #       host: auto
 #       approved_release_id: 0190f52a-9000-7f01-8aaa-77fe8fa99bbb
 #       sync_strategy: rebase
@@ -419,7 +419,8 @@ discover_chain_manifests() {
     for ((idx = 0; idx < chain_count; idx++)); do
       name=$(yq -r ".chains[$idx].name" "$manifest")
       [ -n "$ONLY_CHAIN" ] && [ "$name" != "$ONLY_CHAIN" ] && continue
-      issues=$(yq -r ".chains[$idx].issues | join(\",\")" "$manifest")
+      issues=$(yq -o=json ".chains[$idx].issues // []" "$manifest" \
+        | jq -r 'map(if type == "object" then (.number // .issue // .id // empty) else . end) | map(tostring) | join(",")')
       command="/dev-studio manager work-chain $name --dry-run"
       printf '| `%s` | `%s` | `%s` | `%s` |\n' "$rel_manifest" "$name" "${issues:-"-"}" "$command" >> "$rows_tmp"
     done
@@ -448,7 +449,7 @@ print_discovery() {
   printf '# Studio Chain Discovery\n\n'
   printf -- '- Bare invocation is discovery-only; it never starts or resumes work.\n'
   printf -- '- Preferred user entrypoint: `/dev-studio manager work-chain`.\n'
-  printf -- '- Add a manifest or chain name to filter suggestions: `/dev-studio manager work-chain --discover prd-to-chain-automation`.\n\n'
+  printf -- '- Add a manifest or chain name to filter suggestions: `/dev-studio manager work-chain --discover ios-v2-execution`.\n\n'
   printf '## Next Actions\n\n'
   printf -- '- Preview a chain: `/dev-studio manager work-chain <chain> --dry-run`\n'
   printf -- '- Attended run: `/dev-studio manager work-chain <manifest|chain-name> --attended --yes`\n'

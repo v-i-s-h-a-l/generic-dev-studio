@@ -57,13 +57,13 @@ check_public_docs() {
   for doc in README.md scripts/README.md; do
     require_file_contains "$doc" 'scripts/studio-chain-runner.sh --discover' \
       E_CHAIN_DOC_DISCOVER 'document bare discovery before chain work starts'
-    require_file_contains "$doc" 'scripts/studio-chain-runner.sh --discover prd-to-chain-automation' \
+    require_file_contains "$doc" 'scripts/studio-chain-runner.sh --discover ios-v2-execution' \
       E_CHAIN_DOC_FILTERED_DISCOVER 'document filtered discovery for a manifest or chain name'
-    require_file_contains "$doc" '/dev-studio manager work-chain prd-to-chain-automation --dry-run' \
+    require_file_contains "$doc" '/dev-studio manager work-chain ios-v2-execution --dry-run' \
       E_CHAIN_DOC_DEV_STUDIO_PREVIEW 'document preferred dev-studio work-chain preview'
     require_file_contains "$doc" '/dev-studio manager work-chain --resume <run_id> --yes' \
       E_CHAIN_DOC_DEV_STUDIO_RESUME 'document preferred dev-studio work-chain resume'
-    require_file_contains "$doc" 'scripts/manager-work-chain.sh prd-to-chain-automation --dry-run' \
+    require_file_contains "$doc" 'scripts/manager-work-chain.sh ios-v2-execution --dry-run' \
       E_CHAIN_DOC_MANAGER_PREVIEW 'document manager front-door preview'
     require_file_contains "$doc" 'scripts/studio-chain-runner.sh --auto workflow-measurement-improvements' \
       E_CHAIN_DOC_AUTO 'document unattended supervisor auto mode'
@@ -108,15 +108,15 @@ check_manager_wrapper_contract() {
 }
 
 check_fixtures() {
-  require_file_contains scripts/test-fixtures/446-chain-mode-enhancements/test-chain-runner-discover.sh 'scripts/studio-chain-runner.sh" --discover prd-to-chain-automation' \
+  require_file_contains scripts/test-fixtures/446-chain-mode-enhancements/test-chain-runner-discover.sh 'scripts/studio-chain-runner.sh" --discover ios-v2-execution' \
     E_CHAIN_FIXTURE_FILTERED_DISCOVER 'runner discovery fixture must cover filtered discovery'
-  require_file_contains scripts/test-fixtures/446-chain-mode-enhancements/test-chain-runner-discover.sh '/dev-studio manager work-chain field-telemetry-mvp --dry-run' \
+  require_file_contains scripts/test-fixtures/446-chain-mode-enhancements/test-chain-runner-discover.sh '/dev-studio manager work-chain ios-v2-execution --dry-run' \
     E_CHAIN_FIXTURE_DEV_STUDIO_DISCOVER 'runner discovery fixture must assert preferred dev-studio commands'
   require_file_contains scripts/test-fixtures/446-chain-mode-enhancements/test-chain-runner-discover.sh 'filtered discovery included unrelated runnable chain' \
     E_CHAIN_FIXTURE_FILTER_NEGATIVE 'runner fixture must assert filtered discovery omits unrelated chains'
-  require_file_contains scripts/test-fixtures/655-manager-work-chain/test-manager-work-chain.sh '"$RUN" --discover prd-to-chain-automation' \
+  require_file_contains scripts/test-fixtures/655-manager-work-chain/test-manager-work-chain.sh '"$RUN" --discover ios-v2-execution' \
     E_CHAIN_FIXTURE_MANAGER_FILTERED_DISCOVER 'manager wrapper fixture must cover filtered discovery'
-  require_file_contains scripts/test-fixtures/655-manager-work-chain/test-manager-work-chain.sh '"$RUN" prd-to-chain-automation --dry-run' \
+  require_file_contains scripts/test-fixtures/655-manager-work-chain/test-manager-work-chain.sh '"$RUN" ios-v2-execution --dry-run' \
     E_CHAIN_FIXTURE_MANAGER_AUTO 'manager wrapper fixture must cover named auto delegation'
 }
 
