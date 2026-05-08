@@ -69,7 +69,12 @@ supplies the task context and runtime slug.
      planner-owned work. For `manager work-chain`, prefer the
      `/dev-studio manager work-chain ...` command in user-facing next steps,
      especially after ingest or attended planning; script paths are secondary
-     automation/debug equivalents.
+     automation/debug equivalents. For `manager config`, call
+     `$STUDIO_REPO/scripts/manager-feature-config.sh` for project-scoped
+     feature enable/disable/set/list/doctor operations. For `manager branch`,
+     call `$STUDIO_REPO/scripts/manager-release-branch.sh` for release branch
+     status, prepare, sync, and PR preflight; release readiness remains owned
+     by `release-manager`.
    - `worker` -> bounded task contract in an isolated worktree.
    - `reviewer` -> plan, outcome, diff, PR, or release-packet review.
    - `perf` -> performance, battery, memory, thermal, network, or instrumentation evidence.
@@ -104,6 +109,8 @@ supplies the task context and runtime slug.
    | `audit` | manager | `audit` |
    | `analyze` | manager | `/dev-studio manager analyze` |
    | `reconcile` | manager | `reconcile` in a project repo |
+   | `config` | manager | `/dev-studio manager config list` |
+   | `branch` | manager | `/dev-studio manager branch status --source feature/foo --target release/26.5.0` |
    | `add` | manager | `/dev-studio manager add <url>` |
    | `sync` | host-adapter | `/dev-studio host-adapter sync` |
    | `nodes` | host-adapter | `/dev-studio host-adapter nodes` |
@@ -129,8 +136,8 @@ supplies the task context and runtime slug.
 
 7. For a bare-role landing:
    - In `generic-dev-studio`, include studio-internal options such as
-     `resume-plan`, `ingest`, `guard`, `audit`, `sync`, and `nodes` when they
-     match the selected role.
+     `resume-plan`, `ingest`, `guard`, `audit`, `config`, `branch`, `sync`,
+     and `nodes` when they match the selected role.
    - In project repos, bias suggestions toward project task shaping,
      implementation, review, QA, flow testing, performance, and release
      readiness.
@@ -151,8 +158,10 @@ supplies the task context and runtime slug.
    from this index:
 
    - `manager`: `status`, `resume-plan`, `ingest`, `guard`, `audit`,
-     `analyze`, `reconcile`, `add`; examples: `/dev-studio manager ingest
-     "capture this"`, `/dev-studio manager reconcile`.
+     `analyze`, `reconcile`, `config`, `branch`, `add`; examples:
+     `/dev-studio manager ingest "capture this"`, `/dev-studio manager
+     config list`, `/dev-studio manager branch status --source feature/foo
+     --target release/26.5.0`.
    - `worker`: bounded contract execution plus `checkpoint` and
      `resume-checkpoint`; example: `/dev-studio worker T123`.
    - `reviewer`: `review`, plan/outcome/diff/PR/release-packet review plus

@@ -523,6 +523,13 @@ scripts/manager-work-chain.sh ios-v2-execution
 scripts/manager-chain-monitor.sh status --project generic-dev-studio --json</code>
           </article>
           <article class="role">
+            <h3>Release Branch PR</h3>
+            <p>Ask the manager to inspect or prepare release branch topology before a PR targets a release branch. The branch workflow is non-mutating by default, creates release branches only with explicit execution flags, and halts on conflicts before PR handoff.</p>
+            <code class="shell">/dev-studio manager branch status --source feature/foo --target release/26.5.0
+/dev-studio manager branch prepare-release --release 26.5.0 --from main --dry-run
+/dev-studio manager branch sync --source feature/foo --target release/26.5.0</code>
+          </article>
+          <article class="role">
             <h3>Hotfix Bug</h3>
             <p>Tell the manager it is a hotfix and name the risk. Expect the smallest patch, the fastest relevant checks, review, and release-manager escalation if a build or public message is needed.</p>
             <code class="shell">/dev-studio manager hotfix: fix the launch crash from the latest TestFlight build</code>
@@ -770,6 +777,8 @@ scripts/worker-status.sh</code>
 /dev-studio manager analyze
 /dev-studio manager reconcile
 /dev-studio manager chain-monitor status
+/dev-studio manager config list
+/dev-studio manager branch status --source feature/foo --target release/26.5.0
 /dev-studio manager ingest "capture this pattern"
 /dev-studio manager work-chain
 /dev-studio manager ingest --scope studio "capture this Forge workflow gap"</code>
@@ -859,8 +868,8 @@ scripts/host-preflight.sh codex /repo</code>
             <tbody>
               <tr>
                 <td><code>/dev-studio manager help</code></td>
-                <td><code>status</code>, <code>resume-plan</code>, <code>ingest</code>, <code>guard</code>, <code>audit</code>, <code>analyze</code>, <code>reconcile</code>, <code>add</code></td>
-                <td><code>/dev-studio manager ingest "capture this"</code></td>
+                <td><code>status</code>, <code>resume-plan</code>, <code>ingest</code>, <code>guard</code>, <code>audit</code>, <code>analyze</code>, <code>reconcile</code>, <code>config</code>, <code>branch</code>, <code>add</code></td>
+                <td><code>/dev-studio manager config list</code></td>
               </tr>
               <tr>
                 <td><code>/dev-studio worker help</code></td>
