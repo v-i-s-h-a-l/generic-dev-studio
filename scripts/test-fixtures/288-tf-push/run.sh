@@ -257,6 +257,50 @@ fi
 echo "PASS: empty live-version response is not treated as no conflict"
 
 echo
+echo "=== Test 8b: signing prereq runs after live-version resolution ==="
+cat > "$TMPHOME/bin/curl" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *"/appStoreVersions?fields[appStoreVersions]=versionString,appStoreState"*)
+    printf '{"data":[{"attributes":{"versionString":"1.0.0","appStoreState":"READY_FOR_SALE"}}]}\n'
+    ;;
+  *)
+    printf '{"data":[]}\n'
+    ;;
+esac
+SH
+chmod +x "$TMPHOME/bin/curl"
+VERSIONS_READY_JSON="$TMPHOME/versions-ready.json"
+printf '{"data":[{"attributes":{"versionString":"1.0.0"}}]}\n' > "$VERSIONS_READY_JSON"
+if PATH="$TMPHOME/bin:$PATH" \
+    STUDIO_TF_PUSH_LIVE=1 \
+    STUDIO_TF_PUSH_SKIP_NODE_PICK=1 \
+    STUDIO_TF_SLACK_DEFERRED=1 \
+    STUDIO_RELEASE_TAG="release-fixture-744" \
+    STUDIO_TF_PROJECT_ROOT="$PROJECT" \
+    STUDIO_TF_PBXPROJ="$PBX" \
+    STUDIO_TF_APP_ID="fixture-app" \
+    STUDIO_TF_ASC_KEY_ID="fixture-key" \
+    STUDIO_TF_ASC_ISSUER_ID="fixture-issuer" \
+    STUDIO_TF_ASC_KEY_PATH="$ASC_KEY" \
+    STUDIO_TF_BUILDS_RESPONSE_FILE="$BUILDS_JSON" \
+    STUDIO_TF_VERSIONS_RESPONSE_FILE="$VERSIONS_READY_JSON" \
+    STUDIO_TF_SIGNING_KEYCHAIN_PATH="$TMPHOME/missing-signing.keychain-db" \
+    "$REPO/scripts/studio-tf-push.sh" push >"$TMPHOME/signing-order.out" 2>&1; then
+  echo "FAIL: missing signing keychain should halt"; exit 1
+fi
+grep -q "repo-local signing keychain unreadable" "$TMPHOME/signing-order.out" \
+  || { echo "FAIL: missing signing-keychain prereq message"; cat "$TMPHOME/signing-order.out"; exit 1; }
+if grep -q "WARNING: Could not determine live App Store version" "$TMPHOME/signing-order.out"; then
+  echo "FAIL: signing-order fixture unexpectedly hit live-version warning"; cat "$TMPHOME/signing-order.out"; exit 1
+fi
+grep -q "CURRENT_PROJECT_VERSION = 1;" "$PBX" || { echo "FAIL: build number mutated before signing prereq"; exit 1; }
+if "$REAL_GIT" -C "$PROJECT" log --oneline --grep="Bump build number" | grep -q .; then
+  echo "FAIL: build-number commit was created before signing prereq"; exit 1
+fi
+echo "PASS: signing prereq waits until after live-version resolution and before mutation"
+
+echo
 echo "=== Test 9: release config resolves under per-project dev-studio root ==="
 CONFIG_ROOT="$TMPHOME/.dev-studio/fixture-ios"
 mkdir -p "$CONFIG_ROOT/config" "$CONFIG_ROOT/secrets/appstoreconnect"

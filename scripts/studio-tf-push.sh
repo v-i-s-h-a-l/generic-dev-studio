@@ -58,6 +58,13 @@
 #   STUDIO_TF_PUSH_PREPARED_CONTEXT_PATH
 #                                 optional path where `push` writes build/version
 #                                 context before the long archive phase.
+#   STUDIO_TF_SIGNING_HOME        override the home directory used for code
+#                                 signing lookups when the host session differs
+#                                 from the login session that owns the signing
+#                                 keychain.
+#   STUDIO_TF_SIGNING_KEYCHAIN_PATH
+#                                 override the repo-local signing keychain path.
+#                                 Defaults to <repo>/.dev-studio/signing/zap-dev.keychain-db.
 
 set -u
 umask 022
@@ -83,11 +90,37 @@ load_release_config || {
   exit 2
 }
 
+resolve_signing_home() {
+  if [ -n "${STUDIO_TF_SIGNING_HOME:-}" ]; then
+    printf '%s\n' "$STUDIO_TF_SIGNING_HOME"
+    return 0
+  fi
+
+  case "$HOME" in
+    */.codex-homes/*)
+      local user_name user_home
+      user_name=$(id -un 2>/dev/null || true)
+      if [ -n "$user_name" ]; then
+        user_home=$(dscl . -read "/Users/$user_name" NFSHomeDirectory 2>/dev/null | awk '{print $2}' || true)
+        if [ -n "$user_home" ]; then
+          printf '%s\n' "$user_home"
+          return 0
+        fi
+      fi
+      ;;
+  esac
+
+  printf '%s\n' "$HOME"
+}
+
+SIGNING_HOME=$(resolve_signing_home)
+
 # Project config is loaded from ~/.dev-studio/<project>/config/release.env.
 # STUDIO_TF_* env overrides keep synthetic fixtures out of the real checkout.
 PROJECT_ROOT="${STUDIO_TF_PROJECT_ROOT:-/Users/vishalsingh/Documents/Turnip.gg/turnip-ios}"
 PBXPROJ="${STUDIO_TF_PBXPROJ:-$PROJECT_ROOT/zaps-app/Turnip.xcodeproj/project.pbxproj}"
 PROJECT_RELPATH="${STUDIO_TF_PROJECT_RELPATH:-zaps-app/Turnip.xcodeproj}"
+SIGNING_KEYCHAIN_PATH="${STUDIO_TF_SIGNING_KEYCHAIN_PATH:-$PROJECT_ROOT/.dev-studio/signing/zap-dev.keychain-db}"
 ASC_KEY_ID="${STUDIO_TF_ASC_KEY_ID:-}"
 ASC_ISSUER_ID="${STUDIO_TF_ASC_ISSUER_ID:-}"
 ASC_KEY_PATH=$(release_asc_key_path "$ASC_KEY_ID" 2>/dev/null || true)
@@ -226,6 +259,23 @@ PY
     [ -r "$SLACK_TOKEN_FILE" ] || halt_failed prereq "Slack token unreadable at $SLACK_TOKEN_FILE; no mutation occurred. Set STUDIO_TF_SLACK_DEFERRED=1 only for an intentionally upload-only run."
     [ -s "$SLACK_TOKEN_FILE" ] || halt_failed prereq "Slack token file is empty at $SLACK_TOKEN_FILE; no mutation occurred. Set STUDIO_TF_SLACK_DEFERRED=1 only for an intentionally upload-only run."
   fi
+}
+
+validate_signing_assets() {
+  [ -r "$SIGNING_KEYCHAIN_PATH" ] || halt_failed prereq "repo-local signing keychain unreadable at $SIGNING_KEYCHAIN_PATH; import the .p12 into that keychain before re-running"
+
+  require_cmd security
+
+  local signing_identities signing_count apple_development_count signing_identity_sha1
+  signing_identities=$(HOME="$SIGNING_HOME" security find-identity -v -p codesigning "$SIGNING_KEYCHAIN_PATH" 2>/dev/null || true)
+  signing_count=$(printf '%s\n' "$signing_identities" | awk '/valid identities found/ {print $1; found=1} END {if (!found) print 0}')
+  apple_development_count=$(printf '%s\n' "$signing_identities" | grep -Ec 'Apple Development|iPhone Developer' || true)
+  if [ "${signing_count:-0}" -eq 0 ] || [ "${apple_development_count:-0}" -eq 0 ]; then
+    halt_failed prereq "No usable Apple Development signing identity is available in the repo-local signing keychain at $SIGNING_KEYCHAIN_PATH; import the matching .p12/private key there before re-running."
+  fi
+  signing_identity_sha1=$(printf '%s\n' "$signing_identities" | awk '/Apple Development|iPhone Developer/ {print $2; exit}')
+  [ -n "$signing_identity_sha1" ] || halt_failed prereq "could not derive signing identity SHA-1 from $SIGNING_KEYCHAIN_PATH"
+  SIGNING_IDENTITY_SHA1="$signing_identity_sha1"
 }
 
 asc_get() {
@@ -803,6 +853,7 @@ cmd_push() {
         halt_failed prereq "explicit version $VERSION already exists in ASC as $existing_live_state; choose a new STUDIO_TF_FORCE_VERSION"
       fi
     fi
+    validate_signing_assets
   fi
 
   # Phase 1.5 — pbxproj bump + commit + push (Step 3).
@@ -914,6 +965,7 @@ EOF
   else
     local archive_log="/tmp/${SCHEME}-${NEW_BUILD_NUMBER}-archive.log"
     (
+      HOME="$SIGNING_HOME"
       cd "$PROJECT_ROOT" || exit 1
       xcodebuild archive \
         -project "$PROJECT_RELPATH" \
@@ -924,6 +976,7 @@ EOF
         -authenticationKeyPath "$ASC_KEY_PATH" \
         -authenticationKeyID "$ASC_KEY_ID" \
         -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+        OTHER_CODE_SIGN_FLAGS="--keychain $SIGNING_KEYCHAIN_PATH" \
         CODE_SIGN_STYLE=Automatic \
         2>&1 | tee "$archive_log" | { [ -x "$XCPRETTY" ] && "$XCPRETTY" || cat; }
       exit "${PIPESTATUS[0]}"
@@ -971,7 +1024,7 @@ EOF
 </plist>
 PLIST
     local export_log="/tmp/${SCHEME}-${NEW_BUILD_NUMBER}-export.log"
-    if ! xcodebuild -exportArchive \
+    if ! HOME="$SIGNING_HOME" xcodebuild -exportArchive \
         -archivePath "$ARCHIVE_PATH" \
         -exportPath "/tmp/${SCHEME}-${NEW_BUILD_NUMBER}-export" \
         -exportOptionsPlist "$export_plist" \
@@ -979,6 +1032,7 @@ PLIST
         -authenticationKeyPath "$ASC_KEY_PATH" \
         -authenticationKeyID "$ASC_KEY_ID" \
         -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+        OTHER_CODE_SIGN_FLAGS="--keychain $SIGNING_KEYCHAIN_PATH" \
         >"$export_log" 2>&1; then
       halt_failed upload "xcodebuild -exportArchive exit non-zero (log: $export_log)"
     fi
