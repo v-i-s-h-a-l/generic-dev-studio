@@ -32,6 +32,7 @@ cat > "$SUMMARY_ROOT/issue-446.json" <<'JSON'
   "review_pass_count": 1,
   "review_findings_tier": "warn",
   "functionality_delivered": ["Operators can list persisted chain runs."],
+  "user_visible_change": ["The manager finish output now explains the operator-facing result."],
   "carryover": ["Full D1 amendment flow remains deferred."],
   "lessons": ["List mode should short-circuit before run allocation."],
   "telemetry_gaps": []
@@ -79,6 +80,7 @@ duration_since() { printf '%s\n' "$(( ${2:-120} - $1 ))"; }
 generate_run_report completed ""
 
 for heading in \
+  '## Work-Chain Finish Summary' \
   '## Functionality Delivered' \
   '## Telemetry Roll-up' \
   '## Quality Signals' \
@@ -99,6 +101,11 @@ done
 
 grep -q 'Operators can list persisted chain runs.' "$RUN_REPORT" || {
   printf 'missing functionality narrative\n' >&2
+  cat "$RUN_REPORT" >&2
+  exit 1
+}
+grep -q 'The manager finish output now explains the operator-facing result.' "$RUN_REPORT" || {
+  printf 'missing user-facing change narrative\n' >&2
   cat "$RUN_REPORT" >&2
   exit 1
 }

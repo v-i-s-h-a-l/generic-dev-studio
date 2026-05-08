@@ -72,7 +72,7 @@ Required normalized fields:
 | `tokens` | Token telemetry object, number, or `null`. |
 | `telemetry_gaps` | String array of missing telemetry fields. |
 
-Optional normalized fields include `commit_or_pr_references`, `decisions_made`, `assumptions_escrowed`, `next_recommended_action`, `functionality_delivered`, `refactoring_needed_now`, `refactoring_follow_ups`, `carryover`, `lessons`, and `blocked_reason`.
+Optional normalized fields include `commit_or_pr_references`, `decisions_made`, `assumptions_escrowed`, `next_recommended_action`, `functionality_delivered`, `user_visible_change`, `refactoring_needed_now`, `refactoring_follow_ups`, `carryover`, `lessons`, and `blocked_reason`.
 
 `refactoring_needed_now[]` lists cleanup that was required to complete the current bounded issue safely. `refactoring_follow_ups[]` lists deferred design debt with reason, affected area, risk, and suggested timing so parent summaries can distinguish "fixed as part of this task" from "proposed as follow-up work."
 

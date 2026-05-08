@@ -95,7 +95,7 @@ if grep -q '/dev-studio manager work-chain archived-chain-id --dry-run' "$TMPROO
   cat "$TMPROOT/out" >&2
   exit 1
 fi
-grep -q 'Attended run: `/dev-studio manager work-chain <manifest|chain-name> --attended --yes`' "$TMPROOT/out" || {
+grep -q 'Attended run: `/dev-studio manager work-chain <manifest|chain-name|chain-id> --attended --yes`' "$TMPROOT/out" || {
   printf 'missing attended command contract\n' >&2
   cat "$TMPROOT/out" >&2
   exit 1
