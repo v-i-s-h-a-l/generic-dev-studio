@@ -23,6 +23,8 @@ Every non-fatal halt must leave:
 - the validator-enforced `halt_class`
 - a resumable state object
 - one visible `next_command`, normally `scripts/studio-chain-runner.sh --resume <run_id> --yes`
+- one `next_safe_action` describing what to inspect or correct before resuming
+- compact `issue_context` when the halt can be tied to an issue, including issue-run id, issue number/title, status, dependencies, and commit-after when available
 - finite retry policy metadata showing the auto-retry limit was exhausted or not applicable
 - escalation metadata showing whether a human prompt is allowed for this halt class
 
@@ -44,7 +46,7 @@ Writers choose only `reason_id`; the schema enforces the class.
 | Halt class | Reason IDs |
 |---|---|
 | `retryable` | `github_auth_unavailable`, `github_home_mismatch`, `github_rate_limited`, `network_partition`, `child_timeout`, `disk_runtime_pressure` |
-| `recoverable` | `parent_host_unknown`, `branch_worktree_conflict`, `base_branch_advanced`, `missing_child_summary`, `child_crash`, `issue_body_changed`, `partial_github_operation`, `test_build_infra_unavailable`, `telemetry_artifact_malformed`, `telemetry_artifact_missing`, `manifest_schema_version_mismatch`, `implementation_scope_blocked` |
+| `recoverable` | `parent_host_unknown`, `branch_worktree_conflict`, `base_branch_advanced`, `missing_child_summary`, `child_crash`, `issue_body_changed`, `partial_github_operation`, `test_build_infra_unavailable`, `telemetry_artifact_malformed`, `telemetry_artifact_missing`, `manifest_schema_version_mismatch`, `implementation_scope_blocked`, `checkpoint_drift_detected` |
 | `review-needed` | `reviewer_blocked`, `reviewer_ambiguous` |
 | `human-needed` | `reviewer_host_ineligible`, `model_tool_permission_prompt`, `context_output_overflow` |
 | `fatal` | `required_review_failed`, `secret_detected`, `destructive_change_required`, `permission_expansion_required`, `unsafe_external_state` |
@@ -52,6 +54,12 @@ Writers choose only `reason_id`; the schema enforces the class.
 ## Writer Responsibility
 
 Parent runner writes infrastructure, review, git, GitHub, and runtime halts. Child workers surface model/tool prompts, context/output overflow, secrets, destructive changes, permission expansion, and scoped implementation hard stops through completion summaries; the parent may normalize those into halt records.
+
+Checkpoint drift halts attach a private `details` object with the checkpoint id,
+expected commit, observed commit, drift artifact path, and read-set artifact
+path when resume tracing produced one. The drift artifact stores the same
+commit pair plus the read-set list so recovery does not require parsing chat
+history or rerunning checkpoint resume just to see what changed.
 
 ## Privacy
 

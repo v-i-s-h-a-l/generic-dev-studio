@@ -270,7 +270,7 @@ Emitted by `scripts/studio-chain-runner.sh`. Agent field is `studio`, mode field
 | `chain_run_completed` | The invocation writes its final private report or abort report. | `run_id`, `report`, `status`, `failure_reason`, `duration_s` |
 | `chain_resume_attempt_started` | A manual or supervisor-selected resume invocation begins. | `run_id`, `attempt_id`, `status` |
 | `chain_resume_attempt_completed` | A resume invocation finishes, including failed attempts normalized through halt records. | `run_id`, `attempt_id`, `status`, `duration_s`, `failure_reason` |
-| `chain_halt_recorded` | A retryable, recoverable, review-needed, human-needed, or fatal halt is persisted. | `run_id`, `chain_run_id`, `issue_run_id`, `reason_id`, `halt_class`, `halt_record`, `status` |
+| `chain_halt_recorded` | A retryable, recoverable, review-needed, human-needed, or fatal halt is persisted. | `run_id`, `chain_run_id`, `issue_run_id`, `reason_id`, `halt_class`, `halt_record`, `status`, optional `issue_context`, `next_safe_action`, and compact `details` such as checkpoint drift artifact references |
 | `chain_state_projection_repaired` | Resume startup rewrites stale `state.json` from the event-derived projection. | `run_id`, `backup`, `mismatch`, `status` |
 | `chain_stale_lock_removed` | Startup, supervisor, or state-update lock cleanup removes a stale state lock after PID/host/process evidence proves it is not live. | `run_id`, `lock_path`, `context`, `detail.reason`, `status` |
 | `chain_decision_escrow_opened` | A worker summary contains an assumption or decision that continued on a low-risk default and needs later review. | `run_id`, `chain_run_id`, `issue_run_id`, `decision_id`, `risk_class`, `status`, `escrow_record` |

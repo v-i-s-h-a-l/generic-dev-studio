@@ -967,7 +967,22 @@ write_run_state() {
     --argjson phase_review_feedback "$phase_review_feedback_json" \
     --argjson checkpoints "$checkpoints_json" \
     --argjson efficiency_metrics "$efficiency_metrics_json" \
-    '{
+    'def normalize_issue:
+       . as $issue
+       | ($issue.issue_number // $issue.number // $issue.issue // null) as $issue_number
+       | ($issue.issue_title // $issue.title // $issue.provenance.issue.title // null) as $issue_title
+       | . + {
+           issue_number: $issue_number,
+           issue_title: $issue_title,
+           title: ($issue.title // $issue_title),
+           status: ($issue.status // "unknown"),
+           dependencies: ($issue.dependencies // []),
+           commit_after: ($issue.commit_after // $issue.provenance.implementation.commit_after // null)
+         }
+       | if (.number // null) == null and $issue_number != null then .number = $issue_number else . end;
+     def normalize_chain:
+       .issues = ((.issues // []) | map(normalize_issue));
+     {
       schema_version: 1,
       run_id: $run_id,
       manifest: $manifest,
@@ -987,7 +1002,7 @@ write_run_state() {
         retryable_halt_classes: ["retryable"],
         prompt_after_exhaustion: false
       },
-      chains: $chains,
+      chains: ($chains | map(normalize_chain)),
       halt_records: $halt_records,
       decision_escrows: $decision_escrows,
       phase_reviews: $phase_reviews,
@@ -1141,6 +1156,10 @@ mark_issue_state() {
          );
      (.chains[].issues[] | select(.issue_run_id == $issue_run_id)) |= (
        .status = $status
+       | .issue_number = (.issue_number // .number // .issue // null)
+       | .issue_title = (.issue_title // .title // .provenance.issue.title // null)
+       | .dependencies = (.dependencies // [])
+       | .commit_after = (.commit_after // .provenance.implementation.commit_after // null)
        | append_lifecycle($lifecycle; $status)
        | .provenance.issue = ((.provenance.issue // {}) + {
            number:(.number // .issue // null),
@@ -1187,6 +1206,9 @@ mark_issue_implemented_local() {
          );
      (.chains[].issues[] | select(.issue_run_id == $issue_run_id)) |= (
        append_lifecycle("implemented-local"; "worker-commit")
+       | .issue_number = (.issue_number // .number // .issue // null)
+       | .issue_title = (.issue_title // .title // .provenance.issue.title // null)
+       | .dependencies = (.dependencies // [])
        | .commit_before = $before
        | .commit_after = $after
        | if $summary == "" then . else .summary = $summary end
@@ -1316,12 +1338,79 @@ sanitize_checkpoint_component() {
   printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_' | sed 's/^_*//; s/_*$//; s/__/_/g'
 }
 
+json_array_from_lines_file() {
+  local file="$1"
+  if [ -f "$file" ]; then
+    jq -R -s -c 'split("\n")[:-1]' "$file"
+  else
+    printf '[]\n'
+  fi
+}
+
 checkpoint_latest_pointer_path_for() {
   local project="$1" role="$2" branch="$3" latest_dir safe_role safe_branch
   latest_dir=$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_checkpoint_latest_dir_for "$project")
   safe_role=$(sanitize_checkpoint_component "$role")
   safe_branch=$(sanitize_checkpoint_component "$branch")
   printf '%s/%s/%s.json\n' "$latest_dir" "$safe_role" "$safe_branch"
+}
+
+reset_checkpoint_drift_context() {
+  CHECKPOINT_DRIFT_REASON=""
+  CHECKPOINT_DRIFT_SUMMARY=""
+  CHECKPOINT_DRIFT_EXPECTED_COMMIT=""
+  CHECKPOINT_DRIFT_OBSERVED_COMMIT=""
+  CHECKPOINT_DRIFT_READ_SET_ARTIFACT=""
+}
+
+set_checkpoint_drift_context() {
+  CHECKPOINT_DRIFT_REASON="$1"
+  CHECKPOINT_DRIFT_SUMMARY="$2"
+  CHECKPOINT_DRIFT_EXPECTED_COMMIT="${3:-}"
+  CHECKPOINT_DRIFT_OBSERVED_COMMIT="${4:-}"
+  CHECKPOINT_DRIFT_READ_SET_ARTIFACT="${5:-}"
+}
+
+write_checkpoint_drift_artifact() {
+  local chain_run_id="$1" checkpoint_id="$2" checkpoint_dir="$3" branch="$4" expected_commit="$5" observed_commit="$6" drift_status="$7" read_set_artifact="${8:-}" reason="${9:-checkpoint_drift_detected}" summary="${10:-checkpoint drift detected}"
+  local file safe_checkpoint read_set_json
+  safe_checkpoint=$(sanitize_checkpoint_component "$checkpoint_id")
+  [ -n "$safe_checkpoint" ] || safe_checkpoint="unknown"
+  file="$CHAIN_RUN_ROOT/checkpoint-drift-$chain_run_id-$safe_checkpoint.json"
+  read_set_json=$(json_array_from_lines_file "$read_set_artifact")
+  jq -n \
+    --arg created_at "$(iso_ts_now)" \
+    --arg run_id "$RUN_ID" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg checkpoint_id "$checkpoint_id" \
+    --arg checkpoint_dir "$checkpoint_dir" \
+    --arg branch "$branch" \
+    --arg expected_commit "$expected_commit" \
+    --arg observed_commit "$observed_commit" \
+    --arg drift_status "$drift_status" \
+    --arg read_set_artifact "$read_set_artifact" \
+    --arg reason "$reason" \
+    --arg summary "$summary" \
+    --argjson read_set "$read_set_json" \
+    '{
+      schema_version: 1,
+      kind: "chain-checkpoint-drift",
+      created_at: $created_at,
+      run_id: $run_id,
+      chain_run_id: $chain_run_id,
+      checkpoint_id: $checkpoint_id,
+      checkpoint_dir: (if $checkpoint_dir == "" then null else $checkpoint_dir end),
+      branch: (if $branch == "" then null else $branch end),
+      expected_commit: (if $expected_commit == "" then null else $expected_commit end),
+      observed_commit: (if $observed_commit == "" then null else $observed_commit end),
+      drift_status: $drift_status,
+      read_set_artifact: (if $read_set_artifact == "" then null else $read_set_artifact end),
+      read_set: $read_set,
+      reason: $reason,
+      summary: $summary,
+      privacy: {classification: "private-runtime"}
+    }' > "$file"
+  printf '%s\n' "$file"
 }
 
 resolve_checkpoint_mode() {
@@ -1419,18 +1508,19 @@ create_auto_checkpoint_after_issue() {
 validate_auto_checkpoint_artifacts() {
   local dir="$1" branch="$2" expected_checkpoint_id="$3" current_head="$4"
   local state saved_branch saved_head ref missing=""
-  [ -d "$dir" ] || { printf 'checkpoint directory missing: %s\n' "$dir" >&2; return 1; }
-  [ -f "$dir/manifest.json" ] || { printf 'checkpoint manifest missing: %s\n' "$dir" >&2; return 1; }
-  [ -f "$dir/context.md" ] || { printf 'checkpoint context missing: %s\n' "$dir" >&2; return 1; }
-  [ -f "$dir/state.json" ] || { printf 'checkpoint state missing: %s\n' "$dir" >&2; return 1; }
+  reset_checkpoint_drift_context
+  [ -d "$dir" ] || { set_checkpoint_drift_context checkpoint_directory_missing "checkpoint directory missing: $dir" "" "$current_head"; printf 'checkpoint directory missing: %s\n' "$dir" >&2; return 1; }
+  [ -f "$dir/manifest.json" ] || { set_checkpoint_drift_context checkpoint_manifest_missing "checkpoint manifest missing: $dir" "" "$current_head"; printf 'checkpoint manifest missing: %s\n' "$dir" >&2; return 1; }
+  [ -f "$dir/context.md" ] || { set_checkpoint_drift_context checkpoint_context_missing "checkpoint context missing: $dir" "" "$current_head"; printf 'checkpoint context missing: %s\n' "$dir" >&2; return 1; }
+  [ -f "$dir/state.json" ] || { set_checkpoint_drift_context checkpoint_state_missing "checkpoint state missing: $dir" "" "$current_head"; printf 'checkpoint state missing: %s\n' "$dir" >&2; return 1; }
   jq -e --arg checkpoint_id "$expected_checkpoint_id" --arg role manager \
     '.checkpoint_id == $checkpoint_id and .producer.role == $role and .default_load.files == ["manifest.json", "context.md"]' \
-    "$dir/manifest.json" >/dev/null || return 1
+    "$dir/manifest.json" >/dev/null || { set_checkpoint_drift_context checkpoint_manifest_incompatible "checkpoint manifest incompatible for $expected_checkpoint_id" "" "$current_head"; return 1; }
   state=$(cat "$dir/state.json")
   saved_branch=$(printf '%s\n' "$state" | jq -r '.working_tree.branch // ""')
   saved_head=$(printf '%s\n' "$state" | jq -r '.working_tree.commit // ""')
-  [ "$saved_branch" = "$branch" ] || { printf 'checkpoint branch drift: %s != %s\n' "$saved_branch" "$branch" >&2; return 1; }
-  [ -z "$saved_head" ] || [ "$saved_head" = "$current_head" ] || { printf 'checkpoint head drift: %s != %s\n' "$saved_head" "$current_head" >&2; return 1; }
+  [ "$saved_branch" = "$branch" ] || { set_checkpoint_drift_context checkpoint_branch_drift "checkpoint branch drift: $saved_branch != $branch" "$saved_head" "$current_head"; printf 'checkpoint branch drift: %s != %s\n' "$saved_branch" "$branch" >&2; return 1; }
+  [ -z "$saved_head" ] || [ "$saved_head" = "$current_head" ] || { set_checkpoint_drift_context checkpoint_head_drift "checkpoint head drift: $saved_head != $current_head" "$saved_head" "$current_head"; printf 'checkpoint head drift: %s != %s\n' "$saved_head" "$current_head" >&2; return 1; }
   while IFS= read -r ref; do
     [ -n "$ref" ] || continue
     case "$ref" in
@@ -1439,23 +1529,25 @@ validate_auto_checkpoint_artifacts() {
   done <<EOF
 $(jq -r '.evidence[]?.ref // empty' "$dir/evidence.json" 2>/dev/null || true)
 EOF
-  [ -z "$missing" ] || { printf 'checkpoint evidence refs missing: %s\n' "$missing" >&2; return 1; }
+  [ -z "$missing" ] || { set_checkpoint_drift_context checkpoint_evidence_missing "checkpoint evidence refs missing: $missing" "$saved_head" "$current_head"; printf 'checkpoint evidence refs missing: %s\n' "$missing" >&2; return 1; }
 }
 
 load_auto_checkpoint_for_chain() {
-  local mode="$1" chain_run_id="$2" branch="$3" chain_worktree="$4"
+  local mode="$1" chain_run_id="$2" branch="$3" chain_worktree="$4" chain_name="${5:-}"
   [ "$mode" = "auto" ] || return 0
   [ -n "$RESUME_ID" ] || return 0
-  local checkpoint_id pointer_dir pointer_id checkpoint_dir current_head load_out drift loaded_files
+  local checkpoint_id pointer_dir pointer_id checkpoint_dir current_head load_out drift loaded_files read_set_artifact saved_head drift_artifact details summary
   checkpoint_id=$(jq -r --arg chain_run_id "$chain_run_id" '(.checkpoints // []) | map(select(.chain_run_id == $chain_run_id)) | last | .checkpoint_id // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
   [ -n "$checkpoint_id" ] || return 0
   pointer_dir=$(checkpoint_latest_pointer_path_for generic-dev-studio manager "$branch")
   pointer_id=$(jq -r '.checkpoint_id // empty' "$pointer_dir" 2>/dev/null || true)
   if [ "$pointer_id" != "$checkpoint_id" ]; then
-    log "checkpoint latest pointer drift for branch $branch; skipping optional auto-checkpoint load"
-    emit_chain_event checkpoint_auto_loaded "" "$RUN_ID" "$chain_run_id" "" skipped 0 \
-      "$(jq -cn --arg checkpoint_id "$checkpoint_id" --arg pointer_id "$pointer_id" --arg branch "$branch" '{checkpoint_id:$checkpoint_id, pointer_id:$pointer_id, branch:$branch, skipped_reason:"latest_pointer_drift"}')"
-    return 0
+    summary="checkpoint latest pointer drift for branch $branch: expected $checkpoint_id, observed ${pointer_id:-missing}"
+    drift_artifact=$(write_checkpoint_drift_artifact "$chain_run_id" "$checkpoint_id" "" "$branch" "" "" confirmed "" latest_pointer_drift "$summary")
+    details=$(jq -cn --arg checkpoint_id "$checkpoint_id" --arg expected "$checkpoint_id" --arg observed "$pointer_id" --arg drift_artifact "$drift_artifact" '{checkpoint_id:$checkpoint_id, expected_checkpoint_id:$expected, observed_checkpoint_id:(if $observed == "" then null else $observed end), drift_artifact:$drift_artifact}')
+    write_halt_record checkpoint_drift_detected "$summary" "$chain_run_id" "" "$chain_name" "" parent-runner "$details" "Inspect the checkpoint drift artifact, realign the latest pointer or run state, then resume the chain."
+    finish_run failed "$summary"
+    exit 1
   fi
   checkpoint_dir=$(jq -r --arg chain_run_id "$chain_run_id" --arg checkpoint_id "$checkpoint_id" '(.checkpoints // []) | map(select(.chain_run_id == $chain_run_id and .checkpoint_id == $checkpoint_id)) | last | .checkpoint_dir // empty' "$RUN_STATE_JSON")
   case "$checkpoint_dir" in
@@ -1464,16 +1556,32 @@ load_auto_checkpoint_for_chain() {
     *) checkpoint_dir="$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_checkpoint_root_for generic-dev-studio)/sessions/$checkpoint_dir" ;;
   esac
   current_head=$(git -C "$chain_worktree" rev-parse HEAD)
-  validate_auto_checkpoint_artifacts "$checkpoint_dir" "$branch" "$checkpoint_id" "$current_head" || abort_run "checkpoint drift verification failed for $checkpoint_id"
+  if ! validate_auto_checkpoint_artifacts "$checkpoint_dir" "$branch" "$checkpoint_id" "$current_head"; then
+    summary="${CHECKPOINT_DRIFT_SUMMARY:-checkpoint drift verification failed for $checkpoint_id}"
+    drift_artifact=$(write_checkpoint_drift_artifact "$chain_run_id" "$checkpoint_id" "$checkpoint_dir" "$branch" "${CHECKPOINT_DRIFT_EXPECTED_COMMIT:-}" "${CHECKPOINT_DRIFT_OBSERVED_COMMIT:-$current_head}" confirmed "${CHECKPOINT_DRIFT_READ_SET_ARTIFACT:-}" "${CHECKPOINT_DRIFT_REASON:-checkpoint_validation_failed}" "$summary")
+    details=$(jq -cn --arg checkpoint_id "$checkpoint_id" --arg expected "${CHECKPOINT_DRIFT_EXPECTED_COMMIT:-}" --arg observed "${CHECKPOINT_DRIFT_OBSERVED_COMMIT:-$current_head}" --arg drift_artifact "$drift_artifact" '{checkpoint_id:$checkpoint_id, expected_commit:(if $expected == "" then null else $expected end), observed_commit:(if $observed == "" then null else $observed end), drift_artifact:$drift_artifact}')
+    write_halt_record checkpoint_drift_detected "$summary" "$chain_run_id" "" "$chain_name" "" parent-runner "$details" "Inspect the checkpoint drift artifact, realign the chain worktree or checkpoint, then resume the chain."
+    finish_run failed "$summary"
+    exit 1
+  fi
   load_out="$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.out"
+  read_set_artifact="$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.reads"
   (
     cd "$chain_worktree" || exit 1
-    HOME="$PARENT_HOME_FOR_GITHUB" STUDIO_CHECKPOINT_TRACE_READS="$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.reads" \
+    HOME="$PARENT_HOME_FOR_GITHUB" STUDIO_CHECKPOINT_TRACE_READS="$read_set_artifact" \
       "$SCRIPT_DIR/studio-checkpoint.sh" resume --project generic-dev-studio --role manager --branch "$branch" --latest
   ) > "$load_out"
   drift=$(sed -n 's/^Drift: //p' "$load_out" | tail -1)
-  [ "$drift" != "confirmed" ] || abort_run "checkpoint resume drift confirmed for $checkpoint_id"
-  loaded_files=$(tr '\n' ' ' < "$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.reads" 2>/dev/null | awk '{printf "[\""; for (i=1;i<=NF;i++){if(i>1)printf "\",\""; printf "%s",$i} printf "\"]"}')
+  if [ "$drift" = "confirmed" ]; then
+    saved_head=$(jq -r '.working_tree.commit // ""' "$checkpoint_dir/state.json" 2>/dev/null || true)
+    summary="checkpoint resume drift confirmed for $checkpoint_id"
+    drift_artifact=$(write_checkpoint_drift_artifact "$chain_run_id" "$checkpoint_id" "$checkpoint_dir" "$branch" "$saved_head" "$current_head" "$drift" "$read_set_artifact" resume_drift_confirmed "$summary")
+    details=$(jq -cn --arg checkpoint_id "$checkpoint_id" --arg expected "$saved_head" --arg observed "$current_head" --arg read_set_artifact "$read_set_artifact" --arg drift_artifact "$drift_artifact" '{checkpoint_id:$checkpoint_id, expected_commit:(if $expected == "" then null else $expected end), observed_commit:(if $observed == "" then null else $observed end), read_set_artifact:$read_set_artifact, drift_artifact:$drift_artifact}')
+    write_halt_record checkpoint_drift_detected "$summary" "$chain_run_id" "" "$chain_name" "" parent-runner "$details" "Inspect the checkpoint drift artifact and read-set, realign the chain worktree or checkpoint, then resume the chain."
+    finish_run failed "$summary"
+    exit 1
+  fi
+  loaded_files=$(json_array_from_lines_file "$read_set_artifact")
   [ -n "$loaded_files" ] || loaded_files='[]'
   emit_chain_event checkpoint_auto_loaded "" "$RUN_ID" "$chain_run_id" "" completed 0 \
     "$(jq -cn --arg checkpoint_id "$checkpoint_id" --arg checkpoint_dir "$checkpoint_dir" --arg branch "$branch" --arg drift "${drift:-unknown}" --arg load_output "$load_out" --argjson loaded_files "$loaded_files" '{checkpoint_id:$checkpoint_id, checkpoint_dir:$checkpoint_dir, role:"manager", branch:$branch, drift_status:$drift, loaded_files:$loaded_files, load_output:$load_output}')"
@@ -1483,7 +1591,7 @@ halt_class_for_reason() {
   case "$1" in
     github_auth_unavailable|github_home_mismatch|github_rate_limited|network_partition|child_timeout|disk_runtime_pressure)
       printf 'retryable\n' ;;
-    parent_host_unknown|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_crash|issue_body_changed|partial_github_operation|test_build_infra_unavailable|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|manifest_schema_mismatch|implementation_scope_blocked|chain_state_projection_invalid|chain_state_projection_repair_failed)
+    parent_host_unknown|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_crash|issue_body_changed|partial_github_operation|test_build_infra_unavailable|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|manifest_schema_mismatch|implementation_scope_blocked|chain_state_projection_invalid|chain_state_projection_repair_failed|checkpoint_drift_detected)
       printf 'recoverable\n' ;;
     reviewer_blocked|reviewer_ambiguous)
       printf 'review-needed\n' ;;
@@ -1508,6 +1616,7 @@ halt_reason_for_text() {
     *worker_summary_missing*|*summary*missing*|*produced\ no\ runner\ result*) printf 'missing_child_summary\n' ;;
     *worker\ exited*|*unexpected_exit*) printf 'child_crash\n' ;;
     *manifest/schema\ mismatch*|*planning\ manifest*|*chain-manifest*) printf 'manifest_schema_mismatch\n' ;;
+    *checkpoint*drift*) printf 'checkpoint_drift_detected\n' ;;
     *gh\ issue\ close*|*PR\ telemetry\ comment*|*GitHub\ operation*) printf 'partial_github_operation\n' ;;
     *host\ preflight*|*test*infra*|*build*infra*) printf 'test_build_infra_unavailable\n' ;;
     *permission*) printf 'model_tool_permission_prompt\n' ;;
@@ -1518,12 +1627,111 @@ halt_reason_for_text() {
   esac
 }
 
+halt_issue_context_json() {
+  local chain_run_id="${1:-}" issue_run_id="${2:-}" chain="${3:-}" issue_number="${4:-}"
+  if [ -f "${RUN_STATE_JSON:-}" ]; then
+    jq -c \
+      --arg chain_run_id "$chain_run_id" \
+      --arg issue_run_id "$issue_run_id" \
+      --arg chain "$chain" \
+      --arg issue_number "$issue_number" \
+      'def maybe_number:
+         if . == null or . == "" then null else (tonumber? // .) end;
+       def context($chain_row; $issue):
+         {
+           chain: ($chain_row.name // $chain_row.chain // $chain // null),
+           chain_run_id: ($chain_row.chain_run_id // $chain_run_id // null),
+           issue_run_id: ($issue.issue_run_id // $issue_run_id // null),
+           issue_number: (($issue.issue_number // $issue.number // $issue.issue // $issue_number) | maybe_number),
+           title: ($issue.issue_title // $issue.title // $issue.provenance.issue.title // null),
+           status: ($issue.status // null),
+           lifecycle_state: ($issue.lifecycle_state // null),
+           dependencies: ($issue.dependencies // []),
+           commit_after: ($issue.commit_after // $issue.provenance.implementation.commit_after // null),
+           summary: ($issue.summary // null),
+           issue_url: ($issue.url // $issue.issue_url // $issue.provenance.issue.url // null),
+           issue_branch: ($issue.issue_branch // null),
+           issue_worktree: ($issue.issue_worktree // null)
+         };
+       ([
+          .chains[]? as $chain_row
+          | $chain_row.issues[]?
+          | select(
+              ($issue_run_id != "" and ((.issue_run_id // "") | tostring) == $issue_run_id)
+              or ($issue_number != "" and (((.issue_number // .number // .issue // "") | tostring) == $issue_number))
+            )
+          | context($chain_row; .)
+        ] | .[0])
+       // {
+          chain: (if $chain == "" then null else $chain end),
+          chain_run_id: (if $chain_run_id == "" then null else $chain_run_id end),
+          issue_run_id: (if $issue_run_id == "" then null else $issue_run_id end),
+          issue_number: ($issue_number | maybe_number),
+          title: null,
+          status: null,
+          dependencies: [],
+          commit_after: null
+        }' "$RUN_STATE_JSON" 2>/dev/null && return 0
+  fi
+  jq -cn \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg chain "$chain" \
+    --arg issue_number "$issue_number" \
+    'def maybe_number:
+       if . == null or . == "" then null else (tonumber? // .) end;
+     {
+       chain: (if $chain == "" then null else $chain end),
+       chain_run_id: (if $chain_run_id == "" then null else $chain_run_id end),
+       issue_run_id: (if $issue_run_id == "" then null else $issue_run_id end),
+       issue_number: ($issue_number | maybe_number),
+       title: null,
+       status: null,
+       dependencies: [],
+       commit_after: null
+     }'
+}
+
+halt_next_safe_action() {
+  local reason_id="$1" halt_class="$2"
+  case "$reason_id" in
+    checkpoint_drift_detected)
+      printf 'Inspect the checkpoint drift artifact and read-set, realign the chain worktree or checkpoint, then resume the chain.\n'
+      ;;
+    implementation_scope_blocked)
+      printf 'Inspect the failed prerequisite issue summary, halt record, and preserved worktree before resuming dependent work.\n'
+      ;;
+    missing_child_summary|child_crash|telemetry_artifact_malformed|telemetry_artifact_missing)
+      printf 'Inspect the worker summary or preserved issue worktree, correct the child failure, then resume the chain.\n'
+      ;;
+    reviewer_blocked|reviewer_ambiguous|reviewer_host_ineligible)
+      printf 'Inspect the phase or PR review artifact, resolve the reviewer blocker, then resume the chain.\n'
+      ;;
+    *)
+      case "$halt_class" in
+        retryable)
+          printf 'Correct the transient cause or wait for recovery, then run next_command to resume.\n'
+          ;;
+        human-needed)
+          printf 'Resolve the human-required prompt or environment decision, then run next_command to resume.\n'
+          ;;
+        fatal)
+          printf 'Do not resume automatically; inspect the halt and prepare a fresh human-authored plan.\n'
+          ;;
+        *)
+          printf 'Inspect the halt record and affected artifacts, correct the typed cause, then run next_command to resume.\n'
+          ;;
+      esac
+      ;;
+  esac
+}
+
 write_halt_record() {
-  local reason_id="$1" summary="$2" chain_run_id="${3:-}" issue_run_id="${4:-}" chain="${5:-}" issue_number="${6:-}" writer="${7:-parent-runner}"
+  local reason_id="$1" summary="$2" chain_run_id="${3:-}" issue_run_id="${4:-}" chain="${5:-}" issue_number="${6:-}" writer="${7:-parent-runner}" details_json="${8:-null}" next_safe_action_override="${9:-}"
   [ "$DRY_RUN" -eq 0 ] || return 0
   mkdir -p "$HALT_ROOT"
 
-  local halt_class hard_stop status next_command file rel_file created_at
+  local halt_class hard_stop status next_command file rel_file created_at issue_context_json next_safe_action
   halt_class=$(halt_class_for_reason "$reason_id")
   hard_stop=false
   status=paused
@@ -1536,6 +1744,12 @@ write_halt_record() {
   created_at=$(iso_ts_now)
   file="$HALT_ROOT/$created_at-$reason_id.json"
   rel_file="$file"
+  if [ -z "$details_json" ] || ! printf '%s\n' "$details_json" | jq -e . >/dev/null 2>&1; then
+    details_json="null"
+  fi
+  issue_context_json=$(halt_issue_context_json "$chain_run_id" "$issue_run_id" "$chain" "$issue_number")
+  next_safe_action="$next_safe_action_override"
+  [ -n "$next_safe_action" ] || next_safe_action=$(halt_next_safe_action "$reason_id" "$halt_class")
 
   jq -n \
     --arg created_at "$created_at" \
@@ -1550,13 +1764,17 @@ write_halt_record() {
     --arg writer "$writer" \
     --arg summary "$summary" \
     --arg next_command "$next_command" \
+    --arg next_safe_action "$next_safe_action" \
     --arg execution_mode "$EXECUTION_MODE" \
     --argjson retry_limit "$RETRY_LIMIT" \
     --argjson retry_backoff_sec "$RETRY_BACKOFF_SEC" \
     --argjson true_hard_stop "$hard_stop" \
     --arg run_state "$RUN_STATE_JSON" \
     --arg report "$RUN_REPORT" \
-    '{
+    --argjson issue_context "$issue_context_json" \
+    --argjson details "$details_json" \
+    '($details | if type == "object" then . else {} end) as $detail_obj
+     | {
       schema_version: 1,
       kind: "chain-halt-record",
       created_at: $created_at,
@@ -1570,15 +1788,22 @@ write_halt_record() {
       halt_class: $halt_class,
       writer: $writer,
       summary: $summary,
+      issue_context: $issue_context,
+      details: $details,
       resumable_state: {
         run_state: $run_state,
         report: $report,
         run_id: $run_id,
         chain_run_id: (if $chain_run_id == "" then null else $chain_run_id end),
-        issue_run_id: (if $issue_run_id == "" then null else $issue_run_id end)
+        issue_run_id: (if $issue_run_id == "" then null else $issue_run_id end),
+        issue_context: $issue_context,
+        next_safe_action: $next_safe_action
       },
       next_command: (if $next_command == "" then null else $next_command end),
-      affected_artifacts: [$run_state, $report],
+      next_safe_action: $next_safe_action,
+      affected_artifacts: ([$run_state, $report]
+        + (if ($detail_obj.drift_artifact // null) == null then [] else [$detail_obj.drift_artifact] end)
+        + (if ($detail_obj.read_set_artifact // null) == null then [] else [$detail_obj.read_set_artifact] end)),
       rollback_path: "Inspect the halt record and resume with the next_command after correcting the cause; fatal records require a fresh human-authored plan.",
       retry_policy: {
         auto_retry_limit: $retry_limit,
@@ -1609,11 +1834,13 @@ write_halt_record() {
       --arg halt_class "$halt_class" \
       --arg status "$status" \
       --arg next_command "$next_command" \
+      --arg next_safe_action "$next_safe_action" \
+      --argjson issue_context "$issue_context_json" \
       '(.halt_records //= []) |
-       .halt_records += [{path:$file, reason_id:$reason_id, halt_class:$halt_class, status:$status, next_command:(if $next_command == "" then null else $next_command end)}]'
+       .halt_records += [{path:$file, reason_id:$reason_id, halt_class:$halt_class, status:$status, next_command:(if $next_command == "" then null else $next_command end), next_safe_action:$next_safe_action, issue_context:$issue_context}]'
   fi
   emit_chain_event chain_halt_recorded "$issue_number" "$RUN_ID" "$chain_run_id" "$issue_run_id" "$status" 0 \
-    "$(jq -cn --arg reason_id "$reason_id" --arg halt_class "$halt_class" --arg halt_record "$file" '{reason_id:$reason_id, halt_class:$halt_class, halt_record:$halt_record}')"
+    "$(jq -cn --arg reason_id "$reason_id" --arg halt_class "$halt_class" --arg halt_record "$file" --arg next_safe_action "$next_safe_action" --argjson issue_context "$issue_context_json" --argjson details "$details_json" '{reason_id:$reason_id, halt_class:$halt_class, halt_record:$halt_record, next_safe_action:$next_safe_action, issue_context:$issue_context, details:$details}')"
   printf '%s\n' "$file"
 }
 
@@ -2929,6 +3156,38 @@ generate_run_report() {
     else
       printf 'No quality signals were ingested.\n'
     fi
+    printf '\n## State Issue Rows\n\n'
+    if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ]; then
+      jq -r '
+        def cell($v):
+          if $v == null or $v == "" then "missing"
+          else ($v | tostring | gsub("\\|"; "\\|"))
+          end;
+        def maybe_number:
+          if . == null or . == "" then null else (tonumber? // .) end;
+        [ .chains[]? as $chain
+          | $chain.issues[]?
+          | {
+              chain: ($chain.name // $chain.chain // "unknown"),
+              issue_run_id: (.issue_run_id // .provenance.session.issue_run_id // null),
+              issue_number: ((.issue_number // .number // .issue // null) | maybe_number),
+              title: (.issue_title // .title // .provenance.issue.title // null),
+              status: (.status // "unknown"),
+              dependencies: (.dependencies // []),
+              commit_after: (.commit_after // .provenance.implementation.commit_after // null)
+            }
+        ] as $rows
+        | if ($rows | length) == 0 then "No issue rows were present in run state."
+          else
+            "| Chain | Issue-run UUID | Issue | Title | Status | Depends On | Commit After |",
+            "|---|---|---:|---|---|---|---|",
+            ($rows[] |
+              "| \(cell(.chain)) | \(cell(.issue_run_id)) | #\(.issue_number // "unknown") | \(cell(.title)) | \(cell(.status)) | \(if ((.dependencies // []) | length) == 0 then "-" else ((.dependencies // []) | map("#" + tostring) | join(", ")) end) | \(cell(.commit_after)) |")
+          end
+      ' "$RUN_STATE_JSON"
+    else
+      printf 'Run state was not available.\n'
+    fi
     printf '\n## Chains And Issues\n\n'
     if [ "$summary_count" -gt 0 ]; then
       jq -r -s '
@@ -2984,28 +3243,46 @@ generate_run_report() {
     [ -n "$halt_dir" ] && halt_count=$(find "$halt_dir" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
     if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ] && [ "$(jq '(.halt_records // []) | length' "$RUN_STATE_JSON" 2>/dev/null || printf 0)" -gt 0 ]; then
       jq -r '
+        def cell($v):
+          if $v == null or $v == "" then "missing"
+          else ($v | tostring | gsub("\\|"; "\\|"))
+          end;
+        def issue_label:
+          (.issue_context // {}) as $ctx
+          | if ($ctx.issue_number // null) == null then "unknown"
+            else "#\($ctx.issue_number)\(if ($ctx.title // "") == "" then "" else " " + ($ctx.title | tostring | gsub("\\|"; "\\|")) end)"
+            end;
         (.halt_records // []) as $records
         | ($records | map(select((.status // "") == "paused" or (.status // "") == "terminated"))) as $active
         | ($records | map(select((.status // "") == "superseded"))) as $superseded
         | if ($active | length) > 0 then
-            ["| Reason | Class | Status | Next Command | Artifact |",
-             "|---|---|---|---|---|"],
-            ($active[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(.next_command // "hard stop") | \(.path // "missing") |")
+            ["| Reason | Class | Status | Issue | Issue-run UUID | Next Safe Action | Next Command | Artifact |",
+             "|---|---|---|---|---|---|---|---|"],
+            ($active[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(issue_label) | \(cell(.issue_context.issue_run_id)) | \(cell(.next_safe_action)) | \(.next_command // "hard stop") | \(.path // "missing") |")
           elif ($superseded | length) > 0 then
             "No active halt records. Superseded halt records: \($superseded | length) (run completed after resume).",
             "",
-            "| Reason | Class | Status | Resolution | Artifact |",
-            "|---|---|---|---|---|",
-            ($superseded[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(.resolution // "run_completed_after_resume") | \(.path // "missing") |")
+            "| Reason | Class | Status | Issue | Resolution | Artifact |",
+            "|---|---|---|---|---|---|",
+            ($superseded[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(issue_label) | \(.resolution // "run_completed_after_resume") | \(.path // "missing") |")
           else
             "No active halt records."
           end
       ' "$RUN_STATE_JSON"
     elif [ "$halt_count" -gt 0 ]; then
       jq -r -s '
-        ["| Reason | Class | Status | Next Command | Summary |",
-         "|---|---|---|---|---|"],
-        (.[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(.next_command // "hard stop") | \(.summary | gsub("\\|"; "\\|")) |")
+        def cell($v):
+          if $v == null or $v == "" then "missing"
+          else ($v | tostring | gsub("\\|"; "\\|"))
+          end;
+        def issue_label:
+          (.issue_context // {}) as $ctx
+          | if ($ctx.issue_number // .issue_number // null) == null then "unknown"
+            else "#\($ctx.issue_number // .issue_number)\(if ($ctx.title // "") == "" then "" else " " + ($ctx.title | tostring | gsub("\\|"; "\\|")) end)"
+            end;
+        ["| Reason | Class | Status | Issue | Issue-run UUID | Next Safe Action | Next Command | Summary |",
+         "|---|---|---|---|---|---|---|---|"],
+        (.[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(issue_label) | \(cell(.issue_context.issue_run_id // .issue_run_id)) | \(cell(.next_safe_action)) | \(.next_command // "hard stop") | \(.summary | gsub("\\|"; "\\|")) |")
       ' "$halt_dir"/*.json
     else
       printf 'No halt records were written.\n'
@@ -4292,7 +4569,9 @@ build_plan_json() {
         --argjson dependencies "$dependencies_json" \
         '. + [{
           number:$issue,
+          issue_number:$issue,
           title:$title,
+          issue_title:$title,
           state:$state,
           url:(if $url == "" then null else $url end),
           issue_repo:$issue_repo,
@@ -4302,6 +4581,7 @@ build_plan_json() {
           issue_worktree:$worktree,
           issue_run_id:$issue_run_id,
           status:"pending",
+          commit_after:null,
           lifecycle_state:"issue-created",
           lifecycle_history:[{state:"issue-created", at:$mapped_at, reason:"github-issue-mapping"}],
           provenance:{
@@ -5141,7 +5421,7 @@ detach_chain_worktree_for_merge_cleanup() {
     printf 'DRY-RUN git -C %q checkout --detach HEAD\n' "$chain_worktree"
     return 0
   }
-  [ -d "$chain_worktree/.git" ] || [ -f "$chain_worktree/.git" ] || return 0
+  git_checkout_exists "$chain_worktree" || return 0
   current_branch=$(git -C "$chain_worktree" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
   [ "$current_branch" = "$chain_branch" ] || return 0
   log "detaching $chain_worktree from $chain_branch before PR merge cleanup"
@@ -5635,7 +5915,7 @@ integrate_issue_result() {
           fi
           ;;
         local-clone)
-          if [ ! -d "$issue_worktree/.git" ]; then
+          if ! git_checkout_exists "$issue_worktree"; then
             if [ -n "$result_commit_after" ] \
               && git -C "$chain_worktree" cat-file -e "$result_commit_after^{commit}" 2>/dev/null \
               && git -C "$chain_worktree" merge-base --is-ancestor "$result_commit_after" HEAD 2>/dev/null; then
@@ -6202,7 +6482,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
     fi
   fi
 
-  load_auto_checkpoint_for_chain "$checkpoint_mode" "$chain_run_id" "$branch" "$chain_worktree"
+  load_auto_checkpoint_for_chain "$checkpoint_mode" "$chain_run_id" "$branch" "$chain_worktree" "$name"
 
   run_chain_issue_scheduler "$idx" "$name" "$branch" "$chain_worktree" "$host" "$git_metadata_strategy" "$chain_run_id" "$phase_review_mode" "$checkpoint_mode" "$issue_count" "$chain_results_dir"
 

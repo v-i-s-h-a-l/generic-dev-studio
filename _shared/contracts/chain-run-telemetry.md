@@ -76,8 +76,11 @@ counts, and a small `bottlenecks` array. Missing token or model telemetry stays
 
 Per-issue objects also keep audit state that is more precise than the scheduler
 `status`. `status` remains the compatibility field used for resume and
-dependency scheduling (`pending`, `running`, `completed`, `failed`).
-`lifecycle_state` and `lifecycle_history` distinguish the audit trail:
+dependency scheduling (`pending`, `running`, `completed`, `failed`). New state
+rows carry stable issue identity aliases: `issue_run_id`, `issue_number` when
+known, `issue_title`, `status`, `dependencies`, and `commit_after` when
+available. Readers must keep accepting older rows that only have `number` or
+`title`. `lifecycle_state` and `lifecycle_history` distinguish the audit trail:
 `issue-created`, `implementation-running`, `implemented-local`,
 `smoke-passed`, `merged`, and `closed`. `provenance` records the mapped issue,
 runner/session identifiers, local commit/summary references, merge point, and
@@ -121,7 +124,7 @@ evidence is verification drift.
 | iOS execution summary on worker summaries | Optional `execution_telemetry` records implementation/build/test/review/release executors when applicable, routing reason class, cost/economics summary, private artifact roots, public-safe artifact classes, cleanup outcome, retained TTL class, failover outcome, and timing split across control-plane overhead, source sync, simulator boot, xcodebuild, tests, log parsing, and cleanup. Missing required iOS evidence is emitted as named telemetry gaps (`implementation_executor`, `build_executor`, `test_executor`, `review_executor`, `release_executor`, `worker_routing`, `artifact_evidence`, `cleanup_telemetry`) without failing an otherwise completed task. |
 | iOS cleanup: `chain_ios_artifact_cleanup_completed` | `chain`, janitor `status`, redacted cleanup `counts`, `bytes_freed`, retained `retention_class`/TTL evidence when present, `paths_redacted`, and a private `telemetry_artifact` pointer. |
 | Resume: `chain_resume_attempt_started`, `chain_resume_attempt_completed` | `attempt_id`; completed event also includes `failure_reason` when non-empty. |
-| Halt: `chain_halt_recorded` | `reason_id`, `halt_class`, `halt_record`. |
+| Halt: `chain_halt_recorded` | `reason_id`, `halt_class`, `halt_record`, and when available `issue_context` plus `next_safe_action`. |
 | Projection repair: `chain_state_projection_repaired` | `backup`, `mismatch`. Emitted when resume startup repairs stale `state.json` from `events.jsonl`. |
 | Lock cleanup: `chain_stale_lock_removed` | `lock_path`, `context`, compact lock evidence (`reason`, `pid`, `created_at`, `host`, `process`, current host/process). |
 | Escrow: `chain_decision_escrow_opened` | `decision_id`, `risk_class`, `status`, `escrow_record`. |
@@ -129,7 +132,7 @@ evidence is verification drift.
 | Reviewer: `chain_review_completed` | `pr_url`, `exit_code`, `verdict` when wrapper output supplied it, `model`/`effort` when available, `wrapper_output`. |
 | Gap: `chain_telemetry_gap` | `gap_kind`, `stage`, `reason`/`reason_id`. Missing token/model/check data is a gap, never numeric zero. |
 | HOME/auth normalization: `chain_auth_normalized` | `home_source`, `github_auth`, `secrets`. Do not emit actual HOME paths or secret material. |
-| Automated checkpoints: `checkpoint_auto_created`, `checkpoint_auto_loaded`, `checkpoint_context_savings_estimated` | `checkpoint_id`, `role`, `branch`, compact size/token counters, drift status for loads, loaded file names, and private artifact pointers. Automated checkpoint events are private chain-run telemetry and do not replace worker summaries, phase reviews, PR reviews, halt records, decision escrows, event logs, or reports. |
+| Automated checkpoints: `checkpoint_auto_created`, `checkpoint_auto_loaded`, `checkpoint_context_savings_estimated` | `checkpoint_id`, `role`, `branch`, compact size/token counters, drift status for loads, loaded file names, and private artifact pointers. Checkpoint drift halts write a private drift artifact with `checkpoint_id`, expected commit, observed commit, and the read-set artifact path when resume tracing produced one. Automated checkpoint events are private chain-run telemetry and do not replace worker summaries, phase reviews, PR reviews, halt records, decision escrows, event logs, or reports. |
 
 ## Public Surfaces
 
