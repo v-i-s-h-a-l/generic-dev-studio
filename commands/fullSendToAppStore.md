@@ -5,11 +5,26 @@ allowed-tools: [Bash, Read, Edit, Grep]
 
 # Full Send to App Store
 
-Tag the current commit, create a GitHub draft release, and submit the build to App Store Connect for review with manual release. Mechanical work (tag + push, GH draft, ASC API calls) routes through `scripts/studio-tf-push.sh appstore` in the studio repo (`~/Documents/v-i-s-h-a-l/github/generic-dev-studio`). This wrapper drives release-notes composition, the human-approval gate, and the optional Slack post.
+Tag the current commit, create a GitHub draft release, and submit the build to App Store Connect for review with manual release. Mechanical work (tag + push, GitHub draft, ASC API calls, configured Slack posting, release artifact, and PR handoff) routes through `scripts/studio-tf-push.sh appstore` in the studio repo (`~/Documents/v-i-s-h-a-l/github/generic-dev-studio`). This wrapper drives release-notes composition, App Store "What's New" composition, and the human-approval gate before the script receives approved files.
 
 Authoritative knobs: project release config (App ID, ASC ids, Slack channels),
 `_shared/contracts/build-message-format.md` (release-notes shape). Configure
 Slack release announcements with `/dev-studio release-manager configure`.
+
+Operator path: use `/fullSendToAppStore` for the full App Store submission.
+The split is intentional: this wrapper owns language and approval; the script
+owns external mutations and durable handoff state.
+
+## Ownership
+
+| Surface | Owner |
+|---|---|
+| Release notes and App Store "What's New" drafts | `/fullSendToAppStore` wrapper |
+| Human approval before any tag, GitHub release, ASC submission, or public Slack message | `/fullSendToAppStore` wrapper |
+| Tag push, GitHub draft release creation, App Store Connect submission, localization update | `scripts/studio-tf-push.sh appstore` |
+| Configured App Store Slack parent/thread post and PR link reply | `scripts/studio-tf-push.sh appstore` using the approved wrapper files |
+| GitHub release publication, Slack link update, and PR promotion after `READY_FOR_SALE` | `scripts/appstore-watch.sh` after `scripts/pr-merge-finalize.sh` records release approval |
+| Reporter `cc:` attribution | Not used for App Store release notes; TestFlight drafting owns reporter tagging |
 
 ## Step 1: Resolve build + previous tag + commits
 

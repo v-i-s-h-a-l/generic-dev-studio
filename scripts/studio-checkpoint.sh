@@ -32,6 +32,7 @@ create/update options:
   --warning-ratio <n>       budget warning threshold ratio (default: 0.8)
 
 resume options:
+  --checkpoint-id <id>      resolve by id; searches durable project indexes if project-local lookup misses
   --latest                  resolve latest pointer for project + role + branch
   --show-next               lazy-load next-steps.json after drift checks
 EOF
@@ -119,6 +120,285 @@ latest_pointer_path() {
   safe_role=$(sanitize_component "$role")
   safe_branch=$(sanitize_component "$branch")
   printf '%s/%s/%s.json\n' "$latest_dir" "$safe_role" "$safe_branch"
+}
+
+checkpoint_studio_home() {
+  if [ -n "${STUDIO_CONTEXT_STUDIO_HOME:-}" ]; then
+    printf '%s\n' "$STUDIO_CONTEXT_STUDIO_HOME"
+    return 0
+  fi
+  if [ -n "${STUDIO_HOME:-}" ]; then
+    printf '%s\n' "$STUDIO_HOME"
+    return 0
+  fi
+
+  local home="${HOME:-}" login_home
+  if [ -n "$home" ] && studio_home_is_synthetic "$home"; then
+    login_home=$(resolve_user_login_home 2>/dev/null || true)
+    if [ -z "$login_home" ] || studio_home_is_synthetic "$login_home"; then
+      fail "cannot resolve non-synthetic login home for durable checkpoint state; set STUDIO_CONTEXT_STUDIO_HOME"
+    fi
+    resolve_studio_home_for_login_home "$login_home"
+    return 0
+  fi
+
+  [ -n "$home" ] || fail "HOME is not set; cannot resolve durable checkpoint state"
+  resolve_studio_home_for_login_home "$home"
+}
+
+checkpoint_project_root_for() {
+  local project="${1:?checkpoint_project_root_for <project>}"
+  printf '%s/%s\n' "$(checkpoint_studio_home)" "$project"
+}
+
+checkpoint_root_for_project() {
+  local project="${1:?checkpoint_root_for_project <project>}"
+  printf '%s/.runtime/v2/checkpoints\n' "$(checkpoint_project_root_for "$project")"
+}
+
+checkpoint_index_for_project() {
+  local project="${1:?checkpoint_index_for_project <project>}"
+  printf '%s/index.json\n' "$(checkpoint_root_for_project "$project")"
+}
+
+checkpoint_latest_dir_for_project() {
+  local project="${1:?checkpoint_latest_dir_for_project <project>}"
+  printf '%s/latest\n' "$(checkpoint_root_for_project "$project")"
+}
+
+checkpoint_known_index_paths() {
+  local studio_home index
+  studio_home=$(checkpoint_studio_home)
+  [ -d "$studio_home" ] || return 0
+  for index in "$studio_home"/*/.runtime/v2/checkpoints/index.json; do
+    [ -f "$index" ] || continue
+    printf '%s\n' "$index"
+  done | sort
+}
+
+checkpoint_project_from_index() {
+  local index="${1:?checkpoint_project_from_index <index>}" studio_home rel
+  studio_home=$(checkpoint_studio_home)
+  rel="${index#"$studio_home"/}"
+  printf '%s\n' "${rel%%/*}"
+}
+
+checkpoint_branch_from_latest_pointer() {
+  local root="$1" checkpoint_id="$2" role="$3" pointer branch
+  local safe_role
+  safe_role=$(sanitize_component "$role")
+  for pointer in "$root/latest/$safe_role"/*.json; do
+    [ -f "$pointer" ] || continue
+    branch=$(jq -r --arg checkpoint_id "$checkpoint_id" 'select(.checkpoint_id == $checkpoint_id) | .branch // empty' "$pointer" 2>/dev/null || true)
+    if [ -n "$branch" ]; then
+      printf '%s\n' "$branch"
+      return 0
+    fi
+  done
+  printf '%s\n' ""
+}
+
+checkpoint_branch_for_session() {
+  local root="$1" session_dir="$2" checkpoint_id="$3" role="$4"
+  local state branch
+  state="$root/$session_dir/state.json"
+  if [ -f "$state" ]; then
+    branch=$(jq -r '.working_tree.branch // empty' "$state" 2>/dev/null || true)
+    if [ -n "$branch" ]; then
+      printf '%s\n' "$branch"
+      return 0
+    fi
+  fi
+  checkpoint_branch_from_latest_pointer "$root" "$checkpoint_id" "$role"
+}
+
+checkpoint_role_for_session() {
+  local root="$1" session_dir="$2" state manifest role
+  state="$root/$session_dir/state.json"
+  if [ -f "$state" ]; then
+    role=$(jq -r '.session.role // .role_state.owner_role // empty' "$state" 2>/dev/null || true)
+    if [ -n "$role" ]; then
+      printf '%s\n' "$role"
+      return 0
+    fi
+  fi
+  manifest="$root/$session_dir/manifest.json"
+  if [ -f "$manifest" ]; then
+    jq -r '.producer.role // empty' "$manifest" 2>/dev/null || true
+    return 0
+  fi
+  printf '%s\n' ""
+}
+
+checkpoint_candidate_lines() {
+  local checkpoint_id="${1:?checkpoint_candidate_lines <checkpoint-id> [role]}"
+  local role_filter="${2:-}" index project root role session_dir branch
+  while IFS= read -r index; do
+    [ -n "$index" ] || continue
+    project=$(checkpoint_project_from_index "$index")
+    root=$(dirname "$index")
+    while IFS=$'\t' read -r role session_dir; do
+      [ -n "$session_dir" ] || continue
+      if [ -n "$role_filter" ] && [ "$role" != "$role_filter" ]; then
+        continue
+      fi
+      [ -d "$root/$session_dir" ] || continue
+      branch=$(checkpoint_branch_for_session "$root" "$session_dir" "$checkpoint_id" "$role")
+      [ -n "$branch" ] || branch="(unknown)"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$project" "${role:-"(unknown)"}" "$branch" "$checkpoint_id" "$root" "$session_dir"
+    done < <(jq -r --arg checkpoint_id "$checkpoint_id" '
+      .checkpoints[]?
+      | select(.checkpoint_id == $checkpoint_id)
+      | [.producer_role // "", .session_dir // ("sessions/" + .checkpoint_id)]
+      | @tsv
+    ' "$index" 2>/dev/null || true)
+  done < <(checkpoint_known_index_paths)
+}
+
+checkpoint_nearby_candidate_lines() {
+  local checkpoint_id="${1:?checkpoint_nearby_candidate_lines <checkpoint-id>}" limit="${2:-10}"
+  local key="$checkpoint_id" count=0 index project root candidate_id role session_dir branch
+  if [ "${#key}" -gt 12 ]; then
+    key="${key:0:12}"
+  fi
+  while IFS= read -r index; do
+    [ -n "$index" ] || continue
+    project=$(checkpoint_project_from_index "$index")
+    root=$(dirname "$index")
+    while IFS=$'\t' read -r candidate_id role session_dir; do
+      [ -n "$candidate_id" ] || continue
+      case "$candidate_id" in
+        *"$checkpoint_id"*|*"$key"*) ;;
+        *) continue ;;
+      esac
+      [ -d "$root/$session_dir" ] || continue
+      branch=$(checkpoint_branch_for_session "$root" "$session_dir" "$candidate_id" "$role")
+      [ -n "$branch" ] || branch="(unknown)"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$project" "${role:-"(unknown)"}" "$branch" "$candidate_id" "$root" "$session_dir"
+      count=$(( count + 1 ))
+      [ "$count" -lt "$limit" ] || return 0
+    done < <(jq -r '
+      .checkpoints[]?
+      | [.checkpoint_id // "", .producer_role // "", .session_dir // ("sessions/" + .checkpoint_id)]
+      | @tsv
+    ' "$index" 2>/dev/null || true)
+  done < <(checkpoint_known_index_paths)
+}
+
+checkpoint_print_roots() {
+  local primary_root="${1:-}" index
+  {
+    [ -n "$primary_root" ] && printf '%s\n' "$primary_root"
+    while IFS= read -r index; do
+      [ -n "$index" ] || continue
+      dirname "$index"
+    done < <(checkpoint_known_index_paths)
+  } | awk 'NF && !seen[$0]++ { printf "  - %s\n", $0 }'
+}
+
+checkpoint_print_candidates() {
+  local candidates="$1" project role branch checkpoint_id root session_dir
+  printf '%s\n' "$candidates" | while IFS=$'\t' read -r project role branch checkpoint_id root session_dir; do
+    [ -n "$checkpoint_id" ] || continue
+    printf '  - project=%s role=%s branch=%s checkpoint_id=%s root=%s session=%s\n' \
+      "$project" "$role" "$branch" "$checkpoint_id" "$root" "$session_dir"
+  done
+}
+
+checkpoint_match_count() {
+  sed '/^[[:space:]]*$/d' | wc -l | tr -d ' '
+}
+
+fail_checkpoint_multiple_matches() {
+  local checkpoint_id="$1" role="$2" branch="$3" primary_root="$4" candidates="$5"
+  {
+    printf 'error: checkpoint id matched multiple durable checkpoint candidates: %s (role=%s branch=%s)\n' "$checkpoint_id" "$role" "$branch"
+    printf 'searched checkpoint roots:\n'
+    checkpoint_print_roots "$primary_root"
+    printf 'candidates:\n'
+    checkpoint_print_candidates "$candidates"
+  } >&2
+  exit 1
+}
+
+fail_checkpoint_not_found() {
+  local checkpoint_id="$1" project="$2" role="$3" branch="$4" primary_root="$5"
+  local any_role_matches nearby
+  any_role_matches=$(checkpoint_candidate_lines "$checkpoint_id" "")
+  {
+    if [ -n "$any_role_matches" ]; then
+      printf 'error: checkpoint id was found, but not for requested role: %s (requested project=%s role=%s branch=%s)\n' "$checkpoint_id" "$project" "$role" "$branch"
+    else
+      printf 'error: checkpoint id not found anywhere: %s (requested project=%s role=%s branch=%s)\n' "$checkpoint_id" "$project" "$role" "$branch"
+    fi
+    printf 'searched checkpoint roots:\n'
+    checkpoint_print_roots "$primary_root"
+    if [ -n "$any_role_matches" ]; then
+      printf 'role-mismatched candidates:\n'
+      checkpoint_print_candidates "$any_role_matches"
+    else
+      nearby=$(checkpoint_nearby_candidate_lines "$checkpoint_id" 10)
+      if [ -n "$nearby" ]; then
+        printf 'nearby checkpoint ids:\n'
+        checkpoint_print_candidates "$nearby"
+      else
+        printf 'nearby checkpoint ids: none\n'
+      fi
+    fi
+  } >&2
+  exit 1
+}
+
+resolve_checkpoint_resume_target() {
+  local project="$1" root="$2" latest_dir="$3" role="$4" branch="$5" checkpoint_id="$6" use_latest="$7"
+  local pointer local_dir local_role matches count project_match role_match branch_match root_match session_dir_match selected
+  if [ -n "$checkpoint_id" ]; then
+    validate_checkpoint_id "$checkpoint_id"
+    local_dir=$(checkpoint_dir_for "$root" "$checkpoint_id")
+    if [ -d "$local_dir" ]; then
+      local_role=$(checkpoint_role_for_session "$root" "sessions/$checkpoint_id")
+      if [ -z "$local_role" ] || [ "$local_role" = "$role" ]; then
+        printf '%s\t%s\t%s\n' "$project" "$root" "$checkpoint_id"
+        return 0
+      fi
+    fi
+
+    matches=$(checkpoint_candidate_lines "$checkpoint_id" "$role")
+    count=$(printf '%s\n' "$matches" | checkpoint_match_count)
+    case "$count" in
+      0) fail_checkpoint_not_found "$checkpoint_id" "$project" "$role" "$branch" "$root" ;;
+      1)
+        IFS=$'\t' read -r project_match role_match branch_match selected root_match session_dir_match <<EOF
+$matches
+EOF
+        if [ "$project_match" != "$project" ]; then
+          printf 'checkpoint project-local lookup missed; resolved project=%s role=%s branch=%s session=%s\n' \
+            "$project_match" "$role_match" "$branch_match" "$session_dir_match" >&2
+        fi
+        printf '%s\t%s\t%s\n' "$project_match" "$root_match" "$selected"
+        return 0
+        ;;
+      *) fail_checkpoint_multiple_matches "$checkpoint_id" "$role" "$branch" "$root" "$matches" ;;
+    esac
+  fi
+
+  if [ "$use_latest" = "true" ]; then
+    pointer=$(latest_pointer_path "$latest_dir" "$role" "$branch")
+    if [ ! -f "$pointer" ]; then
+      {
+        printf 'error: no latest checkpoint pointer for role=%s branch=%s project=%s\n' "$role" "$branch" "$project"
+        printf 'searched checkpoint roots:\n'
+        checkpoint_print_roots "$root"
+      } >&2
+      exit 1
+    fi
+    selected=$(jq -r '.checkpoint_id' "$pointer")
+    validate_checkpoint_id "$selected"
+    printf '%s\t%s\t%s\n' "$project" "$root" "$selected"
+    return 0
+  fi
+
+  fail "provide --checkpoint-id or --latest"
 }
 
 write_manifest() {
@@ -395,25 +675,6 @@ warn_if_budget() {
   telemetry_json checkpoint_budget_warning "$now" "$checkpoint_id" "$host" "$role" "$default_bytes" "$total_bytes" "$default_tokens" "$total_tokens" unknown "" "" "default load crossed checkpoint budget warning threshold" unknown '["manifest.json","context.md"]' "Budget warning emitted; inspect largest sections." "manual-checkpoint" "" >> "$telemetry"
 }
 
-resolve_checkpoint_selection() {
-  local latest_dir="$1" role="$2" branch="$3" checkpoint_id="$4" use_latest="$5"
-  if [ -n "$checkpoint_id" ]; then
-    validate_checkpoint_id "$checkpoint_id"
-    printf '%s\n' "$checkpoint_id"
-    return 0
-  fi
-  if [ "$use_latest" = "true" ]; then
-    local pointer
-    pointer=$(latest_pointer_path "$latest_dir" "$role" "$branch")
-    [ -f "$pointer" ] || fail "no latest checkpoint pointer for role=$role branch=$branch"
-    checkpoint_id=$(jq -r '.checkpoint_id' "$pointer")
-    validate_checkpoint_id "$checkpoint_id"
-    printf '%s\n' "$checkpoint_id"
-    return 0
-  fi
-  fail "provide --checkpoint-id or --latest"
-}
-
 cmd_create_or_update() {
   local command="$1"; shift
   need_jq
@@ -453,9 +714,9 @@ cmd_create_or_update() {
   [ -n "$goal" ] || goal="Resume studio work from compact checkpoint."
   case "$role" in [a-z][a-z0-9-]*) ;; *) fail "role must match ^[a-z][a-z0-9-]*$" ;; esac
   local root latest_dir index now repo_root repo branch head dirty session_id dir pointer
-  root=$(resolve_checkpoint_root_for "$project")
-  latest_dir=$(resolve_checkpoint_latest_dir_for "$project")
-  index=$(resolve_checkpoint_index_for "$project")
+  root=$(checkpoint_root_for_project "$project")
+  latest_dir=$(checkpoint_latest_dir_for_project "$project")
+  index=$(checkpoint_index_for_project "$project")
   now=$(json_now)
   repo_root=$(git rev-parse --show-toplevel 2>/dev/null || printf '')
   repo=$(basename "${repo_root:-$project}")
@@ -518,11 +779,14 @@ cmd_resume() {
     esac
   done
   [ -n "$project" ] || project=$(resolve_project)
-  local root latest_dir branch selected dir manifest context state evidence now saved_branch saved_head saved_dirty head dirty drift notes loaded_files total_bytes default_bytes total_tokens default_tokens telemetry
-  root=$(resolve_checkpoint_root_for "$project")
-  latest_dir=$(resolve_checkpoint_latest_dir_for "$project")
+  local root latest_dir branch selected dir manifest context state evidence now saved_branch saved_head saved_dirty head dirty drift notes loaded_files total_bytes default_bytes total_tokens default_tokens telemetry target
+  root=$(checkpoint_root_for_project "$project")
+  latest_dir=$(checkpoint_latest_dir_for_project "$project")
   branch="${branch_override:-$(current_branch)}"
-  selected=$(resolve_checkpoint_selection "$latest_dir" "$role" "$branch" "$checkpoint_id" "$use_latest")
+  target=$(resolve_checkpoint_resume_target "$project" "$root" "$latest_dir" "$role" "$branch" "$checkpoint_id" "$use_latest")
+  IFS=$'\t' read -r project root selected <<EOF
+$target
+EOF
   dir=$(checkpoint_dir_for "$root" "$selected")
   [ -d "$dir" ] || fail "checkpoint directory not found: $dir"
   manifest=$(read_checkpoint_file "$dir/manifest.json")
@@ -589,7 +853,7 @@ cmd_usefulness() {
   [ -n "$checkpoint_id" ] || fail "--checkpoint-id is required"
   case "$outcome" in helpful|partial|not-helpful) ;; *) fail "--outcome must be helpful, partial, or not-helpful" ;; esac
   local root dir now default_bytes total_bytes default_tokens total_tokens
-  root=$(resolve_checkpoint_root_for "$project")
+  root=$(checkpoint_root_for_project "$project")
   dir=$(checkpoint_dir_for "$root" "$checkpoint_id")
   [ -d "$dir" ] || fail "checkpoint directory not found: $dir"
   now=$(json_now)

@@ -77,7 +77,10 @@ jq -e '
   .chains[0].phase_review == "required" and
   .chains[0].chain_run_id != null and
   .chains[0].issues[0].issue_run_id != null and
-  .chains[0].issues[0].status == "pending"
+  .chains[0].issues[0].status == "pending" and
+  .chains[0].issues[0].lifecycle_state == "issue-created" and
+  .chains[0].issues[0].provenance.issue.number == 395 and
+  .chains[0].issues[0].provenance.issue.repo == "v-i-s-h-a-l/generic-dev-studio"
 ' "$state_path" >/dev/null
 
 run_id=$(jq -r '.run_id' "$state_path")
