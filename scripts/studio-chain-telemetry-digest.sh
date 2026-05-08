@@ -271,6 +271,10 @@ jq -n \
     elif ($v | type) == "object" then [$v | tojson]
     else [$v | tostring]
     end;
+  def gap_kind_value($gap):
+    if ($gap | type) == "object" then ($gap.gap_kind // $gap.kind // "unknown") else ($gap | tostring) end;
+  def gap_reason_key:
+    ((.gap_kind // "unknown") + ":" + (.reason_id // .reason // "missing_or_unavailable"));
   def latest_report_source_at($state; $report):
     [($state.updated_at // ""), ($report.latest_event_at // "")]
     | map(select(. != ""))
@@ -365,6 +369,16 @@ jq -n \
   [ $selected_summaries[] | token_total | select(. != null) ] as $tokens |
   [ $selected_summaries[].telemetry_gaps[]? ] as $summary_gaps |
   [ $selected_events[] | select((.event // "") == "chain_telemetry_gap") | (.data.gap_kind // .gap_kind // "unknown") ] as $event_gaps |
+  [ $selected_summaries[] as $row
+    | ($row.telemetry_gaps // [])[]? as $gap
+    | (gap_kind_value($gap)) as $kind
+    | (($row.telemetry_gap_reasons // []) | map(select((.gap_kind // .kind // "") == $kind)) | .[0] // {}) as $detail
+    | {gap_kind:$kind, reason_id:($detail.reason_id // $detail.reason // "missing_or_unavailable")}
+  ] as $summary_gap_reasons |
+  [ $selected_events[]
+    | select((.event // "") == "chain_telemetry_gap")
+    | {gap_kind:(.data.gap_kind // .gap_kind // "unknown"), reason_id:(.data.reason_id // .data.reason // .reason_id // .reason // "missing_or_unavailable")}
+  ] as $event_gap_reasons |
   [ $selected_summaries[] | (.tests // [])[]? ] as $tests |
   [ $selected_summaries[] | (.lints // [])[]? ] as $lints |
   [ $selected_summaries[] | (.builds // [])[]? ] as $builds |
@@ -446,6 +460,7 @@ jq -n \
       event_counts: ($selected_events | counts_by(.event)),
       stage_counts: ($selected_events | counts_by(.stage)),
       telemetry_gap_counts: (($summary_gaps + $event_gaps) | map({gap: ., one: 1}) | counts_by(.gap)),
+      telemetry_gap_reason_counts: (($summary_gap_reasons + $event_gap_reasons) | map({reason: gap_reason_key}) | counts_by(.reason)),
       execution_telemetry: {
         reports: ($execution_rows | length),
         implementation_executors: ([ $selected_summaries[] | (.execution_telemetry.executors.implementation.executor // .execution_telemetry.executors.implementation.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
@@ -491,6 +506,16 @@ jq -n \
       (report_freshness($state; $report)) as $report_freshness |
       [ $run_summaries[].telemetry_gaps[]? ] as $run_summary_gaps |
       [ $run_events[] | select((.event // "") == "chain_telemetry_gap") | (.data.gap_kind // .gap_kind // "unknown") ] as $run_event_gaps |
+      [ $run_summaries[] as $row
+        | ($row.telemetry_gaps // [])[]? as $gap
+        | (gap_kind_value($gap)) as $kind
+        | (($row.telemetry_gap_reasons // []) | map(select((.gap_kind // .kind // "") == $kind)) | .[0] // {}) as $detail
+        | {gap_kind:$kind, reason_id:($detail.reason_id // $detail.reason // "missing_or_unavailable")}
+      ] as $run_summary_gap_reasons |
+      [ $run_events[]
+        | select((.event // "") == "chain_telemetry_gap")
+        | {gap_kind:(.data.gap_kind // .gap_kind // "unknown"), reason_id:(.data.reason_id // .data.reason // .reason_id // .reason // "missing_or_unavailable")}
+      ] as $run_event_gap_reasons |
       {
         run_id: ($state.run_id // "unknown"),
         manifest: ($state.manifest // "unknown" | safe_path),
@@ -529,6 +554,7 @@ jq -n \
           resume_attempts:([ $run_events[] | select((.event // "") == "chain_resume_attempt_started") ] | length)
         },
         telemetry_gap_counts:(($run_summary_gaps + $run_event_gaps) | map({gap: .}) | counts_by(.gap)),
+        telemetry_gap_reason_counts:(($run_summary_gap_reasons + $run_event_gap_reasons) | map({reason: gap_reason_key}) | counts_by(.reason)),
         review_verdict_counts:($run_reviews | counts_by(.verdict)),
         phase_review_verdict_counts:($run_phase_reviews | counts_by(.verdict))
       }
@@ -632,6 +658,10 @@ jq -r '
   "## Telemetry Gaps",
   "",
   count_table(.counters.telemetry_gap_counts),
+  "",
+  "## Telemetry Gap Reasons",
+  "",
+  count_table(.counters.telemetry_gap_reason_counts),
   "",
   "## Runs",
   "",

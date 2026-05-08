@@ -826,6 +826,10 @@ chain_efficiency_metrics_json() {
       end;
     def counts_by(key):
       reduce .[] as $item ({}; ($item | key // "unknown" | tostring) as $k | .[$k] = ((.[$k] // 0) + 1));
+    def gap_kind_value($gap):
+      if ($gap | type) == "object" then ($gap.gap_kind // $gap.kind // "unknown") else ($gap | tostring) end;
+    def reason_key:
+      ((.gap_kind // "unknown") + ":" + (.reason_id // .reason // "missing_or_unavailable"));
     def timing_value($k):
       (.execution_telemetry.timing[$k]
        // .execution_telemetry.timings[$k]
@@ -845,6 +849,16 @@ chain_efficiency_metrics_json() {
     [ $rows[].execution_telemetry.cleanup.retention_class? // empty ] as $retention_classes |
     [ $rows[].execution_telemetry.artifacts.public_classes[]? ] as $artifact_classes |
     [ $rows[].telemetry_gaps[]? | select(test("executor|worker_routing|artifact_evidence|cleanup_telemetry")) ] as $execution_gaps |
+    [ $rows[] as $row
+      | ($row.telemetry_gaps // [])[]? as $gap
+      | (gap_kind_value($gap)) as $kind
+      | (($row.telemetry_gap_reasons // []) | map(select((.gap_kind // .kind // "") == $kind)) | .[0] // {}) as $detail
+      | {gap_kind:$kind, reason_id:($detail.reason_id // $detail.reason // "missing_or_unavailable")}
+    ] as $summary_gap_reasons |
+    [ $events[]
+      | select((.event // "") == "chain_telemetry_gap")
+      | {gap_kind:(.data.gap_kind // .gap_kind // "unknown"), reason_id:(.data.reason_id // .data.reason // .reason_id // .reason // "missing_or_unavailable")}
+    ] as $event_gap_reasons |
     ($rows | max_by(duration)?) as $slowest |
     {
       schema_version: 1,
@@ -877,6 +891,7 @@ chain_efficiency_metrics_json() {
       lints: {total: ($lints | length), bad: ([ $lints[] | select(bad_outcome) ] | length), outcomes: ($lints | counts_by(.outcome // .status))},
       builds: {total: ($builds | length), bad: ([ $builds[] | select(bad_outcome) ] | length), outcomes: ($builds | counts_by(.outcome // .status))},
       telemetry_gap_counts: ([ $rows[].telemetry_gaps[]? ] | map({gap: ., one: 1}) | counts_by(.gap)),
+      telemetry_gap_reason_counts: (($summary_gap_reasons + $event_gap_reasons) | map({reason: reason_key}) | counts_by(.reason)),
       execution_telemetry: {
         reports: ($execution_rows | length),
         implementation_executors: ([ $rows[] | (.execution_telemetry.executors.implementation.executor // .execution_telemetry.executors.implementation.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
@@ -2127,14 +2142,28 @@ refresh_summary_commit_metrics() {
 }
 
 emit_summary_telemetry_gaps() {
-  local summary_file="$1" chain_run_id="$2" issue_run_id="$3" issue="$4" gap
+  local summary_file="$1" chain_run_id="$2" issue_run_id="$3" issue="$4" row gap reason source gap_status
   [ -f "$summary_file" ] || return 0
-  while IFS= read -r gap; do
+  while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    gap=$(printf '%s\n' "$row" | jq -r '.gap_kind // empty' 2>/dev/null)
     [ -n "$gap" ] || continue
+    reason=$(printf '%s\n' "$row" | jq -r '.reason_id // .reason // "missing_or_unavailable"' 2>/dev/null)
+    source=$(printf '%s\n' "$row" | jq -r '.source // "worker_summary"' 2>/dev/null)
+    gap_status=$(printf '%s\n' "$row" | jq -r '.status // "missing"' 2>/dev/null)
     emit_chain_event chain_telemetry_gap "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" missing 0 \
-      "$(jq -cn --arg gap_kind "$gap" --arg stage "ingest" --arg reason "missing_or_unavailable" '{gap_kind:$gap_kind, stage:$stage, reason:$reason}')"
+      "$(jq -cn --arg gap_kind "$gap" --arg stage "ingest" --arg reason "$reason" --arg source "$source" --arg gap_status "$gap_status" '{gap_kind:$gap_kind, stage:$stage, reason:$reason, reason_id:$reason, source:$source, status:$gap_status}')"
   done <<EOF
-$(jq -r '.telemetry_gaps[]? | if type == "object" then (.gap_kind // .kind // empty) else . end' "$summary_file" 2>/dev/null)
+$(jq -c '
+  def gap_kind:
+    if type == "object" then (.gap_kind // .kind // empty) else . end;
+  (.telemetry_gaps // []) as $gaps
+  | (.telemetry_gap_reasons // []) as $reasons
+  | $gaps[]?
+  | (gap_kind) as $kind
+  | select($kind != "")
+  | (($reasons | map(select((.gap_kind // .kind // "") == $kind)) | .[0]) // {gap_kind:$kind, reason_id:"missing_or_unavailable", source:"worker_summary", status:"missing"})
+' "$summary_file" 2>/dev/null)
 EOF
 }
 
@@ -2153,16 +2182,43 @@ codex_home_for_worker() {
   fi
 }
 
+worker_telemetry_extraction_status_json() {
+  local source="$1" status="$2" reason_id="${3:-}" reason="${4:-}" host="${5:-}" codex_home="${6:-}"
+  jq -cn \
+    --arg source "$source" \
+    --arg status "$status" \
+    --arg reason_id "$reason_id" \
+    --arg reason "$reason" \
+    --arg host "$host" \
+    --arg codex_home "$codex_home" \
+    '{
+      schema_version: 1,
+      source: $source,
+      status: $status,
+      reason_id: (if $reason_id == "" then null else $reason_id end),
+      reason: (if $reason == "" then null else $reason end),
+      host: (if $host == "" then null else $host end),
+      fields: {}
+    }
+    | if $codex_home == "" then . else . + {home_resolution:"present"} end'
+}
+
 collect_codex_worker_session_telemetry() {
   local host="$1" worktree="$2" started_at="$3" launch_home="$4"
   local codex_home session_dir best_file="" best_mtime=0 candidate mtime
   case "$host" in
     codex*|*codex*) ;;
-    *) printf '{}\n'; return 0 ;;
+    *)
+      worker_telemetry_extraction_status_json "none" "unsupported" "host_telemetry_unsupported" "selected worker host does not emit Codex session telemetry" "$host" ""
+      return 0
+      ;;
   esac
   codex_home=$(codex_home_for_worker "$launch_home")
   session_dir="$codex_home/sessions"
-  [ -n "$codex_home" ] && [ -d "$session_dir" ] || { printf '{}\n'; return 0; }
+  [ -n "$codex_home" ] && [ -d "$session_dir" ] || {
+    worker_telemetry_extraction_status_json "codex_session_log" "missing" "codex_home_mismatch" "no usable Codex session directory was found for the worker launch HOME" "$host" "$codex_home"
+    return 0
+  }
 
   while IFS= read -r -d '' candidate; do
     mtime=$(stat -f %m "$candidate" 2>/dev/null || printf '')
@@ -2180,30 +2236,66 @@ collect_codex_worker_session_telemetry() {
     fi
   done < <(find "$session_dir" -type f -name '*.jsonl' -print0 2>/dev/null)
 
-  [ -n "$best_file" ] || { printf '{}\n'; return 0; }
+  [ -n "$best_file" ] || {
+    worker_telemetry_extraction_status_json "codex_session_log" "missing" "codex_session_log_not_found" "no Codex session log matched the worker worktree after issue start" "$host" "$codex_home"
+    return 0
+  }
+  jq -e . "$best_file" >/dev/null 2>&1 || {
+    worker_telemetry_extraction_status_json "codex_session_log" "failed" "codex_session_log_parse_failed" "Codex session log was not valid JSONL" "$host" "$codex_home"
+    return 0
+  }
   jq -rs '
-    ([ .[] | select(.type == "turn_context") | {model:(.payload.model // null), effort:(.payload.effort // null)} ] | last) as $ctx
-    | ([ .[]
-        | select(.type == "event_msg" and .payload.type == "token_count" and (.payload.info.total_token_usage // null) != null)
-        | .payload.info.total_token_usage
-      ] | last) as $usage
+    ([ .[] | select(.type == "turn_context") | {model:(.payload.model // null), effort:(.payload.effort // null)} ] | last // {}) as $ctx
+    | ([ .[] | select(.type == "event_msg" and .payload.type == "token_count") ]) as $token_events
+    | ([ $token_events[] | .payload.info.total_token_usage? // empty ] | last) as $usage
+    | ($token_events | length) as $token_event_count
+    | ($usage == null and $token_event_count > 0) as $schema_miss
+    | ($usage == null and $token_event_count == 0) as $usage_absent
+    | ($ctx.model // null) as $model
+    | ($ctx.effort // null) as $effort
+    | (if $usage == null then null else {
+        total: ($usage.total_tokens // null),
+        total_tokens: ($usage.total_tokens // null),
+        input: ($usage.input_tokens // 0),
+        output: ($usage.output_tokens // 0),
+        cache_read: ($usage.cached_input_tokens // 0),
+        reasoning_output: ($usage.reasoning_output_tokens // 0),
+        source: "codex_session_log"
+      } end) as $tokens
+    | ($tokens != null or $model != null or $effort != null) as $has_any
+    | (if $schema_miss then "codex_session_log_schema_miss"
+       elif $usage_absent then "codex_usage_absent"
+       elif $model == null then "codex_session_context_absent"
+       else null end) as $reason_id
     | {
+        schema_version: 1,
         source: "codex_session_log",
-        model: ($ctx.model // null),
-        model_version: ($ctx.model // null),
-        effort: ($ctx.effort // null),
-        tokens: (if $usage == null then null else {
-          total: ($usage.total_tokens // null),
-          total_tokens: ($usage.total_tokens // null),
-          input: ($usage.input_tokens // 0),
-          output: ($usage.output_tokens // 0),
-          cache_read: ($usage.cached_input_tokens // 0),
-          reasoning_output: ($usage.reasoning_output_tokens // 0),
-          source: "codex_session_log"
-        } end)
+        status: (if $tokens != null and $model != null then "present"
+          elif $schema_miss and ($has_any | not) then "failed"
+          elif $has_any then "partial"
+          elif $schema_miss then "failed"
+          else "missing" end),
+        reason_id: $reason_id,
+        reason: (if $reason_id == "codex_session_log_schema_miss" then "Codex token_count event did not match the expected total_token_usage schema"
+          elif $reason_id == "codex_usage_absent" then "Codex session log had no token_count usage event"
+          elif $reason_id == "codex_session_context_absent" then "Codex session log had no recognized turn_context model metadata"
+          else null end),
+        session_log_present: true,
+        fields: {
+          model: (if $model == null then {status:"missing", reason_id:"codex_session_context_absent"} else {status:"present"} end),
+          model_version: (if $model == null then {status:"missing", reason_id:"codex_session_context_absent"} else {status:"present"} end),
+          effort: (if $effort == null then {status:"missing", reason_id:"codex_session_context_absent"} else {status:"present"} end),
+          tokens: (if $tokens != null then {status:"present"}
+            elif $schema_miss then {status:"failed", reason_id:"codex_session_log_schema_miss"}
+            else {status:"missing", reason_id:"codex_usage_absent"} end)
+        },
+        model: $model,
+        model_version: $model,
+        effort: $effort,
+        tokens: $tokens
       }
     | with_entries(select(.value != null))
-  ' "$best_file" 2>/dev/null || printf '{}\n'
+  ' "$best_file" 2>/dev/null || worker_telemetry_extraction_status_json "codex_session_log" "failed" "codex_session_log_parse_failed" "Codex session log parser failed" "$host" "$codex_home"
 }
 
 ingest_worker_summary() {
@@ -2245,8 +2337,28 @@ ingest_worker_summary() {
        | (.model_version // $telemetry_model_version) as $final_model_version
        | (.effort // .reasoning_effort // $telemetry_effort) as $final_effort
        | (.execution_telemetry // .ios_execution // null) as $exec_telemetry
+       | (($session_telemetry.status // null) != null) as $has_session_extraction
        | def has_model: ($final_model != null);
        def has_checks: (((.tests // []) | length) + ((.lints // []) | length) + ((.builds // []) | length)) > 0;
+       def worker_telemetry_extraction:
+         if $has_session_extraction then {
+           schema_version: ($session_telemetry.schema_version // 1),
+           source: ($session_telemetry.source // null),
+           status: ($session_telemetry.status // null),
+           reason_id: ($session_telemetry.reason_id // null),
+           reason: ($session_telemetry.reason // null),
+           fields: ($session_telemetry.fields // {})
+         } else null end;
+       def session_source:
+         ($session_telemetry.source // "worker_summary");
+       def field_reason($field; $fallback):
+         ($session_telemetry.fields[$field].reason_id // $session_telemetry.reason_id // $fallback);
+       def field_status($field):
+         ($session_telemetry.fields[$field].status // $session_telemetry.status // "missing");
+       def gap_reason($gap; $field; $fallback):
+         {gap_kind:$gap, reason_id:field_reason($field; $fallback), source:session_source, status:field_status($field)};
+       def gap_reason_key:
+         ((.gap_kind // .kind // "unknown") + ":" + (.reason_id // .reason // "missing_or_unavailable"));
        def is_ios_execution:
          (($chain_name | test("ios"; "i"))
           or ((.chain // "") | test("ios"; "i"))
@@ -2334,7 +2446,8 @@ ingest_worker_summary() {
         model: (.model // .model_name // $telemetry_model),
         model_version: $final_model_version,
         effort: $final_effort,
-        telemetry_sources: (((.telemetry_sources // []) + (if (($session_telemetry.source // "") == "") then [] else [$session_telemetry.source] end)) | unique),
+        telemetry_sources: (((.telemetry_sources // []) + (if (($session_telemetry.source // "") == "" or (($session_telemetry.status // "") | IN("missing","failed","unsupported"))) then [] else [$session_telemetry.source] end)) | unique),
+        worker_telemetry_extraction: worker_telemetry_extraction,
         execution_telemetry: normalized_execution_telemetry,
         functionality_delivered: (.functionality_delivered // null),
         user_visible_change: (.user_visible_change // .user_facing_change // .change_for_user // .user_change // null),
@@ -2344,7 +2457,14 @@ ingest_worker_summary() {
           + ios_execution_gaps
           + (if $final_tokens == null then ["tokens"] else [] end)
           + (if has_model then [] else ["model"] end)
-          + (if has_checks then [] else ["tests_lints_builds"] end)) | unique | map(select(gap_active(.))))
+          + (if has_checks then [] else ["tests_lints_builds"] end)) | unique | map(select(gap_active(.)))),
+        telemetry_gap_reasons: (((.telemetry_gap_reasons // [])
+          + (if $final_tokens == null then [gap_reason("tokens"; "tokens"; "missing_or_unavailable")] else [] end)
+          + (if has_model then [] else [gap_reason("model"; "model"; "missing_or_unavailable")] end)
+          + (if $final_model_version == null then [gap_reason("model_version"; "model_version"; "missing_or_unavailable")] else [] end)
+          + (if $final_effort == null then [gap_reason("effort"; "effort"; "missing_or_unavailable")] else [] end)
+          + (if has_checks then [] else [{gap_kind:"tests_lints_builds", reason_id:"worker_summary_check_data_absent", source:"worker_summary", status:"missing"}] end))
+          | unique_by(gap_reason_key))
       }' "$summary_path" > "$dest"
     emit_chain_event chain_worker_summary_ingested "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed "$duration_s" \
       "$(jq -cn --arg summary "$dest" '{summary:$summary, validation:"valid"}')"
@@ -2379,7 +2499,24 @@ ingest_worker_summary() {
       --arg worktree_state "$worktree_state" \
       --arg next_safe_action "$next_safe_action" \
       --argjson session_telemetry "$session_telemetry_json" \
-      'def ios_execution_gaps:
+      'def worker_telemetry_extraction:
+         if (($session_telemetry.status // null) != null) then {
+           schema_version: ($session_telemetry.schema_version // 1),
+           source: ($session_telemetry.source // null),
+           status: ($session_telemetry.status // null),
+           reason_id: ($session_telemetry.reason_id // null),
+           reason: ($session_telemetry.reason // null),
+           fields: ($session_telemetry.fields // {})
+         } else null end;
+       def session_source:
+         ($session_telemetry.source // "worker_summary");
+       def field_reason($field; $fallback):
+         ($session_telemetry.fields[$field].reason_id // $session_telemetry.reason_id // $fallback);
+       def field_status($field):
+         ($session_telemetry.fields[$field].status // $session_telemetry.status // "missing");
+       def gap_reason($gap; $field; $fallback):
+         {gap_kind:$gap, reason_id:field_reason($field; $fallback), source:session_source, status:field_status($field)};
+       def ios_execution_gaps:
          if ($chain | test("ios"; "i")) then
            ["implementation_executor", "worker_routing", "artifact_evidence", "cleanup_telemetry"]
          else [] end;
@@ -2419,7 +2556,8 @@ ingest_worker_summary() {
         model_version: ($session_telemetry.model_version // $session_telemetry.model // null),
         effort: ($session_telemetry.effort // null),
         model_recommendation: null,
-        telemetry_sources: (if (($session_telemetry.source // "") == "") then [] else [$session_telemetry.source] end),
+        telemetry_sources: (if (($session_telemetry.source // "") == "" or (($session_telemetry.status // "") | IN("missing","failed","unsupported"))) then [] else [$session_telemetry.source] end),
+        worker_telemetry_extraction: worker_telemetry_extraction,
         execution_telemetry: null,
         functionality_delivered: null,
         user_visible_change: null,
@@ -2427,7 +2565,14 @@ ingest_worker_summary() {
         lessons: null,
         telemetry_gaps: (([$summary_gap, "tests_lints_builds"] + ios_execution_gaps)
           + (if ($session_telemetry.model // $session_telemetry.model_version // null) == null then ["model"] else [] end)
-          + (if ($session_telemetry.tokens // null) == null then ["tokens"] else [] end))
+          + (if ($session_telemetry.tokens // null) == null then ["tokens"] else [] end)),
+        telemetry_gap_reasons: ([
+          {gap_kind:$summary_gap, reason_id:$summary_gap, source:"worker_summary", status:"failed"},
+          {gap_kind:"tests_lints_builds", reason_id:$summary_gap, source:"worker_summary", status:"missing"}
+        ]
+        + (ios_execution_gaps | map({gap_kind:., reason_id:"ios_execution_summary_absent", source:"worker_summary", status:"missing"}))
+        + (if ($session_telemetry.model // $session_telemetry.model_version // null) == null then [gap_reason("model"; "model"; "missing_or_unavailable")] else [] end)
+        + (if ($session_telemetry.tokens // null) == null then [gap_reason("tokens"; "tokens"; "missing_or_unavailable")] else [] end))
       }' > "$dest"
     emit_chain_event chain_artifact_validation_failed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$duration_s" \
       "$(jq -cn --arg artifact "chain-worker-summary" --arg reason "$summary_gap" --arg summary "$dest" '{artifact:$artifact, reason_id:$reason, summary:$summary}')"
@@ -2836,10 +2981,28 @@ generate_run_report() {
     printf '\n## Telemetry Gaps\n\n'
     if [ "$summary_count" -gt 0 ]; then
       jq -r -s '
+        def gap_kind_value($gap):
+          if ($gap | type) == "object" then ($gap.gap_kind // $gap.kind // "unknown") else ($gap | tostring) end;
         [.[].telemetry_gaps[]?] | group_by(.) | map({gap: .[0], count: length}) | sort_by(-.count) |
         if length == 0 then "No worker-declared gaps."
         else .[] | "- \(.gap): \(.count)"
         end
+      ' "$SUMMARY_ROOT"/*.json
+      jq -r -s '
+        def gap_kind_value($gap):
+          if ($gap | type) == "object" then ($gap.gap_kind // $gap.kind // "unknown") else ($gap | tostring) end;
+        [
+          .[] as $row
+          | ($row.telemetry_gaps // [])[]? as $gap
+          | (gap_kind_value($gap)) as $kind
+          | (($row.telemetry_gap_reasons // []) | map(select((.gap_kind // .kind // "") == $kind)) | .[0] // {}) as $detail
+          | {gap_kind:$kind, reason_id:($detail.reason_id // $detail.reason // "missing_or_unavailable")}
+        ] | group_by([.gap_kind, .reason_id])
+          | map({gap_kind:.[0].gap_kind, reason_id:.[0].reason_id, count:length})
+          | sort_by(.gap_kind, .reason_id)
+          | if length == 0 then empty
+            else "", "By reason:", (.[] | "- \(.gap_kind):\(.reason_id): \(.count)")
+            end
       ' "$SUMMARY_ROOT"/*.json
     else
       printf -- '- worker_summary_missing: all issues\n'
