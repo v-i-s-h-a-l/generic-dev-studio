@@ -29,6 +29,7 @@ umask 022
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 CALLER_HOME="${HOME:-}"
+TARGET_REPO_ROOT=""
 
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
@@ -2254,6 +2255,61 @@ canonical_path() {
   printf '%s\n' "$path"
 }
 
+resolve_existing_path() {
+  local path="$1" base="$2" candidate dir base_name
+  if [ -z "$path" ] || [ "$path" = "null" ]; then
+    return 1
+  fi
+
+  case "$path" in
+    /*) candidate="$path" ;;
+    *)
+      if [ -n "$base" ] && [ -e "$base/$path" ]; then
+        candidate="$base/$path"
+      elif [ -e "$REPO_ROOT/$path" ]; then
+        candidate="$REPO_ROOT/$path"
+      else
+        candidate="$path"
+      fi
+      ;;
+  esac
+
+  [ -e "$candidate" ] || return 1
+  dir=$(cd "$(dirname "$candidate")" && pwd -P) || return 1
+  base_name=$(basename "$candidate")
+  printf '%s/%s\n' "$dir" "$base_name"
+}
+
+resolve_target_repo_root() {
+  local manifest="${1:?usage: resolve_target_repo_root <manifest>}" manifest_dir hint env_hint root
+  manifest_dir=$(cd "$(dirname "$manifest")" && pwd -P) || return 1
+
+  hint=$(yq -r '.target_repo_root // .repo_root // .repo.root // ""' "$manifest" 2>/dev/null || true)
+  root=$(resolve_existing_path "$hint" "$manifest_dir" 2>/dev/null || true)
+  if [ -n "$hint" ] && [ "$hint" != "null" ] && [ -z "$root" ]; then
+    printf 'studio-chain-runner: target repo root does not exist: %s\n' "$hint" >&2
+    exit 2
+  fi
+  if [ -z "$root" ]; then
+    env_hint="${STUDIO_CHAIN_TARGET_REPO_ROOT:-${STUDIO_CONTEXT_REPO_ROOT:-}}"
+    root=$(resolve_existing_path "$env_hint" "$manifest_dir" 2>/dev/null || true)
+    if [ -n "$env_hint" ] && [ -z "$root" ]; then
+      printf 'studio-chain-runner: target repo root does not exist: %s\n' "$env_hint" >&2
+      exit 2
+    fi
+  fi
+  if [ -z "$root" ]; then
+    root=$(git -C "$manifest_dir" rev-parse --show-toplevel 2>/dev/null || true)
+  fi
+  [ -n "$root" ] || root="$REPO_ROOT"
+
+  if ! git -C "$root" rev-parse --show-toplevel >/dev/null 2>&1; then
+    printf 'studio-chain-runner: target repo root is not a git checkout: %s\n' "$root" >&2
+    exit 2
+  fi
+  git -C "$root" rev-parse --show-toplevel
+}
+
 state_manifest_matches() {
   local state="$1" manifest="$2" state_manifest
   state_manifest=$(jq -r '.manifest // empty' "$state" 2>/dev/null || true)
@@ -2906,6 +2962,7 @@ build_plan_json() {
   jq -n \
     --arg run_id "$RUN_ID" \
     --arg manifest "$MANIFEST" \
+    --arg target_repo_root "$TARGET_REPO_ROOT" \
     --arg only_chain "$ONLY_CHAIN" \
     --arg host_override "$HOST_OVERRIDE" \
     --arg parallel_chains "$PARALLEL_CHAINS" \
@@ -2918,6 +2975,7 @@ build_plan_json() {
       schema_version:1,
       run_id:$run_id,
       manifest:$manifest,
+      target_repo_root:$target_repo_root,
       only_chain:(if $only_chain == "" then null else $only_chain end),
       host_override:(if $host_override == "" then null else $host_override end),
       parallel_chains:$parallel_chains,
@@ -3049,7 +3107,7 @@ apply_mechanical_rule_gates() {
   gate_args=(
     --plan "$plan"
     --manifest "$MANIFEST"
-    --repo "$REPO_ROOT"
+    --repo "$TARGET_REPO_ROOT"
     --audit-log "$audit_log"
     --expected-run-work-root "$RUN_WORK_ROOT"
   )
@@ -3167,7 +3225,7 @@ live_preflight() {
   while IFS=$'\t' read -r branch base; do
     run_retryable_or_abort network_partition "cannot verify origin/$base" \
       with_login_home_for_github git ls-remote --exit-code --heads origin "$base"
-    if [ -z "$RESUME_ID" ] && git show-ref --verify --quiet "refs/heads/$branch"; then
+    if [ -z "$RESUME_ID" ] && git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/heads/$branch"; then
       printf 'studio-chain-runner: local chain branch already exists: %s\n' "$branch" >&2
       exit 2
     fi
@@ -3180,7 +3238,7 @@ $(jq -r '.chains[] | [.branch, .base] | @tsv' "$plan")
 EOF
   while IFS= read -r issue_branch; do
     [ -n "$issue_branch" ] || continue
-    if [ -z "$RESUME_ID" ] && git show-ref --verify --quiet "refs/heads/$issue_branch"; then
+    if [ -z "$RESUME_ID" ] && git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/heads/$issue_branch"; then
       printf 'studio-chain-runner: local issue branch already exists: %s\n' "$issue_branch" >&2
       exit 2
     fi
@@ -3204,6 +3262,7 @@ explain_plan() {
   printf '# Studio Chain Plan\n\n'
   printf -- '- Run UUID: `%s`\n' "$RUN_ID"
   printf -- '- Manifest: `%s`\n' "$MANIFEST"
+  printf -- '- Target repo root: `%s`\n' "$TARGET_REPO_ROOT"
   printf -- '- State: `%s`\n' "$RUN_STATE_JSON"
   printf -- '- Parallel chains: `%s` effective `%s`\n' "$PARALLEL_CHAINS" "$effective_parallel"
   printf -- '- Execution mode: `%s`\n' "$execution_mode"
@@ -3271,10 +3330,21 @@ explain_plan() {
 prepare_plan() {
   if [ -n "$RESUME_ID" ]; then
     resolve_resume_state
+    TARGET_REPO_ROOT=$(jq -r '.target_repo_root // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
+    if [ -z "$TARGET_REPO_ROOT" ]; then
+      TARGET_REPO_ROOT=$(resolve_target_repo_root "$MANIFEST")
+    fi
+    if ! git -C "$TARGET_REPO_ROOT" rev-parse --show-toplevel >/dev/null 2>&1; then
+      printf 'studio-chain-runner: target repo root is not a git checkout: %s\n' "$TARGET_REPO_ROOT" >&2
+      exit 2
+    fi
     cp "$RUN_STATE_JSON" "$PLAN_JSON"
+    jq --arg target_repo_root "$TARGET_REPO_ROOT" '.target_repo_root = $target_repo_root' "$PLAN_JSON" > "$PLAN_JSON.tmp.$$"
+    mv "$PLAN_JSON.tmp.$$" "$PLAN_JSON"
   else
     MANIFEST=$(resolve_manifest "$MANIFEST")
     MANIFEST=$(canonical_path "$MANIFEST")
+    TARGET_REPO_ROOT=$(resolve_target_repo_root "$MANIFEST")
     build_plan_json "$PLAN_JSON"
   fi
   attach_rule_pack_resolutions "$PLAN_JSON"
@@ -3541,7 +3611,7 @@ detach_chain_worktree_for_merge_cleanup() {
 
 chain_worktree_registered() {
   local chain_worktree="$1"
-  git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null | awk -v target="$chain_worktree" '
+  git -C "$TARGET_REPO_ROOT" worktree list --porcelain 2>/dev/null | awk -v target="$chain_worktree" '
     /^worktree / && substr($0, 10) == target { found=1 }
     END { exit found ? 0 : 1 }
   '
@@ -3650,7 +3720,7 @@ run_issue_job() {
 
   log "issue #$issue -> $issue_branch"
   if [ "$DRY_RUN" -eq 0 ]; then
-    chain_git_prepare_issue_workspace "$REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy"
+    chain_git_prepare_issue_workspace "$TARGET_REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy"
     before=$(git -C "$issue_worktree" rev-parse HEAD)
   else
     printf 'DRY-RUN git metadata strategy for host %q: %s\n' "$host" "$git_metadata_strategy"
@@ -3726,7 +3796,7 @@ run_issue_job() {
     auto_retry_performed=true
     log "issue #$issue exited $worker_rc with no summary and no public diff; retrying once in a fresh issue worktree"
     mark_issue_retry_attempt "$issue_run_id" "worker_summary_missing_no_changes"
-    chain_git_prepare_issue_workspace "$REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy"
+    chain_git_prepare_issue_workspace "$TARGET_REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy"
     before=$(git -C "$issue_worktree" rev-parse HEAD)
     mark_issue_state "$issue_run_id" running "$before"
     issue_started_at=$(now_epoch)
@@ -3927,7 +3997,7 @@ integrate_issue_result() {
     if [ "$(jq -r '.resumed // false' "$result_file")" = "true" ]; then
       case "$git_metadata_strategy" in
         linked-worktree)
-          if ! git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/$issue_branch"; then
+          if ! git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/heads/$issue_branch"; then
             log "resume assumes completed issue #$issue already integrated; issue branch missing"
             return 0
           fi
@@ -3950,7 +4020,7 @@ integrate_issue_result() {
       return 1
     fi
     git -C "$chain_worktree" checkout "$branch" || return 1
-    chain_git_integrate_issue_workspace "$REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy" "$sync_strategy" || return 1
+    chain_git_integrate_issue_workspace "$TARGET_REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy" "$sync_strategy" || return 1
     emit_chain_event chain_issue_merged "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed 0 \
       "$(jq -cn --arg chain "$chain_name" --arg branch "$branch" --arg issue_branch "$issue_branch" --arg commit_after "$result_commit_after" --arg sync_strategy "$sync_strategy" '{chain:$chain, branch:$branch, issue_branch:$issue_branch, sync_strategy:$sync_strategy, commit_after:(if $commit_after == "" then null else $commit_after end)}')"
   else
@@ -3968,8 +4038,8 @@ integrate_issue_result() {
             printf 'DRY-RUN git -C %q commit -m %q\n' "$chain_worktree" "Squash $issue_branch into $branch"
             ;;
         esac
-        printf 'DRY-RUN git -C %q worktree remove %q\n' "$REPO_ROOT" "$issue_worktree"
-        printf 'DRY-RUN git -C %q branch -D %q\n' "$REPO_ROOT" "$issue_branch"
+        printf 'DRY-RUN git -C %q worktree remove %q\n' "$TARGET_REPO_ROOT" "$issue_worktree"
+        printf 'DRY-RUN git -C %q branch -D %q\n' "$TARGET_REPO_ROOT" "$issue_branch"
         ;;
       local-clone)
         case "$sync_strategy" in
@@ -4452,15 +4522,15 @@ for ((idx = 0; idx < chain_count; idx++)); do
   mark_chain_state "$chain_run_id" running
   emit_chain_event chain_started "" "$RUN_ID" "$chain_run_id" "" running 0 \
     "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --arg git_metadata_strategy "$git_metadata_strategy" --arg sync_strategy "$sync_strategy" --arg approved_release_id "$approved_release_id" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, host:$host, git_metadata_strategy:$git_metadata_strategy, sync_strategy:$sync_strategy, approved_release_id:(if $approved_release_id == "" then null else $approved_release_id end), issue_count:$issue_count, worker_pool:$worker_pool}')"
-  host_preflight "$host" "$REPO_ROOT" || abort_run "host preflight failed for $host"
+  host_preflight "$host" "$TARGET_REPO_ROOT" || abort_run "host preflight failed for $host"
   run_retryable_or_abort network_partition "fetch origin failed before chain $name" \
-    with_login_home_for_github git -C "$REPO_ROOT" fetch origin --prune
+    with_login_home_for_github git -C "$TARGET_REPO_ROOT" fetch origin --prune
   if [ "$DRY_RUN" -eq 0 ]; then
     mkdir -p "$chain_results_dir"
     if [ -n "$RESUME_ID" ] && git_checkout_exists "$chain_worktree"; then
       git -C "$chain_worktree" checkout "$branch"
     elif ! git_checkout_exists "$chain_worktree"; then
-      git -C "$REPO_ROOT" worktree add -B "$branch" "$chain_worktree" "origin/$base"
+      git -C "$TARGET_REPO_ROOT" worktree add -B "$branch" "$chain_worktree" "origin/$base"
       git -C "$chain_worktree" checkout "$branch"
       git -C "$chain_worktree" reset --hard "origin/$base"
     else
@@ -4507,17 +4577,17 @@ PR: $FINAL_PR_URL"
 
   if [ "$DRY_RUN" -eq 0 ]; then
     run_retryable_or_abort network_partition "fetch origin failed during chain cleanup" \
-      with_login_home_for_github git -C "$REPO_ROOT" fetch origin --prune
+      with_login_home_for_github git -C "$TARGET_REPO_ROOT" fetch origin --prune
     if chain_worktree_registered "$chain_worktree"; then
-      git -C "$REPO_ROOT" worktree remove "$chain_worktree" || true
+      git -C "$TARGET_REPO_ROOT" worktree remove "$chain_worktree" || true
     else
       log "chain worktree already removed: $chain_worktree"
     fi
-    git -C "$REPO_ROOT" branch -D "$branch" 2>/dev/null || true
+    git -C "$TARGET_REPO_ROOT" branch -D "$branch" 2>/dev/null || true
   else
-    printf 'DRY-RUN git -C %q fetch origin --prune\n' "$REPO_ROOT"
-    printf 'DRY-RUN git -C %q worktree remove %q\n' "$REPO_ROOT" "$chain_worktree"
-    printf 'DRY-RUN git -C %q branch -D %q\n' "$REPO_ROOT" "$branch"
+    printf 'DRY-RUN git -C %q fetch origin --prune\n' "$TARGET_REPO_ROOT"
+    printf 'DRY-RUN git -C %q worktree remove %q\n' "$TARGET_REPO_ROOT" "$chain_worktree"
+    printf 'DRY-RUN git -C %q branch -D %q\n' "$TARGET_REPO_ROOT" "$branch"
   fi
 done
 

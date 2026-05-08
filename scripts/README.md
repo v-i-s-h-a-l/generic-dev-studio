@@ -70,6 +70,7 @@ scripts/studio-chain-runner.sh workflow-measurement-improvements            # de
 scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # same resolved graph, then non-mutating command trace
 scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex --yes # execute after plan with node/RAM-sized session pool + private report
 scripts/studio-chain-runner.sh my-chain --dry-run                          # object-form issues may declare dependencies/depends_on; ready independent issues fill worker_pool
+STUDIO_CHAIN_TARGET_REPO_ROOT=/repo scripts/studio-chain-runner.sh /tmp/chain.yaml --dry-run # run a non-repo manifest against an explicit checkout
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview role/branch-scoped checkpoint hooks
 scripts/studio-chain-runner.sh --discover                                  # bare invocation lists runnable chains, resumable runs, and next actions
 scripts/studio-chain-runner.sh --discover prd-to-chain-automation          # filtered discovery for one chain or manifest

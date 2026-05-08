@@ -16,6 +16,7 @@ private `plan.json` and `state.json` artifacts.
 
 ```yaml
 schema_version: 1
+target_repo_root: /path/to/repo
 rule_packs:
   required: [source-branch-integration]
 chains:
@@ -40,6 +41,7 @@ chains:
 | Field | Required | Default | Notes |
 |---|---:|---|---|
 | `schema_version` | yes | - | Must be `1`. |
+| `target_repo_root` | no | manifest checkout or runner repo | Git checkout used for chain worktrees, branch checks, fetches, and cleanup. Relative paths resolve from the manifest directory first, then the runner repo. `STUDIO_CHAIN_TARGET_REPO_ROOT` and `STUDIO_CONTEXT_REPO_ROOT` are env overrides when the manifest is outside a git checkout. |
 | `rule_packs` | no | `[]` | Global selective rule-pack request. Accepts a string, list, or `{required, optional, advisory, disabled}` object. |
 | `chains[].name` | yes | - | Stable chain name; also drives default branch and worktree slugs. |
 | `chains[].base` | no | `main` | Explicit PR base. Mechanical gates reject missing or invalid bases in the generated plan. |

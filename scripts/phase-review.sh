@@ -254,6 +254,7 @@ fi
 mkdir -p "$(dirname "$output")"
 [ -n "$err_output" ] || err_output="$output.err"
 mkdir -p "$(dirname "$err_output")"
+input_dir=$(cd "$(dirname "$input")" && pwd -P) || fail "input directory not readable: $input"
 
 eligibility_cache_dir="${STUDIO_PHASE_REVIEW_ELIGIBILITY_CACHE_DIR:-}"
 eligibility_cache_file=""
@@ -382,7 +383,7 @@ case "$review_host" in
       CLAUDE_REVIEWER_HOME="$reviewer_claude_home" \
       STUDIO_HOST="$review_host" \
       REVIEW_PAYLOAD="$input" \
-      "${spawn_argv[@]}" "$prompt")
+      "${spawn_argv[@]}" "--add-dir=$input_dir" "$prompt")
     ;;
 esac
 
