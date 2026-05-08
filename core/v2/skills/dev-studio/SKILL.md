@@ -46,10 +46,20 @@ Studio-feedback records still search issues first, consolidate covered work, cre
 
 `/dev-studio manager chain-monitor` routes to the manager role and uses `scripts/manager-chain-monitor.sh` for chain monitor `configure`, `sync`, `status`, and `recovery`. `status` is non-mutating and reports owner home, owner project, state path, Slack List ID, dry-run collision count, and pending write count without secrets. Recovery defaults to dry-run; destructive full-rewrite execution must require explicit operator approval. Background sync scheduling uses `scripts/schedule-chain-monitor.sh` and is macOS LaunchAgent only, with login-home ownership.
 
+<!-- v2-dev-studio:manager-config -->
+## Manager Config
+
+`/dev-studio manager config` routes to the manager role and uses `scripts/manager-feature-config.sh` for project-scoped feature configuration. It supports `list`, `get`, `enable`, `disable`, `set`, and `doctor`; settings live under `~/.dev-studio/<project>/config/` and secrets remain in the existing project-scoped secrets locations.
+
+<!-- v2-dev-studio:manager-branch -->
+## Manager Branch
+
+`/dev-studio manager branch` routes to the manager role and uses `scripts/manager-release-branch.sh` for release branch status, prepare, sync, and PR preflight. It is non-mutating by default, creates remote release branches only with explicit execution flags, and refuses PR handoff when the target branch is missing or mergeability checks find conflicts. Release readiness, tags, TestFlight, App Store, and public release messages remain release-manager responsibilities.
+
 <!-- v2-dev-studio:landing -->
 ## Bare Role Landing
 
-Bare role invocations start a lightweight landing. Load the role contract, inspect cheap cwd/profile context, suggest likely next moves, then report the direct invocation once the workflow is selected. `manager ingest` calls `scripts/dev-studio-ingest-resolve.sh`; `manager analyze` calls `scripts/manager-analyze.sh`; `manager reconcile` calls `scripts/manager-reconcile.sh`; `manager work-chain` calls `scripts/manager-work-chain.sh`; `manager chain-monitor` calls `scripts/manager-chain-monitor.sh`. Bare `scripts/studio-chain-runner.sh` shows runnable chains, resumable runs, and next actions. Prefer `/dev-studio manager work-chain ...` in user-facing guidance; script commands are secondary automation/debug equivalents. Use `--discover <manifest|chain-name>` for filtered discovery; `/dev-studio manager work-chain ios-v2-execution` auto-runs that chain while bare `manager work-chain` lands in discovery. Chain execution supports `--attended` and `--unattended`; end attended/ingest work-chain planning with the next `/dev-studio manager work-chain ...` command.
+Bare role invocations start a lightweight landing. Load the role contract, inspect cheap cwd/profile context, suggest likely next moves, then report the direct invocation once the workflow is selected. `manager ingest` calls `scripts/dev-studio-ingest-resolve.sh`; `manager analyze` calls `scripts/manager-analyze.sh`; `manager reconcile` calls `scripts/manager-reconcile.sh`; `manager work-chain` calls `scripts/manager-work-chain.sh`; `manager chain-monitor` calls `scripts/manager-chain-monitor.sh`; `manager config` calls `scripts/manager-feature-config.sh`; `manager branch` calls `scripts/manager-release-branch.sh`. Bare `scripts/studio-chain-runner.sh` shows runnable chains, resumable runs, and next actions. Prefer `/dev-studio manager work-chain ...` in user-facing guidance; script commands are secondary automation/debug equivalents. Use `--discover <manifest|chain-name>` for filtered discovery; `/dev-studio manager work-chain ios-v2-execution` auto-runs that chain while bare `manager work-chain` lands in discovery. Chain execution supports `--attended` and `--unattended`; end attended/ingest work-chain planning with the next `/dev-studio manager work-chain ...` command.
 
 After a bare role landing, later bare subcommands may resolve through that active role when unambiguous in the same session. Store the resolved canonical role after alias resolution. Explicit `/dev-studio <role> ...` always wins and replaces the active role for that invocation; bare `/dev-studio` re-lands in manager and clears any assumed active-role shortcut. Ambiguous commands require the role prefix or a lightweight clarification.
 
