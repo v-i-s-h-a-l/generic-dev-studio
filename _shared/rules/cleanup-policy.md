@@ -36,6 +36,10 @@ Ownership table, retention tiers, and compact extension spec for all agents.
 | Worker `rescue/<task-id>-stuck.md` | Operator | Written by worker on rc=0 + missing debrief; captures flags + log tail |
 | Worker `worker.log` | `fleet-cleanup.sh` | Rotated to `.1` when >5MB on soft sweep |
 | Stale worker `.lock` (PID dead OR heartbeat >180s) | `fleet-cleanup.sh` (soft) | Cleared on between-session sweep |
+| Studio v2 iOS result bundles/logs/tmp | `studio-ios-artifact-janitor.sh` | Passed runs delete after summary extraction; failed/blocking runs retain by TTL |
+| Studio v2 iOS DerivedData | Chain runner / iOS janitor | Preserved during the chain; cleaned at chain completion or after failure TTL |
+| Studio v2 iOS retention records | `studio-ios-artifact-janitor.sh` | Private root metadata under `retention/`; swept with the artifacts it describes |
+| Studio v2 iOS cache quarantine | `xcode-operation` + iOS janitor | Metadata mismatch/cache-poisoning signals move evidence under `quarantine/` for TTL cleanup |
 
 ---
 
@@ -68,6 +72,30 @@ Chanakya compact only eagerly compacts success paths. Failure-path artifacts sur
 | Review archive entries | — | 30 days |
 | Push queue entries | — | 7 days |
 | Failure-path artifacts (xcresult, worktree, DerivedData) | — | 48h |
+
+### Studio v2 iOS retention classes
+
+Scoped iOS profile operations write a private retention record next to the
+artifact root after the operation summary is written. Telemetry emitted by the
+janitor is redacted: it reports counts, bytes, disk thresholds, and root hashes,
+not raw private paths.
+
+| Class | Trigger | Default handling |
+|---|---|---|
+| `pass-summary-only` | Build/test exits 0 | Delete result bundle, log, and tmp path after summary extraction. Keep DerivedData until chain completion. |
+| `pass-short-retain` | Explicit short-retain override | Keep artifacts for 24h, compress large logs/results when configured. |
+| `failed-retain` | Build/test exits non-zero | Retain artifacts for 48h by default; compress large retained logs/results. |
+| `blocked-retain` | Caller marks the operation blocked | Retain artifacts for 48h by default. |
+| `aborted-retain` | Caller marks the operation aborted | Retain artifacts for 24h by default. |
+| `debug-pinned` | `STUDIO_IOS_DEBUG_RETAIN=1` | Requires owner, reason, and expiry via `STUDIO_IOS_DEBUG_RETAIN_*`; unbounded pins are rejected. |
+| `release-retain` | Release/TestFlight operation | Retain for 30d by default unless a stricter release policy applies. |
+| `cache-quarantined` | Metadata mismatch or cache-poisoning signal | Move cache evidence under `quarantine/`; retain 7d by default instead of deleting immediately. |
+
+TTL defaults are configurable with `STUDIO_IOS_ARTIFACT_*_TTL_*` environment
+variables. `STUDIO_IOS_ARTIFACT_MIN_FREE_KB` and
+`STUDIO_IOS_ARTIFACT_MIN_FREE_PCT` make janitor mutation refuse with redacted
+`refused_disk_pressure` telemetry when the current volume is below the safety
+floor.
 
 ---
 
@@ -199,6 +227,17 @@ for line in open('$PUSH_FILE'):
 " > /tmp/push-queue-filtered.jsonl && mv /tmp/push-queue-filtered.jsonl "$PUSH_FILE"
    fi
    ```
+
+8. **Studio v2 iOS artifact cleanup:**
+   ```bash
+   scripts/studio-ios-artifact-janitor.sh sweep --base "$TMPDIR/studio-ios-artifacts" --json
+   scripts/studio-ios-artifact-janitor.sh sweep --base "$PROJECT_MEMORY/chain-runs/<run>/ios-artifacts" --json
+   ```
+
+   The chain runner invokes this sweep before new dispatch and runs
+   `complete-chain` for each completed chain's scoped iOS root. Success paths
+   delete the root once no pins or retained failure records remain; failure and
+   blocked paths stay until their retention TTL expires.
 
 ### Compact report line (extended)
 

@@ -55,7 +55,10 @@
 #                                 Equivalent to `push --version`; the flag
 #                                 wins when both are set.
 #   STUDIO_TF_PUSH_FIXTURE_NODE   override the resolved node id (smoke tests).
-#   STUDIO_TF_PUSH_SKIP_NODE_PICK=1   skip the node-pick gate (fixtures only).
+#   STUDIO_TF_PUSH_SKIP_NODE_PICK=1   skip the release routing gate (fixtures only).
+#   STUDIO_TF_ALLOW_LOCAL_RELEASE_FALLBACK=1
+#                                 allow a registered local release machine to
+#                                 satisfy the release router's local fallback.
 #   STUDIO_RELEASE_TAG            reused by --background so parent, child, and
 #                                 later Slack emit calls share one release span.
 #   STUDIO_TF_PUSH_PREPARED_CONTEXT_PATH
@@ -326,6 +329,8 @@ PY
 }
 
 route_to_release_node() {
+  local channel="${1:-testflight}"
+  local route_reason_class=""
   if [ "${STUDIO_TF_PUSH_SKIP_NODE_PICK:-0}" = "1" ]; then
     NODE="local-skipped"
     return
@@ -333,10 +338,49 @@ route_to_release_node() {
   if [ -n "${STUDIO_TF_PUSH_FIXTURE_NODE:-}" ]; then
     NODE="$STUDIO_TF_PUSH_FIXTURE_NODE"
   else
-    NODE=$("$SCRIPT_DIR/node-pick.sh" --requires-secret-scope asc,slack release 2>/dev/null || echo local)
+    local route_file route_branch route_sha route_args route_node
+    route_file=$(mktemp 2>/dev/null || printf '/tmp/studio-release-route-%s.json' "$$")
+    route_branch=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+    route_sha=$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || true)
+    route_args=(
+      pick
+      --operation "release:${channel}"
+      --role release
+      --release-channel "$channel"
+      --requires-secret-scope asc,slack
+      --chain "${STUDIO_TF_RELEASE_CHAIN:-release}"
+      --task-id "${RELEASE_TAG:-release-pending}"
+      --worktree "$PROJECT_ROOT"
+      --source-branch "$route_branch"
+    )
+    [ -n "$route_sha" ] && route_args+=(--worktree-sha "$route_sha")
+    if [ "${STUDIO_TF_ALLOW_LOCAL_RELEASE_FALLBACK:-0}" = "1" ]; then
+      route_args+=(--allow-release-local-fallback)
+    fi
+    if ! route_node=$(STUDIO_IOS_ROUTING_DECISION_FILE="$route_file" "$SCRIPT_DIR/studio-ios-check-router.sh" "${route_args[@]}" 2>/dev/null); then
+      rm -f "$route_file" 2>/dev/null || true
+      halt_failed prereq "release routing failed before secret-bearing work"
+    fi
+    NODE="$route_node"
+    if [ "$NODE" = "none" ] || [ -z "$NODE" ]; then
+      local route_reason
+      route_reason=$(jq -r '.reason_class // "unknown"' "$route_file" 2>/dev/null || printf unknown)
+      rm -f "$route_file" 2>/dev/null || true
+      halt_failed prereq "no release-capable node with required asc,slack scopes (${route_reason})"
+    fi
+    route_reason_class=$(jq -r '.reason_class // empty' "$route_file" 2>/dev/null || true)
+    rm -f "$route_file" 2>/dev/null || true
+  fi
+  if [ -n "${STUDIO_TF_PUSH_FIXTURE_NODE:-}" ] || [ "${STUDIO_TF_PUSH_SKIP_NODE_PICK:-0}" = "1" ]; then
+    return
   fi
   if [ "$NODE" = "local" ]; then
-    halt_failed prereq "no node advertises asc,slack scopes — refusing to run secret-bearing work locally"
+    if [ "${STUDIO_TF_ALLOW_LOCAL_RELEASE_FALLBACK:-0}" != "1" ] && \
+       [ "$route_reason_class" != "release_capable_secret_scoped_local" ]; then
+      halt_failed prereq "release routing resolved local without explicit local fallback; refusing secret-bearing work"
+    fi
+  elif ! node_is_self "$NODE"; then
+    halt_failed prereq "release routing selected non-local node $NODE, but this driver cannot yet execute release archives remotely"
   fi
 }
 
@@ -757,7 +801,7 @@ cmd_push() {
     halt_failed prereq "STUDIO_TF_PUSH_LIVE=1 required for non-dry-run; refusing real archive/upload (R14)"
   fi
 
-  route_to_release_node
+  route_to_release_node testflight
   local BRANCH
   BRANCH=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
   if [ "$DRY_RUN_FLAG" != "1" ]; then
@@ -1186,7 +1230,7 @@ cmd_appstore() {
     [ -n "$ASC_KEY_PATH" ] || halt_failed prereq "STUDIO_TF_ASC_KEY_PATH missing and no key-id default could be derived"
     [ -r "$ASC_KEY_PATH" ] || halt_failed prereq "ASC key unreadable at $ASC_KEY_PATH"
   fi
-  route_to_release_node
+  route_to_release_node appstore
 
   local TAG="${BUILD}-zaps"
   local GH_REPO="${STUDIO_TF_GH_REPO:-turnip-ios/turnip-zaps}"

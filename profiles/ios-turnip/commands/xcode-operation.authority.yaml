@@ -3,11 +3,16 @@ role: helper
 filesystem:
   reads:
     - "$STUDIO_PROJECT_ROOT/**"
+    - "$STUDIO_PROJECT_ROOT/.studio/chain-task-start.json"
   writes:
     - "$STUDIO_PROJECT_ROOT/**"
+    - "$STUDIO_IOS_ARTIFACT_ROOT/**"
+    - "$STUDIO_CHAIN_ARTIFACT_ROOT/**"
+    - "$TMPDIR/studio-ios-artifacts/**"
 commands:
   - xcodebuild
   - sh
+  - tee
 secret_scopes:
   - project-local
 mutation_scopes:

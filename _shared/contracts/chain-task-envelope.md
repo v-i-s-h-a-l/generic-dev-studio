@@ -31,7 +31,7 @@ Required fields:
 | `created_at` | RFC3339 UTC time from the parent runner. |
 | `run_id`, `chain_run_id`, `issue_run_id` | UUID join keys for invocation, chain, and issue slice. |
 | `source_issue` | `{number,title,body,url,state}` from GitHub at launch time. |
-| `ownership` | `{chain,branch,issue_branch,worktree,host}`. |
+| `ownership` | `{chain,branch,source_branch,issue_branch,worktree,host}`. `source_branch` is the selected task source and final PR base; older envelopes may omit it and imply `main`/`base`. |
 | `execution_policy` | Mode, review gates, retry budget, and escalation rules the child should honor without reopening parent context. |
 | `expected_summary_artifact` | Exact `.studio/chain-worker-summary.json` path the worker must write. |
 | `required_checks` | String array seeded from runner-known requirements. |

@@ -3,9 +3,9 @@
 #
 # Phase 0 of the release-substrate arc (#215). The achilles test-suite mode
 # (and any future agent path that wants a full xcodebuild test run) routes
-# here so the toolchain entry funnels through one place: node-pick + per-
-# node lock + structured event emission. Direct xcodebuild from agent prose
-# is the bug — this wrapper closes that path for the test-suite shape.
+# here so the toolchain entry funnels through one place: iOS check routing +
+# per-node lock + structured event emission. Direct xcodebuild from agent
+# prose is the bug — this wrapper closes that path for the test-suite shape.
 #
 # Why a sibling rather than a new mode on task-build-gate.sh: the eventing
 # vocabulary differs (test_run_* vs build_check_*), the optional argument
@@ -79,24 +79,103 @@ esac
 
 PROJECT=$(resolve_project 2>/dev/null || echo unknown)
 
-# Pick a swift-test-tagged node — same role as swift-test-gate.sh asks for.
-# The build gate uses `xcodebuild`; the test gate uses `swift-test`. Both
-# resolve to the same machines today, but the role split keeps future
-# differentiation cheap (e.g. a node with simulators but no Xcode).
-REASON_FILE=$(mktemp 2>/dev/null || printf '/tmp/dispatch-reason-%s' "$$")
-: > "$REASON_FILE" 2>/dev/null || true
-NODE_ID=$(STUDIO_DISPATCH_REASON_FILE="$REASON_FILE" \
-  "$SCRIPT_DIR/node-pick.sh" swift-test 2>/dev/null || echo local)
-DISPATCH_REASON=$(tr -d '\n' < "$REASON_FILE" 2>/dev/null)
-rm -f "$REASON_FILE" 2>/dev/null || true
-[ -z "$DISPATCH_REASON" ] && DISPATCH_REASON="healthy"
-XCODE_VER=""
-PARITY_CACHE="$(resolve_runtime_global)/node-parity-cache.json"
-if [ -r "$PARITY_CACHE" ] && command -v jq >/dev/null 2>&1; then
-  XCODE_VER=$(jq -r --arg id "$NODE_ID" '.nodes[$id].xcodebuild.version // ""' "$PARITY_CACHE" 2>/dev/null)
+# The scheduler keeps test routing local-first while preserving chain
+# affinity for expensive simulator work.
+ROUTE_FILE=$(mktemp 2>/dev/null || printf '/tmp/ios-route-%s.json' "$$")
+ROUTE_ARGS=(pick --operation test --role swift-test --task-id "$TASK_ID" --worktree "$WORKTREE")
+[ -n "${STUDIO_IOS_REQUIRED_XCODE_VERSION:-}" ] && ROUTE_ARGS+=(--xcode-version "$STUDIO_IOS_REQUIRED_XCODE_VERSION")
+[ -n "${STUDIO_IOS_SIMULATOR_RUNTIME:-}" ] && ROUTE_ARGS+=(--simulator-runtime "$STUDIO_IOS_SIMULATOR_RUNTIME")
+[ -n "${STUDIO_IOS_USER_BLOCKED:-}" ] && ROUTE_ARGS+=(--user-blocked "$STUDIO_IOS_USER_BLOCKED")
+[ "${DRY_RUN:-0}" = "1" ] && ROUTE_ARGS+=(--dry-run)
+if ! NODE_ID=$(STUDIO_IOS_ROUTING_DECISION_FILE="$ROUTE_FILE" "$SCRIPT_DIR/studio-ios-check-router.sh" "${ROUTE_ARGS[@]}"); then
+  printf 'task-test-gate: iOS routing decision failed\n' >&2
+  rm -f "$ROUTE_FILE" 2>/dev/null || true
+  exit 2
 fi
-DISPATCH_FIELDS=$(printf ',"studio.dispatch.node":"%s","studio.dispatch.role":"swift-test","studio.dispatch.reason":"%s","studio.dispatch.xcode_version":"%s"' \
-  "$NODE_ID" "$DISPATCH_REASON" "$XCODE_VER")
+ROUTE_JSON=$(cat "$ROUTE_FILE" 2>/dev/null || printf '{}')
+rm -f "$ROUTE_FILE" 2>/dev/null || true
+if [ "${DRY_RUN:-0}" != "1" ]; then
+  SYNC_BOOTSTRAP_NODE=$(printf '%s\n' "$ROUTE_JSON" | jq -r 'select(.source_sync_remediation.required == true) | .source_sync_remediation.candidate_executor // empty' 2>/dev/null)
+  if [ -n "$SYNC_BOOTSTRAP_NODE" ] && [ "$SYNC_BOOTSTRAP_NODE" != "local" ]; then
+    # shellcheck source=lib-source-sync.sh
+    . "$SCRIPT_DIR/lib-source-sync.sh"
+    if sourcesync_push "$SYNC_BOOTSTRAP_NODE" "$WORKTREE" >/dev/null; then
+      ROUTE_FILE=$(mktemp 2>/dev/null || printf '/tmp/ios-route-%s.json' "$$")
+      if ! NODE_ID=$(STUDIO_IOS_ROUTING_DECISION_FILE="$ROUTE_FILE" "$SCRIPT_DIR/studio-ios-check-router.sh" "${ROUTE_ARGS[@]}"); then
+        printf 'task-test-gate: iOS routing decision failed after source-sync bootstrap\n' >&2
+        rm -f "$ROUTE_FILE" 2>/dev/null || true
+        exit 2
+      fi
+      ROUTE_JSON=$(cat "$ROUTE_FILE" 2>/dev/null || printf '{}')
+      rm -f "$ROUTE_FILE" 2>/dev/null || true
+    else
+      printf 'task-test-gate: source-sync bootstrap to %s failed; keeping initial routing decision\n' "$SYNC_BOOTSTRAP_NODE" >&2
+    fi
+  fi
+fi
+DISPATCH_REASON=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.reason_class // "routing_unknown"' 2>/dev/null)
+XCODE_VER=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.selected_candidate.predicates.xcode_toolchain.xcode_version // ""' 2>/dev/null)
+MANAGER_SAVINGS_S=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.manager_savings_s // 0' 2>/dev/null)
+REMOTE_LATENCY_COST_S=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.remote_latency_cost_s // 0' 2>/dev/null)
+RETRY_COST_S=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.retry_cost_s // 0' 2>/dev/null)
+USER_BLOCKED_JSON=$(printf '%s\n' "$ROUTE_JSON" | jq -r '.economics.user_blocked // false' 2>/dev/null)
+DISPATCH_FIELDS=$(printf ',"studio.dispatch.node":"%s","studio.dispatch.role":"swift-test","studio.dispatch.reason":"%s","studio.dispatch.xcode_version":"%s","studio.dispatch.manager_savings_s":%s,"studio.dispatch.remote_latency_cost_s":%s,"studio.dispatch.retry_cost_s":%s,"studio.dispatch.user_blocked":%s' \
+  "$NODE_ID" "$DISPATCH_REASON" "$XCODE_VER" "$MANAGER_SAVINGS_S" "$REMOTE_LATENCY_COST_S" "$RETRY_COST_S" "$USER_BLOCKED_JSON")
+
+_failover_json_for_failure() {
+  local signal="${1:?}" exit_code="${2:?}" log_path="${3:-}" artifact_path="${4:-}" route_file decision compact
+  local -a failover_args
+  if [ "${IS_LOCAL:-1}" = "1" ]; then
+    printf 'null'
+    return 0
+  fi
+  route_file=$(mktemp 2>/dev/null || printf '/tmp/ios-failover-route-%s.json' "$$")
+  printf '%s\n' "${ROUTE_JSON:-{\}}" >"$route_file" 2>/dev/null || true
+  failover_args=(
+    decide
+    --operation test
+    --role swift-test
+    --task-id "$TASK_ID"
+    --worktree "$WORKTREE"
+    --selected-executor "$NODE_ID"
+    --failure-signal "$signal"
+    --exit-code "$exit_code"
+    --attempt "$ATTEMPT"
+    --route-decision-file "$route_file"
+  )
+  [ -n "$log_path" ] && failover_args+=(--log "$log_path")
+  [ -n "$artifact_path" ] && failover_args+=(--artifact "$artifact_path")
+  if ! decision=$("$SCRIPT_DIR/studio-ios-check-failover.sh" "${failover_args[@]}"); then
+    printf 'task-test-gate: failover decision failed for %s on %s; publishing halt_operator_review\n' "$signal" "$NODE_ID" >&2
+    rm -f "$route_file" 2>/dev/null || true
+    jq -cn \
+      --arg signal "$signal" \
+      --arg key "ios-check:${TASK_ID}:test:failover-policy-error:${ATTEMPT}:${signal}" \
+      '{failure_class:"failover_policy_error",failure_signal:$signal,selected_retry_path:"halt_operator_review",target_executor:null,retry_count:null,max_retries:null,final_outcome:"halted",retention_class:"blocked-retain",idempotency_key:$key}'
+    return 0
+  fi
+  rm -f "$route_file" 2>/dev/null || true
+  if ! printf '%s\n' "$decision" | jq -e '.kind == "studio-ios-check-failover-decision"' >/dev/null 2>&1; then
+    printf 'task-test-gate: failover decision malformed for %s on %s; publishing halt_operator_review\n' "$signal" "$NODE_ID" >&2
+    jq -cn \
+      --arg signal "$signal" \
+      --arg key "ios-check:${TASK_ID}:test:failover-policy-malformed:${ATTEMPT}:${signal}" \
+      '{failure_class:"failover_policy_error",failure_signal:$signal,selected_retry_path:"halt_operator_review",target_executor:null,retry_count:null,max_retries:null,final_outcome:"halted",retention_class:"blocked-retain",idempotency_key:$key}'
+    return 0
+  fi
+  compact=$(printf '%s\n' "$decision" | jq -c '{
+    failure_class: .failure.class,
+    selected_retry_path: .retry.selected_path,
+    target_executor: .retry.target_executor,
+    retry_count: .retry.retry_count,
+    max_retries: .retry.max_retries,
+    final_outcome,
+    retention_class: .retention.retention_class,
+    idempotency_key: .idempotency_keys.failover
+  }' 2>/dev/null || printf 'null')
+  [ -n "$compact" ] || compact="null"
+  printf '%s' "$compact"
+}
 
 if node_is_self "$NODE_ID"; then
   IS_LOCAL=1
@@ -172,16 +251,21 @@ if [ "$IS_LOCAL" = "0" ]; then
       TEST_COUNT=$(grep -Eo 'Test Suite .* passed|Executed [0-9]+ tests' "$harvest_log" 2>/dev/null \
         | grep -Eo '[0-9]+' | head -1)
       TEST_COUNT="${TEST_COUNT:-0}"
-      rm -f "$harvest_log" 2>/dev/null || true
       if [ "$harvested_rc" -eq 0 ]; then
         data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"test_count":%s,"attempt":%s,"harvested":true%s}' \
           "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$TEST_COUNT" "$ATTEMPT" "$DISPATCH_FIELDS")
+        rm -f "$harvest_log" 2>/dev/null || true
         emit_event_keyed achilles task test_run_passed "$TASK_ID" "$data" >/dev/null 2>&1 || true
         gate_announce_done test "$NODE_ID" "$TASK_ID" passed "$DURATION_S"
         exit 0
       fi
+      failure_reason="build_invocation_failed"
+      [ "$harvested_rc" -eq 124 ] && failure_reason="remote_timeout"
+      failover_json=$(_failover_json_for_failure "$failure_reason" "$harvested_rc" "$harvest_log")
       data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"attempt":%s,"exit_code":%s,"harvested":true%s}' \
         "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$ATTEMPT" "$harvested_rc" "$DISPATCH_FIELDS")
+      data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" --argjson failover "$failover_json" '. + {reason:$reason, failover:$failover}')
+      rm -f "$harvest_log" 2>/dev/null || true
       emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
       gate_announce_done test "$NODE_ID" "$TASK_ID" failed "$DURATION_S"
       exit 2
@@ -220,7 +304,9 @@ while [ -z "$LOCK" ]; do
   done
   [ -n "$LOCK" ] && break
   if [ "$wait_seconds" -ge "$wait_cap" ]; then
+    failover_json=$(_failover_json_for_failure stale_lock 3 "" "")
     data=$(printf '{"node":"%s","reason":"locked_out","waited_s":%s,"slots":%s,"attempt":%s%s}' "$NODE_ID" "$wait_seconds" "$PARALLEL_SLOTS" "$ATTEMPT" "$DISPATCH_FIELDS")
+    data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
     emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
     printf 'error: xcodebuild lock wait exceeded %ss (slots=%s)\n' "$wait_cap" "$PARALLEL_SLOTS" >&2
     gate_announce_done test "$NODE_ID" "$TASK_ID" locked-out "$wait_seconds"
@@ -268,7 +354,9 @@ else
   sourcesync_start_warmup_once "$NODE_ID" "$PROJECT" "$WORKTREE" "$SCHEME" "$DESTINATION" "$PROJECT_RELPATH"
   REL_WORKTREE=$(sourcesync_push "$NODE_ID" "$WORKTREE") || {
     printf 'task-test-gate: source sync to %s failed\n' "$NODE_ID" >&2
+    failover_json=$(_failover_json_for_failure source_sync_failed 2 "" "")
     data=$(printf '{"node":"%s","reason":"source_sync_failed","attempt":%s%s}' "$NODE_ID" "$ATTEMPT" "$DISPATCH_FIELDS")
+    data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
     emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
     exit 2
   }
@@ -278,7 +366,9 @@ else
   }
   remote_derived_abs=$(sourcesync_remote_abs "$NODE_ID" "$REL_DERIVED" 2>/dev/null || printf '')
   sourcesync_mkdir_remote "$NODE_ID" "$REL_DERIVED" || {
+    failover_json=$(_failover_json_for_failure remote_shell_path_failed 2 "" "")
     data=$(printf '{"node":"%s","reason":"remote_shell_path_failed","attempt":%s%s}' "$NODE_ID" "$ATTEMPT" "$DISPATCH_FIELDS")
+    data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
     emit_event_keyed achilles task test_run_failed "$TASK_ID" "$data" >/dev/null 2>&1 || true
     exit 2
   }
@@ -349,9 +439,11 @@ if [ "$IS_LOCAL" != "1" ]; then
     failure_reason=$(remote_failure_reason "$test_log")
   fi
 fi
+failover_json=$(_failover_json_for_failure "$failure_reason" "$TEST_STATUS" "$test_log")
 data=$(printf '{"node":"%s","scheme":"%s","test_target":"%s","duration_s":%s,"attempt":%s,"exit_code":%s%s}' \
   "$NODE_ID" "$SCHEME" "$TEST_TARGET" "$DURATION_S" "$ATTEMPT" "$TEST_STATUS" "$DISPATCH_FIELDS")
 data=$(printf '%s' "$data" | jq -c --arg reason "$failure_reason" '. + {reason:$reason}')
+data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
 if [ "$failure_reason" = "remote_marker_writer_failed" ]; then
   data=$(remote_enrich_marker_failure "$data" "$test_log")
 fi
