@@ -30,12 +30,13 @@ halted runs keep their temporary root until a later hygiene sweep or manual
 inspection.
 
 At startup, the runner performs a bounded private sweep: stale state locks whose
-PIDs are gone are removed, old temporary run roots are pruned, oversized old
-private artifacts such as `events.jsonl`, `report.md`, and wrapper `.out` files
-are gzip-archived when `gzip` is available, and old completed run directories
-may be pruned. Defaults are intentionally conservative and can be tuned with
-`STUDIO_CHAIN_TMP_RETENTION_DAYS`, `STUDIO_CHAIN_RUN_RETENTION_DAYS`, and
-`STUDIO_CHAIN_ARTIFACT_MAX_BYTES`.
+PID, creation time, host, and process evidence no longer identify a live holder
+are removed, old temporary run roots are pruned, oversized old private artifacts
+such as `events.jsonl`, `report.md`, and wrapper `.out` files are gzip-archived
+when `gzip` is available, and old completed run directories may be pruned.
+Defaults are intentionally conservative and can be tuned with
+`STUDIO_CHAIN_TMP_RETENTION_DAYS`, `STUDIO_CHAIN_RUN_RETENTION_DAYS`,
+`STUDIO_CHAIN_LOCK_STALE_S`, and `STUDIO_CHAIN_ARTIFACT_MAX_BYTES`.
 
 ## Event Envelope
 
@@ -53,6 +54,15 @@ Every line carries the same top-level envelope:
 | `chain_run_id`, `issue_run_id` | no | Join keys when the event belongs to a chain or issue slice. |
 | `task` | no | Issue number, PR number, decision id, or empty string. |
 | `data` | yes | Bounded object. Long/private details should be represented as private artifact paths. |
+
+## State Projection
+
+`events.jsonl` is the canonical chain-run fact stream. `state.json` is a
+rebuildable projection for compatibility readers and fast status display. Resume
+startup validates `state.json` against the reducer projection and rewrites stale
+projection state before scheduling; projection failures write typed halt records.
+The detailed state-machine contract lives in
+`_shared/contracts/chain-run-state.md`.
 
 ## Run Metrics
 
@@ -83,6 +93,8 @@ closure PR when available.
 | iOS cleanup: `chain_ios_artifact_cleanup_completed` | `chain`, janitor `status`, redacted cleanup `counts`, `bytes_freed`, retained `retention_class`/TTL evidence when present, `paths_redacted`, and a private `telemetry_artifact` pointer. |
 | Resume: `chain_resume_attempt_started`, `chain_resume_attempt_completed` | `attempt_id`; completed event also includes `failure_reason` when non-empty. |
 | Halt: `chain_halt_recorded` | `reason_id`, `halt_class`, `halt_record`. |
+| Projection repair: `chain_state_projection_repaired` | `backup`, `mismatch`. Emitted when resume startup repairs stale `state.json` from `events.jsonl`. |
+| Lock cleanup: `chain_stale_lock_removed` | `lock_path`, `context`, compact lock evidence (`reason`, `pid`, `created_at`, `host`, `process`, current host/process). |
 | Escrow: `chain_decision_escrow_opened` | `decision_id`, `risk_class`, `status`, `escrow_record`. |
 | Validation failure: `chain_artifact_validation_failed` | `artifact`, `reason_id`, `summary`. |
 | Reviewer: `chain_review_completed` | `pr_url`, `exit_code`, `verdict` when wrapper output supplied it, `model`/`effort` when available, `wrapper_output`. |

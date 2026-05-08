@@ -98,7 +98,7 @@ scripts/manager-work-chain.sh ios-v2-execution --dry-run # preview the named cha
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
 scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes # attended run with explicit confirmation bypass
 scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --yes # no routine continue prompts; typed blockers halt
-scripts/studio-chain-runner.sh --resume <run_id> --yes # resume state; reconcile completed worker summaries before dependents
+scripts/studio-chain-runner.sh --resume <run_id> --yes # resume from event-derived state; repair stale projection before scheduling
 STUDIO_CHAIN_TARGET_REPO_ROOT=/repo scripts/studio-chain-runner.sh /tmp/chain.yaml --dry-run # run a non-repo manifest against an explicit checkout
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview checkpoint-aware safe-boundary hooks
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
@@ -228,11 +228,11 @@ scripts/                # multi-worker fleet (BETA)
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
   studio-dependency-export.sh # Mermaid graph from native GitHub blocked_by issue dependencies
   studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
-  studio-chain-runner.sh   # plan/execute/discover/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, optional checkpoint hooks, locks, and private run reports
+  studio-chain-runner.sh   # plan/execute/discover/auto-resume/list studio issue chains with event-derived state projection, capacity-scaled fresh sessions, UUID telemetry, optional checkpoint hooks, locks, and private run reports
   studio-chain-rule-gates.sh # deterministic chain workflow gates for git hygiene, artifact roots, cache keys, cleanup TTLs, and telemetry redaction
   manager-plan-chain.sh # manager-owned source/issue/plan to reviewed issue-backed work-chain orchestration with native issue links, Project fields, telemetry, and optional execution
   manager-work-chain.sh # manager front door for work-chain discovery/start/resume plus --from-plan unattended execution routing
-  chain-monitor-sync.sh # locked/idempotent chain monitor Slack List row sync from manifests, runtime manifests, and persisted chain-run state
+  chain-monitor-sync.sh # locked/idempotent chain monitor Slack List row sync from manifests, runtime manifests, and event-derived persisted chain-run state
   manager-chain-monitor.sh # manager front door for monitor configure/sync/status/recovery while preserving login-home ownership
   schedule-chain-monitor.sh # login-home macOS LaunchAgent installer for background chain monitor sync
   studio-chain-telemetry-digest.sh # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run reports/events

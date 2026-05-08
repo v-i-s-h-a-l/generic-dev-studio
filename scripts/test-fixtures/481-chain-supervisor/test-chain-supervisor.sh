@@ -57,12 +57,14 @@ write_state() {
   extra="${3:-}"
   [ -n "$extra" ] || extra='{}'
   run_dir="$chain_root/$run_id"
+  work_root="${TMPDIR:-/tmp}/studio-chain-runner/$run_id"
   mkdir -p "$run_dir"
   jq -n \
     --arg run_id "$run_id" \
     --arg manifest "$manifest_real" \
     --arg status "$status" \
     --arg run_dir "$run_dir" \
+    --arg work_root "$work_root" \
     --argjson extra "$extra" \
     '{
       schema_version: 1,
@@ -81,7 +83,7 @@ write_state() {
           branch: "feature/supervisor-a",
           host: "codex",
           chain_run_id: "019df000-0000-7000-a000-000000000001",
-          chain_worktree: "/tmp/studio-chain-runner/supervisor-a-feature",
+          chain_worktree: ($work_root + "/supervisor-a-feature"),
           worker_pool: 1,
           status: "pending",
           issues: [
@@ -90,7 +92,7 @@ write_state() {
               title: "Supervisor fixture 481",
               state: "OPEN",
               issue_branch: "feature/supervisor-a-issue-481",
-              issue_worktree: "/tmp/studio-chain-runner/supervisor-a-issue-481",
+              issue_worktree: ($work_root + "/supervisor-a-issue-481"),
               issue_run_id: "019df000-0000-7000-a000-000000000002",
               status: "pending"
             }

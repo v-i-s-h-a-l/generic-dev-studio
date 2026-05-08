@@ -41,6 +41,8 @@ RUN_PATHS_CONFIGURED=0
 . "$SCRIPT_DIR/lib-chain-git.sh"
 # shellcheck source=lib-chain-monitor-notifier.sh
 . "$SCRIPT_DIR/lib-chain-monitor-notifier.sh"
+# shellcheck source=lib-chain-run-state.sh
+. "$SCRIPT_DIR/lib-chain-run-state.sh"
 
 usage() {
   sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' >&2
@@ -152,9 +154,19 @@ if { [ "$AUTO_MODE" -eq 1 ] || [ "$EXPLAIN_NEXT" -eq 1 ]; } && [ -n "$RESUME_ID"
   usage
 fi
 
+projected_state_for_read() {
+  local state="$1" out="$2" events
+  events=$(chain_run_state_events_path_for_state "$state")
+  if ! chain_run_state_projection_file "$state" "$events" "$out" 2>/dev/null; then
+    jq -n --arg run_id "$(jq -r '.run_id // "unknown"' "$state" 2>/dev/null || printf 'unknown')" \
+      --arg manifest "$(jq -r '.manifest // "unknown"' "$state" 2>/dev/null || printf 'unknown')" \
+      '{run_id:$run_id, manifest:$manifest, status:"projection_invalid"}' > "$out"
+  fi
+}
+
 list_persisted_runs() {
   command -v jq >/dev/null 2>&1 || { printf 'studio-chain-runner: jq required\n' >&2; exit 2; }
-  local parent_home project_root chain_root state_count
+  local parent_home project_root chain_root state_count view
   parent_home=$(resolve_parent_home_for_github)
   project_root=$(HOME="$parent_home" resolve_project_root_for generic-dev-studio)
   chain_root="$project_root/chain-runs"
@@ -175,9 +187,12 @@ list_persisted_runs() {
   printf '| Run ID | Manifest | Status | Started | Updated | Report |\n'
   printf '|---|---|---|---|---|---|\n'
   find "$chain_root" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null | sort | while IFS= read -r state; do
+    view=$(mktemp -t studio-chain-state-view.XXXXXX)
+    projected_state_for_read "$state" "$view"
     jq -r --arg state "$state" '
       "| \(.run_id // "unknown") | \(.manifest // "unknown") | \(.status // "unknown") | \(.started_at // "unknown") | \(.updated_at // "unknown") | \(.report // "missing") |"
-    ' "$state" 2>/dev/null || printf '| unknown | unknown | unreadable | unknown | unknown | `%s` |\n' "$state"
+    ' "$view" 2>/dev/null || printf '| unknown | unknown | unreadable | unknown | unknown | `%s` |\n' "$state"
+    rm -f "$view"
   done
 }
 
@@ -187,7 +202,7 @@ if [ "$LIST_RUNS" -eq 1 ]; then
 fi
 
 discover_persisted_runs() {
-  local parent_home project_root chain_root state_count state run_id status manifest next_command rows_tmp
+  local parent_home project_root chain_root state_count state run_id status manifest next_command rows_tmp view
   command -v jq >/dev/null 2>&1 || { printf 'studio-chain-runner: jq required\n' >&2; exit 2; }
   parent_home=$(resolve_parent_home_for_github)
   project_root=$(HOME="$parent_home" resolve_project_root_for generic-dev-studio)
@@ -209,20 +224,26 @@ discover_persisted_runs() {
   while IFS= read -r state; do
     [ -n "$state" ] || continue
     [ -r "$state" ] || continue
-    run_id=$(jq -r '.run_id // "unknown"' "$state" 2>/dev/null || printf 'unknown')
-    status=$(jq -r '.status // "unknown"' "$state" 2>/dev/null || printf 'unknown')
-    [ "$status" = "completed" ] && continue
-    manifest=$(jq -r '.manifest // "unknown"' "$state" 2>/dev/null || printf 'unknown')
+    view=$(mktemp -t studio-chain-discovery-state.XXXXXX)
+    projected_state_for_read "$state" "$view"
+    run_id=$(jq -r '.run_id // "unknown"' "$view" 2>/dev/null || printf 'unknown')
+    status=$(jq -r '.status // "unknown"' "$view" 2>/dev/null || printf 'unknown')
+    if [ "$status" = "completed" ]; then
+      rm -f "$view"
+      continue
+    fi
+    manifest=$(jq -r '.manifest // "unknown"' "$view" 2>/dev/null || printf 'unknown')
     next_command=$(jq -r --arg run_id "$run_id" '
       (.halt_records // []) as $halts
       | if ($halts | length) > 0 and (($halts | last | .next_command // "") != "") then ($halts | last | .next_command)
         elif ($halts | length) > 0 and (($halts | last | .halt_class // "") == "fatal") then "inspect halt record"
         else "/dev-studio manager work-chain --resume \($run_id) --yes"
         end
-    ' "$state" 2>/dev/null || printf '/dev-studio manager work-chain --resume %s --yes' "$run_id")
+    ' "$view" 2>/dev/null || printf '/dev-studio manager work-chain --resume %s --yes' "$run_id")
     next_command=$(printf '%s\n' "$next_command" \
       | sed "s#${SCRIPT_DIR}/studio-chain-runner.sh#/dev-studio manager work-chain#g; s#scripts/studio-chain-runner.sh#/dev-studio manager work-chain#g")
     printf '| `%s` | `%s` | `%s` | `%s` |\n' "$run_id" "$status" "$manifest" "$next_command" >> "$rows_tmp"
+    rm -f "$view"
   done <<EOF
 $(find "$chain_root" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null | sort)
 EOF
@@ -580,13 +601,13 @@ event_data() {
 event_stage() {
   case "$1" in
     chain_run_started|chain_plan_prepared|chain_phase_review_completed) printf 'plan\n' ;;
-    chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed|chain_rule_gate_completed) printf 'preflight\n' ;;
+    chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed|chain_rule_gate_completed|chain_stale_lock_removed) printf 'preflight\n' ;;
     chain_started|chain_issue_started|chain_issue_completed|chain_issue_validated|chain_parent_commit_finalized|chain_issue_scheduler_blocked) printf 'execute\n' ;;
     chain_worker_summary_ingested|chain_telemetry_gap|checkpoint_auto_created|checkpoint_auto_loaded|checkpoint_context_savings_estimated|chain_ios_artifact_cleanup_completed) printf 'ingest\n' ;;
     chain_pr_opened|chain_review_completed) printf 'review\n' ;;
     chain_completed|chain_issue_merged) printf 'merge\n' ;;
     chain_issue_closed) printf 'close\n' ;;
-    chain_resume_attempt_*|chain_supervisor_decision) printf 'resume\n' ;;
+    chain_resume_attempt_*|chain_supervisor_decision|chain_state_projection_repaired) printf 'resume\n' ;;
     chain_halt_recorded|chain_decision_escrow_*|chain_run_completed) printf 'finalize\n' ;;
     *) printf 'execute\n' ;;
   esac
@@ -812,6 +833,7 @@ update_state_jq() {
   lock="$RUN_STATE_JSON.update.lock"
   while ! mkdir "$lock" 2>/dev/null; do
     if lock_is_stale "$lock"; then
+      record_stale_lock_removed "$lock" state-update
       rm -rf "$lock"
       continue
     fi
@@ -823,8 +845,12 @@ update_state_jq() {
     sleep 0.1
   done
   acquired=1
-  printf '%s\n' "$$" > "$lock/pid"
-  printf '%s\n' "$(iso_ts_now)" > "$lock/created_at"
+  if declare -F write_lock_metadata >/dev/null 2>&1; then
+    write_lock_metadata "$lock" state-update
+  else
+    printf '%s\n' "$$" > "$lock/pid"
+    printf '%s\n' "$(iso_ts_now)" > "$lock/created_at"
+  fi
   filter="${*: -1}"
   set -- "${@:1:$(($# - 1))}"
   tmp="$RUN_STATE_JSON.tmp.$$"
@@ -1050,6 +1076,7 @@ mark_chain_issues_completed_after_pr() {
            chain_pr_commit_after:(if $after == "" then null else $after end)
          })
        | del(.failure_reason)
+       | del(.exit_code)
      )'
   chain_monitor_notify_chain_state_change "$chain_run_id" state-updated
 }
@@ -1245,7 +1272,7 @@ halt_class_for_reason() {
   case "$1" in
     github_auth_unavailable|github_home_mismatch|github_rate_limited|network_partition|child_timeout|disk_runtime_pressure)
       printf 'retryable\n' ;;
-    parent_host_unknown|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_crash|issue_body_changed|partial_github_operation|test_build_infra_unavailable|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|manifest_schema_mismatch|implementation_scope_blocked)
+    parent_host_unknown|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_crash|issue_body_changed|partial_github_operation|test_build_infra_unavailable|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|manifest_schema_mismatch|implementation_scope_blocked|chain_state_projection_invalid|chain_state_projection_repair_failed)
       printf 'recoverable\n' ;;
     reviewer_blocked|reviewer_ambiguous)
       printf 'review-needed\n' ;;
@@ -1377,6 +1404,31 @@ write_halt_record() {
   emit_chain_event chain_halt_recorded "$issue_number" "$RUN_ID" "$chain_run_id" "$issue_run_id" "$status" 0 \
     "$(jq -cn --arg reason_id "$reason_id" --arg halt_class "$halt_class" --arg halt_record "$file" '{reason_id:$reason_id, halt_class:$halt_class, halt_record:$halt_record}')"
   printf '%s\n' "$file"
+}
+
+reconcile_resume_state_projection_or_halt() {
+  local summary_file reconcile_rc status backup
+  [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ] || return 0
+  [ -n "${EVENTS_JSONL:-}" ] && [ -s "$EVENTS_JSONL" ] || return 0
+
+  summary_file=$(mktemp -t chain-state-reconcile.XXXXXX)
+  set +e
+  chain_run_state_reconcile_file "$RUN_STATE_JSON" "$EVENTS_JSONL" resume-startup > "$summary_file"
+  reconcile_rc=$?
+  set -e
+  if [ "$reconcile_rc" -ne 0 ]; then
+    write_halt_record "chain_state_projection_invalid" "resume startup could not derive chain run projection from events: $RUN_STATE_JSON" >/dev/null || true
+    rm -f "$summary_file"
+    exit 2
+  fi
+  status=$(jq -r '.status // "unknown"' "$summary_file" 2>/dev/null || printf 'unknown')
+  if [ "$status" = "repaired" ]; then
+    backup=$(jq -r '.backup // ""' "$summary_file")
+    log "resume repaired stale state projection from events: $RUN_STATE_JSON"
+    emit_chain_event chain_state_projection_repaired "" "$RUN_ID" "" "" completed 0 \
+      "$(jq -c --arg backup "$backup" '{backup:$backup, mismatch:(.mismatch.status // "mismatch")}' "$summary_file")"
+  fi
+  rm -f "$summary_file"
 }
 
 supersede_completed_halt_records() {
@@ -2864,6 +2916,7 @@ emit_supervisor_decision() {
   local action="$1" reason_id="${2:-}" selected_run_id="${3:-}" candidates_json="${4:-[]}" lock_path="${5:-}"
   [ "$EXPLAIN_NEXT" -eq 0 ] || return 0
   [ "$DRY_RUN" -eq 0 ] || return 0
+  [ -n "${CHAIN_RUN_ROOT:-}" ] || return 0
   mkdir -p "$CHAIN_RUN_ROOT"
   emit_chain_event chain_supervisor_decision "" "$RUN_ID" "" "" "$action" 0 \
     "$(jq -cn \
@@ -2917,12 +2970,91 @@ release_state_lock() {
   fi
 }
 
+lock_metadata_json() {
+  local reason="$1" lock="$2" pid="${3:-}" created_at="${4:-}" host="${5:-}" process="${6:-}" current_host="${7:-}" current_process="${8:-}"
+  jq -cn \
+    --arg reason "$reason" \
+    --arg lock "$lock" \
+    --arg pid "$pid" \
+    --arg created_at "$created_at" \
+    --arg host "$host" \
+    --arg process "$process" \
+    --arg current_host "$current_host" \
+    --arg current_process "$current_process" \
+    '{reason:$reason, lock_path:$lock, pid:(if $pid == "" then null else ($pid|tonumber? // $pid) end), created_at:(if $created_at == "" then null else $created_at end), host:(if $host == "" then null else $host end), process:(if $process == "" then null else $process end), current_host:(if $current_host == "" then null else $current_host end), current_process:(if $current_process == "" then null else $current_process end)}'
+}
+
+current_lock_process_name() {
+  local pid="$1"
+  ps -p "$pid" -o comm= 2>/dev/null | awk '{$1=$1; print}' | head -n 1
+}
+
+lock_created_epoch() {
+  local created_at="$1"
+  [ -n "$created_at" ] || { printf '0\n'; return; }
+  jq -nr --arg ts "$created_at" 'try ($ts | fromdateiso8601) catch 0' 2>/dev/null || printf '0\n'
+}
+
+write_lock_metadata() {
+  local lock="$1" purpose="${2:-state}"
+  local process host
+  process=$(current_lock_process_name "$$" || true)
+  host=$(hostname 2>/dev/null || printf 'unknown')
+  printf '%s\n' "$$" > "$lock/pid"
+  printf '%s\n' "$(iso_ts_now)" > "$lock/created_at"
+  printf '%s\n' "$host" > "$lock/host"
+  printf '%s\n' "$process" > "$lock/process"
+  printf '%s\n' "$purpose" > "$lock/purpose"
+}
+
+record_stale_lock_removed() {
+  local lock="$1" context="${2:-unknown}" detail
+  [ -n "${EVENTS_JSONL:-}" ] && [ "$EVENTS_JSONL" != "/dev/null" ] || return 0
+  [ -n "${MANIFEST+x}" ] || return 0
+  declare -F emit_chain_event >/dev/null 2>&1 || return 0
+  detail="${LOCK_STALE_DETAIL_JSON:-}"
+  [ -n "$detail" ] || detail='{}'
+  emit_chain_event chain_stale_lock_removed "" "${RUN_ID:-}" "" "" completed 0 \
+    "$(jq -cn --arg lock "$lock" --arg context "$context" --arg detail "$detail" '{lock_path:$lock, context:$context, detail:($detail | fromjson? // {})}')"
+}
+
 lock_is_stale() {
-  local lock="$1" pid
+  local lock="$1" pid created_at host process current_host current_process created_epoch now_epoch max_age age
+  LOCK_STALE_DETAIL_JSON=$(lock_metadata_json missing_pid "$lock")
   [ -f "$lock/pid" ] || return 0
   pid=$(cat "$lock/pid" 2>/dev/null || true)
-  case "$pid" in ''|*[!0-9]*) return 0 ;; esac
-  kill -0 "$pid" 2>/dev/null && return 1
+  created_at=$(cat "$lock/created_at" 2>/dev/null || true)
+  host=$(cat "$lock/host" 2>/dev/null || true)
+  process=$(cat "$lock/process" 2>/dev/null || true)
+  current_host=$(hostname 2>/dev/null || printf 'unknown')
+  case "$pid" in
+    ''|*[!0-9]*)
+      LOCK_STALE_DETAIL_JSON=$(lock_metadata_json invalid_pid "$lock" "$pid" "$created_at" "$host" "$process" "$current_host")
+      return 0
+      ;;
+  esac
+  if [ -n "$host" ] && [ "$host" != "$current_host" ]; then
+    max_age=$(positive_int_or_default "${STUDIO_CHAIN_LOCK_STALE_S:-900}" 900)
+    created_epoch=$(lock_created_epoch "$created_at")
+    now_epoch=$(now_epoch)
+    age=$((now_epoch - created_epoch))
+    if [ "$created_epoch" -le 0 ] || [ "$age" -ge "$max_age" ]; then
+      LOCK_STALE_DETAIL_JSON=$(lock_metadata_json cross_host_expired "$lock" "$pid" "$created_at" "$host" "$process" "$current_host")
+      return 0
+    fi
+    LOCK_STALE_DETAIL_JSON=$(lock_metadata_json cross_host_unverified_live "$lock" "$pid" "$created_at" "$host" "$process" "$current_host")
+    return 1
+  fi
+  if kill -0 "$pid" 2>/dev/null; then
+    current_process=$(current_lock_process_name "$pid" || true)
+    if [ -n "$process" ] && [ -n "$current_process" ] && [ "$process" != "$current_process" ]; then
+      LOCK_STALE_DETAIL_JSON=$(lock_metadata_json process_mismatch "$lock" "$pid" "$created_at" "$host" "$process" "$current_host" "$current_process")
+      return 0
+    fi
+    LOCK_STALE_DETAIL_JSON=$(lock_metadata_json pid_live "$lock" "$pid" "$created_at" "$host" "$process" "$current_host" "$current_process")
+    return 1
+  fi
+  LOCK_STALE_DETAIL_JSON=$(lock_metadata_json pid_dead "$lock" "$pid" "$created_at" "$host" "$process" "$current_host")
   return 0
 }
 
@@ -2946,6 +3078,7 @@ chain_artifact_hygiene_sweep() {
   while IFS= read -r lock; do
     [ -n "$lock" ] || continue
     if lock_is_stale "$lock"; then
+      record_stale_lock_removed "$lock" startup-hygiene
       rm -rf "$lock"
     fi
   done <<EOF
@@ -3047,17 +3180,16 @@ acquire_state_lock() {
   if mkdir "$lock" 2>/dev/null; then
     SUPERVISOR_LOCK="$lock"
     SUPERVISOR_LOCK_ACQUIRED=1
-    printf '%s\n' "$$" > "$lock/pid"
-    printf '%s\n' "$(iso_ts_now)" > "$lock/created_at"
+    write_lock_metadata "$lock" supervisor
     return 0
   fi
   if lock_is_stale "$lock"; then
+    record_stale_lock_removed "$lock" supervisor
     rm -rf "$lock"
     if mkdir "$lock" 2>/dev/null; then
       SUPERVISOR_LOCK="$lock"
       SUPERVISOR_LOCK_ACQUIRED=1
-      printf '%s\n' "$$" > "$lock/pid"
-      printf '%s\n' "$(iso_ts_now)" > "$lock/created_at"
+      write_lock_metadata "$lock" supervisor
       return 0
     fi
   fi
@@ -3069,32 +3201,43 @@ acquire_state_lock() {
 supervisor_decide_next() {
   local manifest="$1" mode="$2" states completed=0 eligible=0 hard_stop=0 escrow=0
   local state run_id selected_state="" selected_run_id="" candidates_json action reason_id
+  local state_view state_status
   MANIFEST="$manifest"
   resolve_new_run_manifest_context
   states=$(supervisor_matching_states "$MANIFEST" || true)
   candidates_json='[]'
   while IFS= read -r state; do
     [ -n "$state" ] || continue
-    run_id=$(supervisor_state_run_id "$state")
-    [ -n "$run_id" ] || continue
-    if [ "$(jq -r '.status // "unknown"' "$state")" = "completed" ]; then
-      completed=$((completed + 1))
+    state_view=$(mktemp -t studio-chain-supervisor-state.XXXXXX)
+    projected_state_for_read "$state" "$state_view"
+    run_id=$(supervisor_state_run_id "$state_view")
+    if [ -z "$run_id" ]; then
+      rm -f "$state_view"
       continue
     fi
-    if state_has_true_hard_stop "$state"; then
+    state_status=$(jq -r '.status // "unknown"' "$state_view")
+    if [ "$state_status" = "completed" ]; then
+      completed=$((completed + 1))
+      rm -f "$state_view"
+      continue
+    fi
+    if state_has_true_hard_stop "$state_view"; then
       hard_stop=$((hard_stop + 1))
       candidates_json=$(printf '%s' "$candidates_json" | jq --arg run_id "$run_id" '. + [$run_id]')
+      rm -f "$state_view"
       continue
     fi
-    if state_has_open_decision_escrow "$state"; then
+    if state_has_open_decision_escrow "$state_view"; then
       escrow=$((escrow + 1))
       candidates_json=$(printf '%s' "$candidates_json" | jq --arg run_id "$run_id" '. + [$run_id]')
+      rm -f "$state_view"
       continue
     fi
     eligible=$((eligible + 1))
     selected_state="$state"
     selected_run_id="$run_id"
     candidates_json=$(printf '%s' "$candidates_json" | jq --arg run_id "$run_id" '. + [$run_id]')
+    rm -f "$state_view"
   done <<EOF
 $states
 EOF
@@ -4118,6 +4261,9 @@ fi
 command -v gh >/dev/null 2>&1 || { printf 'studio-chain-runner: gh required\n' >&2; exit 2; }
 
 chain_artifact_hygiene_sweep
+if [ -n "$RESUME_ID" ] && [ "$DRY_RUN" -eq 0 ]; then
+  reconcile_resume_state_projection_or_halt
+fi
 prepare_plan
 explain_plan "$PLAN_JSON"
 
@@ -5370,7 +5516,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
   mark_chain_state "$chain_run_id" completed "$FINAL_PR_URL"
   mark_chain_issues_completed_after_pr "$chain_run_id" "$final_chain_head"
   emit_chain_event chain_completed "" "$RUN_ID" "$chain_run_id" "" completed "$chain_duration" \
-    "$(jq -cn --arg name "$name" --arg pr_url "$FINAL_PR_URL" '{chain:$name, pr_url:(if $pr_url == "" then null else $pr_url end)}')"
+    "$(jq -cn --arg name "$name" --arg pr_url "$FINAL_PR_URL" --arg commit_after "$final_chain_head" '{chain:$name, pr_url:(if $pr_url == "" then null else $pr_url end), commit_after:(if $commit_after == "" then null else $commit_after end)}')"
   run_ios_artifact_chain_cleanup "$name" "$chain_run_id" completed
 
   for ((i = 0; i < issue_count; i++)); do
