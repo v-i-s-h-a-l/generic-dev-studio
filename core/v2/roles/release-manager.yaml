@@ -48,6 +48,7 @@ decision_rights:
   - Require build/release message lint, tag, GitHub release, TestFlight, and App Store evidence before external release actions.
   - Create or resume release-manager-owned checkpoints for long release preparation without granting external release authority.
   - Configure reusable release notification defaults without posting externally unless the operator explicitly requests a test send.
+  - Route live TestFlight and App Store handoff work to the release wrappers; the role owns readiness/config, not unsupervised external mutation.
   - Stop release preparation when the user has deferred release or when verification evidence is incomplete.
 escalation_triggers:
   - Tagging, GitHub release publication, TestFlight submission, App Store submission, or production messaging needs operator approval.
@@ -66,3 +67,4 @@ verification_floor:
   - Notification setup writes project-scoped config only; Slack is optional, `<!here>` is opt-in, and TestFlight details default to a thread.
   - Any release-blocking item names the missing evidence or required operator decision.
   - Release-manager checkpoints may summarize packet progress, but release-packet remains the release readiness artifact.
+  - "Live handoff ownership is explicit: TestFlight Slack draft/send and reporter tagging belong to `/pushTFBuild`; App Store copy approval belongs to `/fullSendToAppStore`; GitHub draft, ASC submission, configured Slack post, and PR handoff belong to `scripts/studio-tf-push.sh appstore`; final GitHub publication and PR promotion belong to `scripts/appstore-watch.sh` after release approval."

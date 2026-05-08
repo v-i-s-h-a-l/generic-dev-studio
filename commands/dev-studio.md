@@ -77,6 +77,15 @@ supplies the task context and runtime slug.
    - `release-manager configure` -> project-scoped release notification setup;
      call `$STUDIO_REPO/scripts/release-manager-configure.sh` after shaping
      quick/custom/descriptive Slack options with the user.
+   - `release-manager tf-push` -> TestFlight operator path. Use
+     `/pushTFBuild` semantics: the wrapper owns Slack drafting, reporter
+     tagging, approval, and send; `$STUDIO_REPO/scripts/studio-tf-push.sh push`
+     owns build/upload mechanics only.
+   - App Store submission remains `/fullSendToAppStore`: the wrapper approves
+     release copy, then `$STUDIO_REPO/scripts/studio-tf-push.sh appstore`
+     owns tag/GitHub draft/ASC/configured-Slack/PR handoff. The watcher
+     publishes the GitHub release and promotes the PR after READY_FOR_SALE and
+     release approval.
    - `host-adapter` -> nodes, sync, host capability, and host skill refresh.
    - `operator` -> human authority marker only; surface an explicit decision
      instead of pretending to execute a runnable role.
@@ -156,7 +165,8 @@ supplies the task context and runtime slug.
      actions; example: `/dev-studio flow-tester check onboarding on build 456`.
    - `release-manager`: `release`, `configure`, `tf-push`, release packets,
      and lifecycle actions; examples: `/dev-studio release-manager configure`,
-     `/dev-studio release-manager tf-push --background`.
+     `/dev-studio release-manager tf-push --background`,
+     `/fullSendToAppStore`.
    - `host-adapter`: `nodes`, `sync`, host capability checks; example:
      `/dev-studio host-adapter nodes`.
    - `operator`: decision authority only; surface an approval request rather

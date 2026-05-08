@@ -7,10 +7,24 @@ allowed-tools: [Bash, Read, Edit, Grep]
 
 Hybrid wrapper around `scripts/studio-tf-push.sh` (studio repo at `~/Documents/v-i-s-h-a-l/github/generic-dev-studio`). The studio script owns all mechanical work — bump, archive, export+upload, dSYMs — and emits the four pre-Slack events. This wrapper drives Slack composition + the human-approval gate, then emits `slack_drafted` / `slack_sent` via the same script's `emit` subcommand so all six events share one release-tag.
 
+Operator path: use `/dev-studio release-manager tf-push ...` or this
+`/pushTFBuild` wrapper for a full TestFlight push. The split is intentional:
+`scripts/studio-tf-push.sh push` is the mechanical backend, not the live Slack
+drafting surface.
+
 Authoritative procedure: `_shared/contracts/release-tf-push.md`. Project knobs
 (paths, scheme, ASC ids, Crashlytics plist) live in the project release config.
 Slack body rules: `_shared/contracts/build-message-format.md`. Configure
 channel and notification shape with `/dev-studio release-manager configure`.
+
+## Ownership
+
+| Surface | Owner |
+|---|---|
+| Build/version bump, archive, ASC upload, dSYM upload, TF anchor tag, pre-Slack events | `scripts/studio-tf-push.sh push` |
+| Slack draft composition, recent-thread reporter `cc:` tagging, human approval, Slack parent/thread send | `/pushTFBuild` wrapper |
+| `slack_drafted`, `slack_sent`, and notification failure events | `/pushTFBuild` via `scripts/studio-tf-push.sh emit` |
+| Notification-only recovery for an already uploaded build | `/postSlackTesting`, not `push` |
 
 ## Arguments
 

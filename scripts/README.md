@@ -196,6 +196,7 @@ scripts/install-node-janitor-launchagent.sh             # render + load every-6h
 scripts/monitor-install.sh install                      # opt-in laptop LaunchAgent; hourly node-health monitor + notifications for >6h unreachable nodes (#132)
 scripts/node-monitor.sh                                 # one-shot monitor check; tracks streak/cooldown state and emits node_unreachable alerts (#132)
 scripts/task-emit-debrief.sh <task-uuid> <brief-uuid> self-reviewed '{...}'   # YAML debrief + state flips
+scripts/studio-tf-push.sh appstore --build N --version X.Y.Z --release-notes-file notes.txt --whatsnew-file whatsnew.txt # backend for /fullSendToAppStore; creates GitHub draft, submits ASC, and records Slack/PR handoff
 
 # Manager reconcile/analyze + studio-feedback ingestion:
 scripts/manager-reconcile.sh --cwd "$PWD"               # project repo: sync emitted debriefs/reports into the project task ledger
