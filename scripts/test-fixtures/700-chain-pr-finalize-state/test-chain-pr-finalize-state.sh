@@ -57,7 +57,10 @@ mark_chain_issues_completed_after_pr "chain-700" "$after"
 jq -e --arg after "$after" '
   .chains[0].issues[0].status == "completed"
   and .chains[0].issues[0].integrated == true
+  and .chains[0].issues[0].lifecycle_state == "merged"
+  and (.chains[0].issues[0].lifecycle_history | map(.state) | index("merged") != null)
   and .chains[0].issues[0].commit_after == $after
+  and .chains[0].issues[0].provenance.merge.chain_pr_commit_after == $after
   and (.chains[0].issues[0] | has("failure_reason") | not)
 ' "$RUN_STATE_JSON" >/dev/null || fail "finalized PR did not repair stale issue state"
 
