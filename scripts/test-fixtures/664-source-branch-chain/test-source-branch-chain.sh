@@ -69,7 +69,7 @@ grep -Fq 'Source branch: `feature/source-fixture`' "$TMPROOT/dry-run.out" \
   || fail "dry-run plan did not surface source branch"
 grep -Fq 'Planned PR: base `feature/source-fixture`, head `feature/source-branch-fixture`' "$TMPROOT/dry-run.out" \
   || fail "dry-run plan did not use source branch as PR base"
-grep -q 'DRY-RUN git worktree add -B feature/source-branch-fixture .* origin/feature/source-fixture' "$TMPROOT/dry-run.out" \
+grep -q 'DRY-RUN git -C .* worktree add -B feature/source-branch-fixture .* origin/feature/source-fixture' "$TMPROOT/dry-run.out" \
   || fail "dry-run did not create chain branch from source branch"
 grep -q 'DRY-RUN gh pr create --base feature/source-fixture --head feature/source-branch-fixture' "$TMPROOT/dry-run.out" \
   || fail "dry-run PR creation did not target source branch"

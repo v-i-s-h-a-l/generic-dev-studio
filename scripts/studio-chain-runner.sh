@@ -797,6 +797,12 @@ chain_efficiency_metrics_json() {
       ((.outcome // .status // "") | tostring | test("fail|error|flaky"; "i"));
     def bad_count($arr): [($arr // [])[]? | select(bad_outcome)] | length;
     def duration: (.duration_s // 0 | tonumber? // 0);
+    def numeric_or_length:
+      if . == null then 0
+      elif (type) == "number" then .
+      elif (type) == "array" then length
+      else (tonumber? // 0)
+      end;
     def counts_by(key):
       reduce .[] as $item ({}; ($item | key // "unknown" | tostring) as $k | .[$k] = ((.[$k] // 0) + 1));
     def timing_value($k):
@@ -830,12 +836,18 @@ chain_efficiency_metrics_json() {
       slowest_issue: (if $slowest == null then null else {issue_number: ($slowest.issue_number // null), duration_s: ($slowest.duration_s // null)} end),
       tokens_total: (if ($tokens | length) == 0 then null else ($tokens | add) end),
       token_reports: ($tokens | length),
-      files_changed: ([ $rows[].files_changed? // empty ] | add // 0),
-      additions: ([ $rows[].additions? // empty ] | add // 0),
-      deletions: ([ $rows[].deletions? // empty ] | add // 0),
-      generated_file_count: ([ $rows[].generated_file_count? // empty ] | add // 0),
-      seconds_per_file_changed: (if ([ $rows[].files_changed? // empty ] | add // 0) == 0 then null else (([ $rows[] | duration ] | add // 0) / ([ $rows[].files_changed? // empty ] | add)) end),
-      tokens_per_file_changed: (if (($tokens | length) == 0) or (([ $rows[].files_changed? // empty ] | add // 0) == 0) then null else (($tokens | add) / ([ $rows[].files_changed? // empty ] | add)) end),
+      files_changed: ([ $rows[] | (.files_changed // null | numeric_or_length) ] | add // 0),
+      additions: ([ $rows[] | (.additions // null | numeric_or_length) ] | add // 0),
+      deletions: ([ $rows[] | (.deletions // null | numeric_or_length) ] | add // 0),
+      generated_file_count: ([ $rows[] | (.generated_file_count // null | numeric_or_length) ] | add // 0),
+      seconds_per_file_changed: (
+        ([ $rows[] | (.files_changed // null | numeric_or_length) ] | add // 0) as $file_count
+        | if $file_count == 0 then null else (([ $rows[] | duration ] | add // 0) / $file_count) end
+      ),
+      tokens_per_file_changed: (
+        ([ $rows[] | (.files_changed // null | numeric_or_length) ] | add // 0) as $file_count
+        | if (($tokens | length) == 0) or ($file_count == 0) then null else (($tokens | add) / $file_count) end
+      ),
       retry_events: ([ $events[] | select((.event // "") | test("retry"; "i")) ] | length),
       resume_attempts: ([ $events[] | select((.event // "") | test("^chain_resume_attempt_")) ] | length),
       phase_reviews: ([ $events[] | select((.event // "") == "chain_phase_review_completed") ] | length),
@@ -892,7 +904,9 @@ write_run_state() {
   elif [ -f "$PLAN_JSON" ]; then
     chains_json=$(jq -c '.chains // []' "$PLAN_JSON")
   fi
-  jq -n \
+  local state_tmp
+  state_tmp="$RUN_STATE_JSON.write.$$"
+  if ! jq -n \
     --arg run_id "$RUN_ID" \
     --arg manifest "$MANIFEST" \
     --arg target_repo_root "$TARGET_REPO_ROOT" \
@@ -941,7 +955,17 @@ write_run_state() {
       checkpoints: $checkpoints,
       efficiency_metrics: $efficiency_metrics,
       failure_reason: (if $failure_reason == "" then null else $failure_reason end)
-    }' > "$RUN_STATE_JSON"
+    }' > "$state_tmp"; then
+    printf 'studio-chain-runner: failed to write run state; leaving prior state intact: %s\n' "$RUN_STATE_JSON" >&2
+    rm -f "$state_tmp"
+    return 1
+  fi
+  if ! jq -e . "$state_tmp" >/dev/null 2>&1; then
+    printf 'studio-chain-runner: generated run state is invalid JSON; leaving prior state intact: %s\n' "$RUN_STATE_JSON" >&2
+    rm -f "$state_tmp"
+    return 1
+  fi
+  mv "$state_tmp" "$RUN_STATE_JSON"
 }
 
 update_state_jq() {
@@ -971,7 +995,24 @@ update_state_jq() {
   filter="${*: -1}"
   set -- "${@:1:$(($# - 1))}"
   tmp="$RUN_STATE_JSON.tmp.$$"
-  jq "$@" --arg updated_at "$(iso_ts_now)" ".updated_at = \$updated_at | $filter" "$RUN_STATE_JSON" > "$tmp"
+  if ! jq -e . "$RUN_STATE_JSON" >/dev/null 2>&1; then
+    printf 'studio-chain-runner: refusing state update because state is missing or invalid JSON: %s\n' "$RUN_STATE_JSON" >&2
+    rm -f "$tmp"
+    rm -rf "$lock"
+    return 1
+  fi
+  if ! jq "$@" --arg updated_at "$(iso_ts_now)" ".updated_at = \$updated_at | $filter" "$RUN_STATE_JSON" > "$tmp"; then
+    printf 'studio-chain-runner: state update jq failed; leaving prior state intact: %s\n' "$RUN_STATE_JSON" >&2
+    rm -f "$tmp"
+    rm -rf "$lock"
+    return 1
+  fi
+  if ! jq -e . "$tmp" >/dev/null 2>&1; then
+    printf 'studio-chain-runner: state update produced invalid JSON; leaving prior state intact: %s\n' "$RUN_STATE_JSON" >&2
+    rm -f "$tmp"
+    rm -rf "$lock"
+    return 1
+  fi
   mv "$tmp" "$RUN_STATE_JSON"
   if [ "$acquired" -eq 1 ]; then
     rm -rf "$lock"
@@ -1370,13 +1411,26 @@ load_auto_checkpoint_for_chain() {
   [ -n "$checkpoint_id" ] || return 0
   pointer_dir=$(checkpoint_latest_pointer_path_for generic-dev-studio manager "$branch")
   pointer_id=$(jq -r '.checkpoint_id // empty' "$pointer_dir" 2>/dev/null || true)
-  [ "$pointer_id" = "$checkpoint_id" ] || abort_run "checkpoint latest pointer drift for branch $branch"
+  if [ "$pointer_id" != "$checkpoint_id" ]; then
+    log "checkpoint latest pointer drift for branch $branch; skipping optional auto-checkpoint load"
+    emit_chain_event checkpoint_auto_loaded "" "$RUN_ID" "$chain_run_id" "" skipped 0 \
+      "$(jq -cn --arg checkpoint_id "$checkpoint_id" --arg pointer_id "$pointer_id" --arg branch "$branch" '{checkpoint_id:$checkpoint_id, pointer_id:$pointer_id, branch:$branch, skipped_reason:"latest_pointer_drift"}')"
+    return 0
+  fi
   checkpoint_dir=$(jq -r --arg chain_run_id "$chain_run_id" --arg checkpoint_id "$checkpoint_id" '(.checkpoints // []) | map(select(.chain_run_id == $chain_run_id and .checkpoint_id == $checkpoint_id)) | last | .checkpoint_dir // empty' "$RUN_STATE_JSON")
+  case "$checkpoint_dir" in
+    /*) ;;
+    sessions/*) checkpoint_dir="$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_checkpoint_root_for generic-dev-studio)/$checkpoint_dir" ;;
+    *) checkpoint_dir="$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_checkpoint_root_for generic-dev-studio)/sessions/$checkpoint_dir" ;;
+  esac
   current_head=$(git -C "$chain_worktree" rev-parse HEAD)
   validate_auto_checkpoint_artifacts "$checkpoint_dir" "$branch" "$checkpoint_id" "$current_head" || abort_run "checkpoint drift verification failed for $checkpoint_id"
   load_out="$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.out"
-  HOME="$PARENT_HOME_FOR_GITHUB" STUDIO_CHECKPOINT_TRACE_READS="$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.reads" \
-    "$SCRIPT_DIR/studio-checkpoint.sh" resume --project generic-dev-studio --role manager --branch "$branch" --latest > "$load_out"
+  (
+    cd "$chain_worktree" || exit 1
+    HOME="$PARENT_HOME_FOR_GITHUB" STUDIO_CHECKPOINT_TRACE_READS="$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.reads" \
+      "$SCRIPT_DIR/studio-checkpoint.sh" resume --project generic-dev-studio --role manager --branch "$branch" --latest
+  ) > "$load_out"
   drift=$(sed -n 's/^Drift: //p' "$load_out" | tail -1)
   [ "$drift" != "confirmed" ] || abort_run "checkpoint resume drift confirmed for $checkpoint_id"
   loaded_files=$(tr '\n' ' ' < "$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.reads" 2>/dev/null | awk '{printf "[\""; for (i=1;i<=NF;i++){if(i>1)printf "\",\""; printf "%s",$i} printf "\"]"}')
@@ -2511,9 +2565,15 @@ generate_run_report() {
         def bad_outcome:
           ((.outcome // .status // "") | tostring | test("fail|error|flaky"; "i"));
         def bad_count($arr): [($arr // [])[]? | select(bad_outcome)] | length;
+        def numeric_or_length:
+          if . == null then 0
+          elif (type) == "number" then .
+          elif (type) == "array" then length
+          else (tonumber? // 0)
+          end;
         . as $rows |
         ([ $rows[].duration_s? // empty ] | add // 0) as $worker_seconds |
-        ([ $rows[].files_changed? // empty ] | add // 0) as $files |
+        ([ $rows[] | (.files_changed // null | numeric_or_length) ] | add // 0) as $files |
         ([ $rows[] | token_total | select(. != null) ] | add // null) as $tokens |
         ($rows | max_by(.duration_s // -1)) as $slowest |
         ([ $rows[] | bad_count(.tests) ] | add // 0) as $bad_tests |
@@ -2530,7 +2590,7 @@ generate_run_report() {
         "| Issue | Duration | Files | Seconds/File | Tokens/File | Bad Checks | Gaps |",
         "|---:|---:|---:|---:|---:|---:|---|",
         ($rows[] |
-          (.files_changed // 0) as $row_files |
+          (.files_changed // null | numeric_or_length) as $row_files |
           (token_total) as $row_tokens |
           (bad_count(.tests) + bad_count(.lints) + bad_count(.builds)) as $bad |
           "| #\(.issue_number // "unknown") | \(.duration_s // "unknown")s | \($row_files) | \(if $row_files == 0 or (.duration_s // null) == null then "missing" else (((.duration_s // 0) / $row_files) | tostring) end) | \(if $row_files == 0 or $row_tokens == null then "missing" else (($row_tokens / $row_files) | tostring) end) | \($bad) | \((.telemetry_gaps // []) | join(", ")) |"
@@ -3580,6 +3640,22 @@ host_spawn_command() {
     printf 'studio-chain-runner: %s missing spawn_command\n' "$manifest" >&2
     return 1
   }
+  case "$spawn" in
+    /*) ;;
+    *[[:space:]]*)
+      local first rest
+      first=${spawn%%[[:space:]]*}
+      rest=${spawn#"$first"}
+      case "$first" in
+        /*) ;;
+        */*) first="$REPO_ROOT/$first" ;;
+      esac
+      spawn="$first$rest"
+      ;;
+    */*)
+      spawn="$REPO_ROOT/$spawn"
+      ;;
+  esac
   printf '%s\n' "$spawn"
 }
 
@@ -4559,6 +4635,14 @@ Summary JSON fields:
 - commit_after
 - files_changed/additions/deletions/generated_file_count
 - tests/lints/builds arrays with command/outcome when run
+- start_envelope_read: true/false
+- start_envelope_path: "$start_path"
+- source_repo_confirmed: "$REPO_SLUG"
+- source_issue_confirmed: $issue
+- self_review_performed: true/false
+- self_review_findings array; use [] when no findings
+- self_review_fixes array; use [] when no fixes were needed
+- final_verification_evidence array with the final post-self-review commands and outcomes
 - execution_telemetry optional object for iOS work: implementation/build/test/review/release executors when applicable, routing reason class, economics/cost summary, private artifact roots, public artifact classes, cleanup outcome, retained TTL class, and control-plane timing
 - tokens object when available, otherwise null
 - functionality_delivered optional string or array describing what users/agents can now do
@@ -4721,7 +4805,23 @@ chain_worktree_registered() {
 }
 
 write_issue_phase_plan_artifact() {
-  local artifact="$1" chain_name="$2" branch="$3" issue_branch="$4" issue_worktree="$5" issue="$6" issue_run_id="$7" host="$8" before="$9" context="${10}"
+  local artifact="$1" chain_name="$2" branch="$3" issue_branch="$4" issue_worktree="$5" issue="$6" issue_run_id="$7" host="$8" before="$9" context="${10}" issue_json="${11:-}"
+  local source_number source_title source_url source_state source_body start_path summary_path
+  start_path="$issue_worktree/.studio/chain-task-start.json"
+  summary_path="$issue_worktree/.studio/chain-worker-summary.json"
+  if [ -n "$issue_json" ]; then
+    source_number=$(printf '%s' "$issue_json" | jq -r '.number // ""')
+    source_title=$(printf '%s' "$issue_json" | jq -r '.title // ""')
+    source_url=$(printf '%s' "$issue_json" | jq -r '.url // ""')
+    source_state=$(printf '%s' "$issue_json" | jq -r '.state // ""')
+    source_body=$(printf '%s' "$issue_json" | jq -r '.body // ""')
+  else
+    source_number="$issue"
+    source_title=""
+    source_url=""
+    source_state=""
+    source_body=""
+  fi
   mkdir -p "$(dirname "$artifact")"
   {
     printf '# Chain Issue Phase Plan\n\n'
@@ -4734,11 +4834,47 @@ write_issue_phase_plan_artifact() {
     printf -- '- Issue-run UUID: `%s`\n' "$issue_run_id"
     printf -- '- Host: `%s`\n' "$host"
     printf -- '- Commit before: `%s`\n\n' "$before"
+    printf '## Dependency State\n\n'
+    if [ -f "$RUN_STATE_JSON" ]; then
+      jq -r --argjson issue "$issue" '
+        (.chains[].issues[] | select(.number == $issue) | .dependencies // []) as $deps
+        | if ($deps | length) == 0 then
+            "No issue dependencies declared."
+          else
+            [
+              .chains[].issues[]
+              | select((.number as $n | $deps | index($n)) != null)
+              | "- #\(.number): status=\(.status // "unknown"), integrated=\(.integrated // false), commit=\(.commit_after // "unknown"), summary=\(.summary // "unknown")"
+            ] | join("\n")
+          end
+      ' "$RUN_STATE_JSON"
+    else
+      printf 'Run state unavailable; dependency status must be verified before dispatch.\n'
+    fi
+    printf '\n'
+    printf '## Source Issue\n\n'
+    printf -- '- Source repo: `%s`\n' "$REPO_SLUG"
+    printf -- '- Source URL: `%s`\n' "$source_url"
+    printf -- '- Source issue: `#%s`\n' "$source_number"
+    printf -- '- Source title: `%s`\n' "$source_title"
+    printf -- '- Source state: `%s`\n\n' "$source_state"
+    printf '### Source Issue Body\n\n'
+    if [ -n "$source_body" ]; then
+      printf '%s\n\n' "$source_body"
+    else
+      printf 'No issue body was returned by GitHub for the source issue.\n\n'
+    fi
+    printf '## Worker Handoff\n\n'
+    printf -- '- Task start envelope: `%s`\n' "$start_path"
+    printf -- '- Required summary artifact: `%s`\n' "$summary_path"
+    printf -- '- The worker prompt requires reading the task start envelope before acting.\n'
+    printf -- '- The worker summary must include `start_envelope_read: true`, `start_envelope_path`, `source_repo_confirmed`, `source_issue_confirmed`, `self_review_performed`, `self_review_findings`, `self_review_fixes`, and `final_verification_evidence`.\n'
+    printf -- '- The source issue body embedded above is the runnable leaf contract for this issue; the task start envelope also includes the canonical source issue JSON.\n\n'
     printf '## Goal\n\n'
     printf 'Execute exactly this issue in its isolated worktree and commit the result on the issue branch.\n\n'
     printf '## Scope\n\n'
     printf -- '- In: bounded issue implementation, private worker summary, focused verification evidence.\n'
-    printf -- '- Out: PR creation, merge to the source/base branch, issue closure, unrelated issue work, public copy of private review prose.\n\n'
+    printf -- '- Out: PR creation, merge to the source/base branch, issue closure, unrelated issue work, work from any repository other than the source repo above, public copy of private review prose.\n\n'
     printf '## Prior Clean Outcome Feedback\n\n'
     if [ "$(printf '%s' "$context" | jq 'length')" -gt 0 ]; then
       printf '%s\n' "$context" | jq -r '.[] | "- \(.kind): \(.text)"'
@@ -4746,10 +4882,11 @@ write_issue_phase_plan_artifact() {
       printf 'None.\n'
     fi
     printf '\n## Acceptance Criteria\n\n'
-    printf -- '- After this plan review is clean, the runner writes `.studio/chain-task-start.json` before launching the worker.\n'
-    printf -- '- Worker reads `.studio/chain-task-start.json` before acting.\n'
+    printf -- '- After this plan review is clean, the runner writes the task start envelope before launching the worker.\n'
+    printf -- '- Worker reads the task start envelope before acting.\n'
     printf -- '- Worker summary is valid JSON and remains uncommitted.\n'
     printf -- '- Issue branch produces a non-empty commit for successful execution.\n'
+    printf -- '- Worker executes only the source issue listed in this artifact and does not resolve `#%s` against another repository.\n' "$issue"
     printf -- '- Any stale assumption from prior outcome feedback is handled or surfaced in the worker summary.\n\n'
     printf '## Explicit Ask\n\n'
     printf "Review whether this issue phase is safe to execute now. What's still wrong or missing?\n"
@@ -4807,6 +4944,20 @@ write_issue_phase_outcome_artifact() {
         end;
       rows("test"; .tests)[], rows("lint"; .lints)[], rows("build"; .builds)[]
     ' "$summary_file"
+    printf '\n## Self Review Evidence\n\n'
+    jq -r '
+      def rows($name; $items):
+        ($items // []) as $xs |
+        if ($xs | length) == 0 then ["- \($name): none"]
+        else [ $xs[] | "- \($name): \(if type == "object" then tojson else tostring end)" ]
+        end;
+      "- start_envelope_read: \(.start_envelope_read // "not supplied")",
+      "- start_envelope_path: \(.start_envelope_path // "not supplied")",
+      "- self_review_performed: \(.self_review_performed // "not supplied")",
+      rows("self_review_findings"; .self_review_findings)[],
+      rows("self_review_fixes"; .self_review_fixes)[],
+      rows("final_verification_evidence"; .final_verification_evidence)[]
+    ' "$summary_file"
     printf '\n## Explicit Ask\n\n'
     printf 'Did execution match the plan? Identify stale assumptions, warnings, recommendations, or accepted plan adjustments for upcoming phases. Do not include public-sensitive raw details.\n'
   } > "$artifact"
@@ -4815,7 +4966,7 @@ write_issue_phase_outcome_artifact() {
 run_issue_job() {
   local name="$1" branch="$2" chain_worktree="$3" issue="$4" host="$5" git_metadata_strategy="$6" issue_worktree="$7" issue_branch="$8" chain_run_id="$9" issue_run_id="${10}" result_file="${11}" phase_review_mode="${12:-auto}" issue_count_for_review="${13:-1}"
   local before after worker_rc child_worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason parent_finalized effective_worker_rc failure_summary
-  local phase_context boundary_id phase_plan_artifact phase_outcome_artifact phase_review_rc phase_review_reason worker_telemetry_file worker_launch_home rule_pack_resolution
+  local phase_context boundary_id phase_plan_artifact phase_outcome_artifact phase_review_rc phase_review_reason worker_telemetry_file worker_launch_home rule_pack_resolution phase_issue_json
   local auto_retry_performed
   issue_started_at=$(now_epoch)
   parent_finalized=false
@@ -4852,7 +5003,8 @@ run_issue_job() {
   if [ "$DRY_RUN" -eq 0 ] && phase_review_required_for_issue "$phase_review_mode" "$issue_count_for_review"; then
     boundary_id="$chain_run_id-$issue_run_id"
     phase_plan_artifact="$PHASE_REVIEW_ROOT/$boundary_id-plan.md"
-    write_issue_phase_plan_artifact "$phase_plan_artifact" "$name" "$branch" "$issue_branch" "$issue_worktree" "$issue" "$issue_run_id" "$host" "$before" "$phase_context"
+    phase_issue_json=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,body,url,state)
+    write_issue_phase_plan_artifact "$phase_plan_artifact" "$name" "$branch" "$issue_branch" "$issue_worktree" "$issue" "$issue_run_id" "$host" "$before" "$phase_context" "$phase_issue_json"
     set +e
     run_phase_review_gate plan "$boundary_id" "$phase_plan_artifact" "$chain_run_id" "$issue_run_id" "$name" "$issue"
     phase_review_rc=$?
@@ -5692,7 +5844,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
     fi
   else
     mkdir -p "$chain_results_dir"
-    printf 'DRY-RUN git worktree add -B %q %q origin/%q\n' "$branch" "$chain_worktree" "$base"
+    printf 'DRY-RUN git -C %q worktree add -B %q %q origin/%q\n' "$TARGET_REPO_ROOT" "$branch" "$chain_worktree" "$base"
     if [ "$checkpoint_mode" = "auto" ]; then
       printf 'DRY-RUN scripts/studio-checkpoint.sh resume --project generic-dev-studio --role manager --branch %q --latest\n' "$branch"
     fi
