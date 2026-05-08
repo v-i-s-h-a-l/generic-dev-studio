@@ -76,6 +76,8 @@ scripts/studio-chain-runner.sh --discover                                  # bar
 scripts/studio-chain-runner.sh --discover ios-v2-execution                 # filtered discovery for one chain or manifest
 /dev-studio manager work-chain ios-v2-execution --dry-run                  # preferred user-facing preview path
 /dev-studio manager work-chain --resume <run_id> --yes                     # preferred user-facing resume path from summaries/halt records
+scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio # reviewed source/issue to issue-backed work-chain orchestration
+scripts/manager-work-chain.sh --from-plan task-graph.json --chain my-chain # route planner/task-graph output through plan-chain first
 scripts/manager-work-chain.sh ios-v2-execution --dry-run                   # preview the named chain through the manager front door
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements     # unattended start/resume when state is safe and unambiguous
 scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes # attended execution with explicit confirmation bypass
