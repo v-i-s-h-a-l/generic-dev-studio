@@ -33,7 +33,9 @@ can suggest runnable chains and resumable runs. Named chains default to
 unattended supervisor selection through scripts/studio-chain-runner.sh --auto.
 Use --discover [<manifest|chain-name>] for filtered, non-mutating discovery.
 Use --from-plan to route a reviewed planner/task-graph artifact through the
-manager plan-chain workflow before chain execution.
+manager plan-chain workflow, then launch the generated issue-backed chain
+unattended by default. Pass --plan-only to stop after manifest creation, or
+--interactive to run the generated chain in attended mode.
 All runner flags are passed through to scripts/studio-chain-runner.sh.
 
 Preferred user-facing entrypoint:
@@ -50,12 +52,12 @@ case "$1" in
   -h|--help) usage ;;
   --from-plan)
     shift
-    exec "$PLAN_CHAIN" --from-plan "${1:?--from-plan requires a planner artifact}" "${@:2}"
+    exec "$PLAN_CHAIN" --from-plan "${1:?--from-plan requires a planner artifact}" --execute --unattended "${@:2}"
     ;;
   --from-plan=*)
     from_plan="${1#--from-plan=}"
     shift
-    exec "$PLAN_CHAIN" --from-plan "$from_plan" "$@"
+    exec "$PLAN_CHAIN" --from-plan "$from_plan" --execute --unattended "$@"
     ;;
 esac
 

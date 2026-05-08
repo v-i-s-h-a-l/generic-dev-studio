@@ -79,12 +79,12 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio manager analyze      # studio repo: telemetry/log analysis plus studio feedback triage
 /dev-studio manager config list  # project-scoped opt-in feature settings and doctor checks
 /dev-studio manager branch status --source feature/foo --target release/26.5.0 # release branch preflight
-/dev-studio manager plan-chain <goal-or-issue> # create a reviewed issue-backed work-chain, or return needs_context
+/dev-studio manager plan-chain <goal-or-issue> --execute # reviewed PRD-to-chain automation; default unattended, --interactive for attended
 /dev-studio manager work-chain ios-v2-execution # auto-run the iOS v2 execution chain; bare call discovers available chains
 /dev-studio manager work-chain ios-v2-execution --dry-run # preferred preview path for attended planning
-/dev-studio manager work-chain --from-plan task-graph.json --chain my-chain # ingest reviewed planner/task-graph output into a runnable chain
+/dev-studio manager work-chain --from-plan task-graph.json --chain my-chain # create/link issues, populate Project fields, then auto-run
 /dev-studio manager work-chain --resume <run_id> --yes # preferred resume path from chain summaries/halt records
-scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio # repo-side plan-to-chain orchestration
+scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute # repo-side PRD-to-chain orchestration
 scripts/manager-work-chain.sh ios-v2-execution # repo-side wrapper for the manager work-chain front door
 scripts/prd-intake-normalize.sh prd.md # normalize a PRD/transcript/issue brief into a planner-ready requirement packet
 scripts/prd-task-graph-synthesize.sh packet.md # turn a requirement packet into a validated scheduler graph
@@ -229,8 +229,8 @@ scripts/                # multi-worker fleet (BETA)
   studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
   studio-chain-runner.sh   # plan/execute/discover/auto-resume/list studio issue chains with capacity-scaled fresh sessions, UUID telemetry, optional checkpoint hooks, locks, and private run reports
   studio-chain-rule-gates.sh # deterministic chain workflow gates for git hygiene, artifact roots, cache keys, cleanup TTLs, and telemetry redaction
-  manager-plan-chain.sh # manager-owned source/issue/plan to reviewed issue-backed work-chain orchestration
-  manager-work-chain.sh # manager front door for work-chain discovery/start/resume plus --from-plan routing
+  manager-plan-chain.sh # manager-owned source/issue/plan to reviewed issue-backed work-chain orchestration with native issue links, Project fields, telemetry, and optional execution
+  manager-work-chain.sh # manager front door for work-chain discovery/start/resume plus --from-plan unattended execution routing
   chain-monitor-sync.sh # locked/idempotent chain monitor Slack List row sync from manifests, runtime manifests, and persisted chain-run state
   manager-chain-monitor.sh # manager front door for monitor configure/sync/status/recovery while preserving login-home ownership
   schedule-chain-monitor.sh # login-home macOS LaunchAgent installer for background chain monitor sync
@@ -364,13 +364,16 @@ project-scoped manifests must map tasks to GitHub issue numbers in
 target repo remote resolve to GitHub.
 
 For fresh goals or planner outputs, `manager plan-chain` is the orchestration
-front door. It writes source, requirement, task-graph, planner, and review
-artifacts under `~/.dev-studio/<project>/plan-chains/`, routes plan review
-through `scripts/phase-review.sh`, creates durable GitHub issues only after a
-clean verdict, then writes a runnable manifest and prints the next
-`/dev-studio manager work-chain <manifest> --attended --yes` command. If the
-source is too rough, it returns `needs_context` before issue or manifest
-creation.
+front door. It writes source, requirement, task-graph, planner, review,
+cleanup, Project-field, and telemetry artifacts under
+`~/.dev-studio/<project>/plan-chains/`, routes plan review through
+`scripts/phase-review.sh`, creates durable GitHub issues only after a clean
+verdict, links worker issues under a native parent issue when available,
+populates configured Projects v2 fields, then writes a runnable manifest and
+prints the next `/dev-studio manager work-chain <manifest>` command. Add
+`--execute` for one-command unattended PRD-to-chain execution; add
+`--interactive` when the generated chain should run attended. If the source is
+too rough, it returns `needs_context` before issue or manifest creation.
 
 The default leaf integration strategy is `sync_strategy: rebase`: the runner
 rebases the issue leaf onto the current chain branch and fast-forwards the chain
