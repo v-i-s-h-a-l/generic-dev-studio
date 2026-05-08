@@ -541,7 +541,7 @@ run_review_candidate() {
         REVIEW_PAYLOAD="$payload" \
         PR_URL="$pr_url" \
         PR_HEAD_SHA="$head_sha" \
-        "${spawn_argv[@]}" "$review_prompt" </dev/null > "$summary" 2>"$summary.err" ); then
+        "${spawn_argv[@]}" "--add-dir=$tmpdir" "$review_prompt" </dev/null > "$summary" 2>"$summary.err" ); then
         review_rc=0
       else
         review_rc=$?

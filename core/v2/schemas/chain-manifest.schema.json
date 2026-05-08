@@ -8,6 +8,15 @@
   "required": ["schema_version", "chains"],
   "properties": {
     "schema_version": { "const": 1 },
+    "target_repo_root": { "type": "string", "minLength": 1 },
+    "repo_root": { "type": "string", "minLength": 1 },
+    "repo": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "root": { "type": "string", "minLength": 1 }
+      }
+    },
     "rule_packs": { "$ref": "#/$defs/rule_packs" },
     "chains": {
       "type": "array",
