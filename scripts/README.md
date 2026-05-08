@@ -125,6 +125,7 @@ scripts/studio-staleness-triage.sh --json             # dry-run PM issue stalene
 # STUDIO_CHAIN_WORKER_POOL=N      explicit emergency override
 # STUDIO_CHAIN_MAX_WORKERS=N      clamp auto-detected pool
 # STUDIO_CHAIN_WORKER_RAM_GIB=N   adjust RAM heuristic
+# STUDIO_CHAIN_NODE_HEALTH_TIMEOUT_S=N  bound each auto-pool node-health probe; degraded probes are logged and excluded
 
 # Event log reader (dedupes on producer.agent + idempotency_key; see _shared/contracts/event-emission.md):
 scripts/read-events.sh                                  # current project, deduped
@@ -291,6 +292,7 @@ dispatched_from=user@host
 | `ACHILLES_INBOX_ROOT` | `$HOME/.dev-studio/<project>/.runtime/achilles-inbox` | Explicit override — bypasses project resolution entirely |
 | `ACHILLES_MAX_SLOTS` | `16` | Upper bound for auto-claim slot scan |
 | `ACHILLES_TASK_TIMEOUT_SEC` | `2700` (45m) | Max per-task runtime; needs `gtimeout`. 0 disables. |
+| `STUDIO_NODE_HEALTH_TIMEOUT_S` | `10` | Max per-node SSH probe runtime for `node-health.sh`; timed-out probes report `unreachable`. |
 | `NODE_BUILD_TIMEOUT` | `1800` (30m) | Max remote build/test command stream per `node-dispatch.sh`; needs `gtimeout` or `timeout`, otherwise the script warns and runs unbounded. |
 | `NODE_DISPATCH_TAIL_LINES` | `40` | Remote log lines printed when the detached node runner finishes but its `.exit` marker is missing. |
 | `NODE_ARTIFACT_RETRIEVE` | `0` | Set to `1` to pull remote `.xcarchive` / `.xcresult` directories from the node's DerivedData back to the matching local DerivedData after a successful remote Xcode build/test. |
