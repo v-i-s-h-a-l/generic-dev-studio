@@ -276,7 +276,7 @@ case "$REVIEW_HOST" in
       STUDIO_HOST="$REVIEW_HOST" \
       REVIEW_PAYLOAD="$payload" \
       STAGED_PATCH_ID="$patch_id" \
-      "${spawn_argv[@]}" "$review_prompt")
+      "${spawn_argv[@]}" "--add-dir=$tmpdir" "$review_prompt")
     ;;
 esac
 

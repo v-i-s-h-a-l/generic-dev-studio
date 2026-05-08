@@ -175,14 +175,30 @@ _studio_context_auth_home_for_profile() {
       fi
       ;;
     codex-reviewer)
-      printf '%s\n' "${CODEX_REVIEWER_HOME:-}"
+      if [ -n "${CODEX_REVIEWER_HOME:-}" ]; then
+        printf '%s\n' "$CODEX_REVIEWER_HOME"
+      elif [ -n "${CODEX_HOME:-}" ]; then
+        printf '%s\n' "$CODEX_HOME"
+      else
+        login_home=$(_studio_context_login_home) || return 1
+        if [ -d "$login_home/.codex-reviewer" ]; then
+          printf '%s\n' "$login_home/.codex-reviewer"
+        else
+          printf '%s\n' "$login_home/.codex"
+        fi
+      fi
       ;;
     claude-code)
       login_home=$(_studio_context_login_home) || return 1
       printf '%s\n' "${CLAUDE_HOME:-$login_home}"
       ;;
     claude-reviewer)
-      printf '%s\n' "${CLAUDE_REVIEWER_HOME:-}"
+      if [ -n "${CLAUDE_REVIEWER_HOME:-}" ]; then
+        printf '%s\n' "$CLAUDE_REVIEWER_HOME"
+      else
+        login_home=$(_studio_context_login_home) || return 1
+        printf '%s\n' "$login_home"
+      fi
       ;;
     gemini|gemini-cli)
       login_home=$(_studio_context_login_home) || return 1

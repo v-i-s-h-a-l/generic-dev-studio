@@ -94,6 +94,7 @@ scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unatte
 scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes # attended run with explicit confirmation bypass
 scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --yes # no routine continue prompts; typed blockers halt
 scripts/studio-chain-runner.sh --resume <run_id> --yes # resume state; reconcile completed worker summaries before dependents
+STUDIO_CHAIN_TARGET_REPO_ROOT=/repo scripts/studio-chain-runner.sh /tmp/chain.yaml --dry-run # run a non-repo manifest against an explicit checkout
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview checkpoint-aware safe-boundary hooks
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
 scripts/studio-chain-rule-gates.sh --plan plan.json --dry-run # deterministic rule-pack workflow gates with JSON audit output
