@@ -3797,12 +3797,57 @@ available_ram_gib() {
   printf '4\n'
 }
 
+chain_node_health_timeout_s() {
+  local timeout_s="${STUDIO_CHAIN_NODE_HEALTH_TIMEOUT_S:-12}"
+  case "$timeout_s" in ''|*[!0-9]*|0) timeout_s=12 ;; esac
+  printf '%s\n' "$timeout_s"
+}
+
+chain_node_health_first_row() {
+  local health_cmd="$1" id="$2" timeout_s="$3"
+  local out pid started rc elapsed
+  out=$(mktemp -t studio-chain-node-health.XXXXXX) || return 125
+  if (
+    set +e
+    set -m
+    "$health_cmd" "$id" >"$out" 2>/dev/null &
+    pid=$!
+    started=$(now_epoch)
+    rc=""
+    while kill -0 "$pid" 2>/dev/null; do
+      elapsed=$(( $(now_epoch) - started ))
+      if [ "$elapsed" -ge "$timeout_s" ]; then
+        kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+        sleep 1
+        kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        rc=124
+        break
+      fi
+      sleep 1
+    done
+    if [ -z "$rc" ]; then
+      wait "$pid"
+      rc=$?
+    fi
+    exit "$rc"
+  ) 2>/dev/null; then
+    rc=0
+  else
+    rc=$?
+  fi
+  sed -n '1p' "$out"
+  rm -f "$out"
+  return "$rc"
+}
+
 healthy_xcodebuild_offload_count() {
-  local registry ids id row status health_cmd count=0
+  local registry ids id row status health_cmd count=0 timeout_s degraded=0 probe_rc
   registry="$(resolve_runtime_global)/nodes.json"
   [ -r "$registry" ] || { printf '0\n'; return 0; }
   command -v jq >/dev/null 2>&1 || { printf '0\n'; return 0; }
   health_cmd="${STUDIO_CHAIN_NODE_HEALTH_CMD:-$SCRIPT_DIR/node-health.sh}"
+  timeout_s=$(chain_node_health_timeout_s)
 
   ids=$(jq -r '.nodes[]? | select(.enabled != false) | select(.roles? // [] | index("xcodebuild")) | .id' "$registry" 2>/dev/null) || ids=""
   while IFS= read -r id; do
@@ -3810,14 +3855,28 @@ healthy_xcodebuild_offload_count() {
     if node_is_self "$id"; then
       continue
     fi
-    row=$("$health_cmd" "$id" 2>/dev/null | head -n 1)
+    if row=$(chain_node_health_first_row "$health_cmd" "$id" "$timeout_s"); then
+      :
+    else
+      probe_rc=$?
+      case "$probe_rc" in
+        124) log "worker-pool node-health degraded: timed out probing $id after ${timeout_s}s; excluding node from auto pool" ;;
+        *) log "worker-pool node-health degraded: probe failed for $id; excluding node from auto pool" ;;
+      esac
+      degraded=$((degraded + 1))
+      continue
+    fi
     status=$(printf '%s' "$row" | awk -F'\t' '{print $2}')
     case "$status" in
       healthy|moved) count=$((count + 1)) ;;
+      *) degraded=$((degraded + 1)) ;;
     esac
   done <<EOF
 $ids
 EOF
+  if [ "$degraded" -gt 0 ]; then
+    log "worker-pool auto sizing: healthy_offload_nodes=$count degraded_offload_nodes=$degraded timeout_s=$timeout_s local_worker_included=1"
+  fi
   printf '%s\n' "$count"
 }
 
