@@ -238,6 +238,20 @@ Authoritative rule + linter: `_shared/rules/mode-pack-discipline.md` and `script
 
 **How to check:**
 - For any `*/modes/*.md` change, eyeball the diff for paragraphs that read like `_shared/`. If they do, grep `_shared/` for the same idea — if a primitive exists, replace with a reference.
+
+### R20 — Generated HTML must support system light/dark mode (tier: **block + auto-fix**)
+
+Committed HTML output must opt into system-adaptive theming by default. Required markers:
+
+- `<meta name="color-scheme" content="light dark">`
+- `:root { color-scheme: light dark; ... }`
+- `@media (prefers-color-scheme: dark) { ... }`
+
+Hard-coded `color-scheme: light;` in generated HTML is a block. The fix is to add the dark-mode overrides and make the base palette system-adaptive before the file is committed.
+
+**How to check:** grep committed `.html` files for the three required markers and for any hard-coded `color-scheme: light;`. If a generated HTML page is missing the system theme contract, fix the HTML and add the theme lint gate if one is not already wired.
+
+**Bypass:** `STUDIO_BYPASS_HTML_THEME_GUARD=1 git commit ...` for explicit emergency drift triage only.
 - For any new mode pack added, confirm at least one `_shared/contracts/`, `_shared/rules/`, or `_shared/primitives/` reference is present.
 - Note token-budget headroom from the lint output (warning lines start with `W_MP1_BUDGET_OVER`).
 

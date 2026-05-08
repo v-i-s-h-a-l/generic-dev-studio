@@ -97,6 +97,7 @@ scripts/manager-chain-monitor.sh recovery --full-rewrite --project generic-dev-s
 scripts/schedule-chain-monitor.sh --install --project generic-dev-studio --interval-s 300 # login-home macOS LaunchAgent for background monitor sync
 scripts/studio-chain-telemetry-digest.sh --days 7                          # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run telemetry
 scripts/lint-chain-workflow-docs.sh --staged                               # guard chain launcher docs, usage text, and fixtures; bypass with STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1
+scripts/lint-html-theme.sh --staged                                        # guard generated HTML theme parity; bypass with STUDIO_BYPASS_HTML_THEME_GUARD=1
 scripts/studio-checkpoint.sh create --role worker --goal "..." --next "..." # compact private checkpoint; stdout prints the checkpoint id
 scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker      # load by id, falling back to durable project indexes, then inspect drift lazily
 scripts/codex-worker-exec.sh "<prompt>"                                    # internal Codex worker launcher: workspace-write + ~/.dev-studio + ephemeral + no prompts
