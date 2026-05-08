@@ -24,17 +24,17 @@ fi
 HOME="$TMPROOT/home" "$RUN" >"$TMPROOT/discover.out"
 grep -q '# Studio Chain Discovery' "$TMPROOT/discover.out" \
   || fail "bare manager work-chain should default to discovery"
-grep -q 'prd-to-chain-automation' "$TMPROOT/discover.out" \
-  || fail "discovery should surface the PRD automation chain"
+grep -q 'ios-v2-execution' "$TMPROOT/discover.out" \
+  || fail "discovery should surface the iOS execution chain"
 grep -q '/dev-studio manager work-chain <chain> --dry-run' "$TMPROOT/discover.out" \
   || fail "discovery should surface the preferred preview command contract"
 grep -q 'scripts/manager-work-chain.sh' "$TMPROOT/discover.out" \
   || fail "discovery should keep script equivalents for automation"
 
-HOME="$TMPROOT/home" "$RUN" --discover prd-to-chain-automation >"$TMPROOT/discover-filtered.out"
-grep -q 'prd-to-chain-automation' "$TMPROOT/discover-filtered.out" \
+HOME="$TMPROOT/home" "$RUN" --discover ios-v2-execution >"$TMPROOT/discover-filtered.out"
+grep -q 'ios-v2-execution' "$TMPROOT/discover-filtered.out" \
   || fail "filtered manager discovery should surface the named chain"
-if grep -q '/dev-studio manager work-chain field-telemetry-mvp --dry-run' "$TMPROOT/discover-filtered.out"; then
+if grep -q '/dev-studio manager work-chain automation-mode-preference --dry-run' "$TMPROOT/discover-filtered.out"; then
   fail "filtered manager discovery should not list unrelated chains"
 fi
 
@@ -63,15 +63,15 @@ exit 1
 SH
 chmod +x "$BIN/gh"
 
-PATH="$BIN:$PATH" HOME="$TMPROOT/home" "$RUN" prd-to-chain-automation --dry-run >"$TMPROOT/plan.out" 2>&1
+PATH="$BIN:$PATH" HOME="$TMPROOT/home" "$RUN" ios-v2-execution --dry-run >"$TMPROOT/plan.out" 2>&1
 grep -q '# Studio Chain Plan' "$TMPROOT/plan.out" \
   || fail "named manager work-chain dry-run should preview the plan"
 grep -q -- '- Execution mode: `attended`' "$TMPROOT/plan.out" \
   || fail "named manager work-chain dry-run should preserve default attended mode"
-grep -q 'prd-to-chain-automation' "$TMPROOT/plan.out" \
+grep -q 'ios-v2-execution' "$TMPROOT/plan.out" \
   || fail "named manager work-chain should preserve the chain name"
 
-PATH="$BIN:$PATH" HOME="$TMPROOT/home" "$RUN" prd-to-chain-automation --attended --yes --dry-run >"$TMPROOT/attended.out" 2>&1
+PATH="$BIN:$PATH" HOME="$TMPROOT/home" "$RUN" ios-v2-execution --attended --yes --dry-run >"$TMPROOT/attended.out" 2>&1
 grep -q -- '- Execution mode: `attended`' "$TMPROOT/attended.out" \
   || fail "explicit attended manager work-chain should not be rewritten to auto"
 

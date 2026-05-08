@@ -1,4 +1,4 @@
-# Model-suggested workflow improvement chains from the 2026-05-01 studio session.
+# Open workflow improvement chains from the 2026-05-01 studio session.
 #
 # Run a dry-run first:
 #   scripts/studio-chain-runner.sh chains/workflow-measurement-improvements.yaml --dry-run
@@ -8,49 +8,11 @@
 #
 # Notes:
 # - The closed umbrella issue #197 is intentionally not included.
-# - Chains are sequenced so foundational telemetry/measurement work lands before
-#   parallelization and efficiency tuning work.
-# - Issue IDs are unique across chains because the runner closes issues after a
-#   chain PR succeeds.
+# - Closed chains were removed after their GitHub issues landed, so discovery
+#   only offers work that still has open issues.
 
 schema_version: 1
 chains:
-  - name: field-telemetry-mvp
-    base: main
-    branch: feature/field-telemetry-mvp
-    host: auto
-    issues: [388, 25, 367]
-
-  - name: workflow-economics-and-baselines
-    base: main
-    branch: feature/workflow-economics-and-baselines
-    host: auto
-    issues: [357]
-
-  - name: brief-shape-and-task-sizing
-    base: main
-    branch: feature/brief-shape-and-task-sizing
-    host: auto
-    issues: [323, 256]
-
-  - name: build-test-intelligence
-    base: main
-    branch: feature/build-test-intelligence
-    host: auto
-    issues: [308]
-
-  - name: review-and-model-efficiency
-    base: main
-    branch: feature/review-and-model-efficiency
-    host: auto
-    issues: [257]
-
-  - name: parallel-workflow-streams
-    base: main
-    branch: feature/parallel-workflow-streams
-    host: auto
-    issues: [94, 24, 255, 134, 218]
-
   - name: achilles-capability-followups
     base: main
     branch: feature/achilles-capability-followups
