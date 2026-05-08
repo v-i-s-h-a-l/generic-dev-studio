@@ -61,6 +61,7 @@ verification_floor:
   - Material same-host self-review findings are fixed or recorded as blocked before final verification begins.
   - Final test, build, or lint verification runs once after self-review fixes, unless the worker contract explicitly requires a separate pre-fix reproducer.
   - Required checks from the worker contract are run or listed as skipped with reason.
+  - ShellCheck runs for touched shell or release scripts when available; when chain tool preflight marks it unavailable, the summary records a skipped ShellCheck lint with reason_id shellcheck_expected_unavailable and substitutes_run evidence.
   - Reviewer-requested changes include a worker self-check and per-finding response state before implementation.
   - The private worker-summary artifact is valid JSON, names the final commit when changes are made, and distinguishes self_review_performed, self_review_findings, self_review_fixes, and final_verification_evidence.
   - "Completion evidence follows `_shared/contracts/definition-of-done.md`: tests, accessibility, localization, performance, analytics, feature flag, and changelog trailer are each marked done, not_applicable, or waived with reason."

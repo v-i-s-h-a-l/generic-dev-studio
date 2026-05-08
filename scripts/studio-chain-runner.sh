@@ -1995,8 +1995,55 @@ phase_review_required_for_issue() {
   esac
 }
 
+shellcheck_preflight_json() {
+  local shellcheck_cmd resolved version
+  shellcheck_cmd="${STUDIO_SHELLCHECK_BIN:-shellcheck}"
+  if resolved=$(command -v "$shellcheck_cmd" 2>/dev/null); then
+    version=$("$resolved" --version 2>/dev/null | awk -F': ' '/^version:/ { print $2; exit }' || true)
+    jq -cn \
+      --arg command "$shellcheck_cmd" \
+      --arg path "$resolved" \
+      --arg version "$version" \
+      '{
+        status: "available",
+        required: "conditional_for_shell_script_changes",
+        command: $command,
+        path: $path,
+        version: (if $version == "" then null else $version end),
+        policy: "Run ShellCheck for touched shell scripts and record the command/outcome in lints[].",
+        substitutes: []
+      }'
+  else
+    jq -cn \
+      --arg command "$shellcheck_cmd" \
+      '{
+        status: "unavailable",
+        required: "conditional_for_shell_script_changes",
+        command: $command,
+        reason_id: "shellcheck_expected_unavailable",
+        policy: "Expected chain-runner unavailability only when the worker records ShellCheck as a skipped lint and runs accepted substitutes.",
+        substitutes: [
+          "bash -n on touched shell scripts",
+          "repo-specific lints or fixtures that exercise the touched shell/release surface"
+        ],
+        summary_lint_shape: {
+          command: "shellcheck <touched-shell-files>",
+          outcome: "skipped",
+          reason_id: "shellcheck_expected_unavailable"
+        }
+      }'
+  fi
+}
+
+chain_tool_preflight_json() {
+  local shellcheck_json
+  shellcheck_json=$(shellcheck_preflight_json)
+  jq -cn --argjson shellcheck "$shellcheck_json" '{schema_version:1, tools:{shellcheck:$shellcheck}}'
+}
+
 write_chain_task_start_envelope() {
-  local chain_name="$1" chain_branch="$2" source_branch="$3" issue_branch="$4" issue_json="$5" host="$6" git_metadata_strategy="$7" worktree="$8" chain_run_id="$9" issue_run_id="${10}" summary_path="${11}" start_path="${12}" phase_review_context="${13:-[]}" rule_pack_resolution="${14:-null}"
+  local chain_name="$1" chain_branch="$2" source_branch="$3" issue_branch="$4" issue_json="$5" host="$6" git_metadata_strategy="$7" worktree="$8" chain_run_id="$9" issue_run_id="${10}" summary_path="${11}" start_path="${12}" phase_review_context="${13:-[]}" rule_pack_resolution="${14:-null}" tool_preflight="${15:-}"
+  [ -n "$tool_preflight" ] || tool_preflight=$(chain_tool_preflight_json)
   mkdir -p "$(dirname "$start_path")"
   jq -n \
     --argjson source_issue "$issue_json" \
@@ -2017,6 +2064,7 @@ write_chain_task_start_envelope() {
     --argjson retry_backoff_sec "$RETRY_BACKOFF_SEC" \
     --argjson phase_review_context "$phase_review_context" \
     --argjson rule_pack_resolution "$rule_pack_resolution" \
+    --argjson tool_preflight "$tool_preflight" \
     '{
       schema_version: 1,
       kind: "start",
@@ -2065,6 +2113,7 @@ write_chain_task_start_envelope() {
         }
       },
       expected_summary_artifact: $summary_path,
+      tool_preflight: $tool_preflight,
       required_checks: [
         "Work only in the issue worktree.",
         "Keep changes scoped to the source issue.",
@@ -4855,7 +4904,7 @@ chain_count=$(jq '.chains | length' "$PLAN_JSON")
 
 execute_issue_session() {
   local chain_name="$1" chain_branch="$2" issue="$3" host="$4" git_metadata_strategy="$5" worktree="$6" issue_branch="$7" chain_run_id="$8" issue_run_id="$9" before="${10}" phase_review_context="${11:-[]}" rule_pack_resolution="${12:-null}"
-  local issue_json issue_title issue_body spawn prompt summary_path start_path source_branch chain_artifact_root
+  local issue_json issue_title issue_body spawn prompt summary_path start_path source_branch chain_artifact_root tool_preflight_prompt
   local -a spawn_argv
   local launch_home="" codex_auth_home=""
 
@@ -4866,9 +4915,10 @@ execute_issue_session() {
   summary_path="$worktree/.studio/chain-worker-summary.json"
   start_path="$worktree/.studio/chain-task-start.json"
   chain_artifact_root=$(ios_chain_artifact_root "$chain_run_id")
+  tool_preflight_prompt=$(chain_tool_preflight_json)
   if [ "$DRY_RUN" -eq 0 ]; then
     mkdir -p "$chain_artifact_root"
-    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$source_branch" "$issue_branch" "$issue_json" "$host" "$git_metadata_strategy" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context" "$rule_pack_resolution"
+    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$source_branch" "$issue_branch" "$issue_json" "$host" "$git_metadata_strategy" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context" "$rule_pack_resolution" "$tool_preflight_prompt"
   fi
 
   spawn=$(host_spawn_command "$host")
@@ -4896,6 +4946,7 @@ Working directory: $worktree
 Git metadata strategy: $git_metadata_strategy
 Task start envelope: $start_path
 Required summary artifact: $summary_path
+Tool preflight: $tool_preflight_prompt
 
 Rules:
 - Work only in this working directory.
@@ -4938,6 +4989,7 @@ Summary JSON fields:
 - self_review_findings array; use [] when no findings
 - self_review_fixes array; use [] when no fixes were needed
 - final_verification_evidence array with the final post-self-review commands and outcomes
+- lints entries may record expected tool unavailability with outcome "skipped", reason_id, and substitutes_run
 - execution_telemetry optional object for iOS work: implementation/build/test/review/release executors when applicable, routing reason class, economics/cost summary, private artifact roots, public artifact classes, cleanup outcome, retained TTL class, and control-plane timing
 - tokens object when available, otherwise null
 - functionality_delivered optional string or array describing what users/agents can now do
@@ -4948,6 +5000,11 @@ Summary JSON fields:
 - lessons optional string or array when telemetry supports next-chain recommendations
 - telemetry_gaps array listing missing fields such as "tokens" or "model"
 - blocked_reason when nonzero
+
+ShellCheck verification policy:
+- For touched shell scripts or release scripts, run ShellCheck when tool_preflight.tools.shellcheck.status is "available".
+- If ShellCheck is "unavailable", record a lints[] entry for the attempted ShellCheck command with outcome "skipped", reason_id "shellcheck_expected_unavailable", and substitutes_run naming bash -n plus relevant repo lints/fixtures. This is expected unavailability, not verification drift.
+- If ShellCheck is available but not run for a shell-script change, record the reason and do not claim ShellCheck evidence.
 
 Private phase-review context forwarded from prior clean outcome reviews:
 $phase_review_context

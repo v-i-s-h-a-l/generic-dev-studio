@@ -103,6 +103,15 @@ add `worker_telemetry_extraction` plus `telemetry_gap_reasons[]` for structured
 grouping. Reports and digests group gaps by `gap_kind:reason_id`; readers that
 do not understand the detail array may keep using `telemetry_gaps`.
 
+ShellCheck availability is reported as worker verification evidence, not as a
+telemetry gap. For shell or release script changes, workers record ShellCheck in
+`lints[]` when it runs. If the chain-runner tool preflight marks ShellCheck
+unavailable, workers record a skipped lint with
+`reason_id: shellcheck_expected_unavailable` and list the substitutes they ran
+(`bash -n` plus relevant repo lints or fixtures). Outcome reviewers treat that
+shape as expected unavailability; a missing ShellCheck entry with no substitute
+evidence is verification drift.
+
 ## Required Event Data
 
 | Event family | Required `data` fields |

@@ -109,7 +109,7 @@ scripts/codex-worker-exec.sh "<prompt>"                                    # int
 # Chain manifest preflight rejects planning artifacts before run creation; project-scoped manifests declare issue_repo or resolve it from the target repo remote.
 # Release-bearing chain manifests declare approved_release_id plus sync_strategy; rebase is the default, and squash is used only when the manifest explicitly opts in.
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
-scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
+scripts/host-preflight.sh codex /repo                 # gh/git credential proof plus ShellCheck availability before host task work
 scripts/studio-project-state.sh --status Todo         # field-aware backlog reader for the Studio v2 Projects board
 scripts/studio-gh.sh issue list --state open          # gh wrapper for narrow issue lookups; uses context github_home for auth
 scripts/studio-dependency-export.sh --issue 443       # Mermaid graph from native GitHub blocked_by dependencies; no body parsing
