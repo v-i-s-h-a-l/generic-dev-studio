@@ -107,7 +107,7 @@ scripts/chain-monitor-sync.sh --project generic-dev-studio --dry-run # locked/id
 scripts/manager-chain-monitor.sh status --project generic-dev-studio --json # non-mutating monitor status with owner/list/archive pending-write counts
 scripts/schedule-chain-monitor.sh --install --project generic-dev-studio --interval-s 300 # login-home macOS LaunchAgent for background monitor sync
 scripts/rule-pack-resolve.sh --manifest chain.yaml --chain my-chain --issue 123 --role worker # selective rule-pack selection with context-budget telemetry
-scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters, efficiency ratios, and bottlenecks from private chain-run telemetry
+scripts/studio-chain-telemetry-digest.sh --project turnip-ios --public-safe --days 7 # project-filtered chain telemetry rollup with redacted paths
 scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker # compact resume by id, with durable index fallback; add --latest for branch-scoped lookup
 scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
 STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
@@ -235,7 +235,7 @@ scripts/                # multi-worker fleet (BETA)
   chain-monitor-sync.sh # locked/idempotent chain monitor active/archived Slack List row sync from manifests, runtime manifests, and event-derived persisted chain-run state
   manager-chain-monitor.sh # manager front door for monitor configure/sync/status/recovery while preserving login-home ownership
   schedule-chain-monitor.sh # login-home macOS LaunchAgent installer for background chain monitor sync
-  studio-chain-telemetry-digest.sh # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run reports/events
+  studio-chain-telemetry-digest.sh # v1 counters, efficiency ratios, bottlenecks, project-filtered rollups, and weekly digest from private chain-run reports/events
   prd-intake-normalize.sh # deterministic PRD/transcript/issue brief normalization into a small requirement packet
   prd-task-graph-synthesize.sh # deterministic requirement-packet to scheduler-graph synthesis with dependency/race validation
   studio-checkpoint.sh # compact create/update/resume checkpoints under per-project .runtime/v2/checkpoints

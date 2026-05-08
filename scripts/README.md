@@ -95,7 +95,7 @@ scripts/rule-pack-resolve.sh --manifest chain.yaml --chain my-chain --issue 123 
 scripts/manager-chain-monitor.sh status --project generic-dev-studio --json # non-mutating monitor status with owner/list/archive pending-write counts
 scripts/manager-chain-monitor.sh recovery --full-rewrite --project generic-dev-studio --dry-run # explicit recovery front door; execution requires approval
 scripts/schedule-chain-monitor.sh --install --project generic-dev-studio --interval-s 300 # login-home macOS LaunchAgent for background monitor sync
-scripts/studio-chain-telemetry-digest.sh --days 7                          # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run telemetry
+scripts/studio-chain-telemetry-digest.sh --project turnip-ios --public-safe --days 7 # project-filtered rollup with redacted paths, gaps, halts, retries, and review verdicts
 scripts/lint-chain-workflow-docs.sh --staged                               # guard chain launcher docs, usage text, and fixtures; bypass with STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1
 scripts/lint-html-theme.sh --staged                                        # guard generated HTML theme parity; bypass with STUDIO_BYPASS_HTML_THEME_GUARD=1
 scripts/studio-checkpoint.sh create --role worker --goal "..." --next "..." # compact private checkpoint; stdout prints the checkpoint id
