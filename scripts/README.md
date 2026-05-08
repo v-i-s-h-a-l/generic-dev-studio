@@ -87,6 +87,7 @@ scripts/prd-intake-normalize.sh prd.md                                     # nor
 scripts/prd-task-graph-synthesize.sh packet.md                             # synthesize deterministic scheduler graph; flags missing prereqs and write races
 scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from state.json; reconciles completed worker summaries before scheduling dependents
 scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
+scripts/studio-chain-runner.sh --regenerate-report <run_id>                # opt-in refresh for stale private chain-run reports
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
 scripts/studio-chain-rule-gates.sh --plan plan.json --dry-run              # deterministic rule-pack gates with typed JSON result + audit JSONL
 scripts/studio-ios-artifact-janitor.sh sweep --base /tmp/studio-ios-artifacts --json # redacted iOS artifact TTL sweep for scoped build/test roots
