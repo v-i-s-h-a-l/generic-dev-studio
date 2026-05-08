@@ -105,6 +105,8 @@ check_manager_wrapper_contract() {
     E_CHAIN_MANAGER_NAMED_AUTO 'named manager work-chain must default to supervisor auto mode'
   require_file_contains scripts/manager-work-chain.sh 'Use --discover [<manifest|chain-name>] for filtered, non-mutating discovery.' \
     E_CHAIN_MANAGER_FILTERED_USAGE 'manager wrapper help must document filtered non-mutating discovery'
+  require_file_contains scripts/manager-work-chain.sh 'exec "$PLAN_CHAIN" --from-plan "${1:?--from-plan requires a planner artifact}" --execute --unattended' \
+    E_CHAIN_MANAGER_FROM_PLAN_EXECUTE 'manager --from-plan must default to unattended end-to-end execution'
 }
 
 check_fixtures() {

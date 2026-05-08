@@ -13,6 +13,7 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 PROJECT="${STUDIO_MANAGER_PLAN_CHAIN_PROJECT:-}"
 ISSUE_NUMBER=""
 ISSUE_REPO=""
+PARENT_ISSUE_NUMBER=""
 SOURCE_FILE=""
 SOURCE_TEXT=""
 FROM_PLAN=""
@@ -22,9 +23,32 @@ SOURCE_BRANCH="main"
 TARGET_REPO_ROOT=""
 HOST="auto"
 REVIEW_HOST="${STUDIO_REVIEW_HOST:-claude-reviewer}"
+AUTOMATION_MODE="${STUDIO_MANAGER_PLAN_CHAIN_MODE:-unattended}"
+EXECUTE_AFTER_PLAN=0
+WORK_CHAIN_EXECUTOR="${STUDIO_MANAGER_PLAN_CHAIN_EXECUTOR:-}"
+POPULATE_PROJECT_FIELDS="${STUDIO_MANAGER_PLAN_CHAIN_PROJECT_FIELDS:-1}"
+LINK_SUB_ISSUES="${STUDIO_MANAGER_PLAN_CHAIN_SUB_ISSUES:-1}"
+CREATE_PARENT_ISSUE="${STUDIO_MANAGER_PLAN_CHAIN_PARENT_ISSUE:-auto}"
+PROJECT_OWNER="${STUDIO_PROJECT_OWNER:-v-i-s-h-a-l}"
+PROJECT_NUMBER="${STUDIO_PROJECT_NUMBER:-1}"
+PROJECT_STATUS="${STUDIO_MANAGER_PLAN_CHAIN_PROJECT_STATUS:-Todo}"
+PROJECT_TRACK="${STUDIO_MANAGER_PLAN_CHAIN_PROJECT_TRACK:-}"
+PROJECT_PHASE="${STUDIO_MANAGER_PLAN_CHAIN_PROJECT_PHASE:-}"
+PROJECT_SIZE="${STUDIO_MANAGER_PLAN_CHAIN_PROJECT_SIZE:-S}"
+PROJECT_REVIEW_STATE="${STUDIO_MANAGER_PLAN_CHAIN_PROJECT_REVIEW_STATE:-Plan clean}"
+PLAN_CHAIN_RETENTION_DAYS="${STUDIO_MANAGER_PLAN_CHAIN_RETENTION_DAYS:-30}"
+PLAN_CHAIN_ARTIFACT_MAX_BYTES="${STUDIO_MANAGER_PLAN_CHAIN_ARTIFACT_MAX_BYTES:-1048576}"
 DRY_RUN=0
 ALLOW_MISSING_DETAILS=0
 POSITIONAL=()
+SCRIPT_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+SCRIPT_STARTED_EPOCH=$(date -u +%s)
+EXECUTION_STATUS="not_requested"
+EXECUTION_EXIT_CODE="null"
+EXECUTION_STARTED_AT=""
+EXECUTION_ENDED_AT=""
+EXECUTION_DURATION_S="null"
+EXECUTION_COMMAND_JSON="[]"
 
 usage() {
   cat <<'EOF' >&2
@@ -32,12 +56,19 @@ Usage:
   scripts/manager-plan-chain.sh [--issue N] [--repo owner/repo] [--chain name] [goal text]
   scripts/manager-plan-chain.sh --source-file source.md [--chain name]
   scripts/manager-plan-chain.sh --from-plan task-graph.json [--chain name]
+  scripts/manager-plan-chain.sh --source-file prd.md --execute [--interactive]
 
 Normalizes a shaped goal or issue brief, synthesizes a planner task graph,
 runs same-host self-review plus scripts/phase-review.sh, creates durable
-GitHub issues for reviewed worker contracts, writes a runnable chain manifest
-under ~/.dev-studio/<project>/plan-chains, and prints the clean-session
-manager work-chain command.
+GitHub issues for reviewed worker contracts, links them as native sub-issues
+when a parent is available, populates configured Project fields, writes a
+runnable chain manifest under ~/.dev-studio/<project>/plan-chains, and prints
+the clean-session manager work-chain command.
+
+Default automation mode is unattended. Use --execute to launch the generated
+work-chain after a clean plan review. Use --interactive/--attended when the
+runner should pause only for material design, permission, implementation, or
+test blockers.
 
 If the source is too rough, the command returns status needs_context and stops
 before review, issue creation, or manifest creation.
@@ -78,6 +109,16 @@ hash_text_12() {
   fi
 }
 
+duration_since_epoch() {
+  local started_epoch="$1" ended_epoch
+  ended_epoch=$(date -u +%s)
+  printf '%s\n' $((ended_epoch - started_epoch))
+}
+
+json_string_array_from_argv() {
+  jq -cn '$ARGS.positional' --args "$@"
+}
+
 github_repo_slug_from_hint() {
   local hint="$1" slug owner repo
   [ -n "$hint" ] && [ "$hint" != "null" ] || return 1
@@ -112,6 +153,486 @@ resolve_issue_repo() {
     return 0
   fi
   printf 'v-i-s-h-a-l/generic-dev-studio\n'
+}
+
+gh_api_json() {
+  "$SCRIPT_DIR/studio-gh.sh" api \
+    -H 'Accept: application/vnd.github+json' \
+    -H 'X-GitHub-Api-Version: 2026-03-10' \
+    "$@"
+}
+
+issue_api_json() {
+  local issue_number="$1"
+  gh_api_json "/repos/$ISSUE_REPO/issues/$issue_number"
+}
+
+issue_database_id() {
+  local issue_number="$1"
+  issue_api_json "$issue_number" | jq -r '.id // empty'
+}
+
+issue_url_for_number() {
+  local issue_number="$1"
+  printf 'https://github.com/%s/issues/%s\n' "$ISSUE_REPO" "$issue_number"
+}
+
+extract_source_field() {
+  local field="$1" target
+  target=$(printf '%s' "$field" | tr '[:upper:]' '[:lower:]')
+  awk -v target="$target" '
+    function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+    {
+      line = $0
+      gsub(/`/, "", line)
+      gsub(/^[[:space:]>*-]+/, "", line)
+      lower = tolower(line)
+      if (index(lower, target ":") == 1) {
+        sub(/^[^:]*:[[:space:]]*/, "", line)
+        print trim(line)
+        exit
+      }
+    }
+  ' "$SOURCE_MD"
+}
+
+default_project_fields_from_source() {
+  local extracted
+  if [ -z "$PROJECT_TRACK" ]; then
+    extracted=$(extract_source_field "Track" || true)
+    PROJECT_TRACK="${extracted:-backlog}"
+  fi
+  if [ -z "$PROJECT_PHASE" ]; then
+    extracted=$(extract_source_field "Phase" || true)
+    PROJECT_PHASE="${extracted:-D}"
+  fi
+  [ -n "$PROJECT_SIZE" ] || PROJECT_SIZE="S"
+  [ -n "$PROJECT_REVIEW_STATE" ] || PROJECT_REVIEW_STATE="Plan clean"
+  [ -n "$PROJECT_STATUS" ] || PROJECT_STATUS="Todo"
+}
+
+init_project_fields_artifact() {
+  jq -n \
+    --argjson enabled "$POPULATE_PROJECT_FIELDS" \
+    --arg owner "$PROJECT_OWNER" \
+    --argjson number "$PROJECT_NUMBER" \
+    --arg status "$PROJECT_STATUS" \
+    --arg track "$PROJECT_TRACK" \
+    --arg phase "$PROJECT_PHASE" \
+    --arg size "$PROJECT_SIZE" \
+    --arg review "$PROJECT_REVIEW_STATE" \
+    '{
+      enabled: ($enabled == 1),
+      owner: $owner,
+      project_number: $number,
+      planned_fields: {
+        Status: $status,
+        Track: $track,
+        Phase: $phase,
+        Size: $size,
+        "Sibling host reviewed": $review
+      },
+      items: []
+    }' > "$PROJECT_FIELDS_JSON"
+}
+
+field_id_from_meta() {
+  local field_name="$1"
+  jq -r --arg field "$field_name" '
+    (.fields // .)[]?
+    | select(.name == $field)
+    | .id
+  ' "$PROJECT_FIELDS_META" | head -1
+}
+
+field_option_id_from_meta() {
+  local field_name="$1" value="$2"
+  jq -r --arg field "$field_name" --arg value "$value" '
+    (.fields // .)[]?
+    | select(.name == $field)
+    | (.options // [])[]?
+    | select(.name == $value)
+    | .id
+  ' "$PROJECT_FIELDS_META" | head -1
+}
+
+require_project_field_option() {
+  local field_name="$1" value="$2" field_id option_id
+  field_id=$(field_id_from_meta "$field_name")
+  [ -n "$field_id" ] || {
+    printf 'manager-plan-chain: Project field not found: %s\n' "$field_name" >&2
+    exit 1
+  }
+  option_id=$(field_option_id_from_meta "$field_name" "$value")
+  [ -n "$option_id" ] || {
+    printf 'manager-plan-chain: Project field %s has no option %s\n' "$field_name" "$value" >&2
+    exit 1
+  }
+}
+
+prepare_project_field_metadata() {
+  [ "$POPULATE_PROJECT_FIELDS" -eq 1 ] || return 0
+  [ "$DRY_RUN" -eq 0 ] || return 0
+
+  "$SCRIPT_DIR/studio-gh.sh" project view "$PROJECT_NUMBER" \
+    --owner "$PROJECT_OWNER" \
+    --format json > "$PROJECT_VIEW_JSON" || {
+      printf 'manager-plan-chain: failed to read Project %s/%s; Project field writes require GitHub project scope\n' "$PROJECT_OWNER" "$PROJECT_NUMBER" >&2
+      exit 1
+    }
+  PROJECT_ID=$(jq -r '.id // empty' "$PROJECT_VIEW_JSON")
+  [ -n "$PROJECT_ID" ] || {
+    printf 'manager-plan-chain: Project %s/%s did not expose an id\n' "$PROJECT_OWNER" "$PROJECT_NUMBER" >&2
+    exit 1
+  }
+
+  "$SCRIPT_DIR/studio-gh.sh" project field-list "$PROJECT_NUMBER" \
+    --owner "$PROJECT_OWNER" \
+    --limit 100 \
+    --format json > "$PROJECT_FIELDS_META" || {
+      printf 'manager-plan-chain: failed to read Project fields for %s/%s\n' "$PROJECT_OWNER" "$PROJECT_NUMBER" >&2
+      exit 1
+    }
+
+  require_project_field_option "Status" "$PROJECT_STATUS"
+  require_project_field_option "Track" "$PROJECT_TRACK"
+  require_project_field_option "Phase" "$PROJECT_PHASE"
+  require_project_field_option "Size" "$PROJECT_SIZE"
+  require_project_field_option "Sibling host reviewed" "$PROJECT_REVIEW_STATE"
+}
+
+append_project_field_item() {
+  local issue_number="$1" issue_url="$2" item_id="$3" kind="$4" tmp
+  tmp="$PROJECT_FIELDS_JSON.tmp"
+  jq \
+    --argjson issue_number "$issue_number" \
+    --arg issue_url "$issue_url" \
+    --arg item_id "$item_id" \
+    --arg kind "$kind" \
+    --arg status "$PROJECT_STATUS" \
+    --arg track "$PROJECT_TRACK" \
+    --arg phase "$PROJECT_PHASE" \
+    --arg size "$PROJECT_SIZE" \
+    --arg review "$PROJECT_REVIEW_STATE" \
+    '.items += [{
+      issue_number: $issue_number,
+      issue_url: $issue_url,
+      project_item_id: $item_id,
+      kind: $kind,
+      fields: {
+        Status: $status,
+        Track: $track,
+        Phase: $phase,
+        Size: $size,
+        "Sibling host reviewed": $review
+      }
+    }]' "$PROJECT_FIELDS_JSON" > "$tmp"
+  mv "$tmp" "$PROJECT_FIELDS_JSON"
+}
+
+set_project_single_select() {
+  local item_id="$1" field_name="$2" value="$3" field_id option_id
+  field_id=$(field_id_from_meta "$field_name")
+  option_id=$(field_option_id_from_meta "$field_name" "$value")
+  "$SCRIPT_DIR/studio-gh.sh" project item-edit \
+    --id "$item_id" \
+    --project-id "$PROJECT_ID" \
+    --field-id "$field_id" \
+    --single-select-option-id "$option_id" \
+    --format json >/dev/null
+}
+
+add_issue_to_project_and_set_fields() {
+  local issue_number="$1" issue_url="$2" kind="$3" item_json item_id
+  [ "$POPULATE_PROJECT_FIELDS" -eq 1 ] || return 0
+  item_json=$("$SCRIPT_DIR/studio-gh.sh" project item-add "$PROJECT_NUMBER" \
+    --owner "$PROJECT_OWNER" \
+    --url "$issue_url" \
+    --format json) || {
+      printf 'manager-plan-chain: failed to add issue #%s to Project %s/%s\n' "$issue_number" "$PROJECT_OWNER" "$PROJECT_NUMBER" >&2
+      exit 1
+    }
+  item_id=$(printf '%s\n' "$item_json" | jq -r '.id // .item.id // empty')
+  [ -n "$item_id" ] || {
+    printf 'manager-plan-chain: Project item-add did not return an item id for issue #%s\n' "$issue_number" >&2
+    exit 1
+  }
+  set_project_single_select "$item_id" "Status" "$PROJECT_STATUS"
+  set_project_single_select "$item_id" "Track" "$PROJECT_TRACK"
+  set_project_single_select "$item_id" "Phase" "$PROJECT_PHASE"
+  set_project_single_select "$item_id" "Size" "$PROJECT_SIZE"
+  set_project_single_select "$item_id" "Sibling host reviewed" "$PROJECT_REVIEW_STATE"
+  append_project_field_item "$issue_number" "$issue_url" "$item_id" "$kind"
+  printf '%s\n' "$item_id"
+}
+
+sweep_plan_chain_artifacts() {
+  local root="$1" removed_dirs=0 gzipped_files=0 file dir tmp
+  mkdir -p "$root"
+  case "$PLAN_CHAIN_RETENTION_DAYS" in
+    ''|*[!0-9]*) PLAN_CHAIN_RETENTION_DAYS=30 ;;
+  esac
+  case "$PLAN_CHAIN_ARTIFACT_MAX_BYTES" in
+    ''|*[!0-9]*) PLAN_CHAIN_ARTIFACT_MAX_BYTES=1048576 ;;
+  esac
+
+  while IFS= read -r dir; do
+    [ "$dir" = "$ARTIFACT_ROOT" ] && continue
+    rm -rf "$dir"
+    removed_dirs=$((removed_dirs + 1))
+  done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -mtime +"$PLAN_CHAIN_RETENTION_DAYS" 2>/dev/null | sort)
+
+  if command -v gzip >/dev/null 2>&1; then
+    while IFS= read -r file; do
+      case "$file" in
+        "$ARTIFACT_ROOT"/*) continue ;;
+      esac
+      gzip -f "$file"
+      gzipped_files=$((gzipped_files + 1))
+    done < <(find "$root" -type f ! -name '*.gz' -size +"${PLAN_CHAIN_ARTIFACT_MAX_BYTES}c" 2>/dev/null | sort)
+  fi
+
+  tmp="$CLEANUP_JSON.tmp"
+  jq -n \
+    --arg created_at "$(now_utc)" \
+    --arg root "$root" \
+    --argjson retention_days "$PLAN_CHAIN_RETENTION_DAYS" \
+    --argjson max_bytes "$PLAN_CHAIN_ARTIFACT_MAX_BYTES" \
+    --argjson removed_dirs "$removed_dirs" \
+    --argjson gzipped_files "$gzipped_files" \
+    '{
+      created_at: $created_at,
+      root: $root,
+      retention_class: "plan-chain-private-runtime",
+      retention_days: $retention_days,
+      artifact_max_bytes: $max_bytes,
+      outcome: "completed",
+      removed_stale_run_dirs: $removed_dirs,
+      gzipped_oversized_files: $gzipped_files
+    }' > "$tmp"
+  mv "$tmp" "$CLEANUP_JSON"
+}
+
+create_parent_issue_body() {
+  local body_file="$1"
+  {
+    printf '## PRD-to-chain Parent\n\n'
+    printf 'This issue tracks the reviewed PRD-to-chain decomposition for `%s`.\n\n' "$SUBJECT_REF"
+    printf '## Artifacts\n\n'
+    printf -- '- Planner artifact: `%s`\n' "$PLANNER_ARTIFACT"
+    printf -- '- Review artifact: `%s`\n' "$REVIEW_ARTIFACT"
+    printf -- '- Source: `%s`\n\n' "$SOURCE_LABEL"
+    printf '## Acceptance\n\n'
+    printf -- '- Worker sub-issues remain bounded to the reviewed planner decomposition.\n'
+    printf -- '- The generated work-chain manifest is the execution source for scheduler dependencies.\n'
+    printf -- '- Missing PRD coverage is tracked as a planning gap, not invented in worker scope.\n\n'
+    printf '## Non-Goals\n\n'
+    printf -- '- Do not execute implementation work in this parent issue.\n'
+    printf -- '- Do not replace private review or worker summary artifacts with issue-body prose.\n'
+  } > "$body_file"
+}
+
+parse_issue_number_from_create_output() {
+  local create_out="$1" issue_url
+  if printf '%s\n' "$create_out" | jq -e '.number' >/dev/null 2>&1; then
+    printf '%s\n' "$create_out" | jq -r '.number'
+    return 0
+  fi
+  issue_url=$(printf '%s\n' "$create_out" | tail -1)
+  printf '%s\n' "$issue_url" | sed -n -E 's#.*issues/([0-9]+).*#\1#p' | tail -1
+}
+
+parse_issue_url_from_create_output() {
+  local create_out="$1"
+  if printf '%s\n' "$create_out" | jq -e '.url' >/dev/null 2>&1; then
+    printf '%s\n' "$create_out" | jq -r '.url // ""'
+    return 0
+  fi
+  printf '%s\n' "$create_out" | tail -1
+}
+
+create_or_resolve_parent_issue() {
+  local body_file create_out issue_number issue_url issue_id project_item_id parent_title
+  if [ "$CREATE_PARENT_ISSUE" = "0" ]; then
+    printf 'null\n' > "$PARENT_ISSUE_JSON"
+    return 0
+  fi
+  if [ -n "$PARENT_ISSUE_NUMBER" ]; then
+    issue_number="$PARENT_ISSUE_NUMBER"
+    issue_url=$(issue_url_for_number "$issue_number")
+    issue_id=$(issue_database_id "$issue_number")
+    project_item_id=$(add_issue_to_project_and_set_fields "$issue_number" "$issue_url" "parent")
+    jq -n \
+      --argjson number "$issue_number" \
+      --arg url "$issue_url" \
+      --arg id "$issue_id" \
+      --arg project_item_id "$project_item_id" \
+      '{number:$number, url:$url, id:$id, created:false, project_item_id:$project_item_id}' > "$PARENT_ISSUE_JSON"
+    return 0
+  fi
+  [ "$CREATE_PARENT_ISSUE" = "auto" ] || {
+    printf 'null\n' > "$PARENT_ISSUE_JSON"
+    return 0
+  }
+
+  body_file="$ARTIFACT_ROOT/parent-issue.md"
+  create_parent_issue_body "$body_file"
+  parent_title=$(truncate_title "$CHAIN_NAME: PRD-to-chain parent")
+  create_out=$("$SCRIPT_DIR/studio-gh.sh" issue create --repo "$ISSUE_REPO" --title "$parent_title" --body-file "$body_file") || {
+    printf 'manager-plan-chain: failed to create parent issue for %s\n' "$SUBJECT_REF" >&2
+    exit 1
+  }
+  issue_number=$(parse_issue_number_from_create_output "$create_out")
+  case "$issue_number" in
+    ''|*[!0-9]*)
+      printf 'manager-plan-chain: could not parse parent issue number from create output: %s\n' "$create_out" >&2
+      exit 1
+      ;;
+  esac
+  issue_url=$(parse_issue_url_from_create_output "$create_out")
+  [ -n "$issue_url" ] || issue_url=$(issue_url_for_number "$issue_number")
+  issue_id=$(issue_database_id "$issue_number")
+  project_item_id=$(add_issue_to_project_and_set_fields "$issue_number" "$issue_url" "parent")
+  PARENT_ISSUE_NUMBER="$issue_number"
+  jq -n \
+    --argjson number "$issue_number" \
+    --arg url "$issue_url" \
+    --arg id "$issue_id" \
+    --arg project_item_id "$project_item_id" \
+    '{number:$number, url:$url, id:$id, created:true, project_item_id:$project_item_id}' > "$PARENT_ISSUE_JSON"
+}
+
+verify_sub_issue_api_for_parent() {
+  [ "$LINK_SUB_ISSUES" -eq 1 ] || return 0
+  [ -n "$PARENT_ISSUE_NUMBER" ] || return 0
+  gh_api_json "/repos/$ISSUE_REPO/issues/$PARENT_ISSUE_NUMBER/sub_issues" >/dev/null || {
+    printf 'manager-plan-chain: failed to read native sub-issues for parent issue #%s\n' "$PARENT_ISSUE_NUMBER" >&2
+    exit 1
+  }
+}
+
+link_sub_issue_to_parent() {
+  local child_issue_number="$1" child_issue_id="$2"
+  [ "$LINK_SUB_ISSUES" -eq 1 ] || { printf 'false\n'; return 0; }
+  [ -n "$PARENT_ISSUE_NUMBER" ] || { printf 'false\n'; return 0; }
+  [ -n "$child_issue_id" ] || {
+    printf 'manager-plan-chain: cannot link issue #%s as sub-issue without database id\n' "$child_issue_number" >&2
+    exit 1
+  }
+  gh_api_json -X POST \
+    "/repos/$ISSUE_REPO/issues/$PARENT_ISSUE_NUMBER/sub_issues" \
+    -F "sub_issue_id=$child_issue_id" >/dev/null || {
+      printf 'manager-plan-chain: failed to link issue #%s as sub-issue of #%s\n' "$child_issue_number" "$PARENT_ISSUE_NUMBER" >&2
+      exit 1
+    }
+  printf 'true\n'
+}
+
+clean_session_command_for_manifest() {
+  if [ "$AUTOMATION_MODE" = "interactive" ]; then
+    printf '/dev-studio manager work-chain %s --attended --yes\n' "$WORK_CHAIN"
+  else
+    printf '/dev-studio manager work-chain %s\n' "$WORK_CHAIN"
+  fi
+}
+
+execute_work_chain() {
+  local cmd=() rc
+  [ -n "$WORK_CHAIN_EXECUTOR" ] || WORK_CHAIN_EXECUTOR="$SCRIPT_DIR/manager-work-chain.sh"
+  if [ "$AUTOMATION_MODE" = "interactive" ]; then
+    cmd=("$WORK_CHAIN_EXECUTOR" "$WORK_CHAIN" "--attended" "--yes")
+  else
+    cmd=("$WORK_CHAIN_EXECUTOR" "$WORK_CHAIN")
+  fi
+  EXECUTION_COMMAND_JSON=$(json_string_array_from_argv "${cmd[@]}")
+  EXECUTION_STARTED_AT=$(now_utc)
+  local started_epoch
+  started_epoch=$(date -u +%s)
+  set +e
+  "${cmd[@]}" > "$EXECUTION_OUT" 2> "$EXECUTION_ERR"
+  rc=$?
+  set -e
+  EXECUTION_ENDED_AT=$(now_utc)
+  EXECUTION_DURATION_S=$(duration_since_epoch "$started_epoch")
+  EXECUTION_EXIT_CODE="$rc"
+  if [ "$rc" -eq 0 ]; then
+    EXECUTION_STATUS="completed"
+  else
+    EXECUTION_STATUS="failed"
+  fi
+  return "$rc"
+}
+
+write_telemetry_artifact() {
+  local status="$1" file_count=0 total_bytes=0 file bytes duration_s review_passes created_issue_count project_item_count
+  duration_s=$(duration_since_epoch "$SCRIPT_STARTED_EPOCH")
+  review_passes=0
+  [ -s "$REVIEW_META" ] && review_passes=1
+  created_issue_count=$(jq 'length' "$ISSUE_MAP" 2>/dev/null || printf '0')
+  project_item_count=$(jq '.items | length' "$PROJECT_FIELDS_JSON" 2>/dev/null || printf '0')
+  while IFS= read -r -d '' file; do
+    bytes=$(wc -c < "$file" | tr -d '[:space:]')
+    total_bytes=$((total_bytes + bytes))
+    file_count=$((file_count + 1))
+  done < <(find "$ARTIFACT_ROOT" -type f ! -name 'telemetry.json' -print0 2>/dev/null)
+  jq -n \
+    --arg created_at "$(now_utc)" \
+    --arg started_at "$SCRIPT_STARTED_AT" \
+    --arg status "$status" \
+    --arg mode "$AUTOMATION_MODE" \
+    --arg source_ref "$SOURCE_LABEL" \
+    --arg subject_ref "$SUBJECT_REF" \
+    --arg execution_status "$EXECUTION_STATUS" \
+    --arg execution_started_at "$EXECUTION_STARTED_AT" \
+    --arg execution_ended_at "$EXECUTION_ENDED_AT" \
+    --argjson execution_exit_code "$EXECUTION_EXIT_CODE" \
+    --argjson execution_duration_s "$EXECUTION_DURATION_S" \
+    --argjson execution_command "$EXECUTION_COMMAND_JSON" \
+    --argjson duration_s "$duration_s" \
+    --argjson review_passes "$review_passes" \
+    --argjson created_issue_count "$created_issue_count" \
+    --argjson project_item_count "$project_item_count" \
+    --argjson artifact_file_count "$file_count" \
+    --argjson artifact_bytes "$total_bytes" \
+    --slurpfile cleanup "$CLEANUP_JSON" \
+    '{
+      schema_version: 1,
+      kind: "manager-plan-chain-telemetry",
+      created_at: $created_at,
+      started_at: $started_at,
+      duration_s: $duration_s,
+      status: $status,
+      automation_mode: $mode,
+      source_ref: $source_ref,
+      subject_ref: $subject_ref,
+      counters: {
+        review_passes: $review_passes,
+        retries: 0,
+        created_issues: $created_issue_count,
+        project_items_populated: $project_item_count,
+        tests_run: 0
+      },
+      artifact_size: {
+        file_count: $artifact_file_count,
+        bytes: $artifact_bytes
+      },
+      execution: {
+        requested: ($execution_status != "not_requested"),
+        status: $execution_status,
+        exit_code: $execution_exit_code,
+        started_at: (if $execution_started_at == "" then null else $execution_started_at end),
+        ended_at: (if $execution_ended_at == "" then null else $execution_ended_at end),
+        duration_s: $execution_duration_s,
+        command: $execution_command
+      },
+      bottlenecks: (
+        []
+        + (if $review_passes > 0 then [{kind:"plan_review_gate", count:$review_passes}] else [] end)
+        + (if $execution_status == "failed" then [{kind:"work_chain_execution_failed"}] else [] end)
+      ),
+      cleanup: ($cleanup[0] // null),
+      telemetry_gaps: ["tokens"]
+    }' > "$TELEMETRY_JSON"
 }
 
 review_allows_manifest() {
@@ -258,6 +779,7 @@ write_result_json() {
   jq -n \
     --arg created_at "$(now_utc)" \
     --arg status "$status" \
+    --arg automation_mode "$AUTOMATION_MODE" \
     --arg subject_ref "$SUBJECT_REF" \
     --arg source_ref "$SOURCE_LABEL" \
     --arg artifact_root "$ARTIFACT_ROOT" \
@@ -266,13 +788,23 @@ write_result_json() {
     --arg work_chain "$manifest_path" \
     --arg clean_session_command "$clean_command" \
     --arg review_meta "$review_meta_path" \
+    --arg telemetry "$TELEMETRY_JSON" \
+    --arg cleanup "$CLEANUP_JSON" \
+    --arg execution_status "$EXECUTION_STATUS" \
+    --argjson execute_after_plan "$EXECUTE_AFTER_PLAN" \
+    --argjson execution_exit_code "$EXECUTION_EXIT_CODE" \
+    --argjson execution_duration_s "$EXECUTION_DURATION_S" \
+    --argjson execution_command "$EXECUTION_COMMAND_JSON" \
     --argjson blocked "$blocked_json" \
     --slurpfile issues "$issue_map" \
+    --slurpfile parent "$PARENT_ISSUE_JSON" \
+    --slurpfile project_fields "$PROJECT_FIELDS_JSON" \
     '{
       schema_version: 1,
       kind: "manager-plan-chain-result",
       created_at: $created_at,
       status: $status,
+      automation_mode: $automation_mode,
       subject_ref: $subject_ref,
       source_ref: $source_ref,
       artifact_root: $artifact_root,
@@ -282,7 +814,18 @@ write_result_json() {
       blocked_decisions: $blocked,
       clean_session_command: (if $clean_session_command == "" then null else $clean_session_command end),
       created_issues: ($issues[0] // []),
-      review_meta: (if $review_meta == "" then null else $review_meta end)
+      parent_issue: ($parent[0] // null),
+      project_fields: ($project_fields[0] // null),
+      review_meta: (if $review_meta == "" then null else $review_meta end),
+      telemetry: $telemetry,
+      cleanup: $cleanup,
+      execution: {
+        requested: ($execute_after_plan == 1),
+        status: $execution_status,
+        exit_code: $execution_exit_code,
+        duration_s: $execution_duration_s,
+        command: $execution_command
+      }
     }' > "$RESULT_JSON"
 }
 
@@ -301,6 +844,17 @@ print_result() {
   else
     printf -- '- Work-chain: `not created`\n'
   fi
+  printf -- '- Automation mode: `%s`\n' "$AUTOMATION_MODE"
+  if jq -e 'type == "object"' "$PARENT_ISSUE_JSON" >/dev/null 2>&1; then
+    jq -r '"- Parent issue: `#\(.number)`"' "$PARENT_ISSUE_JSON"
+  else
+    printf -- '- Parent issue: `not created`\n'
+  fi
+  if [ "$POPULATE_PROJECT_FIELDS" -eq 1 ]; then
+    printf -- '- Project fields: `%s` items in `%s`\n' "$(jq '.items | length' "$PROJECT_FIELDS_JSON")" "$PROJECT_FIELDS_JSON"
+  else
+    printf -- '- Project fields: `disabled`\n'
+  fi
   printf -- '- Blocked decisions:\n'
   if [ "$(printf '%s\n' "$blocked_json" | jq 'length')" -eq 0 ]; then
     printf '  - None\n'
@@ -311,6 +865,10 @@ print_result() {
     printf -- '- Clean-session command: `%s`\n' "$clean_command"
   else
     printf -- '- Clean-session command: `not available`\n'
+  fi
+  printf -- '- Telemetry: `%s`\n' "$TELEMETRY_JSON"
+  if [ "$EXECUTION_STATUS" != "not_requested" ]; then
+    printf -- '- Execution: `%s` (exit `%s`, log `%s`)\n' "$EXECUTION_STATUS" "$EXECUTION_EXIT_CODE" "$EXECUTION_OUT"
   fi
 }
 
@@ -467,10 +1025,12 @@ create_worker_issue_body() {
 }
 
 create_worker_issues() {
-  local issue_bodies_dir idx contract_json node_id label title body_file create_out issue_number issue_url tmp
+  local issue_bodies_dir idx contract_json node_id label title body_file create_out issue_number issue_url issue_id project_item_id sub_issue_linked tmp
   issue_bodies_dir="$ARTIFACT_ROOT/issue-bodies"
   mkdir -p "$issue_bodies_dir"
   printf '[]\n' > "$ISSUE_MAP"
+  create_or_resolve_parent_issue
+  verify_sub_issue_api_for_parent
   idx=0
   while IFS= read -r contract_json; do
     [ -n "$contract_json" ] || continue
@@ -483,32 +1043,45 @@ create_worker_issues() {
     if [ "$DRY_RUN" -eq 1 ]; then
       issue_number=$((900000 + idx))
       issue_url="dry-run:$node_id"
+      issue_id="$issue_number"
+      project_item_id=""
+      sub_issue_linked=false
     else
       create_out=$("$SCRIPT_DIR/studio-gh.sh" issue create --repo "$ISSUE_REPO" --title "$title" --body-file "$body_file") || {
         printf 'manager-plan-chain: failed to create issue for %s\n' "$node_id" >&2
         exit 1
       }
-      issue_url=$(printf '%s\n' "$create_out" | tail -1)
-      if printf '%s\n' "$create_out" | jq -e '.number' >/dev/null 2>&1; then
-        issue_number=$(printf '%s\n' "$create_out" | jq -r '.number')
-        issue_url=$(printf '%s\n' "$create_out" | jq -r '.url // ""')
-      else
-        issue_number=$(printf '%s\n' "$issue_url" | sed -n -E 's#.*issues/([0-9]+).*#\1#p' | tail -1)
-      fi
+      issue_number=$(parse_issue_number_from_create_output "$create_out")
+      issue_url=$(parse_issue_url_from_create_output "$create_out")
       case "$issue_number" in
         ''|*[!0-9]*)
           printf 'manager-plan-chain: could not parse issue number from create output: %s\n' "$create_out" >&2
           exit 1
           ;;
       esac
+      [ -n "$issue_url" ] || issue_url=$(issue_url_for_number "$issue_number")
+      issue_id=$(issue_database_id "$issue_number")
+      project_item_id=$(add_issue_to_project_and_set_fields "$issue_number" "$issue_url" "worker")
+      sub_issue_linked=$(link_sub_issue_to_parent "$issue_number" "$issue_id")
     fi
     tmp="$ISSUE_MAP.tmp"
     jq \
       --arg node_id "$node_id" \
       --arg title "$title" \
       --arg url "$issue_url" \
+      --arg id "$issue_id" \
+      --arg project_item_id "$project_item_id" \
       --argjson number "$issue_number" \
-      '. + [{node_id:$node_id, number:$number, title:$title, url:$url}]' \
+      --argjson sub_issue_linked "$sub_issue_linked" \
+      '. + [{
+        node_id:$node_id,
+        number:$number,
+        id:$id,
+        title:$title,
+        url:$url,
+        project_item_id:$project_item_id,
+        sub_issue_linked:$sub_issue_linked
+      }]' \
       "$ISSUE_MAP" > "$tmp"
     mv "$tmp" "$ISSUE_MAP"
   done < <(jq -c '.payload.decomposition[]' "$PLANNER_ARTIFACT")
@@ -574,6 +1147,11 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --issue) ISSUE_NUMBER="${2:?--issue requires a number}"; shift 2 ;;
     --issue=*) ISSUE_NUMBER="${1#--issue=}"; shift ;;
+    --parent-issue) PARENT_ISSUE_NUMBER="${2:?--parent-issue requires a number}"; CREATE_PARENT_ISSUE=manual; shift 2 ;;
+    --parent-issue=*) PARENT_ISSUE_NUMBER="${1#--parent-issue=}"; CREATE_PARENT_ISSUE=manual; shift ;;
+    --no-parent-issue) CREATE_PARENT_ISSUE=0; PARENT_ISSUE_NUMBER=""; shift ;;
+    --sub-issues) LINK_SUB_ISSUES=1; shift ;;
+    --no-sub-issues) LINK_SUB_ISSUES=0; shift ;;
     --repo|--issue-repo) ISSUE_REPO="${2:?--repo requires owner/repo}"; shift 2 ;;
     --repo=*|--issue-repo=*) ISSUE_REPO="${1#*=}"; shift ;;
     --source-file) SOURCE_FILE="${2:?--source-file requires a path}"; shift 2 ;;
@@ -594,6 +1172,26 @@ while [ "$#" -gt 0 ]; do
     --host=*) HOST="${1#--host=}"; shift ;;
     --review-host) REVIEW_HOST="${2:?--review-host requires a profile}"; shift 2 ;;
     --review-host=*) REVIEW_HOST="${1#--review-host=}"; shift ;;
+    --execute|--run) EXECUTE_AFTER_PLAN=1; shift ;;
+    --no-execute|--plan-only) EXECUTE_AFTER_PLAN=0; shift ;;
+    --interactive|--attended) AUTOMATION_MODE="interactive"; shift ;;
+    --unattended) AUTOMATION_MODE="unattended"; shift ;;
+    --project-owner) PROJECT_OWNER="${2:?--project-owner requires owner}"; shift 2 ;;
+    --project-owner=*) PROJECT_OWNER="${1#--project-owner=}"; shift ;;
+    --project-number) PROJECT_NUMBER="${2:?--project-number requires number}"; shift 2 ;;
+    --project-number=*) PROJECT_NUMBER="${1#--project-number=}"; shift ;;
+    --project-status) PROJECT_STATUS="${2:?--project-status requires value}"; shift 2 ;;
+    --project-status=*) PROJECT_STATUS="${1#--project-status=}"; shift ;;
+    --project-track) PROJECT_TRACK="${2:?--project-track requires value}"; shift 2 ;;
+    --project-track=*) PROJECT_TRACK="${1#--project-track=}"; shift ;;
+    --project-phase) PROJECT_PHASE="${2:?--project-phase requires value}"; shift 2 ;;
+    --project-phase=*) PROJECT_PHASE="${1#--project-phase=}"; shift ;;
+    --project-size) PROJECT_SIZE="${2:?--project-size requires value}"; shift 2 ;;
+    --project-size=*) PROJECT_SIZE="${1#--project-size=}"; shift ;;
+    --project-review-state) PROJECT_REVIEW_STATE="${2:?--project-review-state requires value}"; shift 2 ;;
+    --project-review-state=*) PROJECT_REVIEW_STATE="${1#--project-review-state=}"; shift ;;
+    --project-fields) POPULATE_PROJECT_FIELDS=1; shift ;;
+    --no-project-fields) POPULATE_PROJECT_FIELDS=0; shift ;;
     --allow-missing-details) ALLOW_MISSING_DETAILS=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage ;;
@@ -610,6 +1208,23 @@ done
 
 require_tool jq
 require_tool yq
+
+case "$AUTOMATION_MODE" in
+  unattended|interactive) ;;
+  *) printf 'manager-plan-chain: automation mode must be unattended or interactive: %s\n' "$AUTOMATION_MODE" >&2; exit 2 ;;
+esac
+case "$POPULATE_PROJECT_FIELDS" in
+  0|1) ;;
+  *) printf 'manager-plan-chain: project field mode must be 0 or 1: %s\n' "$POPULATE_PROJECT_FIELDS" >&2; exit 2 ;;
+esac
+case "$LINK_SUB_ISSUES" in
+  0|1) ;;
+  *) printf 'manager-plan-chain: sub-issue mode must be 0 or 1: %s\n' "$LINK_SUB_ISSUES" >&2; exit 2 ;;
+esac
+PARENT_ISSUE_NUMBER="${PARENT_ISSUE_NUMBER#\#}"
+case "$PROJECT_NUMBER" in
+  ''|*[!0-9]*) printf 'manager-plan-chain: --project-number must be numeric: %s\n' "$PROJECT_NUMBER" >&2; exit 2 ;;
+esac
 
 if [ "${#POSITIONAL[@]}" -gt 0 ]; then
   if [ -z "$SOURCE_FILE" ] && [ -z "$ISSUE_NUMBER" ] && [ -z "$FROM_PLAN" ] && [ "${#POSITIONAL[@]}" -eq 1 ] && [ -r "${POSITIONAL[0]}" ]; then
@@ -659,7 +1274,8 @@ CHAIN_NAME=$(slugify "$CHAIN_NAME")
 artifact_home=$(resolve_parent_home_for_github)
 project_root=$(HOME="$artifact_home" resolve_project_root_for "$PROJECT")
 run_id="${STUDIO_MANAGER_PLAN_CHAIN_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$CHAIN_NAME}"
-ARTIFACT_ROOT="$project_root/plan-chains/$run_id"
+PLAN_CHAINS_ROOT="$project_root/plan-chains"
+ARTIFACT_ROOT="$PLAN_CHAINS_ROOT/$run_id"
 mkdir -p "$ARTIFACT_ROOT"
 
 SOURCE_MD="$ARTIFACT_ROOT/source.md"
@@ -673,7 +1289,18 @@ REVIEW_META="$ARTIFACT_ROOT/phase-review.env"
 ISSUE_MAP="$ARTIFACT_ROOT/issues.json"
 WORK_CHAIN="$ARTIFACT_ROOT/work-chain.yaml"
 RESULT_JSON="$ARTIFACT_ROOT/result.json"
+PARENT_ISSUE_JSON="$ARTIFACT_ROOT/parent-issue.json"
+PROJECT_VIEW_JSON="$ARTIFACT_ROOT/project-view.json"
+PROJECT_FIELDS_META="$ARTIFACT_ROOT/project-fields-meta.json"
+PROJECT_FIELDS_JSON="$ARTIFACT_ROOT/project-fields.json"
+CLEANUP_JSON="$ARTIFACT_ROOT/cleanup.json"
+TELEMETRY_JSON="$ARTIFACT_ROOT/telemetry.json"
+EXECUTION_OUT="$ARTIFACT_ROOT/work-chain-run.out"
+EXECUTION_ERR="$ARTIFACT_ROOT/work-chain-run.err"
 printf '[]\n' > "$ISSUE_MAP"
+printf 'null\n' > "$PARENT_ISSUE_JSON"
+printf '{"enabled":false,"items":[]}\n' > "$PROJECT_FIELDS_JSON"
+printf '{"outcome":"not_run"}\n' > "$CLEANUP_JSON"
 
 if [ -n "$ISSUE_NUMBER" ]; then
   source_from_issue
@@ -683,6 +1310,14 @@ else
   source_from_file_or_text
 fi
 
+if [ -z "$PARENT_ISSUE_NUMBER" ] && [ -n "$ISSUE_NUMBER" ] && [ "$CREATE_PARENT_ISSUE" != "0" ]; then
+  PARENT_ISSUE_NUMBER="$ISSUE_NUMBER"
+  CREATE_PARENT_ISSUE=manual
+fi
+default_project_fields_from_source
+init_project_fields_artifact
+sweep_plan_chain_artifacts "$PLAN_CHAINS_ROOT"
+
 prepare_task_graph
 
 blocked_json=$(blocked_decisions_json)
@@ -691,6 +1326,7 @@ if [ "$graph_status" != "valid" ] || [ "$(printf '%s\n' "$blocked_json" | jq 'le
   write_review_input_placeholder="$REVIEW_INPUT"
   printf '# Manager Plan-Chain Needs Context\n\nTask graph validation blocked review and issue creation.\n' > "$write_review_input_placeholder"
   write_planner_artifact "needs_context" "$blocked_json"
+  write_telemetry_artifact "needs_context"
   write_result_json "needs_context" "$blocked_json" "" "" "" "$ISSUE_MAP" ""
   print_result "needs_context" "$blocked_json" "" "" ""
   exit 0
@@ -700,6 +1336,7 @@ write_planner_artifact "ready_for_review" "$blocked_json"
 write_review_input
 
 if [ "$DRY_RUN" -eq 1 ]; then
+  write_telemetry_artifact "dry_run"
   write_result_json "dry_run" "$blocked_json" "" "" "Run without --dry-run to review, create issues, and write the work-chain manifest." "$ISSUE_MAP" ""
   print_result "dry_run" "$blocked_json" "" "" "Run without --dry-run to review, create issues, and write the work-chain manifest."
   exit 0
@@ -717,6 +1354,7 @@ set -e
 if [ "$review_rc" -ne 0 ]; then
   cat "$REVIEW_META.err" >&2 || true
   blocked_json=$(jq -cn --arg reason "Plan review wrapper failed; inspect $REVIEW_META and $REVIEW_META.err." '[$reason]')
+  write_telemetry_artifact "blocked"
   write_result_json "blocked" "$blocked_json" "$REVIEW_ARTIFACT" "" "" "$ISSUE_MAP" "$REVIEW_META"
   print_result "blocked" "$blocked_json" "$REVIEW_ARTIFACT" "" ""
   exit 1
@@ -726,14 +1364,31 @@ review_verdict=$(sed -n 's/^PHASE_REVIEW_VERDICT=//p' "$REVIEW_META" | tail -1)
 [ -n "$review_verdict" ] || review_verdict="ambiguous"
 if ! review_allows_manifest "$review_verdict"; then
   blocked_json=$(jq -cn --arg verdict "$review_verdict" '["Plan review verdict was " + $verdict + "; rerun after addressing the review artifact."]')
+  write_telemetry_artifact "blocked"
   write_result_json "blocked" "$blocked_json" "$REVIEW_ARTIFACT" "" "" "$ISSUE_MAP" "$REVIEW_META"
   print_result "blocked" "$blocked_json" "$REVIEW_ARTIFACT" "" ""
   exit 1
 fi
 
+prepare_project_field_metadata
 create_worker_issues
 write_chain_manifest
 
-clean_command="/dev-studio manager work-chain $WORK_CHAIN --attended --yes"
-write_result_json "ready" "$blocked_json" "$REVIEW_ARTIFACT" "$WORK_CHAIN" "$clean_command" "$ISSUE_MAP" "$REVIEW_META"
-print_result "ready" "$blocked_json" "$REVIEW_ARTIFACT" "$WORK_CHAIN" "$clean_command"
+clean_command=$(clean_session_command_for_manifest)
+result_status="ready"
+execution_rc=0
+if [ "$EXECUTE_AFTER_PLAN" -eq 1 ]; then
+  set +e
+  execute_work_chain
+  execution_rc=$?
+  set -e
+  if [ "$execution_rc" -eq 0 ]; then
+    result_status="executed"
+  else
+    result_status="execution_failed"
+  fi
+fi
+write_telemetry_artifact "$result_status"
+write_result_json "$result_status" "$blocked_json" "$REVIEW_ARTIFACT" "$WORK_CHAIN" "$clean_command" "$ISSUE_MAP" "$REVIEW_META"
+print_result "$result_status" "$blocked_json" "$REVIEW_ARTIFACT" "$WORK_CHAIN" "$clean_command"
+exit "$execution_rc"

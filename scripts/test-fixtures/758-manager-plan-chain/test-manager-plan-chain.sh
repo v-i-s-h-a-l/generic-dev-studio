@@ -35,6 +35,13 @@ set -eu
 
 printf '%s\n' "$*" >> "${GH_LOG:?}"
 
+api_path=""
+for arg in "$@"; do
+  case "$arg" in
+    /repos/*) api_path="$arg" ;;
+  esac
+done
+
 if [ "$1" = "issue" ] && [ "$2" = "create" ]; then
   n=$(cat "${ISSUE_COUNTER:?}")
   n=$((n + 1))
@@ -57,10 +64,80 @@ JSON
   exit 0
 fi
 
+if [ "$1" = "api" ]; then
+  case "$api_path" in
+    /repos/example/project/issues/*/sub_issues)
+      case " $* " in
+        *" -X POST "*) printf '{"linked":true}\n' ;;
+        *) printf '[]\n' ;;
+      esac
+      exit 0
+      ;;
+    /repos/example/project/issues/*)
+      issue=${api_path##*/}
+      cat <<JSON
+{"id": $((100000 + issue)), "number": $issue, "url": "https://api.github.com/repos/example/project/issues/$issue", "html_url": "https://github.com/example/project/issues/$issue"}
+JSON
+      exit 0
+      ;;
+  esac
+fi
+
+if [ "$1" = "project" ] && [ "$2" = "view" ]; then
+  printf '{"id":"PVT_fixture","number":1,"title":"Fixture Project"}\n'
+  exit 0
+fi
+
+if [ "$1" = "project" ] && [ "$2" = "field-list" ]; then
+  cat <<'JSON'
+{
+  "fields": [
+    {"id":"FIELD_STATUS","name":"Status","options":[{"id":"OPT_TODO","name":"Todo"},{"id":"OPT_IN_PROGRESS","name":"In Progress"},{"id":"OPT_DONE","name":"Done"}]},
+    {"id":"FIELD_TRACK","name":"Track","options":[{"id":"OPT_D","name":"D chain mode"},{"id":"OPT_BACKLOG","name":"backlog"}]},
+    {"id":"FIELD_PHASE","name":"Phase","options":[{"id":"OPT_D_PHASE","name":"D"}]},
+    {"id":"FIELD_SIZE","name":"Size","options":[{"id":"OPT_S","name":"S"},{"id":"OPT_M","name":"M"}]},
+    {"id":"FIELD_REVIEW","name":"Sibling host reviewed","options":[{"id":"OPT_PLAN_CLEAN","name":"Plan clean"},{"id":"OPT_NEEDS_REVIEW","name":"Needs review"}]}
+  ]
+}
+JSON
+  exit 0
+fi
+
+if [ "$1" = "project" ] && [ "$2" = "item-add" ]; then
+  url=""
+  prev=""
+  for arg in "$@"; do
+    if [ "$prev" = "--url" ]; then
+      url="$arg"
+    fi
+    prev="$arg"
+  done
+  number=${url##*/}
+  printf '{"id":"PVTI_%s"}\n' "$number"
+  exit 0
+fi
+
+if [ "$1" = "project" ] && [ "$2" = "item-edit" ]; then
+  printf '{"ok":true}\n'
+  exit 0
+fi
+
 printf 'unexpected gh invocation: %s\n' "$*" >&2
 exit 1
 SH
 chmod +x "$BIN/gh"
+
+cat > "$BIN/work-chain-exec" <<'SH'
+#!/usr/bin/env bash
+set -eu
+printf 'work-chain-exec %s\n' "$*"
+case " $* " in
+  *" --attended "*) printf 'unexpected attended execution\n' >&2; exit 12 ;;
+esac
+test -f "$1" || { printf 'missing generated manifest: %s\n' "$1" >&2; exit 13; }
+printf 'chain executed\n'
+SH
+chmod +x "$BIN/work-chain-exec"
 
 cat > "$BIN/claude" <<'SH'
 #!/usr/bin/env bash
@@ -107,6 +184,9 @@ Out of scope:
 
 Acceptance:
 - The clean-session command is printed.
+
+Cross-links:
+- Track: `D chain mode`
 EOF
 
 PATH="$BIN:$PATH" \
@@ -140,8 +220,13 @@ REVIEW="$TMPROOT/home/.dev-studio/generic-dev-studio/plan-chains/happy/plan-revi
 jq -e '
   .status == "ready" and
   (.created_issues | length) >= 2 and
+  (.parent_issue.number == 9101) and
+  ([.created_issues[].sub_issue_linked] | all) and
+  (.project_fields.items | length) == ((.created_issues | length) + 1) and
+  .automation_mode == "unattended" and
   (.blocked_decisions | length) == 0 and
-  (.clean_session_command | test("^/dev-studio manager work-chain "))
+  (.clean_session_command | test("^/dev-studio manager work-chain ")) and
+  (.execution.requested == false)
 ' "$RESULT" >/dev/null || fail "result JSON did not capture ready state"
 
 yq -e '
@@ -153,6 +238,14 @@ yq -e '
 ' "$MANIFEST" >/dev/null || fail "generated work-chain manifest is not runnable shape"
 
 grep -q 'PHASE_REVIEW_VERDICT=clean' "$REVIEW" || fail "phase review artifact missing clean verdict"
+grep -q '^project item-add 1 --owner v-i-s-h-a-l --url https://github.com/example/project/issues/9101 ' "$GH_LOG" \
+  || fail "parent issue was not added to the Project"
+grep -q '^api .* /repos/example/project/issues/9101/sub_issues$' "$GH_LOG" \
+  || fail "native sub-issue API was not read before linking"
+grep -q 'sub_issue_id=109102' "$GH_LOG" \
+  || fail "worker issue was not linked as a native sub-issue"
+grep -q '^project item-edit ' "$GH_LOG" \
+  || fail "Project single-select fields were not populated"
 
 : > "$GH_LOG"
 ROUGH="$TMPROOT/rough.md"
@@ -190,12 +283,15 @@ CLAUDE_REVIEWER_CONFIG_DIR="$TMPROOT/claude-reviewer/.claude-reviewer" \
 STUDIO_PARENT_HOST=codex \
 STUDIO_MANAGER_PLAN_CHAIN_PROJECT=generic-dev-studio \
 STUDIO_MANAGER_PLAN_CHAIN_RUN_ID=from-plan \
+STUDIO_MANAGER_PLAN_CHAIN_EXECUTOR="$BIN/work-chain-exec" \
   "$MANAGER" --from-plan "$TASK_GRAPH" --repo example/project --chain from-plan-chain >"$TMPROOT/from-plan.out" 2>"$TMPROOT/from-plan.err"
 
-grep -q 'Status: `ready`' "$TMPROOT/from-plan.out" || {
+grep -q 'Status: `executed`' "$TMPROOT/from-plan.out" || {
   cat "$TMPROOT/from-plan.out" >&2
   cat "$TMPROOT/from-plan.err" >&2
-  fail "manager work-chain --from-plan did not route to plan-chain"
+  fail "manager work-chain --from-plan did not execute the generated chain"
 }
+grep -q 'Execution: `completed`' "$TMPROOT/from-plan.out" \
+  || fail "from-plan execution status was not reported"
 
 printf 'PASS: manager plan-chain orchestration\n'

@@ -16,6 +16,7 @@ invocation:
     - "/dev-studio help"
     - "/dev-studio <role> help"
     - "/dev-studio manager plan-chain"
+    - "/dev-studio manager plan-chain --execute"
     - "/dev-studio manager work-chain --from-plan"
     - "active dev-studio role"
     - "session-local dev-studio role"
