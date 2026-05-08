@@ -15,6 +15,8 @@ version: 0.1.0
 
 The router selects the role contract only. Mode procedure, authority checks, handoffs, events, project profiles, and checkpoint storage stay in their owning contracts.
 
+`/dev-studio` is the primary traffic surface for v2 role routing.
+
 <!-- v2-dev-studio:dispatch -->
 ## Dispatch table
 
@@ -25,7 +27,7 @@ Role help: bare `help` shows the router-level role index unless a session-local 
 <!-- v2-dev-studio:lifecycle -->
 ## Lifecycle Actions
 
-`checkpoint` and `resume-checkpoint` route through the selected role. Bare checkpoint invocations land in `manager`; role-qualified invocations are owned by that role. Create/update checkpoint commands print the checkpoint id, and that id is enough for `resume-checkpoint`. Checkpoints do not replace summaries, verdicts, release packets, QA/flow checklists, perf verdicts, or event logs.
+`checkpoint` and `resume-checkpoint` route through the selected role. Bare `/dev-studio checkpoint` invocations land in `manager`; role-qualified invocations such as `/dev-studio <role> checkpoint` are owned by that role. Create/update checkpoint commands print the checkpoint id, and that id is enough for `resume-checkpoint`. Checkpoints do not replace summaries, verdicts, release packets, QA/flow checklists, perf verdicts, or event logs.
 
 <!-- v2-dev-studio:manager-analyze -->
 ## Manager Analyze Routing
@@ -35,6 +37,8 @@ Role help: bare `help` shows the router-level role index unless a session-local 
 Studio-feedback records still search issues first, consolidate covered work, create only distinct issues, and move to `processed/` only after a destination exists. Unsafe public records stay in the inbox with a policy reason.
 
 `(studio-feedback)` and `(studio feedback)` tags create sidecar records under the studio feedback inbox and do not replace the rest of the prompt.
+
+Studio-feedback tag detection keeps both anchored forms available to hosts: `^\(studio[-\s]feedback\)` and `\(studio[-\s]feedback\)\s*$`. After capture, continue answering any non-feedback part of the prompt.
 
 <!-- v2-dev-studio:release-configure -->
 ## Release Manager Configure
@@ -59,9 +63,11 @@ Studio-feedback records still search issues first, consolidate covered work, cre
 <!-- v2-dev-studio:landing -->
 ## Bare Role Landing
 
-Bare role invocations start a lightweight landing. Load the role contract, inspect cheap cwd/profile context, suggest likely next moves, then report the direct invocation once the workflow is selected. `manager ingest` calls `scripts/dev-studio-ingest-resolve.sh`; `manager analyze` calls `scripts/manager-analyze.sh`; `manager reconcile` calls `scripts/manager-reconcile.sh`; `manager work-chain` calls `scripts/manager-work-chain.sh`; `manager chain-monitor` calls `scripts/manager-chain-monitor.sh`; `manager config` calls `scripts/manager-feature-config.sh`; `manager branch` calls `scripts/manager-release-branch.sh`. Bare `scripts/studio-chain-runner.sh` shows runnable chains, resumable runs, and next actions. Prefer `/dev-studio manager work-chain ...` in user-facing guidance; script commands are secondary automation/debug equivalents. Use `--discover <manifest|chain-name>` for filtered discovery; `/dev-studio manager work-chain ios-v2-execution` auto-runs that chain while bare `manager work-chain` lands in discovery. Chain execution supports `--attended` and `--unattended`; end attended/ingest work-chain planning with the next `/dev-studio manager work-chain ...` command.
+Bare role invocations start a lightweight landing. Load the role contract, inspect cheap cwd/profile context, suggest likely next moves, then report the direct invocation once the workflow is selected. `manager ingest` calls `scripts/dev-studio-ingest-resolve.sh`; `manager analyze` calls `scripts/manager-analyze.sh`; `manager reconcile` calls `scripts/manager-reconcile.sh`; `manager plan-chain` calls `scripts/manager-plan-chain.sh`; `manager work-chain` calls `scripts/manager-work-chain.sh`; `manager chain-monitor` calls `scripts/manager-chain-monitor.sh`; `manager config` calls `scripts/manager-feature-config.sh`; `manager branch` calls `scripts/manager-release-branch.sh`. Bare `scripts/studio-chain-runner.sh` shows runnable chains, resumable runs, and next actions. Prefer `/dev-studio manager work-chain ...` in user-facing guidance; script commands are secondary automation/debug equivalents. Use `manager plan-chain <goal-or-issue>` when the source still needs planner artifact, phase-review, durable issue creation, and manifest generation. Use `manager work-chain --from-plan <task-graph|planner-output>` to route an existing planner artifact through the same orchestration before execution. Use `--discover <manifest|chain-name>` for filtered discovery; `/dev-studio manager work-chain ios-v2-execution` auto-runs that chain while bare `manager work-chain` lands in discovery. Chain execution supports `--attended` and `--unattended`; end attended/ingest work-chain planning with the next `/dev-studio manager work-chain ...` command.
 
 After a bare role landing, later bare subcommands may resolve through that active role when unambiguous in the same session. Store the resolved canonical role after alias resolution. Explicit `/dev-studio <role> ...` always wins and replaces the active role for that invocation; bare `/dev-studio` re-lands in manager and clears any assumed active-role shortcut. Ambiguous commands require the role prefix or a lightweight clarification.
+
+After workflow selection, report the direct one-line invocation the user can run next time.
 
 <!-- v2-dev-studio:intent -->
 ## Intent detection
