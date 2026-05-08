@@ -46,8 +46,13 @@ grep -q 'chains/workflow-measurement-improvements.yaml' "$TMPROOT/out" || {
   cat "$TMPROOT/out" >&2
   exit 1
 }
-grep -q '/dev-studio manager work-chain field-telemetry-mvp --dry-run' "$TMPROOT/out" || {
+grep -q '/dev-studio manager work-chain ios-v2-execution --dry-run' "$TMPROOT/out" || {
   printf 'missing runnable chain suggestion\n' >&2
+  cat "$TMPROOT/out" >&2
+  exit 1
+}
+grep -q '663,664,665,666,667,668,669,670,671' "$TMPROOT/out" || {
+  printf 'object-form issue entries did not render numbers\n' >&2
   cat "$TMPROOT/out" >&2
   exit 1
 }
@@ -57,13 +62,13 @@ grep -q 'Attended run: `/dev-studio manager work-chain <manifest|chain-name> --a
   exit 1
 }
 
-HOME="$HOME_DIR" "$ROOT/scripts/studio-chain-runner.sh" --discover prd-to-chain-automation > "$TMPROOT/filtered.out" 2>&1
-grep -q 'prd-to-chain-automation' "$TMPROOT/filtered.out" || {
+HOME="$HOME_DIR" "$ROOT/scripts/studio-chain-runner.sh" --discover ios-v2-execution > "$TMPROOT/filtered.out" 2>&1
+grep -q 'ios-v2-execution' "$TMPROOT/filtered.out" || {
   printf 'filtered discovery omitted named chain\n' >&2
   cat "$TMPROOT/filtered.out" >&2
   exit 1
 }
-if grep -q '/dev-studio manager work-chain field-telemetry-mvp --dry-run' "$TMPROOT/filtered.out"; then
+if grep -q '/dev-studio manager work-chain automation-mode-preference --dry-run' "$TMPROOT/filtered.out"; then
   printf 'filtered discovery included unrelated runnable chain\n' >&2
   cat "$TMPROOT/filtered.out" >&2
   exit 1

@@ -77,10 +77,10 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio manager ingest       # capture one idea in the current repo context; --scope studio crosses to Forge
 /dev-studio manager reconcile    # project repo: sync emitted debriefs/reports into the task ledger
 /dev-studio manager analyze      # studio repo: telemetry/log analysis plus studio feedback triage
-/dev-studio manager work-chain prd-to-chain-automation # auto-run the PRD automation chain; bare call discovers available chains
-/dev-studio manager work-chain prd-to-chain-automation --dry-run # preferred preview path for attended planning
+/dev-studio manager work-chain ios-v2-execution # auto-run the iOS v2 execution chain; bare call discovers available chains
+/dev-studio manager work-chain ios-v2-execution --dry-run # preferred preview path for attended planning
 /dev-studio manager work-chain --resume <run_id> --yes # preferred resume path from chain summaries/halt records
-scripts/manager-work-chain.sh prd-to-chain-automation # repo-side wrapper for the manager work-chain front door
+scripts/manager-work-chain.sh ios-v2-execution # repo-side wrapper for the manager work-chain front door
 scripts/prd-intake-normalize.sh prd.md # normalize a PRD/transcript/issue brief into a planner-ready requirement packet
 scripts/prd-task-graph-synthesize.sh packet.md # turn a requirement packet into a validated scheduler graph
 /dev-studio checkpoint           # manager-shaped checkpoint routing; stdout is the checkpoint id for resume
@@ -88,8 +88,8 @@ scripts/prd-task-graph-synthesize.sh packet.md # turn a requirement packet into 
 /dev-studio worker resume-checkpoint # resume worker checkpoint via manifest.json + context.md first
 /studio-help                     # open the v2 router docs
 scripts/studio-chain-runner.sh --discover # bare invocation lists runnable chains, resumable runs, and next actions
-scripts/studio-chain-runner.sh --discover prd-to-chain-automation # filtered discovery for one chain or manifest
-scripts/manager-work-chain.sh prd-to-chain-automation --dry-run # preview the named chain through the manager front door
+scripts/studio-chain-runner.sh --discover ios-v2-execution # filtered discovery for one chain or manifest
+scripts/manager-work-chain.sh ios-v2-execution --dry-run # preview the named chain through the manager front door
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
 scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes # attended run with explicit confirmation bypass
 scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --yes # no routine continue prompts; typed blockers halt

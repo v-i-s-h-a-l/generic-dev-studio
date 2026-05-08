@@ -515,11 +515,11 @@
           </article>
           <article class="role">
             <h3>Parallel Chains</h3>
-            <p>Use chain manifests when the repo already has an issue chain. Bare invocation discovers runnable manifests and resumable runs; dry-run first, then launch one independent chain per shell session. The manager front door for the PRD automation arc is <code>/dev-studio manager work-chain prd-to-chain-automation</code>, which auto-runs the chain through the repo-side manager wrapper. Unattended chain runs avoid routine continue prompts and stop only on typed blockers after finite retries.</p>
+            <p>Use chain manifests when the repo already has an issue chain. Bare invocation discovers runnable manifests and resumable runs; dry-run first, then launch one independent chain per shell session. The manager front door for the iOS v2 execution chain is <code>/dev-studio manager work-chain ios-v2-execution</code>, which auto-runs the chain through the repo-side manager wrapper. Unattended chain runs avoid routine continue prompts and stop only on typed blockers after finite retries.</p>
             <code class="shell">scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt; --dry-run
 scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt; --unattended --yes
 scripts/studio-chain-runner.sh --discover
-scripts/manager-work-chain.sh prd-to-chain-automation
+scripts/manager-work-chain.sh ios-v2-execution
 scripts/manager-chain-monitor.sh status --project generic-dev-studio --json</code>
           </article>
           <article class="role">
@@ -728,7 +728,7 @@ scripts/manager-analyze.sh --cwd "$PWD"</code>
             <code class="shell">scripts/studio-chain-runner.sh &lt;manifest&gt; --dry-run
 scripts/studio-chain-runner.sh --auto &lt;manifest&gt;
 scripts/studio-chain-runner.sh --discover
-scripts/manager-work-chain.sh prd-to-chain-automation</code>
+scripts/manager-work-chain.sh ios-v2-execution</code>
           </article>
           <article class="role">
             <h3>Fleet Work</h3>
@@ -764,7 +764,7 @@ scripts/worker-status.sh</code>
             <code class="shell">/dev-studio manager
 /dev-studio manager help
 /dev-studio manager resume-plan
-/dev-studio manager work-chain prd-to-chain-automation
+/dev-studio manager work-chain ios-v2-execution
 /dev-studio manager guard "has this shipped?"
 /dev-studio manager analyze
 /dev-studio manager reconcile
