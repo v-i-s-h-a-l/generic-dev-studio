@@ -1,0 +1,22 @@
+# lint-gh-wrapper allowlist (issue #815 baseline).
+#
+# Files listed here pre-date the lint and are permitted to retain raw `gh`
+# invocations or quoted `gh` references (in printf/echo strings) in --strict
+# (whole-tree) mode. Pre-commit (--staged) mode still rejects newly-added
+# lines containing raw `gh ...` invocations even in these files — the
+# allowlist only suppresses retroactive flagging of pre-existing content.
+#
+# Migration of these files to scripts/studio-gh.sh / with_login_home_for_github
+# is tracked under #710 Phase E. Do not add new entries here without an
+# explicit migration plan.
+#
+# Format: one repo-relative path per line. Comments start with `#`.
+hooks/session-start
+scripts/graduation-scan.sh
+scripts/host-preflight.sh
+scripts/studio-chain-runner.sh
+scripts/studio-pr-baseline-report.sh
+scripts/studio-tf-push.sh
+scripts/sweep-process-events.sh
+scripts/test-host.sh
+scripts/update-recipes.sh
