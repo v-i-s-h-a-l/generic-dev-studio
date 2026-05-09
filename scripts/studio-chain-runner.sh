@@ -45,6 +45,9 @@ RUN_PATHS_CONFIGURED=0
 . "$SCRIPT_DIR/lib-chain-monitor-notifier.sh"
 # shellcheck source=lib-chain-run-state.sh
 . "$SCRIPT_DIR/lib-chain-run-state.sh"
+# shellcheck disable=SC1091
+# shellcheck source=lib-host-eligibility.sh
+. "$SCRIPT_DIR/lib-host-eligibility.sh"
 
 usage() {
   sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' >&2
@@ -5393,6 +5396,128 @@ git_metadata_strategy_for_host() {
   esac
 }
 
+host_resolver_bypassed() {
+  case "${STUDIO_BYPASS_HOST_RESOLVER:-0}" in
+    1|true|TRUE|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+chain_host_profile_for_runner_host() {
+  local host="$1"
+  if host_profile_get "$host" >/dev/null 2>&1; then
+    printf '%s\n' "$host"
+    return 0
+  fi
+  case "$host" in
+    claude-code) printf 'claude\n' ;;
+    *) printf '%s\n' "$host" ;;
+  esac
+}
+
+chain_runner_host_for_profile() {
+  local profile="$1"
+  if resolve_capabilities_manifest "$profile" "$REPO_ROOT" >/dev/null 2>&1; then
+    printf '%s\n' "$profile"
+    return 0
+  fi
+  case "$profile" in
+    # The shipped host profile uses logical id `claude`; the adapted runner
+    # host id is still `claude-code`.
+    claude)
+      if resolve_capabilities_manifest claude-code "$REPO_ROOT" >/dev/null 2>&1; then
+        printf 'claude-code\n'
+        return 0
+      fi
+      ;;
+  esac
+  printf '%s\n' "$profile"
+}
+
+chain_runner_host_has_manifest() {
+  local host="$1" manifest
+  manifest=$(resolve_capabilities_manifest "$host" "$REPO_ROOT" 2>/dev/null || true)
+  [ -n "$manifest" ] && [ -f "$manifest" ]
+}
+
+resolve_auto_worker_host_without_smoke() {
+  local candidates profile runner_host
+  candidates=$(host_profile_list_for_capability worker) || return 1
+  while IFS= read -r profile; do
+    [ -n "$profile" ] || continue
+    runner_host=$(chain_runner_host_for_profile "$profile")
+    if chain_runner_host_has_manifest "$runner_host"; then
+      printf '%s\n' "$runner_host"
+      return 0
+    fi
+    printf 'studio-chain-runner: auto host candidate %s skipped: no capabilities manifest for runner host %s\n' "$profile" "$runner_host" >&2
+  done <<EOF
+$candidates
+EOF
+  printf 'studio-chain-runner: no auto worker host maps to an adapted chain-runner host\n' >&2
+  return 1
+}
+
+resolve_auto_worker_host_with_eligibility() {
+  local candidates profile runner_host eligibility outcome detail duration_ms
+  candidates=$(host_profile_list_for_capability worker) || return 1
+  while IFS= read -r profile; do
+    [ -n "$profile" ] || continue
+    eligibility=$(host_eligibility_check "$profile") || {
+      printf 'studio-chain-runner: host eligibility resolver failed for profile %s\n' "$profile" >&2
+      return 1
+    }
+    outcome=$(printf '%s\n' "$eligibility" | jq -r '.outcome // ""')
+    detail=$(printf '%s\n' "$eligibility" | jq -r '.detail // ""')
+    duration_ms=$(printf '%s\n' "$eligibility" | jq -r '.duration_ms // ""')
+    runner_host=$(chain_runner_host_for_profile "$profile")
+    case "$outcome" in
+      eligible)
+        if ! chain_runner_host_has_manifest "$runner_host"; then
+          printf 'studio-chain-runner: auto host candidate %s skipped: no capabilities manifest for runner host %s\n' "$profile" "$runner_host" >&2
+          continue
+        fi
+        printf 'studio-chain-runner: auto host selected %s via profile %s (duration_ms=%s)\n' "$runner_host" "$profile" "$duration_ms" >&2
+        printf '%s\n' "$runner_host"
+        return 0
+        ;;
+      binary-missing|auth-stale|auth-fresh-but-failed)
+        printf 'studio-chain-runner: auto host candidate %s skipped: %s (%s)\n' "$profile" "$outcome" "$detail" >&2
+        ;;
+      *)
+        printf 'studio-chain-runner: unsupported host eligibility outcome for %s: %s\n' "$profile" "${outcome:-<empty>}" >&2
+        return 1
+        ;;
+    esac
+  done <<EOF
+$candidates
+EOF
+  printf 'studio-chain-runner: no eligible worker host found via host profiles\n' >&2
+  return 1
+}
+
+resolve_chain_worker_host() {
+  local requested="$1"
+  if [ -n "$HOST_OVERRIDE" ]; then
+    chain_runner_host_for_profile "$HOST_OVERRIDE"
+    return 0
+  fi
+  if [ "$requested" != "auto" ]; then
+    chain_runner_host_for_profile "$requested"
+    return 0
+  fi
+  if host_resolver_bypassed; then
+    printf 'studio-chain-runner: host resolver bypassed via STUDIO_BYPASS_HOST_RESOLVER; using legacy auto host codex\n' >&2
+    printf 'codex\n'
+    return 0
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    resolve_auto_worker_host_without_smoke
+  else
+    resolve_auto_worker_host_with_eligibility
+  fi
+}
+
 host_launch_home() {
   resolve_user_login_home 2>/dev/null || true
 }
@@ -5413,15 +5538,44 @@ codex_auth_home_for_worker_launch() {
 }
 
 host_preflight() {
-  local host="$1" repo="$2" launch_home
+  local host="$1" repo="$2" launch_home profile eligibility outcome detail duration_ms
   launch_home=$(host_launch_home)
   if [ "$DRY_RUN" -eq 1 ]; then
+    if ! host_resolver_bypassed; then
+      profile=$(chain_host_profile_for_runner_host "$host")
+      printf 'DRY-RUN host_eligibility_check %q # runner host %q\n' "$profile" "$host"
+    fi
     if [ -n "$launch_home" ] && [ -d "$launch_home" ]; then
       printf 'DRY-RUN HOME=%q scripts/host-preflight.sh %q %q\n' "$launch_home" "$host" "$repo"
     else
       printf 'DRY-RUN scripts/host-preflight.sh %q %q\n' "$host" "$repo"
     fi
     return 0
+  fi
+  if host_resolver_bypassed; then
+    printf 'studio-chain-runner: host eligibility preflight bypassed for host=%s via STUDIO_BYPASS_HOST_RESOLVER\n' "$host" >&2
+  else
+    profile=$(chain_host_profile_for_runner_host "$host")
+    eligibility=$(host_eligibility_check "$profile") || {
+      printf 'studio-chain-runner: host eligibility resolver failed for host=%s profile=%s\n' "$host" "$profile" >&2
+      return 1
+    }
+    outcome=$(printf '%s\n' "$eligibility" | jq -r '.outcome // ""')
+    detail=$(printf '%s\n' "$eligibility" | jq -r '.detail // ""')
+    duration_ms=$(printf '%s\n' "$eligibility" | jq -r '.duration_ms // ""')
+    case "$outcome" in
+      eligible)
+        printf 'studio-chain-runner: host eligibility PASS host=%s profile=%s duration_ms=%s\n' "$host" "$profile" "$duration_ms" >&2
+        ;;
+      binary-missing|auth-stale|auth-fresh-but-failed)
+        printf 'studio-chain-runner: host eligibility failed for host=%s profile=%s: %s (%s)\n' "$host" "$profile" "$outcome" "$detail" >&2
+        return 1
+        ;;
+      *)
+        printf 'studio-chain-runner: unsupported host eligibility outcome for host=%s profile=%s: %s\n' "$host" "$profile" "${outcome:-<empty>}" >&2
+        return 1
+        ;;
+    esac
   fi
   if [ -n "$launch_home" ] && [ -d "$launch_home" ]; then
     HOME="$launch_home" "$SCRIPT_DIR/host-preflight.sh" "$host" "$repo"
@@ -5609,8 +5763,7 @@ build_plan_json() {
     approved_release_id=$(yq -r ".chains[$idx].approved_release_id // \"\"" "$MANIFEST")
     sync_strategy=$(yq -r ".chains[$idx].sync_strategy // \"rebase\"" "$MANIFEST")
     [ -n "$sync_strategy" ] && [ "$sync_strategy" != "null" ] || sync_strategy="rebase"
-    [ "$host" = "auto" ] && host="${HOST_OVERRIDE:-codex}"
-    [ -n "$HOST_OVERRIDE" ] && host="$HOST_OVERRIDE"
+    host=$(resolve_chain_worker_host "$host")
     phase_review_mode=$(resolve_phase_review_mode "$idx")
     checkpoint_mode=$(resolve_checkpoint_mode "$idx")
     git_metadata_strategy=$(git_metadata_strategy_for_host "$host")
@@ -6127,7 +6280,7 @@ explain_plan() {
   printf -- '- Escalation policy: attended prompts are reserved for review-needed, human-needed, or fatal blockers; unattended mode runs until a typed blocker appears\n'
   [ -z "$gates" ] || printf -- '- Review gates: %s\n' "$gates"
   printf -- '- Mechanical rule gates: `%s`; audit `%s`\n' "$(jq -r '.mechanical_rule_gates.status // "not-run"' "$plan")" "$(jq -r '.mechanical_rule_gates.audit_log // "none"' "$plan")"
-  printf -- '- Host/model policy: manifest host, overridden by `--host`; `auto` resolves to `%s`\n' "${HOST_OVERRIDE:-codex}"
+  printf -- "- Host/model policy: manifest host, overridden by \`--host\`; \`auto\` resolves through host profiles%s\n" "$(if [ -n "$HOST_OVERRIDE" ]; then printf " (override \`%s\`)" "$HOST_OVERRIDE"; fi)"
   printf -- '- Issue lifecycle: `issue-created -> implementation-running -> implemented-local -> smoke-passed -> merged -> closed`; scheduler status remains separate for resume compatibility\n'
   printf -- '- Risk notes: %s\n\n' "$risk"
   jq -r '
