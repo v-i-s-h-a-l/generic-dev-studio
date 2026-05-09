@@ -8,6 +8,7 @@
 #   scripts/studio-chain-runner.sh --explain-next <manifest|chain-name|chain-id> [--only <chain>]
 #   scripts/studio-chain-runner.sh --resume <run_id> [--yes]
 #   scripts/studio-chain-runner.sh --regenerate-report <run_id>
+#   scripts/studio-chain-runner.sh --doctor <run_id> [--format markdown|json] [--public-safe]
 #   scripts/studio-chain-runner.sh --list
 #
 # Manifest shape:
@@ -46,7 +47,7 @@ RUN_PATHS_CONFIGURED=0
 . "$SCRIPT_DIR/lib-chain-run-state.sh"
 
 usage() {
-  sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -57,6 +58,9 @@ DRY_RUN=0
 YES=0
 RESUME_ID=""
 REGENERATE_REPORT_ID=""
+DOCTOR_ID=""
+DOCTOR_FORMAT="markdown"
+DOCTOR_PUBLIC_SAFE=0
 DISCOVER_MODE=0
 ALLOW_CLOSED_ISSUES=0
 PARALLEL_CHAINS="auto"
@@ -91,6 +95,11 @@ while [ $# -gt 0 ]; do
     --resume=*) RESUME_ID="${1#--resume=}"; shift ;;
     --regenerate-report) REGENERATE_REPORT_ID="${2:?--regenerate-report requires a run id}"; shift 2 ;;
     --regenerate-report=*) REGENERATE_REPORT_ID="${1#--regenerate-report=}"; shift ;;
+    --doctor) DOCTOR_ID="${2:?--doctor requires a run id}"; shift 2 ;;
+    --doctor=*) DOCTOR_ID="${1#--doctor=}"; shift ;;
+    --format) DOCTOR_FORMAT="${2:?--format requires markdown or json}"; shift 2 ;;
+    --format=*) DOCTOR_FORMAT="${1#--format=}"; shift ;;
+    --public-safe) DOCTOR_PUBLIC_SAFE=1; shift ;;
     --parallel-chains) PARALLEL_CHAINS="${2:?--parallel-chains requires n, auto, or 1}"; shift 2 ;;
     --parallel-chains=*) PARALLEL_CHAINS="${1#--parallel-chains=}"; shift ;;
     --checkpoint) CHECKPOINT_OVERRIDE="${2:?--checkpoint requires auto or off}"; shift 2 ;;
@@ -116,7 +125,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$DISCOVER_MODE" -eq 0 ] && [ "$LIST_RUNS" -eq 0 ] && [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ] && [ -z "$REGENERATE_REPORT_ID" ]; then
+if [ "$DISCOVER_MODE" -eq 0 ] && [ "$LIST_RUNS" -eq 0 ] && [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ] && [ -z "$REGENERATE_REPORT_ID" ] && [ -z "$DOCTOR_ID" ]; then
   DISCOVER_MODE=1
 fi
 
@@ -126,6 +135,7 @@ if [ "$DISCOVER_MODE" -eq 1 ] && {
   [ "$LIST_RUNS" -eq 1 ] ||
   [ -n "$RESUME_ID" ] ||
   [ -n "$REGENERATE_REPORT_ID" ] ||
+  [ -n "$DOCTOR_ID" ] ||
   [ -n "$HOST_OVERRIDE" ] ||
   [ "$DRY_RUN" -eq 1 ] ||
   [ "$YES" -eq 1 ] ||
@@ -154,8 +164,8 @@ if [ "$AUTO_MODE" -eq 1 ] && [ "$EXECUTION_MODE" = "attended" ]; then
   exit 2
 fi
 
-if { [ "$AUTO_MODE" -eq 1 ] || [ "$EXPLAIN_NEXT" -eq 1 ]; } && [ -n "$RESUME_ID" ]; then
-  printf 'studio-chain-runner: supervisor flags cannot be combined with --resume; use --resume <run_id> --yes as the manual override path\n' >&2
+if { [ "$AUTO_MODE" -eq 1 ] || [ "$EXPLAIN_NEXT" -eq 1 ]; } && { [ -n "$RESUME_ID" ] || [ -n "$DOCTOR_ID" ]; }; then
+  printf 'studio-chain-runner: supervisor flags cannot be combined with --resume or --doctor; use --resume <run_id> --yes as the manual override path\n' >&2
   usage
 fi
 
@@ -165,6 +175,7 @@ if [ -n "$REGENERATE_REPORT_ID" ] && {
   [ "$LIST_RUNS" -eq 1 ] ||
   [ "$DISCOVER_MODE" -eq 1 ] ||
   [ -n "$RESUME_ID" ] ||
+  [ -n "$DOCTOR_ID" ] ||
   [ -n "$MANIFEST" ] ||
   [ -n "$HOST_OVERRIDE" ] ||
   [ "$DRY_RUN" -eq 1 ] ||
@@ -172,6 +183,29 @@ if [ -n "$REGENERATE_REPORT_ID" ] && {
   [ "$PARALLEL_CHAINS" != "auto" ]
 }; then
   printf 'studio-chain-runner: --regenerate-report cannot be combined with run, resume, discovery, or supervisor flags\n' >&2
+  usage
+fi
+
+if [ -n "$DOCTOR_ID" ] && {
+  [ "$AUTO_MODE" -eq 1 ] ||
+  [ "$EXPLAIN_NEXT" -eq 1 ] ||
+  [ "$LIST_RUNS" -eq 1 ] ||
+  [ "$DISCOVER_MODE" -eq 1 ] ||
+  [ -n "$RESUME_ID" ] ||
+  [ -n "$REGENERATE_REPORT_ID" ] ||
+  [ -n "$MANIFEST" ] ||
+  [ -n "$HOST_OVERRIDE" ] ||
+  [ "$DRY_RUN" -eq 1 ] ||
+  [ "$YES" -eq 1 ] ||
+  [ "$ALLOW_CLOSED_ISSUES" -eq 1 ] ||
+  [ "$PARALLEL_CHAINS" != "auto" ]
+}; then
+  printf 'studio-chain-runner: --doctor cannot be combined with run, resume, discovery, supervisor, or execution flags\n' >&2
+  usage
+fi
+
+if [ -z "$DOCTOR_ID" ] && { [ "$DOCTOR_FORMAT" != "markdown" ] || [ "$DOCTOR_PUBLIC_SAFE" -eq 1 ]; }; then
+  printf 'studio-chain-runner: --format and --public-safe are only valid with --doctor\n' >&2
   usage
 fi
 
@@ -626,8 +660,14 @@ if [ "$DISCOVER_MODE" -eq 1 ]; then
   exit 0
 fi
 
-if [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ] && [ -z "$REGENERATE_REPORT_ID" ]; then
+if [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ] && [ -z "$REGENERATE_REPORT_ID" ] && [ -z "$DOCTOR_ID" ]; then
   usage
+fi
+
+if [ -n "$DOCTOR_ID" ]; then
+  doctor_cmd=("$SCRIPT_DIR/studio-chain-doctor.sh" --run "$DOCTOR_ID" --format "$DOCTOR_FORMAT")
+  [ "$DOCTOR_PUBLIC_SAFE" -eq 0 ] || doctor_cmd+=(--public-safe)
+  exec "${doctor_cmd[@]}"
 fi
 
 case "$PARALLEL_CHAINS" in

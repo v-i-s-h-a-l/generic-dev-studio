@@ -14,7 +14,7 @@ has_explicit_mode_flag() {
   local arg
   for arg in "$@"; do
     case "$arg" in
-      --auto|--auto=*|--discover|--list|--resume|--resume=*|--explain-next|--explain-next=*|--attended|--unattended|--dry-run|--yes|--no-confirm)
+      --auto|--auto=*|--discover|--list|--resume|--resume=*|--doctor|--doctor=*|--format|--format=*|--public-safe|--explain-next|--explain-next=*|--attended|--unattended|--dry-run|--yes|--no-confirm)
         return 0
         ;;
     esac
@@ -37,6 +37,7 @@ Use --from-plan to route a reviewed planner/task-graph artifact through the
 manager plan-chain workflow, then launch the generated issue-backed chain
 unattended by default. Pass --plan-only to stop after manifest creation, or
 --interactive to run the generated chain in attended mode.
+Use --doctor <run_id> for a read-only chain recovery recommendation.
 All runner flags are passed through to scripts/studio-chain-runner.sh.
 
 Preferred user-facing entrypoint:
