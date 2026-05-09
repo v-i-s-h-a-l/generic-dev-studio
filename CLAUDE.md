@@ -205,6 +205,23 @@ captured in `scripts/lint-gh-wrapper-allowlist.txt` and tracked under #710
 Phase E for migration; the bypass and the annotation are user-controlled and
 must not be used silently by an assistant.
 
+Synthetic-home detection follows the same rule. Production scripts must not
+hand-roll `case "$HOME"`, `[ "$HOME" = ... ]`, or inline `*/.codex-homes/*`
+pattern matches; instead, call `studio_home_is_synthetic` (defined in
+`scripts/lib-paths.sh`) or the `_studio_context_login_home` helper from
+`scripts/lib-studio-context.sh`. `scripts/lint-synthetic-home.sh` blocks new
+ad-hoc synthetic-home special casing in `scripts/*.sh`, `core/**/*.sh`, and
+`hooks/*` outside the resolver layer (`scripts/lib-studio-context.sh`,
+`scripts/lib-paths.sh`). Approved patterns: lines that call
+`studio_home_is_synthetic` or `_studio_context_login_home` on the same (or
+previous) line. `STUDIO_BYPASS_SYNTHETIC_HOME_LINT=1` is the emergency/debug
+lever for `scripts/lint-synthetic-home.sh` and the pre-commit gate; it emits
+a stderr audit line when set. Per-line carve-outs use
+`# lint-synthetic-home:allow next-line — <reason>`. Pre-existing call sites
+are captured in `scripts/lint-synthetic-home-allowlist.txt` and tracked under
+#710 Phase E for migration; the bypass and the annotation are user-controlled
+and must not be used silently by an assistant.
+
 ## Backlog
 
 The canonical actionable backlog is the GitHub Projects v2 board documented in

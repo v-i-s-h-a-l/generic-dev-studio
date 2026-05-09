@@ -1,0 +1,16 @@
+# lint-synthetic-home allowlist (issue #816 baseline).
+#
+# Files listed here pre-date the lint and are permitted to retain inline
+# synthetic-home special casing (`case "$HOME"`, `[ "$HOME" = ... ]`, or
+# direct `.codex-homes` references) in --strict (whole-tree) mode.
+# Pre-commit (--staged) mode still rejects newly-added lines containing
+# such patterns even in these files — the allowlist only suppresses
+# retroactive flagging of pre-existing content.
+#
+# Migration of these files to scripts/lib-paths.sh `studio_home_is_synthetic`
+# / scripts/lib-studio-context.sh `_studio_context_login_home` is tracked
+# under #710 Phase E. Do not add new entries here without an explicit
+# migration plan.
+#
+# Format: one repo-relative path per line. Comments start with `#`.
+scripts/studio-tf-push.sh
