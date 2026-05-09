@@ -176,14 +176,14 @@ Output artifact format: YAML work-chain manifest.
 Verification evidence: fixture test.
 
 Scope:
-- Create the reusable planner artifact.
+- Create the reusable planner artifact in `scripts/manager-plan-chain.sh`.
 - Write implementation to `scripts/manager-plan-chain.sh` after R001.
 
 Out of scope:
 - Worker execution.
 
 Acceptance:
-- The clean-session command is printed.
+- Update clean-session command printing in `scripts/manager-plan-chain.sh` after R002.
 
 Cross-links:
 - Track: `D chain mode`
@@ -293,5 +293,41 @@ grep -q 'Status: `executed`' "$TMPROOT/from-plan.out" || {
 }
 grep -q 'Execution: `completed`' "$TMPROOT/from-plan.out" \
   || fail "from-plan execution status was not reported"
+
+CARDINALITY="$TMPROOT/cardinality.md"
+cat > "$CARDINALITY" <<'EOF'
+Input source: issue brief.
+Output artifact format: YAML work-chain manifest.
+Verification evidence: fixture test.
+
+Scope:
+A five-component arc marker writes `scripts/five.sh`.
+- Write first component to `scripts/one.sh`.
+- Write second component to `scripts/two.sh` after R001.
+
+Out of scope:
+- Worker execution.
+
+Acceptance:
+- Write third component to `scripts/three.sh` after R002.
+EOF
+
+PATH="$BIN:$PATH" \
+HOME="$TMPROOT/home" \
+GH_LOG="$GH_LOG" \
+ISSUE_COUNTER="$ISSUE_COUNTER" \
+STUDIO_MANAGER_PLAN_CHAIN_PROJECT=generic-dev-studio \
+STUDIO_MANAGER_PLAN_CHAIN_RUN_ID=cardinality \
+  "$RUN" --source-file "$CARDINALITY" --repo example/project --chain cardinality-chain --dry-run --no-project-fields >"$TMPROOT/cardinality.out" 2>"$TMPROOT/cardinality.err"
+
+CARDINALITY_PLANNER="$TMPROOT/home/.dev-studio/generic-dev-studio/plan-chains/cardinality/planner-output.json"
+jq -e '
+  .status == "ready_for_review" and
+  any(.payload.self_review_findings[]; contains("WARNING: Cardinality cue expected 5 worker contracts; produced 4."))
+' "$CARDINALITY_PLANNER" >/dev/null || {
+  cat "$TMPROOT/cardinality.out" >&2
+  cat "$TMPROOT/cardinality.err" >&2
+  fail "cardinality mismatch was not surfaced in self-review"
+}
 
 printf 'PASS: manager plan-chain orchestration\n'

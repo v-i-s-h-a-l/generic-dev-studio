@@ -649,14 +649,62 @@ blocked_decisions_json() {
       + [(.validation.missing_dependencies[]? | "Missing dependency for \(.node_id): \(.missing_source_id)")]
       + [(.validation.parallel_write_races[]? | "Parallel write race on \(.resource): \(.node_ids | join(", "))")]
       + [(.validation.packet_conflicts[]? | "Packet conflict \(.source_id): \(.text)")]
+      + [(.validation.empty_allowed_paths[]? | "Empty allowed paths for \(.node_id): \(.text)")]
+      + [(.validation.fragment_labels[]? | "Fragment-shaped task label for \(.node_id): \(.text)")]
       + [(.validation.unresolved_missing_details[]? | "Missing detail \(.source_id): \(.text)")]
       + (if task_count == 0 then ["No executable task nodes were produced."] else [] end)
     ) | unique
   ' "$TASK_GRAPH"
 }
 
+expected_task_count_from_source() {
+  awk '
+    function lower(s) { return tolower(s) }
+    function word_number(s) {
+      s = lower(s)
+      if (s == "one") return 1
+      if (s == "two") return 2
+      if (s == "three") return 3
+      if (s == "four") return 4
+      if (s == "five") return 5
+      if (s == "six") return 6
+      if (s == "seven") return 7
+      if (s == "eight") return 8
+      if (s == "nine") return 9
+      if (s == "ten") return 10
+      return ""
+    }
+    {
+      line = lower($0)
+      if (match(line, /[0-9]+[ -]?(component|sub-task|subtask|sub-issue|subissue|contract|task)s?/)) {
+        print substr(line, RSTART, RLENGTH) + 0
+        exit
+      }
+      if (match(line, /(one|two|three|four|five|six|seven|eight|nine|ten)[ -]?(component|sub-task|subtask|sub-issue|subissue|contract|task)s?/)) {
+        cue = substr(line, RSTART, RLENGTH)
+        sub(/[ -]?(component|sub-task|subtask|sub-issue|subissue|contract|task)s?.*/, "", cue)
+        print word_number(cue)
+        exit
+      }
+    }
+  ' "$SOURCE_MD"
+}
+
 write_planner_artifact() {
   local status="$1" blocked_json="$2"
+  local expected_task_count produced_task_count cardinality_findings
+  expected_task_count=$(expected_task_count_from_source || true)
+  case "$expected_task_count" in
+    ''|*[!0-9]*) expected_task_count=null ;;
+  esac
+  produced_task_count=$(jq '[.nodes[]? | select(.kind == "task")] | length' "$TASK_GRAPH")
+  cardinality_findings=$(jq -cn \
+    --argjson expected "$expected_task_count" \
+    --argjson produced "$produced_task_count" \
+    'if $expected == null then []
+     elif $expected == $produced then ["Cardinality cue expected \($expected) worker contracts; produced \($produced)."]
+     else ["WARNING: Cardinality cue expected \($expected) worker contracts; produced \($produced)."]
+     end')
   jq -n \
     --slurpfile graph "$TASK_GRAPH" \
     --arg created_at "$(now_utc)" \
@@ -668,6 +716,7 @@ write_planner_artifact() {
     --arg review_input "$REVIEW_INPUT" \
     --arg status "$status" \
     --argjson blocked "$blocked_json" \
+    --argjson cardinality_findings "$cardinality_findings" \
     '
     $graph[0] as $g
     | ($g.nodes // [] | map(select(.kind == "task"))) as $tasks
@@ -720,11 +769,11 @@ write_planner_artifact() {
           ),
           refactoring_follow_ups: [],
           self_review_performed: true,
-          self_review_findings: [
+          self_review_findings: ([
             ("Task graph validation status: " + ($g.validation.status // "unknown")),
             ("Worker contract count: " + (($tasks | length) | tostring)),
             "Checked that missing details, packet conflicts, and parallel write races block issue creation."
-          ],
+          ] + $cardinality_findings),
           self_review_fixes: (
             if $status == "needs_context"
             then ["Stopped before review, issue creation, and manifest creation because the source needs more context."]
