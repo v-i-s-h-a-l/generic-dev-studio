@@ -1,0 +1,6 @@
+schema_version: 1
+kind: host-profiles
+profiles:
+  broken:
+    host_id: broken
+    binary_path:
