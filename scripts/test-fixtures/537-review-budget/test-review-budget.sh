@@ -66,9 +66,11 @@ chmod +x "$BIN/codex"
 
 export PATH="$BIN:$PATH"
 export HOME="$TMPROOT/caller-home"
+export TMPDIR="$TMPROOT/session-tmp"
+export STUDIO_CONTEXT_STUDIO_HOME="$TMPROOT/durable-home/.dev-studio"
 export CODEX_HOME="$HOME/.codex"
 export STUDIO_REVIEWER_SMOKE_TIMEOUT_SEC=0
-mkdir -p "$CODEX_HOME"
+mkdir -p "$CODEX_HOME" "$TMPDIR" "$(dirname "$STUDIO_CONTEXT_STUDIO_HOME")"
 
 git -C "$REPO" init -q
 git -C "$REPO" config user.email test@example.com

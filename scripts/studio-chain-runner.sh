@@ -7,6 +7,8 @@
 #   scripts/studio-chain-runner.sh --auto <manifest|chain-name|chain-id> [--only <chain>] [--host <host>] [--dry-run] [--checkpoint auto|off] [--unattended]
 #   scripts/studio-chain-runner.sh --explain-next <manifest|chain-name|chain-id> [--only <chain>]
 #   scripts/studio-chain-runner.sh --resume <run_id> [--yes]
+#   scripts/studio-chain-runner.sh --regenerate-report <run_id>
+#   scripts/studio-chain-runner.sh --doctor <run_id> [--format markdown|json] [--public-safe]
 #   scripts/studio-chain-runner.sh --list
 #
 # Manifest shape:
@@ -45,7 +47,7 @@ RUN_PATHS_CONFIGURED=0
 . "$SCRIPT_DIR/lib-chain-run-state.sh"
 
 usage() {
-  sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -55,6 +57,10 @@ HOST_OVERRIDE=""
 DRY_RUN=0
 YES=0
 RESUME_ID=""
+REGENERATE_REPORT_ID=""
+DOCTOR_ID=""
+DOCTOR_FORMAT="markdown"
+DOCTOR_PUBLIC_SAFE=0
 DISCOVER_MODE=0
 ALLOW_CLOSED_ISSUES=0
 PARALLEL_CHAINS="auto"
@@ -87,6 +93,13 @@ while [ $# -gt 0 ]; do
     --host=*) HOST_OVERRIDE="${1#--host=}"; shift ;;
     --resume) RESUME_ID="${2:?--resume requires a run id}"; shift 2 ;;
     --resume=*) RESUME_ID="${1#--resume=}"; shift ;;
+    --regenerate-report) REGENERATE_REPORT_ID="${2:?--regenerate-report requires a run id}"; shift 2 ;;
+    --regenerate-report=*) REGENERATE_REPORT_ID="${1#--regenerate-report=}"; shift ;;
+    --doctor) DOCTOR_ID="${2:?--doctor requires a run id}"; shift 2 ;;
+    --doctor=*) DOCTOR_ID="${1#--doctor=}"; shift ;;
+    --format) DOCTOR_FORMAT="${2:?--format requires markdown or json}"; shift 2 ;;
+    --format=*) DOCTOR_FORMAT="${1#--format=}"; shift ;;
+    --public-safe) DOCTOR_PUBLIC_SAFE=1; shift ;;
     --parallel-chains) PARALLEL_CHAINS="${2:?--parallel-chains requires n, auto, or 1}"; shift 2 ;;
     --parallel-chains=*) PARALLEL_CHAINS="${1#--parallel-chains=}"; shift ;;
     --checkpoint) CHECKPOINT_OVERRIDE="${2:?--checkpoint requires auto or off}"; shift 2 ;;
@@ -112,7 +125,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$DISCOVER_MODE" -eq 0 ] && [ "$LIST_RUNS" -eq 0 ] && [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ]; then
+if [ "$DISCOVER_MODE" -eq 0 ] && [ "$LIST_RUNS" -eq 0 ] && [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ] && [ -z "$REGENERATE_REPORT_ID" ] && [ -z "$DOCTOR_ID" ]; then
   DISCOVER_MODE=1
 fi
 
@@ -121,6 +134,8 @@ if [ "$DISCOVER_MODE" -eq 1 ] && {
   [ "$EXPLAIN_NEXT" -eq 1 ] ||
   [ "$LIST_RUNS" -eq 1 ] ||
   [ -n "$RESUME_ID" ] ||
+  [ -n "$REGENERATE_REPORT_ID" ] ||
+  [ -n "$DOCTOR_ID" ] ||
   [ -n "$HOST_OVERRIDE" ] ||
   [ "$DRY_RUN" -eq 1 ] ||
   [ "$YES" -eq 1 ] ||
@@ -149,8 +164,48 @@ if [ "$AUTO_MODE" -eq 1 ] && [ "$EXECUTION_MODE" = "attended" ]; then
   exit 2
 fi
 
-if { [ "$AUTO_MODE" -eq 1 ] || [ "$EXPLAIN_NEXT" -eq 1 ]; } && [ -n "$RESUME_ID" ]; then
-  printf 'studio-chain-runner: supervisor flags cannot be combined with --resume; use --resume <run_id> --yes as the manual override path\n' >&2
+if { [ "$AUTO_MODE" -eq 1 ] || [ "$EXPLAIN_NEXT" -eq 1 ]; } && { [ -n "$RESUME_ID" ] || [ -n "$DOCTOR_ID" ]; }; then
+  printf 'studio-chain-runner: supervisor flags cannot be combined with --resume or --doctor; use --resume <run_id> --yes as the manual override path\n' >&2
+  usage
+fi
+
+if [ -n "$REGENERATE_REPORT_ID" ] && {
+  [ "$AUTO_MODE" -eq 1 ] ||
+  [ "$EXPLAIN_NEXT" -eq 1 ] ||
+  [ "$LIST_RUNS" -eq 1 ] ||
+  [ "$DISCOVER_MODE" -eq 1 ] ||
+  [ -n "$RESUME_ID" ] ||
+  [ -n "$DOCTOR_ID" ] ||
+  [ -n "$MANIFEST" ] ||
+  [ -n "$HOST_OVERRIDE" ] ||
+  [ "$DRY_RUN" -eq 1 ] ||
+  [ "$ALLOW_CLOSED_ISSUES" -eq 1 ] ||
+  [ "$PARALLEL_CHAINS" != "auto" ]
+}; then
+  printf 'studio-chain-runner: --regenerate-report cannot be combined with run, resume, discovery, or supervisor flags\n' >&2
+  usage
+fi
+
+if [ -n "$DOCTOR_ID" ] && {
+  [ "$AUTO_MODE" -eq 1 ] ||
+  [ "$EXPLAIN_NEXT" -eq 1 ] ||
+  [ "$LIST_RUNS" -eq 1 ] ||
+  [ "$DISCOVER_MODE" -eq 1 ] ||
+  [ -n "$RESUME_ID" ] ||
+  [ -n "$REGENERATE_REPORT_ID" ] ||
+  [ -n "$MANIFEST" ] ||
+  [ -n "$HOST_OVERRIDE" ] ||
+  [ "$DRY_RUN" -eq 1 ] ||
+  [ "$YES" -eq 1 ] ||
+  [ "$ALLOW_CLOSED_ISSUES" -eq 1 ] ||
+  [ "$PARALLEL_CHAINS" != "auto" ]
+}; then
+  printf 'studio-chain-runner: --doctor cannot be combined with run, resume, discovery, supervisor, or execution flags\n' >&2
+  usage
+fi
+
+if [ -z "$DOCTOR_ID" ] && { [ "$DOCTOR_FORMAT" != "markdown" ] || [ "$DOCTOR_PUBLIC_SAFE" -eq 1 ]; }; then
+  printf 'studio-chain-runner: --format and --public-safe are only valid with --doctor\n' >&2
   usage
 fi
 
@@ -605,8 +660,14 @@ if [ "$DISCOVER_MODE" -eq 1 ]; then
   exit 0
 fi
 
-if [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ]; then
+if [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ] && [ -z "$REGENERATE_REPORT_ID" ] && [ -z "$DOCTOR_ID" ]; then
   usage
+fi
+
+if [ -n "$DOCTOR_ID" ]; then
+  doctor_cmd=("$SCRIPT_DIR/studio-chain-doctor.sh" --run "$DOCTOR_ID" --format "$DOCTOR_FORMAT")
+  [ "$DOCTOR_PUBLIC_SAFE" -eq 0 ] || doctor_cmd+=(--public-safe)
+  exec "${doctor_cmd[@]}"
 fi
 
 case "$PARALLEL_CHAINS" in
@@ -652,6 +713,7 @@ SUMMARY_ROOT=""
 HALT_ROOT=""
 ESCROW_ROOT=""
 PHASE_REVIEW_ROOT=""
+STARTUP_DIAGNOSTICS_ROOT=""
 EVENTS_JSONL="/dev/null"
 RUN_STATE_JSON=""
 RUN_REPORT=""
@@ -664,6 +726,7 @@ configure_run_paths() {
   HALT_ROOT="$CHAIN_RUN_ROOT/halt-records"
   ESCROW_ROOT="$CHAIN_RUN_ROOT/decision-escrows"
   PHASE_REVIEW_ROOT="$ANALYSIS_ROOT/$RUN_ID-phase-reviews"
+  STARTUP_DIAGNOSTICS_ROOT="$CHAIN_RUN_ROOT/startup-diagnostics"
   EVENTS_JSONL="$CHAIN_RUN_ROOT/events.jsonl"
   RUN_STATE_JSON="$CHAIN_RUN_ROOT/state.json"
   RUN_REPORT="$CHAIN_RUN_ROOT/report.md"
@@ -673,7 +736,7 @@ configure_run_paths() {
     RUN_STATE_JSON="$RUN_ROOT/$RUN_ID-state.json"
   fi
   if { [ "$DRY_RUN" -eq 0 ] || [ -n "$RESUME_ID" ]; } && [ "$EXPLAIN_NEXT" -eq 0 ]; then
-    mkdir -p "$SUMMARY_ROOT" "$HALT_ROOT" "$ESCROW_ROOT" "$PHASE_REVIEW_ROOT"
+    mkdir -p "$SUMMARY_ROOT" "$HALT_ROOT" "$ESCROW_ROOT" "$PHASE_REVIEW_ROOT" "$STARTUP_DIAGNOSTICS_ROOT"
   else
     EVENTS_JSONL="/dev/null"
   fi
@@ -805,6 +868,10 @@ chain_efficiency_metrics_json() {
       end;
     def counts_by(key):
       reduce .[] as $item ({}; ($item | key // "unknown" | tostring) as $k | .[$k] = ((.[$k] // 0) + 1));
+    def gap_kind_value($gap):
+      if ($gap | type) == "object" then ($gap.gap_kind // $gap.kind // "unknown") else ($gap | tostring) end;
+    def reason_key:
+      ((.gap_kind // "unknown") + ":" + (.reason_id // .reason // "missing_or_unavailable"));
     def timing_value($k):
       (.execution_telemetry.timing[$k]
        // .execution_telemetry.timings[$k]
@@ -824,6 +891,16 @@ chain_efficiency_metrics_json() {
     [ $rows[].execution_telemetry.cleanup.retention_class? // empty ] as $retention_classes |
     [ $rows[].execution_telemetry.artifacts.public_classes[]? ] as $artifact_classes |
     [ $rows[].telemetry_gaps[]? | select(test("executor|worker_routing|artifact_evidence|cleanup_telemetry")) ] as $execution_gaps |
+    [ $rows[] as $row
+      | ($row.telemetry_gaps // [])[]? as $gap
+      | (gap_kind_value($gap)) as $kind
+      | (($row.telemetry_gap_reasons // []) | map(select((.gap_kind // .kind // "") == $kind)) | .[0] // {}) as $detail
+      | {gap_kind:$kind, reason_id:($detail.reason_id // $detail.reason // "missing_or_unavailable")}
+    ] as $summary_gap_reasons |
+    [ $events[]
+      | select((.event // "") == "chain_telemetry_gap")
+      | {gap_kind:(.data.gap_kind // .gap_kind // "unknown"), reason_id:(.data.reason_id // .data.reason // .reason_id // .reason // "missing_or_unavailable")}
+    ] as $event_gap_reasons |
     ($rows | max_by(duration)?) as $slowest |
     {
       schema_version: 1,
@@ -856,6 +933,7 @@ chain_efficiency_metrics_json() {
       lints: {total: ($lints | length), bad: ([ $lints[] | select(bad_outcome) ] | length), outcomes: ($lints | counts_by(.outcome // .status))},
       builds: {total: ($builds | length), bad: ([ $builds[] | select(bad_outcome) ] | length), outcomes: ($builds | counts_by(.outcome // .status))},
       telemetry_gap_counts: ([ $rows[].telemetry_gaps[]? ] | map({gap: ., one: 1}) | counts_by(.gap)),
+      telemetry_gap_reason_counts: (($summary_gap_reasons + $event_gap_reasons) | map({reason: reason_key}) | counts_by(.reason)),
       execution_telemetry: {
         reports: ($execution_rows | length),
         implementation_executors: ([ $rows[] | (.execution_telemetry.executors.implementation.executor // .execution_telemetry.executors.implementation.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
@@ -892,6 +970,7 @@ chain_efficiency_metrics_json() {
 write_run_state() {
   local status="$1" failure_reason="${2:-}"
   local chains_json="[]" halt_records_json="[]" decision_escrows_json="[]" phase_reviews_json="[]" phase_review_feedback_json="[]" checkpoints_json="[]"
+  local report_generated_at=""
   local efficiency_metrics_json
   efficiency_metrics_json=$(chain_efficiency_metrics_json "$status" "$failure_reason")
   if [ -f "$RUN_STATE_JSON" ]; then
@@ -901,6 +980,7 @@ write_run_state() {
     phase_reviews_json=$(jq -c '.phase_reviews // []' "$RUN_STATE_JSON")
     phase_review_feedback_json=$(jq -c '.phase_review_feedback // []' "$RUN_STATE_JSON")
     checkpoints_json=$(jq -c '.checkpoints // []' "$RUN_STATE_JSON")
+    report_generated_at=$(jq -r '.report_generated_at // empty' "$RUN_STATE_JSON")
   elif [ -f "$PLAN_JSON" ]; then
     chains_json=$(jq -c '.chains // []' "$PLAN_JSON")
   fi
@@ -915,6 +995,7 @@ write_run_state() {
     --arg started_at "$RUN_STARTED_TS" \
     --arg updated_at "$(iso_ts_now)" \
     --arg report "$RUN_REPORT" \
+    --arg report_generated_at "$report_generated_at" \
     --arg plan "$PLAN_JSON" \
     --arg parallel_chains "$PARALLEL_CHAINS" \
     --arg execution_mode "$EXECUTION_MODE" \
@@ -928,7 +1009,22 @@ write_run_state() {
     --argjson phase_review_feedback "$phase_review_feedback_json" \
     --argjson checkpoints "$checkpoints_json" \
     --argjson efficiency_metrics "$efficiency_metrics_json" \
-    '{
+    'def normalize_issue:
+       . as $issue
+       | ($issue.issue_number // $issue.number // $issue.issue // null) as $issue_number
+       | ($issue.issue_title // $issue.title // $issue.provenance.issue.title // null) as $issue_title
+       | . + {
+           issue_number: $issue_number,
+           issue_title: $issue_title,
+           title: ($issue.title // $issue_title),
+           status: ($issue.status // "unknown"),
+           dependencies: ($issue.dependencies // []),
+           commit_after: ($issue.commit_after // $issue.provenance.implementation.commit_after // null)
+         }
+       | if (.number // null) == null and $issue_number != null then .number = $issue_number else . end;
+     def normalize_chain:
+       .issues = ((.issues // []) | map(normalize_issue));
+     {
       schema_version: 1,
       run_id: $run_id,
       manifest: $manifest,
@@ -938,6 +1034,7 @@ write_run_state() {
       started_at: $started_at,
       updated_at: $updated_at,
       report: $report,
+      report_generated_at: (if $report_generated_at == "" then null else $report_generated_at end),
       plan: $plan,
       parallel_chains: $parallel_chains,
       execution_mode: $execution_mode,
@@ -947,7 +1044,7 @@ write_run_state() {
         retryable_halt_classes: ["retryable"],
         prompt_after_exhaustion: false
       },
-      chains: $chains,
+      chains: ($chains | map(normalize_chain)),
       halt_records: $halt_records,
       decision_escrows: $decision_escrows,
       phase_reviews: $phase_reviews,
@@ -1101,6 +1198,10 @@ mark_issue_state() {
          );
      (.chains[].issues[] | select(.issue_run_id == $issue_run_id)) |= (
        .status = $status
+       | .issue_number = (.issue_number // .number // .issue // null)
+       | .issue_title = (.issue_title // .title // .provenance.issue.title // null)
+       | .dependencies = (.dependencies // [])
+       | .commit_after = (.commit_after // .provenance.implementation.commit_after // null)
        | append_lifecycle($lifecycle; $status)
        | .provenance.issue = ((.provenance.issue // {}) + {
            number:(.number // .issue // null),
@@ -1147,6 +1248,9 @@ mark_issue_implemented_local() {
          );
      (.chains[].issues[] | select(.issue_run_id == $issue_run_id)) |= (
        append_lifecycle("implemented-local"; "worker-commit")
+       | .issue_number = (.issue_number // .number // .issue // null)
+       | .issue_title = (.issue_title // .title // .provenance.issue.title // null)
+       | .dependencies = (.dependencies // [])
        | .commit_before = $before
        | .commit_after = $after
        | if $summary == "" then . else .summary = $summary end
@@ -1276,12 +1380,79 @@ sanitize_checkpoint_component() {
   printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_' | sed 's/^_*//; s/_*$//; s/__/_/g'
 }
 
+json_array_from_lines_file() {
+  local file="$1"
+  if [ -f "$file" ]; then
+    jq -R -s -c 'split("\n")[:-1]' "$file"
+  else
+    printf '[]\n'
+  fi
+}
+
 checkpoint_latest_pointer_path_for() {
   local project="$1" role="$2" branch="$3" latest_dir safe_role safe_branch
   latest_dir=$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_checkpoint_latest_dir_for "$project")
   safe_role=$(sanitize_checkpoint_component "$role")
   safe_branch=$(sanitize_checkpoint_component "$branch")
   printf '%s/%s/%s.json\n' "$latest_dir" "$safe_role" "$safe_branch"
+}
+
+reset_checkpoint_drift_context() {
+  CHECKPOINT_DRIFT_REASON=""
+  CHECKPOINT_DRIFT_SUMMARY=""
+  CHECKPOINT_DRIFT_EXPECTED_COMMIT=""
+  CHECKPOINT_DRIFT_OBSERVED_COMMIT=""
+  CHECKPOINT_DRIFT_READ_SET_ARTIFACT=""
+}
+
+set_checkpoint_drift_context() {
+  CHECKPOINT_DRIFT_REASON="$1"
+  CHECKPOINT_DRIFT_SUMMARY="$2"
+  CHECKPOINT_DRIFT_EXPECTED_COMMIT="${3:-}"
+  CHECKPOINT_DRIFT_OBSERVED_COMMIT="${4:-}"
+  CHECKPOINT_DRIFT_READ_SET_ARTIFACT="${5:-}"
+}
+
+write_checkpoint_drift_artifact() {
+  local chain_run_id="$1" checkpoint_id="$2" checkpoint_dir="$3" branch="$4" expected_commit="$5" observed_commit="$6" drift_status="$7" read_set_artifact="${8:-}" reason="${9:-checkpoint_drift_detected}" summary="${10:-checkpoint drift detected}"
+  local file safe_checkpoint read_set_json
+  safe_checkpoint=$(sanitize_checkpoint_component "$checkpoint_id")
+  [ -n "$safe_checkpoint" ] || safe_checkpoint="unknown"
+  file="$CHAIN_RUN_ROOT/checkpoint-drift-$chain_run_id-$safe_checkpoint.json"
+  read_set_json=$(json_array_from_lines_file "$read_set_artifact")
+  jq -n \
+    --arg created_at "$(iso_ts_now)" \
+    --arg run_id "$RUN_ID" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg checkpoint_id "$checkpoint_id" \
+    --arg checkpoint_dir "$checkpoint_dir" \
+    --arg branch "$branch" \
+    --arg expected_commit "$expected_commit" \
+    --arg observed_commit "$observed_commit" \
+    --arg drift_status "$drift_status" \
+    --arg read_set_artifact "$read_set_artifact" \
+    --arg reason "$reason" \
+    --arg summary "$summary" \
+    --argjson read_set "$read_set_json" \
+    '{
+      schema_version: 1,
+      kind: "chain-checkpoint-drift",
+      created_at: $created_at,
+      run_id: $run_id,
+      chain_run_id: $chain_run_id,
+      checkpoint_id: $checkpoint_id,
+      checkpoint_dir: (if $checkpoint_dir == "" then null else $checkpoint_dir end),
+      branch: (if $branch == "" then null else $branch end),
+      expected_commit: (if $expected_commit == "" then null else $expected_commit end),
+      observed_commit: (if $observed_commit == "" then null else $observed_commit end),
+      drift_status: $drift_status,
+      read_set_artifact: (if $read_set_artifact == "" then null else $read_set_artifact end),
+      read_set: $read_set,
+      reason: $reason,
+      summary: $summary,
+      privacy: {classification: "private-runtime"}
+    }' > "$file"
+  printf '%s\n' "$file"
 }
 
 resolve_checkpoint_mode() {
@@ -1379,18 +1550,19 @@ create_auto_checkpoint_after_issue() {
 validate_auto_checkpoint_artifacts() {
   local dir="$1" branch="$2" expected_checkpoint_id="$3" current_head="$4"
   local state saved_branch saved_head ref missing=""
-  [ -d "$dir" ] || { printf 'checkpoint directory missing: %s\n' "$dir" >&2; return 1; }
-  [ -f "$dir/manifest.json" ] || { printf 'checkpoint manifest missing: %s\n' "$dir" >&2; return 1; }
-  [ -f "$dir/context.md" ] || { printf 'checkpoint context missing: %s\n' "$dir" >&2; return 1; }
-  [ -f "$dir/state.json" ] || { printf 'checkpoint state missing: %s\n' "$dir" >&2; return 1; }
+  reset_checkpoint_drift_context
+  [ -d "$dir" ] || { set_checkpoint_drift_context checkpoint_directory_missing "checkpoint directory missing: $dir" "" "$current_head"; printf 'checkpoint directory missing: %s\n' "$dir" >&2; return 1; }
+  [ -f "$dir/manifest.json" ] || { set_checkpoint_drift_context checkpoint_manifest_missing "checkpoint manifest missing: $dir" "" "$current_head"; printf 'checkpoint manifest missing: %s\n' "$dir" >&2; return 1; }
+  [ -f "$dir/context.md" ] || { set_checkpoint_drift_context checkpoint_context_missing "checkpoint context missing: $dir" "" "$current_head"; printf 'checkpoint context missing: %s\n' "$dir" >&2; return 1; }
+  [ -f "$dir/state.json" ] || { set_checkpoint_drift_context checkpoint_state_missing "checkpoint state missing: $dir" "" "$current_head"; printf 'checkpoint state missing: %s\n' "$dir" >&2; return 1; }
   jq -e --arg checkpoint_id "$expected_checkpoint_id" --arg role manager \
     '.checkpoint_id == $checkpoint_id and .producer.role == $role and .default_load.files == ["manifest.json", "context.md"]' \
-    "$dir/manifest.json" >/dev/null || return 1
+    "$dir/manifest.json" >/dev/null || { set_checkpoint_drift_context checkpoint_manifest_incompatible "checkpoint manifest incompatible for $expected_checkpoint_id" "" "$current_head"; return 1; }
   state=$(cat "$dir/state.json")
   saved_branch=$(printf '%s\n' "$state" | jq -r '.working_tree.branch // ""')
   saved_head=$(printf '%s\n' "$state" | jq -r '.working_tree.commit // ""')
-  [ "$saved_branch" = "$branch" ] || { printf 'checkpoint branch drift: %s != %s\n' "$saved_branch" "$branch" >&2; return 1; }
-  [ -z "$saved_head" ] || [ "$saved_head" = "$current_head" ] || { printf 'checkpoint head drift: %s != %s\n' "$saved_head" "$current_head" >&2; return 1; }
+  [ "$saved_branch" = "$branch" ] || { set_checkpoint_drift_context checkpoint_branch_drift "checkpoint branch drift: $saved_branch != $branch" "$saved_head" "$current_head"; printf 'checkpoint branch drift: %s != %s\n' "$saved_branch" "$branch" >&2; return 1; }
+  [ -z "$saved_head" ] || [ "$saved_head" = "$current_head" ] || { set_checkpoint_drift_context checkpoint_head_drift "checkpoint head drift: $saved_head != $current_head" "$saved_head" "$current_head"; printf 'checkpoint head drift: %s != %s\n' "$saved_head" "$current_head" >&2; return 1; }
   while IFS= read -r ref; do
     [ -n "$ref" ] || continue
     case "$ref" in
@@ -1399,23 +1571,25 @@ validate_auto_checkpoint_artifacts() {
   done <<EOF
 $(jq -r '.evidence[]?.ref // empty' "$dir/evidence.json" 2>/dev/null || true)
 EOF
-  [ -z "$missing" ] || { printf 'checkpoint evidence refs missing: %s\n' "$missing" >&2; return 1; }
+  [ -z "$missing" ] || { set_checkpoint_drift_context checkpoint_evidence_missing "checkpoint evidence refs missing: $missing" "$saved_head" "$current_head"; printf 'checkpoint evidence refs missing: %s\n' "$missing" >&2; return 1; }
 }
 
 load_auto_checkpoint_for_chain() {
-  local mode="$1" chain_run_id="$2" branch="$3" chain_worktree="$4"
+  local mode="$1" chain_run_id="$2" branch="$3" chain_worktree="$4" chain_name="${5:-}"
   [ "$mode" = "auto" ] || return 0
   [ -n "$RESUME_ID" ] || return 0
-  local checkpoint_id pointer_dir pointer_id checkpoint_dir current_head load_out drift loaded_files
+  local checkpoint_id pointer_dir pointer_id checkpoint_dir current_head load_out drift loaded_files read_set_artifact saved_head drift_artifact details summary
   checkpoint_id=$(jq -r --arg chain_run_id "$chain_run_id" '(.checkpoints // []) | map(select(.chain_run_id == $chain_run_id)) | last | .checkpoint_id // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
   [ -n "$checkpoint_id" ] || return 0
   pointer_dir=$(checkpoint_latest_pointer_path_for generic-dev-studio manager "$branch")
   pointer_id=$(jq -r '.checkpoint_id // empty' "$pointer_dir" 2>/dev/null || true)
   if [ "$pointer_id" != "$checkpoint_id" ]; then
-    log "checkpoint latest pointer drift for branch $branch; skipping optional auto-checkpoint load"
-    emit_chain_event checkpoint_auto_loaded "" "$RUN_ID" "$chain_run_id" "" skipped 0 \
-      "$(jq -cn --arg checkpoint_id "$checkpoint_id" --arg pointer_id "$pointer_id" --arg branch "$branch" '{checkpoint_id:$checkpoint_id, pointer_id:$pointer_id, branch:$branch, skipped_reason:"latest_pointer_drift"}')"
-    return 0
+    summary="checkpoint latest pointer drift for branch $branch: expected $checkpoint_id, observed ${pointer_id:-missing}"
+    drift_artifact=$(write_checkpoint_drift_artifact "$chain_run_id" "$checkpoint_id" "" "$branch" "" "" confirmed "" latest_pointer_drift "$summary")
+    details=$(jq -cn --arg checkpoint_id "$checkpoint_id" --arg expected "$checkpoint_id" --arg observed "$pointer_id" --arg drift_artifact "$drift_artifact" '{checkpoint_id:$checkpoint_id, expected_checkpoint_id:$expected, observed_checkpoint_id:(if $observed == "" then null else $observed end), drift_artifact:$drift_artifact}')
+    write_halt_record checkpoint_drift_detected "$summary" "$chain_run_id" "" "$chain_name" "" parent-runner "$details" "Inspect the checkpoint drift artifact, realign the latest pointer or run state, then resume the chain."
+    finish_run failed "$summary"
+    exit 1
   fi
   checkpoint_dir=$(jq -r --arg chain_run_id "$chain_run_id" --arg checkpoint_id "$checkpoint_id" '(.checkpoints // []) | map(select(.chain_run_id == $chain_run_id and .checkpoint_id == $checkpoint_id)) | last | .checkpoint_dir // empty' "$RUN_STATE_JSON")
   case "$checkpoint_dir" in
@@ -1424,16 +1598,32 @@ load_auto_checkpoint_for_chain() {
     *) checkpoint_dir="$(HOME="$PARENT_HOME_FOR_GITHUB" resolve_checkpoint_root_for generic-dev-studio)/sessions/$checkpoint_dir" ;;
   esac
   current_head=$(git -C "$chain_worktree" rev-parse HEAD)
-  validate_auto_checkpoint_artifacts "$checkpoint_dir" "$branch" "$checkpoint_id" "$current_head" || abort_run "checkpoint drift verification failed for $checkpoint_id"
+  if ! validate_auto_checkpoint_artifacts "$checkpoint_dir" "$branch" "$checkpoint_id" "$current_head"; then
+    summary="${CHECKPOINT_DRIFT_SUMMARY:-checkpoint drift verification failed for $checkpoint_id}"
+    drift_artifact=$(write_checkpoint_drift_artifact "$chain_run_id" "$checkpoint_id" "$checkpoint_dir" "$branch" "${CHECKPOINT_DRIFT_EXPECTED_COMMIT:-}" "${CHECKPOINT_DRIFT_OBSERVED_COMMIT:-$current_head}" confirmed "${CHECKPOINT_DRIFT_READ_SET_ARTIFACT:-}" "${CHECKPOINT_DRIFT_REASON:-checkpoint_validation_failed}" "$summary")
+    details=$(jq -cn --arg checkpoint_id "$checkpoint_id" --arg expected "${CHECKPOINT_DRIFT_EXPECTED_COMMIT:-}" --arg observed "${CHECKPOINT_DRIFT_OBSERVED_COMMIT:-$current_head}" --arg drift_artifact "$drift_artifact" '{checkpoint_id:$checkpoint_id, expected_commit:(if $expected == "" then null else $expected end), observed_commit:(if $observed == "" then null else $observed end), drift_artifact:$drift_artifact}')
+    write_halt_record checkpoint_drift_detected "$summary" "$chain_run_id" "" "$chain_name" "" parent-runner "$details" "Inspect the checkpoint drift artifact, realign the chain worktree or checkpoint, then resume the chain."
+    finish_run failed "$summary"
+    exit 1
+  fi
   load_out="$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.out"
+  read_set_artifact="$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.reads"
   (
     cd "$chain_worktree" || exit 1
-    HOME="$PARENT_HOME_FOR_GITHUB" STUDIO_CHECKPOINT_TRACE_READS="$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.reads" \
+    HOME="$PARENT_HOME_FOR_GITHUB" STUDIO_CHECKPOINT_TRACE_READS="$read_set_artifact" \
       "$SCRIPT_DIR/studio-checkpoint.sh" resume --project generic-dev-studio --role manager --branch "$branch" --latest
   ) > "$load_out"
   drift=$(sed -n 's/^Drift: //p' "$load_out" | tail -1)
-  [ "$drift" != "confirmed" ] || abort_run "checkpoint resume drift confirmed for $checkpoint_id"
-  loaded_files=$(tr '\n' ' ' < "$CHAIN_RUN_ROOT/checkpoint-load-$chain_run_id.reads" 2>/dev/null | awk '{printf "[\""; for (i=1;i<=NF;i++){if(i>1)printf "\",\""; printf "%s",$i} printf "\"]"}')
+  if [ "$drift" = "confirmed" ]; then
+    saved_head=$(jq -r '.working_tree.commit // ""' "$checkpoint_dir/state.json" 2>/dev/null || true)
+    summary="checkpoint resume drift confirmed for $checkpoint_id"
+    drift_artifact=$(write_checkpoint_drift_artifact "$chain_run_id" "$checkpoint_id" "$checkpoint_dir" "$branch" "$saved_head" "$current_head" "$drift" "$read_set_artifact" resume_drift_confirmed "$summary")
+    details=$(jq -cn --arg checkpoint_id "$checkpoint_id" --arg expected "$saved_head" --arg observed "$current_head" --arg read_set_artifact "$read_set_artifact" --arg drift_artifact "$drift_artifact" '{checkpoint_id:$checkpoint_id, expected_commit:(if $expected == "" then null else $expected end), observed_commit:(if $observed == "" then null else $observed end), read_set_artifact:$read_set_artifact, drift_artifact:$drift_artifact}')
+    write_halt_record checkpoint_drift_detected "$summary" "$chain_run_id" "" "$chain_name" "" parent-runner "$details" "Inspect the checkpoint drift artifact and read-set, realign the chain worktree or checkpoint, then resume the chain."
+    finish_run failed "$summary"
+    exit 1
+  fi
+  loaded_files=$(json_array_from_lines_file "$read_set_artifact")
   [ -n "$loaded_files" ] || loaded_files='[]'
   emit_chain_event checkpoint_auto_loaded "" "$RUN_ID" "$chain_run_id" "" completed 0 \
     "$(jq -cn --arg checkpoint_id "$checkpoint_id" --arg checkpoint_dir "$checkpoint_dir" --arg branch "$branch" --arg drift "${drift:-unknown}" --arg load_output "$load_out" --argjson loaded_files "$loaded_files" '{checkpoint_id:$checkpoint_id, checkpoint_dir:$checkpoint_dir, role:"manager", branch:$branch, drift_status:$drift, loaded_files:$loaded_files, load_output:$load_output}')"
@@ -1443,7 +1633,7 @@ halt_class_for_reason() {
   case "$1" in
     github_auth_unavailable|github_home_mismatch|github_rate_limited|network_partition|child_timeout|disk_runtime_pressure)
       printf 'retryable\n' ;;
-    parent_host_unknown|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_crash|issue_body_changed|partial_github_operation|test_build_infra_unavailable|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|manifest_schema_mismatch|implementation_scope_blocked|chain_state_projection_invalid|chain_state_projection_repair_failed)
+    parent_host_unknown|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_crash|issue_body_changed|partial_github_operation|test_build_infra_unavailable|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|manifest_schema_mismatch|implementation_scope_blocked|chain_state_projection_invalid|chain_state_projection_repair_failed|checkpoint_drift_detected)
       printf 'recoverable\n' ;;
     reviewer_blocked|reviewer_ambiguous)
       printf 'review-needed\n' ;;
@@ -1458,16 +1648,18 @@ halt_class_for_reason() {
 
 halt_reason_for_text() {
   case "$1" in
+    github_auth_unavailable|github_home_mismatch|parent_host_unknown|reviewer_host_ineligible|reviewer_blocked|reviewer_ambiguous|required_review_failed|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_timeout|child_crash|issue_body_changed|partial_github_operation|github_rate_limited|network_partition|test_build_infra_unavailable|disk_runtime_pressure|model_tool_permission_prompt|context_output_overflow|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|secret_detected|destructive_change_required|permission_expansion_required|unsafe_external_state|implementation_scope_blocked|checkpoint_drift_detected) printf '%s\n' "$1" ;;
     *GitHub*auth*|*github*auth*) printf 'github_auth_unavailable\n' ;;
     *reviewer_blocked*|*reviewer\ blocked*) printf 'reviewer_blocked\n' ;;
     *reviewer_ambiguous*|*reviewer\ ambiguous*|*ambiguous\ review*) printf 'reviewer_ambiguous\n' ;;
-    *reviewer\ host*|*reviewer\ host\ unavailable*|*reviewer\ host\ ineligible*) printf 'reviewer_host_ineligible\n' ;;
-    *review\ failed*|*PR\ review\ failed*|*required\ review*) printf 'required_review_failed\n' ;;
+    *reviewer\ host*) printf 'reviewer_host_ineligible\n' ;;
+    *review\ failed*|*required\ review*) printf 'required_review_failed\n' ;;
     *branch\ already\ exists*|*worktree*conflict*) printf 'branch_worktree_conflict\n' ;;
     *rebase*|*base\ branch*) printf 'base_branch_advanced\n' ;;
     *worker_summary_missing*|*summary*missing*|*produced\ no\ runner\ result*) printf 'missing_child_summary\n' ;;
-    *worker\ exited*|*unexpected_exit*) printf 'child_crash\n' ;;
+    *worker\ exited*) printf 'child_crash\n' ;;
     *manifest/schema\ mismatch*|*planning\ manifest*|*chain-manifest*) printf 'manifest_schema_mismatch\n' ;;
+    *checkpoint*drift*) printf 'checkpoint_drift_detected\n' ;;
     *gh\ issue\ close*|*PR\ telemetry\ comment*|*GitHub\ operation*) printf 'partial_github_operation\n' ;;
     *host\ preflight*|*test*infra*|*build*infra*) printf 'test_build_infra_unavailable\n' ;;
     *permission*) printf 'model_tool_permission_prompt\n' ;;
@@ -1478,12 +1670,485 @@ halt_reason_for_text() {
   esac
 }
 
+is_halt_reason_id() {
+  case "$1" in
+    github_auth_unavailable|github_home_mismatch|parent_host_unknown|reviewer_host_ineligible|reviewer_blocked|reviewer_ambiguous|required_review_failed|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_timeout|child_crash|issue_body_changed|partial_github_operation|github_rate_limited|network_partition|test_build_infra_unavailable|disk_runtime_pressure|model_tool_permission_prompt|context_output_overflow|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|secret_detected|destructive_change_required|permission_expansion_required|unsafe_external_state|implementation_scope_blocked|checkpoint_drift_detected)
+      return 0 ;;
+    *)
+      return 1 ;;
+  esac
+}
+
+retry_halt_positive_int_or_default() {
+  local value="$1" fallback="$2"
+  case "$value" in
+    ''|*[!0-9]*) printf '%s\n' "$fallback" ;;
+    *) printf '%s\n' "$value" ;;
+  esac
+}
+
+retry_halt_cooldown_sec() {
+  retry_halt_positive_int_or_default "${STUDIO_CHAIN_RETRY_HALT_COOLDOWN_SEC:-30}" 30
+}
+
+retry_halt_inspection_count() {
+  retry_halt_positive_int_or_default "${STUDIO_CHAIN_RETRY_HALT_INSPECTION_COUNT:-3}" 3
+}
+
+retry_halt_cooldown_until() {
+  local seen_at="$1" cooldown_s="$2" epoch target
+  case "$cooldown_s" in ''|*[!0-9]*) cooldown_s=30 ;; esac
+  if [ "$cooldown_s" -le 0 ]; then
+    printf '%s\n' "$seen_at"
+    return 0
+  fi
+  if command -v ts_to_epoch >/dev/null 2>&1; then
+    epoch=$(ts_to_epoch "$seen_at" 2>/dev/null || true)
+  else
+    epoch=""
+  fi
+  if [ -z "$epoch" ]; then
+    epoch=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$seen_at" +%s 2>/dev/null || date -u -d "$seen_at" +%s 2>/dev/null || true)
+  fi
+  case "$epoch" in
+    ''|*[!0-9]*) printf '%s\n' "$seen_at" ;;
+    *)
+      target=$((epoch + cooldown_s))
+      date -u -r "$target" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$target" '+%Y-%m-%dT%H:%M:%SZ'
+      ;;
+  esac
+}
+
+retryable_halt_metadata_json() {
+  local reason_id="$1" summary="$2" chain_run_id="${3:-}" issue_run_id="${4:-}" details_json="${5:-null}" created_at="$6" next_command="${7:-}"
+  local cooldown_s inspection_count cooldown_until
+  cooldown_s=$(retry_halt_cooldown_sec)
+  inspection_count=$(retry_halt_inspection_count)
+  cooldown_until=$(retry_halt_cooldown_until "$created_at" "$cooldown_s")
+  jq -cn \
+    --arg run_id "$RUN_ID" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg reason_id "$reason_id" \
+    --arg summary "$summary" \
+    --arg created_at "$created_at" \
+    --arg next_command "$next_command" \
+    --arg cooldown_until "$cooldown_until" \
+    --argjson cooldown_s "$cooldown_s" \
+    --argjson inspection_count "$inspection_count" \
+    --argjson details "$details_json" \
+    'def str($v):
+       if $v == null then ""
+       elif ($v | type) == "string" then $v
+       else ($v | tostring)
+       end;
+     def trim: gsub("^[[:space:]]+|[[:space:]]+$"; "");
+     def normalize_origin:
+       str(.) | ascii_downcase | trim
+       | gsub("^git@github[.]com:"; "github.com/")
+       | gsub("^ssh://git@github[.]com/"; "github.com/")
+       | gsub("^https?://"; "")
+       | gsub("^github[.]com:"; "github.com/")
+       | gsub("[.]git$"; "")
+       | gsub("/+$"; "")
+       | if test("^/") then "local-path" else . end
+       | if test("^[a-z0-9_.-]+/[a-z0-9_.-]+$") then "github.com/" + . else . end
+       | if . == "" then "unknown" else . end;
+     def command_origin($cmd):
+       (str($cmd)) as $c
+       | if ($c | test("github[.]com[:/]"; "i")) then
+           (($c | capture("(git@github[.]com:|https?://github[.]com/|ssh://git@github[.]com/)(?<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)([.]git)?"; "i")?) // null) as $match
+           | if $match == null then "unknown" else "github.com/" + ($match.repo | ascii_downcase | gsub("[.]git$"; "")) end
+         elif ($c | test("(^|[[:space:]])origin($|[[:space:]])")) then "origin"
+         elif ($c | test("(^|[[:space:]])upstream($|[[:space:]])")) then "upstream"
+         else "unknown"
+         end;
+     def normalize_error:
+       str(.) | ascii_downcase
+       | gsub("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"; "<uuid>")
+       | gsub("20[0-9]{2}-[0-9]{2}-[0-9]{2}t[0-9:.+-]+z?"; "<timestamp>")
+       | gsub("[0-9a-f]{7,40}"; "<sha>")
+       | gsub("(/private)?/var/folders/[^[:space:]]+"; "<tmp-path>")
+       | gsub("/tmp/[^[:space:]]+"; "<tmp-path>")
+       | gsub("[\"`]+"; "")
+       | gsub("[[:space:]]+"; " ")
+       | trim
+       | if . == "" then "unknown" else . end;
+     ($details | if type == "object" then . else {} end) as $d
+     | ($d.last_command // $d.command // $d.argv // $next_command) as $command_raw
+     | (if ($command_raw | type) == "array" then ($command_raw | map(tostring) | join(" ")) else str($command_raw) end) as $last_command
+     | ($d.origin // $d.command_origin // $d.remote // $d.host // command_origin($last_command)) as $origin_raw
+     | ($d.error // $d.stderr // $d.message // $d.exit_status // $summary) as $error_raw
+     | ($origin_raw | normalize_origin) as $origin
+     | ($error_raw | normalize_error) as $error
+     | (if $issue_run_id != "" then {scope_kind:"issue_run", scope_id:$issue_run_id}
+        elif $chain_run_id != "" then {scope_kind:"chain_run", scope_id:$chain_run_id}
+        else {scope_kind:"run", scope_id:$run_id}
+        end) as $scope
+     | {
+        retry_count: 1,
+        first_seen: $created_at,
+        last_seen: $created_at,
+        last_observed_command: $last_command,
+        last_observed_error: str($error_raw),
+        normalized_origin: $origin,
+        normalized_error: $error,
+        cooldown_seconds: $cooldown_s,
+        cooldown_until: $cooldown_until,
+        human_inspection_retry_count: $inspection_count,
+        coalesce_key: {
+          run_id: $run_id,
+          scope_kind: $scope.scope_kind,
+          scope_id: $scope.scope_id,
+          reason_id: $reason_id,
+          normalized_origin: $origin,
+          normalized_error: $error
+        },
+        observation: {
+          seen_at: $created_at,
+          command: $last_command,
+          error: str($error_raw),
+          normalized_origin: $origin,
+          normalized_error: $error
+        }
+      }'
+}
+
+active_retryable_halt_record_path() {
+  local coalesce_key_json="$1"
+  [ -n "${RUN_STATE_JSON:-}" ] || return 1
+  [ -f "$RUN_STATE_JSON" ] || return 1
+  jq -r --argjson coalesce_key "$coalesce_key_json" '
+    [(.halt_records // [])[]
+      | select((.status // "") == "paused")
+      | select((.halt_class // "") == "retryable")
+      | select((.coalesce_key // null) == $coalesce_key)
+      | select((.path // "") != "")
+    ] | last | .path // empty
+  ' "$RUN_STATE_JSON" 2>/dev/null | head -n 1
+}
+
+retry_halt_resume_state_filter() {
+  cat <<'JQ'
+    def ts_epoch: try ((. // "") | fromdateiso8601) catch 0;
+    def retry_resume_state($now):
+      if ((.halt_class // "") != "retryable") then "needs_human_inspection"
+      elif (((.retry_count // 1) | tonumber? // 1) >= ((.retry_policy.human_inspection_retry_count // 3) | tonumber? // 3)) then "needs_human_inspection"
+      elif (((.retry_policy.cooldown_until // .last_seen // .created_at // "") | ts_epoch) > $now) then "cooling_down"
+      else "retrying"
+      end;
+JQ
+}
+
+selected_active_halt_resume_guidance() {
+  local halt_json now_epoch_value jq_program
+  halt_json=$(selected_active_halt_json 2>/dev/null || true)
+  [ -n "$halt_json" ] || return 1
+  now_epoch_value=$(now_epoch)
+  jq_program="$(retry_halt_resume_state_filter)"'
+    retry_resume_state($now_epoch) as $state
+    | "- Retry halt state: `\($state)`; reason `\(.reason_id // "unknown")`; retry_count `\(.retry_count // 1)`; cooldown_until `\(.retry_policy.cooldown_until // "not_applicable")`; last command `\(.last_observed_command // "missing")`; last error `\(.last_observed_error // .summary // "missing")`"
+  '
+  printf '%s\n' "$halt_json" | jq -r --argjson now_epoch "$now_epoch_value" "$jq_program"
+}
+
+selected_active_halt_json() {
+  [ -n "${RUN_STATE_JSON:-}" ] || return 1
+  [ -f "$RUN_STATE_JSON" ] || return 1
+  jq -e -c '
+    def active:
+      ((.status // "") == "paused" or (.status // "") == "terminated");
+    def halt_priority:
+      if (.halt_class // "") == "fatal" then 50
+      elif (.halt_class // "") == "human-needed" then 40
+      elif (.halt_class // "") == "review-needed" then 30
+      elif (.halt_class // "") == "recoverable" then 20
+      elif (.halt_class // "") == "retryable" then 10
+      else 0
+      end;
+    [(.halt_records // [])
+      | to_entries[]
+      | .value + {
+          __index: .key,
+          __priority: (.value | halt_priority),
+          __created_at: (.value.created_at // "")
+        }
+      | select(active)
+    ]
+    | sort_by(.__priority, .__created_at, .__index)
+    | last
+    | if . == null then empty else del(.__index, .__priority, .__created_at) end
+  ' "$RUN_STATE_JSON" 2>/dev/null
+}
+
+selected_active_halt_reason_id() {
+  selected_active_halt_json 2>/dev/null | jq -r '.reason_id // empty' 2>/dev/null || true
+}
+
+active_halt_reason_exists() {
+  local reason_id="$1"
+  [ -n "$reason_id" ] || return 1
+  [ -n "${RUN_STATE_JSON:-}" ] || return 1
+  [ -f "$RUN_STATE_JSON" ] || return 1
+  jq -e --arg reason_id "$reason_id" '
+    [(.halt_records // [])[]
+      | select((.status // "") == "paused" or (.status // "") == "terminated")
+      | select((.reason_id // "") == $reason_id)
+    ] | length > 0
+  ' "$RUN_STATE_JSON" >/dev/null 2>&1
+}
+
+resolved_run_failure_reason() {
+  local status="$1" reason="${2:-}" selected_reason
+  if [ "$status" != "completed" ]; then
+    selected_reason=$(selected_active_halt_reason_id)
+    if [ -n "$selected_reason" ]; then
+      printf '%s\n' "$selected_reason"
+      return 0
+    fi
+  fi
+  if is_halt_reason_id "$reason"; then
+    printf '%s\n' "$reason"
+  else
+    printf '%s\n' "$reason"
+  fi
+}
+
+halt_issue_context_json() {
+  local chain_run_id="${1:-}" issue_run_id="${2:-}" chain="${3:-}" issue_number="${4:-}"
+  if [ -f "${RUN_STATE_JSON:-}" ]; then
+    jq -c \
+      --arg chain_run_id "$chain_run_id" \
+      --arg issue_run_id "$issue_run_id" \
+      --arg chain "$chain" \
+      --arg issue_number "$issue_number" \
+      'def maybe_number:
+         if . == null or . == "" then null else (tonumber? // .) end;
+       def context($chain_row; $issue):
+         {
+           chain: ($chain_row.name // $chain_row.chain // $chain // null),
+           chain_run_id: ($chain_row.chain_run_id // $chain_run_id // null),
+           issue_run_id: ($issue.issue_run_id // $issue_run_id // null),
+           issue_number: (($issue.issue_number // $issue.number // $issue.issue // $issue_number) | maybe_number),
+           title: ($issue.issue_title // $issue.title // $issue.provenance.issue.title // null),
+           status: ($issue.status // null),
+           lifecycle_state: ($issue.lifecycle_state // null),
+           dependencies: ($issue.dependencies // []),
+           commit_after: ($issue.commit_after // $issue.provenance.implementation.commit_after // null),
+           summary: ($issue.summary // null),
+           issue_url: ($issue.url // $issue.issue_url // $issue.provenance.issue.url // null),
+           issue_branch: ($issue.issue_branch // null),
+           issue_worktree: ($issue.issue_worktree // null)
+         };
+       ([
+          .chains[]? as $chain_row
+          | $chain_row.issues[]?
+          | select(
+              ($issue_run_id != "" and ((.issue_run_id // "") | tostring) == $issue_run_id)
+              or ($issue_number != "" and (((.issue_number // .number // .issue // "") | tostring) == $issue_number))
+            )
+          | context($chain_row; .)
+        ] | .[0])
+       // {
+          chain: (if $chain == "" then null else $chain end),
+          chain_run_id: (if $chain_run_id == "" then null else $chain_run_id end),
+          issue_run_id: (if $issue_run_id == "" then null else $issue_run_id end),
+          issue_number: ($issue_number | maybe_number),
+          title: null,
+          status: null,
+          dependencies: [],
+          commit_after: null
+        }' "$RUN_STATE_JSON" 2>/dev/null && return 0
+  fi
+  jq -cn \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg chain "$chain" \
+    --arg issue_number "$issue_number" \
+    'def maybe_number:
+       if . == null or . == "" then null else (tonumber? // .) end;
+     {
+       chain: (if $chain == "" then null else $chain end),
+       chain_run_id: (if $chain_run_id == "" then null else $chain_run_id end),
+       issue_run_id: (if $issue_run_id == "" then null else $issue_run_id end),
+       issue_number: ($issue_number | maybe_number),
+       title: null,
+       status: null,
+       dependencies: [],
+       commit_after: null
+     }'
+}
+
+halt_next_safe_action() {
+  local reason_id="$1" halt_class="$2"
+  case "$reason_id" in
+    checkpoint_drift_detected)
+      printf 'Inspect the checkpoint drift artifact and read-set, realign the chain worktree or checkpoint, then resume the chain.\n'
+      ;;
+    implementation_scope_blocked)
+      printf 'Inspect the failed prerequisite issue summary, halt record, and preserved worktree before resuming dependent work.\n'
+      ;;
+    missing_child_summary|child_crash|telemetry_artifact_malformed|telemetry_artifact_missing)
+      printf 'Inspect the worker summary or preserved issue worktree, correct the child failure, then resume the chain.\n'
+      ;;
+    reviewer_blocked|reviewer_ambiguous|reviewer_host_ineligible)
+      printf 'Inspect the phase or PR review artifact, resolve the reviewer blocker, then resume the chain.\n'
+      ;;
+    *)
+      case "$halt_class" in
+        retryable)
+          printf 'Correct the transient cause or wait for recovery, then run next_command to resume.\n'
+          ;;
+        human-needed)
+          printf 'Resolve the human-required prompt or environment decision, then run next_command to resume.\n'
+          ;;
+        fatal)
+          printf 'Do not resume automatically; inspect the halt and prepare a fresh human-authored plan.\n'
+          ;;
+        *)
+          printf 'Inspect the halt record and affected artifacts, correct the typed cause, then run next_command to resume.\n'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+coalesce_retryable_halt_record() {
+  local file="$1" created_at="$2" reason_id="$3" summary="$4" chain_run_id="${5:-}" issue_run_id="${6:-}" chain="${7:-}" issue_number="${8:-}" writer="${9:-parent-runner}" details_json="${10:-null}" next_command="${11:-}" next_safe_action="${12:-}" issue_context_json="${13:-null}" retry_metadata_json="${14:-null}"
+  local tmp retry_observation_limit retry_count coalesce_key_json
+  retry_observation_limit=5
+  tmp="$file.tmp.$$"
+
+  if ! jq \
+    --arg created_at "$created_at" \
+    --arg reason_id "$reason_id" \
+    --arg summary "$summary" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg chain "$chain" \
+    --arg issue_number "$issue_number" \
+    --arg writer "$writer" \
+    --arg next_command "$next_command" \
+    --arg next_safe_action "$next_safe_action" \
+    --argjson details "$details_json" \
+    --argjson issue_context "$issue_context_json" \
+    --argjson retry_metadata "$retry_metadata_json" \
+    --argjson retry_limit "$RETRY_LIMIT" \
+    --argjson retry_backoff_sec "$RETRY_BACKOFF_SEC" \
+    --argjson retry_observation_limit "$retry_observation_limit" \
+    'def cap_observations:
+       if length <= $retry_observation_limit then .
+       else [.[0]] + (.[1:] | .[-($retry_observation_limit - 1):])
+       end;
+     ($retry_metadata.observation) as $observation
+     | .summary = $summary
+     | .chain_run_id = (if $chain_run_id == "" then null else $chain_run_id end)
+     | .issue_run_id = (if $issue_run_id == "" then null else $issue_run_id end)
+     | .chain = (if $chain == "" then null else $chain end)
+     | .issue_number = (if $issue_number == "" then null else ($issue_number | tonumber) end)
+     | .writer = $writer
+     | .details = $details
+     | .issue_context = $issue_context
+     | .resumable_state.issue_context = $issue_context
+     | .resumable_state.next_safe_action = $next_safe_action
+     | .next_command = (if $next_command == "" then null else $next_command end)
+     | .next_safe_action = $next_safe_action
+     | .retry_count = (((.retry_count // 1) | tonumber? // 1) + 1)
+     | .first_seen = (.first_seen // .created_at // $retry_metadata.first_seen)
+     | .last_seen = $retry_metadata.last_seen
+     | .last_observed_command = $retry_metadata.last_observed_command
+     | .last_observed_error = $retry_metadata.last_observed_error
+     | .normalized_origin = $retry_metadata.normalized_origin
+     | .normalized_error = $retry_metadata.normalized_error
+     | .coalesce_key = $retry_metadata.coalesce_key
+     | .coalesced_observations = (((.coalesced_observations // [{
+         seen_at:(.first_seen // .created_at // $retry_metadata.first_seen),
+         command:(.last_observed_command // ""),
+         error:(.last_observed_error // ""),
+         normalized_origin:(.normalized_origin // $retry_metadata.normalized_origin),
+         normalized_error:(.normalized_error // $retry_metadata.normalized_error)
+       }]) + [$observation]) | cap_observations)
+     | .retry_policy = ((.retry_policy // {}) + {
+         auto_retry_limit:$retry_limit,
+         backoff_seconds:$retry_backoff_sec,
+         exhausted:true,
+         retryable:true,
+         cooldown_seconds:$retry_metadata.cooldown_seconds,
+         cooldown_until:$retry_metadata.cooldown_until,
+         human_inspection_retry_count:$retry_metadata.human_inspection_retry_count
+       })' "$file" > "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ! "$SCRIPT_DIR/validate-contract.sh" chain-halt-record "$tmp" >/dev/null; then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv "$tmp" "$file"
+
+  coalesce_key_json=$(printf '%s\n' "$retry_metadata_json" | jq -c '.coalesce_key')
+  if [ -f "$RUN_STATE_JSON" ]; then
+    update_state_jq \
+      --arg file "$file" \
+      --arg created_at "$created_at" \
+      --arg summary "$summary" \
+      --arg next_command "$next_command" \
+      --arg next_safe_action "$next_safe_action" \
+      --argjson details "$details_json" \
+      --argjson issue_context "$issue_context_json" \
+      --argjson retry_metadata "$retry_metadata_json" \
+      --argjson coalesce_key "$coalesce_key_json" \
+      --argjson retry_observation_limit "$retry_observation_limit" \
+      'def cap_observations:
+         if length <= $retry_observation_limit then .
+         else [.[0]] + (.[1:] | .[-($retry_observation_limit - 1):])
+         end;
+       (.halt_records //= [])
+       | .halt_records = (.halt_records | map(
+           if ((.status // "") == "paused" and (.halt_class // "") == "retryable" and (.coalesce_key // null) == $coalesce_key) then
+             ($retry_metadata.observation) as $observation
+             | .summary = $summary
+             | .details = $details
+             | .next_command = (if $next_command == "" then null else $next_command end)
+             | .next_safe_action = $next_safe_action
+             | .issue_context = $issue_context
+             | .retry_count = (((.retry_count // 1) | tonumber? // 1) + 1)
+             | .first_seen = (.first_seen // .created_at // $retry_metadata.first_seen)
+             | .last_seen = $retry_metadata.last_seen
+             | .last_observed_command = $retry_metadata.last_observed_command
+             | .last_observed_error = $retry_metadata.last_observed_error
+             | .normalized_origin = $retry_metadata.normalized_origin
+             | .normalized_error = $retry_metadata.normalized_error
+             | .coalesce_key = $retry_metadata.coalesce_key
+             | .coalesced_observations = (((.coalesced_observations // [{
+                 seen_at:(.first_seen // .created_at // $retry_metadata.first_seen),
+                 command:(.last_observed_command // ""),
+                 error:(.last_observed_error // ""),
+                 normalized_origin:(.normalized_origin // $retry_metadata.normalized_origin),
+                 normalized_error:(.normalized_error // $retry_metadata.normalized_error)
+               }]) + [$observation]) | cap_observations)
+             | .retry_policy = ((.retry_policy // {}) + {
+                 cooldown_seconds:$retry_metadata.cooldown_seconds,
+                 cooldown_until:$retry_metadata.cooldown_until,
+                 human_inspection_retry_count:$retry_metadata.human_inspection_retry_count
+               })
+           else . end
+         ))'
+  fi
+
+  retry_count=$(jq -r '.retry_count // 1' "$file" 2>/dev/null || printf '1')
+  emit_chain_event chain_halt_recorded "$issue_number" "$RUN_ID" "$chain_run_id" "$issue_run_id" paused 0 \
+    "$(jq -cn --arg reason_id "$reason_id" --arg halt_record "$file" --arg next_safe_action "$next_safe_action" --argjson issue_context "$issue_context_json" --argjson details "$details_json" --argjson retry_metadata "$retry_metadata_json" --argjson retry_count "$retry_count" '{reason_id:$reason_id, halt_class:"retryable", halt_record:$halt_record, next_safe_action:$next_safe_action, issue_context:$issue_context, details:$details, coalesced:true, retry_count:$retry_count, coalesce_key:$retry_metadata.coalesce_key, cooldown_until:$retry_metadata.cooldown_until}')"
+  printf '%s\n' "$file"
+}
+
 write_halt_record() {
-  local reason_id="$1" summary="$2" chain_run_id="${3:-}" issue_run_id="${4:-}" chain="${5:-}" issue_number="${6:-}" writer="${7:-parent-runner}"
+  local reason_id="$1" summary="$2" chain_run_id="${3:-}" issue_run_id="${4:-}" chain="${5:-}" issue_number="${6:-}" writer="${7:-parent-runner}" details_json="${8:-null}" next_safe_action_override="${9:-}"
   [ "$DRY_RUN" -eq 0 ] || return 0
   mkdir -p "$HALT_ROOT"
 
-  local halt_class hard_stop status next_command file rel_file created_at
+  local halt_class hard_stop status next_command file rel_file created_at issue_context_json next_safe_action
+  local retry_metadata_json coalesce_key_json existing_retryable_file retry_observation_limit
   halt_class=$(halt_class_for_reason "$reason_id")
   hard_stop=false
   status=paused
@@ -1496,6 +2161,22 @@ write_halt_record() {
   created_at=$(iso_ts_now)
   file="$HALT_ROOT/$created_at-$reason_id.json"
   rel_file="$file"
+  if [ -z "$details_json" ] || ! printf '%s\n' "$details_json" | jq -e . >/dev/null 2>&1; then
+    details_json="null"
+  fi
+  issue_context_json=$(halt_issue_context_json "$chain_run_id" "$issue_run_id" "$chain" "$issue_number")
+  next_safe_action="$next_safe_action_override"
+  [ -n "$next_safe_action" ] || next_safe_action=$(halt_next_safe_action "$reason_id" "$halt_class")
+  retry_metadata_json="null"
+  if [ "$halt_class" = "retryable" ]; then
+    retry_metadata_json=$(retryable_halt_metadata_json "$reason_id" "$summary" "$chain_run_id" "$issue_run_id" "$details_json" "$created_at" "$next_command")
+    coalesce_key_json=$(printf '%s\n' "$retry_metadata_json" | jq -c '.coalesce_key')
+    existing_retryable_file=$(active_retryable_halt_record_path "$coalesce_key_json" || true)
+    if [ -n "$existing_retryable_file" ] && [ -f "$existing_retryable_file" ]; then
+      coalesce_retryable_halt_record "$existing_retryable_file" "$created_at" "$reason_id" "$summary" "$chain_run_id" "$issue_run_id" "$chain" "$issue_number" "$writer" "$details_json" "$next_command" "$next_safe_action" "$issue_context_json" "$retry_metadata_json"
+      return 0
+    fi
+  fi
 
   jq -n \
     --arg created_at "$created_at" \
@@ -1510,13 +2191,18 @@ write_halt_record() {
     --arg writer "$writer" \
     --arg summary "$summary" \
     --arg next_command "$next_command" \
+    --arg next_safe_action "$next_safe_action" \
     --arg execution_mode "$EXECUTION_MODE" \
     --argjson retry_limit "$RETRY_LIMIT" \
     --argjson retry_backoff_sec "$RETRY_BACKOFF_SEC" \
     --argjson true_hard_stop "$hard_stop" \
     --arg run_state "$RUN_STATE_JSON" \
     --arg report "$RUN_REPORT" \
-    '{
+    --argjson issue_context "$issue_context_json" \
+    --argjson details "$details_json" \
+    --argjson retry_metadata "$retry_metadata_json" \
+    '($details | if type == "object" then . else {} end) as $detail_obj
+     | ({
       schema_version: 1,
       kind: "chain-halt-record",
       created_at: $created_at,
@@ -1530,22 +2216,36 @@ write_halt_record() {
       halt_class: $halt_class,
       writer: $writer,
       summary: $summary,
+      issue_context: $issue_context,
+      details: $details,
       resumable_state: {
         run_state: $run_state,
         report: $report,
         run_id: $run_id,
         chain_run_id: (if $chain_run_id == "" then null else $chain_run_id end),
-        issue_run_id: (if $issue_run_id == "" then null else $issue_run_id end)
+        issue_run_id: (if $issue_run_id == "" then null else $issue_run_id end),
+        issue_context: $issue_context,
+        next_safe_action: $next_safe_action
       },
       next_command: (if $next_command == "" then null else $next_command end),
-      affected_artifacts: [$run_state, $report],
+      next_safe_action: $next_safe_action,
+      affected_artifacts: ([$run_state, $report]
+        + (if ($detail_obj.drift_artifact // null) == null then [] else [$detail_obj.drift_artifact] end)
+        + (if ($detail_obj.read_set_artifact // null) == null then [] else [$detail_obj.read_set_artifact] end)
+        + (if ($detail_obj.startup_diagnostics_artifact // null) == null then [] else [$detail_obj.startup_diagnostics_artifact] end)
+        + (if ($detail_obj.stdout_tail_artifact // null) == null then [] else [$detail_obj.stdout_tail_artifact] end)
+        + (if ($detail_obj.stderr_tail_artifact // null) == null then [] else [$detail_obj.stderr_tail_artifact] end)),
       rollback_path: "Inspect the halt record and resume with the next_command after correcting the cause; fatal records require a fresh human-authored plan.",
-      retry_policy: {
+      retry_policy: ({
         auto_retry_limit: $retry_limit,
         backoff_seconds: $retry_backoff_sec,
         exhausted: ($halt_class == "retryable"),
         retryable: ($halt_class == "retryable")
-      },
+      } + (if $halt_class == "retryable" then {
+        cooldown_seconds: $retry_metadata.cooldown_seconds,
+        cooldown_until: $retry_metadata.cooldown_until,
+        human_inspection_retry_count: $retry_metadata.human_inspection_retry_count
+      } else {} end)),
       escalation: {
         execution_mode: $execution_mode,
         prompt_allowed: ($halt_class == "review-needed" or $halt_class == "human-needed" or $halt_class == "fatal"),
@@ -1558,22 +2258,69 @@ write_halt_record() {
       true_hard_stop: $true_hard_stop,
       human_action_required: ($halt_class == "human-needed" or $halt_class == "fatal"),
       privacy: {classification: "private-runtime"}
-    }' > "$file"
+    }
+    | if $halt_class == "retryable" then . + {
+        retry_count: $retry_metadata.retry_count,
+        first_seen: $retry_metadata.first_seen,
+        last_seen: $retry_metadata.last_seen,
+        last_observed_command: $retry_metadata.last_observed_command,
+        last_observed_error: $retry_metadata.last_observed_error,
+        normalized_origin: $retry_metadata.normalized_origin,
+        normalized_error: $retry_metadata.normalized_error,
+        coalesce_key: $retry_metadata.coalesce_key,
+        coalesced_observations: [$retry_metadata.observation]
+      } else . end)' > "$file"
 
   "$SCRIPT_DIR/validate-contract.sh" chain-halt-record "$file" >/dev/null
 
   if [ -f "$RUN_STATE_JSON" ]; then
+    retry_observation_limit=5
     update_state_jq \
       --arg file "$rel_file" \
+      --arg created_at "$created_at" \
       --arg reason_id "$reason_id" \
       --arg halt_class "$halt_class" \
       --arg status "$status" \
+      --arg summary "$summary" \
       --arg next_command "$next_command" \
+      --arg next_safe_action "$next_safe_action" \
+      --argjson issue_context "$issue_context_json" \
+      --argjson details "$details_json" \
+      --argjson retry_metadata "$retry_metadata_json" \
+      --argjson retry_observation_limit "$retry_observation_limit" \
       '(.halt_records //= []) |
-       .halt_records += [{path:$file, reason_id:$reason_id, halt_class:$halt_class, status:$status, next_command:(if $next_command == "" then null else $next_command end)}]'
+       .halt_records += ([{
+         path:$file,
+         created_at:$created_at,
+         reason_id:$reason_id,
+         halt_class:$halt_class,
+         status:$status,
+         summary:$summary,
+         details:$details,
+         next_command:(if $next_command == "" then null else $next_command end),
+         next_safe_action:$next_safe_action,
+         issue_context:$issue_context
+       }]
+       | if $halt_class == "retryable" then map(. + {
+           retry_count:$retry_metadata.retry_count,
+           first_seen:$retry_metadata.first_seen,
+           last_seen:$retry_metadata.last_seen,
+           last_observed_command:$retry_metadata.last_observed_command,
+           last_observed_error:$retry_metadata.last_observed_error,
+           normalized_origin:$retry_metadata.normalized_origin,
+           normalized_error:$retry_metadata.normalized_error,
+           coalesce_key:$retry_metadata.coalesce_key,
+           coalesced_observations:[$retry_metadata.observation],
+           retry_policy:{
+             cooldown_seconds:$retry_metadata.cooldown_seconds,
+             cooldown_until:$retry_metadata.cooldown_until,
+             human_inspection_retry_count:$retry_metadata.human_inspection_retry_count
+           }
+         }) else . end)'
   fi
   emit_chain_event chain_halt_recorded "$issue_number" "$RUN_ID" "$chain_run_id" "$issue_run_id" "$status" 0 \
-    "$(jq -cn --arg reason_id "$reason_id" --arg halt_class "$halt_class" --arg halt_record "$file" '{reason_id:$reason_id, halt_class:$halt_class, halt_record:$halt_record}')"
+    "$(jq -cn --arg reason_id "$reason_id" --arg halt_class "$halt_class" --arg halt_record "$file" --arg next_safe_action "$next_safe_action" --argjson issue_context "$issue_context_json" --argjson details "$details_json" --argjson retry_metadata "$retry_metadata_json" '{reason_id:$reason_id, halt_class:$halt_class, halt_record:$halt_record, next_safe_action:$next_safe_action, issue_context:$issue_context, details:$details}
+      | if $halt_class == "retryable" then . + {coalesced:false, retry_count:$retry_metadata.retry_count, coalesce_key:$retry_metadata.coalesce_key, cooldown_until:$retry_metadata.cooldown_until} else . end')"
   printf '%s\n' "$file"
 }
 
@@ -1837,6 +2584,7 @@ append_phase_review_feedback() {
 run_phase_review_gate() {
   local kind="$1" boundary_id="$2" artifact="$3" chain_run_id="$4" issue_run_id="$5" chain_name="$6" issue="$7"
   local review_host actual_review_host fallback_from fallback_to fallback_reason cross_host_satisfied degraded_review degraded_reason next_cross_host_retry review_file review_meta review_rc verdict feedback review_started_at review_duration
+  local review_detail halt_details_json halt_next_safe_action
   review_host="${STUDIO_REVIEW_HOST:-claude-reviewer}"
   review_file="$PHASE_REVIEW_ROOT/$boundary_id-$kind-review.md"
 
@@ -1854,13 +2602,6 @@ run_phase_review_gate() {
   printf '%s\n' "$review_meta"
   review_duration=$(duration_since "$review_started_at")
 
-  if [ "$review_rc" -ne 0 ]; then
-    emit_chain_event chain_phase_review_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$review_duration" \
-      "$(jq -cn --arg kind "$kind" --arg boundary_id "$boundary_id" --arg review_host "$review_host" --arg exit_code "$review_rc" '{kind:$kind, boundary_id:$boundary_id, review_host:$review_host, exit_code:($exit_code|tonumber), reason_id:"reviewer_host_ineligible"}')"
-    write_halt_record "reviewer_host_ineligible" "$kind phase review wrapper failed for $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" >/dev/null || true
-    return 70
-  fi
-
   verdict=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_VERDICT=//p' | tail -1)
   [ -n "$verdict" ] || verdict="ambiguous"
   actual_review_host=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_HOST=//p' | tail -1)
@@ -1874,6 +2615,49 @@ run_phase_review_gate() {
   [ -n "$degraded_review" ] || degraded_review="0"
   degraded_reason=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_DEGRADED_REASON=//p' | tail -1)
   next_cross_host_retry=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_NEXT_CROSS_HOST_RETRY=//p' | tail -1)
+  review_detail=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_FALLBACK_DETAIL=//p' | tail -1 | cut -c 1-500)
+  [ -n "$review_detail" ] || review_detail=$(printf '%s\n' "$review_meta" | sed -n 's/^phase-review: //p' | tail -1 | cut -c 1-500)
+  [ -n "$review_detail" ] || review_detail=$(printf '%s\n' "$review_meta" | awk 'NF { line=$0 } END { print line }' | cut -c 1-500)
+  halt_details_json=$(jq -cn \
+    --arg kind "$kind" \
+    --arg boundary_id "$boundary_id" \
+    --arg requested_review_host "$review_host" \
+    --arg review_host "$actual_review_host" \
+    --arg fallback_from "$fallback_from" \
+    --arg fallback_to "$fallback_to" \
+    --arg fallback_reason "$fallback_reason" \
+    --arg cross_host_satisfied "$cross_host_satisfied" \
+    --arg degraded_review "$degraded_review" \
+    --arg degraded_reason "$degraded_reason" \
+    --arg next_cross_host_retry "$next_cross_host_retry" \
+    --arg artifact "$artifact" \
+    --arg review "$review_file" \
+    --arg detail "$review_detail" \
+    --argjson exit_code "$review_rc" \
+    '{
+      kind:$kind,
+      boundary_id:$boundary_id,
+      requested_review_host:$requested_review_host,
+      review_host:$review_host,
+      exit_code:$exit_code,
+      artifact:$artifact,
+      review:$review,
+      cross_host_satisfied:$cross_host_satisfied,
+      degraded_review:($degraded_review == "1"),
+      wrapper_detail:(if $detail == "" then null else $detail end)
+    }
+    | if $fallback_from != "" then . + {fallback_from:$fallback_from, fallback_to:$fallback_to, fallback_reason:$fallback_reason} else . end
+    | if $degraded_reason != "" then . + {degraded_reason:$degraded_reason} else . end
+    | if $next_cross_host_retry != "" then . + {next_cross_host_retry:$next_cross_host_retry} else . end')
+
+  if [ "$review_rc" -ne 0 ]; then
+    emit_chain_event chain_phase_review_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$review_duration" \
+      "$(jq -cn --arg kind "$kind" --arg boundary_id "$boundary_id" --arg review_host "$review_host" --arg exit_code "$review_rc" --arg reason_id "reviewer_host_ineligible" --argjson details "$halt_details_json" '{kind:$kind, boundary_id:$boundary_id, review_host:$review_host, exit_code:($exit_code|tonumber), reason_id:$reason_id, details:$details}')"
+    halt_next_safe_action="Inspect the phase-review wrapper output and reviewer eligibility details, restore a usable sibling reviewer or choose an explicit human recovery path, then resume the chain."
+    write_halt_record "reviewer_host_ineligible" "$kind phase review wrapper failed for $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" "$halt_details_json" "$halt_next_safe_action" >/dev/null || true
+    return 70
+  fi
+
   feedback="[]"
   if [ "$kind" = "outcome" ] && [ -f "$review_file" ]; then
     feedback=$(compact_phase_review_feedback_json "$review_file")
@@ -1909,11 +2693,13 @@ run_phase_review_gate() {
       return 0
       ;;
     blocked)
-      write_halt_record "reviewer_blocked" "$kind phase review blocked $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" >/dev/null || true
+      halt_next_safe_action="Inspect the phase review artifact, resolve the fatal reviewer findings, rerun sibling review, then resume the chain."
+      write_halt_record "reviewer_blocked" "$kind phase review blocked $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" "$halt_details_json" "$halt_next_safe_action" >/dev/null || true
       return 71
       ;;
     ambiguous|*)
-      write_halt_record "reviewer_ambiguous" "$kind phase review verdict was ambiguous for $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" >/dev/null || true
+      halt_next_safe_action="Inspect the phase review artifact and wrapper output, clarify the reviewer verdict, rerun sibling review, then resume the chain."
+      write_halt_record "reviewer_ambiguous" "$kind phase review verdict was ambiguous for $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" "$halt_details_json" "$halt_next_safe_action" >/dev/null || true
       return 72
       ;;
   esac
@@ -1955,8 +2741,55 @@ phase_review_required_for_issue() {
   esac
 }
 
+shellcheck_preflight_json() {
+  local shellcheck_cmd resolved version
+  shellcheck_cmd="${STUDIO_SHELLCHECK_BIN:-shellcheck}"
+  if resolved=$(command -v "$shellcheck_cmd" 2>/dev/null); then
+    version=$("$resolved" --version 2>/dev/null | awk -F': ' '/^version:/ { print $2; exit }' || true)
+    jq -cn \
+      --arg command "$shellcheck_cmd" \
+      --arg path "$resolved" \
+      --arg version "$version" \
+      '{
+        status: "available",
+        required: "conditional_for_shell_script_changes",
+        command: $command,
+        path: $path,
+        version: (if $version == "" then null else $version end),
+        policy: "Run ShellCheck for touched shell scripts and record the command/outcome in lints[].",
+        substitutes: []
+      }'
+  else
+    jq -cn \
+      --arg command "$shellcheck_cmd" \
+      '{
+        status: "unavailable",
+        required: "conditional_for_shell_script_changes",
+        command: $command,
+        reason_id: "shellcheck_expected_unavailable",
+        policy: "Expected chain-runner unavailability only when the worker records ShellCheck as a skipped lint and runs accepted substitutes.",
+        substitutes: [
+          "bash -n on touched shell scripts",
+          "repo-specific lints or fixtures that exercise the touched shell/release surface"
+        ],
+        summary_lint_shape: {
+          command: "shellcheck <touched-shell-files>",
+          outcome: "skipped",
+          reason_id: "shellcheck_expected_unavailable"
+        }
+      }'
+  fi
+}
+
+chain_tool_preflight_json() {
+  local shellcheck_json
+  shellcheck_json=$(shellcheck_preflight_json)
+  jq -cn --argjson shellcheck "$shellcheck_json" '{schema_version:1, tools:{shellcheck:$shellcheck}}'
+}
+
 write_chain_task_start_envelope() {
-  local chain_name="$1" chain_branch="$2" source_branch="$3" issue_branch="$4" issue_json="$5" host="$6" git_metadata_strategy="$7" worktree="$8" chain_run_id="$9" issue_run_id="${10}" summary_path="${11}" start_path="${12}" phase_review_context="${13:-[]}" rule_pack_resolution="${14:-null}"
+  local chain_name="$1" chain_branch="$2" source_branch="$3" issue_branch="$4" issue_json="$5" host="$6" git_metadata_strategy="$7" worktree="$8" chain_run_id="$9" issue_run_id="${10}" summary_path="${11}" start_path="${12}" phase_review_context="${13:-[]}" rule_pack_resolution="${14:-null}" tool_preflight="${15:-}"
+  [ -n "$tool_preflight" ] || tool_preflight=$(chain_tool_preflight_json)
   mkdir -p "$(dirname "$start_path")"
   jq -n \
     --argjson source_issue "$issue_json" \
@@ -1977,6 +2810,7 @@ write_chain_task_start_envelope() {
     --argjson retry_backoff_sec "$RETRY_BACKOFF_SEC" \
     --argjson phase_review_context "$phase_review_context" \
     --argjson rule_pack_resolution "$rule_pack_resolution" \
+    --argjson tool_preflight "$tool_preflight" \
     '{
       schema_version: 1,
       kind: "start",
@@ -2025,6 +2859,7 @@ write_chain_task_start_envelope() {
         }
       },
       expected_summary_artifact: $summary_path,
+      tool_preflight: $tool_preflight,
       required_checks: [
         "Work only in the issue worktree.",
         "Keep changes scoped to the source issue.",
@@ -2102,15 +2937,469 @@ refresh_summary_commit_metrics() {
 }
 
 emit_summary_telemetry_gaps() {
-  local summary_file="$1" chain_run_id="$2" issue_run_id="$3" issue="$4" gap
+  local summary_file="$1" chain_run_id="$2" issue_run_id="$3" issue="$4" row gap reason source gap_status
   [ -f "$summary_file" ] || return 0
-  while IFS= read -r gap; do
+  while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    gap=$(printf '%s\n' "$row" | jq -r '.gap_kind // empty' 2>/dev/null)
     [ -n "$gap" ] || continue
+    reason=$(printf '%s\n' "$row" | jq -r '.reason_id // .reason // "missing_or_unavailable"' 2>/dev/null)
+    source=$(printf '%s\n' "$row" | jq -r '.source // "worker_summary"' 2>/dev/null)
+    gap_status=$(printf '%s\n' "$row" | jq -r '.status // "missing"' 2>/dev/null)
     emit_chain_event chain_telemetry_gap "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" missing 0 \
-      "$(jq -cn --arg gap_kind "$gap" --arg stage "ingest" --arg reason "missing_or_unavailable" '{gap_kind:$gap_kind, stage:$stage, reason:$reason}')"
+      "$(jq -cn --arg gap_kind "$gap" --arg stage "ingest" --arg reason "$reason" --arg source "$source" --arg gap_status "$gap_status" '{gap_kind:$gap_kind, stage:$stage, reason:$reason, reason_id:$reason, source:$source, status:$gap_status}')"
   done <<EOF
-$(jq -r '.telemetry_gaps[]? | if type == "object" then (.gap_kind // .kind // empty) else . end' "$summary_file" 2>/dev/null)
+$(jq -c '
+  def gap_kind:
+    if type == "object" then (.gap_kind // .kind // empty) else . end;
+  (.telemetry_gaps // []) as $gaps
+  | (.telemetry_gap_reasons // []) as $reasons
+  | $gaps[]?
+  | (gap_kind) as $kind
+  | select($kind != "")
+  | (($reasons | map(select((.gap_kind // .kind // "") == $kind)) | .[0]) // {gap_kind:$kind, reason_id:"missing_or_unavailable", source:"worker_summary", status:"missing"})
+' "$summary_file" 2>/dev/null)
 EOF
+}
+
+startup_diagnostics_artifact_path() {
+  local issue_run_id="$1"
+  printf '%s/%s-startup-diagnostics.json\n' "$STARTUP_DIAGNOSTICS_ROOT" "$issue_run_id"
+}
+
+startup_launch_context_path() {
+  local issue_run_id="$1"
+  printf '%s/%s-launch-context.json\n' "$STARTUP_DIAGNOSTICS_ROOT" "$issue_run_id"
+}
+
+startup_stdout_raw_path() {
+  local issue_run_id="$1"
+  printf '%s/%s.stdout.raw.log\n' "$STARTUP_DIAGNOSTICS_ROOT" "$issue_run_id"
+}
+
+startup_stderr_raw_path() {
+  local issue_run_id="$1"
+  printf '%s/%s.stderr.raw.log\n' "$STARTUP_DIAGNOSTICS_ROOT" "$issue_run_id"
+}
+
+startup_stdout_tail_path() {
+  local issue_run_id="$1"
+  printf '%s/%s.stdout.tail.txt\n' "$STARTUP_DIAGNOSTICS_ROOT" "$issue_run_id"
+}
+
+startup_stderr_tail_path() {
+  local issue_run_id="$1"
+  printf '%s/%s.stderr.tail.txt\n' "$STARTUP_DIAGNOSTICS_ROOT" "$issue_run_id"
+}
+
+startup_tail_bytes() {
+  local value="${STUDIO_CHAIN_STARTUP_TAIL_BYTES:-16384}"
+  case "$value" in
+    ''|*[!0-9]*) printf '16384\n' ;;
+    *) printf '%s\n' "$value" ;;
+  esac
+}
+
+startup_capture_enabled() {
+  case "${STUDIO_CHAIN_CHILD_STARTUP_CAPTURE:-auto}" in
+    1|true|TRUE|yes|YES|always|on|ON) return 0 ;;
+    0|false|FALSE|no|NO|never|off|OFF) return 1 ;;
+    auto|"") [ "${EXECUTION_MODE:-attended}" = "unattended" ] ;;
+    *) [ "${EXECUTION_MODE:-attended}" = "unattended" ] ;;
+  esac
+}
+
+startup_redact_stream() {
+  if command -v perl >/dev/null 2>&1; then
+    perl -pe 's/([A-Za-z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD)[A-Za-z0-9_]*\s*[:=]\s*)\S+/${1}[REDACTED]/ig; s/(Authorization:\s*).*/${1}[REDACTED]/ig; s/gh[pousr]_[A-Za-z0-9_]+/[REDACTED_GITHUB_TOKEN]/g; s/AKIA[0-9A-Z]{16}/[REDACTED_AWS_ACCESS_KEY]/g'
+  else
+    sed -E \
+      -e 's/([A-Za-z0-9_]*(TOKEN|KEY|SECRET|PASSWORD)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*)[^[:space:]]+/\1[REDACTED]/g' \
+      -e 's/([Aa]uthorization:[[:space:]]*).*/\1[REDACTED]/g' \
+      -e 's/gh[pousr]_[A-Za-z0-9_]+/[REDACTED_GITHUB_TOKEN]/g' \
+      -e 's/AKIA[0-9A-Z]{16}/[REDACTED_AWS_ACCESS_KEY]/g'
+  fi
+}
+
+startup_write_tail_artifact() {
+  local source="$1" dest="$2" bytes
+  [ -f "$source" ] || return 1
+  bytes=$(startup_tail_bytes)
+  mkdir -p "$(dirname "$dest")"
+  tail -c "$bytes" "$source" 2>/dev/null | startup_redact_stream > "$dest"
+}
+
+startup_env_shape_json() {
+  local env_count path_entry_count secret_like_count studio_prefix_count
+  env_count=$(env | wc -l | tr -d ' ')
+  path_entry_count=$(printf '%s' "${PATH:-}" | awk -F: '{ if ($0 == "") print 0; else print NF }')
+  secret_like_count=$(env | awk -F= 'BEGIN { count=0 } { name=toupper($1); if (name ~ /(TOKEN|SECRET|PASSWORD|KEY|CREDENTIAL|AUTH)/) count++ } END { print count }')
+  studio_prefix_count=$(env | awk -F= 'BEGIN { count=0 } $1 ~ /^STUDIO_/ { count++ } END { print count }')
+  case "$env_count" in ''|*[!0-9]*) env_count=0 ;; esac
+  case "$path_entry_count" in ''|*[!0-9]*) path_entry_count=0 ;; esac
+  case "$secret_like_count" in ''|*[!0-9]*) secret_like_count=0 ;; esac
+  case "$studio_prefix_count" in ''|*[!0-9]*) studio_prefix_count=0 ;; esac
+  jq -cn \
+    --argjson env_count "$env_count" \
+    --argjson path_entry_count "$path_entry_count" \
+    --argjson secret_like_count "$secret_like_count" \
+    --argjson studio_prefix_count "$studio_prefix_count" \
+    '{
+      env_var_count: $env_count,
+      path_entry_count: $path_entry_count,
+      studio_prefix_count: $studio_prefix_count,
+      secret_like_var_count: $secret_like_count,
+      full_env_persisted: false,
+      secret_values_persisted: false
+    }'
+}
+
+startup_host_profile_json() {
+  local host="$1" spawn_argv0="${2:-}" manifest sandbox secret_scope tool_dialect block_strategy
+  manifest=$(resolve_capabilities_manifest "$host" "$REPO_ROOT" 2>/dev/null || true)
+  if [ -n "$manifest" ] && [ -f "$manifest" ]; then
+    sandbox=$(yq -r '.sandbox_profile // ""' "$manifest" 2>/dev/null || true)
+    secret_scope=$(yq -r '.secret_scope // ""' "$manifest" 2>/dev/null || true)
+    tool_dialect=$(yq -r '.tool_dialect // ""' "$manifest" 2>/dev/null || true)
+    block_strategy=$(yq -r '.block_for_event_strategy // ""' "$manifest" 2>/dev/null || true)
+  else
+    sandbox=""
+    secret_scope=""
+    tool_dialect=""
+    block_strategy=""
+  fi
+  jq -cn \
+    --arg host "$host" \
+    --arg manifest "$manifest" \
+    --arg sandbox "$sandbox" \
+    --arg secret_scope "$secret_scope" \
+    --arg tool_dialect "$tool_dialect" \
+    --arg block_strategy "$block_strategy" \
+    --arg spawn_argv0 "$spawn_argv0" \
+    '{
+      host: $host,
+      capabilities_manifest: (if $manifest == "" then null else $manifest end),
+      sandbox_profile: (if $sandbox == "" then null else $sandbox end),
+      secret_scope: (if $secret_scope == "" then null else $secret_scope end),
+      tool_dialect: (if $tool_dialect == "" then null else $tool_dialect end),
+      block_for_event_strategy: (if $block_strategy == "" then null else $block_strategy end),
+      spawn_argv0: (if $spawn_argv0 == "" then null else $spawn_argv0 end)
+    }'
+}
+
+write_child_launch_context() {
+  local context_path="$1" chain_name="$2" issue="$3" host="$4" worktree="$5" issue_branch="$6" summary_path="$7" start_path="$8" launch_home="$9" codex_auth_home="${10:-}" spawn_argv0="${11:-}" capture_streams="${12:-false}"
+  local created_at host_profile env_shape worktree_exists start_exists summary_exists launch_home_status codex_auth_home_status tail_bytes
+  created_at=$(iso_ts_now)
+  tail_bytes=$(startup_tail_bytes)
+  host_profile=$(startup_host_profile_json "$host" "$spawn_argv0")
+  env_shape=$(startup_env_shape_json)
+  [ -d "$worktree" ] && worktree_exists=true || worktree_exists=false
+  [ -f "$start_path" ] && start_exists=true || start_exists=false
+  [ -f "$summary_path" ] && summary_exists=true || summary_exists=false
+  [ -n "$launch_home" ] && [ -d "$launch_home" ] && launch_home_status=present || launch_home_status=missing
+  case "$host" in
+    codex*|*codex*)
+      [ -n "$codex_auth_home" ] && [ -d "$codex_auth_home" ] && codex_auth_home_status=present || codex_auth_home_status=missing
+      ;;
+    *)
+      codex_auth_home_status=not_applicable
+      ;;
+  esac
+  mkdir -p "$(dirname "$context_path")"
+  jq -n \
+    --arg created_at "$created_at" \
+    --arg run_id "$RUN_ID" \
+    --arg chain "$chain_name" \
+    --arg issue "$issue" \
+    --arg host "$host" \
+    --arg worktree "$worktree" \
+    --arg issue_branch "$issue_branch" \
+    --arg summary_path "$summary_path" \
+    --arg start_path "$start_path" \
+    --arg launch_home "$launch_home" \
+    --arg launch_home_status "$launch_home_status" \
+    --arg codex_auth_home "$codex_auth_home" \
+    --arg codex_auth_home_status "$codex_auth_home_status" \
+    --argjson worktree_exists "$worktree_exists" \
+    --argjson start_exists "$start_exists" \
+    --argjson summary_exists "$summary_exists" \
+    --argjson host_profile "$host_profile" \
+    --argjson env_shape "$env_shape" \
+    --argjson capture_streams "$capture_streams" \
+    --argjson tail_bytes "$tail_bytes" \
+    '{
+      schema_version: 1,
+      kind: "chain-child-launch-context",
+      created_at: $created_at,
+      run_id: $run_id,
+      chain: $chain,
+      issue_number: ($issue | tonumber),
+      host: $host,
+      launch_stage: "pre_spawn",
+      cwd: $worktree,
+      cwd_exists: $worktree_exists,
+      issue_branch: $issue_branch,
+      worker_summary_path: $summary_path,
+      worker_summary_preexisting: $summary_exists,
+      task_start_envelope: $start_path,
+      task_start_envelope_written: $start_exists,
+      host_profile: $host_profile,
+      auth_profile: {
+        launch_home: (if $launch_home == "" then null else $launch_home end),
+        launch_home_status: $launch_home_status,
+        codex_auth_home: (if $codex_auth_home == "" then null else $codex_auth_home end),
+        codex_auth_home_status: $codex_auth_home_status
+      },
+      environment_shape: ($env_shape + {
+        explicit_env_keys: (["STUDIO_RUN_ID", "STUDIO_CHAIN_RUN_ID", "STUDIO_ISSUE_RUN_ID", "STUDIO_CHAIN_ARTIFACT_ROOT"]
+          + (if $launch_home == "" then [] else ["HOME"] end)
+          + (if $codex_auth_home == "" then [] else ["CODEX_HOME"] end)),
+        explicit_env_key_count: ((["STUDIO_RUN_ID", "STUDIO_CHAIN_RUN_ID", "STUDIO_ISSUE_RUN_ID", "STUDIO_CHAIN_ARTIFACT_ROOT"]
+          + (if $launch_home == "" then [] else ["HOME"] end)
+          + (if $codex_auth_home == "" then [] else ["CODEX_HOME"] end)) | length)
+      }),
+      stream_capture: {
+        enabled: $capture_streams,
+        mode: (if $capture_streams then "bounded-redacted-tail-on-failure" else "disabled" end),
+        tail_bytes: $tail_bytes,
+        tail_bytes_override_env: "STUDIO_CHAIN_STARTUP_TAIL_BYTES"
+      },
+      privacy: {
+        classification: "private-runtime",
+        full_env_persisted: false,
+        secret_values_persisted: false
+      }
+    }' > "$context_path"
+}
+
+update_child_launch_context_exit() {
+  local context_path="$1" exit_code="$2" exited_at stage tmp
+  [ -f "$context_path" ] || return 0
+  exited_at=$(iso_ts_now)
+  stage=child_exited
+  case "$exit_code" in
+    126|127) stage=spawn_failed ;;
+  esac
+  tmp="$context_path.$$"
+  jq \
+    --arg exited_at "$exited_at" \
+    --arg stage "$stage" \
+    --argjson exit_code "$exit_code" \
+    '.launch_stage = $stage
+     | .child_exit_code = $exit_code
+     | .child_exited_at = $exited_at' \
+    "$context_path" > "$tmp" && mv "$tmp" "$context_path"
+}
+
+run_child_with_optional_startup_capture() {
+  local capture_streams="$1" stdout_raw="$2" stderr_raw="$3"
+  shift 3
+  if [ "$capture_streams" = "true" ]; then
+    : > "$stdout_raw"
+    : > "$stderr_raw"
+    # Process-substitution tee preserves parent output, but stream flush is best-effort for fast child exits.
+    "$@" > >(tee "$stdout_raw") 2> >(tee "$stderr_raw" >&2)
+  else
+    "$@"
+  fi
+}
+
+startup_prompt_boundary_status() {
+  local session_telemetry_json="$1"
+  local status
+  status=$(printf '%s\n' "$session_telemetry_json" | jq -r '
+    if (.source // "") == "codex_session_log" and (.session_log_present // false) == true then "detected"
+    elif (.source // "") == "codex_session_log" and ((.reason_id // "") == "codex_session_log_not_found" or (.reason_id // "") == "codex_home_mismatch") then "not_detected"
+    elif (.source // "") == "none" or (.status // "") == "unsupported" then "unknown"
+    else "unknown" end
+  ' 2>/dev/null) || status=unknown
+  case "$status" in
+    detected|not_detected|unknown) printf '%s\n' "$status" ;;
+    *) printf 'unknown\n' ;;
+  esac
+}
+
+startup_failure_class_for_context() {
+  local summary_gap="$1" exit_code="$2" context_file="$3" session_telemetry_json="$4" stderr_tail="$5"
+  local prompt_status session_reason cwd_exists auth_status
+  if [ "$summary_gap" = "telemetry_artifact_malformed" ]; then
+    printf 'worker_summary_malformed\n'
+    return 0
+  fi
+  prompt_status=$(startup_prompt_boundary_status "$session_telemetry_json")
+  session_reason=$(printf '%s\n' "$session_telemetry_json" | jq -r '.reason_id // ""' 2>/dev/null || true)
+  cwd_exists=true
+  auth_status=""
+  if [ -f "$context_file" ]; then
+    cwd_exists=$(jq -r '.cwd_exists // true' "$context_file" 2>/dev/null || printf 'true')
+    auth_status=$(jq -r '.auth_profile.codex_auth_home_status // ""' "$context_file" 2>/dev/null || true)
+  fi
+  if [ "$cwd_exists" = "false" ] || [ "$auth_status" = "missing" ] || [ "$session_reason" = "codex_home_mismatch" ] || grep -Eiq 'auth[ _-]*home not found|auth unavailable|CODEX_HOME|credential|auth[ _-]*profile|codex[ _-]*profile|credential.*profile' "$stderr_tail" 2>/dev/null; then
+    printf 'cwd_auth_profile_mismatch\n'
+  elif [ "$exit_code" = "126" ] || [ "$exit_code" = "127" ] || grep -Eiq 'command not found|no such file or directory|permission denied' "$stderr_tail" 2>/dev/null; then
+    printf 'host_launch_failure\n'
+  elif [ "$prompt_status" = "detected" ]; then
+    printf 'worker_runtime_crash\n'
+  elif [ "$prompt_status" = "not_detected" ]; then
+    printf 'prompt_handoff_failure\n'
+  else
+    printf 'unknown\n'
+  fi
+}
+
+write_child_startup_diagnostics() {
+  local chain_name="$1" issue="$2" host="$3" worktree="$4" summary_path="$5" exit_code="$6" chain_run_id="$7" issue_run_id="$8" summary_gap="$9" session_telemetry_json="${10:-}"
+  local context_path artifact stdout_raw stderr_raw stdout_tail stderr_tail created_at prompt_status failure_class launch_stage tail_bytes
+  local stdout_tail_present=false stderr_tail_present=false stdout_bytes=0 stderr_bytes=0 context_json
+  context_path=$(startup_launch_context_path "$issue_run_id")
+  artifact=$(startup_diagnostics_artifact_path "$issue_run_id")
+  stdout_raw=$(startup_stdout_raw_path "$issue_run_id")
+  stderr_raw=$(startup_stderr_raw_path "$issue_run_id")
+  stdout_tail=$(startup_stdout_tail_path "$issue_run_id")
+  stderr_tail=$(startup_stderr_tail_path "$issue_run_id")
+  created_at=$(iso_ts_now)
+  tail_bytes=$(startup_tail_bytes)
+  mkdir -p "$STARTUP_DIAGNOSTICS_ROOT"
+  [ -n "$session_telemetry_json" ] || session_telemetry_json="{}"
+  if ! printf '%s\n' "$session_telemetry_json" | jq -e . >/dev/null 2>&1; then
+    session_telemetry_json="{}"
+  fi
+
+  if startup_write_tail_artifact "$stdout_raw" "$stdout_tail"; then
+    stdout_tail_present=true
+    stdout_bytes=$(wc -c < "$stdout_tail" | tr -d ' ')
+  fi
+  if startup_write_tail_artifact "$stderr_raw" "$stderr_tail"; then
+    stderr_tail_present=true
+    stderr_bytes=$(wc -c < "$stderr_tail" | tr -d ' ')
+  fi
+  rm -f "$stdout_raw" "$stderr_raw" 2>/dev/null || true
+
+  prompt_status=$(startup_prompt_boundary_status "$session_telemetry_json")
+  failure_class=$(startup_failure_class_for_context "$summary_gap" "$exit_code" "$context_path" "$session_telemetry_json" "$stderr_tail")
+  if [ -f "$context_path" ] && jq -e . "$context_path" >/dev/null 2>&1; then
+    context_json=$(jq -c . "$context_path")
+    launch_stage=$(jq -r '.launch_stage // "child_exited"' "$context_path" 2>/dev/null || printf 'child_exited')
+  else
+    context_json="{}"
+    launch_stage=child_exited
+  fi
+
+  jq -n \
+    --arg created_at "$created_at" \
+    --arg run_id "$RUN_ID" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg chain "$chain_name" \
+    --arg issue "$issue" \
+    --arg host "$host" \
+    --arg worktree "$worktree" \
+    --arg summary_path "$summary_path" \
+    --arg summary_gap "$summary_gap" \
+    --arg failure_class "$failure_class" \
+    --arg launch_stage "$launch_stage" \
+    --arg prompt_status "$prompt_status" \
+    --arg context_path "$context_path" \
+    --arg stdout_tail "$stdout_tail" \
+    --arg stderr_tail "$stderr_tail" \
+    --argjson stdout_tail_present "$stdout_tail_present" \
+    --argjson stderr_tail_present "$stderr_tail_present" \
+    --argjson stdout_bytes "$stdout_bytes" \
+    --argjson stderr_bytes "$stderr_bytes" \
+    --argjson exit_code "$exit_code" \
+    --argjson context "$context_json" \
+    --argjson session_telemetry "$session_telemetry_json" \
+    --argjson tail_bytes "$tail_bytes" \
+    '{
+      schema_version: 1,
+      kind: "chain-child-startup-diagnostics",
+      created_at: $created_at,
+      run_id: $run_id,
+      chain_run_id: $chain_run_id,
+      issue_run_id: $issue_run_id,
+      chain: $chain,
+      issue_number: ($issue | tonumber),
+      host: $host,
+      startup_failure_class: $failure_class,
+      launch_stage: $launch_stage,
+      exit_code: $exit_code,
+      summary_validation: $summary_gap,
+      cwd: $worktree,
+      worker_summary_path: $summary_path,
+      launch_context_artifact: $context_path,
+      host_profile: ($context.host_profile // {host:$host}),
+      auth_profile: ($context.auth_profile // {}),
+      environment_shape: (($context.environment_shape // {}) + {full_env_persisted:false, secret_values_persisted:false}),
+      prompt_boundary: {
+        status: $prompt_status,
+        detector: ($session_telemetry.source // "none"),
+        reason_id: ($session_telemetry.reason_id // null)
+      },
+      worker_start_boundary: {
+        status: (if $prompt_status == "detected" then "observed" elif $prompt_status == "not_detected" then "not_detected" else "unknown" end),
+        detector: ($session_telemetry.source // "none")
+      },
+      streams: {
+        stdout: {
+          tail_artifact: (if $stdout_tail_present then $stdout_tail else null end),
+          tail_bytes: $stdout_bytes,
+          tail_limit_bytes: $tail_bytes,
+          synchronization: "best_effort",
+          redacted: true,
+          full_log_retained: false
+        },
+        stderr: {
+          tail_artifact: (if $stderr_tail_present then $stderr_tail else null end),
+          tail_bytes: $stderr_bytes,
+          tail_limit_bytes: $tail_bytes,
+          synchronization: "best_effort",
+          redacted: true,
+          full_log_retained: false
+        }
+      },
+      telemetry_extraction: $session_telemetry,
+      public_summary: {
+        failure_class: $failure_class,
+        launch_stage: $launch_stage,
+        prompt_boundary_status: $prompt_status
+      },
+      privacy: {
+        classification: "private-runtime",
+        full_env_persisted: false,
+        secret_values_persisted: false,
+        stream_tails_redacted: true,
+        public_outputs_use_abstract_failure_class: true
+      }
+    }' > "$artifact"
+
+  printf '%s\n' "$artifact"
+}
+
+cleanup_child_startup_capture_artifacts() {
+  local issue_run_id="$1"
+  rm -f "$(startup_stdout_raw_path "$issue_run_id")" "$(startup_stderr_raw_path "$issue_run_id")" 2>/dev/null || true
+  if [ ! -f "$(startup_diagnostics_artifact_path "$issue_run_id")" ]; then
+    rm -f \
+      "$(startup_launch_context_path "$issue_run_id")" \
+      "$(startup_stdout_tail_path "$issue_run_id")" \
+      "$(startup_stderr_tail_path "$issue_run_id")" 2>/dev/null || true
+  fi
+}
+
+startup_halt_details_json() {
+  local summary_file="$1"
+  jq -c '
+    {
+      startup_diagnostics_artifact: (.startup_diagnostics.artifact // .startup_diagnostics_artifact // null),
+      startup_failure_class: (.startup_diagnostics.failure_class // .startup_failure_class // null),
+      startup_launch_stage: (.startup_diagnostics.launch_stage // null),
+      prompt_boundary_status: (.startup_diagnostics.prompt_boundary_status // null),
+      stdout_tail_artifact: (.startup_diagnostics.stdout_tail_artifact // null),
+      stderr_tail_artifact: (.startup_diagnostics.stderr_tail_artifact // null)
+    }
+    | with_entries(select(.value != null))
+  ' "$summary_file" 2>/dev/null || printf '{}\n'
 }
 
 codex_home_for_worker() {
@@ -2128,16 +3417,43 @@ codex_home_for_worker() {
   fi
 }
 
+worker_telemetry_extraction_status_json() {
+  local source="$1" status="$2" reason_id="${3:-}" reason="${4:-}" host="${5:-}" codex_home="${6:-}"
+  jq -cn \
+    --arg source "$source" \
+    --arg status "$status" \
+    --arg reason_id "$reason_id" \
+    --arg reason "$reason" \
+    --arg host "$host" \
+    --arg codex_home "$codex_home" \
+    '{
+      schema_version: 1,
+      source: $source,
+      status: $status,
+      reason_id: (if $reason_id == "" then null else $reason_id end),
+      reason: (if $reason == "" then null else $reason end),
+      host: (if $host == "" then null else $host end),
+      fields: {}
+    }
+    | if $codex_home == "" then . else . + {home_resolution:"present"} end'
+}
+
 collect_codex_worker_session_telemetry() {
   local host="$1" worktree="$2" started_at="$3" launch_home="$4"
   local codex_home session_dir best_file="" best_mtime=0 candidate mtime
   case "$host" in
     codex*|*codex*) ;;
-    *) printf '{}\n'; return 0 ;;
+    *)
+      worker_telemetry_extraction_status_json "none" "unsupported" "host_telemetry_unsupported" "selected worker host does not emit Codex session telemetry" "$host" ""
+      return 0
+      ;;
   esac
   codex_home=$(codex_home_for_worker "$launch_home")
   session_dir="$codex_home/sessions"
-  [ -n "$codex_home" ] && [ -d "$session_dir" ] || { printf '{}\n'; return 0; }
+  [ -n "$codex_home" ] && [ -d "$session_dir" ] || {
+    worker_telemetry_extraction_status_json "codex_session_log" "missing" "codex_home_mismatch" "no usable Codex session directory was found for the worker launch HOME" "$host" "$codex_home"
+    return 0
+  }
 
   while IFS= read -r -d '' candidate; do
     mtime=$(stat -f %m "$candidate" 2>/dev/null || printf '')
@@ -2155,30 +3471,66 @@ collect_codex_worker_session_telemetry() {
     fi
   done < <(find "$session_dir" -type f -name '*.jsonl' -print0 2>/dev/null)
 
-  [ -n "$best_file" ] || { printf '{}\n'; return 0; }
+  [ -n "$best_file" ] || {
+    worker_telemetry_extraction_status_json "codex_session_log" "missing" "codex_session_log_not_found" "no Codex session log matched the worker worktree after issue start" "$host" "$codex_home"
+    return 0
+  }
+  jq -e . "$best_file" >/dev/null 2>&1 || {
+    worker_telemetry_extraction_status_json "codex_session_log" "failed" "codex_session_log_parse_failed" "Codex session log was not valid JSONL" "$host" "$codex_home"
+    return 0
+  }
   jq -rs '
-    ([ .[] | select(.type == "turn_context") | {model:(.payload.model // null), effort:(.payload.effort // null)} ] | last) as $ctx
-    | ([ .[]
-        | select(.type == "event_msg" and .payload.type == "token_count" and (.payload.info.total_token_usage // null) != null)
-        | .payload.info.total_token_usage
-      ] | last) as $usage
+    ([ .[] | select(.type == "turn_context") | {model:(.payload.model // null), effort:(.payload.effort // null)} ] | last // {}) as $ctx
+    | ([ .[] | select(.type == "event_msg" and .payload.type == "token_count") ]) as $token_events
+    | ([ $token_events[] | .payload.info.total_token_usage? // empty ] | last) as $usage
+    | ($token_events | length) as $token_event_count
+    | ($usage == null and $token_event_count > 0) as $schema_miss
+    | ($usage == null and $token_event_count == 0) as $usage_absent
+    | ($ctx.model // null) as $model
+    | ($ctx.effort // null) as $effort
+    | (if $usage == null then null else {
+        total: ($usage.total_tokens // null),
+        total_tokens: ($usage.total_tokens // null),
+        input: ($usage.input_tokens // 0),
+        output: ($usage.output_tokens // 0),
+        cache_read: ($usage.cached_input_tokens // 0),
+        reasoning_output: ($usage.reasoning_output_tokens // 0),
+        source: "codex_session_log"
+      } end) as $tokens
+    | ($tokens != null or $model != null or $effort != null) as $has_any
+    | (if $schema_miss then "codex_session_log_schema_miss"
+       elif $usage_absent then "codex_usage_absent"
+       elif $model == null then "codex_session_context_absent"
+       else null end) as $reason_id
     | {
+        schema_version: 1,
         source: "codex_session_log",
-        model: ($ctx.model // null),
-        model_version: ($ctx.model // null),
-        effort: ($ctx.effort // null),
-        tokens: (if $usage == null then null else {
-          total: ($usage.total_tokens // null),
-          total_tokens: ($usage.total_tokens // null),
-          input: ($usage.input_tokens // 0),
-          output: ($usage.output_tokens // 0),
-          cache_read: ($usage.cached_input_tokens // 0),
-          reasoning_output: ($usage.reasoning_output_tokens // 0),
-          source: "codex_session_log"
-        } end)
+        status: (if $tokens != null and $model != null then "present"
+          elif $schema_miss and ($has_any | not) then "failed"
+          elif $has_any then "partial"
+          elif $schema_miss then "failed"
+          else "missing" end),
+        reason_id: $reason_id,
+        reason: (if $reason_id == "codex_session_log_schema_miss" then "Codex token_count event did not match the expected total_token_usage schema"
+          elif $reason_id == "codex_usage_absent" then "Codex session log had no token_count usage event"
+          elif $reason_id == "codex_session_context_absent" then "Codex session log had no recognized turn_context model metadata"
+          else null end),
+        session_log_present: true,
+        fields: {
+          model: (if $model == null then {status:"missing", reason_id:"codex_session_context_absent"} else {status:"present"} end),
+          model_version: (if $model == null then {status:"missing", reason_id:"codex_session_context_absent"} else {status:"present"} end),
+          effort: (if $effort == null then {status:"missing", reason_id:"codex_session_context_absent"} else {status:"present"} end),
+          tokens: (if $tokens != null then {status:"present"}
+            elif $schema_miss then {status:"failed", reason_id:"codex_session_log_schema_miss"}
+            else {status:"missing", reason_id:"codex_usage_absent"} end)
+        },
+        model: $model,
+        model_version: $model,
+        effort: $effort,
+        tokens: $tokens
       }
     | with_entries(select(.value != null))
-  ' "$best_file" 2>/dev/null || printf '{}\n'
+  ' "$best_file" 2>/dev/null || worker_telemetry_extraction_status_json "codex_session_log" "failed" "codex_session_log_parse_failed" "Codex session log parser failed" "$host" "$codex_home"
 }
 
 ingest_worker_summary() {
@@ -2186,6 +3538,7 @@ ingest_worker_summary() {
   local summary_path="$worktree/.studio/chain-worker-summary.json"
   local dest="$SUMMARY_ROOT/${chain_name}-issue-${issue}-${issue_run_id}.json"
   local ended_at created_at duration_s stats changed_artifacts session_telemetry_json worktree_state next_safe_action
+  local startup_diagnostics_file startup_diagnostics_json startup_failure_class startup_launch_stage startup_prompt_boundary
   ended_at=$(now_epoch)
   created_at=$(iso_ts_now)
   duration_s=$(duration_since "$started_at" "$ended_at")
@@ -2220,8 +3573,28 @@ ingest_worker_summary() {
        | (.model_version // $telemetry_model_version) as $final_model_version
        | (.effort // .reasoning_effort // $telemetry_effort) as $final_effort
        | (.execution_telemetry // .ios_execution // null) as $exec_telemetry
+       | (($session_telemetry.status // null) != null) as $has_session_extraction
        | def has_model: ($final_model != null);
        def has_checks: (((.tests // []) | length) + ((.lints // []) | length) + ((.builds // []) | length)) > 0;
+       def worker_telemetry_extraction:
+         if $has_session_extraction then {
+           schema_version: ($session_telemetry.schema_version // 1),
+           source: ($session_telemetry.source // null),
+           status: ($session_telemetry.status // null),
+           reason_id: ($session_telemetry.reason_id // null),
+           reason: ($session_telemetry.reason // null),
+           fields: ($session_telemetry.fields // {})
+         } else null end;
+       def session_source:
+         ($session_telemetry.source // "worker_summary");
+       def field_reason($field; $fallback):
+         ($session_telemetry.fields[$field].reason_id // $session_telemetry.reason_id // $fallback);
+       def field_status($field):
+         ($session_telemetry.fields[$field].status // $session_telemetry.status // "missing");
+       def gap_reason($gap; $field; $fallback):
+         {gap_kind:$gap, reason_id:field_reason($field; $fallback), source:session_source, status:field_status($field)};
+       def gap_reason_key:
+         ((.gap_kind // .kind // "unknown") + ":" + (.reason_id // .reason // "missing_or_unavailable"));
        def is_ios_execution:
          (($chain_name | test("ios"; "i"))
           or ((.chain // "") | test("ios"; "i"))
@@ -2309,7 +3682,8 @@ ingest_worker_summary() {
         model: (.model // .model_name // $telemetry_model),
         model_version: $final_model_version,
         effort: $final_effort,
-        telemetry_sources: (((.telemetry_sources // []) + (if (($session_telemetry.source // "") == "") then [] else [$session_telemetry.source] end)) | unique),
+        telemetry_sources: (((.telemetry_sources // []) + (if (($session_telemetry.source // "") == "" or (($session_telemetry.status // "") | IN("missing","failed","unsupported"))) then [] else [$session_telemetry.source] end)) | unique),
+        worker_telemetry_extraction: worker_telemetry_extraction,
         execution_telemetry: normalized_execution_telemetry,
         functionality_delivered: (.functionality_delivered // null),
         user_visible_change: (.user_visible_change // .user_facing_change // .change_for_user // .user_change // null),
@@ -2319,8 +3693,18 @@ ingest_worker_summary() {
           + ios_execution_gaps
           + (if $final_tokens == null then ["tokens"] else [] end)
           + (if has_model then [] else ["model"] end)
-          + (if has_checks then [] else ["tests_lints_builds"] end)) | unique | map(select(gap_active(.))))
+          + (if has_checks then [] else ["tests_lints_builds"] end)) | unique | map(select(gap_active(.)))),
+        telemetry_gap_reasons: (((.telemetry_gap_reasons // [])
+          + (if $final_tokens == null then [gap_reason("tokens"; "tokens"; "missing_or_unavailable")] else [] end)
+          + (if has_model then [] else [gap_reason("model"; "model"; "missing_or_unavailable")] end)
+          + (if $final_model_version == null then [gap_reason("model_version"; "model_version"; "missing_or_unavailable")] else [] end)
+          + (if $final_effort == null then [gap_reason("effort"; "effort"; "missing_or_unavailable")] else [] end)
+          + (if has_checks then [] else [{gap_kind:"tests_lints_builds", reason_id:"worker_summary_check_data_absent", source:"worker_summary", status:"missing"}] end))
+          | unique_by(gap_reason_key))
       }' "$summary_path" > "$dest"
+    if declare -F cleanup_child_startup_capture_artifacts >/dev/null 2>&1; then
+      cleanup_child_startup_capture_artifacts "$issue_run_id"
+    fi
     emit_chain_event chain_worker_summary_ingested "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" completed "$duration_s" \
       "$(jq -cn --arg summary "$dest" '{summary:$summary, validation:"valid"}')"
   else
@@ -2335,6 +3719,16 @@ ingest_worker_summary() {
     if chain_git_parent_finalize_has_public_diff "$worktree"; then
       worktree_state="dirty"
       next_safe_action="preserve the issue worktree and inspect uncommitted changes before retry"
+    fi
+    startup_diagnostics_file=$(write_child_startup_diagnostics "$chain_name" "$issue" "$host" "$worktree" "$summary_path" "$exit_code" "$chain_run_id" "$issue_run_id" "$summary_gap" "$session_telemetry_json")
+    startup_diagnostics_json=$(jq -c . "$startup_diagnostics_file" 2>/dev/null || printf '{}')
+    startup_failure_class=$(printf '%s\n' "$startup_diagnostics_json" | jq -r '.startup_failure_class // "unknown"' 2>/dev/null || printf 'unknown')
+    startup_launch_stage=$(printf '%s\n' "$startup_diagnostics_json" | jq -r '.launch_stage // "unknown"' 2>/dev/null || printf 'unknown')
+    startup_prompt_boundary=$(printf '%s\n' "$startup_diagnostics_json" | jq -r '.prompt_boundary.status // "unknown"' 2>/dev/null || printf 'unknown')
+    if [ "$worktree_state" = "dirty" ]; then
+      next_safe_action="inspect startup diagnostics at $startup_diagnostics_file and preserve the issue worktree before retry or resume"
+    else
+      next_safe_action="inspect startup diagnostics at $startup_diagnostics_file before retry or resume"
     fi
     jq -n \
       --arg run_id "$RUN_ID" \
@@ -2353,8 +3747,30 @@ ingest_worker_summary() {
       --arg summary_gap "$summary_gap" \
       --arg worktree_state "$worktree_state" \
       --arg next_safe_action "$next_safe_action" \
+      --arg startup_diagnostics_file "$startup_diagnostics_file" \
+      --arg startup_failure_class "$startup_failure_class" \
+      --arg startup_launch_stage "$startup_launch_stage" \
+      --arg startup_prompt_boundary "$startup_prompt_boundary" \
+      --argjson startup_diagnostics "$startup_diagnostics_json" \
       --argjson session_telemetry "$session_telemetry_json" \
-      'def ios_execution_gaps:
+      'def worker_telemetry_extraction:
+         if (($session_telemetry.status // null) != null) then {
+           schema_version: ($session_telemetry.schema_version // 1),
+           source: ($session_telemetry.source // null),
+           status: ($session_telemetry.status // null),
+           reason_id: ($session_telemetry.reason_id // null),
+           reason: ($session_telemetry.reason // null),
+           fields: ($session_telemetry.fields // {})
+         } else null end;
+       def session_source:
+         ($session_telemetry.source // "worker_summary");
+       def field_reason($field; $fallback):
+         ($session_telemetry.fields[$field].reason_id // $session_telemetry.reason_id // $fallback);
+       def field_status($field):
+         ($session_telemetry.fields[$field].status // $session_telemetry.status // "missing");
+       def gap_reason($gap; $field; $fallback):
+         {gap_kind:$gap, reason_id:field_reason($field; $fallback), source:session_source, status:field_status($field)};
+       def ios_execution_gaps:
          if ($chain | test("ios"; "i")) then
            ["implementation_executor", "worker_routing", "artifact_evidence", "cleanup_telemetry"]
          else [] end;
@@ -2384,17 +3800,29 @@ ingest_worker_summary() {
         builds: [],
         summary_validation: $summary_gap,
         worktree_state: $worktree_state,
+        startup_diagnostics_artifact: $startup_diagnostics_file,
+        startup_failure_class: $startup_failure_class,
+        startup_diagnostics: {
+          schema_version: ($startup_diagnostics.schema_version // 1),
+          artifact: $startup_diagnostics_file,
+          failure_class: $startup_failure_class,
+          launch_stage: $startup_launch_stage,
+          prompt_boundary_status: $startup_prompt_boundary,
+          stdout_tail_artifact: ($startup_diagnostics.streams.stdout.tail_artifact // null),
+          stderr_tail_artifact: ($startup_diagnostics.streams.stderr.tail_artifact // null)
+        },
         blocked_reason: (if $summary_gap == "worker_summary_missing"
           then "worker exited without writing .studio/chain-worker-summary.json"
           else "worker wrote malformed .studio/chain-worker-summary.json" end),
-        failure_summary: "Worker exited without a valid completion summary; parent synthesized this minimal failure summary from exit code, git state, and available telemetry.",
+        failure_summary: ("Worker exited without a valid completion summary; parent synthesized this minimal failure summary from exit code, git state, available telemetry, and startup diagnostics. startup_failure_class=" + $startup_failure_class),
         next_safe_action: $next_safe_action,
         tokens: ($session_telemetry.tokens // null),
         model: ($session_telemetry.model // null),
         model_version: ($session_telemetry.model_version // $session_telemetry.model // null),
         effort: ($session_telemetry.effort // null),
         model_recommendation: null,
-        telemetry_sources: (if (($session_telemetry.source // "") == "") then [] else [$session_telemetry.source] end),
+        telemetry_sources: (if (($session_telemetry.source // "") == "" or (($session_telemetry.status // "") | IN("missing","failed","unsupported"))) then [] else [$session_telemetry.source] end),
+        worker_telemetry_extraction: worker_telemetry_extraction,
         execution_telemetry: null,
         functionality_delivered: null,
         user_visible_change: null,
@@ -2402,7 +3830,14 @@ ingest_worker_summary() {
         lessons: null,
         telemetry_gaps: (([$summary_gap, "tests_lints_builds"] + ios_execution_gaps)
           + (if ($session_telemetry.model // $session_telemetry.model_version // null) == null then ["model"] else [] end)
-          + (if ($session_telemetry.tokens // null) == null then ["tokens"] else [] end))
+          + (if ($session_telemetry.tokens // null) == null then ["tokens"] else [] end)),
+        telemetry_gap_reasons: ([
+          {gap_kind:$summary_gap, reason_id:$summary_gap, source:"worker_summary", status:"failed"},
+          {gap_kind:"tests_lints_builds", reason_id:$summary_gap, source:"worker_summary", status:"missing"}
+        ]
+        + (ios_execution_gaps | map({gap_kind:., reason_id:"ios_execution_summary_absent", source:"worker_summary", status:"missing"}))
+        + (if ($session_telemetry.model // $session_telemetry.model_version // null) == null then [gap_reason("model"; "model"; "missing_or_unavailable")] else [] end)
+        + (if ($session_telemetry.tokens // null) == null then [gap_reason("tokens"; "tokens"; "missing_or_unavailable")] else [] end))
       }' > "$dest"
     emit_chain_event chain_artifact_validation_failed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$duration_s" \
       "$(jq -cn --arg artifact "chain-worker-summary" --arg reason "$summary_gap" --arg summary "$dest" '{artifact:$artifact, reason_id:$reason, summary:$summary}')"
@@ -2439,13 +3874,14 @@ issue_failure_summary_text() {
     --argjson rc "$worker_rc" \
     --arg summary_file "$summary_file" \
     --arg worktree "$issue_worktree" \
-    '"issue #\($issue) worker failed: exit_code=\($rc); summary_status=\(.summary_validation // "valid"); worktree_state=\(.worktree_state // "unknown"); summary=\($summary_file); worktree=\($worktree); next_safe_action=\(.next_safe_action // "inspect the worker summary and halt record before resuming")"' \
+    '"issue #\($issue) worker failed: exit_code=\($rc); summary_status=\(.summary_validation // "valid"); startup_failure_class=\(.startup_diagnostics.failure_class // .startup_failure_class // "unknown"); startup_diagnostics=\(.startup_diagnostics.artifact // .startup_diagnostics_artifact // "missing"); worktree_state=\(.worktree_state // "unknown"); summary=\($summary_file); worktree=\($worktree); next_safe_action=\(.next_safe_action // "inspect the worker summary and halt record before resuming")"' \
     "$summary_file" 2>/dev/null \
     || printf 'issue #%s worker failed: exit_code=%s; summary=%s; worktree=%s' "$issue" "$worker_rc" "$summary_file" "$issue_worktree"
 }
 
 generate_run_report() {
   local status="$1" failure_reason="${2:-}" ended_ts ended_epoch duration_s summary_count halt_count halt_dir digest_script
+  local latest_event_at state_status state_updated_at tmp_state
   ended_ts=$(iso_ts_now)
   ended_epoch=$(now_epoch)
   duration_s=$(duration_since "$RUN_STARTED_AT" "$ended_epoch")
@@ -2457,12 +3893,29 @@ generate_run_report() {
   elif [ -n "${ROOT:-}" ]; then
     digest_script="$ROOT/scripts/studio-chain-telemetry-digest.sh"
   fi
+  latest_event_at=""
+  if [ -s "${EVENTS_JSONL:-}" ] && [ "$EVENTS_JSONL" != "/dev/null" ]; then
+    latest_event_at=$(jq -r -s '[ .[] | .created_at? // empty | select(. != "") ] | max // ""' "$EVENTS_JSONL" 2>/dev/null || true)
+  fi
+  state_status="$status"
+  state_updated_at=""
+  if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ]; then
+    state_status=$(jq -r '.status // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
+    state_updated_at=$(jq -r '.updated_at // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
+  fi
+  [ -n "$state_status" ] || state_status="$status"
+  [ -n "$state_updated_at" ] || state_updated_at="unknown"
+  [ -n "$latest_event_at" ] || latest_event_at="none"
 
   {
     printf '# Studio Chain Run Report\n\n'
     printf -- '- Run UUID: `%s`\n' "$RUN_ID"
     printf -- '- Manifest: `%s`\n' "$MANIFEST"
     printf -- '- Status: `%s`\n' "$status"
+    printf -- '- Report generated: `%s`\n' "$ended_ts"
+    printf -- '- Latest event: `%s`\n' "$latest_event_at"
+    printf -- '- State status: `%s`\n' "$state_status"
+    printf -- '- State updated: `%s`\n' "$state_updated_at"
     printf -- '- Started: `%s`\n' "$RUN_STARTED_TS"
     printf -- '- Ended: `%s`\n' "$ended_ts"
     printf -- '- Duration: `%ss`\n' "$duration_s"
@@ -2679,6 +4132,37 @@ generate_run_report() {
     else
       printf 'Validation failure summary unavailable: no event log was written.\n'
     fi
+    printf '\n## Startup Diagnostics\n\n'
+    if [ "$summary_count" -gt 0 ]; then
+      jq -r -s '
+        def cell($v):
+          if $v == null or $v == "" then "missing"
+          else ($v | tostring | gsub("\\|"; "\\|"))
+          end;
+        [
+          .[] |
+          select((.startup_diagnostics.artifact // .startup_diagnostics_artifact // null) != null)
+          | {
+              issue: (.issue_number // "unknown"),
+              failure_class: (.startup_diagnostics.failure_class // .startup_failure_class // "unknown"),
+              launch_stage: (.startup_diagnostics.launch_stage // "unknown"),
+              prompt_boundary: (.startup_diagnostics.prompt_boundary_status // "unknown"),
+              artifact: (.startup_diagnostics.artifact // .startup_diagnostics_artifact // null),
+              stdout_tail: (.startup_diagnostics.stdout_tail_artifact // null),
+              stderr_tail: (.startup_diagnostics.stderr_tail_artifact // null)
+            }
+        ] as $rows |
+        if ($rows | length) == 0 then
+          "No child startup diagnostics were recorded."
+        else
+          "| Issue | Failure Class | Launch Stage | Prompt Boundary | Artifact | Stdout Tail | Stderr Tail |",
+          "|---:|---|---|---|---|---|---|",
+          ($rows[] | "| #\(cell(.issue)) | \(cell(.failure_class)) | \(cell(.launch_stage)) | \(cell(.prompt_boundary)) | \(cell(.artifact)) | \(cell(.stdout_tail)) | \(cell(.stderr_tail)) |")
+        end
+      ' "$SUMMARY_ROOT"/*.json
+    else
+      printf 'No child startup diagnostics were recorded.\n'
+    fi
     printf '\n## Quality Signals\n\n'
     if [ "$summary_count" -gt 0 ]; then
       jq -r -s '
@@ -2691,6 +4175,38 @@ generate_run_report() {
       ' "$SUMMARY_ROOT"/*.json
     else
       printf 'No quality signals were ingested.\n'
+    fi
+    printf '\n## State Issue Rows\n\n'
+    if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ]; then
+      jq -r '
+        def cell($v):
+          if $v == null or $v == "" then "missing"
+          else ($v | tostring | gsub("\\|"; "\\|"))
+          end;
+        def maybe_number:
+          if . == null or . == "" then null else (tonumber? // .) end;
+        [ .chains[]? as $chain
+          | $chain.issues[]?
+          | {
+              chain: ($chain.name // $chain.chain // "unknown"),
+              issue_run_id: (.issue_run_id // .provenance.session.issue_run_id // null),
+              issue_number: ((.issue_number // .number // .issue // null) | maybe_number),
+              title: (.issue_title // .title // .provenance.issue.title // null),
+              status: (.status // "unknown"),
+              dependencies: (.dependencies // []),
+              commit_after: (.commit_after // .provenance.implementation.commit_after // null)
+            }
+        ] as $rows
+        | if ($rows | length) == 0 then "No issue rows were present in run state."
+          else
+            "| Chain | Issue-run UUID | Issue | Title | Status | Depends On | Commit After |",
+            "|---|---|---:|---|---|---|---|",
+            ($rows[] |
+              "| \(cell(.chain)) | \(cell(.issue_run_id)) | #\(.issue_number // "unknown") | \(cell(.title)) | \(cell(.status)) | \(if ((.dependencies // []) | length) == 0 then "-" else ((.dependencies // []) | map("#" + tostring) | join(", ")) end) | \(cell(.commit_after)) |")
+          end
+      ' "$RUN_STATE_JSON"
+    else
+      printf 'Run state was not available.\n'
     fi
     printf '\n## Chains And Issues\n\n'
     if [ "$summary_count" -gt 0 ]; then
@@ -2746,29 +4262,77 @@ generate_run_report() {
     halt_count=0
     [ -n "$halt_dir" ] && halt_count=$(find "$halt_dir" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
     if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ] && [ "$(jq '(.halt_records // []) | length' "$RUN_STATE_JSON" 2>/dev/null || printf 0)" -gt 0 ]; then
-      jq -r '
+      jq -r --argjson now_epoch "$ended_epoch" '
+        def cell($v):
+          if $v == null or $v == "" then "missing"
+          else ($v | tostring | gsub("\\|"; "\\|"))
+          end;
+        def ts_epoch: try ((. // "") | fromdateiso8601) catch 0;
+        def retry_resume_state:
+          if ((.halt_class // "") != "retryable") then "needs_human_inspection"
+          elif (((.retry_count // 1) | tonumber? // 1) >= ((.retry_policy.human_inspection_retry_count // 3) | tonumber? // 3)) then "needs_human_inspection"
+          elif (((.retry_policy.cooldown_until // .last_seen // .created_at // "") | ts_epoch) > $now_epoch) then "cooling_down"
+          else "retrying"
+          end;
+        def retry_cell:
+          if ((.halt_class // "") != "retryable") then "not_applicable"
+          else "state=\(retry_resume_state); count=\(.retry_count // 1); first=\(.first_seen // .created_at // "missing"); last=\(.last_seen // .created_at // "missing"); command=\(cell(.last_observed_command)); error=\(cell(.last_observed_error))"
+          end;
+        def issue_label:
+          (.issue_context // {}) as $ctx
+          | if ($ctx.issue_number // null) == null then "unknown"
+            else "#\($ctx.issue_number)\(if ($ctx.title // "") == "" then "" else " " + ($ctx.title | tostring | gsub("\\|"; "\\|")) end)"
+            end;
+        def detail_cell:
+          (.details // null) as $details
+          | if $details == null then "missing"
+            elif ($details | type) == "object" or ($details | type) == "array" then ($details | tojson)
+            else ($details | tostring)
+            end
+          | gsub("\\|"; "\\|")
+          | .[0:240];
         (.halt_records // []) as $records
         | ($records | map(select((.status // "") == "paused" or (.status // "") == "terminated"))) as $active
         | ($records | map(select((.status // "") == "superseded"))) as $superseded
         | if ($active | length) > 0 then
-            ["| Reason | Class | Status | Next Command | Artifact |",
-             "|---|---|---|---|---|"],
-            ($active[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(.next_command // "hard stop") | \(.path // "missing") |")
+            ["| Reason | Class | Status | Retry | Issue | Issue-run UUID | Summary | Details | Next Safe Action | Next Command | Artifact |",
+             "|---|---|---|---|---|---|---|---|---|---|---|"],
+            ($active[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(retry_cell) | \(issue_label) | \(cell(.issue_context.issue_run_id)) | \(cell(.summary)) | \(detail_cell) | \(cell(.next_safe_action)) | \(.next_command // "hard stop") | \(.path // "missing") |")
           elif ($superseded | length) > 0 then
             "No active halt records. Superseded halt records: \($superseded | length) (run completed after resume).",
             "",
-            "| Reason | Class | Status | Resolution | Artifact |",
-            "|---|---|---|---|---|",
-            ($superseded[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(.resolution // "run_completed_after_resume") | \(.path // "missing") |")
+            "| Reason | Class | Status | Issue | Resolution | Artifact |",
+            "|---|---|---|---|---|---|",
+            ($superseded[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(issue_label) | \(.resolution // "run_completed_after_resume") | \(.path // "missing") |")
           else
             "No active halt records."
           end
       ' "$RUN_STATE_JSON"
     elif [ "$halt_count" -gt 0 ]; then
-      jq -r -s '
-        ["| Reason | Class | Status | Next Command | Summary |",
-         "|---|---|---|---|---|"],
-        (.[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(.next_command // "hard stop") | \(.summary | gsub("\\|"; "\\|")) |")
+      jq -r -s --argjson now_epoch "$ended_epoch" '
+        def cell($v):
+          if $v == null or $v == "" then "missing"
+          else ($v | tostring | gsub("\\|"; "\\|"))
+          end;
+        def ts_epoch: try ((. // "") | fromdateiso8601) catch 0;
+        def retry_resume_state:
+          if ((.halt_class // "") != "retryable") then "needs_human_inspection"
+          elif (((.retry_count // 1) | tonumber? // 1) >= ((.retry_policy.human_inspection_retry_count // 3) | tonumber? // 3)) then "needs_human_inspection"
+          elif (((.retry_policy.cooldown_until // .last_seen // .created_at // "") | ts_epoch) > $now_epoch) then "cooling_down"
+          else "retrying"
+          end;
+        def retry_cell:
+          if ((.halt_class // "") != "retryable") then "not_applicable"
+          else "state=\(retry_resume_state); count=\(.retry_count // 1); first=\(.first_seen // .created_at // "missing"); last=\(.last_seen // .created_at // "missing"); command=\(cell(.last_observed_command)); error=\(cell(.last_observed_error))"
+          end;
+        def issue_label:
+          (.issue_context // {}) as $ctx
+          | if ($ctx.issue_number // .issue_number // null) == null then "unknown"
+            else "#\($ctx.issue_number // .issue_number)\(if ($ctx.title // "") == "" then "" else " " + ($ctx.title | tostring | gsub("\\|"; "\\|")) end)"
+            end;
+        ["| Reason | Class | Status | Retry | Issue | Issue-run UUID | Next Safe Action | Next Command | Summary |",
+         "|---|---|---|---|---|---|---|---|---|"],
+        (.[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(retry_cell) | \(issue_label) | \(cell(.issue_context.issue_run_id // .issue_run_id)) | \(cell(.next_safe_action)) | \(.next_command // "hard stop") | \(.summary | gsub("\\|"; "\\|")) |")
       ' "$halt_dir"/*.json
     else
       printf 'No halt records were written.\n'
@@ -2793,10 +4357,28 @@ generate_run_report() {
     printf '\n## Telemetry Gaps\n\n'
     if [ "$summary_count" -gt 0 ]; then
       jq -r -s '
+        def gap_kind_value($gap):
+          if ($gap | type) == "object" then ($gap.gap_kind // $gap.kind // "unknown") else ($gap | tostring) end;
         [.[].telemetry_gaps[]?] | group_by(.) | map({gap: .[0], count: length}) | sort_by(-.count) |
         if length == 0 then "No worker-declared gaps."
         else .[] | "- \(.gap): \(.count)"
         end
+      ' "$SUMMARY_ROOT"/*.json
+      jq -r -s '
+        def gap_kind_value($gap):
+          if ($gap | type) == "object" then ($gap.gap_kind // $gap.kind // "unknown") else ($gap | tostring) end;
+        [
+          .[] as $row
+          | ($row.telemetry_gaps // [])[]? as $gap
+          | (gap_kind_value($gap)) as $kind
+          | (($row.telemetry_gap_reasons // []) | map(select((.gap_kind // .kind // "") == $kind)) | .[0] // {}) as $detail
+          | {gap_kind:$kind, reason_id:($detail.reason_id // $detail.reason // "missing_or_unavailable")}
+        ] | group_by([.gap_kind, .reason_id])
+          | map({gap_kind:.[0].gap_kind, reason_id:.[0].reason_id, count:length})
+          | sort_by(.gap_kind, .reason_id)
+          | if length == 0 then empty
+            else "", "By reason:", (.[] | "- \(.gap_kind):\(.reason_id): \(.count)")
+            end
       ' "$SUMMARY_ROOT"/*.json
     else
       printf -- '- worker_summary_missing: all issues\n'
@@ -2824,10 +4406,19 @@ generate_run_report() {
     printf -- '- Event log: `%s`\n' "${EVENTS_JSONL:-missing}"
     printf -- '- Worker summaries: `%s`\n' "${SUMMARY_ROOT:-missing}"
     printf -- '- Halt records: `%s`\n' "${HALT_ROOT:-missing}"
+    printf -- '- Startup diagnostics: `%s`\n' "${STARTUP_DIAGNOSTICS_ROOT:-missing}"
     printf -- '- Decision escrows: `%s`\n' "${ESCROW_ROOT:-missing}"
     printf -- '- Phase reviews: `%s`\n\n' "${PHASE_REVIEW_ROOT:-missing}"
     printf 'This report is private local telemetry under `~/.dev-studio/generic-dev-studio/chain-runs/`. Public PR and issue comments should include run IDs, PR URLs, issue numbers, and abstract gap names only, not private project file paths or velocity details.\n'
   } > "$RUN_REPORT"
+  if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ]; then
+    tmp_state="$RUN_STATE_JSON.report-generated.$$"
+    # Only finish_run and --regenerate-report write reports; any new caller must hold the run-state lock or be fixture-local.
+    jq --arg report_generated_at "$ended_ts" \
+      '.report_generated_at = $report_generated_at' \
+      "$RUN_STATE_JSON" > "$tmp_state"
+    mv "$tmp_state" "$RUN_STATE_JSON"
+  fi
 }
 
 render_run_finish_summary() {
@@ -2925,6 +4516,7 @@ render_run_finish_summary() {
 finish_run() {
   local status="${1:-$RUN_STATUS}" reason="${2:-$RUN_FAILURE_REASON}" duration_s
   RUN_FINISHED=1
+  reason=$(resolved_run_failure_reason "$status" "$reason")
   RUN_STATUS="$status"
   RUN_FAILURE_REASON="$reason"
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -2935,7 +4527,6 @@ finish_run() {
   if [ "$status" = "completed" ]; then
     supersede_completed_halt_records
   fi
-  generate_run_report "$status" "$reason"
   duration_s=$(duration_since "$RUN_STARTED_AT")
   emit_chain_event chain_run_completed "" "$RUN_ID" "" "" "$status" "$duration_s" \
     "$(jq -cn --arg report "$RUN_REPORT" --arg reason "$reason" '{report:$report, failure_reason:(if $reason == "" then null else $reason end)}')"
@@ -2943,6 +4534,7 @@ finish_run() {
     emit_chain_event chain_resume_attempt_completed "" "$RUN_ID" "" "" "$status" "$duration_s" \
       "$(jq -cn --arg attempt_id "$ATTEMPT_ID" --arg reason "$reason" '{attempt_id:$attempt_id, failure_reason:(if $reason == "" then null else $reason end)}')"
   fi
+  generate_run_report "$status" "$reason"
   if [ "$status" = "completed" ] && [ -n "${RUN_WORK_ROOT:-}" ]; then
     rm -rf "$RUN_WORK_ROOT" 2>/dev/null || true
   fi
@@ -2951,15 +4543,29 @@ finish_run() {
 }
 
 abort_run() {
-  local reason="${1:-failed}"
-  write_halt_record "$(halt_reason_for_text "$reason")" "$reason" >/dev/null || log "halt record write failed for: $reason"
+  local reason="${1:-failed}" reason_id
+  reason_id=$(halt_reason_for_text "$reason")
+  if [ "$(halt_class_for_reason "$reason_id")" = "retryable" ] || ! active_halt_reason_exists "$reason_id"; then
+    write_halt_record "$reason_id" "$reason" >/dev/null || log "halt record write failed for: $reason"
+  fi
   finish_run failed "$reason"
   exit 1
 }
 
 abort_run_with_reason() {
   local reason_id="$1" summary="$2"
-  write_halt_record "$reason_id" "$summary" >/dev/null || log "halt record write failed for: $summary"
+  if [ "$(halt_class_for_reason "$reason_id")" = "retryable" ] || ! active_halt_reason_exists "$reason_id"; then
+    write_halt_record "$reason_id" "$summary" >/dev/null || log "halt record write failed for: $summary"
+  fi
+  finish_run failed "$summary"
+  exit 1
+}
+
+abort_run_with_reason_details() {
+  local reason_id="$1" summary="$2" details_json="${3:-null}"
+  if [ "$(halt_class_for_reason "$reason_id")" = "retryable" ] || ! active_halt_reason_exists "$reason_id"; then
+    write_halt_record "$reason_id" "$summary" "" "" "" "" parent-runner "$details_json" >/dev/null || log "halt record write failed for: $summary"
+  fi
   finish_run failed "$summary"
   exit 1
 }
@@ -3197,6 +4803,7 @@ print_supervisor_decision() {
   if [ "$action" = "resume" ]; then
     printf -- '- Resume semantics: continue the selected run only; completed and integrated issues are skipped, completed but unintegrated issues are integrated before new work starts, pending dependency-ready issues are relaunched, and failed/halted issues keep their halt record until the cause is corrected.\n'
     printf -- '- Resume command: `scripts/studio-chain-runner.sh --resume %s --yes`\n' "$selected_run_id"
+    selected_active_halt_resume_guidance 2>/dev/null || true
   elif [ "$action" = "start" ]; then
     printf -- '- Namespacing: this run owns `%s/%s/`; chain and issue worktrees are created below that run UUID so concurrent chains cannot share temporary paths.\n' "$RUN_ROOT" "$selected_run_id"
   elif [ "$action" = "refused_hard_stop" ] || [ "$action" = "refused_escrow" ] || [ "$action" = "refused_lock" ]; then
@@ -3451,7 +5058,7 @@ acquire_state_lock() {
 
 supervisor_decide_next() {
   local manifest="$1" mode="$2" states completed=0 eligible=0 hard_stop=0 escrow=0
-  local state run_id selected_state="" selected_run_id="" candidates_json action reason_id
+  local state run_id selected_run_id="" candidates_json action reason_id
   local state_view state_status
   MANIFEST="$manifest"
   resolve_new_run_manifest_context
@@ -3485,7 +5092,6 @@ supervisor_decide_next() {
       continue
     fi
     eligible=$((eligible + 1))
-    selected_state="$state"
     selected_run_id="$run_id"
     candidates_json=$(printf '%s' "$candidates_json" | jq --arg run_id "$run_id" '. + [$run_id]')
     rm -f "$state_view"
@@ -3586,10 +5192,58 @@ run_retryable() {
   done
 }
 
+command_string_from_args() {
+  local arg out=""
+  for arg in "$@"; do
+    out="${out:+$out }$arg"
+  done
+  printf '%s\n' "$out"
+}
+
+retryable_command_origin() {
+  local command="$1"
+  case "$command" in
+    *" github.com:"*|*"github.com/"*|git@github.com:*)
+      printf '%s\n' "$command" | sed -E 's#.*(git@github\.com:|https?://github\.com/|ssh://git@github\.com/)([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(\.git)?.*#github.com/\2#' | tr '[:upper:]' '[:lower:]'
+      ;;
+    *" origin "*|*" origin"|*"origin "*)
+      printf 'origin\n'
+      ;;
+    *" upstream "*|*" upstream"|*"upstream "*)
+      printf 'upstream\n'
+      ;;
+    *)
+      printf 'unknown\n'
+      ;;
+  esac
+}
+
+retryable_halt_details_json() {
+  local reason_id="$1" summary="$2" exit_code="$3"
+  shift 3
+  local command origin
+  command=$(command_string_from_args "$@")
+  origin=$(retryable_command_origin "$command")
+  jq -cn \
+    --arg reason_id "$reason_id" \
+    --arg summary "$summary" \
+    --arg command "$command" \
+    --arg origin "$origin" \
+    --argjson exit_code "$exit_code" \
+    '{reason_id:$reason_id, command:$command, last_command:$command, origin:$origin, error:$summary, exit_code:$exit_code}'
+}
+
 run_retryable_or_abort() {
   local reason_id="$1" summary="$2"
   shift 2
-  run_retryable "$reason_id" "$@" || abort_run_with_reason "$reason_id" "$summary"
+  local rc details_json
+  set +e
+  run_retryable "$reason_id" "$@"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] && return 0
+  details_json=$(retryable_halt_details_json "$reason_id" "$summary" "$rc" "$@")
+  abort_run_with_reason_details "$reason_id" "$summary" "$details_json"
 }
 
 validate_branch_ref() {
@@ -3797,12 +5451,57 @@ available_ram_gib() {
   printf '4\n'
 }
 
+chain_node_health_timeout_s() {
+  local timeout_s="${STUDIO_CHAIN_NODE_HEALTH_TIMEOUT_S:-12}"
+  case "$timeout_s" in ''|*[!0-9]*|0) timeout_s=12 ;; esac
+  printf '%s\n' "$timeout_s"
+}
+
+chain_node_health_first_row() {
+  local health_cmd="$1" id="$2" timeout_s="$3"
+  local out pid started rc elapsed
+  out=$(mktemp -t studio-chain-node-health.XXXXXX) || return 125
+  if (
+    set +e
+    set -m
+    "$health_cmd" "$id" >"$out" 2>/dev/null &
+    pid=$!
+    started=$(now_epoch)
+    rc=""
+    while kill -0 "$pid" 2>/dev/null; do
+      elapsed=$(( $(now_epoch) - started ))
+      if [ "$elapsed" -ge "$timeout_s" ]; then
+        kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+        sleep 1
+        kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        rc=124
+        break
+      fi
+      sleep 1
+    done
+    if [ -z "$rc" ]; then
+      wait "$pid"
+      rc=$?
+    fi
+    exit "$rc"
+  ) 2>/dev/null; then
+    rc=0
+  else
+    rc=$?
+  fi
+  sed -n '1p' "$out"
+  rm -f "$out"
+  return "$rc"
+}
+
 healthy_xcodebuild_offload_count() {
-  local registry ids id row status health_cmd count=0
+  local registry ids id row status health_cmd count=0 timeout_s degraded=0 probe_rc
   registry="$(resolve_runtime_global)/nodes.json"
   [ -r "$registry" ] || { printf '0\n'; return 0; }
   command -v jq >/dev/null 2>&1 || { printf '0\n'; return 0; }
   health_cmd="${STUDIO_CHAIN_NODE_HEALTH_CMD:-$SCRIPT_DIR/node-health.sh}"
+  timeout_s=$(chain_node_health_timeout_s)
 
   ids=$(jq -r '.nodes[]? | select(.enabled != false) | select(.roles? // [] | index("xcodebuild")) | .id' "$registry" 2>/dev/null) || ids=""
   while IFS= read -r id; do
@@ -3810,14 +5509,28 @@ healthy_xcodebuild_offload_count() {
     if node_is_self "$id"; then
       continue
     fi
-    row=$("$health_cmd" "$id" 2>/dev/null | head -n 1)
+    if row=$(chain_node_health_first_row "$health_cmd" "$id" "$timeout_s"); then
+      :
+    else
+      probe_rc=$?
+      case "$probe_rc" in
+        124) log "worker-pool node-health degraded: timed out probing $id after ${timeout_s}s; excluding node from auto pool" ;;
+        *) log "worker-pool node-health degraded: probe failed for $id; excluding node from auto pool" ;;
+      esac
+      degraded=$((degraded + 1))
+      continue
+    fi
     status=$(printf '%s' "$row" | awk -F'\t' '{print $2}')
     case "$status" in
       healthy|moved) count=$((count + 1)) ;;
+      *) degraded=$((degraded + 1)) ;;
     esac
   done <<EOF
 $ids
 EOF
+  if [ "$degraded" -gt 0 ]; then
+    log "worker-pool auto sizing: healthy_offload_nodes=$count degraded_offload_nodes=$degraded timeout_s=$timeout_s local_worker_included=1"
+  fi
   printf '%s\n' "$count"
 }
 
@@ -3970,7 +5683,9 @@ build_plan_json() {
         --argjson dependencies "$dependencies_json" \
         '. + [{
           number:$issue,
+          issue_number:$issue,
           title:$title,
+          issue_title:$title,
           state:$state,
           url:(if $url == "" then null else $url end),
           issue_repo:$issue_repo,
@@ -3980,6 +5695,7 @@ build_plan_json() {
           issue_worktree:$worktree,
           issue_run_id:$issue_run_id,
           status:"pending",
+          commit_after:null,
           lifecycle_state:"issue-created",
           lifecycle_history:[{state:"issue-created", at:$mapped_at, reason:"github-issue-mapping"}],
           provenance:{
@@ -4324,7 +6040,7 @@ validate_release_chain_leaf_policy() {
 
 verify_expected_source_sha_or_abort() {
   local chain_name="$1" source_branch="$2" expected_sha="$3" phase="$4"
-  local actual_sha
+  local actual_sha summary details_json
   [ -n "$expected_sha" ] && [ "$expected_sha" != "null" ] || return 0
   if [ "$DRY_RUN" -eq 1 ]; then
     printf 'DRY-RUN verify origin/%q matches expected source SHA %q before %s\n' "$source_branch" "$expected_sha" "$phase"
@@ -4332,7 +6048,9 @@ verify_expected_source_sha_or_abort() {
   fi
   actual_sha=$(with_login_home_for_github git ls-remote --heads origin "$source_branch" 2>/dev/null | awk 'NR == 1 { print $1 }') || actual_sha=""
   if [ -z "$actual_sha" ]; then
-    abort_run_with_reason network_partition "cannot verify origin/$source_branch before $phase for chain $chain_name"
+    summary="cannot verify origin/$source_branch before $phase for chain $chain_name"
+    details_json=$(retryable_halt_details_json network_partition "$summary" 1 with_login_home_for_github git ls-remote --heads origin "$source_branch")
+    abort_run_with_reason_details network_partition "$summary" "$details_json"
   fi
   if [ "$actual_sha" != "$expected_sha" ]; then
     abort_run_with_reason base_branch_advanced "source branch $source_branch for chain $chain_name changed before $phase: expected $expected_sha, got $actual_sha"
@@ -4499,6 +6217,28 @@ prepare_plan() {
 
 trap finish_unexpected_exit EXIT
 
+if [ -n "$REGENERATE_REPORT_ID" ]; then
+  RUN_FINISHED=1
+  RUN_ID="$REGENERATE_REPORT_ID"
+  configure_run_paths
+  if [ ! -f "$RUN_STATE_JSON" ]; then
+    printf 'studio-chain-runner: regenerate state not found: %s\n' "$RUN_STATE_JSON" >&2
+    exit 2
+  fi
+  acquire_state_lock
+  resolve_resume_state
+  RUN_STATUS=$(jq -r '.status // "unknown"' "$RUN_STATE_JSON" 2>/dev/null || printf 'unknown')
+  RUN_FAILURE_REASON=$(jq -r '.failure_reason // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
+  if command -v ts_to_epoch >/dev/null 2>&1; then
+    RUN_STARTED_AT=$(ts_to_epoch "$RUN_STARTED_TS" 2>/dev/null || now_epoch)
+  else
+    RUN_STARTED_AT=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$RUN_STARTED_TS" +%s 2>/dev/null || date -u -d "$RUN_STARTED_TS" +%s 2>/dev/null || now_epoch)
+  fi
+  generate_run_report "$RUN_STATUS" "$RUN_FAILURE_REASON"
+  log "report regenerated for $RUN_ID at $RUN_REPORT"
+  exit 0
+fi
+
 if [ "$EXPLAIN_NEXT" -eq 1 ]; then
   supervisor_decide_next "$MANIFEST" explain
 fi
@@ -4560,7 +6300,8 @@ chain_count=$(jq '.chains | length' "$PLAN_JSON")
 
 execute_issue_session() {
   local chain_name="$1" chain_branch="$2" issue="$3" host="$4" git_metadata_strategy="$5" worktree="$6" issue_branch="$7" chain_run_id="$8" issue_run_id="$9" before="${10}" phase_review_context="${11:-[]}" rule_pack_resolution="${12:-null}"
-  local issue_json issue_title issue_body spawn prompt summary_path start_path source_branch chain_artifact_root
+  local issue_json issue_title issue_body spawn prompt summary_path start_path source_branch chain_artifact_root tool_preflight_prompt
+  local startup_context stdout_raw stderr_raw capture_streams child_rc restore_errexit
   local -a spawn_argv
   local launch_home="" codex_auth_home=""
 
@@ -4571,9 +6312,10 @@ execute_issue_session() {
   summary_path="$worktree/.studio/chain-worker-summary.json"
   start_path="$worktree/.studio/chain-task-start.json"
   chain_artifact_root=$(ios_chain_artifact_root "$chain_run_id")
+  tool_preflight_prompt=$(chain_tool_preflight_json)
   if [ "$DRY_RUN" -eq 0 ]; then
     mkdir -p "$chain_artifact_root"
-    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$source_branch" "$issue_branch" "$issue_json" "$host" "$git_metadata_strategy" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context" "$rule_pack_resolution"
+    write_chain_task_start_envelope "$chain_name" "$chain_branch" "$source_branch" "$issue_branch" "$issue_json" "$host" "$git_metadata_strategy" "$worktree" "$chain_run_id" "$issue_run_id" "$summary_path" "$start_path" "$phase_review_context" "$rule_pack_resolution" "$tool_preflight_prompt"
   fi
 
   spawn=$(host_spawn_command "$host")
@@ -4583,6 +6325,16 @@ execute_issue_session() {
   case "$host" in
     codex*|*codex*) codex_auth_home=$(codex_auth_home_for_worker_launch "$launch_home") ;;
   esac
+  capture_streams=false
+  if startup_capture_enabled; then
+    capture_streams=true
+  fi
+  startup_context=$(startup_launch_context_path "$issue_run_id")
+  stdout_raw=$(startup_stdout_raw_path "$issue_run_id")
+  stderr_raw=$(startup_stderr_raw_path "$issue_run_id")
+  if [ "$DRY_RUN" -eq 0 ]; then
+    write_child_launch_context "$startup_context" "$chain_name" "$issue" "$host" "$worktree" "$issue_branch" "$summary_path" "$start_path" "$launch_home" "$codex_auth_home" "${spawn_argv[0]:-}" "$capture_streams"
+  fi
 
   prompt=$(cat <<EOF
 Implement this studio issue in a fresh chain-runner session.
@@ -4601,6 +6353,7 @@ Working directory: $worktree
 Git metadata strategy: $git_metadata_strategy
 Task start envelope: $start_path
 Required summary artifact: $summary_path
+Tool preflight: $tool_preflight_prompt
 
 Rules:
 - Work only in this working directory.
@@ -4643,6 +6396,7 @@ Summary JSON fields:
 - self_review_findings array; use [] when no findings
 - self_review_fixes array; use [] when no fixes were needed
 - final_verification_evidence array with the final post-self-review commands and outcomes
+- lints entries may record expected tool unavailability with outcome "skipped", reason_id, and substitutes_run
 - execution_telemetry optional object for iOS work: implementation/build/test/review/release executors when applicable, routing reason class, economics/cost summary, private artifact roots, public artifact classes, cleanup outcome, retained TTL class, and control-plane timing
 - tokens object when available, otherwise null
 - functionality_delivered optional string or array describing what users/agents can now do
@@ -4653,6 +6407,11 @@ Summary JSON fields:
 - lessons optional string or array when telemetry supports next-chain recommendations
 - telemetry_gaps array listing missing fields such as "tokens" or "model"
 - blocked_reason when nonzero
+
+ShellCheck verification policy:
+- For touched shell scripts or release scripts, run ShellCheck when tool_preflight.tools.shellcheck.status is "available".
+- If ShellCheck is "unavailable", record a lints[] entry for the attempted ShellCheck command with outcome "skipped", reason_id "shellcheck_expected_unavailable", and substitutes_run naming bash -n plus relevant repo lints/fixtures. This is expected unavailability, not verification drift.
+- If ShellCheck is available but not run for a shell-script change, record the reason and do not claim ShellCheck evidence.
 
 Private phase-review context forwarded from prior clean outcome reviews:
 $phase_review_context
@@ -4670,9 +6429,15 @@ EOF
     return 0
   fi
 
+  restore_errexit=0
+  case "$-" in
+    *e*) restore_errexit=1; set +e ;;
+  esac
+
   if [ -n "$launch_home" ] && [ -d "$launch_home" ]; then
     if [ -n "$codex_auth_home" ]; then
-      (cd "$worktree" && env \
+      (cd "$worktree" && run_child_with_optional_startup_capture "$capture_streams" "$stdout_raw" "$stderr_raw" \
+        env \
         HOME="$launch_home" \
         CODEX_HOME="$codex_auth_home" \
         STUDIO_RUN_ID="$RUN_ID" \
@@ -4680,33 +6445,45 @@ EOF
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
         STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
         "${spawn_argv[@]}" "$prompt")
+      child_rc=$?
     else
-      (cd "$worktree" && env \
+      (cd "$worktree" && run_child_with_optional_startup_capture "$capture_streams" "$stdout_raw" "$stderr_raw" \
+        env \
         HOME="$launch_home" \
         STUDIO_RUN_ID="$RUN_ID" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
         STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
         "${spawn_argv[@]}" "$prompt")
+      child_rc=$?
     fi
   else
     if [ -n "$codex_auth_home" ]; then
-      (cd "$worktree" && env \
+      (cd "$worktree" && run_child_with_optional_startup_capture "$capture_streams" "$stdout_raw" "$stderr_raw" \
+        env \
         CODEX_HOME="$codex_auth_home" \
         STUDIO_RUN_ID="$RUN_ID" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
         STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
         "${spawn_argv[@]}" "$prompt")
+      child_rc=$?
     else
-      (cd "$worktree" && env \
+      (cd "$worktree" && run_child_with_optional_startup_capture "$capture_streams" "$stdout_raw" "$stderr_raw" \
+        env \
         STUDIO_RUN_ID="$RUN_ID" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
         STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
         "${spawn_argv[@]}" "$prompt")
+      child_rc=$?
     fi
   fi
+  if [ "$restore_errexit" -eq 1 ]; then
+    set -e
+  fi
+  update_child_launch_context_exit "$startup_context" "$child_rc"
+  return "$child_rc"
 }
 
 finalize_chain_pr() {
@@ -4789,7 +6566,7 @@ detach_chain_worktree_for_merge_cleanup() {
     printf 'DRY-RUN git -C %q checkout --detach HEAD\n' "$chain_worktree"
     return 0
   }
-  [ -d "$chain_worktree/.git" ] || [ -f "$chain_worktree/.git" ] || return 0
+  git_checkout_exists "$chain_worktree" || return 0
   current_branch=$(git -C "$chain_worktree" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
   [ "$current_branch" = "$chain_branch" ] || return 0
   log "detaching $chain_worktree from $chain_branch before PR merge cleanup"
@@ -4966,6 +6743,7 @@ write_issue_phase_outcome_artifact() {
 run_issue_job() {
   local name="$1" branch="$2" chain_worktree="$3" issue="$4" host="$5" git_metadata_strategy="$6" issue_worktree="$7" issue_branch="$8" chain_run_id="$9" issue_run_id="${10}" result_file="${11}" phase_review_mode="${12:-auto}" issue_count_for_review="${13:-1}"
   local before after worker_rc child_worker_rc summary_file issue_duration summary_payload issue_started_at child_reason_id child_blocked_reason parent_finalized effective_worker_rc failure_summary
+  local halt_details_json halt_next_safe_action
   local phase_context boundary_id phase_plan_artifact phase_outcome_artifact phase_review_rc phase_review_reason worker_telemetry_file worker_launch_home rule_pack_resolution phase_issue_json
   local auto_retry_performed
   issue_started_at=$(now_epoch)
@@ -5016,7 +6794,7 @@ run_issue_job() {
         72) phase_review_reason="reviewer_ambiguous" ;;
         *) phase_review_reason="required_review_failed" ;;
       esac
-      mark_issue_state "$issue_run_id" failed "$before" "$before" "" "phase_review_failed"
+      mark_issue_state "$issue_run_id" failed "$before" "$before" "" "$phase_review_reason"
       jq -n --arg issue "$issue" --arg reason "$phase_review_reason" \
         '{status:"failed", issue:($issue|tonumber), reason:$reason}' > "$result_file"
       return 0
@@ -5162,7 +6940,9 @@ run_issue_job() {
       child_reason_id=$(halt_reason_for_text "${child_blocked_reason:-worker exited $worker_rc}")
     fi
     failure_summary=$(issue_failure_summary_text "$issue" "$worker_rc" "$summary_file" "$issue_worktree")
-    write_halt_record "$child_reason_id" "$failure_summary" "$chain_run_id" "$issue_run_id" "$name" "$issue" "child-worker" >/dev/null || log "halt record write failed for issue #$issue"
+    halt_details_json=$(startup_halt_details_json "$summary_file")
+    halt_next_safe_action=$(jq -r '.next_safe_action // empty' "$summary_file" 2>/dev/null || true)
+    write_halt_record "$child_reason_id" "$failure_summary" "$chain_run_id" "$issue_run_id" "$name" "$issue" "child-worker" "$halt_details_json" "$halt_next_safe_action" >/dev/null || log "halt record write failed for issue #$issue"
     emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" "$summary_payload"
     mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "worker_exited_$worker_rc"
     mark_issue_exit_code "$issue_run_id" "$worker_rc"
@@ -5199,7 +6979,7 @@ run_issue_job() {
         *) phase_review_reason="required_review_failed" ;;
       esac
       emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" "$summary_payload"
-      mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "phase_review_failed"
+      mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "$phase_review_reason"
       jq -n --arg issue "$issue" --arg reason "$phase_review_reason" \
         '{status:"failed", issue:($issue|tonumber), reason:$reason}' > "$result_file"
       return 0
@@ -5283,7 +7063,7 @@ integrate_issue_result() {
           fi
           ;;
         local-clone)
-          if [ ! -d "$issue_worktree/.git" ]; then
+          if ! git_checkout_exists "$issue_worktree"; then
             if [ -n "$result_commit_after" ] \
               && git -C "$chain_worktree" cat-file -e "$result_commit_after^{commit}" 2>/dev/null \
               && git -C "$chain_worktree" merge-base --is-ancestor "$result_commit_after" HEAD 2>/dev/null; then
@@ -5538,7 +7318,7 @@ reconcile_resume_issue_summary() {
         *) phase_review_reason="required_review_failed" ;;
       esac
       emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$duration_s" "$payload"
-      mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "phase_review_failed"
+      mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "$phase_review_reason"
       SCHEDULER_FAILURE_REASON="$phase_review_reason"
       return 2
     fi
@@ -5850,7 +7630,7 @@ for ((idx = 0; idx < chain_count; idx++)); do
     fi
   fi
 
-  load_auto_checkpoint_for_chain "$checkpoint_mode" "$chain_run_id" "$branch" "$chain_worktree"
+  load_auto_checkpoint_for_chain "$checkpoint_mode" "$chain_run_id" "$branch" "$chain_worktree" "$name"
 
   run_chain_issue_scheduler "$idx" "$name" "$branch" "$chain_worktree" "$host" "$git_metadata_strategy" "$chain_run_id" "$phase_review_mode" "$checkpoint_mode" "$issue_count" "$chain_results_dir"
 

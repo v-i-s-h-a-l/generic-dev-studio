@@ -85,6 +85,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio manager work-chain --from-plan task-graph.json --chain my-chain # create/link issues, populate Project fields, then auto-run
 /dev-studio manager work-chain --resume <run_id> --yes # preferred resume path from chain summaries/halt records
 scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute # repo-side PRD-to-chain orchestration
+/dev-studio manager work-chain --doctor <run_id> # read-only recovery recommendation for stale reports, halts, drift, and review blocks
 scripts/manager-work-chain.sh ios-v2-execution # repo-side wrapper for the manager work-chain front door
 scripts/prd-intake-normalize.sh prd.md # normalize a PRD/transcript/issue brief into a planner-ready requirement packet
 scripts/prd-task-graph-synthesize.sh packet.md # turn a requirement packet into a validated scheduler graph
@@ -99,6 +100,8 @@ scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unatte
 scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes # attended run with explicit confirmation bypass
 scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --yes # no routine continue prompts; typed blockers halt
 scripts/studio-chain-runner.sh --resume <run_id> --yes # resume from event-derived state; repair stale projection before scheduling
+scripts/studio-chain-runner.sh --regenerate-report <run_id> # opt-in refresh for stale private chain-run reports
+scripts/studio-chain-runner.sh --doctor <run_id> --public-safe # inspect recovery state with local paths/details redacted
 STUDIO_CHAIN_TARGET_REPO_ROOT=/repo scripts/studio-chain-runner.sh /tmp/chain.yaml --dry-run # run a non-repo manifest against an explicit checkout
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview checkpoint-aware safe-boundary hooks
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show next supervisor action without state mutation
@@ -107,7 +110,7 @@ scripts/chain-monitor-sync.sh --project generic-dev-studio --dry-run # locked/id
 scripts/manager-chain-monitor.sh status --project generic-dev-studio --json # non-mutating monitor status with owner/list/archive pending-write counts
 scripts/schedule-chain-monitor.sh --install --project generic-dev-studio --interval-s 300 # login-home macOS LaunchAgent for background monitor sync
 scripts/rule-pack-resolve.sh --manifest chain.yaml --chain my-chain --issue 123 --role worker # selective rule-pack selection with context-budget telemetry
-scripts/studio-chain-telemetry-digest.sh --days 7     # weekly v1 counters, efficiency ratios, and bottlenecks from private chain-run telemetry
+scripts/studio-chain-telemetry-digest.sh --project turnip-ios --public-safe --days 7 # project-filtered chain telemetry rollup with redacted paths
 scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker # compact resume by id, with durable index fallback; add --latest for branch-scoped lookup
 scripts/studio-staleness-triage.sh --json        # preview PM-surface stale/escalation/archive-candidate issue labels
 STUDIO_TRACK=<track>             # session-start shortcut for v2 track work
@@ -153,7 +156,7 @@ scripts/forge-latency-report.sh --days 14                   # stage-level Forge 
 scripts/field-workflow-report.sh --days 14                  # Field loop timing, tokens, gate pass rates, review coverage, improvement candidates
 scripts/studio-pr-baseline-report.sh 366                    # PR-level timing, churn, gate, and generated-file baselines
 scripts/studio-weekly.sh --post                             # weekly GitHub PM digest; cron posts to the pinned summary issue
-scripts/host-preflight.sh codex /repo                       # prove gh + git credential access before host task work
+scripts/host-preflight.sh codex /repo                       # prove gh/git credential access and report ShellCheck availability before host task work
 scripts/studio-project-state.sh --status Todo               # Project-field backlog reader for Status / Track / Phase / Size / review state
 scripts/studio-gh.sh issue list --state open                # assistant-safe GitHub CLI wrapper; uses context github_home for auth
 scripts/manager-reconcile.sh --cwd "$PWD"                   # project report/debrief sync into the project task ledger
@@ -228,20 +231,21 @@ scripts/                # multi-worker fleet (BETA)
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
   studio-dependency-export.sh # Mermaid graph from native GitHub blocked_by issue dependencies
   studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
-  studio-chain-runner.sh   # plan/execute/discover/auto-resume/list studio issue chains with event-derived state projection, capacity-scaled fresh sessions, UUID telemetry, optional checkpoint hooks, locks, and private run reports
+  studio-chain-runner.sh   # plan/execute/discover/auto-resume/list/regenerate-report/doctor studio issue chains with event-derived state projection, capacity-scaled fresh sessions, UUID telemetry, optional checkpoint hooks, locks, and private run reports
+  studio-chain-doctor.sh   # read-only chain-run recovery recommendation from state, events, reports, halts, checkpoints, retries, and phase reviews
   studio-chain-rule-gates.sh # deterministic chain workflow gates for git hygiene, artifact roots, cache keys, cleanup TTLs, and telemetry redaction
   manager-plan-chain.sh # manager-owned source/issue/plan to reviewed issue-backed work-chain orchestration with native issue links, Project fields, telemetry, and optional execution
   manager-work-chain.sh # manager front door for work-chain discovery/start/resume plus --from-plan unattended execution routing
   chain-monitor-sync.sh # locked/idempotent chain monitor active/archived Slack List row sync from manifests, runtime manifests, and event-derived persisted chain-run state
   manager-chain-monitor.sh # manager front door for monitor configure/sync/status/recovery while preserving login-home ownership
   schedule-chain-monitor.sh # login-home macOS LaunchAgent installer for background chain monitor sync
-  studio-chain-telemetry-digest.sh # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run reports/events
+  studio-chain-telemetry-digest.sh # v1 counters, efficiency ratios, bottlenecks, project-filtered rollups, and weekly digest from private chain-run reports/events
   prd-intake-normalize.sh # deterministic PRD/transcript/issue brief normalization into a small requirement packet
   prd-task-graph-synthesize.sh # deterministic requirement-packet to scheduler-graph synthesis with dependency/race validation
   studio-checkpoint.sh # compact create/update/resume checkpoints under per-project .runtime/v2/checkpoints
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   studio-staleness-triage.sh # scheduled GitHub issue staleness labels + escalation comments for the PM surface
-  host-preflight.sh    # pre-task host parity gate: gh auth + git ls-remote credential access
+  host-preflight.sh    # pre-task host parity gate: gh auth, git ls-remote credential access, and ShellCheck availability
   studio-gh.sh          # GitHub CLI wrapper for assistant/interactive calls; uses context github_home for auth
   manager-feature-config.sh # /dev-studio manager config: project-scoped feature enable/disable/set/list/doctor
   manager-release-branch.sh # /dev-studio manager branch: release branch status/prepare/sync/PR preflight

@@ -115,6 +115,70 @@
           "type": "string",
           "minLength": 1
         },
+        "tool_preflight": {
+          "type": "object",
+          "description": "Non-blocking tool availability observed by the parent runner before child launch.",
+          "properties": {
+            "schema_version": {
+              "const": 1
+            },
+            "tools": {
+              "type": "object",
+              "properties": {
+                "shellcheck": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "required",
+                    "policy"
+                  ],
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "available",
+                        "unavailable"
+                      ]
+                    },
+                    "required": {
+                      "type": "string"
+                    },
+                    "command": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "version": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reason_id": {
+                      "type": "string"
+                    },
+                    "policy": {
+                      "type": "string"
+                    },
+                    "substitutes": {
+                      "$ref": "#/$defs/stringList"
+                    },
+                    "summary_lint_shape": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
         "required_checks": {
           "$ref": "#/$defs/stringList"
         },
@@ -484,6 +548,27 @@
         "host": "codex"
       },
       "expected_summary_artifact": "/tmp/studio-chain-runner/autonomous-continuation-loop-478-issue-478/.studio/chain-worker-summary.json",
+      "tool_preflight": {
+        "schema_version": 1,
+        "tools": {
+          "shellcheck": {
+            "status": "unavailable",
+            "required": "conditional_for_shell_script_changes",
+            "command": "shellcheck",
+            "reason_id": "shellcheck_expected_unavailable",
+            "policy": "Record a skipped lint plus substitutes when ShellCheck is unavailable.",
+            "substitutes": [
+              "bash -n on touched shell scripts",
+              "repo-specific lints or fixtures that exercise the touched shell/release surface"
+            ],
+            "summary_lint_shape": {
+              "command": "shellcheck <touched-shell-files>",
+              "outcome": "skipped",
+              "reason_id": "shellcheck_expected_unavailable"
+            }
+          }
+        }
+      },
       "required_checks": [
         "Commit the scoped issue change before exit."
       ],

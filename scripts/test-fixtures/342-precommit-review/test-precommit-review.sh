@@ -48,8 +48,10 @@ export GITHUB_TOKEN="must-not-leak"
 export OPENAI_API_KEY="must-not-leak"
 export ANTHROPIC_API_KEY="must-not-leak"
 export HOME="$TMPROOT/caller-home"
+export TMPDIR="$TMPROOT/session-tmp"
+export STUDIO_CONTEXT_STUDIO_HOME="$TMPROOT/durable-home/.dev-studio"
 export CODEX_REVIEWER_HOME="$TMPROOT/reviewer-home"
-mkdir -p "$HOME/.config/gh" "$CODEX_REVIEWER_HOME"
+mkdir -p "$HOME/.config/gh" "$CODEX_REVIEWER_HOME" "$TMPDIR" "$(dirname "$STUDIO_CONTEXT_STUDIO_HOME")"
 printf 'github.com: token\n' > "$HOME/.config/gh/hosts.yml"
 
 resolved_codex_home=$(STUDIO_CONTEXT_HOST_PROFILE=codex-reviewer bash -c ". '$ROOT/scripts/lib-studio-context.sh'; studio_context_get auth_home delegated-host-spawn")

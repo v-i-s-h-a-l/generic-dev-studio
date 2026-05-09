@@ -51,7 +51,11 @@ cat > "$SUMMARY_ROOT/issue-340-old.json" <<'JSON'
   "additions": 2,
   "deletions": 1,
   "generated_file_count": 0,
-  "telemetry_gaps": ["model", "tokens"]
+  "telemetry_gaps": ["model", "tokens"],
+  "telemetry_gap_reasons": [
+    {"gap_kind": "model", "reason_id": "codex_session_context_absent"},
+    {"gap_kind": "tokens", "reason_id": "codex_usage_absent"}
+  ]
 }
 JSON
 
@@ -126,6 +130,11 @@ grep -q 'List mode should short-circuit before run allocation.' "$RUN_REPORT" ||
 }
 grep -q 'model: 1' "$RUN_REPORT" || {
   printf 'missing old-summary telemetry gap fallback\n' >&2
+  cat "$RUN_REPORT" >&2
+  exit 1
+}
+grep -q 'tokens:codex_usage_absent: 1' "$RUN_REPORT" || {
+  printf 'missing telemetry gap reason roll-up\n' >&2
   cat "$RUN_REPORT" >&2
   exit 1
 }
