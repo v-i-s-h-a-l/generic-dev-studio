@@ -41,9 +41,57 @@ first_line() {
   sed -n '1p' "$1" 2>/dev/null | tr '\n' ' ' | cut -c 1-240
 }
 
+sanitize_runtime_slug() {
+  local raw="$1" slug
+  slug=$(printf '%s' "$raw" | tr -cs 'A-Za-z0-9._-' '-' | sed -e 's/^-*//' -e 's/-*$//')
+  [ -n "$slug" ] && printf '%s\n' "$slug" || printf 'unknown\n'
+}
+
+eligibility_smoke_chain_task_slug() {
+  local start_path source_url repo
+  start_path="$PWD/.studio/chain-task-start.json"
+  [ -r "$start_path" ] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  source_url=$(jq -r '.source_issue.url // empty' "$start_path" 2>/dev/null || true)
+  case "$source_url" in
+    https://github.com/*/*/issues/*|https://github.com/*/*/pull/*)
+      repo=$(printf '%s\n' "$source_url" | sed -E 's#^https://github.com/[^/]+/([^/]+)/(issues|pull)/.*$#\1#')
+      ;;
+    *)
+      repo=""
+      ;;
+  esac
+  [ -n "$repo" ] || return 1
+  sanitize_runtime_slug "$repo"
+}
+
+eligibility_smoke_project_slug() {
+  local slug
+  slug=$(eligibility_smoke_chain_task_slug 2>/dev/null || true)
+  [ -n "$slug" ] || slug=$(resolve_display_name 2>/dev/null || true)
+  [ -n "$slug" ] || slug=$(resolve_project 2>/dev/null || true)
+  sanitize_runtime_slug "${slug:-unknown}"
+}
+
+eligibility_smoke_payload_parent() {
+  local project_slug
+  studio_context_resolve runtime-mutation || return 1
+  project_slug=$(eligibility_smoke_project_slug)
+  printf '%s/%s/.runtime/reviewer-payloads/eligibility-smoke\n' "$STUDIO_CONTEXT_STUDIO_HOME" "$project_slug"
+}
+
 run_smoke_gate() {
-  local tmpdir payload stdout_file stderr_file reviewer_home reviewer_codex_home reviewer_claude_home reviewer_claude_config_dir
-  tmpdir=$(mktemp -d -t pr-reviewer-smoke.XXXXXX) || fail smoke_tmp_failed "mktemp failed"
+  local tmpdir payload stdout_file stderr_file reviewer_home reviewer_codex_home reviewer_claude_home reviewer_claude_config_dir payload_parent
+  payload_parent=$(eligibility_smoke_payload_parent) \
+    || fail smoke_payload_runtime_unavailable "Studio runtime context unavailable for reviewer smoke payload"
+  mkdir -p "$payload_parent" \
+    || fail smoke_payload_runtime_unavailable "failed to create reviewer smoke payload root: $payload_parent"
+  tmpdir=$(mktemp -d "$payload_parent/run.XXXXXX") \
+    || fail smoke_payload_runtime_unavailable "failed to create reviewer smoke payload directory under $payload_parent"
+  cleanup_smoke_tmpdir() {
+    [ "${STUDIO_KEEP_REVIEWER_SMOKE_PAYLOADS:-0}" = "1" ] && return 0
+    [ -n "${tmpdir:-}" ] && rm -rf "$tmpdir"
+  }
   payload="$tmpdir/payload.md"
   stdout_file="$tmpdir/stdout"
   stderr_file="$tmpdir/stderr"
@@ -57,33 +105,33 @@ run_smoke_gate() {
     codex*|*codex*)
       export STUDIO_CONTEXT_HOST_PROFILE="$HOST"
       studio_context_resolve delegated-host-spawn || {
-        rm -rf "$tmpdir"
+        cleanup_smoke_tmpdir
         fail smoke_auth_unavailable "codex reviewer auth home unavailable via Studio context"
       }
       reviewer_codex_home="$STUDIO_CONTEXT_AUTH_HOME"
       [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] || {
-        rm -rf "$tmpdir"
+        cleanup_smoke_tmpdir
         fail smoke_auth_unavailable "codex reviewer auth home not found via Studio context"
       }
       ;;
     claude*|*claude*)
       export STUDIO_CONTEXT_HOST_PROFILE="$HOST"
       studio_context_resolve delegated-host-spawn || {
-        rm -rf "$tmpdir"
+        cleanup_smoke_tmpdir
         fail smoke_auth_unavailable "claude reviewer auth home unavailable via Studio context"
       }
       reviewer_claude_home="$STUDIO_CONTEXT_AUTH_HOME"
       [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] || {
-        rm -rf "$tmpdir"
+        cleanup_smoke_tmpdir
         fail smoke_auth_unavailable "claude reviewer auth home not found via Studio context"
       }
       reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-$reviewer_claude_home/.claude-reviewer}"
       [ -n "$reviewer_claude_config_dir" ] || {
-        rm -rf "$tmpdir"
+        cleanup_smoke_tmpdir
         fail smoke_auth_unavailable "claude reviewer config dir not found; set CLAUDE_REVIEWER_CONFIG_DIR or HOME"
       }
       mkdir -p "$reviewer_claude_config_dir" || {
-        rm -rf "$tmpdir"
+        cleanup_smoke_tmpdir
         fail smoke_auth_unavailable "failed to create claude reviewer config dir: $reviewer_claude_config_dir"
       }
       ;;
@@ -101,7 +149,7 @@ run_smoke_gate() {
       elif command -v timeout >/dev/null 2>&1; then
         timeout_argv=(timeout "$SMOKE_TIMEOUT_SEC")
       else
-        rm -rf "$tmpdir"
+        cleanup_smoke_tmpdir
         fail smoke_timeout_unavailable "reviewer smoke timeout requires gtimeout or timeout"
       fi
       ;;
@@ -146,7 +194,7 @@ run_smoke_gate() {
     local detail
     detail=$(first_line "$stderr_file")
     [ -n "$detail" ] || detail=$(first_line "$stdout_file")
-    rm -rf "$tmpdir"
+    cleanup_smoke_tmpdir
     fail smoke_failed "${detail:-reviewer smoke command exited non-zero}"
   fi
 
@@ -155,17 +203,17 @@ run_smoke_gate() {
   verdict=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$stdout_file")
   if [ "$verdict_count" != "1" ]; then
     detail=$(first_line "$stdout_file")
-    rm -rf "$tmpdir"
+    cleanup_smoke_tmpdir
     fail smoke_no_verdict "expected exactly one STUDIO_REVIEW_VERDICT line; found $verdict_count${detail:+; first_stdout=$detail}"
   fi
   case "$verdict" in
     approved|approved_with_fixes|blocked) ;;
     *)
-      rm -rf "$tmpdir"
+      cleanup_smoke_tmpdir
       fail smoke_invalid_verdict "$verdict"
       ;;
   esac
-  rm -rf "$tmpdir"
+  cleanup_smoke_tmpdir
 }
 
 registry="$REPO_ROOT/hosts/registry.yaml"
