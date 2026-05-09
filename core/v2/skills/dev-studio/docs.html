@@ -553,10 +553,11 @@
           </article>
           <article class="role">
             <h3>Parallel Chains</h3>
-            <p>Use chain manifests when the repo already has an issue chain. For a fresh goal or planner artifact, start with <code>/dev-studio manager plan-chain</code>; it stores planner, review, cleanup, and telemetry artifacts, returns <code>needs_context</code> before issue creation when the input is too rough, creates native parent/sub-issue links, populates configured Project fields, and prints the clean work-chain handoff after a clean review. Add <code>--execute</code> for one-command unattended launch or <code>--interactive</code> for attended execution. Bare work-chain invocation discovers runnable manifests and resumable runs; dry-run first, then launch one independent chain per shell session. The manager front door for the iOS v2 execution chain is <code>/dev-studio manager work-chain ios-v2-execution</code>, which auto-runs the chain through the repo-side manager wrapper.</p>
+            <p>Use chain manifests when the repo already has an issue chain. For a fresh goal or planner artifact, start with <code>/dev-studio manager plan-chain</code>; it stores planner, review, cleanup, and telemetry artifacts, returns <code>needs_context</code> before issue creation when the input is too rough, creates native parent/sub-issue links, populates configured Project fields, and prints the clean work-chain handoff after a clean review. Add <code>--execute</code> for one-command unattended launch or <code>--interactive</code> for attended execution. Bare work-chain invocation discovers runnable manifests and resumable runs; dry-run first, then launch one independent chain per shell session. The manager front door for the iOS v2 execution chain is <code>/dev-studio manager work-chain ios-v2-execution</code>, which auto-runs the chain through the repo-side manager wrapper. Use <code>--doctor &lt;run_id&gt;</code> when an existing run needs a read-only recovery recommendation.</p>
             <code class="shell">scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt; --dry-run
 scripts/studio-chain-runner.sh &lt;manifest&gt; --only &lt;chain&gt; --unattended --yes
 scripts/studio-chain-runner.sh --discover
+scripts/studio-chain-runner.sh --doctor &lt;run_id&gt; --public-safe
 scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute
 scripts/manager-work-chain.sh --from-plan task-graph.json --chain my-chain
 scripts/manager-work-chain.sh ios-v2-execution
@@ -772,10 +773,11 @@ scripts/manager-analyze.sh --cwd "$PWD"</code>
           </article>
           <article class="role">
             <h3>Chain Runs</h3>
-            <p>Issue chains can run with persisted private reports and resume markers. Use dry-run first, or type the chain runner with no manifest to see runnable manifests and resumable runs before starting a chain. The manager wrapper mirrors the same discovery flow for bare invocations and auto-runs named work-chains by default. Explicit <code>--attended</code> and <code>--unattended</code> modes keep human prompts reserved for real review, implementation, permission, or test blockers.</p>
+            <p>Issue chains can run with persisted private reports and resume markers. Use dry-run first, or type the chain runner with no manifest to see runnable manifests and resumable runs before starting a chain. The manager wrapper mirrors the same discovery flow for bare invocations and auto-runs named work-chains by default. The chain doctor inspects state, events, reports, halts, retry coalescing, checkpoint drift, and phase reviews without mutating the run. Explicit <code>--attended</code> and <code>--unattended</code> modes keep human prompts reserved for real review, implementation, permission, or test blockers.</p>
             <code class="shell">scripts/studio-chain-runner.sh &lt;manifest&gt; --dry-run
 scripts/studio-chain-runner.sh --auto &lt;manifest&gt;
 scripts/studio-chain-runner.sh --discover
+scripts/studio-chain-runner.sh --doctor &lt;run_id&gt;
 scripts/manager-work-chain.sh ios-v2-execution</code>
           </article>
           <article class="role">

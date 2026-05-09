@@ -78,6 +78,7 @@ scripts/studio-chain-runner.sh --discover ios-v2-execution                 # fil
 /dev-studio manager work-chain --resume <run_id> --yes                     # preferred user-facing resume path from summaries/halt records
 scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute # reviewed source/issue to unattended issue-backed work-chain execution
 scripts/manager-work-chain.sh --from-plan task-graph.json --chain my-chain # plan-chain gate, native issue links, Project fields, then unattended execution
+/dev-studio manager work-chain --doctor <run_id>                           # preferred read-only recovery recommendation for an existing run
 scripts/manager-work-chain.sh ios-v2-execution --dry-run                   # preview the named chain through the manager front door
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements     # unattended start/resume when state is safe and unambiguous
 scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes # attended execution with explicit confirmation bypass
@@ -87,6 +88,8 @@ scripts/prd-intake-normalize.sh prd.md                                     # nor
 scripts/prd-task-graph-synthesize.sh packet.md                             # synthesize deterministic scheduler graph; flags missing prereqs and write races
 scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from state.json; reconciles completed worker summaries before scheduling dependents
 scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
+scripts/studio-chain-runner.sh --regenerate-report <run_id>                # opt-in refresh for stale private chain-run reports
+scripts/studio-chain-runner.sh --doctor <run_id> --public-safe             # read-only recovery recommendation with local paths/details redacted
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
 scripts/studio-chain-rule-gates.sh --plan plan.json --dry-run              # deterministic rule-pack gates with typed JSON result + audit JSONL
 scripts/studio-ios-artifact-janitor.sh sweep --base /tmp/studio-ios-artifacts --json # redacted iOS artifact TTL sweep for scoped build/test roots
@@ -95,7 +98,7 @@ scripts/rule-pack-resolve.sh --manifest chain.yaml --chain my-chain --issue 123 
 scripts/manager-chain-monitor.sh status --project generic-dev-studio --json # non-mutating monitor status with owner/list/archive pending-write counts
 scripts/manager-chain-monitor.sh recovery --full-rewrite --project generic-dev-studio --dry-run # explicit recovery front door; execution requires approval
 scripts/schedule-chain-monitor.sh --install --project generic-dev-studio --interval-s 300 # login-home macOS LaunchAgent for background monitor sync
-scripts/studio-chain-telemetry-digest.sh --days 7                          # v1 counters, efficiency ratios, bottlenecks, and weekly digest from private chain-run telemetry
+scripts/studio-chain-telemetry-digest.sh --project turnip-ios --public-safe --days 7 # project-filtered rollup with redacted paths, gaps, halts, retries, and review verdicts
 scripts/lint-chain-workflow-docs.sh --staged                               # guard chain launcher docs, usage text, and fixtures; bypass with STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1
 scripts/lint-html-theme.sh --staged                                        # guard generated HTML theme parity; bypass with STUDIO_BYPASS_HTML_THEME_GUARD=1
 scripts/studio-checkpoint.sh create --role worker --goal "..." --next "..." # compact private checkpoint; stdout prints the checkpoint id
@@ -108,7 +111,7 @@ scripts/codex-worker-exec.sh "<prompt>"                                    # int
 # Chain manifest preflight rejects planning artifacts before run creation; project-scoped manifests declare issue_repo or resolve it from the target repo remote.
 # Release-bearing chain manifests declare approved_release_id plus sync_strategy; rebase is the default, and squash is used only when the manifest explicitly opts in.
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
-scripts/host-preflight.sh codex /repo                 # gh auth + git ls-remote credential-helper proof before host task work
+scripts/host-preflight.sh codex /repo                 # gh/git credential proof plus ShellCheck availability before host task work
 scripts/studio-project-state.sh --status Todo         # field-aware backlog reader for the Studio v2 Projects board
 scripts/studio-gh.sh issue list --state open          # gh wrapper for narrow issue lookups; uses context github_home for auth
 scripts/studio-dependency-export.sh --issue 443       # Mermaid graph from native GitHub blocked_by dependencies; no body parsing
@@ -125,6 +128,7 @@ scripts/studio-staleness-triage.sh --json             # dry-run PM issue stalene
 # STUDIO_CHAIN_WORKER_POOL=N      explicit emergency override
 # STUDIO_CHAIN_MAX_WORKERS=N      clamp auto-detected pool
 # STUDIO_CHAIN_WORKER_RAM_GIB=N   adjust RAM heuristic
+# STUDIO_CHAIN_NODE_HEALTH_TIMEOUT_S=N  bound each auto-pool node-health probe; degraded probes are logged and excluded
 
 # Event log reader (dedupes on producer.agent + idempotency_key; see _shared/contracts/event-emission.md):
 scripts/read-events.sh                                  # current project, deduped
@@ -291,6 +295,7 @@ dispatched_from=user@host
 | `ACHILLES_INBOX_ROOT` | `$HOME/.dev-studio/<project>/.runtime/achilles-inbox` | Explicit override — bypasses project resolution entirely |
 | `ACHILLES_MAX_SLOTS` | `16` | Upper bound for auto-claim slot scan |
 | `ACHILLES_TASK_TIMEOUT_SEC` | `2700` (45m) | Max per-task runtime; needs `gtimeout`. 0 disables. |
+| `STUDIO_NODE_HEALTH_TIMEOUT_S` | `10` | Max per-node SSH probe runtime for `node-health.sh`; timed-out probes report `unreachable`. |
 | `NODE_BUILD_TIMEOUT` | `1800` (30m) | Max remote build/test command stream per `node-dispatch.sh`; needs `gtimeout` or `timeout`, otherwise the script warns and runs unbounded. |
 | `NODE_DISPATCH_TAIL_LINES` | `40` | Remote log lines printed when the detached node runner finishes but its `.exit` marker is missing. |
 | `NODE_ARTIFACT_RETRIEVE` | `0` | Set to `1` to pull remote `.xcarchive` / `.xcresult` directories from the node's DerivedData back to the matching local DerivedData after a successful remote Xcode build/test. |

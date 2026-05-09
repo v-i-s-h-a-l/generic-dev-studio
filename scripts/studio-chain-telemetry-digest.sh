@@ -15,16 +15,22 @@ CHAIN_RUNS_ROOT=""
 DAYS=7
 SINCE=""
 UNTIL=""
+PROJECT_FILTER=""
+PUBLIC_SAFE=0
+PUBLIC_SAFE_TRIGGER=""
 
 usage() {
   cat <<'EOF' >&2
 Usage:
   scripts/studio-chain-telemetry-digest.sh [--days N] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--format markdown|json]
+  scripts/studio-chain-telemetry-digest.sh --project <slug|repo|path> [--public-safe] [--format markdown|json]
   scripts/studio-chain-telemetry-digest.sh --run <run_id> [--format markdown|json]
   scripts/studio-chain-telemetry-digest.sh --chain-run-root <dir> [--format markdown|json]
 
 Reads private chain-run state under ~/.dev-studio/generic-dev-studio/chain-runs
-and emits aggregate v1 counters plus a compact operator digest.
+and emits aggregate v1 counters plus a compact operator digest. --project uses
+explicit project/repo metadata when present and reports path fallback matches.
+--public-safe redacts local private paths from emitted JSON/markdown.
 EOF
   exit 2
 }
@@ -38,10 +44,25 @@ date_days_ago() {
   fi
 }
 
+file_mtime_epoch() {
+  local path="$1"
+  stat -f %m "$path" 2>/dev/null || stat -c %Y "$path" 2>/dev/null || printf '0\n'
+}
+
+epoch_to_iso() {
+  local epoch="$1"
+  date -u -r "$epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$epoch" +%Y-%m-%dT%H:%M:%SZ
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --format) FORMAT="${2:?--format requires markdown|json}"; shift 2 ;;
     --format=*) FORMAT="${1#--format=}"; shift ;;
+    --project) PROJECT_FILTER="${2:?--project requires slug, repo, or path}"; shift 2 ;;
+    --project=*) PROJECT_FILTER="${1#--project=}"; shift ;;
+    --target-project) PROJECT_FILTER="${2:?--target-project requires slug, repo, or path}"; shift 2 ;;
+    --target-project=*) PROJECT_FILTER="${1#--target-project=}"; shift ;;
+    --public-safe) PUBLIC_SAFE=1; PUBLIC_SAFE_TRIGGER="flag"; shift ;;
     --run) RUN_ID="${2:?--run requires run id}"; shift 2 ;;
     --run=*) RUN_ID="${1#--run=}"; shift ;;
     --chain-run-root) CHAIN_RUN_ROOT="${2:?--chain-run-root requires dir}"; shift 2 ;;
@@ -58,6 +79,14 @@ while [ $# -gt 0 ]; do
     *) printf 'studio-chain-telemetry-digest: unknown arg: %s\n' "$1" >&2; usage ;;
   esac
 done
+
+case "${STUDIO_CHAIN_TELEMETRY_PUBLIC_SAFE:-}" in
+  1|true|yes)
+    PUBLIC_SAFE=1
+    [ -n "$PUBLIC_SAFE_TRIGGER" ] || PUBLIC_SAFE_TRIGGER="env"
+    ;;
+esac
+[ -n "$PUBLIC_SAFE_TRIGGER" ] || PUBLIC_SAFE_TRIGGER="off"
 
 case "$FORMAT" in
   markdown|json) ;;
@@ -88,16 +117,21 @@ trap 'rm -rf "$TMPDIR_DIGEST"' EXIT
 states_jsonl="$TMPDIR_DIGEST/states.jsonl"
 events_jsonl="$TMPDIR_DIGEST/events.jsonl"
 summaries_jsonl="$TMPDIR_DIGEST/summaries.jsonl"
+halts_jsonl="$TMPDIR_DIGEST/halts.jsonl"
+reports_jsonl="$TMPDIR_DIGEST/reports.jsonl"
 digest_json="$TMPDIR_DIGEST/digest.json"
 : > "$states_jsonl"
 : > "$events_jsonl"
 : > "$summaries_jsonl"
+: > "$halts_jsonl"
+: > "$reports_jsonl"
 
 append_run() {
-  local run_root="$1" state events summaries
+  local run_root="$1" state events summaries halts report_path report_exists report_mtime_epoch report_mtime_iso report_size report_generated_at report_generated_at_source latest_event_at
   state="$run_root/state.json"
   events="$run_root/events.jsonl"
   summaries="$run_root/worker-summaries"
+  halts="$run_root/halt-records"
   [ -f "$state" ] || return 0
   jq -c --arg run_root "$run_root" '. + {__run_root: $run_root}' "$state" >> "$states_jsonl"
   if [ -f "$events" ]; then
@@ -105,9 +139,49 @@ append_run() {
   fi
   if [ -d "$summaries" ]; then
     find "$summaries" -type f -name '*.json' | sort | while IFS= read -r summary; do
-      jq -c --arg run_root "$run_root" '. + {__run_root: $run_root}' "$summary" >> "$summaries_jsonl"
+      jq -c --arg run_root "$run_root" --arg path "$summary" '. + {__run_root: $run_root, __artifact_path: $path}' "$summary" >> "$summaries_jsonl"
     done
   fi
+  if [ -d "$halts" ]; then
+    find "$halts" -type f -name '*.json' | sort | while IFS= read -r halt; do
+      jq -c --arg run_root "$run_root" --arg path "$halt" '. + {__run_root: $run_root, __artifact_path: $path}' "$halt" >> "$halts_jsonl"
+    done
+  fi
+  report_path=$(jq -r '.report // empty' "$state")
+  report_exists=false
+  report_mtime_epoch=0
+  report_mtime_iso=""
+  report_size=0
+  report_generated_at=$(jq -r '.report_generated_at // empty' "$state" 2>/dev/null || true)
+  report_generated_at_source=""
+  latest_event_at=""
+  if [ -n "$report_path" ] && [ -f "$report_path" ]; then
+    report_exists=true
+    report_mtime_epoch=$(file_mtime_epoch "$report_path")
+    report_mtime_iso=$(epoch_to_iso "$report_mtime_epoch")
+    report_size=$(wc -c < "$report_path" | tr -d ' ')
+  fi
+  if [ -z "$report_generated_at" ] && [ "$report_exists" = true ] && [ -n "$report_mtime_iso" ]; then
+    report_generated_at="$report_mtime_iso"
+    report_generated_at_source="filesystem_mtime"
+  elif [ -n "$report_generated_at" ]; then
+    report_generated_at_source="state.report_generated_at"
+  fi
+  if [ -f "$events" ]; then
+    latest_event_at=$(jq -r -s '[ .[] | .created_at? // empty | select(. != "") ] | max // ""' "$events" 2>/dev/null || true)
+  fi
+  jq -cn \
+    --arg run_root "$run_root" \
+    --arg path "$report_path" \
+    --arg mtime "$report_mtime_iso" \
+    --arg generated_at "$report_generated_at" \
+    --arg generated_at_source "$report_generated_at_source" \
+    --arg latest_event_at "$latest_event_at" \
+    --argjson exists "$report_exists" \
+    --argjson mtime_epoch "$report_mtime_epoch" \
+    --argjson size "$report_size" \
+    '{__run_root:$run_root, path:(if $path == "" then null else $path end), exists:$exists, mtime:(if $mtime == "" then null else $mtime end), mtime_epoch:$mtime_epoch, generated_at:(if $generated_at == "" then null else $generated_at end), generated_at_source:(if $generated_at_source == "" then null else $generated_at_source end), latest_event_at:(if $latest_event_at == "" then null else $latest_event_at end), size_bytes:$size}' \
+    >> "$reports_jsonl"
 }
 
 if [ -n "$CHAIN_RUN_ROOT" ]; then
@@ -123,13 +197,58 @@ jq -n \
   --arg since "$SINCE" \
   --arg until "$UNTIL" \
   --arg source_root "${CHAIN_RUN_ROOT:-$CHAIN_RUNS_ROOT}" \
+  --arg project_filter "$PROJECT_FILTER" \
+  --arg public_safe_trigger "$PUBLIC_SAFE_TRIGGER" \
+  --argjson public_safe "$PUBLIC_SAFE" \
   --slurpfile states "$states_jsonl" \
   --slurpfile events "$events_jsonl" \
-  --slurpfile summaries "$summaries_jsonl" '
+  --slurpfile summaries "$summaries_jsonl" \
+  --slurpfile halts "$halts_jsonl" \
+  --slurpfile reports "$reports_jsonl" '
   def date_part: (. // "")[0:10];
   def in_window: (date_part >= $since and date_part <= $until);
   def counts_by(key):
     reduce .[] as $item ({}; ($item | key // "unknown" | tostring) as $k | .[$k] = ((.[$k] // 0) + 1));
+  def safe_path:
+    if $public_safe then
+      if . == null then null
+      else (. | tostring) as $p |
+        if $p == "" then $p
+        elif ($p | startswith("/")) then "<redacted>/" + ($p | split("/")[-1])
+        else $p
+        end
+      end
+    else . end;
+  def repo_leaf: tostring | split(":")[-1] | split("/")[-1] | sub("[.]git$"; "");
+  def maybe_number:
+    if . == null or . == "" then null else (tonumber? // .) end;
+  def matches_project($v):
+    if $project_filter == "" or $v == null then false
+    else
+      ($project_filter | tostring | ascii_downcase) as $needle |
+      ($project_filter | repo_leaf | ascii_downcase) as $needle_leaf |
+      ($v | tostring) as $raw |
+      (($raw | ascii_downcase) == $needle
+       or ($raw | repo_leaf | ascii_downcase) == $needle
+       or ($raw | repo_leaf | ascii_downcase) == $needle_leaf)
+    end;
+  def project_match:
+    if $project_filter == "" then {matched:true, match_type:"unfiltered", source:null, value:null}
+    else
+      ([
+        {match_type:"canonical", source:"target_project", value:(.target_project // .target_project_slug // .project // .project_slug // .run_project // .target.project // null)},
+        {match_type:"canonical", source:"target_repo", value:(.target_repo // .target_repo_slug // .repo_slug // .repository // .issue_repo // null)}
+      ] | map(select(matches_project(.value))) | .[0]) as $canonical |
+      if $canonical != null then $canonical + {matched:true}
+      else
+        ([
+          {match_type:"fallback_path", source:"target_repo_root", value:(.target_repo_root // null)}
+        ] | map(select(matches_project(.value))) | .[0]) as $fallback |
+        if $fallback != null then $fallback + {matched:true}
+        else {matched:false, match_type:"none", source:null, value:null}
+        end
+      end
+    end;
   def timing_value($k):
     (.execution_telemetry.timing[$k]
      // .execution_telemetry.timings[$k]
@@ -152,20 +271,117 @@ jq -n \
     elif ($v | type) == "object" then [$v | tojson]
     else [$v | tostring]
     end;
+  def gap_kind_value($gap):
+    if ($gap | type) == "object" then ($gap.gap_kind // $gap.kind // "unknown") else ($gap | tostring) end;
+  def gap_reason_key:
+    ((.gap_kind // "unknown") + ":" + (.reason_id // .reason // "missing_or_unavailable"));
+  def latest_report_source_at($state; $report):
+    [($state.updated_at // ""), ($report.latest_event_at // "")]
+    | map(select(. != ""))
+    | max // "";
+  def report_freshness($state; $report):
+    if (($report.exists // false) | not) then "missing"
+    elif (($report.generated_at // "") == "") then "unknown"
+    elif (latest_report_source_at($state; $report) != "" and (($report.generated_at // "") < latest_report_source_at($state; $report))) then "stale"
+    else "fresh"
+    end;
 
-  [ $states[] | select((.started_at // .updated_at // .created_at // "") | in_window) ] as $selected_states |
+  [ $states[] | select((.started_at // .updated_at // .created_at // "") | in_window) ] as $window_states |
+  [ $window_states[] | project_match as $match | select($match.matched) | . + {__project_match:$match} ] as $selected_states |
   [ $selected_states[].__run_root ] as $roots |
   [ $events[] | select(.__run_root as $r | $roots | index($r)) ] as $selected_events |
   [ $summaries[] | select(.__run_root as $r | $roots | index($r)) ] as $selected_summaries |
+  [ $halts[] | select(.__run_root as $r | $roots | index($r)) ] as $selected_halts |
+  [ $reports[] | select(.__run_root as $r | $roots | index($r)) ] as $selected_reports |
   [ $selected_states[].chains[]?.issues[]? ] as $issues |
   [ $selected_events[] | select((.event // "") == "chain_review_completed") ] as $reviews |
-  [ $selected_events[] | select((.event // "") == "chain_phase_review_completed") ] as $phase_reviews |
+  [ $reviews[] | {__run_root, task, status:(.status // .data.status // "unknown"), verdict:(.data.verdict // .status // .data.status // "unknown"), pr_url:(.data.pr_url // null), duration_s:(.data.duration_s // null)} ] as $review_rows |
+  [ $selected_states[] as $state |
+    ([ ($state.phase_reviews // [])[]? ]) as $state_reviews |
+    if ($state_reviews | length) > 0 then
+      $state_reviews[] | . + {__run_root:$state.__run_root}
+    else
+      $selected_events[]
+      | select(.__run_root == $state.__run_root and (.event // "") == "chain_phase_review_completed")
+      | {
+          __run_root:$state.__run_root,
+          kind:(.data.kind // .kind // "phase"),
+          boundary_id:(.data.boundary_id // null),
+          verdict:(.data.verdict // .status // "unknown"),
+          review:(.data.review // null),
+          review_host:(.data.review_host // null),
+          issue_run_id:(.issue_run_id // .data.issue_run_id // null)
+        }
+    end
+  ] as $phase_review_rows |
+  [ $selected_states[] as $state |
+    ([ $selected_halts[] | select(.__run_root == $state.__run_root) ]) as $file_halts |
+    if ($file_halts | length) > 0 then
+      $file_halts[]
+    else
+      (($state.halt_records // [])[]? | . + {__run_root:$state.__run_root})
+    end
+  ] as $halt_rows |
+  [ $selected_states[] as $state |
+    $state.__run_root as $root |
+    $state.chains[]? as $chain |
+    $chain.issues[]? as $issue |
+    (($issue.issue_run_id // $issue.provenance.session.issue_run_id // "") | tostring) as $issue_run_id |
+    (($issue.issue_number // $issue.number // $issue.issue // "") | tostring) as $issue_no_s |
+    [ $selected_summaries[]
+      | select(.__run_root == $root)
+      | select(
+          ($issue_run_id != "" and ((.issue_run_id // "") | tostring) == $issue_run_id)
+          or ($issue_no_s != "" and ((.issue_number // .number // .issue // "") | tostring) == $issue_no_s)
+        )
+    ] as $issue_summaries |
+    [ $halt_rows[]
+      | select(.__run_root == $root)
+      | select(
+          ($issue_run_id != "" and ((.issue_run_id // "") | tostring) == $issue_run_id)
+          or ($issue_no_s != "" and ((.issue_number // .number // .issue // "") | tostring) == $issue_no_s)
+        )
+    ] as $issue_halts |
+    [ $phase_review_rows[]
+      | select(.__run_root == $root)
+      | select($issue_run_id != "" and ((.issue_run_id // "") | tostring) == $issue_run_id)
+    ] as $issue_phase_reviews |
+    {
+      run_id:($state.run_id // "unknown"),
+      chain:($chain.name // $chain.chain // "unknown"),
+      issue_number:($issue_no_s | maybe_number),
+      issue_run_id:(if $issue_run_id == "" then null else $issue_run_id end),
+      issue_title:($issue.issue_title // $issue.title // $issue.provenance.issue.title // $issue_summaries[-1].issue_title // null),
+      status:($issue.status // "unknown"),
+      lifecycle_state:($issue.lifecycle_state // null),
+      dependencies:($issue.dependencies // []),
+      commit_after:($issue.commit_after // $issue.provenance.implementation.commit_after // $issue_summaries[-1].commit_after // null),
+      exit_code:($issue.exit_code // $issue_summaries[-1].exit_code // null),
+      retry_count:(($issue.auto_retry_attempts // 0) | tonumber? // 0),
+      halt_count:($issue_halts | length),
+      summary_present:(($issue_summaries | length) > 0),
+      summary_path:(($issue.summary // $issue_summaries[-1].__artifact_path // null) | safe_path),
+      telemetry_gaps:([ $issue_summaries[].telemetry_gaps[]? ] | unique),
+      phase_review_verdicts:([ $issue_phase_reviews[] | "\(.kind // "phase"):\(.verdict // "unknown")" ]),
+      failure_reason:($issue.failure_reason // $issue_summaries[-1].blocked_reason // null)
+    }
+  ] as $issue_rows |
   [ $selected_events[] | select((.event // "") == "checkpoint_auto_created") ] as $checkpoint_creates |
   [ $selected_events[] | select((.event // "") == "checkpoint_auto_loaded") ] as $checkpoint_loads |
   [ $selected_events[] | select((.event // "") == "checkpoint_context_savings_estimated") ] as $checkpoint_savings |
   [ $selected_summaries[] | token_total | select(. != null) ] as $tokens |
   [ $selected_summaries[].telemetry_gaps[]? ] as $summary_gaps |
   [ $selected_events[] | select((.event // "") == "chain_telemetry_gap") | (.data.gap_kind // .gap_kind // "unknown") ] as $event_gaps |
+  [ $selected_summaries[] as $row
+    | ($row.telemetry_gaps // [])[]? as $gap
+    | (gap_kind_value($gap)) as $kind
+    | (($row.telemetry_gap_reasons // []) | map(select((.gap_kind // .kind // "") == $kind)) | .[0] // {}) as $detail
+    | {gap_kind:$kind, reason_id:($detail.reason_id // $detail.reason // "missing_or_unavailable")}
+  ] as $summary_gap_reasons |
+  [ $selected_events[]
+    | select((.event // "") == "chain_telemetry_gap")
+    | {gap_kind:(.data.gap_kind // .gap_kind // "unknown"), reason_id:(.data.reason_id // .data.reason // .reason_id // .reason // "missing_or_unavailable")}
+  ] as $event_gap_reasons |
   [ $selected_summaries[] | (.tests // [])[]? ] as $tests |
   [ $selected_summaries[] | (.lints // [])[]? ] as $lints |
   [ $selected_summaries[] | (.builds // [])[]? ] as $builds |
@@ -184,7 +400,15 @@ jq -n \
     kind: "studio_chain_telemetry_digest",
     created_at: $created_at,
     window: {since: $since, until: $until},
-    source: {root: $source_root},
+    source: {root: ($source_root | safe_path), public_safe: ($public_safe == true or $public_safe == 1), public_safe_trigger: $public_safe_trigger},
+    filter: {
+      project: (if $project_filter == "" then null else ($project_filter | safe_path) end),
+      matched_runs: ($selected_states | length),
+      excluded_runs: (($window_states | length) - ($selected_states | length)),
+      match_sources: ([ $selected_states[].__project_match | select(.match_type != "unfiltered") | {source:(.match_type + ":" + .source)} ] | counts_by(.source)),
+      fallback_path_matches: ([ $selected_states[].__project_match | select(.match_type == "fallback_path") ] | length),
+      path_fallback_reported: ([ $selected_states[].__project_match | select(.match_type == "fallback_path") ] | length > 0)
+    },
     counters: {
       runs_total: ($selected_states | length),
       runs_by_status: ($selected_states | counts_by(.status)),
@@ -208,7 +432,24 @@ jq -n \
       reviews_total: ($reviews | length),
       review_passes: ([ $reviews[] | select((.status // .data.status // "") == "completed") ] | length),
       review_failures: ([ $reviews[] | select((.status // .data.status // "") != "completed") ] | length),
-      phase_reviews_total: (($phase_reviews | length) + ([ $selected_states[].phase_reviews[]? ] | length)),
+      review_verdict_counts: ($review_rows | counts_by(.verdict)),
+      phase_reviews_total: ($phase_review_rows | length),
+      phase_review_verdict_counts: ($phase_review_rows | counts_by(.verdict)),
+      halt_records_total: ($halt_rows | length),
+      halt_records_active: ([ $halt_rows[] | select((.status // "") == "paused" or (.status // "") == "terminated") ] | length),
+      halt_records_by_class: ($halt_rows | counts_by(.halt_class)),
+      retry_counts: {
+        issue_auto_retries: ([ $issues[].auto_retry_attempts? // empty | tonumber? ] | add // 0),
+        chain_retry_events: ([ $selected_events[] | select((.event // "") == "chain_retry_attempt") ] | length),
+        resume_attempts: ([ $selected_events[] | select((.event // "") == "chain_resume_attempt_started") ] | length)
+      },
+      reports: {
+        total: ($selected_reports | length),
+        fresh: ([ $selected_states[] as $state | ($selected_reports[] | select(.__run_root == $state.__run_root)) as $report | select(report_freshness($state; $report) == "fresh") ] | length),
+        stale: ([ $selected_states[] as $state | ($selected_reports[] | select(.__run_root == $state.__run_root)) as $report | select(report_freshness($state; $report) == "stale") ] | length),
+        missing: ([ $selected_states[] as $state | ($selected_reports[] | select(.__run_root == $state.__run_root)) as $report | select(report_freshness($state; $report) == "missing") ] | length),
+        unknown: ([ $selected_states[] as $state | ($selected_reports[] | select(.__run_root == $state.__run_root)) as $report | select(report_freshness($state; $report) == "unknown") ] | length)
+      },
       checkpoint_auto_created: ($checkpoint_creates | length),
       checkpoint_auto_loaded: ($checkpoint_loads | length),
       checkpoint_drift_confirmed: ([ $checkpoint_loads[] | select((.data.drift_status // "") == "confirmed") ] | length),
@@ -222,6 +463,7 @@ jq -n \
       event_counts: ($selected_events | counts_by(.event)),
       stage_counts: ($selected_events | counts_by(.stage)),
       telemetry_gap_counts: (($summary_gaps + $event_gaps) | map({gap: ., one: 1}) | counts_by(.gap)),
+      telemetry_gap_reason_counts: (($summary_gap_reasons + $event_gap_reasons) | map({reason: gap_reason_key}) | counts_by(.reason)),
       execution_telemetry: {
         reports: ($execution_rows | length),
         implementation_executors: ([ $selected_summaries[] | (.execution_telemetry.executors.implementation.executor // .execution_telemetry.executors.implementation.node // empty) ] | map({executor: ., one: 1}) | counts_by(.executor)),
@@ -255,17 +497,72 @@ jq -n \
       (if ($execution_gaps | length) > 0 then {kind:"ios_execution_telemetry_gaps", count:($execution_gaps | length)} else empty end)
     ]),
     runs: [
-      $selected_states[] |
+      $selected_states[] as $state |
+      $state.__run_root as $root |
+      [ $selected_events[] | select(.__run_root == $root) ] as $run_events |
+      [ $selected_summaries[] | select(.__run_root == $root) ] as $run_summaries |
+      [ $halt_rows[] | select(.__run_root == $root) ] as $run_halts |
+      [ $phase_review_rows[] | select(.__run_root == $root) ] as $run_phase_reviews |
+      [ $review_rows[] | select(.__run_root == $root) ] as $run_reviews |
+      [ $selected_reports[] | select(.__run_root == $root) ] as $run_reports |
+      ($run_reports[0] // {path:($state.report // null), exists:false, mtime:null, generated_at:null, generated_at_source:null, latest_event_at:null, size_bytes:0}) as $report |
+      (report_freshness($state; $report)) as $report_freshness |
+      [ $run_summaries[].telemetry_gaps[]? ] as $run_summary_gaps |
+      [ $run_events[] | select((.event // "") == "chain_telemetry_gap") | (.data.gap_kind // .gap_kind // "unknown") ] as $run_event_gaps |
+      [ $run_summaries[] as $row
+        | ($row.telemetry_gaps // [])[]? as $gap
+        | (gap_kind_value($gap)) as $kind
+        | (($row.telemetry_gap_reasons // []) | map(select((.gap_kind // .kind // "") == $kind)) | .[0] // {}) as $detail
+        | {gap_kind:$kind, reason_id:($detail.reason_id // $detail.reason // "missing_or_unavailable")}
+      ] as $run_summary_gap_reasons |
+      [ $run_events[]
+        | select((.event // "") == "chain_telemetry_gap")
+        | {gap_kind:(.data.gap_kind // .gap_kind // "unknown"), reason_id:(.data.reason_id // .data.reason // .reason_id // .reason // "missing_or_unavailable")}
+      ] as $run_event_gap_reasons |
       {
-        run_id: (.run_id // "unknown"),
-        manifest: (.manifest // "unknown"),
-        status: (.status // "unknown"),
-        started_at: (.started_at // null),
-        updated_at: (.updated_at // null),
-        report: (.report // null),
-        issues: ([.chains[]?.issues[]?] | length)
+        run_id: ($state.run_id // "unknown"),
+        manifest: ($state.manifest // "unknown" | safe_path),
+        target_repo_root: ($state.target_repo_root // null | safe_path),
+        issue_repo: ($state.issue_repo // null),
+        project_match: {
+          type:($state.__project_match.match_type // "unknown"),
+          source:($state.__project_match.source // null),
+          value:($state.__project_match.value | safe_path)
+        },
+        status: ($state.status // "unknown"),
+        started_at: ($state.started_at // null),
+        updated_at: ($state.updated_at // null),
+        report: {
+          path:($report.path | safe_path),
+          exists:($report.exists // false),
+          mtime:($report.mtime // null),
+          generated_at:($report.generated_at // null),
+          generated_at_source:($report.generated_at_source // null),
+          latest_event_at:($report.latest_event_at // null),
+          state_status:($state.status // null),
+          state_updated_at:($state.updated_at // null),
+          latest_source_at:(latest_report_source_at($state; $report)),
+          stale:($report_freshness == "stale"),
+          freshness:$report_freshness
+        },
+        issues: ([ $state.chains[]?.issues[]? ] | length),
+        halt_counts: {
+          total:($run_halts | length),
+          active:([ $run_halts[] | select((.status // "") == "paused" or (.status // "") == "terminated") ] | length),
+          by_class:($run_halts | counts_by(.halt_class))
+        },
+        retry_counts: {
+          issue_auto_retries:([ $state.chains[]?.issues[]?.auto_retry_attempts? // empty | tonumber? ] | add // 0),
+          chain_retry_events:([ $run_events[] | select((.event // "") == "chain_retry_attempt") ] | length),
+          resume_attempts:([ $run_events[] | select((.event // "") == "chain_resume_attempt_started") ] | length)
+        },
+        telemetry_gap_counts:(($run_summary_gaps + $run_event_gaps) | map({gap: .}) | counts_by(.gap)),
+        telemetry_gap_reason_counts:(($run_summary_gap_reasons + $run_event_gap_reasons) | map({reason: gap_reason_key}) | counts_by(.reason)),
+        review_verdict_counts:($run_reviews | counts_by(.verdict)),
+        phase_review_verdict_counts:($run_phase_reviews | counts_by(.verdict))
       }
-    ]
+    ],
+    issues: $issue_rows
   }
 ' > "$digest_json"
 
@@ -279,14 +576,24 @@ jq -r '
     if (($obj // {}) | length) == 0 then "- none"
     else ($obj | to_entries | sort_by(.key)[] | "- \(.key): \(.value)")
     end;
+  def cell($v):
+    if $v == null or $v == "" then "missing"
+    else ($v | tostring | gsub("\\|"; "\\|"))
+    end;
   "# Studio Chain Telemetry Digest",
   "",
   "- Window: \(.window.since) through \(.window.until)",
+  "- Project filter: \(.filter.project // "none")",
+  "- Public-safe: \(.source.public_safe) (\(.source.public_safe_trigger))",
+  (if .filter.path_fallback_reported then "- Project match fallback: path-derived target repo root used for at least one run" else empty end),
   "- Runs: \(.counters.runs_total)",
   "- Issues: \(.counters.issues_total)",
   "- Worker summaries: \(.counters.worker_summaries_total)",
   "- Worker wall-clock: \(.counters.worker_duration_s)s",
   "- Reviews: \(.counters.review_passes) pass / \(.counters.review_failures) fail",
+  "- Halt records: \(.counters.halt_records_total) total / \(.counters.halt_records_active) active",
+  "- Retries: \(.counters.retry_counts.issue_auto_retries) issue auto / \(.counters.retry_counts.chain_retry_events) chain / \(.counters.retry_counts.resume_attempts) resume",
+  "- Reports: \(.counters.reports.fresh) fresh / \(.counters.reports.stale) stale / \(.counters.reports.missing) missing / \(.counters.reports.unknown) unknown",
   "- Checkpoints: \(.counters.checkpoint_auto_created) created / \(.counters.checkpoint_auto_loaded) loaded, \(.counters.checkpoint_drift_confirmed) confirmed drift, ~\(.counters.checkpoint_estimated_saved_tokens) tokens saved",
   "- Tests/lints/builds: \(.counters.tests_bad)/\(.counters.tests_total) bad tests, \(.counters.lints_bad)/\(.counters.lints_total) bad lints, \(.counters.builds_bad)/\(.counters.builds_total) bad builds",
   "- Tokens: \(if .counters.tokens_total == null then "missing" else (.counters.tokens_total | tostring) end) across \(.counters.token_reports) summaries",
@@ -342,6 +649,15 @@ jq -r '
   "Issues:",
   count_table(.counters.issues_by_status),
   "",
+  "Halts:",
+  count_table(.counters.halt_records_by_class),
+  "",
+  "Review verdicts:",
+  count_table(.counters.review_verdict_counts),
+  "",
+  "Phase review verdicts:",
+  count_table(.counters.phase_review_verdict_counts),
+  "",
   "## Event Counters",
   "",
   count_table(.counters.event_counts),
@@ -350,12 +666,29 @@ jq -r '
   "",
   count_table(.counters.telemetry_gap_counts),
   "",
+  "## Telemetry Gap Reasons",
+  "",
+  count_table(.counters.telemetry_gap_reason_counts),
+  "",
   "## Runs",
   "",
   (if (.runs | length) == 0 then "No chain runs matched the window."
    else
-     "| Run | Status | Issues | Report |",
-     "|---|---|---:|---|",
-     (.runs[] | "| \(.run_id) | \(.status) | \(.issues) | \(.report // "missing") |")
+     "| Run | Status | Manifest | Issues | Halts | Retries | Gaps | Report | Report Generated | Latest Event | State Status | Project Match |",
+     "|---|---|---|---:|---:|---:|---|---|---|---|---|---|",
+     (.runs[] |
+       ([.telemetry_gap_counts // {} | to_entries[] | "\(.key):\(.value)"] | join(", ")) as $gaps |
+       "| \(.run_id) | \(.status) | \(.manifest // "missing") | \(.issues) | \(.halt_counts.total) | \(.retry_counts.issue_auto_retries + .retry_counts.chain_retry_events + .retry_counts.resume_attempts) | \(if $gaps == "" then "none" else $gaps end) | \(.report.freshness) | \(.report.generated_at // "missing") | \(.report.latest_event_at // "none") | \(.report.state_status // "unknown") | \(.project_match.type):\(.project_match.source // "none") |")
+   end)
+  ,
+  "",
+  "## Issues",
+  "",
+  (if (.issues | length) == 0 then "No issues matched the selected runs."
+   else
+     "| Run | Chain | Issue | Title | Issue-run UUID | Status | Depends On | Commit After | Retries | Halts | Gaps | Phase Reviews | Summary |",
+     "|---|---|---:|---|---|---|---|---|---:|---:|---|---|---|",
+     (.issues[] |
+       "| \(.run_id) | \(.chain) | #\(.issue_number // "unknown") | \(cell(.issue_title)) | \(cell(.issue_run_id)) | \(.status) | \(if ((.dependencies // []) | length) == 0 then "-" else ((.dependencies // []) | map("#" + tostring) | join(", ")) end) | \(cell(.commit_after)) | \(.retry_count) | \(.halt_count) | \(if ((.telemetry_gaps // []) | length) == 0 then "none" else ((.telemetry_gaps // []) | join(", ")) end) | \(if ((.phase_review_verdicts // []) | length) == 0 then "none" else ((.phase_review_verdicts // []) | join(", ")) end) | \(if .summary_present then "present" else "missing" end) |")
    end)
 ' "$digest_json"

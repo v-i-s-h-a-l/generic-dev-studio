@@ -105,15 +105,53 @@ SSH_OPTS=(
   -n                                # no stdin — otherwise ssh reads the loop's heredoc and starves subsequent iterations (#215)
   -o BatchMode=yes
   -o ConnectTimeout=10
+  -o ConnectionAttempts=1
+  -o ServerAliveInterval=5
+  -o ServerAliveCountMax=2
   -o StrictHostKeyChecking=accept-new
 )
 
-# `gtimeout` ships via coreutils on macOS; `timeout` is GNU-only on Linux.
-# Missing on a vanilla Mac is common, so fall through gracefully — SSH's
-# own ConnectTimeout still bounds the dominant failure mode (TCP hang).
-TIMEOUT_BIN=""
-command -v gtimeout >/dev/null 2>&1 && TIMEOUT_BIN="gtimeout 10"
-command -v timeout  >/dev/null 2>&1 && [ -z "$TIMEOUT_BIN" ] && TIMEOUT_BIN="timeout 10"
+NODE_HEALTH_TIMEOUT_S="${STUDIO_NODE_HEALTH_TIMEOUT_S:-10}"
+case "$NODE_HEALTH_TIMEOUT_S" in ''|*[!0-9]*|0) NODE_HEALTH_TIMEOUT_S=10 ;; esac
+
+node_health_run_with_timeout() {
+  local timeout_s="$1"
+  shift
+  local out pid started elapsed rc
+  out=$(mktemp -t node-health-probe.XXXXXX) || return 125
+  if (
+    set +e
+    set -m
+    "$@" >"$out" 2>&1 &
+    pid=$!
+    started=$(date -u +%s)
+    rc=""
+    while kill -0 "$pid" 2>/dev/null; do
+      elapsed=$(( $(date -u +%s) - started ))
+      if [ "$elapsed" -ge "$timeout_s" ]; then
+        kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+        sleep 1
+        kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        rc=124
+        break
+      fi
+      sleep 1
+    done
+    if [ -z "$rc" ]; then
+      wait "$pid"
+      rc=$?
+    fi
+    exit "$rc"
+  ) 2>/dev/null; then
+    rc=0
+  else
+    rc=$?
+  fi
+  cat "$out"
+  rm -f "$out"
+  return "$rc"
+}
 
 any_healthy=0
 
@@ -148,7 +186,7 @@ while IFS=$'\t' read -r id host user enabled expected_mid; do
     fi
     observed_mid=$(cat "$(resolve_runtime_global)/machine-id" 2>/dev/null | tr -d '[:space:]')
   else
-    if ! output=$($TIMEOUT_BIN ssh "${SSH_OPTS[@]}" "${user}@${host}" \
+    if ! output=$(node_health_run_with_timeout "$NODE_HEALTH_TIMEOUT_S" ssh "${SSH_OPTS[@]}" "${user}@${host}" \
         'uptime; printf "###MID###\n"; cat ~/.dev-studio/.runtime/machine-id 2>/dev/null' 2>&1); then
       _emit_unreachable "$id" "ssh" "$output"
       printf '%s\tunreachable\t-\t%s\n' "$id" "$host"

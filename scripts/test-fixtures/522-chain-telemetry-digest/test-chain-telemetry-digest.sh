@@ -40,7 +40,7 @@ cat > "$RUNS/run-a/events.jsonl" <<'JSONL'
 {"event":"chain_issue_started","stage":"execute","status":"running","data":{"duration_s":0}}
 {"event":"chain_issue_completed","stage":"execute","status":"completed","data":{"duration_s":9}}
 {"event":"chain_review_completed","stage":"review","status":"completed","data":{"duration_s":3}}
-{"event":"chain_telemetry_gap","stage":"ingest","status":"missing","data":{"gap_kind":"tokens"}}
+{"event":"chain_telemetry_gap","stage":"ingest","status":"missing","data":{"gap_kind":"tokens","reason_id":"codex_usage_absent"}}
 JSONL
 
 cat > "$RUNS/run-a/worker-summaries/issue-522.json" <<'JSON'
@@ -80,6 +80,10 @@ cat > "$RUNS/run-a/worker-summaries/issue-523.json" <<'JSON'
   "lints": [],
   "builds": [{"command": "build", "outcome": "error"}],
   "telemetry_gaps": ["model", "tokens"],
+  "telemetry_gap_reasons": [
+    {"gap_kind": "model", "reason_id": "codex_session_context_absent"},
+    {"gap_kind": "tokens", "reason_id": "codex_home_mismatch"}
+  ],
   "carryover": ["Retry blocked worker."]
 }
 JSON
@@ -133,6 +137,9 @@ jq -e '
   and .counters.builds_bad == 1
   and .counters.telemetry_gap_counts.tokens == 2
   and .counters.telemetry_gap_counts.model == 1
+  and .counters.telemetry_gap_reason_counts["tokens:codex_home_mismatch"] == 1
+  and .counters.telemetry_gap_reason_counts["tokens:codex_usage_absent"] == 1
+  and .counters.telemetry_gap_reason_counts["model:codex_session_context_absent"] == 1
   and .counters.generated_file_count == 1
   and (.runs | length) == 2
 ' "$JSON_OUT" >/dev/null || {
@@ -151,6 +158,7 @@ for needle in \
   "Tokens: 100 across 1 summaries" \
   "chain_issue_completed: 1" \
   "tokens: 2" \
+  "tokens:codex_home_mismatch: 1" \
   "run-a"
 do
   grep -q "$needle" "$MD_OUT" || {

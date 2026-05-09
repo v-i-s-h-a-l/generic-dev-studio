@@ -29,6 +29,7 @@ JSONL
 
 cat > "$events_dir/2026-04-29.jsonl" <<'JSONL'
 {"ts":"2026-04-29T10:00:00Z","agent":"studio","event":"precommit_review_passed","task":"","data":{"patch_id":"p1","verdict":"approved"}}
+{"ts":"2026-04-29T10:01:00Z","agent":"studio","event":"precommit_review_failed","task":"","data":{"patch_id":"p1","status":"failed","failure_kind":"infrastructure","reason":"reviewer_command_failed","review_host":"claude-reviewer","duration_s":11}}
 {"ts":"2026-04-29T12:00:00Z","agent":"chanakya","event":"task_dispatched","task":"T003","data":{}}
 {"ts":"2026-04-29T12:05:00Z","agent":"achilles","event":"task_started","task":"T003","data":{}}
 {"ts":"2026-04-29T12:50:00Z","agent":"achilles","event":"build_check_started","task":"T003","data":{"attempt":1}}
@@ -83,6 +84,26 @@ grep -q 'post   samples=2' "$out" || {
 }
 grep -q 'pre-commit_review: 1 gap(s)' "$out" || {
   printf 'precommit telemetry gap missing\n' >&2
+  cat "$out" >&2
+  exit 1
+}
+grep -Eq '^pre-commit_review_infra_failure[[:space:]]+1[[:space:]]+11' "$out" || {
+  printf 'precommit infra failure aggregate missing\n' >&2
+  cat "$out" >&2
+  exit 1
+}
+grep -q 'Pre-commit reviewer infrastructure failures' "$out" || {
+  printf 'precommit infra failure section missing\n' >&2
+  cat "$out" >&2
+  exit 1
+}
+grep -Eq 'claude-reviewer[[:space:]]+failures=1' "$out" || {
+  printf 'precommit infra failure host missing\n' >&2
+  cat "$out" >&2
+  exit 1
+}
+grep -Eq 'reviewer_command_failed[[:space:]]+failures=1' "$out" || {
+  printf 'precommit infra failure reason missing\n' >&2
   cat "$out" >&2
   exit 1
 }

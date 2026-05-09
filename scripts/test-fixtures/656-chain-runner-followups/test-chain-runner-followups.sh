@@ -81,6 +81,7 @@ jq -e '
   and .model_version == "gpt-5.5"
   and .effort == "medium"
   and (.telemetry_sources | index("codex_session_log"))
+  and .worker_telemetry_extraction.status == "present"
   and ((.telemetry_gaps // []) | index("tokens") | not)
   and ((.telemetry_gaps // []) | index("model") | not)
   and ((.telemetry_gaps // []) | index("model_version") | not)
@@ -88,6 +89,102 @@ jq -e '
 ' "$summary_file" >/dev/null || {
   printf 'parent telemetry enrichment failed\n' >&2
   cat "$summary_file" >&2
+  exit 1
+}
+
+host_mismatch=$(collect_codex_worker_session_telemetry claude "$WORK" 0 "$TMPROOT/home")
+printf '%s\n' "$host_mismatch" | jq -e '
+  .status == "unsupported"
+  and .reason_id == "host_telemetry_unsupported"
+' >/dev/null || {
+  printf 'host telemetry mismatch reason was not structured\n' >&2
+  printf '%s\n' "$host_mismatch" >&2
+  exit 1
+}
+
+home_mismatch=$(CODEX_HOME="$TMPROOT/missing-codex" collect_codex_worker_session_telemetry codex "$WORK" 0 "$TMPROOT/home")
+printf '%s\n' "$home_mismatch" | jq -e '
+  .status == "missing"
+  and .reason_id == "codex_home_mismatch"
+' >/dev/null || {
+  printf 'home mismatch reason was not structured\n' >&2
+  printf '%s\n' "$home_mismatch" >&2
+  exit 1
+}
+
+empty_lookup=$(collect_codex_worker_session_telemetry codex "$TMPROOT/no-matching-worktree" 0 "$TMPROOT/home")
+printf '%s\n' "$empty_lookup" | jq -e '
+  .status == "missing"
+  and .reason_id == "codex_session_log_not_found"
+' >/dev/null || {
+  printf 'empty session lookup reason was not structured\n' >&2
+  printf '%s\n' "$empty_lookup" >&2
+  exit 1
+}
+
+NO_USAGE_WORK="$TMPROOT/no-usage"
+mkdir -p "$NO_USAGE_WORK/.studio" "$CODEX_HOME/sessions/2026/05/08"
+cat > "$CODEX_HOME/sessions/2026/05/08/no-usage.jsonl" <<JSONL
+{"type":"session_meta","payload":{"cwd":"$NO_USAGE_WORK","timestamp":"2026-05-08T00:00:01Z"}}
+{"type":"turn_context","payload":{"cwd":"$NO_USAGE_WORK","model":"gpt-usage-missing","effort":"high"}}
+JSONL
+cat > "$NO_USAGE_WORK/.studio/chain-worker-summary.json" <<JSON
+{
+  "schema_version": 1,
+  "kind": "completion",
+  "chain": "followups",
+  "issue_number": 657,
+  "host": "codex",
+  "exit_code": 0,
+  "tests": [{"command":"fixture","outcome":"pass"}],
+  "lints": [],
+  "builds": [],
+  "tokens": null,
+  "model": null,
+  "model_version": null,
+  "effort": null,
+  "telemetry_gaps": ["tokens", "model", "model_version", "effort"]
+}
+JSON
+no_usage_telemetry="$TMPROOT/no-usage-telemetry.json"
+collect_codex_worker_session_telemetry codex "$NO_USAGE_WORK" 0 "$TMPROOT/home" > "$no_usage_telemetry"
+jq -e '
+  .status == "partial"
+  and .reason_id == "codex_usage_absent"
+  and .fields.tokens.status == "missing"
+' "$no_usage_telemetry" >/dev/null || {
+  printf 'usage absence reason was not structured\n' >&2
+  cat "$no_usage_telemetry" >&2
+  exit 1
+}
+no_usage_summary=$(ingest_worker_summary followups 657 codex "$NO_USAGE_WORK" before after 0 100 "$CHAIN_RUN_ID" "$ISSUE_RUN_ID-no-usage" "$no_usage_telemetry")
+jq -e '
+  .model == "gpt-usage-missing"
+  and .worker_telemetry_extraction.reason_id == "codex_usage_absent"
+  and ((.telemetry_gaps // []) | index("tokens"))
+  and ((.telemetry_gaps // []) | index("model") | not)
+  and ((.telemetry_gap_reasons // [])[] | select(.gap_kind == "tokens" and .reason_id == "codex_usage_absent"))
+' "$no_usage_summary" >/dev/null || {
+  printf 'usage absence gap reason was not preserved in summary\n' >&2
+  cat "$no_usage_summary" >&2
+  exit 1
+}
+
+SCHEMA_MISS_WORK="$TMPROOT/schema-miss"
+mkdir -p "$SCHEMA_MISS_WORK/.studio"
+cat > "$CODEX_HOME/sessions/2026/05/08/schema-miss.jsonl" <<JSONL
+{"type":"session_meta","payload":{"cwd":"$SCHEMA_MISS_WORK","timestamp":"2026-05-08T00:00:02Z"}}
+{"type":"turn_context","payload":{"cwd":"$SCHEMA_MISS_WORK","model":"gpt-schema-miss","effort":"medium"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"usage":{"total_tokens":10}}}}
+JSONL
+schema_miss=$(collect_codex_worker_session_telemetry codex "$SCHEMA_MISS_WORK" 0 "$TMPROOT/home")
+printf '%s\n' "$schema_miss" | jq -e '
+  .status == "partial"
+  and .reason_id == "codex_session_log_schema_miss"
+  and .fields.tokens.status == "failed"
+' >/dev/null || {
+  printf 'parser schema miss reason was not structured\n' >&2
+  printf '%s\n' "$schema_miss" >&2
   exit 1
 }
 

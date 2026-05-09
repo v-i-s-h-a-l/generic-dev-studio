@@ -19,6 +19,7 @@ REVIEW_HOST="${STUDIO_REVIEW_HOST:-}"
 BYPASS_REVIEW=0
 REVIEW_STARTED_AT=$(date +%s)
 REVIEW_CONTEXT_JSON="null"
+REVIEW_PAYLOAD_STORAGE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -66,7 +67,7 @@ print_reviewer_failure() {
 
 emit_gate_event() {
   command -v emit_event_keyed >/dev/null 2>&1 || return 0
-  local event="$1" verdict="$2" host="$3" patch_id="$4" bypass_source="${5:-}"
+  local event="$1" verdict="$2" host="$3" patch_id="$4" bypass_source="${5:-}" status="${6:-}" failure_kind="${7:-}" reason="${8:-}"
   local data duration_s
   duration_s=$(( $(date +%s) - REVIEW_STARTED_AT ))
   [ "$duration_s" -ge 0 ] && [ "$duration_s" -le 86400 ] || duration_s=""
@@ -78,17 +79,77 @@ emit_gate_event() {
       --arg head "$(git rev-parse --short HEAD 2>/dev/null || true)" \
       --arg patch_id "$patch_id" \
       --arg bypass_source "$bypass_source" \
+      --arg status "$status" \
+      --arg failure_kind "$failure_kind" \
+      --arg reason "$reason" \
+      --arg payload_storage "$REVIEW_PAYLOAD_STORAGE" \
       --arg duration_s "$duration_s" \
       --argjson review_context "$REVIEW_CONTEXT_JSON" \
       '{verdict:$verdict,review_host:$host,branch:$branch,head:$head,patch_id:$patch_id,bypass_source:$bypass_source}
        + (if $duration_s == "" then {} else {duration_s:($duration_s|tonumber)} end)
+       + (if $status == "" then {} else {status:$status} end)
+       + (if $failure_kind == "" then {} else {failure_kind:$failure_kind} end)
+       + (if $reason == "" then {} else {reason:$reason} end)
+       + (if $payload_storage == "" then {} else {payload_storage:$payload_storage} end)
        + (if $review_context == null then {} else {review_context:$review_context} end)')
   else
     data="{\"verdict\":\"$verdict\",\"review_host\":\"$host\",\"patch_id\":\"$patch_id\",\"bypass_source\":\"$bypass_source\""
     [ -n "$duration_s" ] && data="$data,\"duration_s\":$duration_s"
+    [ -n "$status" ] && data="$data,\"status\":\"$status\""
+    [ -n "$failure_kind" ] && data="$data,\"failure_kind\":\"$failure_kind\""
+    [ -n "$reason" ] && data="$data,\"reason\":\"$reason\""
+    [ -n "$REVIEW_PAYLOAD_STORAGE" ] && data="$data,\"payload_storage\":\"$REVIEW_PAYLOAD_STORAGE\""
     data="$data}"
   fi
-  emit_event_keyed studio commit "$event" "" "$data" --idem-key "precommit:$event:$patch_id" >/dev/null 2>&1 || true
+  local idem_key="precommit:$event:$patch_id"
+  [ "$event" != "precommit_review_failed" ] || idem_key="$idem_key:$host:$reason"
+  emit_event_keyed studio commit "$event" "" "$data" --idem-key "$idem_key" >/dev/null 2>&1 || true
+}
+
+fail_gate() {
+  local reason="$1" message="$2" code="${3:-1}"
+  [ -z "$message" ] || printf 'pre-commit-review: %s\n' "$message" >&2
+  emit_gate_event precommit_review_failed infrastructure_failed "${REVIEW_HOST:-unknown}" "${patch_id:-unknown}" "" failed infrastructure "$reason"
+  exit "$code"
+}
+
+sanitize_runtime_slug() {
+  local raw="$1" slug
+  slug=$(printf '%s' "$raw" | tr -cs 'A-Za-z0-9._-' '-' | sed -e 's/^-*//' -e 's/-*$//')
+  [ -n "$slug" ] && printf '%s\n' "$slug" || printf 'unknown\n'
+}
+
+chain_task_project_slug() {
+  local start_path source_url repo
+  start_path="$PWD/.studio/chain-task-start.json"
+  [ -r "$start_path" ] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  source_url=$(jq -r '.source_issue.url // empty' "$start_path" 2>/dev/null || true)
+  case "$source_url" in
+    https://github.com/*/*/issues/*|https://github.com/*/*/pull/*)
+      repo=$(printf '%s\n' "$source_url" | sed -E 's#^https://github.com/[^/]+/([^/]+)/(issues|pull)/.*$#\1#')
+      ;;
+    *)
+      repo=""
+      ;;
+  esac
+  [ -n "$repo" ] || return 1
+  sanitize_runtime_slug "$repo"
+}
+
+precommit_review_project_slug() {
+  local slug
+  slug=$(chain_task_project_slug 2>/dev/null || true)
+  [ -n "$slug" ] || slug=$(resolve_display_name 2>/dev/null || true)
+  [ -n "$slug" ] || slug=$(resolve_project 2>/dev/null || true)
+  sanitize_runtime_slug "${slug:-unknown}"
+}
+
+precommit_review_payload_parent() {
+  local project_slug
+  studio_context_resolve runtime-mutation || return 1
+  project_slug=$(precommit_review_project_slug)
+  printf '%s/%s/.runtime/reviewer-payloads/pre-commit\n' "$STUDIO_CONTEXT_STUDIO_HOME" "$project_slug"
 }
 
 eligible_hosts() {
@@ -118,12 +179,12 @@ if [ "${STUDIO_BYPASS_REVIEW:-0}" = "1" ] || [ "$BYPASS_REVIEW" -eq 1 ]; then
   source="env"
   [ "$BYPASS_REVIEW" -eq 1 ] && source="flag"
   printf 'pre-commit-review: STUDIO REVIEW GATE BYPASSED by explicit user override (%s)\n' "$source" >&2
-  emit_gate_event precommit_review_bypassed bypassed "${REVIEW_HOST:-none}" "$patch_id" "$source"
+  emit_gate_event precommit_review_bypassed bypassed "${REVIEW_HOST:-none}" "$patch_id" "$source" bypassed "" ""
   exit 0
 fi
 
-command -v yq >/dev/null 2>&1 || { printf 'pre-commit-review: yq is required\n' >&2; exit 1; }
-command -v jq >/dev/null 2>&1 || { printf 'pre-commit-review: jq is required\n' >&2; exit 1; }
+command -v yq >/dev/null 2>&1 || fail_gate missing_yq "yq is required"
+command -v jq >/dev/null 2>&1 || fail_gate missing_jq "jq is required"
 
 if [ -z "$REVIEW_HOST" ]; then
   hosts=()
@@ -133,6 +194,7 @@ if [ -z "$REVIEW_HOST" ]; then
   [ "${#hosts[@]}" -gt 0 ] || {
     printf 'pre-commit-review: no eligible reviewer hosts found\n' >&2
     printf 'bypass (explicit user override only): STUDIO_BYPASS_REVIEW=1 git commit ...\n' >&2
+    emit_gate_event precommit_review_failed infrastructure_failed none "$patch_id" "" failed infrastructure no_eligible_reviewer_hosts
     exit 1
   }
   REVIEW_HOST="${hosts[0]}"
@@ -140,15 +202,23 @@ fi
 
 eligibility=$("$SCRIPT_DIR/pr-reviewer-eligibility.sh" "$REVIEW_HOST") || {
   printf '%s\n' "$eligibility" >&2
-  printf 'pre-commit-review: reviewer host is not eligible: %s\n' "$REVIEW_HOST" >&2
-  exit 1
+  fail_gate reviewer_ineligible "reviewer host is not eligible: $REVIEW_HOST"
 }
 manifest=$(printf '%s\n' "$eligibility" | sed -n 's/^MANIFEST=//p' | head -1)
 spawn_command=$(printf '%s\n' "$eligibility" | sed -n 's/^SPAWN_COMMAND=//p' | head -1)
-[ -n "$spawn_command" ] || { printf 'pre-commit-review: missing spawn command for %s\n' "$REVIEW_HOST" >&2; exit 1; }
+[ -n "$spawn_command" ] || fail_gate missing_spawn_command "missing spawn command for $REVIEW_HOST"
 
-tmpdir=$(mktemp -d -t pre-commit-review.XXXXXX)
-trap 'rm -rf "$tmpdir"' EXIT
+payload_parent=$(precommit_review_payload_parent) \
+  || fail_gate payload_runtime_unavailable "Studio runtime context unavailable for reviewer payload handoff"
+mkdir -p "$payload_parent" \
+  || fail_gate payload_runtime_unavailable "failed to create reviewer payload root"
+tmpdir=$(mktemp -d "$payload_parent/run.XXXXXX") \
+  || fail_gate payload_runtime_unavailable "failed to create reviewer payload directory"
+REVIEW_PAYLOAD_STORAGE="studio-runtime"
+cleanup_tmpdir() {
+  [ "${STUDIO_KEEP_REVIEW_PAYLOADS:-0}" = "1" ] || rm -rf "$tmpdir"
+}
+trap cleanup_tmpdir EXIT
 payload="$tmpdir/review-payload.md"
 diff_payload="$tmpdir/staged.diff"
 summary="$tmpdir/reviewer-summary.md"
@@ -162,35 +232,29 @@ case "$REVIEW_HOST" in
   codex*|*codex*)
     export STUDIO_CONTEXT_HOST_PROFILE="$REVIEW_HOST"
     studio_context_resolve delegated-host-spawn || {
-      printf 'pre-commit-review: codex reviewer auth home unavailable via Studio context\n' >&2
-      exit 1
+      fail_gate reviewer_auth_unavailable "codex reviewer auth home unavailable via Studio context"
     }
     reviewer_codex_home="$STUDIO_CONTEXT_AUTH_HOME"
     [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] || {
-      printf 'pre-commit-review: codex reviewer auth home not found via Studio context\n' >&2
-      exit 1
+      fail_gate reviewer_auth_unavailable "codex reviewer auth home not found via Studio context"
     }
     ;;
   claude*|*claude*)
     export STUDIO_CONTEXT_HOST_PROFILE="$REVIEW_HOST"
     studio_context_resolve delegated-host-spawn || {
-      printf 'pre-commit-review: claude reviewer auth home unavailable via Studio context\n' >&2
-      exit 1
+      fail_gate reviewer_auth_unavailable "claude reviewer auth home unavailable via Studio context"
     }
     reviewer_claude_home="$STUDIO_CONTEXT_AUTH_HOME"
     [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] || {
-      printf 'pre-commit-review: claude reviewer auth home not found via Studio context\n' >&2
-      exit 1
+      fail_gate reviewer_auth_unavailable "claude reviewer auth home not found via Studio context"
     }
     reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-$reviewer_claude_home/.claude-reviewer}"
     [ -n "$reviewer_claude_config_dir" ] || {
-      printf 'pre-commit-review: claude reviewer config dir not found; set CLAUDE_REVIEWER_CONFIG_DIR or HOME\n' >&2
-      exit 1
+      fail_gate reviewer_auth_unavailable "claude reviewer config dir not found; set CLAUDE_REVIEWER_CONFIG_DIR or HOME"
     }
     mkdir -p "$reviewer_claude_config_dir"
     [ -d "$reviewer_claude_config_dir" ] || {
-      printf 'pre-commit-review: failed to create claude reviewer config dir: %s\n' "$reviewer_claude_config_dir" >&2
-      exit 1
+      fail_gate reviewer_auth_unavailable "failed to create claude reviewer config dir: $reviewer_claude_config_dir"
     }
     ;;
 esac
@@ -263,7 +327,7 @@ case "$REVIEW_HOST" in
       STUDIO_HOST="$REVIEW_HOST" \
       REVIEW_PAYLOAD="$payload" \
       STAGED_PATCH_ID="$patch_id" \
-      "${spawn_argv[@]}" "$review_prompt")
+      "${spawn_argv[@]}" --add-dir "$tmpdir" "$review_prompt")
     ;;
   *)
     review_cmd=(env -i \
@@ -289,7 +353,7 @@ run_precommit_reviewer() {
 
 if ! run_precommit_reviewer; then
   print_reviewer_failure "$summary" "$summary.err"
-  exit 1
+  fail_gate reviewer_command_failed ""
 fi
 
 verdict_count=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$summary" | wc -l | tr -d ' ')
@@ -303,7 +367,7 @@ if [ "$verdict_count" = "0" ] \
   review_budget_emit_context_event studio "$patch_id" review_context_budget_resolved "$REVIEW_CONTEXT_JSON" "precommit-review-context-expanded:$patch_id"
   if ! run_precommit_reviewer; then
     print_reviewer_failure "$summary" "$summary.err"
-    exit 1
+    fail_gate reviewer_command_failed ""
   fi
   verdict_count=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$summary" | wc -l | tr -d ' ')
   verdict=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$summary")
@@ -311,7 +375,7 @@ fi
 if [ "$verdict_count" != "1" ]; then
   printf 'pre-commit-review: reviewer must emit exactly one STUDIO_REVIEW_VERDICT line (found %s)\n' "$verdict_count" >&2
   sed -n '1,120p' "$summary" >&2 || true
-  exit 1
+  fail_gate reviewer_no_verdict ""
 fi
 
 case "$verdict" in
@@ -319,19 +383,21 @@ case "$verdict" in
     printf 'PRECOMMIT_REVIEW_HOST=%s\n' "$REVIEW_HOST"
     printf 'PRECOMMIT_REVIEW_MANIFEST=%s\n' "$manifest"
     printf 'PRECOMMIT_REVIEW_VERDICT=%s\n' "$verdict"
+    printf 'PRECOMMIT_REVIEW_STATUS=passed\n'
+    printf 'PRECOMMIT_REVIEW_PAYLOAD_STORAGE=%s\n' "$REVIEW_PAYLOAD_STORAGE"
     sed -n '1,120p' "$summary"
-    emit_gate_event precommit_review_passed "$verdict" "$REVIEW_HOST" "$patch_id" ""
+    emit_gate_event precommit_review_passed "$verdict" "$REVIEW_HOST" "$patch_id" "" passed "" ""
     ;;
   blocked)
     printf 'pre-commit-review: reviewer blocked commit\n' >&2
     sed -n '1,120p' "$summary" >&2 || true
-    emit_gate_event precommit_review_blocked "$verdict" "$REVIEW_HOST" "$patch_id" ""
+    emit_gate_event precommit_review_blocked "$verdict" "$REVIEW_HOST" "$patch_id" "" blocked "" ""
     exit 1
     ;;
   *)
     printf 'pre-commit-review: reviewer did not emit a valid STUDIO_REVIEW_VERDICT line\n' >&2
     sed -n '1,120p' "$summary" >&2 || true
-    exit 1
+    fail_gate reviewer_invalid_verdict ""
     ;;
 esac
 

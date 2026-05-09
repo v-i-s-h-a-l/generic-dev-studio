@@ -97,7 +97,7 @@ if [ -n "$CUTOVER" ]; then
 else
   cutover_epoch=$(jq -sr '
     [.[]
-     | select(.event == "precommit_hook_completed" or .event == "precommit_review_passed" or .event == "precommit_review_blocked" or .event == "precommit_review_bypassed")
+     | select(.event == "precommit_hook_completed" or .event == "precommit_review_passed" or .event == "precommit_review_blocked" or .event == "precommit_review_bypassed" or .event == "precommit_review_failed")
      | try (.ts | fromdateiso8601 | floor) catch empty
     ] | min // empty
   ' "$events_file")
@@ -292,6 +292,19 @@ function valid_tokens(v) {
     if (duration != "" && valid_duration(duration)) sample("pre-commit_review", patch_id, "", "", duration, "duration_s", "")
     else missing("pre-commit_review", "missing_duration_or_start_end")
   }
+  if (event == "precommit_review_failed") {
+    if (duration != "" && valid_duration(duration)) sample("pre-commit_review_infra_failure", patch_id, "", "", duration, "duration_s", "")
+    else missing("pre-commit_review_infra_failure", "missing_duration_or_start_end")
+    precommit_infra_failures++
+    infra_host = review_host != "" ? review_host : "unknown"
+    infra_reason = reason != "" ? reason : "unknown"
+    if (!(infra_host in precommit_infra_host_seen)) {
+      precommit_infra_host_seen[infra_host] = 1
+      precommit_infra_host_order[++precommit_infra_host_n] = infra_host
+    }
+    precommit_infra_host_count[infra_host]++
+    precommit_infra_reason_count[infra_reason]++
+  }
   if (event == "precommit_hook_completed") {
     if (duration != "" && valid_duration(duration)) sample("pre-commit_hook", "", "", "", duration, "duration_s", "")
     else missing("pre-commit_hook", "missing_duration_s")
@@ -379,6 +392,25 @@ END {
     stage = r[2]
     if (count[stage] == "" && missing_count[stage] == "") continue
     printf "%-36s %7d %10d %10s %10s %10d\n", stage, count[stage] + 0, total[stage] + 0, percentile(stage, 0.50), percentile(stage, 0.90), missing_count[stage] + 0
+  }
+
+  print ""
+  print "Pre-commit reviewer infrastructure failures"
+  if (precommit_infra_failures + 0 < 1) {
+    print "  none"
+  } else {
+    printf "  total=%d\n", precommit_infra_failures
+    if (precommit_infra_host_n > 0) {
+      print "  by host:"
+      for (i = 1; i <= precommit_infra_host_n; i++) {
+        host = precommit_infra_host_order[i]
+        printf "    %-20s failures=%d\n", host, precommit_infra_host_count[host] + 0
+      }
+    }
+    print "  by reason:"
+    for (reason in precommit_infra_reason_count) {
+      printf "    %-32s failures=%d\n", reason, precommit_infra_reason_count[reason] + 0
+    }
   }
 
   print ""

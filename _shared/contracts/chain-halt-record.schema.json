@@ -99,6 +99,113 @@
         "null"
       ]
     },
+    "retry_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Total equivalent retryable halt observations represented by this active record. First write is 1."
+    },
+    "first_seen": {
+      "$ref": "debrief.schema.json#/$defs/rfc3339"
+    },
+    "last_seen": {
+      "$ref": "debrief.schema.json#/$defs/rfc3339"
+    },
+    "last_observed_command": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "last_observed_error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "normalized_origin": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "normalized_error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "coalesce_key": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Retryable-halt equivalence key: run id, scope id, reason id, normalized origin, and normalized error.",
+      "additionalProperties": true
+    },
+    "coalesced_observations": {
+      "type": "array",
+      "description": "Bounded first/last sample observations for equivalent retryable halts.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "issue_context": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Compact issue identity and resume context copied from run state when the halt can be tied to an issue.",
+      "properties": {
+        "chain": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "chain_run_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "issue_run_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "issue_number": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dependencies": {
+          "type": "array"
+        },
+        "commit_after": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
     "resumable_state": {
       "type": "object",
       "description": "Minimal state needed to resume or inspect the halt without chat history.",
@@ -110,6 +217,11 @@
         "null"
       ],
       "description": "Single operator command to resume/continue. Null only for true hard stops."
+    },
+    "next_safe_action": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable next inspection or recovery action before any resume command is run."
     },
     "affected_artifacts": {
       "$ref": "#/$defs/stringList"
@@ -231,7 +343,8 @@
         "destructive_change_required",
         "permission_expansion_required",
         "unsafe_external_state",
-        "implementation_scope_blocked"
+        "implementation_scope_blocked",
+        "checkpoint_drift_detected"
       ]
     },
     "stringList": {
@@ -277,7 +390,8 @@
                 "telemetry_artifact_malformed",
                 "telemetry_artifact_missing",
                 "manifest_schema_version_mismatch",
-                "implementation_scope_blocked"
+                "implementation_scope_blocked",
+                "checkpoint_drift_detected"
               ]
             },
             "halt_class": {

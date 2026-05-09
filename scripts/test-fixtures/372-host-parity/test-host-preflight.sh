@@ -37,6 +37,17 @@ printf 'unexpected gh invocation: %s\n' "$*" >&2
 exit 2
 SH
 
+cat > "$BIN/shellcheck" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  --version)
+    printf 'ShellCheck - shell script analysis tool\nversion: fixture\n'
+    exit 0
+    ;;
+esac
+exit 0
+SH
+
 cat > "$BIN/git" <<SH
 #!/usr/bin/env bash
 if [ "\$1" = "-C" ] && [ "\$3" = "ls-remote" ]; then
@@ -51,7 +62,7 @@ if [ "\$1" = "-C" ] && [ "\$3" = "ls-remote" ]; then
 fi
 exec "$REAL_GIT" "\$@"
 SH
-chmod +x "$BIN/gh" "$BIN/git"
+chmod +x "$BIN/gh" "$BIN/git" "$BIN/shellcheck"
 
 (
   cd "$REPO"
@@ -76,7 +87,14 @@ grep -q 'gh auth status' "$TMPROOT/gh.err" || { printf 'FAIL: missing gh auth di
 PATH="$BIN:$PATH" HOME="$HOME_DIR" GH_AUTH_STATUS=ok LS_REMOTE_STATUS=ok \
   "$ROOT/scripts/host-preflight.sh" codex "$REPO" >"$TMPROOT/pass.out" 2>"$TMPROOT/pass.err"
 grep -q 'ls-remote' "$TMPROOT/git-calls" || { printf 'FAIL: git ls-remote was not exercised\n' >&2; exit 1; }
+grep -q 'ShellCheck available.*version=fixture' "$TMPROOT/pass.err" || { printf 'FAIL: missing ShellCheck availability diagnostic\n' >&2; cat "$TMPROOT/pass.err" >&2; exit 1; }
 grep -q 'PASS host=codex' "$TMPROOT/pass.err" || { printf 'FAIL: missing pass diagnostic\n' >&2; cat "$TMPROOT/pass.err" >&2; exit 1; }
+
+PATH="$BIN:$PATH" HOME="$HOME_DIR" GH_AUTH_STATUS=ok LS_REMOTE_STATUS=ok \
+  STUDIO_SHELLCHECK_BIN="$TMPROOT/missing-shellcheck" \
+  "$ROOT/scripts/host-preflight.sh" codex "$REPO" >"$TMPROOT/no-shellcheck.out" 2>"$TMPROOT/no-shellcheck.err"
+grep -q 'ShellCheck unavailable' "$TMPROOT/no-shellcheck.err" || { printf 'FAIL: missing ShellCheck unavailable diagnostic\n' >&2; cat "$TMPROOT/no-shellcheck.err" >&2; exit 1; }
+grep -q 'shellcheck_expected_unavailable' "$TMPROOT/no-shellcheck.err" || { printf 'FAIL: missing expected unavailable reason\n' >&2; cat "$TMPROOT/no-shellcheck.err" >&2; exit 1; }
 
 GH_HOME_LOG="$TMPROOT/gh-home.log"
 GIT_HOME_LOG="$TMPROOT/git-home.log"
@@ -108,7 +126,7 @@ set -e
 grep -q 'github_home is not a directory' "$TMPROOT/context-fail.err" || { printf 'FAIL: missing context failure detail\n' >&2; cat "$TMPROOT/context-fail.err" >&2; exit 1; }
 grep -q 'GitHub context unavailable' "$TMPROOT/context-fail.err" || { printf 'FAIL: missing host-preflight context failure diagnostic\n' >&2; cat "$TMPROOT/context-fail.err" >&2; exit 1; }
 
-preflight_call="host_preflight \"\$host\" \"\$REPO_ROOT\""
+preflight_call="host_preflight \"\$host\" \"\$TARGET_REPO_ROOT\""
 preflight_launch="HOME=\"\$launch_home\" \"\$SCRIPT_DIR/host-preflight.sh\""
 launch_home_resolution="launch_home=\$(host_launch_home)"
 

@@ -76,12 +76,57 @@ counts, and a small `bottlenecks` array. Missing token or model telemetry stays
 
 Per-issue objects also keep audit state that is more precise than the scheduler
 `status`. `status` remains the compatibility field used for resume and
-dependency scheduling (`pending`, `running`, `completed`, `failed`).
-`lifecycle_state` and `lifecycle_history` distinguish the audit trail:
+dependency scheduling (`pending`, `running`, `completed`, `failed`). New state
+rows carry stable issue identity aliases: `issue_run_id`, `issue_number` when
+known, `issue_title`, `status`, `dependencies`, and `commit_after` when
+available. Readers must keep accepting older rows that only have `number` or
+`title`. `lifecycle_state` and `lifecycle_history` distinguish the audit trail:
 `issue-created`, `implementation-running`, `implemented-local`,
 `smoke-passed`, `merged`, and `closed`. `provenance` records the mapped issue,
 runner/session identifiers, local commit/summary references, merge point, and
 closure PR when available.
+
+Worker session telemetry extraction writes a structured sidecar before summary
+ingestion. The sidecar uses a closed `status` enum: `present`, `partial`,
+`missing`, `failed`, or `unsupported`. `reason_id` is an open string set with
+reserved v1 values:
+
+| Reason | Meaning |
+|---|---|
+| `host_telemetry_unsupported` | The selected worker host does not emit parser-compatible session telemetry. |
+| `codex_home_mismatch` | The runner could not find a usable Codex session root for the worker launch HOME/CODEX home. |
+| `codex_session_log_not_found` | A session root existed, but no post-start session log matched the worker worktree. |
+| `codex_session_log_parse_failed` | A matching session log existed but was not parseable JSONL. |
+| `codex_session_log_schema_miss` | The log contained a recognized telemetry event whose payload no longer matched the parser schema. |
+| `codex_session_context_absent` | The log lacked recognized model/effort session context. |
+| `codex_usage_absent` | The log parsed but did not contain token usage. |
+
+Worker summaries keep legacy `telemetry_gaps` as strings for compatibility and
+add `worker_telemetry_extraction` plus `telemetry_gap_reasons[]` for structured
+grouping. Reports and digests group gaps by `gap_kind:reason_id`; readers that
+do not understand the detail array may keep using `telemetry_gaps`.
+
+When a child exits before writing a valid worker summary, the runner writes a
+private `chain-child-startup-diagnostics` artifact under
+`chain-runs/<run_id>/startup-diagnostics/`. The artifact has
+`schema_version: 1` and records the child exit code, launch-stage enum,
+abstract startup failure class, host profile/sandbox class, prompt-boundary
+detection when available, and redacted bounded stdout/stderr tail artifact
+paths. Stream tails are best-effort for fast exits. It stores environment shape
+only (counts and expected key names), not a full environment dump or secret
+values. `STUDIO_CHAIN_CHILD_STARTUP_CAPTURE` controls stream capture
+(`auto` = unattended only, `on`/`always` = force, `off`/`never` = disable).
+Synthesized missing-summary records and halt records may point to this private
+artifact; public summaries must use only the abstract failure class.
+
+ShellCheck availability is reported as worker verification evidence, not as a
+telemetry gap. For shell or release script changes, workers record ShellCheck in
+`lints[]` when it runs. If the chain-runner tool preflight marks ShellCheck
+unavailable, workers record a skipped lint with
+`reason_id: shellcheck_expected_unavailable` and list the substitutes they ran
+(`bash -n` plus relevant repo lints or fixtures). Outcome reviewers treat that
+shape as expected unavailability; a missing ShellCheck entry with no substitute
+evidence is verification drift.
 
 ## Required Event Data
 
@@ -92,15 +137,15 @@ closure PR when available.
 | iOS execution summary on worker summaries | Optional `execution_telemetry` records implementation/build/test/review/release executors when applicable, routing reason class, cost/economics summary, private artifact roots, public-safe artifact classes, cleanup outcome, retained TTL class, failover outcome, and timing split across control-plane overhead, source sync, simulator boot, xcodebuild, tests, log parsing, and cleanup. Missing required iOS evidence is emitted as named telemetry gaps (`implementation_executor`, `build_executor`, `test_executor`, `review_executor`, `release_executor`, `worker_routing`, `artifact_evidence`, `cleanup_telemetry`) without failing an otherwise completed task. |
 | iOS cleanup: `chain_ios_artifact_cleanup_completed` | `chain`, janitor `status`, redacted cleanup `counts`, `bytes_freed`, retained `retention_class`/TTL evidence when present, `paths_redacted`, and a private `telemetry_artifact` pointer. |
 | Resume: `chain_resume_attempt_started`, `chain_resume_attempt_completed` | `attempt_id`; completed event also includes `failure_reason` when non-empty. |
-| Halt: `chain_halt_recorded` | `reason_id`, `halt_class`, `halt_record`. |
+| Halt: `chain_halt_recorded` | `reason_id`, `halt_class`, `halt_record`, and when available `issue_context` plus `next_safe_action`. |
 | Projection repair: `chain_state_projection_repaired` | `backup`, `mismatch`. Emitted when resume startup repairs stale `state.json` from `events.jsonl`. |
 | Lock cleanup: `chain_stale_lock_removed` | `lock_path`, `context`, compact lock evidence (`reason`, `pid`, `created_at`, `host`, `process`, current host/process). |
 | Escrow: `chain_decision_escrow_opened` | `decision_id`, `risk_class`, `status`, `escrow_record`. |
 | Validation failure: `chain_artifact_validation_failed` | `artifact`, `reason_id`, `summary`. |
 | Reviewer: `chain_review_completed` | `pr_url`, `exit_code`, `verdict` when wrapper output supplied it, `model`/`effort` when available, `wrapper_output`. |
-| Gap: `chain_telemetry_gap` | `gap_kind`, `stage`, `reason`. Missing token/model/check data is a gap, never numeric zero. |
+| Gap: `chain_telemetry_gap` | `gap_kind`, `stage`, `reason`/`reason_id`. Missing token/model/check data is a gap, never numeric zero. |
 | HOME/auth normalization: `chain_auth_normalized` | `home_source`, `github_auth`, `secrets`. Do not emit actual HOME paths or secret material. |
-| Automated checkpoints: `checkpoint_auto_created`, `checkpoint_auto_loaded`, `checkpoint_context_savings_estimated` | `checkpoint_id`, `role`, `branch`, compact size/token counters, drift status for loads, loaded file names, and private artifact pointers. Automated checkpoint events are private chain-run telemetry and do not replace worker summaries, phase reviews, PR reviews, halt records, decision escrows, event logs, or reports. |
+| Automated checkpoints: `checkpoint_auto_created`, `checkpoint_auto_loaded`, `checkpoint_context_savings_estimated` | `checkpoint_id`, `role`, `branch`, compact size/token counters, drift status for loads, loaded file names, and private artifact pointers. Checkpoint drift halts write a private drift artifact with `checkpoint_id`, expected commit, observed commit, and the read-set artifact path when resume tracing produced one. Automated checkpoint events are private chain-run telemetry and do not replace worker summaries, phase reviews, PR reviews, halt records, decision escrows, event logs, or reports. |
 
 ## Public Surfaces
 
@@ -109,6 +154,7 @@ Public issue and PR comments may mention only this allowlist:
 ```text
 issue_number, chain_name, stage, verdict, status, gap_kind, reason_id, run_id, PR/issue URLs
 artifact_class, retention_class, cleanup_outcome, routing_reason_class, executor_role
+startup_failure_class, launch_stage, prompt_boundary_status
 ```
 
 Do not publish local paths, exact node or machine names, branch/work-project details, prompts, token totals, cache totals, velocity data, private task details, or raw reviewer output. Detailed reconstruction lives in the private report under the run directory.

@@ -30,6 +30,27 @@ cat > "$TMPROOT/start.json" <<'JSON'
     "host": "codex"
   },
   "expected_summary_artifact": "/tmp/studio-chain-runner/autonomous-continuation-loop-478-issue-478/.studio/chain-worker-summary.json",
+  "tool_preflight": {
+    "schema_version": 1,
+    "tools": {
+      "shellcheck": {
+        "status": "unavailable",
+        "required": "conditional_for_shell_script_changes",
+        "command": "shellcheck",
+        "reason_id": "shellcheck_expected_unavailable",
+        "policy": "Record a skipped lint plus substitutes when ShellCheck is unavailable.",
+        "substitutes": [
+          "bash -n on touched shell scripts",
+          "repo-specific lints or fixtures that exercise the touched shell/release surface"
+        ],
+        "summary_lint_shape": {
+          "command": "shellcheck <touched-shell-files>",
+          "outcome": "skipped",
+          "reason_id": "shellcheck_expected_unavailable"
+        }
+      }
+    }
+  },
   "required_checks": ["Commit the scoped issue change before exit."],
   "allowed_assumptions": ["The issue body is the authoritative scoped brief."],
   "stop_conditions": ["Exit non-zero after writing blocked_reason when blocked."],
@@ -106,11 +127,19 @@ grep -q 'write_chain_task_start_envelope' "$ROOT/scripts/studio-chain-runner.sh"
   printf 'runner does not write start envelopes\n' >&2
   exit 1
 }
+grep -q "tool_preflight: \$tool_preflight" "$ROOT/scripts/studio-chain-runner.sh" || {
+  printf 'runner does not write tool preflight into start envelopes\n' >&2
+  exit 1
+}
+grep -q 'shellcheck_expected_unavailable' "$ROOT/scripts/studio-chain-runner.sh" || {
+  printf 'runner prompt does not define expected ShellCheck unavailability\n' >&2
+  exit 1
+}
 grep -q 'kind: (.kind // "completion")' "$ROOT/scripts/studio-chain-runner.sh" || {
   printf 'runner does not normalize completion kind\n' >&2
   exit 1
 }
-grep -q 'created_at: (.created_at // $created_at)' "$ROOT/scripts/studio-chain-runner.sh" || {
+grep -q "created_at: (.created_at // \$created_at)" "$ROOT/scripts/studio-chain-runner.sh" || {
   printf 'runner does not normalize completion created_at\n' >&2
   exit 1
 }
