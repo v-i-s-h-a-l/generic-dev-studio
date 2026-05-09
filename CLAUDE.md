@@ -33,6 +33,18 @@ points the resolver at a non-default profile file instead of
 `STUDIO_AUTO_HOST_ORDER=<csv>` only when intentionally testing or recovering a
 specific host order. These are user-controlled levers, not assistant shortcuts.
 
+Durable-state path resolution follows the same rule. `scripts/lint-runtime-paths.sh`
+blocks raw `$HOME/.dev-studio/...`, `~/.dev-studio/...`, and
+`${HOME}/.dev-studio/...` formulas in `scripts/*.sh`, `core/**/*.sh`, and
+`hooks/*` outside the resolver layer (`scripts/lib-paths.sh`,
+`scripts/lib-studio-context.sh`); production code must call resolver helpers
+(`project_runtime_dir`, `project_state_dir`, `runtime_global_dir`) or the
+`STUDIO_CONTEXT_STUDIO_HOME` envelope. `STUDIO_BYPASS_RUNTIME_PATH_LINT=1` is
+the emergency/debug lever for `studio-chain-runner.sh` and the pre-commit
+gate; it emits a stderr audit line when set. Per-line carve-outs use
+`# lint-runtime-paths:allow next-line — <reason>`. The bypass and the
+annotation are user-controlled; assistants must not use either silently.
+
 **How to apply:** when the user says "remember X" / "from now on do Y" / "always do Z", first ask: is X a fact about *the user* (preference, identity, context) or a *workflow rule*? If workflow, encode it in the relevant repo file above and offer to add a hook or script when mechanical enforcement is the right shape. If pure user context, then memory is fine. When in doubt, default to repo — repo travels, memory doesn't.
 
 ## Worktree protocol (hard rule — no exceptions)
