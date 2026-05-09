@@ -55,6 +55,33 @@ relaunched with a fresh child session.
 
 `execution_policy.mode` is `attended` or `unattended`. Attended mode allows questions only for real design, implementation, permission, destructive-change, test, or review judgment blockers. Unattended mode proceeds through routine boundaries until such a blocker appears. `execution_policy.retry` carries a finite auto-retry limit and backoff; exhausted retryable failures become typed halt records. `execution_policy.escalation.routine_continue_prompts` must remain `false`.
 
+## Host Eligibility Records
+
+When a chain uses `host: auto` or performs live worker-host preflight, the
+parent runner stores compact host eligibility records in run state and halt
+details. The closed outcome enum is:
+
+- `eligible`
+- `binary-missing`
+- `auth-stale`
+- `auth-fresh-but-failed`
+- `unknown`
+
+Run state may include `chains[].host_eligibility.resolver.records[]` and
+`chains[].host_eligibility.preflight_records[]`. Each record uses
+`kind: "host-eligibility-record"`, `phase`, `profile`, `runner_host`,
+`outcome`, `selection_status`, `selected`, optional `detail`, optional
+`duration_ms`, and optional `smoke_command`. Unknown or future raw outcomes are
+normalized to `outcome: "unknown"` and may carry `raw_outcome` so reports stay
+stable without silently accepting enum drift.
+
+Typed halt records for worker host resolution or preflight failures attach
+`details.kind: "host_eligibility"` with `phase`, requested/resolved host,
+`closed_outcomes`, and the compact records. Private run reports render the same
+records under `## Host Eligibility` so operators can see why an auto candidate
+or explicit worker host was accepted, skipped, or blocked without parsing raw
+stderr.
+
 ### ShellCheck Policy
 
 `tool_preflight.tools.shellcheck.status` is `available` when the runner can see

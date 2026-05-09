@@ -1,0 +1,25 @@
+schema_version: 1
+kind: host-profiles
+default_order:
+  - alpha
+  - beta
+profiles:
+  alpha:
+    host_id: alpha
+    binary_path: alpha-host
+    auth_home: "${login_home}/.alpha"
+    github_home: "${github_home}"
+    capabilities:
+      - worker
+      - reviewer
+    synthetic_home_behavior: login-home-runtime
+    eligibility_smoke_command: "alpha-host smoke"
+  beta:
+    host_id: beta
+    binary_path: beta-host
+    auth_home: "${login_home}/.beta"
+    github_home: "${github_home}"
+    capabilities:
+      - worker
+    synthetic_home_behavior: login-home-runtime
+    eligibility_smoke_command: "beta-host smoke"

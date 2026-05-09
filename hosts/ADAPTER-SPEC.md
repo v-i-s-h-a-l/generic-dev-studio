@@ -174,6 +174,20 @@ user-controlled emergency bypass for the preflight gate is
 `STUDIO_BYPASS_GITHUB_AUTH_PREFLIGHT=1`; bypass use is loud and should be
 reserved for deliberate recovery.
 
+## Host profile resolver scope
+
+The host-agnostic runtime resolver arc contributes only the host-profile schema,
+ordered resolver, and eligibility-smoke primitives. It does not complete the
+broader host-profile substrate: Phases C/D/E of #710 -- mechanical lint, matrix
+conformance, and full migration -- ship separately.
+
+The repo-shipped resolver profile file is `_shared/host-profiles/default.yaml`.
+Operators may point at another compatible file with
+`STUDIO_HOST_PROFILE_FILE=<path>` and may change the auto resolver order with
+`STUDIO_AUTO_HOST_ORDER=<csv>`. Those overrides are for explicit migration,
+recovery, and conformance testing; they do not relax the adapter security floor
+or replace the later #710 lint and matrix gates.
+
 ## Chain issue git metadata
 
 `scripts/studio-chain-runner.sh` selects the issue-session git metadata
