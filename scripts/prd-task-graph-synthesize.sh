@@ -63,7 +63,36 @@ fingerprint() {
 
 fingerprint_sha256=$(fingerprint "$PACKET")
 
-awk -v allow_missing="$ALLOW_MISSING_DETAILS" '
+source_hint=$(awk '
+  /^- Source: `/ {
+    s = $0
+    sub(/^- Source: `/, "", s)
+    sub(/`[[:space:]]*$/, "", s)
+    print s
+    exit
+  }
+' "$PACKET")
+
+has_component_headings() {
+  awk '
+    /^###[[:space:]]+[0-9]+[.)][[:space:]]+/ { count++ }
+    END { exit(count >= 2 ? 0 : 1) }
+  ' "$1"
+}
+
+GRAPH_INPUT="$PACKET"
+if has_component_headings "$PACKET"; then
+  GRAPH_INPUT="$PACKET"
+elif [ -n "$source_hint" ] && [ -r "$source_hint" ] && has_component_headings "$source_hint"; then
+  GRAPH_INPUT="$source_hint"
+fi
+
+component_mode=0
+if has_component_headings "$GRAPH_INPUT"; then
+  component_mode=1
+fi
+
+awk -v allow_missing="$ALLOW_MISSING_DETAILS" -v component_mode="$component_mode" '
 function trim(s) {
   gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
   return s
@@ -101,6 +130,13 @@ function add_node(source_id, kind, text,    id) {
   node_dependencies[source_id] = ""
   node_reads[source_id] = ""
   node_writes[source_id] = resources_from(text, "write")
+  node_unscoped[source_id] = "false"
+  node_unscoped_justification[source_id] = ""
+}
+
+function mark_unscoped(source_id, justification) {
+  node_unscoped[source_id] = "true"
+  node_unscoped_justification[source_id] = trim(justification)
 }
 
 function add_dependency(source_id, dep_source_id, reason,    key) {
@@ -136,6 +172,10 @@ function add_resource(list, value,    n, existing, i) {
   return list "," value
 }
 
+function resource_like(value) {
+  return value ~ /(^scripts\/|^_shared\/|^core\/|^hooks\/|^commands\/|^tests\/|^README\.md$|^REVIEW\.md$|^CLAUDE\.md$|^AGENTS\.md$|^ROADMAP\.md$|^ARCHITECTURE\.md$|\.sh$|\.md$|\.json$|\.ya?ml$)/
+}
+
 function resources_from(text, mode,    l, rest, value, out) {
   l = lower(text)
   if (mode == "write" && l !~ /(^|[^[:alnum:]_])(write|writes|modify|modifies|touch|touches|update|updates|create|creates|emit|emits|produce|produces)([^[:alnum:]_]|$)/) {
@@ -145,8 +185,61 @@ function resources_from(text, mode,    l, rest, value, out) {
   out = ""
   while (match(rest, /`[^`]+`/)) {
     value = substr(rest, RSTART + 1, RLENGTH - 2)
-    out = add_resource(out, value)
+    if (resource_like(value)) {
+      out = add_resource(out, value)
+    }
     rest = substr(rest, RSTART + RLENGTH)
+  }
+  return out
+}
+
+function resources_anywhere(text,    rest, value, out) {
+  rest = text
+  out = ""
+  while (match(rest, /`[^`]+`/)) {
+    value = substr(rest, RSTART + 1, RLENGTH - 2)
+    if (resource_like(value)) {
+      out = add_resource(out, value)
+    }
+    rest = substr(rest, RSTART + RLENGTH)
+  }
+  return out
+}
+
+function fallback_component_resources(title,    l, out) {
+  l = lower(title)
+  out = ""
+  if (l ~ /(feature-config|branch policy|policy namespace)/) {
+    out = add_resource(out, "scripts/manager-feature-config.sh")
+    out = add_resource(out, "scripts/lib-feature-branch-policy.sh")
+    out = add_resource(out, "_shared/contracts/feature-config.md")
+  }
+  if (l ~ /(source-branch|manifest|lock-in|drift)/) {
+    out = add_resource(out, "_shared/contracts/chain-task-envelope.md")
+    out = add_resource(out, "_shared/contracts/chain-task-envelope.schema.json")
+    out = add_resource(out, "scripts/manager-plan-chain.sh")
+    out = add_resource(out, "scripts/studio-chain-runner.sh")
+    out = add_resource(out, "scripts/lib-chain-git.sh")
+  }
+  if (l ~ /(ingest|pre-flight|context header)/) {
+    out = add_resource(out, "core/v2/skills/dev-studio/SKILL.md")
+    out = add_resource(out, "core/v2/roles/manager.yaml")
+    out = add_resource(out, "scripts/dev-studio-ingest-resolve.sh")
+  }
+  if (l ~ /(pr-finalize|pre-commit|policy gate)/) {
+    out = add_resource(out, "scripts/pr-merge-finalize.sh")
+    out = add_resource(out, "hooks/pre-commit")
+    out = add_resource(out, "REVIEW.md")
+  }
+  if (l ~ /worktree/) {
+    out = add_resource(out, "scripts/studio-worktree-gc.sh")
+    out = add_resource(out, "CLAUDE.md")
+  }
+  if (l ~ /(stacked-parent|lifecycle|doctor)/) {
+    out = add_resource(out, "scripts/manager-feature-config.sh")
+    out = add_resource(out, "scripts/manager-release-branch.sh")
+    out = add_resource(out, "scripts/lib-feature-branch-policy.sh")
+    out = add_resource(out, "scripts/studio-chain-runner.sh")
   }
   return out
 }
@@ -161,7 +254,26 @@ function add_missing_detail(source_id, text) {
   missing_detail_count++
   missing_detail_id[missing_detail_count] = source_id
   missing_detail_text[missing_detail_count] = text
-  add_node(source_id, "shared_prerequisite", text)
+  if (component_mode != 1) {
+    add_node(source_id, "shared_prerequisite", text)
+  }
+}
+
+function add_empty_allowed_paths(source_id, text) {
+  empty_allowed_count++
+  empty_allowed_id[empty_allowed_count] = source_id
+  empty_allowed_text[empty_allowed_count] = text
+}
+
+function add_fragment_label(source_id, text) {
+  fragment_count++
+  fragment_id[fragment_count] = source_id
+  fragment_text[fragment_count] = text
+}
+
+function looks_fragmentary(text,    l) {
+  l = lower(trim(text))
+  return l ~ /(,| and| or| the| where| from| on| with| to| for)$/ || l ~ /^`t-r[0-9]/ || l ~ /^\)/ || (l ~ /^\(/ && l !~ /\)$/)
 }
 
 function print_string_array(csv,    n, arr, i) {
@@ -211,6 +323,9 @@ function print_node(source_id,    deps, status) {
   print_string_array(node_reads[source_id])
   printf ",\"write_resources\":"
   print_string_array(node_writes[source_id])
+  if (node_unscoped[source_id] == "true") {
+    printf ",\"allowed_paths_unscoped\":true,\"allowed_paths_unscoped_justification\":\"%s\"", json_escape(node_unscoped_justification[source_id])
+  }
   printf ",\"status\":\"%s\"", status
   printf "}"
 }
@@ -222,6 +337,10 @@ BEGIN {
   node_count = 0
   conflict_count = 0
   missing_detail_count = 0
+  empty_allowed_count = 0
+  fragment_count = 0
+  open_question_section = 0
+  current_component = ""
 }
 
 {
@@ -236,6 +355,39 @@ BEGIN {
   }
   if (line ~ /^## /) {
     section = trim(substr(line, 4))
+    open_question_section = (lower(section) ~ /^open questions/)
+    if (component_mode == 1) {
+      current_component = ""
+    }
+  }
+
+  if (component_mode == 1) {
+    if (match(line, /^###[[:space:]]+[0-9]+[.)][[:space:]]+/)) {
+      heading = line
+      sub(/^###[[:space:]]+/, "", heading)
+      sub(/^[0-9]+[.)][[:space:]]+/, "", heading)
+      component_count++
+      source_id = sprintf("R%03d", component_count)
+      component_source[component_count] = source_id
+      component_title[source_id] = trim(heading)
+      component_body[source_id] = ""
+      current_component = source_id
+      add_node(source_id, "task", component_title[source_id])
+      next
+    }
+    if (open_question_section == 1) {
+      text = trim(line)
+      sub(/^[-*+][[:space:]]+/, "", text)
+      if (text != "" && text !~ /^#/ && text != "```") {
+        missing_id = sprintf("M%03d", missing_detail_count + 1)
+        add_missing_detail(missing_id, text)
+      }
+      next
+    }
+    if (current_component != "") {
+      component_body[current_component] = component_body[current_component] "\n" line
+    }
+    next
   }
 
   if (match(line, /^- `R[0-9][0-9][0-9]` .*: "/)) {
@@ -244,6 +396,9 @@ BEGIN {
     sub(/^.*: "/, "", text)
     sub(/"$/, "", text)
     add_node(source_id, "task", text)
+    if (looks_fragmentary(text)) {
+      add_fragment_label(source_id, text)
+    }
     next
   }
   if (match(line, /^- `M[0-9][0-9][0-9]`: /)) {
@@ -268,6 +423,30 @@ END {
 
   for (i = 1; i <= node_count; i++) {
     source_id = node_order[i]
+    if (component_mode == 1 && node_kind[source_id] == "task") {
+      found_resources = resources_anywhere(component_body[source_id])
+      fallback_resources = fallback_component_resources(component_title[source_id])
+      if (found_resources != "") {
+        split(found_resources, found_arr, ",")
+        for (fr in found_arr) {
+          node_writes[source_id] = add_resource(node_writes[source_id], found_arr[fr])
+        }
+      }
+      if (fallback_resources != "") {
+        split(fallback_resources, fallback_arr, ",")
+        for (fr in fallback_arr) {
+          node_writes[source_id] = add_resource(node_writes[source_id], fallback_arr[fr])
+        }
+      }
+      if (component_body[source_id] ~ /allowed_paths_unscoped:[[:space:]]*true/) {
+        justification = "Explicit allowed_paths_unscoped marker in source."
+        if (match(component_body[source_id], /allowed_paths_unscoped_justification:[^\n]+/)) {
+          justification = substr(component_body[source_id], RSTART, RLENGTH)
+          sub(/^allowed_paths_unscoped_justification:[[:space:]]*/, "", justification)
+        }
+        mark_unscoped(source_id, justification)
+      }
+    }
     if (node_kind[source_id] != "task") {
       continue
     }
@@ -285,6 +464,29 @@ END {
       dep_source_id = substr(candidate, RSTART, RLENGTH)
       add_dependency(source_id, dep_source_id, "explicit source reference")
       rest = substr(rest, outer_end)
+    }
+    if (component_mode == 1) {
+      rest = component_body[source_id]
+      while (match(rest, /(depends on|after|requires?|follows)[^R]*R[0-9][0-9][0-9]/)) {
+        outer_end = RSTART + RLENGTH
+        candidate = substr(rest, RSTART, RLENGTH)
+        match(candidate, /R[0-9][0-9][0-9]/)
+        dep_source_id = substr(candidate, RSTART, RLENGTH)
+        add_dependency(source_id, dep_source_id, "explicit source reference")
+        rest = substr(rest, outer_end)
+      }
+      if (source_id != "R001" && lower(component_title["R001"]) ~ /(policy|config|foundation|schema|setup)/) {
+        add_dependency(source_id, "R001", "component sequencing")
+      }
+      if (source_id == "R003" && lower(component_title["R002"]) ~ /(manifest|source-branch|lock-in|drift)/) {
+        add_dependency(source_id, "R002", "component sequencing")
+      }
+      if (source_id == "R006" && lower(component_title["R002"]) ~ /(manifest|source-branch|lock-in|drift)/) {
+        add_dependency(source_id, "R002", "component sequencing")
+      }
+    }
+    if (node_kind[source_id] == "task" && node_writes[source_id] == "" && node_unscoped[source_id] != "true") {
+      add_empty_allowed_paths(source_id, "Task has no allowed paths or unscoped justification.")
     }
   }
 
@@ -328,7 +530,7 @@ END {
   }
 
   validation_status = "valid"
-  if (missing_dependency_count > 0 || race_count > 0 || conflict_count > 0 || (missing_detail_count > 0 && allow_missing != 1)) {
+  if (missing_dependency_count > 0 || race_count > 0 || conflict_count > 0 || empty_allowed_count > 0 || fragment_count > 0 || (missing_detail_count > 0 && allow_missing != 1)) {
     validation_status = "invalid"
   }
 
@@ -386,6 +588,16 @@ END {
     if (i > 1) printf ","
     printf "{\"source_id\":\"%s\",\"text\":\"%s\"}", json_escape(conflict_id[i]), json_escape(conflict_text[i])
   }
+  printf "],\"empty_allowed_paths\":["
+  for (i = 1; i <= empty_allowed_count; i++) {
+    if (i > 1) printf ","
+    printf "{\"node_id\":\"%s\",\"text\":\"%s\"}", json_escape(node_id(empty_allowed_id[i])), json_escape(empty_allowed_text[i])
+  }
+  printf "],\"fragment_labels\":["
+  for (i = 1; i <= fragment_count; i++) {
+    if (i > 1) printf ","
+    printf "{\"node_id\":\"%s\",\"text\":\"%s\"}", json_escape(node_id(fragment_id[i])), json_escape(fragment_text[i])
+  }
   printf "],\"unresolved_missing_details\":["
   for (i = 1; i <= missing_detail_count; i++) {
     if (i > 1) printf ","
@@ -393,7 +605,7 @@ END {
   }
   printf "]}}"
 }
-' "$PACKET" | sed "s/__FINGERPRINT__/$fingerprint_sha256/" | jq -S . >"$TMPROOT/graph.json"
+' "$GRAPH_INPUT" | sed "s/__FINGERPRINT__/$fingerprint_sha256/" | jq -S . >"$TMPROOT/graph.json"
 
 cat "$TMPROOT/graph.json"
 
@@ -404,6 +616,8 @@ if [ "$(jq -r '.validation.status' "$TMPROOT/graph.json")" != "valid" ]; then
       + (if (.validation.missing_dependencies | length) > 0 then ["missing_dependencies"] else [] end)
       + (if (.validation.parallel_write_races | length) > 0 then ["parallel_write_races"] else [] end)
       + (if (.validation.packet_conflicts | length) > 0 then ["packet_conflicts"] else [] end)
+      + (if ((.validation.empty_allowed_paths // []) | length) > 0 then ["empty_allowed_paths"] else [] end)
+      + (if ((.validation.fragment_labels // []) | length) > 0 then ["fragment_labels"] else [] end)
       + (if (.validation.unresolved_missing_details | length) > 0 then ["unresolved_missing_details"] else [] end)
     | join(","))
   ' "$TMPROOT/graph.json" >&2

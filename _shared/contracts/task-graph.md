@@ -7,9 +7,13 @@ type: contract
 # Task Graph
 
 `scripts/prd-task-graph-synthesize.sh` reads the Markdown requirement packet
-from `_shared/contracts/requirement-packet.md` and writes a serializable JSON
-graph for scheduler planning. The graph is a pre-executor artifact: it does not
-dispatch workers, choose review escalation, or mutate issues.
+from `_shared/contracts/requirement-packet.md` or a structured Markdown source
+with numbered component headings, then writes a serializable JSON graph for
+scheduler planning. When a packet has a readable filesystem path in its
+`Source` metadata and the packet itself has no component headings, the
+synthesizer reads that source path to recover the component axis. The graph is
+a pre-executor artifact: it does not dispatch workers, choose review
+escalation, or mutate issues.
 
 ## Shape
 
@@ -34,6 +38,11 @@ The graph contains:
   become dependency edges.
 - Backticked paths or resources in lines that say `write`, `modify`, `touch`,
   `update`, `create`, `emit`, or `produce` become `write_resources`.
+- Consistent Markdown component headings such as `### 1. <Title>` become the
+  task axis when present. Open-question sections become unresolved missing
+  details instead of tasks.
+- Task nodes with no `write_resources` are invalid unless they explicitly carry
+  `allowed_paths_unscoped: true` and an `allowed_paths_unscoped_justification`.
 
 ## Validation
 
@@ -45,6 +54,8 @@ Validation is deterministic and runs before execution:
   `validation.parallel_write_races`.
 - Missing details and conflicts keep `validation.status` at `invalid` unless the
   caller passes `--allow-missing-details`.
+- Empty allowed paths and fragment-shaped labels keep `validation.status` at
+  `invalid`.
 
 ## Non-Goals
 

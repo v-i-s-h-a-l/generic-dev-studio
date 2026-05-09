@@ -88,7 +88,7 @@ scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio 
 /dev-studio manager work-chain --doctor <run_id> # read-only recovery recommendation for stale reports, halts, drift, and review blocks
 scripts/manager-work-chain.sh ios-v2-execution # repo-side wrapper for the manager work-chain front door
 scripts/prd-intake-normalize.sh prd.md # normalize a PRD/transcript/issue brief into a planner-ready requirement packet
-scripts/prd-task-graph-synthesize.sh packet.md # turn a requirement packet into a validated scheduler graph
+scripts/prd-task-graph-synthesize.sh packet.md # turn a requirement packet or headed source into a validated scheduler graph
 /dev-studio checkpoint           # manager-shaped checkpoint routing; stdout is the checkpoint id for resume
 /dev-studio worker checkpoint    # worker-owned compact checkpoint; does not replace worker summary
 /dev-studio worker resume-checkpoint # resume worker checkpoint via manifest.json + context.md first
@@ -241,7 +241,7 @@ scripts/                # multi-worker fleet (BETA)
   schedule-chain-monitor.sh # login-home macOS LaunchAgent installer for background chain monitor sync
   studio-chain-telemetry-digest.sh # v1 counters, efficiency ratios, bottlenecks, project-filtered rollups, and weekly digest from private chain-run reports/events
   prd-intake-normalize.sh # deterministic PRD/transcript/issue brief normalization into a small requirement packet
-  prd-task-graph-synthesize.sh # deterministic requirement-packet to scheduler-graph synthesis with dependency/race validation
+  prd-task-graph-synthesize.sh # deterministic requirement/source to scheduler-graph synthesis with dependency/race/scope validation
   studio-checkpoint.sh # compact create/update/resume checkpoints under per-project .runtime/v2/checkpoints
   issue-body-edit.sh  # guarded GitHub issue body replacement from generated content
   studio-staleness-triage.sh # scheduled GitHub issue staleness labels + escalation comments for the PM surface
