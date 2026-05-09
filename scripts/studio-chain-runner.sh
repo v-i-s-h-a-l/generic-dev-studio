@@ -1639,6 +1639,179 @@ is_halt_reason_id() {
   esac
 }
 
+retry_halt_positive_int_or_default() {
+  local value="$1" fallback="$2"
+  case "$value" in
+    ''|*[!0-9]*) printf '%s\n' "$fallback" ;;
+    *) printf '%s\n' "$value" ;;
+  esac
+}
+
+retry_halt_cooldown_sec() {
+  retry_halt_positive_int_or_default "${STUDIO_CHAIN_RETRY_HALT_COOLDOWN_SEC:-30}" 30
+}
+
+retry_halt_inspection_count() {
+  retry_halt_positive_int_or_default "${STUDIO_CHAIN_RETRY_HALT_INSPECTION_COUNT:-3}" 3
+}
+
+retry_halt_cooldown_until() {
+  local seen_at="$1" cooldown_s="$2" epoch target
+  case "$cooldown_s" in ''|*[!0-9]*) cooldown_s=30 ;; esac
+  if [ "$cooldown_s" -le 0 ]; then
+    printf '%s\n' "$seen_at"
+    return 0
+  fi
+  if command -v ts_to_epoch >/dev/null 2>&1; then
+    epoch=$(ts_to_epoch "$seen_at" 2>/dev/null || true)
+  else
+    epoch=""
+  fi
+  if [ -z "$epoch" ]; then
+    epoch=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$seen_at" +%s 2>/dev/null || date -u -d "$seen_at" +%s 2>/dev/null || true)
+  fi
+  case "$epoch" in
+    ''|*[!0-9]*) printf '%s\n' "$seen_at" ;;
+    *)
+      target=$((epoch + cooldown_s))
+      date -u -r "$target" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$target" '+%Y-%m-%dT%H:%M:%SZ'
+      ;;
+  esac
+}
+
+retryable_halt_metadata_json() {
+  local reason_id="$1" summary="$2" chain_run_id="${3:-}" issue_run_id="${4:-}" details_json="${5:-null}" created_at="$6" next_command="${7:-}"
+  local cooldown_s inspection_count cooldown_until
+  cooldown_s=$(retry_halt_cooldown_sec)
+  inspection_count=$(retry_halt_inspection_count)
+  cooldown_until=$(retry_halt_cooldown_until "$created_at" "$cooldown_s")
+  jq -cn \
+    --arg run_id "$RUN_ID" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg reason_id "$reason_id" \
+    --arg summary "$summary" \
+    --arg created_at "$created_at" \
+    --arg next_command "$next_command" \
+    --arg cooldown_until "$cooldown_until" \
+    --argjson cooldown_s "$cooldown_s" \
+    --argjson inspection_count "$inspection_count" \
+    --argjson details "$details_json" \
+    'def str($v):
+       if $v == null then ""
+       elif ($v | type) == "string" then $v
+       else ($v | tostring)
+       end;
+     def trim: gsub("^[[:space:]]+|[[:space:]]+$"; "");
+     def normalize_origin:
+       str(.) | ascii_downcase | trim
+       | gsub("^git@github[.]com:"; "github.com/")
+       | gsub("^ssh://git@github[.]com/"; "github.com/")
+       | gsub("^https?://"; "")
+       | gsub("^github[.]com:"; "github.com/")
+       | gsub("[.]git$"; "")
+       | gsub("/+$"; "")
+       | if test("^/") then "local-path" else . end
+       | if test("^[a-z0-9_.-]+/[a-z0-9_.-]+$") then "github.com/" + . else . end
+       | if . == "" then "unknown" else . end;
+     def command_origin($cmd):
+       (str($cmd)) as $c
+       | if ($c | test("github[.]com[:/]"; "i")) then
+           (($c | capture("(git@github[.]com:|https?://github[.]com/|ssh://git@github[.]com/)(?<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)([.]git)?"; "i")?) // null) as $match
+           | if $match == null then "unknown" else "github.com/" + ($match.repo | ascii_downcase | gsub("[.]git$"; "")) end
+         elif ($c | test("(^|[[:space:]])origin($|[[:space:]])")) then "origin"
+         elif ($c | test("(^|[[:space:]])upstream($|[[:space:]])")) then "upstream"
+         else "unknown"
+         end;
+     def normalize_error:
+       str(.) | ascii_downcase
+       | gsub("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"; "<uuid>")
+       | gsub("20[0-9]{2}-[0-9]{2}-[0-9]{2}t[0-9:.+-]+z?"; "<timestamp>")
+       | gsub("[0-9a-f]{7,40}"; "<sha>")
+       | gsub("(/private)?/var/folders/[^[:space:]]+"; "<tmp-path>")
+       | gsub("/tmp/[^[:space:]]+"; "<tmp-path>")
+       | gsub("[\"`]+"; "")
+       | gsub("[[:space:]]+"; " ")
+       | trim
+       | if . == "" then "unknown" else . end;
+     ($details | if type == "object" then . else {} end) as $d
+     | ($d.last_command // $d.command // $d.argv // $next_command) as $command_raw
+     | (if ($command_raw | type) == "array" then ($command_raw | map(tostring) | join(" ")) else str($command_raw) end) as $last_command
+     | ($d.origin // $d.command_origin // $d.remote // $d.host // command_origin($last_command)) as $origin_raw
+     | ($d.error // $d.stderr // $d.message // $d.exit_status // $summary) as $error_raw
+     | ($origin_raw | normalize_origin) as $origin
+     | ($error_raw | normalize_error) as $error
+     | (if $issue_run_id != "" then {scope_kind:"issue_run", scope_id:$issue_run_id}
+        elif $chain_run_id != "" then {scope_kind:"chain_run", scope_id:$chain_run_id}
+        else {scope_kind:"run", scope_id:$run_id}
+        end) as $scope
+     | {
+        retry_count: 1,
+        first_seen: $created_at,
+        last_seen: $created_at,
+        last_observed_command: $last_command,
+        last_observed_error: str($error_raw),
+        normalized_origin: $origin,
+        normalized_error: $error,
+        cooldown_seconds: $cooldown_s,
+        cooldown_until: $cooldown_until,
+        human_inspection_retry_count: $inspection_count,
+        coalesce_key: {
+          run_id: $run_id,
+          scope_kind: $scope.scope_kind,
+          scope_id: $scope.scope_id,
+          reason_id: $reason_id,
+          normalized_origin: $origin,
+          normalized_error: $error
+        },
+        observation: {
+          seen_at: $created_at,
+          command: $last_command,
+          error: str($error_raw),
+          normalized_origin: $origin,
+          normalized_error: $error
+        }
+      }'
+}
+
+active_retryable_halt_record_path() {
+  local coalesce_key_json="$1"
+  [ -n "${RUN_STATE_JSON:-}" ] || return 1
+  [ -f "$RUN_STATE_JSON" ] || return 1
+  jq -r --argjson coalesce_key "$coalesce_key_json" '
+    [(.halt_records // [])[]
+      | select((.status // "") == "paused")
+      | select((.halt_class // "") == "retryable")
+      | select((.coalesce_key // null) == $coalesce_key)
+      | select((.path // "") != "")
+    ] | last | .path // empty
+  ' "$RUN_STATE_JSON" 2>/dev/null | head -n 1
+}
+
+retry_halt_resume_state_filter() {
+  cat <<'JQ'
+    def ts_epoch: try ((. // "") | fromdateiso8601) catch 0;
+    def retry_resume_state($now):
+      if ((.halt_class // "") != "retryable") then "needs_human_inspection"
+      elif (((.retry_count // 1) | tonumber? // 1) >= ((.retry_policy.human_inspection_retry_count // 3) | tonumber? // 3)) then "needs_human_inspection"
+      elif (((.retry_policy.cooldown_until // .last_seen // .created_at // "") | ts_epoch) > $now) then "cooling_down"
+      else "retrying"
+      end;
+JQ
+}
+
+selected_active_halt_resume_guidance() {
+  local halt_json now_epoch_value jq_program
+  halt_json=$(selected_active_halt_json 2>/dev/null || true)
+  [ -n "$halt_json" ] || return 1
+  now_epoch_value=$(now_epoch)
+  jq_program="$(retry_halt_resume_state_filter)"'
+    retry_resume_state($now_epoch) as $state
+    | "- Retry halt state: `\($state)`; reason `\(.reason_id // "unknown")`; retry_count `\(.retry_count // 1)`; cooldown_until `\(.retry_policy.cooldown_until // "not_applicable")`; last command `\(.last_observed_command // "missing")`; last error `\(.last_observed_error // .summary // "missing")`"
+  '
+  printf '%s\n' "$halt_json" | jq -r --argjson now_epoch "$now_epoch_value" "$jq_program"
+}
+
 selected_active_halt_json() {
   [ -n "${RUN_STATE_JSON:-}" ] || return 1
   [ -f "$RUN_STATE_JSON" ] || return 1
@@ -1800,12 +1973,142 @@ halt_next_safe_action() {
   esac
 }
 
+coalesce_retryable_halt_record() {
+  local file="$1" created_at="$2" reason_id="$3" summary="$4" chain_run_id="${5:-}" issue_run_id="${6:-}" chain="${7:-}" issue_number="${8:-}" writer="${9:-parent-runner}" details_json="${10:-null}" next_command="${11:-}" next_safe_action="${12:-}" issue_context_json="${13:-null}" retry_metadata_json="${14:-null}"
+  local tmp retry_observation_limit retry_count coalesce_key_json
+  retry_observation_limit=5
+  tmp="$file.tmp.$$"
+
+  if ! jq \
+    --arg created_at "$created_at" \
+    --arg reason_id "$reason_id" \
+    --arg summary "$summary" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg chain "$chain" \
+    --arg issue_number "$issue_number" \
+    --arg writer "$writer" \
+    --arg next_command "$next_command" \
+    --arg next_safe_action "$next_safe_action" \
+    --argjson details "$details_json" \
+    --argjson issue_context "$issue_context_json" \
+    --argjson retry_metadata "$retry_metadata_json" \
+    --argjson retry_limit "$RETRY_LIMIT" \
+    --argjson retry_backoff_sec "$RETRY_BACKOFF_SEC" \
+    --argjson retry_observation_limit "$retry_observation_limit" \
+    'def cap_observations:
+       if length <= $retry_observation_limit then .
+       else [.[0]] + (.[1:] | .[-($retry_observation_limit - 1):])
+       end;
+     ($retry_metadata.observation) as $observation
+     | .summary = $summary
+     | .chain_run_id = (if $chain_run_id == "" then null else $chain_run_id end)
+     | .issue_run_id = (if $issue_run_id == "" then null else $issue_run_id end)
+     | .chain = (if $chain == "" then null else $chain end)
+     | .issue_number = (if $issue_number == "" then null else ($issue_number | tonumber) end)
+     | .writer = $writer
+     | .details = $details
+     | .issue_context = $issue_context
+     | .resumable_state.issue_context = $issue_context
+     | .resumable_state.next_safe_action = $next_safe_action
+     | .next_command = (if $next_command == "" then null else $next_command end)
+     | .next_safe_action = $next_safe_action
+     | .retry_count = (((.retry_count // 1) | tonumber? // 1) + 1)
+     | .first_seen = (.first_seen // .created_at // $retry_metadata.first_seen)
+     | .last_seen = $retry_metadata.last_seen
+     | .last_observed_command = $retry_metadata.last_observed_command
+     | .last_observed_error = $retry_metadata.last_observed_error
+     | .normalized_origin = $retry_metadata.normalized_origin
+     | .normalized_error = $retry_metadata.normalized_error
+     | .coalesce_key = $retry_metadata.coalesce_key
+     | .coalesced_observations = (((.coalesced_observations // [{
+         seen_at:(.first_seen // .created_at // $retry_metadata.first_seen),
+         command:(.last_observed_command // ""),
+         error:(.last_observed_error // ""),
+         normalized_origin:(.normalized_origin // $retry_metadata.normalized_origin),
+         normalized_error:(.normalized_error // $retry_metadata.normalized_error)
+       }]) + [$observation]) | cap_observations)
+     | .retry_policy = ((.retry_policy // {}) + {
+         auto_retry_limit:$retry_limit,
+         backoff_seconds:$retry_backoff_sec,
+         exhausted:true,
+         retryable:true,
+         cooldown_seconds:$retry_metadata.cooldown_seconds,
+         cooldown_until:$retry_metadata.cooldown_until,
+         human_inspection_retry_count:$retry_metadata.human_inspection_retry_count
+       })' "$file" > "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ! "$SCRIPT_DIR/validate-contract.sh" chain-halt-record "$tmp" >/dev/null; then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv "$tmp" "$file"
+
+  coalesce_key_json=$(printf '%s\n' "$retry_metadata_json" | jq -c '.coalesce_key')
+  if [ -f "$RUN_STATE_JSON" ]; then
+    update_state_jq \
+      --arg file "$file" \
+      --arg created_at "$created_at" \
+      --arg summary "$summary" \
+      --arg next_command "$next_command" \
+      --arg next_safe_action "$next_safe_action" \
+      --argjson details "$details_json" \
+      --argjson issue_context "$issue_context_json" \
+      --argjson retry_metadata "$retry_metadata_json" \
+      --argjson coalesce_key "$coalesce_key_json" \
+      --argjson retry_observation_limit "$retry_observation_limit" \
+      'def cap_observations:
+         if length <= $retry_observation_limit then .
+         else [.[0]] + (.[1:] | .[-($retry_observation_limit - 1):])
+         end;
+       (.halt_records //= [])
+       | .halt_records = (.halt_records | map(
+           if ((.status // "") == "paused" and (.halt_class // "") == "retryable" and (.coalesce_key // null) == $coalesce_key) then
+             ($retry_metadata.observation) as $observation
+             | .summary = $summary
+             | .details = $details
+             | .next_command = (if $next_command == "" then null else $next_command end)
+             | .next_safe_action = $next_safe_action
+             | .issue_context = $issue_context
+             | .retry_count = (((.retry_count // 1) | tonumber? // 1) + 1)
+             | .first_seen = (.first_seen // .created_at // $retry_metadata.first_seen)
+             | .last_seen = $retry_metadata.last_seen
+             | .last_observed_command = $retry_metadata.last_observed_command
+             | .last_observed_error = $retry_metadata.last_observed_error
+             | .normalized_origin = $retry_metadata.normalized_origin
+             | .normalized_error = $retry_metadata.normalized_error
+             | .coalesce_key = $retry_metadata.coalesce_key
+             | .coalesced_observations = (((.coalesced_observations // [{
+                 seen_at:(.first_seen // .created_at // $retry_metadata.first_seen),
+                 command:(.last_observed_command // ""),
+                 error:(.last_observed_error // ""),
+                 normalized_origin:(.normalized_origin // $retry_metadata.normalized_origin),
+                 normalized_error:(.normalized_error // $retry_metadata.normalized_error)
+               }]) + [$observation]) | cap_observations)
+             | .retry_policy = ((.retry_policy // {}) + {
+                 cooldown_seconds:$retry_metadata.cooldown_seconds,
+                 cooldown_until:$retry_metadata.cooldown_until,
+                 human_inspection_retry_count:$retry_metadata.human_inspection_retry_count
+               })
+           else . end
+         ))'
+  fi
+
+  retry_count=$(jq -r '.retry_count // 1' "$file" 2>/dev/null || printf '1')
+  emit_chain_event chain_halt_recorded "$issue_number" "$RUN_ID" "$chain_run_id" "$issue_run_id" paused 0 \
+    "$(jq -cn --arg reason_id "$reason_id" --arg halt_record "$file" --arg next_safe_action "$next_safe_action" --argjson issue_context "$issue_context_json" --argjson details "$details_json" --argjson retry_metadata "$retry_metadata_json" --argjson retry_count "$retry_count" '{reason_id:$reason_id, halt_class:"retryable", halt_record:$halt_record, next_safe_action:$next_safe_action, issue_context:$issue_context, details:$details, coalesced:true, retry_count:$retry_count, coalesce_key:$retry_metadata.coalesce_key, cooldown_until:$retry_metadata.cooldown_until}')"
+  printf '%s\n' "$file"
+}
+
 write_halt_record() {
   local reason_id="$1" summary="$2" chain_run_id="${3:-}" issue_run_id="${4:-}" chain="${5:-}" issue_number="${6:-}" writer="${7:-parent-runner}" details_json="${8:-null}" next_safe_action_override="${9:-}"
   [ "$DRY_RUN" -eq 0 ] || return 0
   mkdir -p "$HALT_ROOT"
 
   local halt_class hard_stop status next_command file rel_file created_at issue_context_json next_safe_action
+  local retry_metadata_json coalesce_key_json existing_retryable_file retry_observation_limit
   halt_class=$(halt_class_for_reason "$reason_id")
   hard_stop=false
   status=paused
@@ -1824,6 +2127,16 @@ write_halt_record() {
   issue_context_json=$(halt_issue_context_json "$chain_run_id" "$issue_run_id" "$chain" "$issue_number")
   next_safe_action="$next_safe_action_override"
   [ -n "$next_safe_action" ] || next_safe_action=$(halt_next_safe_action "$reason_id" "$halt_class")
+  retry_metadata_json="null"
+  if [ "$halt_class" = "retryable" ]; then
+    retry_metadata_json=$(retryable_halt_metadata_json "$reason_id" "$summary" "$chain_run_id" "$issue_run_id" "$details_json" "$created_at" "$next_command")
+    coalesce_key_json=$(printf '%s\n' "$retry_metadata_json" | jq -c '.coalesce_key')
+    existing_retryable_file=$(active_retryable_halt_record_path "$coalesce_key_json" || true)
+    if [ -n "$existing_retryable_file" ] && [ -f "$existing_retryable_file" ]; then
+      coalesce_retryable_halt_record "$existing_retryable_file" "$created_at" "$reason_id" "$summary" "$chain_run_id" "$issue_run_id" "$chain" "$issue_number" "$writer" "$details_json" "$next_command" "$next_safe_action" "$issue_context_json" "$retry_metadata_json"
+      return 0
+    fi
+  fi
 
   jq -n \
     --arg created_at "$created_at" \
@@ -1847,8 +2160,9 @@ write_halt_record() {
     --arg report "$RUN_REPORT" \
     --argjson issue_context "$issue_context_json" \
     --argjson details "$details_json" \
+    --argjson retry_metadata "$retry_metadata_json" \
     '($details | if type == "object" then . else {} end) as $detail_obj
-     | {
+     | ({
       schema_version: 1,
       kind: "chain-halt-record",
       created_at: $created_at,
@@ -1882,12 +2196,16 @@ write_halt_record() {
         + (if ($detail_obj.stdout_tail_artifact // null) == null then [] else [$detail_obj.stdout_tail_artifact] end)
         + (if ($detail_obj.stderr_tail_artifact // null) == null then [] else [$detail_obj.stderr_tail_artifact] end)),
       rollback_path: "Inspect the halt record and resume with the next_command after correcting the cause; fatal records require a fresh human-authored plan.",
-      retry_policy: {
+      retry_policy: ({
         auto_retry_limit: $retry_limit,
         backoff_seconds: $retry_backoff_sec,
         exhausted: ($halt_class == "retryable"),
         retryable: ($halt_class == "retryable")
-      },
+      } + (if $halt_class == "retryable" then {
+        cooldown_seconds: $retry_metadata.cooldown_seconds,
+        cooldown_until: $retry_metadata.cooldown_until,
+        human_inspection_retry_count: $retry_metadata.human_inspection_retry_count
+      } else {} end)),
       escalation: {
         execution_mode: $execution_mode,
         prompt_allowed: ($halt_class == "review-needed" or $halt_class == "human-needed" or $halt_class == "fatal"),
@@ -1900,11 +2218,23 @@ write_halt_record() {
       true_hard_stop: $true_hard_stop,
       human_action_required: ($halt_class == "human-needed" or $halt_class == "fatal"),
       privacy: {classification: "private-runtime"}
-    }' > "$file"
+    }
+    | if $halt_class == "retryable" then . + {
+        retry_count: $retry_metadata.retry_count,
+        first_seen: $retry_metadata.first_seen,
+        last_seen: $retry_metadata.last_seen,
+        last_observed_command: $retry_metadata.last_observed_command,
+        last_observed_error: $retry_metadata.last_observed_error,
+        normalized_origin: $retry_metadata.normalized_origin,
+        normalized_error: $retry_metadata.normalized_error,
+        coalesce_key: $retry_metadata.coalesce_key,
+        coalesced_observations: [$retry_metadata.observation]
+      } else . end)' > "$file"
 
   "$SCRIPT_DIR/validate-contract.sh" chain-halt-record "$file" >/dev/null
 
   if [ -f "$RUN_STATE_JSON" ]; then
+    retry_observation_limit=5
     update_state_jq \
       --arg file "$rel_file" \
       --arg created_at "$created_at" \
@@ -1916,8 +2246,10 @@ write_halt_record() {
       --arg next_safe_action "$next_safe_action" \
       --argjson issue_context "$issue_context_json" \
       --argjson details "$details_json" \
+      --argjson retry_metadata "$retry_metadata_json" \
+      --argjson retry_observation_limit "$retry_observation_limit" \
       '(.halt_records //= []) |
-       .halt_records += [{
+       .halt_records += ([{
          path:$file,
          created_at:$created_at,
          reason_id:$reason_id,
@@ -1928,10 +2260,27 @@ write_halt_record() {
          next_command:(if $next_command == "" then null else $next_command end),
          next_safe_action:$next_safe_action,
          issue_context:$issue_context
-       }]'
+       }]
+       | if $halt_class == "retryable" then map(. + {
+           retry_count:$retry_metadata.retry_count,
+           first_seen:$retry_metadata.first_seen,
+           last_seen:$retry_metadata.last_seen,
+           last_observed_command:$retry_metadata.last_observed_command,
+           last_observed_error:$retry_metadata.last_observed_error,
+           normalized_origin:$retry_metadata.normalized_origin,
+           normalized_error:$retry_metadata.normalized_error,
+           coalesce_key:$retry_metadata.coalesce_key,
+           coalesced_observations:[$retry_metadata.observation],
+           retry_policy:{
+             cooldown_seconds:$retry_metadata.cooldown_seconds,
+             cooldown_until:$retry_metadata.cooldown_until,
+             human_inspection_retry_count:$retry_metadata.human_inspection_retry_count
+           }
+         }) else . end)'
   fi
   emit_chain_event chain_halt_recorded "$issue_number" "$RUN_ID" "$chain_run_id" "$issue_run_id" "$status" 0 \
-    "$(jq -cn --arg reason_id "$reason_id" --arg halt_class "$halt_class" --arg halt_record "$file" --arg next_safe_action "$next_safe_action" --argjson issue_context "$issue_context_json" --argjson details "$details_json" '{reason_id:$reason_id, halt_class:$halt_class, halt_record:$halt_record, next_safe_action:$next_safe_action, issue_context:$issue_context, details:$details}')"
+    "$(jq -cn --arg reason_id "$reason_id" --arg halt_class "$halt_class" --arg halt_record "$file" --arg next_safe_action "$next_safe_action" --argjson issue_context "$issue_context_json" --argjson details "$details_json" --argjson retry_metadata "$retry_metadata_json" '{reason_id:$reason_id, halt_class:$halt_class, halt_record:$halt_record, next_safe_action:$next_safe_action, issue_context:$issue_context, details:$details}
+      | if $halt_class == "retryable" then . + {coalesced:false, retry_count:$retry_metadata.retry_count, coalesce_key:$retry_metadata.coalesce_key, cooldown_until:$retry_metadata.cooldown_until} else . end')"
   printf '%s\n' "$file"
 }
 
@@ -3873,10 +4222,21 @@ generate_run_report() {
     halt_count=0
     [ -n "$halt_dir" ] && halt_count=$(find "$halt_dir" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
     if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ] && [ "$(jq '(.halt_records // []) | length' "$RUN_STATE_JSON" 2>/dev/null || printf 0)" -gt 0 ]; then
-      jq -r '
+      jq -r --argjson now_epoch "$ended_epoch" '
         def cell($v):
           if $v == null or $v == "" then "missing"
           else ($v | tostring | gsub("\\|"; "\\|"))
+          end;
+        def ts_epoch: try ((. // "") | fromdateiso8601) catch 0;
+        def retry_resume_state:
+          if ((.halt_class // "") != "retryable") then "needs_human_inspection"
+          elif (((.retry_count // 1) | tonumber? // 1) >= ((.retry_policy.human_inspection_retry_count // 3) | tonumber? // 3)) then "needs_human_inspection"
+          elif (((.retry_policy.cooldown_until // .last_seen // .created_at // "") | ts_epoch) > $now_epoch) then "cooling_down"
+          else "retrying"
+          end;
+        def retry_cell:
+          if ((.halt_class // "") != "retryable") then "not_applicable"
+          else "state=\(retry_resume_state); count=\(.retry_count // 1); first=\(.first_seen // .created_at // "missing"); last=\(.last_seen // .created_at // "missing"); command=\(cell(.last_observed_command)); error=\(cell(.last_observed_error))"
           end;
         def issue_label:
           (.issue_context // {}) as $ctx
@@ -3895,9 +4255,9 @@ generate_run_report() {
         | ($records | map(select((.status // "") == "paused" or (.status // "") == "terminated"))) as $active
         | ($records | map(select((.status // "") == "superseded"))) as $superseded
         | if ($active | length) > 0 then
-            ["| Reason | Class | Status | Issue | Issue-run UUID | Summary | Details | Next Safe Action | Next Command | Artifact |",
-             "|---|---|---|---|---|---|---|---|---|---|"],
-            ($active[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(issue_label) | \(cell(.issue_context.issue_run_id)) | \(cell(.summary)) | \(detail_cell) | \(cell(.next_safe_action)) | \(.next_command // "hard stop") | \(.path // "missing") |")
+            ["| Reason | Class | Status | Retry | Issue | Issue-run UUID | Summary | Details | Next Safe Action | Next Command | Artifact |",
+             "|---|---|---|---|---|---|---|---|---|---|---|"],
+            ($active[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(retry_cell) | \(issue_label) | \(cell(.issue_context.issue_run_id)) | \(cell(.summary)) | \(detail_cell) | \(cell(.next_safe_action)) | \(.next_command // "hard stop") | \(.path // "missing") |")
           elif ($superseded | length) > 0 then
             "No active halt records. Superseded halt records: \($superseded | length) (run completed after resume).",
             "",
@@ -3909,19 +4269,30 @@ generate_run_report() {
           end
       ' "$RUN_STATE_JSON"
     elif [ "$halt_count" -gt 0 ]; then
-      jq -r -s '
+      jq -r -s --argjson now_epoch "$ended_epoch" '
         def cell($v):
           if $v == null or $v == "" then "missing"
           else ($v | tostring | gsub("\\|"; "\\|"))
+          end;
+        def ts_epoch: try ((. // "") | fromdateiso8601) catch 0;
+        def retry_resume_state:
+          if ((.halt_class // "") != "retryable") then "needs_human_inspection"
+          elif (((.retry_count // 1) | tonumber? // 1) >= ((.retry_policy.human_inspection_retry_count // 3) | tonumber? // 3)) then "needs_human_inspection"
+          elif (((.retry_policy.cooldown_until // .last_seen // .created_at // "") | ts_epoch) > $now_epoch) then "cooling_down"
+          else "retrying"
+          end;
+        def retry_cell:
+          if ((.halt_class // "") != "retryable") then "not_applicable"
+          else "state=\(retry_resume_state); count=\(.retry_count // 1); first=\(.first_seen // .created_at // "missing"); last=\(.last_seen // .created_at // "missing"); command=\(cell(.last_observed_command)); error=\(cell(.last_observed_error))"
           end;
         def issue_label:
           (.issue_context // {}) as $ctx
           | if ($ctx.issue_number // .issue_number // null) == null then "unknown"
             else "#\($ctx.issue_number // .issue_number)\(if ($ctx.title // "") == "" then "" else " " + ($ctx.title | tostring | gsub("\\|"; "\\|")) end)"
             end;
-        ["| Reason | Class | Status | Issue | Issue-run UUID | Next Safe Action | Next Command | Summary |",
-         "|---|---|---|---|---|---|---|---|"],
-        (.[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(issue_label) | \(cell(.issue_context.issue_run_id // .issue_run_id)) | \(cell(.next_safe_action)) | \(.next_command // "hard stop") | \(.summary | gsub("\\|"; "\\|")) |")
+        ["| Reason | Class | Status | Retry | Issue | Issue-run UUID | Next Safe Action | Next Command | Summary |",
+         "|---|---|---|---|---|---|---|---|---|"],
+        (.[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(retry_cell) | \(issue_label) | \(cell(.issue_context.issue_run_id // .issue_run_id)) | \(cell(.next_safe_action)) | \(.next_command // "hard stop") | \(.summary | gsub("\\|"; "\\|")) |")
       ' "$halt_dir"/*.json
     else
       printf 'No halt records were written.\n'
@@ -4134,7 +4505,7 @@ finish_run() {
 abort_run() {
   local reason="${1:-failed}" reason_id
   reason_id=$(halt_reason_for_text "$reason")
-  if ! active_halt_reason_exists "$reason_id"; then
+  if [ "$(halt_class_for_reason "$reason_id")" = "retryable" ] || ! active_halt_reason_exists "$reason_id"; then
     write_halt_record "$reason_id" "$reason" >/dev/null || log "halt record write failed for: $reason"
   fi
   finish_run failed "$reason"
@@ -4143,8 +4514,17 @@ abort_run() {
 
 abort_run_with_reason() {
   local reason_id="$1" summary="$2"
-  if ! active_halt_reason_exists "$reason_id"; then
+  if [ "$(halt_class_for_reason "$reason_id")" = "retryable" ] || ! active_halt_reason_exists "$reason_id"; then
     write_halt_record "$reason_id" "$summary" >/dev/null || log "halt record write failed for: $summary"
+  fi
+  finish_run failed "$summary"
+  exit 1
+}
+
+abort_run_with_reason_details() {
+  local reason_id="$1" summary="$2" details_json="${3:-null}"
+  if [ "$(halt_class_for_reason "$reason_id")" = "retryable" ] || ! active_halt_reason_exists "$reason_id"; then
+    write_halt_record "$reason_id" "$summary" "" "" "" "" parent-runner "$details_json" >/dev/null || log "halt record write failed for: $summary"
   fi
   finish_run failed "$summary"
   exit 1
@@ -4383,6 +4763,7 @@ print_supervisor_decision() {
   if [ "$action" = "resume" ]; then
     printf -- '- Resume semantics: continue the selected run only; completed and integrated issues are skipped, completed but unintegrated issues are integrated before new work starts, pending dependency-ready issues are relaunched, and failed/halted issues keep their halt record until the cause is corrected.\n'
     printf -- '- Resume command: `scripts/studio-chain-runner.sh --resume %s --yes`\n' "$selected_run_id"
+    selected_active_halt_resume_guidance 2>/dev/null || true
   elif [ "$action" = "start" ]; then
     printf -- '- Namespacing: this run owns `%s/%s/`; chain and issue worktrees are created below that run UUID so concurrent chains cannot share temporary paths.\n' "$RUN_ROOT" "$selected_run_id"
   elif [ "$action" = "refused_hard_stop" ] || [ "$action" = "refused_escrow" ] || [ "$action" = "refused_lock" ]; then
@@ -4771,10 +5152,58 @@ run_retryable() {
   done
 }
 
+command_string_from_args() {
+  local arg out=""
+  for arg in "$@"; do
+    out="${out:+$out }$arg"
+  done
+  printf '%s\n' "$out"
+}
+
+retryable_command_origin() {
+  local command="$1"
+  case "$command" in
+    *" github.com:"*|*"github.com/"*|git@github.com:*)
+      printf '%s\n' "$command" | sed -E 's#.*(git@github\.com:|https?://github\.com/|ssh://git@github\.com/)([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(\.git)?.*#github.com/\2#' | tr '[:upper:]' '[:lower:]'
+      ;;
+    *" origin "*|*" origin"|*"origin "*)
+      printf 'origin\n'
+      ;;
+    *" upstream "*|*" upstream"|*"upstream "*)
+      printf 'upstream\n'
+      ;;
+    *)
+      printf 'unknown\n'
+      ;;
+  esac
+}
+
+retryable_halt_details_json() {
+  local reason_id="$1" summary="$2" exit_code="$3"
+  shift 3
+  local command origin
+  command=$(command_string_from_args "$@")
+  origin=$(retryable_command_origin "$command")
+  jq -cn \
+    --arg reason_id "$reason_id" \
+    --arg summary "$summary" \
+    --arg command "$command" \
+    --arg origin "$origin" \
+    --argjson exit_code "$exit_code" \
+    '{reason_id:$reason_id, command:$command, last_command:$command, origin:$origin, error:$summary, exit_code:$exit_code}'
+}
+
 run_retryable_or_abort() {
   local reason_id="$1" summary="$2"
   shift 2
-  run_retryable "$reason_id" "$@" || abort_run_with_reason "$reason_id" "$summary"
+  local rc details_json
+  set +e
+  run_retryable "$reason_id" "$@"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] && return 0
+  details_json=$(retryable_halt_details_json "$reason_id" "$summary" "$rc" "$@")
+  abort_run_with_reason_details "$reason_id" "$summary" "$details_json"
 }
 
 validate_branch_ref() {
@@ -5571,7 +6000,7 @@ validate_release_chain_leaf_policy() {
 
 verify_expected_source_sha_or_abort() {
   local chain_name="$1" source_branch="$2" expected_sha="$3" phase="$4"
-  local actual_sha
+  local actual_sha summary details_json
   [ -n "$expected_sha" ] && [ "$expected_sha" != "null" ] || return 0
   if [ "$DRY_RUN" -eq 1 ]; then
     printf 'DRY-RUN verify origin/%q matches expected source SHA %q before %s\n' "$source_branch" "$expected_sha" "$phase"
@@ -5579,7 +6008,9 @@ verify_expected_source_sha_or_abort() {
   fi
   actual_sha=$(with_login_home_for_github git ls-remote --heads origin "$source_branch" 2>/dev/null | awk 'NR == 1 { print $1 }') || actual_sha=""
   if [ -z "$actual_sha" ]; then
-    abort_run_with_reason network_partition "cannot verify origin/$source_branch before $phase for chain $chain_name"
+    summary="cannot verify origin/$source_branch before $phase for chain $chain_name"
+    details_json=$(retryable_halt_details_json network_partition "$summary" 1 with_login_home_for_github git ls-remote --heads origin "$source_branch")
+    abort_run_with_reason_details network_partition "$summary" "$details_json"
   fi
   if [ "$actual_sha" != "$expected_sha" ]; then
     abort_run_with_reason base_branch_advanced "source branch $source_branch for chain $chain_name changed before $phase: expected $expected_sha, got $actual_sha"

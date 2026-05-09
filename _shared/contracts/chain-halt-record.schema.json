@@ -99,6 +99,57 @@
         "null"
       ]
     },
+    "retry_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Total equivalent retryable halt observations represented by this active record. First write is 1."
+    },
+    "first_seen": {
+      "$ref": "debrief.schema.json#/$defs/rfc3339"
+    },
+    "last_seen": {
+      "$ref": "debrief.schema.json#/$defs/rfc3339"
+    },
+    "last_observed_command": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "last_observed_error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "normalized_origin": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "normalized_error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "coalesce_key": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Retryable-halt equivalence key: run id, scope id, reason id, normalized origin, and normalized error.",
+      "additionalProperties": true
+    },
+    "coalesced_observations": {
+      "type": "array",
+      "description": "Bounded first/last sample observations for equivalent retryable halts.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
     "issue_context": {
       "type": [
         "object",
