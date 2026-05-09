@@ -78,6 +78,7 @@ scripts/studio-chain-runner.sh --discover ios-v2-execution                 # fil
 /dev-studio manager work-chain --resume <run_id> --yes                     # preferred user-facing resume path from summaries/halt records
 scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute # reviewed source/issue to unattended issue-backed work-chain execution
 scripts/manager-work-chain.sh --from-plan task-graph.json --chain my-chain # plan-chain gate, native issue links, Project fields, then unattended execution
+/dev-studio manager work-chain --doctor <run_id>                           # preferred read-only recovery recommendation for an existing run
 scripts/manager-work-chain.sh ios-v2-execution --dry-run                   # preview the named chain through the manager front door
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements     # unattended start/resume when state is safe and unambiguous
 scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes # attended execution with explicit confirmation bypass
@@ -88,6 +89,7 @@ scripts/prd-task-graph-synthesize.sh packet.md                             # syn
 scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from state.json; reconciles completed worker summaries before scheduling dependents
 scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
 scripts/studio-chain-runner.sh --regenerate-report <run_id>                # opt-in refresh for stale private chain-run reports
+scripts/studio-chain-runner.sh --doctor <run_id> --public-safe             # read-only recovery recommendation with local paths/details redacted
 scripts/studio-chain-runner.sh workflow-measurement-improvements --only chain-a --dry-run  # one manual shell per independent chain; dry-run before parallel execution
 scripts/studio-chain-rule-gates.sh --plan plan.json --dry-run              # deterministic rule-pack gates with typed JSON result + audit JSONL
 scripts/studio-ios-artifact-janitor.sh sweep --base /tmp/studio-ios-artifacts --json # redacted iOS artifact TTL sweep for scoped build/test roots

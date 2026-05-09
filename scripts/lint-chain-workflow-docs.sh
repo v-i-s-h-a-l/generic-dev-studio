@@ -38,7 +38,7 @@ staged_paths() {
 
 should_check_staged() {
   [ "$MODE" = "staged" ] || return 0
-  staged_paths | grep -Eq '^(\.githooks/pre-commit|README\.md|scripts/README\.md|core/v2/skills/dev-studio/SKILL\.md|scripts/(studio-chain-runner|manager-work-chain|lint-chain-workflow-docs)\.sh|scripts/test-fixtures/(446-chain-mode-enhancements|655-manager-work-chain)/)' 2>/dev/null
+  staged_paths | grep -Eq '^(\.githooks/pre-commit|README\.md|scripts/README\.md|core/v2/skills/dev-studio/SKILL\.md|scripts/(studio-chain-runner|studio-chain-doctor|manager-work-chain|lint-chain-workflow-docs)\.sh|scripts/test-fixtures/(446-chain-mode-enhancements|655-manager-work-chain|771-chain-doctor)/)' 2>/dev/null
 }
 
 require_file_contains() {
@@ -63,10 +63,14 @@ check_public_docs() {
       E_CHAIN_DOC_DEV_STUDIO_PREVIEW 'document preferred dev-studio work-chain preview'
     require_file_contains "$doc" '/dev-studio manager work-chain --resume <run_id> --yes' \
       E_CHAIN_DOC_DEV_STUDIO_RESUME 'document preferred dev-studio work-chain resume'
+    require_file_contains "$doc" '/dev-studio manager work-chain --doctor <run_id>' \
+      E_CHAIN_DOC_DEV_STUDIO_DOCTOR 'document preferred read-only recovery recommendation'
     require_file_contains "$doc" 'scripts/manager-work-chain.sh ios-v2-execution --dry-run' \
       E_CHAIN_DOC_MANAGER_PREVIEW 'document manager front-door preview'
     require_file_contains "$doc" 'scripts/studio-chain-runner.sh --auto workflow-measurement-improvements' \
       E_CHAIN_DOC_AUTO 'document unattended supervisor auto mode'
+    require_file_contains "$doc" 'scripts/studio-chain-runner.sh --doctor <run_id>' \
+      E_CHAIN_DOC_DOCTOR 'document runner doctor recovery recommendation'
     require_file_contains "$doc" 'scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes' \
       E_CHAIN_DOC_ATTENDED 'document attended execution mode'
     require_file_contains "$doc" 'scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --yes' \
@@ -81,6 +85,8 @@ check_router_docs() {
     E_CHAIN_ROUTER_FILTERED_DISCOVER 'dev-studio skill must name the filtered discovery contract'
   require_file_contains core/v2/skills/dev-studio/SKILL.md '`--attended` and `--unattended`' \
     E_CHAIN_ROUTER_EXECUTION_MODE 'dev-studio skill must name execution modes'
+  require_file_contains core/v2/skills/dev-studio/SKILL.md '`--doctor <run_id>`' \
+    E_CHAIN_ROUTER_DOCTOR 'dev-studio skill must name the read-only chain doctor'
 }
 
 check_runner_contract() {
@@ -96,6 +102,8 @@ check_runner_contract() {
     E_CHAIN_RUNNER_PROGRESS_RECAP 'chain runner must print compact task progress recaps'
   require_file_contains scripts/studio-chain-runner.sh '--auto is unattended' \
     E_CHAIN_RUNNER_AUTO_MODE 'auto mode must stay unattended unless the contract changes deliberately'
+  require_file_contains scripts/studio-chain-runner.sh 'scripts/studio-chain-runner.sh --doctor <run_id> [--format markdown|json] [--public-safe]' \
+    E_CHAIN_RUNNER_DOCTOR_USAGE 'runner usage must expose the read-only doctor command'
 }
 
 check_manager_wrapper_contract() {
@@ -107,6 +115,8 @@ check_manager_wrapper_contract() {
     E_CHAIN_MANAGER_FILTERED_USAGE 'manager wrapper help must document filtered non-mutating discovery'
   require_file_contains scripts/manager-work-chain.sh 'exec "$PLAN_CHAIN" --from-plan "${1:?--from-plan requires a planner artifact}" --execute --unattended' \
     E_CHAIN_MANAGER_FROM_PLAN_EXECUTE 'manager --from-plan must default to unattended end-to-end execution'
+  require_file_contains scripts/manager-work-chain.sh '--doctor|--doctor=*' \
+    E_CHAIN_MANAGER_DOCTOR_FLAG 'manager wrapper must pass doctor mode through instead of auto-running named chains'
 }
 
 check_fixtures() {
@@ -120,6 +130,10 @@ check_fixtures() {
     E_CHAIN_FIXTURE_MANAGER_FILTERED_DISCOVER 'manager wrapper fixture must cover filtered discovery'
   require_file_contains scripts/test-fixtures/655-manager-work-chain/test-manager-work-chain.sh '"$RUN" ios-v2-execution --dry-run' \
     E_CHAIN_FIXTURE_MANAGER_AUTO 'manager wrapper fixture must cover named auto delegation'
+  require_file_contains scripts/test-fixtures/771-chain-doctor/test-chain-doctor.sh 'Recommended action: `wait_for_cooldown`' \
+    E_CHAIN_FIXTURE_DOCTOR_RETRY 'doctor fixture must cover retry cooldown recommendation'
+  require_file_contains scripts/test-fixtures/771-chain-doctor/test-chain-doctor.sh 'Recommended action: `review_phase_artifact`' \
+    E_CHAIN_FIXTURE_DOCTOR_REVIEW 'doctor fixture must cover reviewer block recommendation'
 }
 
 check_hook_wiring() {
