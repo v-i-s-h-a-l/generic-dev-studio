@@ -173,12 +173,31 @@ function add_resource(list, value,    n, existing, i) {
 }
 
 function resource_like(value) {
-  return value ~ /(^scripts\/|^_shared\/|^core\/|^hooks\/|^commands\/|^tests\/|^README\.md$|^REVIEW\.md$|^CLAUDE\.md$|^AGENTS\.md$|^ROADMAP\.md$|^ARCHITECTURE\.md$|\.sh$|\.md$|\.json$|\.ya?ml$)/
+  if (value ~ /[[:space:]]|--|"|>|<|\$\(|\$\{|;|&&|\|\|/) {
+    return 0
+  }
+  if (value ~ /^\.[A-Za-z0-9]+$/) {
+    return 0
+  }
+  return value ~ /(^scripts\/|^_shared\/|^core\/|^hooks\/|^commands\/|^tests\/|^README\.md$|^REVIEW\.md$|^CLAUDE\.md$|^AGENTS\.md$|^ROADMAP\.md$|^ARCHITECTURE\.md$|^hosts\/|[A-Za-z0-9_-]+\.sh$|[A-Za-z0-9_-]+\.md$|[A-Za-z0-9_-]+\.json$|[A-Za-z0-9_-]+\.ya?ml$)/
+}
+
+function resources_from_title(title,    rest, value, out) {
+  rest = title
+  out = ""
+  while (match(rest, /`[^`]+`/)) {
+    value = substr(rest, RSTART + 1, RLENGTH - 2)
+    if (resource_like(value)) {
+      out = add_resource(out, value)
+    }
+    rest = substr(rest, RSTART + RLENGTH)
+  }
+  return out
 }
 
 function resources_from(text, mode,    l, rest, value, out) {
   l = lower(text)
-  if (mode == "write" && l !~ /(^|[^[:alnum:]_])(write|writes|modify|modifies|touch|touches|update|updates|create|creates|emit|emits|produce|produces)([^[:alnum:]_]|$)/) {
+  if (mode == "write" && l !~ /(^|[^[:alnum:]_])(write|writes|written|modify|modifies|modified|touch|touches|touched|update|updates|updated|create|creates|created|produce|produces|produced|edit|edits|edited|add|adds|added|document|documents|documented|populate|populates|populated|replace|replaces|replaced|materialize|materializes|materialized|archive|archives|archived|live|lives|located|defined|defines)([^[:alnum:]_]|$)/) {
     return ""
   }
   rest = text
@@ -202,6 +221,65 @@ function resources_anywhere(text,    rest, value, out) {
       out = add_resource(out, value)
     }
     rest = substr(rest, RSTART + RLENGTH)
+  }
+  return out
+}
+
+function resources_in_component_body(body,    rest, line, in_reference_section, paragraph, out, found_resources, fr, found_arr, ended) {
+  rest = body
+  out = ""
+  in_reference_section = 0
+  paragraph = ""
+  while (match(rest, /\n[^\n]*/)) {
+    line = substr(rest, RSTART + 1, RLENGTH - 1)
+    rest = substr(rest, RSTART + RLENGTH)
+    if (line ~ /^####?[[:space:]]/) {
+      if (paragraph != "") {
+        found_resources = resources_from(paragraph, "write")
+        if (found_resources != "") {
+          split(found_resources, found_arr, ",")
+          for (fr in found_arr) out = add_resource(out, found_arr[fr])
+        }
+        paragraph = ""
+      }
+      if (lower(line) ~ /(edges and prior art|edges and references|reference|references|verification|inventory|prior art|non-goals|out of scope|scope \(out\))/) {
+        in_reference_section = 1
+      } else {
+        in_reference_section = 0
+      }
+      continue
+    }
+    if (in_reference_section) continue
+    if (line ~ /^[[:space:]]*$/) {
+      if (paragraph != "") {
+        found_resources = resources_from(paragraph, "write")
+        if (found_resources != "") {
+          split(found_resources, found_arr, ",")
+          for (fr in found_arr) out = add_resource(out, found_arr[fr])
+        }
+        paragraph = ""
+      }
+      continue
+    }
+    if (line ~ /^[[:space:]]*[-*][[:space:]]/) {
+      if (paragraph != "") {
+        found_resources = resources_from(paragraph, "write")
+        if (found_resources != "") {
+          split(found_resources, found_arr, ",")
+          for (fr in found_arr) out = add_resource(out, found_arr[fr])
+        }
+      }
+      paragraph = line
+      continue
+    }
+    paragraph = paragraph " " line
+  }
+  if (paragraph != "") {
+    found_resources = resources_from(paragraph, "write")
+    if (found_resources != "") {
+      split(found_resources, found_arr, ",")
+      for (fr in found_arr) out = add_resource(out, found_arr[fr])
+    }
   }
   return out
 }
@@ -424,7 +502,14 @@ END {
   for (i = 1; i <= node_count; i++) {
     source_id = node_order[i]
     if (component_mode == 1 && node_kind[source_id] == "task") {
-      found_resources = resources_anywhere(component_body[source_id])
+      title_resources = resources_from_title(component_title[source_id])
+      if (title_resources != "") {
+        split(title_resources, title_arr, ",")
+        for (fr in title_arr) {
+          node_writes[source_id] = add_resource(node_writes[source_id], title_arr[fr])
+        }
+      }
+      found_resources = resources_in_component_body(component_body[source_id])
       fallback_resources = fallback_component_resources(component_title[source_id])
       if (found_resources != "") {
         split(found_resources, found_arr, ",")
