@@ -1,0 +1,30 @@
+schema_version: 1
+kind: host-profiles
+default_order:
+  - claude
+  - codex
+profiles:
+  claude:
+    host_id: claude
+    binary_path: claude
+    auth_home: "${env.CLAUDE_HOME:-${login_home}}"
+    github_home: "${github_home}"
+    capabilities:
+      - worker
+      - reviewer
+      - planner
+      - perf
+    synthetic_home_behavior: login-home-runtime
+    eligibility_smoke_command: "claude -p --permission-mode dontAsk 'Print STUDIO_HOST_PROFILE_SMOKE=ok'"
+  codex:
+    host_id: codex
+    binary_path: codex
+    auth_home: "${env.CODEX_WORKER_HOME:-${env.CODEX_HOME:-${login_home}/.codex}}"
+    github_home: "${github_home}"
+    capabilities:
+      - worker
+      - reviewer
+      - planner
+      - perf
+    synthetic_home_behavior: codex-auth-home-runtime
+    eligibility_smoke_command: "codex exec --ignore-user-config --ignore-rules --ephemeral --sandbox read-only -c approval_policy=never 'Print STUDIO_HOST_PROFILE_SMOKE=ok'"
