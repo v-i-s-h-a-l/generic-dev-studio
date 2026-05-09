@@ -24,6 +24,15 @@ If the user asks "where were we" or similar, invoke `/resume-plan` — it reads 
 
 **Process rules MUST allow a user-controlled override.** Hard gates that fire without an escape hatch leave the user wedged. The override is the user's lever, not the assistant's — assistants must never bypass on their own initiative. Common patterns: `STUDIO_BYPASS_*=1` env vars, `--bypass-*` flags, explicit `git commit --no-verify` documented as an emergency lever.
 
+Host auto-resolution follows the same rule. `STUDIO_BYPASS_AUTO_HOST_ELIGIBILITY=1`
+is the emergency/debug lever for `studio-chain-runner.sh` auto host selection:
+it skips the eligibility smoke and uses the first profile in resolver order
+as-is, with loud stderr and run-state recording. `STUDIO_HOST_PROFILE_FILE=<path>`
+points the resolver at a non-default profile file instead of
+`_shared/host-profiles/default.yaml`; pair it with
+`STUDIO_AUTO_HOST_ORDER=<csv>` only when intentionally testing or recovering a
+specific host order. These are user-controlled levers, not assistant shortcuts.
+
 **How to apply:** when the user says "remember X" / "from now on do Y" / "always do Z", first ask: is X a fact about *the user* (preference, identity, context) or a *workflow rule*? If workflow, encode it in the relevant repo file above and offer to add a hook or script when mechanical enforcement is the right shape. If pure user context, then memory is fine. When in doubt, default to repo — repo travels, memory doesn't.
 
 ## Worktree protocol (hard rule — no exceptions)

@@ -45,6 +45,9 @@ RUN_PATHS_CONFIGURED=0
 . "$SCRIPT_DIR/lib-chain-monitor-notifier.sh"
 # shellcheck source=lib-chain-run-state.sh
 . "$SCRIPT_DIR/lib-chain-run-state.sh"
+# shellcheck disable=SC1091
+# shellcheck source=lib-host-eligibility.sh
+. "$SCRIPT_DIR/lib-host-eligibility.sh"
 
 usage() {
   sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' >&2
@@ -3888,7 +3891,7 @@ issue_failure_summary_text() {
 }
 
 generate_run_report() {
-  local status="$1" failure_reason="${2:-}" ended_ts ended_epoch duration_s summary_count halt_count halt_dir digest_script
+  local status="$1" failure_reason="${2:-}" ended_ts ended_epoch duration_s summary_count halt_count host_halt_count halt_dir digest_script
   local latest_event_at state_status state_updated_at tmp_state
   ended_ts=$(iso_ts_now)
   ended_epoch=$(now_epoch)
@@ -4265,6 +4268,70 @@ generate_run_report() {
       printf -- '- PR URL: %s\n' "$FINAL_PR_URL"
     else
       printf -- '- PR URL: not opened\n'
+    fi
+    printf '\n## Host Eligibility\n\n'
+    if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ]; then
+      jq -r '
+        def cell($v):
+          if $v == null or $v == "" then "missing"
+          else ($v | tostring | gsub("\\|"; "\\|"))
+          end;
+        [ .chains[]? as $chain
+          | (($chain.host_eligibility.resolver.records // [])[]? + {
+              chain: ($chain.name // $chain.chain // "unknown"),
+              requested_host: ($chain.host_eligibility.resolver.requested_host // null),
+              resolved_host: ($chain.host_eligibility.resolver.resolved_host // null)
+            })
+        ] as $resolver_rows
+        | [ .chains[]? as $chain
+            | (($chain.host_eligibility.preflight_records // [])[]? + {
+                chain: ($chain.name // $chain.chain // "unknown"),
+                requested_host: ($chain.host_eligibility.resolver.requested_host // null),
+                resolved_host: ($chain.host // $chain.host_eligibility.resolver.resolved_host // null)
+              })
+          ] as $preflight_rows
+        | ($resolver_rows + $preflight_rows) as $rows
+        | if ($rows | length) == 0 then
+            "No host eligibility records were captured."
+          else
+            "| Chain | Phase | Requested | Resolved | Profile | Runner Host | Outcome | Status | Selected | Detail |",
+            "|---|---|---|---|---|---|---|---|---|---|",
+            ($rows[] |
+              "| \(cell(.chain)) | \(cell(.phase)) | \(cell(.requested_host)) | \(cell(.resolved_host)) | \(cell(.profile)) | \(cell(.runner_host)) | \(cell(.outcome)) | \(cell(.selection_status)) | \(cell(.selected)) | \(cell(.detail)) |")
+          end
+      ' "$RUN_STATE_JSON"
+    else
+      printf 'Run state was not available.\n'
+    fi
+    host_halt_count=0
+    [ -n "$halt_dir" ] && host_halt_count=$(find "$halt_dir" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$host_halt_count" -gt 0 ]; then
+      jq -r -s '
+        def cell($v):
+          if $v == null or $v == "" then "missing"
+          else ($v | tostring | gsub("\\|"; "\\|"))
+          end;
+        [ .[]?
+          | select((.details.kind // "") == "host_eligibility") as $halt
+          | ($halt.details.records // [])[]?
+          | . + {
+              chain: ($halt.details.chain // "unknown"),
+              requested_host: ($halt.details.requested_host // null),
+              resolved_host: ($halt.details.resolved_host // null),
+              halt_reason: ($halt.reason_id // "unknown")
+            }
+        ] as $rows
+        | if ($rows | length) == 0 then empty
+          else
+            "",
+            "Host eligibility halt details:",
+            "",
+            "| Chain | Halt Reason | Phase | Requested | Resolved | Profile | Runner Host | Outcome | Status | Selected | Detail |",
+            "|---|---|---|---|---|---|---|---|---|---|---|",
+            ($rows[] |
+              "| \(cell(.chain)) | \(cell(.halt_reason)) | \(cell(.phase)) | \(cell(.requested_host)) | \(cell(.resolved_host)) | \(cell(.profile)) | \(cell(.runner_host)) | \(cell(.outcome)) | \(cell(.selection_status)) | \(cell(.selected)) | \(cell(.detail)) |")
+          end
+      ' "$halt_dir"/*.json
     fi
     printf '\n## Halt Records\n\n'
     halt_count=0
@@ -5393,6 +5460,306 @@ git_metadata_strategy_for_host() {
   esac
 }
 
+host_resolver_bypassed() {
+  case "${STUDIO_BYPASS_HOST_RESOLVER:-0}" in
+    1|true|TRUE|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+host_eligibility_outcome_or_unknown() {
+  case "${1:-}" in
+    eligible|binary-missing|auth-stale|auth-fresh-but-failed|unknown) printf '%s\n' "$1" ;;
+    *) printf 'unknown\n' ;;
+  esac
+}
+
+host_eligibility_closed_outcomes_json() {
+  jq -cn '["eligible", "binary-missing", "auth-stale", "auth-fresh-but-failed", "unknown"]'
+}
+
+host_eligibility_record_json() {
+  local phase="$1" profile="$2" runner_host="$3" selected="$4" selection_status="$5" eligibility_json="${6:-null}"
+  local outcome detail duration_ms smoke_command raw_outcome runner_manifest_available
+  if [ -z "$eligibility_json" ] || ! printf '%s\n' "$eligibility_json" | jq -e . >/dev/null 2>&1; then
+    eligibility_json='{}'
+  fi
+  raw_outcome=$(printf '%s\n' "$eligibility_json" | jq -r '.outcome // "unknown"')
+  outcome=$(host_eligibility_outcome_or_unknown "$raw_outcome")
+  detail=$(printf '%s\n' "$eligibility_json" | jq -r '.detail // ""')
+  duration_ms=$(printf '%s\n' "$eligibility_json" | jq -r '.duration_ms // empty')
+  smoke_command=$(printf '%s\n' "$eligibility_json" | jq -r '.smoke_command // ""')
+  runner_manifest_available=false
+  if [ -n "$runner_host" ] && chain_runner_host_has_manifest "$runner_host"; then
+    runner_manifest_available=true
+  fi
+  jq -cn \
+    --arg phase "$phase" \
+    --arg profile "$profile" \
+    --arg runner_host "$runner_host" \
+    --arg outcome "$outcome" \
+    --arg raw_outcome "$raw_outcome" \
+    --arg detail "$detail" \
+    --arg duration_ms "$duration_ms" \
+    --arg smoke_command "$smoke_command" \
+    --arg selected "$selected" \
+    --arg selection_status "$selection_status" \
+    --argjson runner_manifest_available "$runner_manifest_available" \
+    '{
+      schema_version: 1,
+      kind: "host-eligibility-record",
+      phase: $phase,
+      profile: $profile,
+      runner_host: $runner_host,
+      outcome: $outcome,
+      detail: (if $detail == "" then null else $detail end),
+      duration_ms: (if $duration_ms == "" then null else ($duration_ms | tonumber) end),
+      smoke_command: (if $smoke_command == "" then null else $smoke_command end),
+      selected: ($selected == "true"),
+      selection_status: $selection_status,
+      runner_manifest_available: $runner_manifest_available
+    }
+    | if $raw_outcome == $outcome then . else . + {raw_outcome:$raw_outcome} end'
+}
+
+host_eligibility_unknown_record_json() {
+  local phase="$1" profile="$2" runner_host="$3" detail="$4" selection_status="${5:-error}"
+  local eligibility_json
+  eligibility_json=$(jq -cn --arg outcome "unknown" --arg detail "$detail" '{
+    outcome: $outcome,
+    detail: $detail,
+    duration_ms: null,
+    smoke_command: null
+  }')
+  host_eligibility_record_json "$phase" "$profile" "$runner_host" false "$selection_status" "$eligibility_json"
+}
+
+append_host_eligibility_record_file() {
+  local record_json="$1" file="${HOST_ELIGIBILITY_RECORDS_FILE:-}" tmp
+  [ -n "$file" ] || return 0
+  [ -f "$file" ] || printf '[]\n' > "$file"
+  tmp="$file.tmp.$$"
+  jq --argjson record "$record_json" '. + [$record]' "$file" > "$tmp" && mv "$tmp" "$file"
+}
+
+chain_host_resolution_json() {
+  local requested_host="$1" resolved_host="$2" records_json="$3" status="${4:-selected}" summary="${5:-}"
+  local bypassed=false
+  if host_resolver_bypassed; then
+    bypassed=true
+  fi
+  [ -n "$records_json" ] && printf '%s\n' "$records_json" | jq -e . >/dev/null 2>&1 || records_json='[]'
+  jq -cn \
+    --arg requested_host "$requested_host" \
+    --arg resolved_host "$resolved_host" \
+    --arg status "$status" \
+    --arg summary "$summary" \
+    --arg host_override "$HOST_OVERRIDE" \
+    --argjson bypassed "$bypassed" \
+    --argjson dry_run "$DRY_RUN" \
+    --argjson records "$records_json" \
+    '{
+      schema_version: 1,
+      requested_host: $requested_host,
+      resolved_host: (if $resolved_host == "" then null else $resolved_host end),
+      host_override: (if $host_override == "" then null else $host_override end),
+      status: $status,
+      summary: (if $summary == "" then null else $summary end),
+      bypassed: $bypassed,
+      dry_run: ($dry_run == 1),
+      closed_outcomes: ["eligible", "binary-missing", "auth-stale", "auth-fresh-but-failed", "unknown"],
+      records: $records
+    }'
+}
+
+host_eligibility_halt_details_json() {
+  local phase="$1" chain="$2" requested_host="$3" resolved_host="$4" records_json="$5" summary="$6"
+  [ -n "$records_json" ] && printf '%s\n' "$records_json" | jq -e . >/dev/null 2>&1 || records_json='[]'
+  jq -cn \
+    --arg phase "$phase" \
+    --arg chain "$chain" \
+    --arg requested_host "$requested_host" \
+    --arg resolved_host "$resolved_host" \
+    --arg summary "$summary" \
+    --argjson closed_outcomes "$(host_eligibility_closed_outcomes_json)" \
+    --argjson records "$records_json" \
+    '{
+      kind: "host_eligibility",
+      phase: $phase,
+      chain: (if $chain == "" then null else $chain end),
+      requested_host: (if $requested_host == "" then null else $requested_host end),
+      resolved_host: (if $resolved_host == "" then null else $resolved_host end),
+      summary: $summary,
+      closed_outcomes: $closed_outcomes,
+      records: $records
+    }'
+}
+
+append_chain_host_eligibility_record() {
+  local record_json="$1" chain_run_id="${CURRENT_CHAIN_RUN_ID:-}" phase
+  [ -n "$chain_run_id" ] || return 0
+  [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ] || return 0
+  if [ -z "$record_json" ] || ! printf '%s\n' "$record_json" | jq -e . >/dev/null 2>&1; then
+    return 0
+  fi
+  phase=$(printf '%s\n' "$record_json" | jq -r '.phase // "unknown"')
+  # shellcheck disable=SC2016 # jq variables are supplied via --arg/--argjson.
+  if ! update_state_jq \
+    --arg chain_run_id "$chain_run_id" \
+    --arg phase "$phase" \
+    --argjson record "$record_json" \
+    '(.chains[] | select((.chain_run_id // "") == $chain_run_id) | .host_eligibility) |= (
+       (. // {})
+       | .last_record = $record
+       | if $phase == "preflight" then
+           .preflight_records = ((.preflight_records // []) + [$record])
+         else
+           .records = ((.records // []) + [$record])
+         end
+     )'
+  then
+    printf 'studio-chain-runner: failed to persist host eligibility record for chain_run_id=%s\n' "$chain_run_id" >&2
+    return 1
+  fi
+}
+
+chain_host_profile_for_runner_host() {
+  local host="$1"
+  if host_profile_get "$host" >/dev/null 2>&1; then
+    printf '%s\n' "$host"
+    return 0
+  fi
+  case "$host" in
+    claude-code) printf 'claude\n' ;;
+    *) printf '%s\n' "$host" ;;
+  esac
+}
+
+chain_runner_host_for_profile() {
+  local profile="$1"
+  if resolve_capabilities_manifest "$profile" "$REPO_ROOT" >/dev/null 2>&1; then
+    printf '%s\n' "$profile"
+    return 0
+  fi
+  case "$profile" in
+    # The shipped host profile uses logical id `claude`; the adapted runner
+    # host id is still `claude-code`.
+    claude)
+      if resolve_capabilities_manifest claude-code "$REPO_ROOT" >/dev/null 2>&1; then
+        printf 'claude-code\n'
+        return 0
+      fi
+      ;;
+  esac
+  printf '%s\n' "$profile"
+}
+
+chain_runner_host_has_manifest() {
+  local host="$1" manifest
+  manifest=$(resolve_capabilities_manifest "$host" "$REPO_ROOT" 2>/dev/null || true)
+  [ -n "$manifest" ] && [ -f "$manifest" ]
+}
+
+resolve_auto_worker_host_without_smoke() {
+  local candidates profile runner_host
+  candidates=$(host_profile_list_for_capability worker) || return 1
+  while IFS= read -r profile; do
+    [ -n "$profile" ] || continue
+    runner_host=$(chain_runner_host_for_profile "$profile")
+    if chain_runner_host_has_manifest "$runner_host"; then
+      printf '%s\n' "$runner_host"
+      return 0
+    fi
+    printf 'studio-chain-runner: auto host candidate %s skipped: no capabilities manifest for runner host %s\n' "$profile" "$runner_host" >&2
+  done <<EOF
+$candidates
+EOF
+  printf 'studio-chain-runner: no auto worker host maps to an adapted chain-runner host\n' >&2
+  return 1
+}
+
+resolve_auto_worker_host_with_eligibility() {
+  local candidates profile runner_host eligibility outcome detail duration_ms record
+  candidates=$(host_profile_list_for_capability worker) || return 1
+  while IFS= read -r profile; do
+    [ -n "$profile" ] || continue
+    eligibility=$(host_eligibility_check "$profile") || {
+      runner_host=$(chain_runner_host_for_profile "$profile")
+      record=$(host_eligibility_unknown_record_json resolver "$profile" "$runner_host" "host eligibility resolver failed for profile $profile" error)
+      append_host_eligibility_record_file "$record"
+      printf 'studio-chain-runner: host eligibility resolver failed for profile %s\n' "$profile" >&2
+      return 1
+    }
+    outcome=$(printf '%s\n' "$eligibility" | jq -r '.outcome // ""')
+    detail=$(printf '%s\n' "$eligibility" | jq -r '.detail // ""')
+    duration_ms=$(printf '%s\n' "$eligibility" | jq -r '.duration_ms // ""')
+    runner_host=$(chain_runner_host_for_profile "$profile")
+    case "$outcome" in
+      eligible)
+        if ! chain_runner_host_has_manifest "$runner_host"; then
+          record=$(host_eligibility_record_json resolver "$profile" "$runner_host" false manifest-missing "$eligibility")
+          append_host_eligibility_record_file "$record"
+          printf 'studio-chain-runner: auto host candidate %s skipped: no capabilities manifest for runner host %s\n' "$profile" "$runner_host" >&2
+          continue
+        fi
+        record=$(host_eligibility_record_json resolver "$profile" "$runner_host" true selected "$eligibility")
+        append_host_eligibility_record_file "$record"
+        printf 'studio-chain-runner: auto host selected %s via profile %s (duration_ms=%s)\n' "$runner_host" "$profile" "$duration_ms" >&2
+        printf '%s\n' "$runner_host"
+        return 0
+        ;;
+      binary-missing|auth-stale|auth-fresh-but-failed)
+        record=$(host_eligibility_record_json resolver "$profile" "$runner_host" false skipped "$eligibility")
+        append_host_eligibility_record_file "$record"
+        printf 'studio-chain-runner: auto host candidate %s skipped: %s (%s)\n' "$profile" "$outcome" "$detail" >&2
+        ;;
+      *)
+        record=$(host_eligibility_record_json resolver "$profile" "$runner_host" false unsupported-outcome "$eligibility")
+        append_host_eligibility_record_file "$record"
+        printf 'studio-chain-runner: unsupported host eligibility outcome for %s: %s\n' "$profile" "${outcome:-<empty>}" >&2
+        return 1
+        ;;
+    esac
+  done <<EOF
+$candidates
+EOF
+  printf 'studio-chain-runner: no eligible worker host found via host profiles\n' >&2
+  return 1
+}
+
+resolve_chain_worker_host() {
+  local requested="$1" runner_host record eligibility_json
+  if [ -n "$HOST_OVERRIDE" ]; then
+    runner_host=$(chain_runner_host_for_profile "$HOST_OVERRIDE")
+    eligibility_json=$(jq -cn --arg detail "host selected by --host override; eligibility checked during live preflight" '{outcome:"unknown", detail:$detail}')
+    record=$(host_eligibility_record_json resolver "$HOST_OVERRIDE" "$runner_host" true override "$eligibility_json")
+    append_host_eligibility_record_file "$record"
+    printf '%s\n' "$runner_host"
+    return 0
+  fi
+  if [ "$requested" != "auto" ]; then
+    runner_host=$(chain_runner_host_for_profile "$requested")
+    eligibility_json=$(jq -cn --arg detail "explicit manifest host; eligibility checked during live preflight" '{outcome:"unknown", detail:$detail}')
+    record=$(host_eligibility_record_json resolver "$requested" "$runner_host" true explicit "$eligibility_json")
+    append_host_eligibility_record_file "$record"
+    printf '%s\n' "$runner_host"
+    return 0
+  fi
+  if host_resolver_bypassed; then
+    printf 'studio-chain-runner: host resolver bypassed via STUDIO_BYPASS_HOST_RESOLVER; using legacy auto host codex\n' >&2
+    eligibility_json=$(jq -cn '{outcome:"unknown", detail:"host resolver bypassed via STUDIO_BYPASS_HOST_RESOLVER; legacy auto host codex selected"}')
+    record=$(host_eligibility_record_json resolver codex codex true bypassed "$eligibility_json")
+    append_host_eligibility_record_file "$record"
+    printf 'codex\n'
+    return 0
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    resolve_auto_worker_host_without_smoke
+  else
+    resolve_auto_worker_host_with_eligibility
+  fi
+}
+
 host_launch_home() {
   resolve_user_login_home 2>/dev/null || true
 }
@@ -5413,15 +5780,61 @@ codex_auth_home_for_worker_launch() {
 }
 
 host_preflight() {
-  local host="$1" repo="$2" launch_home
+  local host="$1" repo="$2" launch_home profile eligibility outcome detail duration_ms record
+  HOST_PREFLIGHT_LAST_DETAILS_JSON="null"
   launch_home=$(host_launch_home)
   if [ "$DRY_RUN" -eq 1 ]; then
+    if ! host_resolver_bypassed; then
+      profile=$(chain_host_profile_for_runner_host "$host")
+      printf 'DRY-RUN host_eligibility_check %q # runner host %q\n' "$profile" "$host"
+    fi
     if [ -n "$launch_home" ] && [ -d "$launch_home" ]; then
       printf 'DRY-RUN HOME=%q scripts/host-preflight.sh %q %q\n' "$launch_home" "$host" "$repo"
     else
       printf 'DRY-RUN scripts/host-preflight.sh %q %q\n' "$host" "$repo"
     fi
     return 0
+  fi
+  if host_resolver_bypassed; then
+    eligibility=$(jq -cn '{outcome:"unknown", detail:"host eligibility preflight bypassed via STUDIO_BYPASS_HOST_RESOLVER"}')
+    record=$(host_eligibility_record_json preflight "$host" "$host" true bypassed "$eligibility")
+    HOST_PREFLIGHT_LAST_DETAILS_JSON=$(host_eligibility_halt_details_json preflight "${CURRENT_CHAIN_NAME:-}" "$host" "$host" "[$record]" "host eligibility preflight bypassed for host=$host")
+    append_chain_host_eligibility_record "$record"
+    printf 'studio-chain-runner: host eligibility preflight bypassed for host=%s via STUDIO_BYPASS_HOST_RESOLVER\n' "$host" >&2
+  else
+    profile=$(chain_host_profile_for_runner_host "$host")
+    eligibility=$(host_eligibility_check "$profile") || {
+      record=$(host_eligibility_unknown_record_json preflight "$profile" "$host" "host eligibility resolver failed for host=$host profile=$profile" error)
+      HOST_PREFLIGHT_LAST_DETAILS_JSON=$(host_eligibility_halt_details_json preflight "${CURRENT_CHAIN_NAME:-}" "$host" "$host" "[$record]" "host eligibility resolver failed for host=$host profile=$profile")
+      append_chain_host_eligibility_record "$record"
+      printf 'studio-chain-runner: host eligibility resolver failed for host=%s profile=%s\n' "$host" "$profile" >&2
+      return 1
+    }
+    outcome=$(printf '%s\n' "$eligibility" | jq -r '.outcome // ""')
+    detail=$(printf '%s\n' "$eligibility" | jq -r '.detail // ""')
+    duration_ms=$(printf '%s\n' "$eligibility" | jq -r '.duration_ms // ""')
+    case "$outcome" in
+      eligible)
+        record=$(host_eligibility_record_json preflight "$profile" "$host" true passed "$eligibility")
+        HOST_PREFLIGHT_LAST_DETAILS_JSON=$(host_eligibility_halt_details_json preflight "${CURRENT_CHAIN_NAME:-}" "$host" "$host" "[$record]" "host eligibility passed for host=$host profile=$profile")
+        append_chain_host_eligibility_record "$record"
+        printf 'studio-chain-runner: host eligibility PASS host=%s profile=%s duration_ms=%s\n' "$host" "$profile" "$duration_ms" >&2
+        ;;
+      binary-missing|auth-stale|auth-fresh-but-failed)
+        record=$(host_eligibility_record_json preflight "$profile" "$host" false failed "$eligibility")
+        HOST_PREFLIGHT_LAST_DETAILS_JSON=$(host_eligibility_halt_details_json preflight "${CURRENT_CHAIN_NAME:-}" "$host" "$host" "[$record]" "host eligibility failed for host=$host profile=$profile")
+        append_chain_host_eligibility_record "$record"
+        printf 'studio-chain-runner: host eligibility failed for host=%s profile=%s: %s (%s)\n' "$host" "$profile" "$outcome" "$detail" >&2
+        return 1
+        ;;
+      *)
+        record=$(host_eligibility_record_json preflight "$profile" "$host" false unsupported-outcome "$eligibility")
+        HOST_PREFLIGHT_LAST_DETAILS_JSON=$(host_eligibility_halt_details_json preflight "${CURRENT_CHAIN_NAME:-}" "$host" "$host" "[$record]" "unsupported host eligibility outcome for host=$host profile=$profile")
+        append_chain_host_eligibility_record "$record"
+        printf 'studio-chain-runner: unsupported host eligibility outcome for host=%s profile=%s: %s\n' "$host" "$profile" "${outcome:-<empty>}" >&2
+        return 1
+        ;;
+    esac
   fi
   if [ -n "$launch_home" ] && [ -d "$launch_home" ]; then
     HOME="$launch_home" "$SCRIPT_DIR/host-preflight.sh" "$host" "$repo"
@@ -5582,9 +5995,9 @@ resolve_resume_state() {
 }
 
 build_plan_json() {
-  local out="$1" chain_count idx name base source_branch expected_source_sha branch host approved_release_id sync_strategy phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state issue_url
+  local out="$1" chain_count idx name base source_branch expected_source_sha branch requested_host host approved_release_id sync_strategy phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state issue_url
   local chain_run_id issue_run_id issue_slug issue_branch issue_worktree chain_slug chain_worktree worker_pool issue_kind dependencies_json previous_issue
-  local tmp chains_tmp issues_tmp mapped_at
+  local tmp chains_tmp issues_tmp mapped_at host_resolution_records_file host_resolution_records_json host_resolution_json resolver_rc resolution_summary
   tmp="$out.tmp.$$"
   chains_tmp="$out.chains.$$"
   printf '[]\n' > "$chains_tmp"
@@ -5605,12 +6018,32 @@ build_plan_json() {
     base="$source_branch"
     expected_source_sha=$(resolve_chain_expected_source_sha "$idx")
     branch=$(yq -r ".chains[$idx].branch // (\"feature/\" + .chains[$idx].name)" "$MANIFEST")
-    host=$(yq -r ".chains[$idx].host // \"auto\"" "$MANIFEST")
+    requested_host=$(yq -r ".chains[$idx].host // \"auto\"" "$MANIFEST")
     approved_release_id=$(yq -r ".chains[$idx].approved_release_id // \"\"" "$MANIFEST")
     sync_strategy=$(yq -r ".chains[$idx].sync_strategy // \"rebase\"" "$MANIFEST")
     [ -n "$sync_strategy" ] && [ "$sync_strategy" != "null" ] || sync_strategy="rebase"
-    [ "$host" = "auto" ] && host="${HOST_OVERRIDE:-codex}"
-    [ -n "$HOST_OVERRIDE" ] && host="$HOST_OVERRIDE"
+    host_resolution_records_file=$(mktemp -t chain-host-eligibility.XXXXXX)
+    printf '[]\n' > "$host_resolution_records_file"
+    HOST_ELIGIBILITY_RECORDS_FILE="$host_resolution_records_file"
+    set +e
+    host=$(resolve_chain_worker_host "$requested_host")
+    resolver_rc=$?
+    set -e
+    HOST_ELIGIBILITY_RECORDS_FILE=""
+    host_resolution_records_json=$(jq -c '.' "$host_resolution_records_file" 2>/dev/null || printf '[]')
+    rm -f "$host_resolution_records_file"
+    if [ "$resolver_rc" -ne 0 ]; then
+      resolution_summary="host resolution failed for chain $name requested_host=$requested_host"
+      host_resolution_json=$(chain_host_resolution_json "$requested_host" "" "$host_resolution_records_json" blocked "$resolution_summary")
+      if [ "$DRY_RUN" -eq 0 ]; then
+        abort_run_with_reason_details test_build_infra_unavailable "$resolution_summary" \
+          "$(host_eligibility_halt_details_json resolver "$name" "$requested_host" "" "$host_resolution_records_json" "$resolution_summary")"
+      fi
+      printf 'studio-chain-runner: %s\n' "$resolution_summary" >&2
+      printf '%s\n' "$host_resolution_json" >&2
+      exit "$resolver_rc"
+    fi
+    host_resolution_json=$(chain_host_resolution_json "$requested_host" "$host" "$host_resolution_records_json" selected "")
     phase_review_mode=$(resolve_phase_review_mode "$idx")
     checkpoint_mode=$(resolve_checkpoint_mode "$idx")
     git_metadata_strategy=$(git_metadata_strategy_for_host "$host")
@@ -5742,6 +6175,7 @@ build_plan_json() {
       --arg chain_run_id "$chain_run_id" \
       --arg worktree "$chain_worktree" \
       --argjson worker_pool "$worker_pool" \
+      --argjson host_resolution "$host_resolution_json" \
       --slurpfile issues "$issues_tmp" \
       '. + [{
         name:$name,
@@ -5755,6 +6189,9 @@ build_plan_json() {
         phase_review:$phase_review_mode,
         checkpoint:$checkpoint_mode,
         git_metadata_strategy:$git_metadata_strategy,
+        host_eligibility: {
+          resolver: $host_resolution
+        },
         chain_run_id:$chain_run_id,
         chain_worktree:$worktree,
         worker_pool:$worker_pool,
@@ -6127,7 +6564,7 @@ explain_plan() {
   printf -- '- Escalation policy: attended prompts are reserved for review-needed, human-needed, or fatal blockers; unattended mode runs until a typed blocker appears\n'
   [ -z "$gates" ] || printf -- '- Review gates: %s\n' "$gates"
   printf -- '- Mechanical rule gates: `%s`; audit `%s`\n' "$(jq -r '.mechanical_rule_gates.status // "not-run"' "$plan")" "$(jq -r '.mechanical_rule_gates.audit_log // "none"' "$plan")"
-  printf -- '- Host/model policy: manifest host, overridden by `--host`; `auto` resolves to `%s`\n' "${HOST_OVERRIDE:-codex}"
+  printf -- "- Host/model policy: manifest host, overridden by \`--host\`; \`auto\` resolves through host profiles%s\n" "$(if [ -n "$HOST_OVERRIDE" ]; then printf " (override \`%s\`)" "$HOST_OVERRIDE"; fi)"
   printf -- '- Issue lifecycle: `issue-created -> implementation-running -> implemented-local -> smoke-passed -> merged -> closed`; scheduler status remains separate for resume compatibility\n'
   printf -- '- Risk notes: %s\n\n' "$risk"
   jq -r '
@@ -7614,7 +8051,11 @@ for ((idx = 0; idx < chain_count; idx++)); do
   mark_chain_state "$chain_run_id" running
   emit_chain_event chain_started "" "$RUN_ID" "$chain_run_id" "" running 0 \
     "$(jq -cn --arg name "$name" --arg branch "$branch" --arg base "$base" --arg host "$host" --arg git_metadata_strategy "$git_metadata_strategy" --arg sync_strategy "$sync_strategy" --arg approved_release_id "$approved_release_id" --argjson issue_count "$issue_count" --argjson worker_pool "$CHAIN_WORKER_POOL" '{chain:$name, branch:$branch, base:$base, source_branch:$base, host:$host, git_metadata_strategy:$git_metadata_strategy, sync_strategy:$sync_strategy, approved_release_id:(if $approved_release_id == "" then null else $approved_release_id end), issue_count:$issue_count, worker_pool:$worker_pool}')"
-  host_preflight "$host" "$TARGET_REPO_ROOT" || abort_run "host preflight failed for $host"
+  CURRENT_CHAIN_RUN_ID="$chain_run_id"
+  CURRENT_CHAIN_NAME="$name"
+  host_preflight "$host" "$TARGET_REPO_ROOT" || abort_run_with_reason_details test_build_infra_unavailable "host preflight failed for $host" "$HOST_PREFLIGHT_LAST_DETAILS_JSON"
+  CURRENT_CHAIN_RUN_ID=""
+  CURRENT_CHAIN_NAME=""
   run_retryable_or_abort network_partition "fetch origin failed before chain $name" \
     with_login_home_for_github git -C "$TARGET_REPO_ROOT" fetch origin --prune
   verify_expected_source_sha_or_abort "$name" "$base" "$expected_source_sha" "chain worktree creation"
