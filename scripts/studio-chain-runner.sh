@@ -1608,15 +1608,16 @@ halt_class_for_reason() {
 
 halt_reason_for_text() {
   case "$1" in
+    github_auth_unavailable|github_home_mismatch|parent_host_unknown|reviewer_host_ineligible|reviewer_blocked|reviewer_ambiguous|required_review_failed|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_timeout|child_crash|issue_body_changed|partial_github_operation|github_rate_limited|network_partition|test_build_infra_unavailable|disk_runtime_pressure|model_tool_permission_prompt|context_output_overflow|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|secret_detected|destructive_change_required|permission_expansion_required|unsafe_external_state|implementation_scope_blocked|checkpoint_drift_detected) printf '%s\n' "$1" ;;
     *GitHub*auth*|*github*auth*) printf 'github_auth_unavailable\n' ;;
     *reviewer_blocked*|*reviewer\ blocked*) printf 'reviewer_blocked\n' ;;
     *reviewer_ambiguous*|*reviewer\ ambiguous*|*ambiguous\ review*) printf 'reviewer_ambiguous\n' ;;
-    *reviewer\ host*|*reviewer\ host\ unavailable*|*reviewer\ host\ ineligible*) printf 'reviewer_host_ineligible\n' ;;
-    *review\ failed*|*PR\ review\ failed*|*required\ review*) printf 'required_review_failed\n' ;;
+    *reviewer\ host*) printf 'reviewer_host_ineligible\n' ;;
+    *review\ failed*|*required\ review*) printf 'required_review_failed\n' ;;
     *branch\ already\ exists*|*worktree*conflict*) printf 'branch_worktree_conflict\n' ;;
     *rebase*|*base\ branch*) printf 'base_branch_advanced\n' ;;
     *worker_summary_missing*|*summary*missing*|*produced\ no\ runner\ result*) printf 'missing_child_summary\n' ;;
-    *worker\ exited*|*unexpected_exit*) printf 'child_crash\n' ;;
+    *worker\ exited*) printf 'child_crash\n' ;;
     *manifest/schema\ mismatch*|*planning\ manifest*|*chain-manifest*) printf 'manifest_schema_mismatch\n' ;;
     *checkpoint*drift*) printf 'checkpoint_drift_detected\n' ;;
     *gh\ issue\ close*|*PR\ telemetry\ comment*|*GitHub\ operation*) printf 'partial_github_operation\n' ;;
@@ -1627,6 +1628,77 @@ halt_reason_for_text() {
     *destructive*) printf 'destructive_change_required\n' ;;
     *) printf 'implementation_scope_blocked\n' ;;
   esac
+}
+
+is_halt_reason_id() {
+  case "$1" in
+    github_auth_unavailable|github_home_mismatch|parent_host_unknown|reviewer_host_ineligible|reviewer_blocked|reviewer_ambiguous|required_review_failed|branch_worktree_conflict|base_branch_advanced|missing_child_summary|child_timeout|child_crash|issue_body_changed|partial_github_operation|github_rate_limited|network_partition|test_build_infra_unavailable|disk_runtime_pressure|model_tool_permission_prompt|context_output_overflow|telemetry_artifact_malformed|telemetry_artifact_missing|manifest_schema_version_mismatch|secret_detected|destructive_change_required|permission_expansion_required|unsafe_external_state|implementation_scope_blocked|checkpoint_drift_detected)
+      return 0 ;;
+    *)
+      return 1 ;;
+  esac
+}
+
+selected_active_halt_json() {
+  [ -n "${RUN_STATE_JSON:-}" ] || return 1
+  [ -f "$RUN_STATE_JSON" ] || return 1
+  jq -e -c '
+    def active:
+      ((.status // "") == "paused" or (.status // "") == "terminated");
+    def halt_priority:
+      if (.halt_class // "") == "fatal" then 50
+      elif (.halt_class // "") == "human-needed" then 40
+      elif (.halt_class // "") == "review-needed" then 30
+      elif (.halt_class // "") == "recoverable" then 20
+      elif (.halt_class // "") == "retryable" then 10
+      else 0
+      end;
+    [(.halt_records // [])
+      | to_entries[]
+      | .value + {
+          __index: .key,
+          __priority: (.value | halt_priority),
+          __created_at: (.value.created_at // "")
+        }
+      | select(active)
+    ]
+    | sort_by(.__priority, .__created_at, .__index)
+    | last
+    | if . == null then empty else del(.__index, .__priority, .__created_at) end
+  ' "$RUN_STATE_JSON" 2>/dev/null
+}
+
+selected_active_halt_reason_id() {
+  selected_active_halt_json 2>/dev/null | jq -r '.reason_id // empty' 2>/dev/null || true
+}
+
+active_halt_reason_exists() {
+  local reason_id="$1"
+  [ -n "$reason_id" ] || return 1
+  [ -n "${RUN_STATE_JSON:-}" ] || return 1
+  [ -f "$RUN_STATE_JSON" ] || return 1
+  jq -e --arg reason_id "$reason_id" '
+    [(.halt_records // [])[]
+      | select((.status // "") == "paused" or (.status // "") == "terminated")
+      | select((.reason_id // "") == $reason_id)
+    ] | length > 0
+  ' "$RUN_STATE_JSON" >/dev/null 2>&1
+}
+
+resolved_run_failure_reason() {
+  local status="$1" reason="${2:-}" selected_reason
+  if [ "$status" != "completed" ]; then
+    selected_reason=$(selected_active_halt_reason_id)
+    if [ -n "$selected_reason" ]; then
+      printf '%s\n' "$selected_reason"
+      return 0
+    fi
+  fi
+  if is_halt_reason_id "$reason"; then
+    printf '%s\n' "$reason"
+  else
+    printf '%s\n' "$reason"
+  fi
 }
 
 halt_issue_context_json() {
@@ -1835,14 +1907,28 @@ write_halt_record() {
   if [ -f "$RUN_STATE_JSON" ]; then
     update_state_jq \
       --arg file "$rel_file" \
+      --arg created_at "$created_at" \
       --arg reason_id "$reason_id" \
       --arg halt_class "$halt_class" \
       --arg status "$status" \
+      --arg summary "$summary" \
       --arg next_command "$next_command" \
       --arg next_safe_action "$next_safe_action" \
       --argjson issue_context "$issue_context_json" \
+      --argjson details "$details_json" \
       '(.halt_records //= []) |
-       .halt_records += [{path:$file, reason_id:$reason_id, halt_class:$halt_class, status:$status, next_command:(if $next_command == "" then null else $next_command end), next_safe_action:$next_safe_action, issue_context:$issue_context}]'
+       .halt_records += [{
+         path:$file,
+         created_at:$created_at,
+         reason_id:$reason_id,
+         halt_class:$halt_class,
+         status:$status,
+         summary:$summary,
+         details:$details,
+         next_command:(if $next_command == "" then null else $next_command end),
+         next_safe_action:$next_safe_action,
+         issue_context:$issue_context
+       }]'
   fi
   emit_chain_event chain_halt_recorded "$issue_number" "$RUN_ID" "$chain_run_id" "$issue_run_id" "$status" 0 \
     "$(jq -cn --arg reason_id "$reason_id" --arg halt_class "$halt_class" --arg halt_record "$file" --arg next_safe_action "$next_safe_action" --argjson issue_context "$issue_context_json" --argjson details "$details_json" '{reason_id:$reason_id, halt_class:$halt_class, halt_record:$halt_record, next_safe_action:$next_safe_action, issue_context:$issue_context, details:$details}')"
@@ -2109,6 +2195,7 @@ append_phase_review_feedback() {
 run_phase_review_gate() {
   local kind="$1" boundary_id="$2" artifact="$3" chain_run_id="$4" issue_run_id="$5" chain_name="$6" issue="$7"
   local review_host actual_review_host fallback_from fallback_to fallback_reason cross_host_satisfied degraded_review degraded_reason next_cross_host_retry review_file review_meta review_rc verdict feedback review_started_at review_duration
+  local review_detail halt_details_json halt_next_safe_action
   review_host="${STUDIO_REVIEW_HOST:-claude-reviewer}"
   review_file="$PHASE_REVIEW_ROOT/$boundary_id-$kind-review.md"
 
@@ -2126,13 +2213,6 @@ run_phase_review_gate() {
   printf '%s\n' "$review_meta"
   review_duration=$(duration_since "$review_started_at")
 
-  if [ "$review_rc" -ne 0 ]; then
-    emit_chain_event chain_phase_review_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$review_duration" \
-      "$(jq -cn --arg kind "$kind" --arg boundary_id "$boundary_id" --arg review_host "$review_host" --arg exit_code "$review_rc" '{kind:$kind, boundary_id:$boundary_id, review_host:$review_host, exit_code:($exit_code|tonumber), reason_id:"reviewer_host_ineligible"}')"
-    write_halt_record "reviewer_host_ineligible" "$kind phase review wrapper failed for $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" >/dev/null || true
-    return 70
-  fi
-
   verdict=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_VERDICT=//p' | tail -1)
   [ -n "$verdict" ] || verdict="ambiguous"
   actual_review_host=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_HOST=//p' | tail -1)
@@ -2146,6 +2226,49 @@ run_phase_review_gate() {
   [ -n "$degraded_review" ] || degraded_review="0"
   degraded_reason=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_DEGRADED_REASON=//p' | tail -1)
   next_cross_host_retry=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_NEXT_CROSS_HOST_RETRY=//p' | tail -1)
+  review_detail=$(printf '%s\n' "$review_meta" | sed -n 's/^PHASE_REVIEW_FALLBACK_DETAIL=//p' | tail -1 | cut -c 1-500)
+  [ -n "$review_detail" ] || review_detail=$(printf '%s\n' "$review_meta" | sed -n 's/^phase-review: //p' | tail -1 | cut -c 1-500)
+  [ -n "$review_detail" ] || review_detail=$(printf '%s\n' "$review_meta" | awk 'NF { line=$0 } END { print line }' | cut -c 1-500)
+  halt_details_json=$(jq -cn \
+    --arg kind "$kind" \
+    --arg boundary_id "$boundary_id" \
+    --arg requested_review_host "$review_host" \
+    --arg review_host "$actual_review_host" \
+    --arg fallback_from "$fallback_from" \
+    --arg fallback_to "$fallback_to" \
+    --arg fallback_reason "$fallback_reason" \
+    --arg cross_host_satisfied "$cross_host_satisfied" \
+    --arg degraded_review "$degraded_review" \
+    --arg degraded_reason "$degraded_reason" \
+    --arg next_cross_host_retry "$next_cross_host_retry" \
+    --arg artifact "$artifact" \
+    --arg review "$review_file" \
+    --arg detail "$review_detail" \
+    --argjson exit_code "$review_rc" \
+    '{
+      kind:$kind,
+      boundary_id:$boundary_id,
+      requested_review_host:$requested_review_host,
+      review_host:$review_host,
+      exit_code:$exit_code,
+      artifact:$artifact,
+      review:$review,
+      cross_host_satisfied:$cross_host_satisfied,
+      degraded_review:($degraded_review == "1"),
+      wrapper_detail:(if $detail == "" then null else $detail end)
+    }
+    | if $fallback_from != "" then . + {fallback_from:$fallback_from, fallback_to:$fallback_to, fallback_reason:$fallback_reason} else . end
+    | if $degraded_reason != "" then . + {degraded_reason:$degraded_reason} else . end
+    | if $next_cross_host_retry != "" then . + {next_cross_host_retry:$next_cross_host_retry} else . end')
+
+  if [ "$review_rc" -ne 0 ]; then
+    emit_chain_event chain_phase_review_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$review_duration" \
+      "$(jq -cn --arg kind "$kind" --arg boundary_id "$boundary_id" --arg review_host "$review_host" --arg exit_code "$review_rc" --arg reason_id "reviewer_host_ineligible" --argjson details "$halt_details_json" '{kind:$kind, boundary_id:$boundary_id, review_host:$review_host, exit_code:($exit_code|tonumber), reason_id:$reason_id, details:$details}')"
+    halt_next_safe_action="Inspect the phase-review wrapper output and reviewer eligibility details, restore a usable sibling reviewer or choose an explicit human recovery path, then resume the chain."
+    write_halt_record "reviewer_host_ineligible" "$kind phase review wrapper failed for $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" "$halt_details_json" "$halt_next_safe_action" >/dev/null || true
+    return 70
+  fi
+
   feedback="[]"
   if [ "$kind" = "outcome" ] && [ -f "$review_file" ]; then
     feedback=$(compact_phase_review_feedback_json "$review_file")
@@ -2181,11 +2304,13 @@ run_phase_review_gate() {
       return 0
       ;;
     blocked)
-      write_halt_record "reviewer_blocked" "$kind phase review blocked $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" >/dev/null || true
+      halt_next_safe_action="Inspect the phase review artifact, resolve the fatal reviewer findings, rerun sibling review, then resume the chain."
+      write_halt_record "reviewer_blocked" "$kind phase review blocked $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" "$halt_details_json" "$halt_next_safe_action" >/dev/null || true
       return 71
       ;;
     ambiguous|*)
-      write_halt_record "reviewer_ambiguous" "$kind phase review verdict was ambiguous for $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" >/dev/null || true
+      halt_next_safe_action="Inspect the phase review artifact and wrapper output, clarify the reviewer verdict, rerun sibling review, then resume the chain."
+      write_halt_record "reviewer_ambiguous" "$kind phase review verdict was ambiguous for $boundary_id" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue" "parent-runner" "$halt_details_json" "$halt_next_safe_action" >/dev/null || true
       return 72
       ;;
   esac
@@ -3758,13 +3883,21 @@ generate_run_report() {
           | if ($ctx.issue_number // null) == null then "unknown"
             else "#\($ctx.issue_number)\(if ($ctx.title // "") == "" then "" else " " + ($ctx.title | tostring | gsub("\\|"; "\\|")) end)"
             end;
+        def detail_cell:
+          (.details // null) as $details
+          | if $details == null then "missing"
+            elif ($details | type) == "object" or ($details | type) == "array" then ($details | tojson)
+            else ($details | tostring)
+            end
+          | gsub("\\|"; "\\|")
+          | .[0:240];
         (.halt_records // []) as $records
         | ($records | map(select((.status // "") == "paused" or (.status // "") == "terminated"))) as $active
         | ($records | map(select((.status // "") == "superseded"))) as $superseded
         | if ($active | length) > 0 then
-            ["| Reason | Class | Status | Issue | Issue-run UUID | Next Safe Action | Next Command | Artifact |",
-             "|---|---|---|---|---|---|---|---|"],
-            ($active[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(issue_label) | \(cell(.issue_context.issue_run_id)) | \(cell(.next_safe_action)) | \(.next_command // "hard stop") | \(.path // "missing") |")
+            ["| Reason | Class | Status | Issue | Issue-run UUID | Summary | Details | Next Safe Action | Next Command | Artifact |",
+             "|---|---|---|---|---|---|---|---|---|---|"],
+            ($active[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(issue_label) | \(cell(.issue_context.issue_run_id)) | \(cell(.summary)) | \(detail_cell) | \(cell(.next_safe_action)) | \(.next_command // "hard stop") | \(.path // "missing") |")
           elif ($superseded | length) > 0 then
             "No active halt records. Superseded halt records: \($superseded | length) (run completed after resume).",
             "",
@@ -3972,6 +4105,7 @@ render_run_finish_summary() {
 finish_run() {
   local status="${1:-$RUN_STATUS}" reason="${2:-$RUN_FAILURE_REASON}" duration_s
   RUN_FINISHED=1
+  reason=$(resolved_run_failure_reason "$status" "$reason")
   RUN_STATUS="$status"
   RUN_FAILURE_REASON="$reason"
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -3998,15 +4132,20 @@ finish_run() {
 }
 
 abort_run() {
-  local reason="${1:-failed}"
-  write_halt_record "$(halt_reason_for_text "$reason")" "$reason" >/dev/null || log "halt record write failed for: $reason"
+  local reason="${1:-failed}" reason_id
+  reason_id=$(halt_reason_for_text "$reason")
+  if ! active_halt_reason_exists "$reason_id"; then
+    write_halt_record "$reason_id" "$reason" >/dev/null || log "halt record write failed for: $reason"
+  fi
   finish_run failed "$reason"
   exit 1
 }
 
 abort_run_with_reason() {
   local reason_id="$1" summary="$2"
-  write_halt_record "$reason_id" "$summary" >/dev/null || log "halt record write failed for: $summary"
+  if ! active_halt_reason_exists "$reason_id"; then
+    write_halt_record "$reason_id" "$summary" >/dev/null || log "halt record write failed for: $summary"
+  fi
   finish_run failed "$summary"
   exit 1
 }
@@ -4498,7 +4637,7 @@ acquire_state_lock() {
 
 supervisor_decide_next() {
   local manifest="$1" mode="$2" states completed=0 eligible=0 hard_stop=0 escrow=0
-  local state run_id selected_state="" selected_run_id="" candidates_json action reason_id
+  local state run_id selected_run_id="" candidates_json action reason_id
   local state_view state_status
   MANIFEST="$manifest"
   resolve_new_run_manifest_context
@@ -4532,7 +4671,6 @@ supervisor_decide_next() {
       continue
     fi
     eligible=$((eligible + 1))
-    selected_state="$state"
     selected_run_id="$run_id"
     candidates_json=$(printf '%s' "$candidates_json" | jq --arg run_id "$run_id" '. + [$run_id]')
     rm -f "$state_view"
@@ -6185,7 +6323,7 @@ run_issue_job() {
         72) phase_review_reason="reviewer_ambiguous" ;;
         *) phase_review_reason="required_review_failed" ;;
       esac
-      mark_issue_state "$issue_run_id" failed "$before" "$before" "" "phase_review_failed"
+      mark_issue_state "$issue_run_id" failed "$before" "$before" "" "$phase_review_reason"
       jq -n --arg issue "$issue" --arg reason "$phase_review_reason" \
         '{status:"failed", issue:($issue|tonumber), reason:$reason}' > "$result_file"
       return 0
@@ -6370,7 +6508,7 @@ run_issue_job() {
         *) phase_review_reason="required_review_failed" ;;
       esac
       emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$issue_duration" "$summary_payload"
-      mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "phase_review_failed"
+      mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "$phase_review_reason"
       jq -n --arg issue "$issue" --arg reason "$phase_review_reason" \
         '{status:"failed", issue:($issue|tonumber), reason:$reason}' > "$result_file"
       return 0
@@ -6709,7 +6847,7 @@ reconcile_resume_issue_summary() {
         *) phase_review_reason="required_review_failed" ;;
       esac
       emit_chain_event chain_issue_completed "$issue" "$RUN_ID" "$chain_run_id" "$issue_run_id" failed "$duration_s" "$payload"
-      mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "phase_review_failed"
+      mark_issue_state "$issue_run_id" failed "$before" "$after" "$summary_file" "$phase_review_reason"
       SCHEDULER_FAILURE_REASON="$phase_review_reason"
       return 2
     fi

@@ -71,7 +71,7 @@
       "name": "failed-chain",
       "chain_run_id": "chain-failed",
       "status": "failed",
-      "failure_reason": "phase_review_failed",
+      "failure_reason": "reviewer_blocked",
       "issues": [
         {
           "number": 950,
