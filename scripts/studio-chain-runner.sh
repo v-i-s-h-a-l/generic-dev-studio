@@ -5461,7 +5461,7 @@ git_metadata_strategy_for_host() {
 }
 
 host_resolver_bypassed() {
-  case "${STUDIO_BYPASS_HOST_RESOLVER:-0}" in
+  case "${STUDIO_BYPASS_AUTO_HOST_ELIGIBILITY:-0}" in
     1|true|TRUE|yes|YES) return 0 ;;
     *) return 1 ;;
   esac
@@ -5678,6 +5678,35 @@ EOF
   return 1
 }
 
+resolve_auto_worker_host_with_bypass() {
+  local candidates profile runner_host eligibility_json record
+  candidates=$(host_profile_list_for_capability worker) || return 1
+  profile=$(printf '%s\n' "$candidates" | sed -n '1p')
+  if [ -z "$profile" ]; then
+    printf 'studio-chain-runner: no auto worker host profile available for bypassed host eligibility\n' >&2
+    return 1
+  fi
+
+  runner_host=$(chain_runner_host_for_profile "$profile")
+  if ! chain_runner_host_has_manifest "$runner_host"; then
+    eligibility_json=$(jq -cn \
+      --arg detail "host eligibility bypassed via STUDIO_BYPASS_AUTO_HOST_ELIGIBILITY; first worker profile $profile has no capabilities manifest for runner host $runner_host" \
+      '{outcome:"unknown", detail:$detail}')
+    record=$(host_eligibility_record_json resolver "$profile" "$runner_host" false manifest-missing "$eligibility_json")
+    append_host_eligibility_record_file "$record"
+    printf 'studio-chain-runner: bypassed auto host candidate %s has no capabilities manifest for runner host %s\n' "$profile" "$runner_host" >&2
+    return 1
+  fi
+
+  printf 'studio-chain-runner: host eligibility bypassed via STUDIO_BYPASS_AUTO_HOST_ELIGIBILITY; using first worker profile %s as runner host %s\n' "$profile" "$runner_host" >&2
+  eligibility_json=$(jq -cn \
+    --arg detail "host eligibility bypassed via STUDIO_BYPASS_AUTO_HOST_ELIGIBILITY; first worker profile $profile selected as runner host $runner_host" \
+    '{outcome:"unknown", detail:$detail}')
+  record=$(host_eligibility_record_json resolver "$profile" "$runner_host" true bypassed "$eligibility_json")
+  append_host_eligibility_record_file "$record"
+  printf '%s\n' "$runner_host"
+}
+
 resolve_auto_worker_host_with_eligibility() {
   local candidates profile runner_host eligibility outcome detail duration_ms record
   candidates=$(host_profile_list_for_capability worker) || return 1
@@ -5746,12 +5775,8 @@ resolve_chain_worker_host() {
     return 0
   fi
   if host_resolver_bypassed; then
-    printf 'studio-chain-runner: host resolver bypassed via STUDIO_BYPASS_HOST_RESOLVER; using legacy auto host codex\n' >&2
-    eligibility_json=$(jq -cn '{outcome:"unknown", detail:"host resolver bypassed via STUDIO_BYPASS_HOST_RESOLVER; legacy auto host codex selected"}')
-    record=$(host_eligibility_record_json resolver codex codex true bypassed "$eligibility_json")
-    append_host_eligibility_record_file "$record"
-    printf 'codex\n'
-    return 0
+    resolve_auto_worker_host_with_bypass
+    return $?
   fi
   if [ "$DRY_RUN" -eq 1 ]; then
     resolve_auto_worker_host_without_smoke
@@ -5796,11 +5821,11 @@ host_preflight() {
     return 0
   fi
   if host_resolver_bypassed; then
-    eligibility=$(jq -cn '{outcome:"unknown", detail:"host eligibility preflight bypassed via STUDIO_BYPASS_HOST_RESOLVER"}')
+    eligibility=$(jq -cn '{outcome:"unknown", detail:"host eligibility preflight bypassed via STUDIO_BYPASS_AUTO_HOST_ELIGIBILITY"}')
     record=$(host_eligibility_record_json preflight "$host" "$host" true bypassed "$eligibility")
     HOST_PREFLIGHT_LAST_DETAILS_JSON=$(host_eligibility_halt_details_json preflight "${CURRENT_CHAIN_NAME:-}" "$host" "$host" "[$record]" "host eligibility preflight bypassed for host=$host")
     append_chain_host_eligibility_record "$record"
-    printf 'studio-chain-runner: host eligibility preflight bypassed for host=%s via STUDIO_BYPASS_HOST_RESOLVER\n' "$host" >&2
+    printf 'studio-chain-runner: host eligibility preflight bypassed for host=%s via STUDIO_BYPASS_AUTO_HOST_ELIGIBILITY\n' "$host" >&2
   else
     profile=$(chain_host_profile_for_runner_host "$host")
     eligibility=$(host_eligibility_check "$profile") || {
