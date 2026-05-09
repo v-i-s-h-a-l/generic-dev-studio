@@ -27,13 +27,19 @@
 #   2l. lint-runtime-paths.sh --staged — block raw `$HOME/.dev-studio` /
 #       `~/.dev-studio` / `${HOME}/.dev-studio` formulas in newly-added
 #       lines outside the resolver layer (#710 Phase C1, #814).
+#   2n. lint-synthetic-home.sh --staged — block ad-hoc synthetic-home
+#       special casing (`case "$HOME"`, `[ "$HOME" = ... ]`, raw
+#       `.codex-homes` references) outside scripts/lib-studio-context.sh /
+#       scripts/lib-paths.sh (#710 Phase C3, #816).
 #   3.  privacy gate — reject if staged diff leaks another project's runtime.
 #
 # Main-branch commit guard bypass: `STUDIO_BYPASS_MAIN_COMMIT_GUARD=1 git commit ...`.
 # Chain workflow docs guard bypass: `STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1 git commit ...`.
 # HTML theme guard bypass: `STUDIO_BYPASS_HTML_THEME_GUARD=1 git commit ...`.
 # Runtime path lint bypass: `STUDIO_BYPASS_RUNTIME_PATH_LINT=1 git commit ...`.
-# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/2g/2h/2i/2j/2k/2l/3.
+# GH wrapper lint bypass: `STUDIO_BYPASS_GH_WRAPPER_LINT=1 git commit ...`.
+# Synthetic-home lint bypass: `STUDIO_BYPASS_SYNTHETIC_HOME_LINT=1 git commit ...`.
+# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/2g/2h/2i/2j/2k/2l/2m/2n/3.
 # Gates 1+1b (manifest regens) always run because stale manifests leak
 # downstream.
 # LLM review is not part of the default hook path. Run
@@ -247,6 +253,17 @@ if [ -x "$SCRIPTS/lint-gh-wrapper.sh" ]; then
   if [ "$rc" -ne 0 ]; then
     printf '\npre-commit: raw `gh` invocation found outside the wrapper layer — call scripts/studio-gh.sh (assistant-initiated) or with_login_home_for_github (in-script) per CLAUDE.md §GitHub CLI home normalization\n' >&2
     printf 'bypass (emergencies only): STUDIO_BYPASS_GH_WRAPPER_LINT=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2n — synthetic-home special-casing linter (#710 Phase C3, #816).
+if [ -x "$SCRIPTS/lint-synthetic-home.sh" ]; then
+  "$SCRIPTS/lint-synthetic-home.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: ad-hoc synthetic-home special casing found outside the resolver layer — call scripts/lib-paths.sh `studio_home_is_synthetic` or scripts/lib-studio-context.sh `_studio_context_login_home` instead of inline `case "$HOME"` / `[ "$HOME" = ... ]` / `.codex-homes` checks per CLAUDE.md §Where workflow rules live\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_SYNTHETIC_HOME_LINT=1 git commit ...\n' >&2
     exit 1
   fi
 fi
