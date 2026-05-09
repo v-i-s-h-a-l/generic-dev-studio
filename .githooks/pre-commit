@@ -21,6 +21,9 @@
 #       usage text, and regression fixtures aligned.
 #   2k. lint-html-theme.sh --staged — generated HTML must support light/dark
 #       mode and adapt to the OS setting by default.
+#   2m. lint-gh-wrapper.sh --staged — block raw `gh` invocations outside
+#       scripts/studio-gh.sh / with_login_home_for_github (#710 Phase C2,
+#       #815).
 #   2l. lint-runtime-paths.sh --staged — block raw `$HOME/.dev-studio` /
 #       `~/.dev-studio` / `${HOME}/.dev-studio` formulas in newly-added
 #       lines outside the resolver layer (#710 Phase C1, #814).
@@ -233,6 +236,17 @@ if [ -x "$SCRIPTS/lint-runtime-paths.sh" ]; then
   if [ "$rc" -ne 0 ]; then
     printf '\npre-commit: raw $HOME/.dev-studio path formula found outside the resolver layer — call scripts/lib-paths.sh helpers (project_runtime_dir, project_state_dir, runtime_global_dir) or scripts/lib-studio-context.sh (STUDIO_CONTEXT_STUDIO_HOME) instead\n' >&2
     printf 'bypass (emergencies only): STUDIO_BYPASS_RUNTIME_PATH_LINT=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2m — raw `gh` invocation linter (#710 Phase C2, #815).
+if [ -x "$SCRIPTS/lint-gh-wrapper.sh" ]; then
+  "$SCRIPTS/lint-gh-wrapper.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: raw `gh` invocation found outside the wrapper layer — call scripts/studio-gh.sh (assistant-initiated) or with_login_home_for_github (in-script) per CLAUDE.md §GitHub CLI home normalization\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_GH_WRAPPER_LINT=1 git commit ...\n' >&2
     exit 1
   fi
 fi
