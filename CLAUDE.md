@@ -192,6 +192,19 @@ Assistant-initiated GitHub CLI calls in this repo MUST go through `scripts/studi
 
 User-controlled override for intentional isolation tests: `STUDIO_BYPASS_PARENT_HOME_FLIP=1`. Assistants must not set it to bypass a failing GitHub operation.
 
+The wrapper requirement is mechanically enforced by `scripts/lint-gh-wrapper.sh`,
+which blocks raw `gh ...` invocations in `scripts/*.sh`, `core/**/*.sh`, and
+`hooks/*` outside the wrapper layer (`scripts/studio-gh.sh`,
+`scripts/lib-studio-context.sh`). Approved patterns: calls routed through
+`scripts/studio-gh.sh`, the `with_login_home_for_github` helper, or the
+`gh_api_json` helper. `STUDIO_BYPASS_GH_WRAPPER_LINT=1` is the
+emergency/debug lever for `scripts/lint-gh-wrapper.sh` and the pre-commit
+gate; it emits a stderr audit line when set. Per-line carve-outs use
+`# lint-gh-wrapper:allow next-line — <reason>`. Pre-existing call sites are
+captured in `scripts/lint-gh-wrapper-allowlist.txt` and tracked under #710
+Phase E for migration; the bypass and the annotation are user-controlled and
+must not be used silently by an assistant.
+
 ## Backlog
 
 The canonical actionable backlog is the GitHub Projects v2 board documented in
