@@ -59,6 +59,8 @@
         "missing_dependencies",
         "parallel_write_races",
         "packet_conflicts",
+        "empty_allowed_paths",
+        "fragment_labels",
         "unresolved_missing_details"
       ],
       "properties": {
@@ -74,6 +76,14 @@
         "packet_conflicts": {
           "type": "array",
           "items": { "$ref": "#/$defs/packetConflict" }
+        },
+        "empty_allowed_paths": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/emptyAllowedPaths" }
+        },
+        "fragment_labels": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fragmentLabel" }
         },
         "unresolved_missing_details": {
           "type": "array",
@@ -117,6 +127,11 @@
           "items": { "type": "string" },
           "uniqueItems": true
         },
+        "allowed_paths_unscoped": { "type": "boolean" },
+        "allowed_paths_unscoped_justification": {
+          "type": "string",
+          "minLength": 1
+        },
         "status": { "enum": ["ready", "blocked"] }
       },
       "additionalProperties": false
@@ -158,6 +173,24 @@
       "required": ["source_id", "text"],
       "properties": {
         "source_id": { "type": "string" },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "emptyAllowedPaths": {
+      "type": "object",
+      "required": ["node_id", "text"],
+      "properties": {
+        "node_id": { "type": "string" },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "fragmentLabel": {
+      "type": "object",
+      "required": ["node_id", "text"],
+      "properties": {
+        "node_id": { "type": "string" },
         "text": { "type": "string" }
       },
       "additionalProperties": false
