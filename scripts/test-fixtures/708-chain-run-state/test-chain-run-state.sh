@@ -119,6 +119,22 @@ jq -e '.status == "repaired" and .repaired == true and (.backup | length > 0)' "
 jq -e '.projection.source == "events.jsonl" and .chains[0].issues[0].status == "completed"' "$state" >/dev/null \
   || fail "state.json was not repaired from projection"
 
+invalid_summary="$TMPROOT/invalid-summary.json"
+(
+  chain_run_state_projection_file() { : > "$3"; return 0; }
+  chain_run_state_reconcile_file "$state" "$events" resume-startup > "$invalid_summary"
+) && fail "reconcile did not flag empty projection output"
+jq -e '.status == "projection_invalid"' "$invalid_summary" >/dev/null \
+  || fail "reconcile did not report projection_invalid for empty projection output"
+
+malformed_summary="$TMPROOT/malformed-summary.json"
+(
+  chain_run_state_projection_file() { printf 'not json\n' > "$3"; return 0; }
+  chain_run_state_reconcile_file "$state" "$events" resume-startup > "$malformed_summary"
+) && fail "reconcile did not flag malformed projection JSON"
+jq -e '.status == "projection_invalid"' "$malformed_summary" >/dev/null \
+  || fail "reconcile did not report projection_invalid for malformed projection output"
+
 rows="$TMPROOT/monitor-rows.json"
 fixture_now=$(jq -nr '"2026-05-07T00:10:00Z" | fromdateiso8601')
 chain_monitor_claims_from_persisted_run_json "$run_id" "$state" "$fixture_now" 3600 300 > "$rows"

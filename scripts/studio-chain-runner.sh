@@ -2335,7 +2335,15 @@ reconcile_resume_state_projection_or_halt() {
   reconcile_rc=$?
   set -e
   if [ "$reconcile_rc" -ne 0 ]; then
-    write_halt_record "chain_state_projection_invalid" "resume startup could not derive chain run projection from events: $RUN_STATE_JSON" >/dev/null || true
+    status=$(jq -r '.status // "unknown"' "$summary_file" 2>/dev/null || printf 'unknown')
+    case "$status" in
+      backup_failed|repair_projection_metadata_failed|repair_output_invalid|repair_write_failed)
+        write_halt_record "chain_state_projection_repair_failed" "resume startup could not repair chain run state projection ($status): $RUN_STATE_JSON" >/dev/null || true
+        ;;
+      *)
+        write_halt_record "chain_state_projection_invalid" "resume startup could not derive chain run projection from events ($status): $RUN_STATE_JSON" >/dev/null || true
+        ;;
+    esac
     rm -f "$summary_file"
     exit 2
   fi

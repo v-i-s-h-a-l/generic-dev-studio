@@ -210,6 +210,11 @@ chain_run_state_reconcile_file() {
     jq -cn --arg status "projection_failed" --arg state "$state_path" --arg events "$events_path" '{status:$status,state:$state,events:$events}'
     return 1
   fi
+  if [ ! -s "$projection" ] || ! jq empty "$projection" >/dev/null 2>&1; then
+    rm -f "$projection" "$tmp"
+    jq -cn --arg status "projection_invalid" --arg state "$state_path" --arg events "$events_path" '{status:$status,state:$state,events:$events}'
+    return 1
+  fi
 
   mismatch=$(chain_run_state_projection_mismatch_json "$state_path" "$projection")
   if [ "$(printf '%s\n' "$mismatch" | jq -r '.status')" = "ok" ]; then
@@ -242,6 +247,11 @@ chain_run_state_reconcile_file() {
   then
     rm -f "$projection" "$tmp"
     jq -cn --arg status "repair_projection_metadata_failed" --arg state "$state_path" --arg events "$events_path" --arg backup "$backup" '{status:$status,state:$state,events:$events,backup:$backup}'
+    return 1
+  fi
+  if [ ! -s "$tmp" ] || ! jq empty "$tmp" >/dev/null 2>&1; then
+    rm -f "$projection" "$tmp"
+    jq -cn --arg status "repair_output_invalid" --arg state "$state_path" --arg events "$events_path" --arg backup "$backup" '{status:$status,state:$state,events:$events,backup:$backup}'
     return 1
   fi
   if ! mv "$tmp" "$state_path"; then

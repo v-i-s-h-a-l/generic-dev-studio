@@ -339,6 +339,8 @@
         "telemetry_artifact_malformed",
         "telemetry_artifact_missing",
         "manifest_schema_version_mismatch",
+        "chain_state_projection_invalid",
+        "chain_state_projection_repair_failed",
         "secret_detected",
         "destructive_change_required",
         "permission_expansion_required",
@@ -390,6 +392,8 @@
                 "telemetry_artifact_malformed",
                 "telemetry_artifact_missing",
                 "manifest_schema_version_mismatch",
+                "chain_state_projection_invalid",
+                "chain_state_projection_repair_failed",
                 "implementation_scope_blocked",
                 "checkpoint_drift_detected"
               ]
