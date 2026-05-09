@@ -21,7 +21,7 @@ Usage:
   scripts/manager-feature-config.sh [--project <slug>] enable <feature> [options]
   scripts/manager-feature-config.sh [--project <slug>] disable <feature>
   scripts/manager-feature-config.sh [--project <slug>] set <setting> <value> [--dry-run]
-  scripts/manager-feature-config.sh [--project <slug>] doctor [feature]
+  scripts/manager-feature-config.sh [--project <slug>] doctor [feature|branch_policy|all]
 
 Feature options:
   --default-release-base <branch>  Required by release_branch_workflow
@@ -100,6 +100,27 @@ feature_names() {
 
 setting_key() {
   case "$1" in
+    branch_policy.schema_version|branch-policy.schema-version|branch_policy_schema_version)
+      printf 'STUDIO_BRANCH_POLICY_SCHEMA_VERSION\n'
+      ;;
+    branch_policy.default_base|branch-policy.default-base|branch_policy_default_base)
+      printf 'STUDIO_BRANCH_POLICY_DEFAULT_BASE\n'
+      ;;
+    branch_policy.release_branch_pattern|branch-policy.release-branch-pattern|branch_policy_release_branch_pattern)
+      printf 'STUDIO_BRANCH_POLICY_RELEASE_BRANCH_PATTERN\n'
+      ;;
+    branch_policy.allow_feature_off_feature|branch-policy.allow-feature-off-feature|branch_policy_allow_feature_off_feature)
+      printf 'STUDIO_BRANCH_POLICY_ALLOW_FEATURE_OFF_FEATURE\n'
+      ;;
+    branch_policy.merge_target_to_main|branch-policy.merge-target-to-main|branch_policy_merge_target_to_main)
+      printf 'STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN\n'
+      ;;
+    branch_policy.worktree_gc_scope|branch-policy.worktree-gc-scope|branch_policy_worktree_gc_scope)
+      printf 'STUDIO_BRANCH_POLICY_WORKTREE_GC_SCOPE\n'
+      ;;
+    branch_policy.worktree_disk_budget_mb|branch-policy.worktree-disk-budget-mb|branch_policy_worktree_disk_budget_mb)
+      printf 'STUDIO_BRANCH_POLICY_WORKTREE_DISK_BUDGET_MB\n'
+      ;;
     release_branch_workflow.default_release_base|default_release_base|default-release-base)
       printf 'STUDIO_RELEASE_BRANCH_DEFAULT_BASE\n'
       ;;
@@ -112,6 +133,138 @@ setting_key() {
     *)
       return 1
       ;;
+  esac
+}
+
+branch_policy_key_name() {
+  case "$1" in
+    schema_version) printf 'STUDIO_BRANCH_POLICY_SCHEMA_VERSION\n' ;;
+    default_base) printf 'STUDIO_BRANCH_POLICY_DEFAULT_BASE\n' ;;
+    release_branch_pattern) printf 'STUDIO_BRANCH_POLICY_RELEASE_BRANCH_PATTERN\n' ;;
+    allow_feature_off_feature) printf 'STUDIO_BRANCH_POLICY_ALLOW_FEATURE_OFF_FEATURE\n' ;;
+    merge_target_to_main) printf 'STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN\n' ;;
+    worktree_gc_scope) printf 'STUDIO_BRANCH_POLICY_WORKTREE_GC_SCOPE\n' ;;
+    worktree_disk_budget_mb) printf 'STUDIO_BRANCH_POLICY_WORKTREE_DISK_BUDGET_MB\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+branch_policy_default_value() {
+  case "$1" in
+    schema_version) printf '1\n' ;;
+    default_base) printf '%s\n' "${STUDIO_RELEASE_BRANCH_DEFAULT_BASE:-main}" ;;
+    release_branch_pattern)
+      if [ -n "${STUDIO_RELEASE_BRANCH_PATTERN:-}" ]; then
+        printf '%s\n' "$STUDIO_RELEASE_BRANCH_PATTERN"
+      else
+        printf 'release/{version}\n'
+      fi
+      ;;
+    allow_feature_off_feature) printf '0\n' ;;
+    merge_target_to_main) printf '1\n' ;;
+    worktree_gc_scope) printf 'project\n' ;;
+    worktree_disk_budget_mb) printf '10240\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+branch_policy_fields() {
+  printf '%s\n' \
+    schema_version \
+    default_base \
+    release_branch_pattern \
+    allow_feature_off_feature \
+    merge_target_to_main \
+    worktree_gc_scope \
+    worktree_disk_budget_mb
+}
+
+sync_legacy_release_aliases() {
+  local field="$1" value="$2"
+  case "$field" in
+    default_base)
+      write_setting STUDIO_RELEASE_BRANCH_DEFAULT_BASE "$value"
+      ;;
+    release_branch_pattern)
+      write_setting STUDIO_RELEASE_BRANCH_PATTERN "$value"
+      ;;
+  esac
+}
+
+write_branch_policy_field() {
+  local field="$1" value="$2" key
+  key=$(branch_policy_key_name "$field") || return 1
+  write_setting "$key" "$value" || return 1
+  sync_legacy_release_aliases "$field" "$value"
+}
+
+branch_policy_value() {
+  local field="$1" key value
+  key=$(branch_policy_key_name "$field") || return 1
+  value=$(value_of "$key")
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+  branch_policy_default_value "$field"
+}
+
+branch_policy_configured_value() {
+  local field="$1" key value
+  key=$(branch_policy_key_name "$field") || return 1
+  value=$(value_of "$key")
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+  case "$field" in
+    default_base) value=$(value_of STUDIO_RELEASE_BRANCH_DEFAULT_BASE) ;;
+    release_branch_pattern) value=$(value_of STUDIO_RELEASE_BRANCH_PATTERN) ;;
+    *) value="" ;;
+  esac
+  [ -n "$value" ] && printf '%s\n' "$value"
+}
+
+ensure_branch_policy_namespace() {
+  local field key value
+  while IFS= read -r field; do
+    key=$(branch_policy_key_name "$field")
+    if [ -z "$(value_of "$key")" ]; then
+      value=$(branch_policy_default_value "$field")
+      write_branch_policy_field "$field" "$value" || return 1
+    fi
+  done <<EOF
+$(branch_policy_fields)
+EOF
+}
+
+normalize_bool() {
+  case "$1" in
+    1|true|TRUE|yes|YES|on|ON) printf '1\n' ;;
+    0|false|FALSE|no|NO|off|OFF) printf '0\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+valid_branch_name() {
+  git check-ref-format --branch "$1" >/dev/null 2>&1
+}
+
+valid_release_pattern() {
+  local pattern="$1" probe
+  case "$pattern" in
+    *'{version}'*) ;;
+    *) return 1 ;;
+  esac
+  probe=${pattern//\{version\}/1.0.0}
+  valid_branch_name "$probe"
+}
+
+valid_positive_integer() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+    0) return 1 ;;
+    *) return 0 ;;
   esac
 }
 
@@ -149,13 +302,14 @@ feature_enabled() {
 
 missing_release_branch_inputs() {
   local missing=""
-  [ -n "$(value_of STUDIO_RELEASE_BRANCH_DEFAULT_BASE)" ] || missing="${missing} default_release_base"
-  [ -n "$(value_of STUDIO_RELEASE_BRANCH_PATTERN)" ] || missing="${missing} branch_pattern"
+  [ -n "$(branch_policy_configured_value default_base)" ] || missing="${missing} default_release_base"
+  [ -n "$(branch_policy_configured_value release_branch_pattern)" ] || missing="${missing} branch_pattern"
   printf '%s\n' "${missing# }"
 }
 
 cmd_list() {
   local feature key status missing
+  ensure_branch_policy_namespace || return 1
   printf 'Project: %s\n' "$PROJECT"
   printf 'Config: %s\n\n' "$CONFIG_FILE"
   printf '%-28s %-10s %s\n' "FEATURE" "STATUS" "DETAIL"
@@ -172,10 +326,26 @@ cmd_list() {
   done <<EOF
 $(feature_names)
 EOF
+  printf '\nBranch policy:\n'
+  printf '  default_base: %s\n' "$(branch_policy_value default_base)"
+  printf '  release_branch_pattern: %s\n' "$(branch_policy_value release_branch_pattern)"
+  printf '  allow_feature_off_feature: %s\n' "$(branch_policy_value allow_feature_off_feature)"
+  printf '  merge_target_to_main: %s\n' "$(branch_policy_value merge_target_to_main)"
+  printf '  worktree_gc_scope: %s\n' "$(branch_policy_value worktree_gc_scope)"
+  printf '  worktree_disk_budget_mb: %s\n' "$(branch_policy_value worktree_disk_budget_mb)"
 }
 
 cmd_get() {
   local name="${1:?usage: get <feature|setting>}" key
+  if [ "$name" = "branch_policy" ] || [ "$name" = "branch-policy" ]; then
+    ensure_branch_policy_namespace || return 1
+    while IFS= read -r key; do
+      printf '%s=%s\n' "$(branch_policy_key_name "$key")" "$(branch_policy_value "$key")"
+    done <<EOF
+$(branch_policy_fields)
+EOF
+    return 0
+  fi
   if feature_exists "$name"; then
     key=$(feature_key "$name")
     printf '%s=%s\n' "$key" "$(value_of "$key")"
@@ -185,6 +355,21 @@ cmd_get() {
     printf 'manager-feature-config: unknown feature or setting: %s\n' "$name" >&2
     return 2
   }
+  case "$key" in
+    STUDIO_BRANCH_POLICY_*) ensure_branch_policy_namespace || return 1 ;;
+  esac
+  case "$key" in
+    STUDIO_RELEASE_BRANCH_DEFAULT_BASE)
+      ensure_branch_policy_namespace || return 1
+      printf '%s=%s\n' "$key" "$(branch_policy_value default_base)"
+      return 0
+      ;;
+    STUDIO_RELEASE_BRANCH_PATTERN)
+      ensure_branch_policy_namespace || return 1
+      printf '%s=%s\n' "$key" "$(branch_policy_value release_branch_pattern)"
+      return 0
+      ;;
+  esac
   printf '%s=%s\n' "$key" "$(value_of "$key")"
 }
 
@@ -200,14 +385,21 @@ cmd_enable() {
       *) printf 'manager-feature-config: enable unknown arg: %s\n' "$1" >&2; return 2 ;;
     esac
   done
-  [ -n "$base" ] && write_setting STUDIO_RELEASE_BRANCH_DEFAULT_BASE "$base"
-  [ -n "$pattern" ] && write_setting STUDIO_RELEASE_BRANCH_PATTERN "$pattern"
+  if [ -n "$base" ]; then
+    valid_branch_name "$base" || { printf 'manager-feature-config: invalid default release base: %s\n' "$base" >&2; return 2; }
+    write_branch_policy_field default_base "$base"
+  fi
+  if [ -n "$pattern" ]; then
+    valid_release_pattern "$pattern" || { printf 'manager-feature-config: branch pattern must be a valid branch pattern containing {version}: %s\n' "$pattern" >&2; return 2; }
+    write_branch_policy_field release_branch_pattern "$pattern"
+  fi
   missing=$(missing_release_branch_inputs)
   if [ -n "$missing" ]; then
     printf 'manager-feature-config: cannot enable %s; missing required input(s): %s\n' "$feature" "$missing" >&2
     printf 'fix: add --default-release-base <branch> --branch-pattern <pattern>\n' >&2
     return 2
   fi
+  ensure_branch_policy_namespace || return 1
   key=$(feature_key "$feature")
   write_setting "$key" "1"
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -236,12 +428,120 @@ cmd_set() {
     printf 'manager-feature-config: unknown setting: %s\n' "$name" >&2
     return 2
   }
-  write_setting "$key" "$value"
+  case "$key" in
+    STUDIO_BRANCH_POLICY_DEFAULT_BASE)
+      valid_branch_name "$value" || { printf 'manager-feature-config: invalid branch_policy.default_base: %s\n' "$value" >&2; return 2; }
+      write_branch_policy_field default_base "$value"
+      ;;
+    STUDIO_BRANCH_POLICY_RELEASE_BRANCH_PATTERN)
+      valid_release_pattern "$value" || { printf 'manager-feature-config: branch_policy.release_branch_pattern must be a valid branch pattern containing {version}: %s\n' "$value" >&2; return 2; }
+      write_branch_policy_field release_branch_pattern "$value"
+      ;;
+    STUDIO_BRANCH_POLICY_ALLOW_FEATURE_OFF_FEATURE)
+      value=$(normalize_bool "$value") || { printf 'manager-feature-config: branch_policy.allow_feature_off_feature must be true or false\n' >&2; return 2; }
+      write_branch_policy_field allow_feature_off_feature "$value"
+      ;;
+    STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN)
+      value=$(normalize_bool "$value") || { printf 'manager-feature-config: branch_policy.merge_target_to_main must be true or false\n' >&2; return 2; }
+      write_branch_policy_field merge_target_to_main "$value"
+      ;;
+    STUDIO_BRANCH_POLICY_WORKTREE_GC_SCOPE)
+      case "$value" in project|runtime|off) ;; *) printf 'manager-feature-config: branch_policy.worktree_gc_scope must be project, runtime, or off\n' >&2; return 2 ;; esac
+      write_branch_policy_field worktree_gc_scope "$value"
+      ;;
+    STUDIO_BRANCH_POLICY_WORKTREE_DISK_BUDGET_MB)
+      valid_positive_integer "$value" || { printf 'manager-feature-config: branch_policy.worktree_disk_budget_mb must be a positive integer\n' >&2; return 2; }
+      write_branch_policy_field worktree_disk_budget_mb "$value"
+      ;;
+    STUDIO_RELEASE_BRANCH_DEFAULT_BASE)
+      valid_branch_name "$value" || { printf 'manager-feature-config: invalid default_release_base: %s\n' "$value" >&2; return 2; }
+      write_branch_policy_field default_base "$value"
+      ;;
+    STUDIO_RELEASE_BRANCH_PATTERN)
+      valid_release_pattern "$value" || { printf 'manager-feature-config: branch_pattern must be a valid branch pattern containing {version}: %s\n' "$value" >&2; return 2; }
+      write_branch_policy_field release_branch_pattern "$value"
+      ;;
+    STUDIO_BRANCH_POLICY_SCHEMA_VERSION)
+      [ "$value" = "1" ] || { printf 'manager-feature-config: branch_policy.schema_version must be 1\n' >&2; return 2; }
+      write_branch_policy_field schema_version "$value"
+      ;;
+    *)
+      write_setting "$key" "$value"
+      ;;
+  esac
   if [ "$DRY_RUN" -eq 1 ]; then
     printf 'dry-run: would set %s for project %s\n' "$key" "$PROJECT"
   else
     printf 'set %s for project %s\n' "$key" "$PROJECT"
   fi
+}
+
+doctor_branch_policy() {
+  local errors=0 value legacy_base legacy_pattern
+  ensure_branch_policy_namespace || return 1
+
+  value=$(branch_policy_value schema_version)
+  if [ "$value" != "1" ]; then
+    printf 'ERROR branch_policy schema_version expected 1 got %s\n' "$value"
+    errors=$((errors + 1))
+  fi
+
+  value=$(branch_policy_value default_base)
+  if ! valid_branch_name "$value"; then
+    printf 'ERROR branch_policy default_base invalid: %s\n' "$value"
+    errors=$((errors + 1))
+  fi
+
+  value=$(branch_policy_value release_branch_pattern)
+  if ! valid_release_pattern "$value"; then
+    printf 'ERROR branch_policy release_branch_pattern must contain {version} and resolve to a valid branch: %s\n' "$value"
+    errors=$((errors + 1))
+  fi
+
+  value=$(branch_policy_value allow_feature_off_feature)
+  normalize_bool "$value" >/dev/null || {
+    printf 'ERROR branch_policy allow_feature_off_feature must be boolean: %s\n' "$value"
+    errors=$((errors + 1))
+  }
+
+  value=$(branch_policy_value merge_target_to_main)
+  normalize_bool "$value" >/dev/null || {
+    printf 'ERROR branch_policy merge_target_to_main must be boolean: %s\n' "$value"
+    errors=$((errors + 1))
+  }
+
+  value=$(branch_policy_value worktree_gc_scope)
+  case "$value" in
+    project|runtime|off) ;;
+    *)
+      printf 'ERROR branch_policy worktree_gc_scope must be project, runtime, or off: %s\n' "$value"
+      errors=$((errors + 1))
+      ;;
+  esac
+
+  value=$(branch_policy_value worktree_disk_budget_mb)
+  if ! valid_positive_integer "$value"; then
+    printf 'ERROR branch_policy worktree_disk_budget_mb must be a positive integer: %s\n' "$value"
+    errors=$((errors + 1))
+  fi
+
+  legacy_base=$(value_of STUDIO_RELEASE_BRANCH_DEFAULT_BASE)
+  if [ -n "$legacy_base" ] && [ "$legacy_base" != "$(branch_policy_value default_base)" ]; then
+    printf 'ERROR branch_policy default_base conflicts with legacy STUDIO_RELEASE_BRANCH_DEFAULT_BASE=%s\n' "$legacy_base"
+    errors=$((errors + 1))
+  fi
+
+  legacy_pattern=$(value_of STUDIO_RELEASE_BRANCH_PATTERN)
+  if [ -n "$legacy_pattern" ] && [ "$legacy_pattern" != "$(branch_policy_value release_branch_pattern)" ]; then
+    printf 'ERROR branch_policy release_branch_pattern conflicts with legacy STUDIO_RELEASE_BRANCH_PATTERN=%s\n' "$legacy_pattern"
+    errors=$((errors + 1))
+  fi
+
+  if [ "$errors" -eq 0 ]; then
+    printf 'OK branch_policy ready\n'
+    return 0
+  fi
+  return 1
 }
 
 doctor_feature() {
@@ -263,11 +563,18 @@ cmd_doctor() {
   local feature="${1:-}" rc=0
   printf 'Project: %s\n' "$PROJECT"
   printf 'Config: %s\n' "$CONFIG_FILE"
-  if [ -n "$feature" ]; then
-    doctor_feature "$feature" || rc=$?
-  else
-    doctor_feature release_branch_workflow || rc=$?
-  fi
+  case "$feature" in
+    ""|all)
+      doctor_branch_policy || rc=$?
+      doctor_feature release_branch_workflow || rc=$?
+      ;;
+    branch_policy|branch-policy)
+      doctor_branch_policy || rc=$?
+      ;;
+    *)
+      doctor_feature "$feature" || rc=$?
+      ;;
+  esac
   return "$rc"
 }
 
