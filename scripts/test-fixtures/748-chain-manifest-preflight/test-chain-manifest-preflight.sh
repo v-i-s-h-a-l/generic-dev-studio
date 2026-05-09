@@ -140,4 +140,36 @@ grep -q '^issue view 74801 --repo example/project ' "$GH_LOG" || {
   fail "issue lookup did not use the manifest issue repo"
 }
 
+auto_bypass_manifest="$TMPROOT/auto-bypass-chain.yaml"
+cat >"$auto_bypass_manifest" <<YAML
+schema_version: 1
+target_repo_root: $project_repo
+issue_repo: example/project
+chains:
+  - name: auto-bypass-chain
+    base: main
+    branch: feature/auto-bypass-chain
+    host: auto
+    issues: [74802]
+YAML
+
+: > "$GH_LOG"
+PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" STUDIO_BYPASS_AUTO_HOST_ELIGIBILITY=1 "$RUNNER" "$auto_bypass_manifest" --dry-run >"$TMPROOT/auto-bypass.out" 2>&1
+grep -q 'STUDIO_BYPASS_AUTO_HOST_ELIGIBILITY' "$TMPROOT/auto-bypass.out" || {
+  cat "$TMPROOT/auto-bypass.out" >&2
+  fail "auto host bypass did not report the documented bypass env"
+}
+grep -q "Host: \`claude-code\`" "$TMPROOT/auto-bypass.out" || {
+  cat "$TMPROOT/auto-bypass.out" >&2
+  fail "auto host bypass did not select the first worker profile as runner host"
+}
+if grep -q 'DRY-RUN host_eligibility_check' "$TMPROOT/auto-bypass.out"; then
+  cat "$TMPROOT/auto-bypass.out" >&2
+  fail "auto host bypass still planned an eligibility smoke check"
+fi
+if grep -q 'STUDIO_BYPASS_HOST_RESOLVER' "$TMPROOT/auto-bypass.out"; then
+  cat "$TMPROOT/auto-bypass.out" >&2
+  fail "auto host bypass leaked the retired bypass env name"
+fi
+
 printf 'PASS: chain manifest preflight\n'
