@@ -99,7 +99,7 @@ Writers choose only `reason_id`; the schema enforces the class.
 | Halt class | Reason IDs |
 |---|---|
 | `retryable` | `github_auth_unavailable`, `github_home_mismatch`, `github_rate_limited`, `network_partition`, `child_timeout`, `disk_runtime_pressure` |
-| `recoverable` | `parent_host_unknown`, `branch_worktree_conflict`, `base_branch_advanced`, `missing_child_summary`, `child_crash`, `issue_body_changed`, `partial_github_operation`, `test_build_infra_unavailable`, `telemetry_artifact_malformed`, `telemetry_artifact_missing`, `manifest_schema_version_mismatch`, `implementation_scope_blocked`, `checkpoint_drift_detected` |
+| `recoverable` | `parent_host_unknown`, `branch_worktree_conflict`, `base_branch_advanced`, `missing_child_summary`, `child_crash`, `issue_body_changed`, `partial_github_operation`, `test_build_infra_unavailable`, `telemetry_artifact_malformed`, `telemetry_artifact_missing`, `manifest_schema_version_mismatch`, `chain_state_projection_invalid`, `chain_state_projection_repair_failed`, `implementation_scope_blocked`, `checkpoint_drift_detected` |
 | `review-needed` | `reviewer_blocked`, `reviewer_ambiguous` |
 | `human-needed` | `reviewer_host_ineligible`, `model_tool_permission_prompt`, `context_output_overflow` |
 | `fatal` | `required_review_failed`, `secret_detected`, `destructive_change_required`, `permission_expansion_required`, `unsafe_external_state` |
