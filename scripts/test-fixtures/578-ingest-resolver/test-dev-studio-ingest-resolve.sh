@@ -7,6 +7,7 @@ RUN="$ROOT/scripts/dev-studio-ingest-resolve.sh"
 TMPROOT=$(mktemp -d -t ingest-resolver.XXXXXX)
 trap 'rm -rf "$TMPROOT"' EXIT
 export STUDIO_BYPASS_FEEDBACK_LOGIN_HOME=1
+export STUDIO_BYPASS_INGEST_LOGIN_HOME=1
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -97,6 +98,44 @@ printf '%s\n' "$synthetic_home_json" | jq -e \
    and .artifact_root == ($login_home + "/.dev-studio/generic-dev-studio/feedback-inbox/sample-app")' >/dev/null || {
   printf '%s\n' "$synthetic_home_json" >&2
   fail "synthetic HOME studio feedback did not resolve through login home"
+}
+
+synthetic_home_project_json=$(
+  env -u STUDIO_BYPASS_INGEST_LOGIN_HOME \
+    HOME="$TMPROOT/.codex-homes/personal" \
+    PATH="$TMPROOT/bin:$PATH" \
+    "$RUN" --cwd "$TMPROOT/sample-app"
+)
+printf '%s\n' "$synthetic_home_project_json" | jq -e \
+  --arg login_home "$TMPROOT/login-home" \
+  '.scope == "project"
+   and .destination_project == "sample-app"
+   and .artifact_kind == "project-ingest"
+   and .artifact_root == ($login_home + "/.dev-studio/sample-app/ingest")' >/dev/null || {
+  printf '%s\n' "$synthetic_home_project_json" >&2
+  fail "synthetic HOME project ingest did not resolve through login home (#822)"
+}
+
+synthetic_home_project_bypass_json=$(
+  HOME="$TMPROOT/.codex-homes/personal" \
+    PATH="$TMPROOT/bin:$PATH" \
+    "$RUN" --cwd "$TMPROOT/sample-app"
+)
+printf '%s\n' "$synthetic_home_project_bypass_json" | jq -e \
+  --arg synthetic "$TMPROOT/.codex-homes/personal" \
+  '.artifact_root == ($synthetic + "/.dev-studio/sample-app/ingest")' >/dev/null || {
+  printf '%s\n' "$synthetic_home_project_bypass_json" >&2
+  fail "STUDIO_BYPASS_INGEST_LOGIN_HOME=1 should keep ingest in synthetic HOME for tests/isolation"
+}
+
+dev_studio_alias_json=$(HOME="$TMPROOT/home" "$RUN" --cwd "$TMPROOT/sample-app" --to dev-studio)
+printf '%s\n' "$dev_studio_alias_json" | jq -e \
+  '.destination_project == "generic-dev-studio"
+   and .scope == "studio"
+   and .artifact_kind == "studio-ingest"
+   and .requires_privacy_scrub == true' >/dev/null || {
+  printf '%s\n' "$dev_studio_alias_json" >&2
+  fail "--to dev-studio did not normalize to generic-dev-studio (#822)"
 }
 
 explicit_project_json=$(HOME="$TMPROOT/home" "$RUN" --cwd "$TMPROOT/sample-app" --to other-app)
