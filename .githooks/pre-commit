@@ -31,6 +31,10 @@
 #       special casing (`case "$HOME"`, `[ "$HOME" = ... ]`, raw
 #       `.codex-homes` references) outside scripts/lib-studio-context.sh /
 #       scripts/lib-paths.sh (#710 Phase C3, #816).
+#   2o. lint-artifact-cleanup.sh --staged — block new artifact-producing
+#       call sites (xcodebuild, -derivedDataPath, git worktree add,
+#       mktemp -d) that don't route through scripts/lib-artifact-cleanup.sh
+#       `register_artifact` or an approved janitor (#710 / T-R004, #849).
 #   3.  privacy gate — reject if staged diff leaks another project's runtime.
 #
 # Main-branch commit guard bypass: `STUDIO_BYPASS_MAIN_COMMIT_GUARD=1 git commit ...`.
@@ -39,7 +43,8 @@
 # Runtime path lint bypass: `STUDIO_BYPASS_RUNTIME_PATH_LINT=1 git commit ...`.
 # GH wrapper lint bypass: `STUDIO_BYPASS_GH_WRAPPER_LINT=1 git commit ...`.
 # Synthetic-home lint bypass: `STUDIO_BYPASS_SYNTHETIC_HOME_LINT=1 git commit ...`.
-# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/2g/2h/2i/2j/2k/2l/2m/2n/3.
+# Artifact-cleanup lint bypass: `STUDIO_BYPASS_ARTIFACT_CLEANUP_LINT=1 git commit ...`.
+# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/2g/2h/2i/2j/2k/2l/2m/2n/2o/3.
 # Gates 1+1b (manifest regens) always run because stale manifests leak
 # downstream.
 # LLM review is not part of the default hook path. Run
@@ -268,6 +273,7 @@ if [ -x "$SCRIPTS/lint-synthetic-home.sh" ]; then
   fi
 fi
 
+<<<<<<< HEAD
 # Gate 2o — jsonl-merge linter (#820 item 7.2). Block the dangerous
 # `cat ... | jq -s 'sort_by ...'` shape that silently destroys ndjson on
 # control-char input. Use scripts/jsonl-merge.sh instead.
@@ -277,6 +283,17 @@ if [ -x "$SCRIPTS/lint-jsonl-merge.sh" ]; then
   if [ "$rc" -ne 0 ]; then
     printf '\npre-commit: dangerous `jq -s sort_by|unique|group_by|add` over ndjson found — use scripts/jsonl-merge.sh (control-char safe, refuses to lose records) per #820\n' >&2
     printf 'bypass (emergencies only): STUDIO_BYPASS_JSONL_MERGE_LINT=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2p — artifact-cleanup linter (#710 / T-R004, #849).
+if [ -x "$SCRIPTS/lint-artifact-cleanup.sh" ]; then
+  "$SCRIPTS/lint-artifact-cleanup.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: new artifact-producing call site found without cleanup wiring — route through scripts/lib-artifact-cleanup.sh `register_artifact` or an approved janitor (studio-ios-artifact-janitor / node-janitor / fleet-cleanup / sweep-janitor) per CLAUDE.md §Where workflow rules live\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_ARTIFACT_CLEANUP_LINT=1 git commit ...\n' >&2
     exit 1
   fi
 fi
