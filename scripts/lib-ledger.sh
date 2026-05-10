@@ -268,6 +268,13 @@ flush_index() {
 # Resolve plans/<kind>/<uuid>.yaml for the current project. Callers that have
 # already resolved the project can set LEDGER_PROJECT_ROOT to skip the
 # resolve_project round-trip.
+#
+# #820 item 1: when the canonical-named file does not exist, scan the kind
+# directory for a sibling whose `id:` field matches the requested uuid and
+# return that path. Catches 3156-sweep-style legacy filenames where the
+# artifact lives at `<legacy>.yaml` (e.g. `T368.yaml`) but its `id:` is the
+# synthetic UUID. Writers that miss the canonical path fall through to it
+# (so newly-created artifacts always land at the canonical name).
 _artifact_path() {
   local kind="${1:?}" uuid="${2:?}"
   local root
@@ -278,7 +285,50 @@ _artifact_path() {
     project=$(resolve_project) || return 2
     root=$(resolve_project_root_for "$project") || return 2
   fi
-  printf '%s/plans/%s/%s.yaml\n' "$root" "$kind" "$uuid"
+  local canonical="$root/plans/$kind/$uuid.yaml"
+  if [ -f "$canonical" ]; then
+    printf '%s\n' "$canonical"
+    return 0
+  fi
+  local kind_dir="$root/plans/$kind"
+  if [ -d "$kind_dir" ]; then
+    local file_count
+    file_count=$(find "$kind_dir" -maxdepth 1 -type f -name '*.yaml' 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${file_count:-0}" -gt 0 ] && [ "${file_count:-0}" -le 500 ]; then
+      local match
+      match=$(grep -lE "^id:[[:space:]]+${uuid}[[:space:]]*\$" "$kind_dir"/*.yaml 2>/dev/null | head -1)
+      if [ -n "$match" ]; then
+        printf '%s\n' "$match"
+        return 0
+      fi
+    fi
+  fi
+  printf '%s\n' "$canonical"
+}
+
+# UUIDv7 enforcement (#820 item 2). RFC 9562 §5.7: 48-bit Unix-ms prefix,
+# version nibble `7`, variant bits `10` (first nibble 8/9/a/b). The 3156-sweep
+# tasks were minted with UUIDv4-marker ids (4xxx-...) and every YAML write
+# silently bypassed the schema validator — exactly the regression Phase 2's
+# validators were meant to prevent. This guard fails closed at intake so the
+# next batch can't slip through.
+#
+# Bypass: STUDIO_BYPASS_UUIDV7_CHECK=1 (legacy migrations only). Audit-logged.
+_assert_uuidv7() {
+  local uuid="${1:?_assert_uuidv7 <uuid>}"
+  case "${STUDIO_BYPASS_UUIDV7_CHECK:-0}" in
+    1|true|TRUE|yes|YES)
+      printf 'lib-ledger: STUDIO_BYPASS_UUIDV7_CHECK=1 — accepting non-UUIDv7 id %s (audit)\n' "$uuid" >&2
+      return 0
+      ;;
+  esac
+  case "$uuid" in
+    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-7[0-9a-f][0-9a-f][0-9a-f]-[89ab][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+      return 0
+      ;;
+  esac
+  printf 'lib-ledger: id %s is not a valid UUIDv7 (RFC 9562 §5.7) — refusing intake. Mint via mint_uuidv7. Bypass: STUDIO_BYPASS_UUIDV7_CHECK=1.\n' "$uuid" >&2
+  return 2
 }
 
 # ---------- DRY-RUN helper ----------
@@ -803,6 +853,7 @@ write_task_artifact() {
   local uuid="${1:?write_task_artifact <uuid> <state> <title> [k=v...]}"
   local state="${2:?}" title="${3:?}"
   shift 3
+  _assert_uuidv7 "$uuid" || return 2
 
   local f ts
   f=$(_artifact_path tasks "$uuid") || return 2
@@ -848,6 +899,8 @@ write_brief_artifact() {
   local uuid="${1:?write_brief_artifact <brief-uuid> <task-uuid> <type> <size> [k=v...]}"
   local task_uuid="${2:?}" type="${3:?}" size="${4:?}"
   shift 4
+  _assert_uuidv7 "$uuid" || return 2
+  _assert_uuidv7 "$task_uuid" || return 2
 
   # Body (multi-line prose) is special-cased as block-scalar YAML in the
   # canonical file.
