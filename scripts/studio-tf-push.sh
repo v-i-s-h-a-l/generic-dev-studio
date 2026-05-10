@@ -329,6 +329,50 @@ print(jwt.encode(payload, key, algorithm='ES256', headers={'kid': '$ASC_KEY_ID'}
 PY
 }
 
+# asc_api METHOD PATH [BODY_JSON]
+#
+# Single-source-of-truth helper for App Store Connect REST calls. Preserves
+# HTTP status separately from the response body so callers can branch on
+# status (in particular: 409 from POST /appStoreVersionSubmissions when a
+# submission already exists must be treated as success after a re-GET).
+#
+# - PATH is appended to https://api.appstoreconnect.apple.com (leading slash).
+# - BODY_JSON is optional; PATCH/POST without a body works too.
+# - Requires $TOKEN to be set in the caller's scope (mint_jwt() result).
+# - Output: two lines on stdout — first line = HTTP status code, second line
+#   = response body (JSON or empty). Caller splits with `read`.
+# - Test fixtures override this function in scope to mock the network.
+#
+# Why a function and not inline curls: #824 surfaced that body-only parsing
+# (jq '.errors[]?') is fragile for 409 detection — Apple sometimes returns
+# 409 with a non-error body, and absent-body 200s also exist. Keeping status
+# explicit makes the decision tree honest.
+asc_api() {
+  local method="$1" path="$2" body="${3:-}"
+  local url="https://api.appstoreconnect.apple.com${path}"
+  local resp_file http_code
+  resp_file=$(mktemp 2>/dev/null) || { printf '0\n\n'; return 2; }
+  if [ -n "$body" ]; then
+    http_code=$(curl -sg -o "$resp_file" -w '%{http_code}' \
+      -X "$method" "$url" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "$body")
+  else
+    http_code=$(curl -sg -o "$resp_file" -w '%{http_code}' \
+      -X "$method" "$url" \
+      -H "Authorization: Bearer $TOKEN")
+  fi
+  printf '%s\n' "${http_code:-0}"
+  cat "$resp_file" 2>/dev/null
+  rm -f "$resp_file"
+}
+
+# Read first line (HTTP status) of an asc_api invocation; rest of the captured
+# string is the body. Helper for the common destructure pattern.
+asc_status() { printf '%s\n' "$1" | head -n 1; }
+asc_body()   { printf '%s\n' "$1" | tail -n +2; }
+
 route_to_release_node() {
   local channel="${1:-testflight}"
   local route_reason_class=""
@@ -1237,8 +1281,13 @@ cmd_appstore() {
   local GH_REPO="${STUDIO_TF_GH_REPO:-turnip-ios/turnip-zaps}"
   local RELEASE_URL="https://github.com/${GH_REPO}/releases/tag/${TAG}"
   if [ "$DRY_RUN_FLAG" = "1" ]; then
-    printf 'studio-tf-push: [dry-run] would tag %s, push, gh release create --draft, ASC submit build=%s version=%s\n' \
-      "$TAG" "$BUILD" "$VERSION" >&2
+    # #824: dry-run synthesizes a submission id so downstream tools that read
+    # the dry-write log see the same shape as a real submission, but tagged
+    # with a `dry-run-` prefix so it cannot be mistaken for a real ASC id.
+    local _dry_sub_id="dry-run-$(mint_uuidv7)"
+    # lint-gh-wrapper:allow next-line — string lists what the real run *would* do; not a real gh invocation.
+    printf 'studio-tf-push: [dry-run] would tag %s, push, gh release create --draft, ASC submit build=%s version=%s submission=%s\n' \
+      "$TAG" "$BUILD" "$VERSION" "$_dry_sub_id" >&2
     appstore_notify_slack "$BUILD" "$VERSION" "$TAG" "$RELEASE_NOTES_FILE" "$WHATSNEW_FILE" "$RELEASE_URL" "$DRY_RUN_FLAG"
     return 0
   fi
@@ -1270,49 +1319,107 @@ cmd_appstore() {
   [ -n "$TOKEN" ] || halt_failed prereq "ASC JWT mint failed"
 
   local build_resp build_id
-  build_resp=$(curl -sg "https://api.appstoreconnect.apple.com/v1/builds?filter[version]=${BUILD}&include=preReleaseVersion&limit=1" \
-    -H "Authorization: Bearer $TOKEN")
-  build_id=$(printf '%s' "$build_resp" | jq -r '.data[0].id // empty')
+  build_resp=$(asc_api GET "/v1/builds?filter[version]=${BUILD}&include=preReleaseVersion&limit=1")
+  build_id=$(asc_body "$build_resp" | jq -r '.data[0].id // empty')
   [ -n "$build_id" ] || halt_failed prereq "ASC: build $BUILD not found"
 
   local versions_resp version_id
-  versions_resp=$(curl -sg "https://api.appstoreconnect.apple.com/v1/apps/${APP_ID}/appStoreVersions?fields[appStoreVersions]=versionString,appStoreState,releaseType" \
-    -H "Authorization: Bearer $TOKEN")
-  version_id=$(printf '%s' "$versions_resp" \
+  versions_resp=$(asc_api GET "/v1/apps/${APP_ID}/appStoreVersions?fields[appStoreVersions]=versionString,appStoreState,releaseType")
+  version_id=$(asc_body "$versions_resp" \
     | jq -r --arg v "$VERSION" '.data[] | select(.attributes.appStoreState=="PREPARE_FOR_SUBMISSION" and .attributes.versionString==$v) | .id' \
     | head -1)
   if [ -z "$version_id" ]; then
     local create_resp
-    create_resp=$(curl -s -X POST "https://api.appstoreconnect.apple.com/v1/appStoreVersions" \
-      -H "Authorization: Bearer $TOKEN" \
-      -H "Content-Type: application/json" \
-      -d "$(jq -nc --arg v "$VERSION" --arg app "$APP_ID" '{data:{type:"appStoreVersions",attributes:{platform:"IOS",versionString:$v,releaseType:"MANUAL"},relationships:{app:{data:{type:"apps",id:$app}}}}}')")
-    version_id=$(printf '%s' "$create_resp" | jq -r '.data.id // empty')
-    [ -n "$version_id" ] || halt_failed prereq "ASC: appStoreVersion create failed: $create_resp"
+    create_resp=$(asc_api POST "/v1/appStoreVersions" \
+      "$(jq -nc --arg v "$VERSION" --arg app "$APP_ID" '{data:{type:"appStoreVersions",attributes:{platform:"IOS",versionString:$v,releaseType:"MANUAL"},relationships:{app:{data:{type:"apps",id:$app}}}}}')")
+    version_id=$(asc_body "$create_resp" | jq -r '.data.id // empty')
+    [ -n "$version_id" ] || halt_failed prereq "ASC: appStoreVersion create failed: $(asc_body "$create_resp")"
   fi
 
-  curl -s -X PATCH "https://api.appstoreconnect.apple.com/v1/appStoreVersions/${version_id}" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "$(jq -nc --arg id "$version_id" --arg bid "$build_id" '{data:{type:"appStoreVersions",id:$id,attributes:{releaseType:"MANUAL"},relationships:{build:{data:{type:"builds",id:$bid}}}}}')" \
+  asc_api PATCH "/v1/appStoreVersions/${version_id}" \
+    "$(jq -nc --arg id "$version_id" --arg bid "$build_id" '{data:{type:"appStoreVersions",id:$id,attributes:{releaseType:"MANUAL"},relationships:{build:{data:{type:"builds",id:$bid}}}}}')" \
     >/dev/null
 
   local locs_resp whatsnew_text
   whatsnew_text=$(cat "$WHATSNEW_FILE")
-  locs_resp=$(curl -s "https://api.appstoreconnect.apple.com/v1/appStoreVersions/${version_id}/appStoreVersionLocalizations" \
-    -H "Authorization: Bearer $TOKEN")
+  locs_resp=$(asc_api GET "/v1/appStoreVersions/${version_id}/appStoreVersionLocalizations")
   local loc_count=0
-  for loc_id in $(printf '%s' "$locs_resp" | jq -r '.data[].id'); do
-    curl -s -X PATCH "https://api.appstoreconnect.apple.com/v1/appStoreVersionLocalizations/${loc_id}" \
-      -H "Authorization: Bearer $TOKEN" \
-      -H "Content-Type: application/json" \
-      -d "$(jq -nc --arg id "$loc_id" --arg w "$whatsnew_text" '{data:{type:"appStoreVersionLocalizations",id:$id,attributes:{whatsNew:$w}}}')" \
+  for loc_id in $(asc_body "$locs_resp" | jq -r '.data[].id'); do
+    asc_api PATCH "/v1/appStoreVersionLocalizations/${loc_id}" \
+      "$(jq -nc --arg id "$loc_id" --arg w "$whatsnew_text" '{data:{type:"appStoreVersionLocalizations",id:$id,attributes:{whatsNew:$w}}}')" \
       >/dev/null
     loc_count=$((loc_count + 1))
   done
 
-  printf 'studio-tf-push: appstore submission ready (build=%s version=%s, %d localizations updated)\n' \
-    "$BUILD" "$VERSION" "$loc_count" >&2
+  # ─── #824: real App Store submission ────────────────────────────────────
+  # Until this fix landed, the flow stopped here and printed "submission
+  # ready" without ever calling POST /v1/appStoreVersionSubmissions. ASC
+  # remained in PREPARE_FOR_SUBMISSION while GitHub tags + Slack implied
+  # success. The block below issues the actual submission, with build-mismatch
+  # guards on both branches (existing-submission reuse AND fresh POST), an
+  # idempotent pre-check, defensive 409 fallback, and structured failure
+  # halt + GH draft rename so a failed submission cannot leave the artifact
+  # marked submitted.
+
+  # Build-mismatch guard: confirm the version's *current* build relationship
+  # still points at the build we intend to submit. Catches resume-from-partial
+  # cases where another flow swapped the build under us.
+  local cur_build_resp cur_build_id
+  cur_build_resp=$(asc_api GET "/v1/appStoreVersions/${version_id}/relationships/build")
+  cur_build_id=$(asc_body "$cur_build_resp" | jq -r '.data.id // empty')
+  if [ -n "$cur_build_id" ] && [ "$cur_build_id" != "$build_id" ]; then
+    halt_failed prereq "ASC: appStoreVersion ${version_id} is bound to build ${cur_build_id}, not ${build_id} (build $BUILD); refusing to submit a mismatched build"
+  fi
+
+  # Idempotent pre-check: does an appStoreVersionSubmission already exist?
+  local sub_pre_resp sub_pre_status sub_id=""
+  sub_pre_resp=$(asc_api GET "/v1/appStoreVersions/${version_id}/relationships/appStoreVersionSubmission")
+  sub_pre_status=$(asc_status "$sub_pre_resp")
+  if [ "$sub_pre_status" = "200" ]; then
+    sub_id=$(asc_body "$sub_pre_resp" | jq -r '.data.id // empty')
+  fi
+
+  if [ -n "$sub_id" ]; then
+    printf 'studio-tf-push: ASC submission already exists for version %s: %s — reusing\n' "$VERSION" "$sub_id" >&2
+  else
+    # POST the submission. On 409 (Apple sometimes surfaces an existing
+    # reviewSubmission at the app level), re-GET and treat existing as success.
+    local sub_resp sub_status
+    sub_resp=$(asc_api POST "/v1/appStoreVersionSubmissions" \
+      "$(jq -nc --arg vid "$version_id" '{data:{type:"appStoreVersionSubmissions",relationships:{appStoreVersion:{data:{type:"appStoreVersions",id:$vid}}}}}')")
+    sub_status=$(asc_status "$sub_resp")
+    case "$sub_status" in
+      2??)
+        sub_id=$(asc_body "$sub_resp" | jq -r '.data.id // empty')
+        ;;
+      409)
+        printf 'studio-tf-push: ASC submission POST returned 409; re-GETing existing submission\n' >&2
+        sub_pre_resp=$(asc_api GET "/v1/appStoreVersions/${version_id}/relationships/appStoreVersionSubmission")
+        sub_id=$(asc_body "$sub_pre_resp" | jq -r '.data.id // empty')
+        ;;
+    esac
+    if [ -z "$sub_id" ]; then
+      # Submission failed. Mark the GH draft release so the stale tag is
+      # visibly flagged, emit the structured failure event, and halt before
+      # any user-visible "ready" output, Slack, PR creation, or artifact write.
+      local failure_body fail_reason
+      failure_body=$(asc_body "$sub_resp" 2>/dev/null || true)
+      fail_reason=$(printf '%s' "$failure_body" | jq -r '.errors[0].detail // .errors[0].title // "ASC submission rejected"' 2>/dev/null || printf 'ASC submission rejected')
+      with_login_home_for_github gh release edit "$TAG" \
+        --repo "$GH_REPO" \
+        --title "[SUBMISSION-FAILED] $TAG" \
+        --draft >/dev/null 2>&1 || true
+      emit_event_keyed achilles release appstore_submission_failed "" \
+        "{\"version_id\":\"$version_id\",\"build_id\":\"$build_id\",\"http_status\":\"$sub_status\",\"reason\":$(printf '%s' "$fail_reason" | jq -Rs .),\"tag\":\"$TAG\"}" \
+        >/dev/null 2>&1 || true
+      halt_failed prereq "ASC submission failed (HTTP $sub_status): $fail_reason — GH draft renamed to [SUBMISSION-FAILED] $TAG"
+    fi
+  fi
+
+  # ────────────────────────────────────────────────────────────────────────
+
+  printf 'studio-tf-push: appstore submission accepted by ASC (build=%s version=%s, submission=%s, %d localizations updated)\n' \
+    "$BUILD" "$VERSION" "$sub_id" "$loc_count" >&2
 
   appstore_notify_slack "$BUILD" "$VERSION" "$TAG" "$RELEASE_NOTES_FILE" "$WHATSNEW_FILE" "$RELEASE_URL" "$DRY_RUN_FLAG"
   local release_notes_summary
@@ -1329,6 +1436,7 @@ cmd_appstore() {
     "$APP_ID" "$build_id" "$version_id" \
     "$APPSTORE_SLACK_CHANNEL_USED" "$APPSTORE_SLACK_PARENT_TS" "$APPSTORE_PR_SLACK_REPLY_TS" \
     "$release_notes_summary" \
+    "$sub_id" \
     || halt_failed prereq "release artifact write failed after App Store submission; watcher cannot promote this release until the artifact exists"
   write_appstore_pending_marker "$BUILD" "$VERSION" "$TAG" "$version_id" "$build_id" "$RELEASE_URL" "$release_notes_summary" "$release_uuid" \
     || printf 'studio-tf-push: warning: pending App Store marker write failed; watcher will fall back to the release artifact when possible\n' >&2
@@ -1344,11 +1452,12 @@ cmd_appstore() {
     --arg github_pr_number "$APPSTORE_PR_NUMBER" \
     --arg version_id "$version_id" \
     --arg build_id "$build_id" \
+    --arg submission_id "$sub_id" \
     --arg slack_status "$APPSTORE_SLACK_STATUS" \
     --arg slack_channel "$APPSTORE_SLACK_CHANNEL_USED" \
     --arg slack_parent_ts "$APPSTORE_SLACK_PARENT_TS" \
     --argjson loc_count "$loc_count" \
-    '{release_tag:$release_tag, release_id:$release_id, tag:$tag, github_release_url:$github_release_url, github_pr:{url:$github_pr_url, number:($github_pr_number | tonumber? // $github_pr_number)}, version_id:$version_id, build_id:$build_id, localizations:$loc_count, slack:{status:$slack_status, channel_id:$slack_channel, message_ts:$slack_parent_ts}}'
+    '{release_tag:$release_tag, release_id:$release_id, tag:$tag, github_release_url:$github_release_url, github_pr:{url:$github_pr_url, number:($github_pr_number | tonumber? // $github_pr_number)}, version_id:$version_id, build_id:$build_id, submission_id:$submission_id, localizations:$loc_count, slack:{status:$slack_status, channel_id:$slack_channel, message_ts:$slack_parent_ts}}'
 }
 
 case "${1:-}" in

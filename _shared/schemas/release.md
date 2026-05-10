@@ -49,6 +49,7 @@ github_pr:
   source_branch: "feature/appstore-release"
 asc_metadata:
   asc_build_id: "1234567890"                     # App Store Connect build identifier
+  appstore_submission_id: "f0a4...c7"            # 1.5.0 (#824); appStoreVersionSubmissions id from a real ASC submission. Required when channel=appstore AND state=submitted (or downstream). Null for testflight (TF has no appStoreVersionSubmissions POST). dry-run-* prefix indicates a synthetic dry-run id; never matches a real ASC id.
   app_store_state: "WAITING_FOR_REVIEW"          # ASC appStoreState verbatim
   last_poll_at: 2026-04-22T14:32:11Z
   next_check_at: 2026-04-22T15:02:11Z
@@ -86,7 +87,7 @@ notes: null
 | `tasks` | array of UUIDv7 | yes | Task-ids shipped in this release. Bidirectional with `task.links.release`. |
 | `reviews` | array of UUIDv7 | yes | Pre-release review artifacts (e.g. release-gate reviews). |
 | `github_pr` | object \| null | no | App Store source PR opened from the submitted branch to `main`; merged with a merge commit only after `READY_FOR_SALE`. Null for TestFlight and for legacy artifacts. |
-| `asc_metadata` | object \| null | yes | ASC poll state. Null for channels without ASC (none today). |
+| `asc_metadata` | object \| null | yes | ASC poll state. Null for channels without ASC (none today). When `channel: appstore` AND `state ∈ {submitted, approved, in-review, pending-developer-release, released}`, `asc_metadata.appstore_submission_id` (1.5.0; #824) MUST be a non-empty string — the `appStoreVersionSubmissions` id returned by ASC. A `dry-run-*` prefix marks a synthetic id from `--dry-run` runs and must never appear on a real submitted artifact. Null on `channel: testflight` (no `appStoreVersionSubmissions` POST in the TF flow). |
 | `slack` | object \| null | yes | Slack post metadata for release announcements. Null when no post made. |
 | `notes` | string \| null | yes | Optional commentary. |
 | `replaced_by` | UUIDv7 \| null | no (1.1.0) | When set, names the release-id of the build that replaced this one — the cancel-and-replace pattern (cancel build N, ship build M instead). Setting `replaced_by` requires `state == cancelled`. Default when absent: `null` (release was not replaced). Consumed by Nabu (#214) for release-replacement-ready suggestions. |

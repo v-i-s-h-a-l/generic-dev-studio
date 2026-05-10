@@ -13,7 +13,7 @@ Every release routed through the studio — TestFlight or App Store — traverse
 | State | Meaning | Who can enter |
 |---|---|---|
 | `drafted` | Release artifact created but not yet submitted to ASC. | Achilles `push-tf` / `app-store` modes pre-upload. |
-| `submitted` | Build uploaded to App Store Connect; ASC processing begins. | Achilles release modes post-upload. |
+| `submitted` | **Channel-specific (#824).** TestFlight: build uploaded to App Store Connect; ASC processing begins. App Store: `POST /v1/appStoreVersionSubmissions` returned 2xx — Apple review begins immediately. The App Store path requires `asc_metadata.appstore_submission_id` to be the real ASC submission id (never a `dry-run-*` synthetic). | Achilles release modes post-upload (TF) / post-`appStoreVersionSubmissions` (App Store). |
 | `approved` | Studio approval recorded for the submitted release. This is the release-manager gate, not Apple review. | `release-manager` after the approval review gate records the green light and approval metadata. |
 | `in-review` | Apple has started formal review (App Store channel only). | `scripts/appstore-watch.sh` on ASC state `IN_REVIEW`. |
 | `pending-developer-release` | Apple has approved the submission in ASC; awaiting the developer release action. This is the Apple holdpoint, not the studio approval gate. | `scripts/appstore-watch.sh` on ASC state `PENDING_DEVELOPER_RELEASE`. |
@@ -48,7 +48,7 @@ superseded            → archived                  : compact sweep.
 **Channel-specific notes:**
 
 - **TestFlight channel** typically transitions `drafted → submitted → approved → released`. ASC may emit build-processing states (`PROCESSING`, `INVALID_BINARY`) during `submitted`; these stay inside `submitted` until a terminal TF state is observed.
-- **App Store channel** has the full review flow. `approved` records the studio gate before App Store review begins. `pending-developer-release` is the holdpoint where ASC has approved the build and the developer must push the "Release" button; it is not a merge signal. `READY_FOR_SALE` is the first unambiguous live signal and triggers the source PR merge with `gh pr merge --merge`.
+- **App Store channel** has the full review flow. `approved` records the **studio** gate, which gates **PR-merge / GitHub-release publication** — not Apple's review. Apple's review begins immediately on the `appStoreVersionSubmissions` POST that drives `drafted → submitted` (#824), so the `submitted → approved` studio transition can be recorded before, during, or after Apple's review without affecting Apple's timeline. `pending-developer-release` is the holdpoint where ASC has approved the build and the developer must push the "Release" button; it is not a merge signal. `READY_FOR_SALE` is the first unambiguous live signal and triggers the source PR merge with `gh pr merge --merge`.
 
 ## App Store PR Lifecycle
 
