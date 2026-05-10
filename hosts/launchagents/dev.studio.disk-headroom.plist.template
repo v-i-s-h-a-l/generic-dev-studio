@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.studio.disk-headroom</string>
+
+    <!-- Invoked via /bin/bash with the script as an argument so the LaunchAgent
+         survives macOS Sequoia+ TCC restrictions on script execution from
+         locations like ~/Documents — same pattern as node-janitor. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__SWEEP_SCRIPT__</string>
+        <string>--all-projects</string>
+        <string>disk-headroom</string>
+    </array>
+
+    <!-- Every 4 hours. Cleanups have no effect when above the headroom target,
+         so the wall-clock cost on a healthy node is one df -Pk and a short
+         shell wakeup. Below the target, the sweep escalates through
+         simctl/brew/DerivedData; each step is idempotent and bounded. -->
+    <key>StartInterval</key>
+    <integer>14400</integer>
+
+    <!-- Run once at load so the first headroom check doesn't wait 4h. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/.dev-studio/.runtime/logs/disk-headroom.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.dev-studio/.runtime/logs/disk-headroom.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
