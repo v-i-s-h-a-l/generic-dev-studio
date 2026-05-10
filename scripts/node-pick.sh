@@ -30,9 +30,19 @@
 #   writes a single line with the dispatch reason for the caller to fold
 #   into its event payloads. One of:
 #     healthy | fallback:unreachable | fallback:no-role | fallback:disabled
+#     | fallback:secret-scope | forced-local | pinned
 #   Callers (build/test gates) pre-create the file, read it after the
 #   pick, and tag `studio.dispatch.reason` on their gate events. Keeping
 #   stdout = node-id preserves the long-standing caller contract.
+#
+# Escape hatches (#820 item 6):
+#   STUDIO_DISPATCH_FORCE_LOCAL=1 — bypass node selection; return `local`
+#     immediately. Use when the user wants laptop-only execution without
+#     editing nodes.json. Race-safe vs other Achilles instances.
+#   STUDIO_DISPATCH_PIN=<node-id> — explicit pin. The named node must
+#     exist + be enabled + carry the requested role/scopes. Mismatch is a
+#     hard error (exit 2), not a silent fallback — the user's intent stays
+#     visible.
 #
 # R14: every fallback path emits `node_fallback` so analytics can tell
 # "ran locally because we wanted to" from "fell back because the mini was
@@ -77,6 +87,57 @@ _emit_fallback() {
 }
 
 REGISTRY="$(resolve_runtime_global)/nodes.json"
+
+# #820 item 6: documented escape hatches.
+#
+# STUDIO_DISPATCH_FORCE_LOCAL=1 — bypass node selection entirely; return
+# `local` immediately with reason `forced-local`. Use when the user wants
+# laptop-only execution without editing nodes.json (which races other
+# Achilles instances).
+case "${STUDIO_DISPATCH_FORCE_LOCAL:-0}" in
+  1|true|TRUE|yes|YES)
+    _record_reason "forced-local"
+    _emit_fallback "forced-local"
+    echo "local"
+    exit 0
+    ;;
+esac
+
+# STUDIO_DISPATCH_PIN=<node-id> — explicit pin. The named node must exist
+# in the registry, be enabled, and carry the requested role (and any
+# requested secret scopes). On any mismatch this is a HARD ERROR — pinning
+# a broken node should not silently fall back, otherwise the user's
+# operational intent is hidden. Use STUDIO_DISPATCH_FORCE_LOCAL=1 instead
+# when the goal is "skip remote dispatch."
+if [ -n "${STUDIO_DISPATCH_PIN:-}" ]; then
+  if [ ! -r "$REGISTRY" ]; then
+    printf 'node-pick: STUDIO_DISPATCH_PIN=%s but registry %s is unreadable\n' "$STUDIO_DISPATCH_PIN" "$REGISTRY" >&2
+    exit 2
+  fi
+  command -v jq >/dev/null 2>&1 || { printf 'error: jq required\n' >&2; exit 2; }
+  pinned=$(jq -r --arg id "$STUDIO_DISPATCH_PIN" --arg role "$ROLE" --arg req "$REQUIRED_SCOPES" '
+    .nodes[]?
+    | select(.id == $id)
+    | select(.enabled != false)
+    | select(.roles? // [] | index($role))
+    | (if $req == "" then .id else
+        ($req | split(",") | map(gsub("^\\s+|\\s+$"; ""))) as $r
+        | select(($r - (.secret_scopes // [])) == [])
+        | .id
+       end)
+  ' "$REGISTRY" 2>/dev/null | head -1)
+  if [ -z "$pinned" ]; then
+    printf 'node-pick: STUDIO_DISPATCH_PIN=%s does not match any enabled node with role=%s' \
+      "$STUDIO_DISPATCH_PIN" "$ROLE" >&2
+    [ -n "$REQUIRED_SCOPES" ] && printf ' scopes=%s' "$REQUIRED_SCOPES" >&2
+    printf ' (use STUDIO_DISPATCH_FORCE_LOCAL=1 for local-only)\n' >&2
+    exit 2
+  fi
+  _record_reason "pinned"
+  printf '%s\n' "$pinned"
+  exit 0
+fi
+
 if [ ! -r "$REGISTRY" ]; then
   _record_reason "fallback:unreachable"
   _emit_fallback "fallback:unreachable"
