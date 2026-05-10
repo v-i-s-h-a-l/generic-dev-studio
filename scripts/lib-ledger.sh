@@ -51,7 +51,7 @@
 #     write_review_artifact   <uuid> <subject-kind> <subject-uuid> <verdict> <findings-json>
 #     write_round_artifact    <uuid> <round-number> <scope> <tasks-csv> <body>
 #     write_release_artifact  <uuid> <channel> <version> <build> <tag> <tasks-csv>
-#     write_appstore_release_submission_artifact <uuid> <version> <build> <tag> <commit-sha> <github-release-url> <pr-number> <pr-url> <source-branch> <asc-app-id> <asc-build-id> <appstore-version-id> <slack-channel> <slack-parent-ts> <slack-pr-reply-ts> <release-notes-summary>
+#     write_appstore_release_submission_artifact <uuid> <version> <build> <tag> <commit-sha> <github-release-url> <pr-number> <pr-url> <source-branch> <asc-app-id> <asc-build-id> <appstore-version-id> <slack-channel> <slack-parent-ts> <slack-pr-reply-ts> <release-notes-summary> [<appstore-submission-id>]
 #     write_release_attempt_artifact <uuid> <operation> <channel> <intent-json>
 #     append_release_attempt_transaction <uuid> <entry-type> <status> <actor> <data-json>
 #
@@ -1341,10 +1341,16 @@ write_release_artifact() {
 }
 
 write_appstore_release_submission_artifact() {
-  local uuid="${1:?write_appstore_release_submission_artifact <uuid> <version> <build> <tag> <commit-sha> <github-release-url> <pr-number> <pr-url> <source-branch> <asc-app-id> <asc-build-id> <appstore-version-id> <slack-channel> <slack-parent-ts> <slack-pr-reply-ts> <release-notes-summary>}"
+  local uuid="${1:?write_appstore_release_submission_artifact <uuid> <version> <build> <tag> <commit-sha> <github-release-url> <pr-number> <pr-url> <source-branch> <asc-app-id> <asc-build-id> <appstore-version-id> <slack-channel> <slack-parent-ts> <slack-pr-reply-ts> <release-notes-summary> [<appstore-submission-id>]}"
   local version="${2:?}" build_num="${3:?}" tag="${4:?}" commit_sha="${5:?}" github_release_url="${6:-}"
   local pr_number="${7:-}" pr_url="${8:-}" source_branch="${9:-}" asc_app_id="${10:-}" asc_build_id="${11:-}" appstore_version_id="${12:-}"
   local slack_channel="${13:-}" slack_parent_ts="${14:-}" slack_pr_reply_ts="${15:-}" release_notes_summary="${16:-}"
+  # #824: submission_id captures the actual appStoreVersionSubmissions id from
+  # ASC. Required for `state: submitted` to mean a real Apple-side submission.
+  # Optional positional for backward compat with callers minted before #824
+  # (those will see a null submission_id and the schema validator will warn —
+  # see schemas/release.md channel-scoped requirement).
+  local appstore_submission_id="${17:-}"
 
   local f ts idem payload
   f=$(_artifact_path releases "$uuid") || return 2
@@ -1365,12 +1371,13 @@ write_appstore_release_submission_artifact() {
     --arg asc_app_id "$asc_app_id" \
     --arg asc_build_id "$asc_build_id" \
     --arg appstore_version_id "$appstore_version_id" \
+    --arg appstore_submission_id "$appstore_submission_id" \
     --arg slack_channel "$slack_channel" \
     --arg slack_parent_ts "$slack_parent_ts" \
     --arg slack_pr_reply_ts "$slack_pr_reply_ts" \
     --arg release_notes_summary "$release_notes_summary" \
     '{
-      schema_version:{name:"release",version:"1.4.0",min_reader:"1.0.0",deprecated_at:null},
+      schema_version:{name:"release",version:"1.5.0",min_reader:"1.0.0",deprecated_at:null},
       id:$uuid,
       channel:"appstore",
       state:"submitted",
@@ -1401,6 +1408,7 @@ write_appstore_release_submission_artifact() {
         asc_app_id:$asc_app_id,
         asc_build_id:$asc_build_id,
         appstore_version_id:$appstore_version_id,
+        appstore_submission_id:(if $appstore_submission_id == "" then null else $appstore_submission_id end),
         app_store_state:"SUBMITTED",
         last_poll_at:null,
         next_check_at:null,
