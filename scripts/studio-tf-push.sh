@@ -1297,22 +1297,22 @@ cmd_appstore() {
   case "$appstore_branch" in
     main|master|trunk|develop|release/*) halt_failed prereq "active branch '$appstore_branch' is a base branch — R11 forbids studio-initiated push" ;;
   esac
+  # Push the source branch up-front; the App Store PR opened later needs it
+  # on origin. This is independent of submission success — if submission
+  # fails, the user already wanted the branch pushed for review purposes.
   (
     cd "$PROJECT_ROOT" || exit 1
     git push -u origin HEAD || exit 1
-    git tag "$TAG" || exit 1
-    git push origin "$TAG" || exit 1
-  ) || halt_failed prereq "git tag/push failed"
+  ) || halt_failed prereq "git push HEAD failed"
+
+  # NOTE: git tag, tag push, and `gh release create --draft` are deferred
+  # until AFTER the appStoreVersionSubmissions POST succeeds (#824 follow-up).
+  # The mitigation in #824 (rename draft to [SUBMISSION-FAILED] on failure)
+  # left a published tag behind on every failed submission. Deferring the
+  # tag eliminates that residue entirely: on submission failure, nothing
+  # tag-shaped is created, so there's nothing to clean up.
 
   with_login_home_for_github gh auth switch --user vishal-zaps >/dev/null 2>&1 || true
-  if ! with_login_home_for_github gh release create "$TAG" \
-      --repo "$GH_REPO" \
-      --title "$TAG" \
-      --notes-file "$RELEASE_NOTES_FILE" \
-      --draft >/dev/null; then
-    halt_failed prereq "gh release create failed"
-  fi
-  printf 'studio-tf-push: GH draft release: %s\n' "$RELEASE_URL" >&2
 
   local TOKEN
   TOKEN=$(mint_jwt)
@@ -1421,24 +1421,39 @@ cmd_appstore() {
         ;;
     esac
     if [ -z "$sub_id" ]; then
-      # Submission failed. Mark the GH draft release so the stale tag is
-      # visibly flagged, emit the structured failure event, and halt before
-      # any user-visible "ready" output, Slack, PR creation, or artifact write.
+      # Submission failed. Emit the structured failure event and halt before
+      # any user-visible "ready" output, Slack, PR creation, or artifact
+      # write. NB: with tag/draft creation deferred (this PR), there is
+      # nothing tag-shaped to rename on failure — no residue is left behind.
       local failure_body fail_reason
       failure_body=$(asc_body "$sub_resp" 2>/dev/null || true)
       fail_reason=$(printf '%s' "$failure_body" | jq -r '.errors[0].detail // .errors[0].title // "ASC submission rejected"' 2>/dev/null || printf 'ASC submission rejected')
-      with_login_home_for_github gh release edit "$TAG" \
-        --repo "$GH_REPO" \
-        --title "[SUBMISSION-FAILED] $TAG" \
-        --draft >/dev/null 2>&1 || true
       emit_event_keyed achilles release appstore_submission_failed "" \
         "{\"version_id\":\"$version_id\",\"build_id\":\"$build_id\",\"http_status\":\"$sub_status\",\"reason\":$(printf '%s' "$fail_reason" | jq -Rs .),\"tag\":\"$TAG\"}" \
         >/dev/null 2>&1 || true
-      halt_failed prereq "ASC submission failed (HTTP $sub_status): $fail_reason — GH draft renamed to [SUBMISSION-FAILED] $TAG"
+      halt_failed prereq "ASC submission failed (HTTP $sub_status): $fail_reason"
     fi
   fi
 
   # ────────────────────────────────────────────────────────────────────────
+
+  # Submission succeeded — NOW create the git tag + GH draft release. This
+  # is the deferred tag/release step (#824 follow-up). On failure above we
+  # halted before this point, so no orphaned tag is ever published.
+  (
+    cd "$PROJECT_ROOT" || exit 1
+    git tag "$TAG" || exit 1
+    git push origin "$TAG" || exit 1
+  ) || halt_failed prereq "git tag/push failed (post-submission)"
+
+  if ! with_login_home_for_github gh release create "$TAG" \
+      --repo "$GH_REPO" \
+      --title "$TAG" \
+      --notes-file "$RELEASE_NOTES_FILE" \
+      --draft >/dev/null; then
+    halt_failed prereq "gh release create failed (post-submission)"
+  fi
+  printf 'studio-tf-push: GH draft release: %s\n' "$RELEASE_URL" >&2
 
   printf 'studio-tf-push: appstore submission accepted by ASC (build=%s version=%s, submission=%s, %d localizations updated)\n' \
     "$BUILD" "$VERSION" "$sub_id" "$loc_count" >&2
