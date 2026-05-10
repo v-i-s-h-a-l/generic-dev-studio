@@ -1285,6 +1285,57 @@ if [ "${#POSITIONAL[@]}" -gt 0 ]; then
   fi
 fi
 
+# #823: inline refinement prompts that *reference* prior plan/review artifacts
+# previously got synthesized as a single worker task with empty allowed_paths
+# and stopped later as needs_context with no actionable instruction. Detect
+# this class early — if the inline goal text contains readable file paths, the
+# user almost certainly meant to feed those files as structured input. Fail
+# fast with a clear redirect to --source-file / --from-plan instead of
+# producing a bogus one-task decomposition.
+#
+# Bypass: STUDIO_PLAN_CHAIN_ALLOW_INLINE_PATHS=1 (for prompts that legitimately
+# mention paths as prose, not as input artifacts).
+if [ -z "$SOURCE_FILE" ] && [ -z "$ISSUE_NUMBER" ] && [ -z "$FROM_PLAN" ] && [ -n "$SOURCE_TEXT" ]; then
+  case "${STUDIO_PLAN_CHAIN_ALLOW_INLINE_PATHS:-0}" in
+    1|true|TRUE|yes|YES) ;;
+    *)
+      _inline_path_hits=""
+      for _tok in $SOURCE_TEXT; do
+        case "$_tok" in
+          /*.md|/*.yaml|/*.yml|/*.json|/*.txt \
+          |\~/*.md|\~/*.yaml|\~/*.yml|\~/*.json|\~/*.txt \
+          |./*.md|./*.yaml|./*.yml|./*.json|./*.txt \
+          |../*.md|../*.yaml|../*.yml|../*.json|../*.txt)
+            _expanded="${_tok/#\~/$HOME}"
+            if [ -r "$_expanded" ]; then
+              _inline_path_hits="${_inline_path_hits}${_inline_path_hits:+ }$_tok"
+            fi
+            ;;
+        esac
+      done
+      if [ -n "$_inline_path_hits" ]; then
+        cat >&2 <<EOF
+manager-plan-chain: inline goal text references readable file path(s):
+  $_inline_path_hits
+
+Inline prompts get synthesized as a single worker task with empty
+allowed_paths and stop later as needs_context. If those paths are the
+intended input, rerun with structured input:
+
+  --source-file <path>     for a PRD / brief / refinement doc
+  --from-plan <path>       for an existing planner / task-graph artifact
+  --issue <n>              to load from a GitHub issue
+
+If the path text is prose (not input), bypass with:
+  STUDIO_PLAN_CHAIN_ALLOW_INLINE_PATHS=1
+EOF
+        exit 2
+      fi
+      unset _inline_path_hits _tok _expanded
+      ;;
+  esac
+fi
+
 TARGET_REPO_ROOT=${TARGET_REPO_ROOT:-$(git -C "${PWD:-$REPO_ROOT}" rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "$REPO_ROOT")}
 TARGET_REPO_ROOT=$(cd "$TARGET_REPO_ROOT" && pwd -P)
 [ -n "$PROJECT" ] || PROJECT=$(basename "$TARGET_REPO_ROOT")
