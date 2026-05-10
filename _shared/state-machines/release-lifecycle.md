@@ -27,7 +27,7 @@ Every release routed through the studio — TestFlight or App Store — traverse
 ## Transitions
 
 ```
-drafted               → submitted                 : build uploaded to ASC.
+drafted               → submitted                 : build uploaded to ASC. (No writer produces a `drafted` artifact on disk today; the writers fire only after upload+submission, so the on-disk event is `null → submitted`. See §Initial-write semantics below.)
 submitted             → approved                  : release-manager records the studio approval gate.
 approved              → in-review                 : ASC state IN_REVIEW (App Store only).
 approved              → released                  : ASC state PROCESSED / READY_FOR_SALE (TestFlight only).
@@ -70,16 +70,21 @@ The watcher keeps the PR open through `PENDING_DEVELOPER_RELEASE`. On `READY_FOR
   "event": "release_state_changed",
   "task": "TF-3047",
   "data": {
-    "from_state": "drafted",
-    "to_state": "submitted",
-    "channel": "testflight",
-    "release_id": "0190f52a-9000-7f01-8aaa-77fe8fa99bbb",
-    "asc_state": "PROCESSING"
+    "from": "submitted",
+    "to": "approved",
+    "actor": "release-manager",
+    "event_id": "0190f52a-9000-7f01-8bbb-..."
   }
 }
 ```
 
-`task` field of the event carries the release tag (TF-nnnn or AS-nnnn) for continuity with the legacy event shape. `data.release_id` is the UUIDv7 of the release artifact — the authoritative identifier.
+`task` field of the event carries the release tag (TF-nnnn or AS-nnnn) for continuity with the legacy event shape. `data.event_id` is the UUIDv7 of the transition; the release-artifact UUIDv7 is the `task`-field subject key on the event row.
+
+### Initial-write semantics (`from: null`)
+
+The writers in `scripts/lib-ledger.sh` (`write_release_artifact`, `write_appstore_release_submission_artifact`) emit `release_state_changed` with **`from: null`** when an artifact is first written — there is no `drafted` row preceding it on disk. In practice the App Store path goes `null → submitted` (the writer fires only after `appStoreVersionSubmissions` POST succeeds, per #824) and the TestFlight path goes `null → released`. The `drafted` state in the table above is reserved for future flows that may persist a release artifact pre-upload; today no writer produces it. Treat `from: null` in an event payload as "this is the artifact's first state on disk," not "transition from an absent drafted state." Downstream consumers (sweep-process-events, watcher state machines) handle the null `from` explicitly.
+
+State-machine transitions *after* the first write (`submitted → approved`, `approved → in-review`, etc.) are emitted by `_transition_artifact`, which reads the existing `state` field as the real `from` — those events carry the actual prior state, not null.
 
 ## Retry and backoff
 
