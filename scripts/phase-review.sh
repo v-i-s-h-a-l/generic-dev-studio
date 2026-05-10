@@ -363,15 +363,32 @@ EOF
 
 case "$review_host" in
   codex*|*codex*)
-    review_cmd=(env -i \
-      PATH="$PATH" \
-      HOME="$reviewer_home" \
-      LANG="${LANG:-C.UTF-8}" \
-      USER="${USER:-}" \
-      ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
-      STUDIO_HOST="$review_host" \
-      REVIEW_PAYLOAD="$input" \
-      "${spawn_argv[@]}" "$prompt")
+    # See pr-reviewer-eligibility.sh: codex 0.130+ ChatGPT-OAuth fails 401 with
+    # HOME reassigned to a tmpdir OR with CODEX_HOME set explicitly even to
+    # the default $HOME/.codex. When the resolved auth_home equals the
+    # default, drop both overrides so codex auth resolves through the user's
+    # real environment. Real isolation (seeded `.codex-reviewer/`) still
+    # uses the override path.
+    if [ "$reviewer_codex_home" = "$HOME/.codex" ]; then
+      review_cmd=(env -i \
+        PATH="$PATH" \
+        HOME="$HOME" \
+        LANG="${LANG:-C.UTF-8}" \
+        USER="${USER:-}" \
+        STUDIO_HOST="$review_host" \
+        REVIEW_PAYLOAD="$input" \
+        "${spawn_argv[@]}" "$prompt")
+    else
+      review_cmd=(env -i \
+        PATH="$PATH" \
+        HOME="$reviewer_home" \
+        LANG="${LANG:-C.UTF-8}" \
+        USER="${USER:-}" \
+        ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
+        STUDIO_HOST="$review_host" \
+        REVIEW_PAYLOAD="$input" \
+        "${spawn_argv[@]}" "$prompt")
+    fi
     ;;
   *)
     review_cmd=(env -i \
