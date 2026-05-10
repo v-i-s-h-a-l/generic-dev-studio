@@ -314,6 +314,51 @@ start_data=$(printf '{"mode":"%s","worktree":"%s","attempt":%s%s}' "$MODE" "$WOR
 emit_event_keyed achilles task build_check_started "$TASK_ID" "$start_data" >/dev/null 2>&1 || true
 trap '_emit_aborted_if_open; _release_task_lock' EXIT INT TERM
 
+# #820 item 5: preserve build_log + build_json on failure for postmortem.
+# Successful runs still rm; failure runs move the artifacts under
+# <runtime-global>/logs/build/<task>-<ts>-<status>.log.
+# Auto-prune anything older than 7 days so the dir doesn't grow without bound.
+_preserve_failed_build_log() {
+  local status="${1:-failed}" project_slug
+  project_slug=$(resolve_project 2>/dev/null || printf 'unknown')
+  local dest_dir="$(resolve_runtime_global)/logs/build/$project_slug"
+  mkdir -p "$dest_dir" 2>/dev/null || { rm -f "$build_log" "$build_json" 2>/dev/null; return 0; }
+  local ts dest_log dest_json
+  ts=$(date -u +%Y%m%dT%H%M%SZ)
+  dest_log="$dest_dir/${TASK_ID:-unknown}-${ts}-${status}.log"
+  dest_json="$dest_dir/${TASK_ID:-unknown}-${ts}-${status}.json"
+  if [ -s "$build_log" ]; then
+    mv -f "$build_log" "$dest_log" 2>/dev/null || rm -f "$build_log" 2>/dev/null
+    printf 'task-build-gate: preserved failure build_log: %s\n' "$dest_log" >&2
+  else
+    rm -f "$build_log" 2>/dev/null
+  fi
+  if [ -s "$build_json" ]; then
+    mv -f "$build_json" "$dest_json" 2>/dev/null || rm -f "$build_json" 2>/dev/null
+  else
+    rm -f "$build_json" 2>/dev/null
+  fi
+  find "$dest_dir" -type f -mtime +7 -delete 2>/dev/null || true
+}
+
+# #820 item 4: a 6–30s "success_marker_absent" is almost always a source-sync /
+# shim / harvest failure on the worker side, NOT a real build that mysteriously
+# missed the marker. Real Xcode builds take minutes. Reframe the diagnosis
+# below this wall-time floor as `dispatch_failed` so postmortem looks at the
+# right surface (rsync exit code, ssh failure, sync-worker.sh state) instead
+# of chasing a phantom Xcode bug.
+#
+# Override: STUDIO_BUILD_GATE_MIN_WALL_S=<seconds> (default 60). Set to 0 to
+# disable the floor (e.g. for fixture testing with synthetic logs).
+_under_min_wall_floor() {
+  local wall_s="${1:-0}"
+  local floor="${STUDIO_BUILD_GATE_MIN_WALL_S:-60}"
+  case "$floor" in
+    ''|*[!0-9]*) floor=60 ;;
+  esac
+  [ "$floor" -gt 0 ] && [ "$wall_s" -lt "$floor" ]
+}
+
 # ---------- lsp-only ----------
 #
 # Pure read analysis — no lock, no cleanup. The check is the union of errors
@@ -473,11 +518,14 @@ if [ "$HARVESTED" = "1" ]; then
     data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
     _emit_terminal build_check_failed "$data"
     gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
-    rm -f "$build_log" 2>/dev/null || true
+    _preserve_failed_build_log "$failure_reason"
     exit 2
   fi
   if [ "$success_marker_present" -eq 0 ]; then
     log_tail_json=$(_json_string_from_file_tail "$build_log" 200)
+    # #820 item 4: harvest path runs after the original dispatch — wall time
+    # is not meaningful here, so the floor doesn't apply. Diagnosis stays
+    # success_marker_absent.
     _emit_build_harness_failed success_marker_absent "$BUILD_STATUS" "$log_tail_json"
     failover_json=$(_failover_json_for_failure success_marker_absent "$BUILD_STATUS" "$build_log")
     data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"success_marker_absent","xcode_exit_code":%s,"log_tail":%s,"harvested":true%s}' \
@@ -485,7 +533,7 @@ if [ "$HARVESTED" = "1" ]; then
     data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
     _emit_terminal build_check_failed "$data"
     gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
-    rm -f "$build_log" 2>/dev/null || true
+    _preserve_failed_build_log success_marker_absent
     exit 2
   fi
   rm -f "$build_log" 2>/dev/null || true
@@ -814,20 +862,28 @@ if [ "$BUILD_STATUS" -ne 0 ]; then
   fi
   _emit_terminal build_check_failed "$data"
   gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
-  rm -f "$build_log" "$build_json" 2>/dev/null || true
+  _preserve_failed_build_log "$failure_reason"
   exit 2
 fi
 
 if [ "$success_marker_present" -eq 0 ]; then
+  # #820 item 4: under the wall-time floor, success_marker_absent is almost
+  # always a dispatch-side failure (source-sync, ssh, shim missing). Reframe
+  # so postmortem looks at the right surface. Above the floor, the original
+  # diagnosis stands.
+  marker_reason=success_marker_absent
+  if [ "$IS_LOCAL" != "1" ] && _under_min_wall_floor "$GATE_DUR_S"; then
+    marker_reason=dispatch_failed
+  fi
   log_tail_json=$(_json_string_from_file_tail "$build_log" 200)
-  _emit_build_harness_failed success_marker_absent "$BUILD_STATUS" "$log_tail_json"
-  failover_json=$(_failover_json_for_failure success_marker_absent "$BUILD_STATUS" "$build_log")
-  data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"success_marker_absent","xcode_exit_code":%s,"log_tail":%s,"errors_json":%s%s}' \
-    "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$BUILD_STATUS" "$log_tail_json" "$errors_json" "$DISPATCH_FIELDS")
+  _emit_build_harness_failed "$marker_reason" "$BUILD_STATUS" "$log_tail_json"
+  failover_json=$(_failover_json_for_failure "$marker_reason" "$BUILD_STATUS" "$build_log")
+  data=$(printf '{"mode":"full-green","node":"%s","errors":%s,"warnings":%s,"scheme":"%s","attempt":%s,"reason":"%s","xcode_exit_code":%s,"log_tail":%s,"errors_json":%s,"wall_s":%s%s}' \
+    "$NODE_ID" "$err_count" "$warn_count" "$SCHEME" "$ATTEMPT" "$marker_reason" "$BUILD_STATUS" "$log_tail_json" "$errors_json" "$GATE_DUR_S" "$DISPATCH_FIELDS")
   data=$(printf '%s' "$data" | jq -c --argjson failover "$failover_json" '. + {failover:$failover}')
   _emit_terminal build_check_failed "$data"
   gate_announce_done build "$NODE_ID" "$TASK_ID" failed "$GATE_DUR_S"
-  rm -f "$build_log" "$build_json" 2>/dev/null || true
+  _preserve_failed_build_log "$marker_reason"
   exit 2
 fi
 
