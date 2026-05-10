@@ -72,7 +72,25 @@ error: no project resolved.
 EOF
     return 1
   }
-  basename "$top"
+  # #820: inside an Achilles worktree (~/.dev-studio/<slug>/worktrees/<wt>),
+  # git rev-parse --show-toplevel returns the worktree's own toplevel and
+  # `basename` yields <wt> (e.g. "T368") instead of the project slug, orphaning
+  # events to ~/.dev-studio/T368/events/. Resolve from the *main* checkout via
+  # --git-common-dir, which points at the primary repo's .git for worktrees
+  # and at <top>/.git for ordinary checkouts — so the same logic works in
+  # both cases.
+  local common_dir main_top
+  common_dir=$(git -C "$top" rev-parse --git-common-dir 2>/dev/null) || {
+    basename "$top"
+    return 0
+  }
+  case "$common_dir" in
+    /*) ;;
+    *) common_dir="$top/$common_dir" ;;
+  esac
+  # `dirname <main>/.git` -> <main>; cd-resolve handles trailing-slash quirks.
+  main_top=$(cd "$(dirname "$common_dir")" 2>/dev/null && pwd -P) || main_top=$(dirname "$common_dir")
+  basename "$main_top"
 }
 
 resolve_inbox_root() {
