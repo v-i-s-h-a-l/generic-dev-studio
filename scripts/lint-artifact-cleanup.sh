@@ -137,9 +137,29 @@ allowlisted() {
 }
 
 has_approved_context() {
+  # Only same-line context counts. The previous-line allowance the lint
+  # used to accept (`register_artifact` on the line above) was a false
+  # negative — it accepted any earlier register call regardless of which
+  # artifact it referenced, which let unrelated `mktemp -d` / `xcodebuild`
+  # / etc. slip through. If a register_artifact appears on a different
+  # line than the offender, the author should either combine onto one
+  # line with `;` or use the explicit per-line annotation
+  # `# lint-artifact-cleanup:allow next-line — <reason>` placed on the
+  # line immediately above.
   case "$1" in
     *register_artifact*)              return 0 ;;
     *'lint-artifact-cleanup:allow'*)  return 0 ;;
+  esac
+  return 1
+}
+
+# Recognize the explicit per-line annotation only when it is on the
+# physically-previous line. This is intentionally narrower than
+# has_approved_context: an arbitrary register_artifact above an offender
+# is NOT a carve-out, but `# lint-artifact-cleanup:allow next-line` IS.
+has_prev_line_annotation() {
+  case "$1" in
+    *'lint-artifact-cleanup:allow'*) return 0 ;;
   esac
   return 1
 }
@@ -214,7 +234,11 @@ scan_whole_file() {
       continue
     fi
     if match_offender "$line"; then
-      if has_approved_context "$line" || has_approved_context "$prev"; then
+      # Same-line register_artifact / annotation always allowed.
+      # Previous-line annotation (the explicit `# lint-artifact-cleanup:allow`
+      # form) is also allowed — but a bare register_artifact on the previous
+      # line is NOT, since it may register a different artifact.
+      if has_approved_context "$line" || has_prev_line_annotation "$prev"; then
         prev="$line"
         continue
       fi
@@ -260,7 +284,12 @@ scan_staged_diff() {
           [ "$in_hunk" -eq 1 ] || continue
           local content="${dline#+}"
           if ! is_comment_line "$content" && match_offender "$content"; then
-            if ! has_approved_context "$content" && ! has_approved_context "$prev_added"; then
+            # Same as scan_whole_file: same-line register_artifact OR
+            # previous-line `# lint-artifact-cleanup:allow next-line`
+            # annotation are the only carve-outs. A bare register_artifact
+            # on the previous added line is no longer a carve-out (false
+            # negative for unrelated artifacts).
+            if ! has_approved_context "$content" && ! has_prev_line_annotation "$prev_added"; then
               emit_error "E_ARTIFACT_CLEANUP_UNREGISTERED:$f:$new_line:$MATCH_DETAIL | route through scripts/lib-artifact-cleanup.sh \`register_artifact\` or an approved janitor (studio-ios-artifact-janitor / node-janitor / fleet-cleanup / sweep-janitor); per CLAUDE.md §Where workflow rules live"
             fi
           fi

@@ -111,7 +111,10 @@ register_artifact() {
     printf 'register_artifact: usage: register_artifact <kind> <path> [--keep-on-handoff]\n' >&2
     return 2
   fi
-  local kind="$1" path="$2" handoff="0"
+  # NOTE: never use `local path` here — zsh ties `path` to `PATH`, so a
+  # local would temporarily wipe PATH inside this function and any trap
+  # callees, breaking command lookup for sed/rm/etc. Use art_path.
+  local kind="$1" art_path="$2" handoff="0"
   shift 2
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -123,13 +126,13 @@ register_artifact() {
     esac
   done
 
-  if [ -z "$kind" ] || [ -z "$path" ]; then
+  if [ -z "$kind" ] || [ -z "$art_path" ]; then
     printf 'register_artifact: <kind> and <path> must be non-empty\n' >&2
     return 2
   fi
 
   _LAC_KINDS+=("$kind")
-  _LAC_PATHS+=("$path")
+  _LAC_PATHS+=("$art_path")
   _LAC_HANDOFFS+=("$handoff")
   _lac_install_trap
 }
@@ -138,7 +141,8 @@ register_artifact() {
 # artifact and own its lifecycle. TSV (kind, path, owner_pid, ts_iso)
 # keeps the format greppable without a yq/jq dependency.
 _lac_write_handoff_record() {
-  local kind="$1" path="$2"
+  # zsh-safe: art_path instead of path.
+  local kind="$1" art_path="$2"
   local dir record ts
   dir=$(_lac_registry_dir) || return 1
   mkdir -p "$dir/handoff" 2>/dev/null || return 1
@@ -146,7 +150,7 @@ _lac_write_handoff_record() {
   # One file per record so concurrent writers from sibling processes
   # never clobber each other; filename is unique per (pid, count).
   record="$dir/handoff/$$-${#_LAC_KINDS[@]}-$(date +%s 2>/dev/null || echo n).tsv"
-  printf '%s\t%s\t%s\t%s\n' "$kind" "$path" "$$" "$ts" > "$record" 2>/dev/null
+  printf '%s\t%s\t%s\t%s\n' "$kind" "$art_path" "$$" "$ts" > "$record" 2>/dev/null
 }
 
 # Public: finalize all registered artifacts. Safe to call multiple times.
@@ -159,22 +163,32 @@ finalize_artifacts() {
     1|true|TRUE|yes|YES) keep_all="1" ;;
   esac
 
-  local i count="${#_LAC_PATHS[@]}"
-  i=0
-  while [ "$i" -lt "$count" ]; do
-    local kind="${_LAC_KINDS[$i]}" path="${_LAC_PATHS[$i]}" handoff="${_LAC_HANDOFFS[$i]}"
+  # Portable iteration across bash (0-indexed) and zsh (1-indexed by
+  # default): walk the parallel arrays via the @ expansion plus a counter
+  # we maintain ourselves, so we never index by an integer that differs
+  # between shells. zsh-safe: art_path instead of path.
+  local kind art_path handoff
+  local idx=0
+  for art_path in "${_LAC_PATHS[@]}"; do
+    if [ -n "${ZSH_VERSION:-}" ]; then
+      kind="${_LAC_KINDS[$((idx + 1))]}"
+      handoff="${_LAC_HANDOFFS[$((idx + 1))]}"
+    else
+      kind="${_LAC_KINDS[$idx]}"
+      handoff="${_LAC_HANDOFFS[$idx]}"
+    fi
 
     if [ "$keep_all" = "1" ]; then
       printf 'studio: STUDIO_KEEP_ARTIFACTS=1 — retaining %s artifact: %s\n' \
-        "$kind" "$path" >&2
+        "$kind" "$art_path" >&2
     elif [ "$handoff" = "1" ]; then
-      _lac_write_handoff_record "$kind" "$path" || true
+      _lac_write_handoff_record "$kind" "$art_path" || true
       # Intentionally NO rm — ownership transferred.
     else
-      if [ -n "$path" ] && [ -e "$path" ]; then
-        rm -rf -- "$path" 2>/dev/null || true
+      if [ -n "$art_path" ] && [ -e "$art_path" ]; then
+        rm -rf -- "$art_path" 2>/dev/null || true
       fi
     fi
-    i=$((i + 1))
+    idx=$((idx + 1))
   done
 }

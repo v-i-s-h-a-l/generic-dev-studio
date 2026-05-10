@@ -61,22 +61,41 @@ else
 fi
 
 # -----------------------------------------------------------------------
-# Scenario (b) — register_artifact carve-out passes
+# Scenario (b) — same-line register_artifact carve-out passes
 # -----------------------------------------------------------------------
 mkdir -p "$TMP/b/scripts"
 cat > "$TMP/b/scripts/registered.sh" <<'SH'
 #!/usr/bin/env bash
 . "$(dirname "$0")/lib-artifact-cleanup.sh"
 tmp=$(mktemp -d); register_artifact tmpdir "$tmp"
-# previous-line annotation form also accepted (register_artifact below)
-register_artifact tmpdir "$tmp"
-scratch=$(mktemp -d -t scratch.XXXXXX)
+# lint-artifact-cleanup:allow next-line — explicit annotation form
+scratch=$(mktemp -d -t scratch.XXXXXX); rm -rf "$scratch"
 SH
 if ! "$LINT" "$TMP/b/scripts/registered.sh" >"$TMP/b.out" 2>"$TMP/b.err"; then
-  fail b "lint rejected register_artifact carve-outs"
+  fail b "lint rejected same-line register_artifact and explicit annotation carve-outs"
   cat "$TMP/b.out" "$TMP/b.err" >&2
 else
-  pass b "register_artifact same-line and previous-line carve-outs accepted"
+  pass b "same-line register_artifact and explicit prev-line annotation accepted"
+fi
+
+# -----------------------------------------------------------------------
+# Scenario (b2) — bare register_artifact on previous line is NOT a carve-out
+# (the false-negative the PR #860 review caught). $scratch is unregistered;
+# lint must reject it even though the line above contains register_artifact
+# for a different artifact.
+# -----------------------------------------------------------------------
+mkdir -p "$TMP/b2/scripts"
+cat > "$TMP/b2/scripts/false-negative.sh" <<'SH'
+#!/usr/bin/env bash
+. "$(dirname "$0")/lib-artifact-cleanup.sh"
+tmp=$(mktemp -d); register_artifact tmpdir "$tmp"
+scratch=$(mktemp -d -t scratch.XXXXXX)
+SH
+if "$LINT" "$TMP/b2/scripts/false-negative.sh" >"$TMP/b2.out" 2>"$TMP/b2.err"; then
+  fail b2 "lint allowed unregistered \$scratch when previous line had register_artifact for a different artifact"
+  cat "$TMP/b2.out" "$TMP/b2.err" >&2
+else
+  pass b2 "previous-line bare register_artifact is no longer a carve-out (false-negative fixed)"
 fi
 
 # -----------------------------------------------------------------------
