@@ -166,7 +166,10 @@ run_submission() {
         ;;
     esac
     if [ -z "$sub_id" ]; then
-      with_login_home_for_github gh release edit "$TAG" --repo "$GH_REPO" --title "[SUBMISSION-FAILED] $TAG" --draft
+      # Tag/draft-release creation is deferred until AFTER submission
+      # succeeds (#824 follow-up). On failure there's nothing tag-shaped
+      # to rename — the failure path just emits the structured event and
+      # halts. No GH residue is created.
       emit_event_keyed achilles release appstore_submission_failed "" "{}"
       halt_failed prereq "ASC submission failed (HTTP $sub_status)"
       return 1
@@ -189,8 +192,8 @@ assert "existing-submission path skips the POST" \
 
 ASC_SCENARIO=failure run_submission && rc=0 || rc=$?
 assert "submission failure halts non-zero" '[ "$rc" -ne 0 ]'
-assert "failure renames GH draft to [SUBMISSION-FAILED]" \
-  'printf %s "$GH_LAST_ARGS" | grep -q "\\[SUBMISSION-FAILED\\]"'
+assert "failure does NOT touch GH (no draft to rename — tag is deferred)" \
+  '[ -z "$GH_LAST_ARGS" ]'
 assert "failure emits appstore_submission_failed event" \
   '[ "$EVENT_NAME" = "appstore_submission_failed" ]'
 
