@@ -1364,20 +1364,42 @@ cmd_appstore() {
   # Build-mismatch guard: confirm the version's *current* build relationship
   # still points at the build we intend to submit. Catches resume-from-partial
   # cases where another flow swapped the build under us.
-  local cur_build_resp cur_build_id
+  #
+  # #824 outcome review item: an opaque non-2xx on /relationships/build means
+  # we can't *prove* the version is still bound to our build. Treating that
+  # as "no current binding" (cur_build_id empty → skip the != check) would
+  # silently allow a mismatched build to be submitted. Halt instead so the
+  # operator sees the relationship probe itself failed.
+  local cur_build_resp cur_build_status cur_build_id
   cur_build_resp=$(asc_api GET "/v1/appStoreVersions/${version_id}/relationships/build")
+  cur_build_status=$(asc_status "$cur_build_resp")
+  if [ "$cur_build_status" != "200" ]; then
+    halt_failed prereq "ASC: GET /v1/appStoreVersions/${version_id}/relationships/build returned HTTP ${cur_build_status:-unknown}; refusing to submit without a verifiable build binding"
+  fi
   cur_build_id=$(asc_body "$cur_build_resp" | jq -r '.data.id // empty')
   if [ -n "$cur_build_id" ] && [ "$cur_build_id" != "$build_id" ]; then
     halt_failed prereq "ASC: appStoreVersion ${version_id} is bound to build ${cur_build_id}, not ${build_id} (build $BUILD); refusing to submit a mismatched build"
   fi
 
   # Idempotent pre-check: does an appStoreVersionSubmission already exist?
+  # Non-2xx on this GET is informative but not fatal — Apple sometimes
+  # returns 4xx for "no submission relationship" (a legitimate "not found")
+  # and the POST below treats absence-or-error symmetrically by attempting
+  # to create. Just log unexpected statuses for postmortem.
   local sub_pre_resp sub_pre_status sub_id=""
   sub_pre_resp=$(asc_api GET "/v1/appStoreVersions/${version_id}/relationships/appStoreVersionSubmission")
   sub_pre_status=$(asc_status "$sub_pre_resp")
-  if [ "$sub_pre_status" = "200" ]; then
-    sub_id=$(asc_body "$sub_pre_resp" | jq -r '.data.id // empty')
-  fi
+  case "$sub_pre_status" in
+    200)
+      sub_id=$(asc_body "$sub_pre_resp" | jq -r '.data.id // empty')
+      ;;
+    404)
+      : # No submission yet — expected state for a fresh version.
+      ;;
+    *)
+      printf 'studio-tf-push: warning: GET /relationships/appStoreVersionSubmission returned HTTP %s (continuing — POST will create)\n' "$sub_pre_status" >&2
+      ;;
+  esac
 
   if [ -n "$sub_id" ]; then
     printf 'studio-tf-push: ASC submission already exists for version %s: %s — reusing\n' "$VERSION" "$sub_id" >&2
