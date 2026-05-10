@@ -76,6 +76,13 @@ source_project=$(basename "$source_root")
 destination_project=$source_project
 
 if [ -n "$to_project" ]; then
+  # `--to dev-studio` is a common shorthand for the studio destination; normalize
+  # so it routes through the studio-feedback path instead of being treated as a
+  # project slug literal (which would write a project ingest dir named
+  # "dev-studio"). See #822.
+  if [ "$to_project" = "dev-studio" ]; then
+    to_project=generic-dev-studio
+  fi
   destination_project=$to_project
 elif [ "$scope" = "studio" ]; then
   destination_project=generic-dev-studio
@@ -97,7 +104,7 @@ if [ "$scope" = "project" ] && [ "$resolved_scope" = "studio" ]; then
 fi
 
 artifact_kind=project-ingest
-artifact_root="$(resolve_project_root_for "$destination_project")/ingest"
+artifact_root="$(resolve_project_ingest_root_for "$destination_project")"
 public_issue_repo=null
 requires_privacy_scrub=false
 

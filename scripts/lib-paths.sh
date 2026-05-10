@@ -543,6 +543,41 @@ resolve_feedback_data_home() {
   printf '%s\n' "${HOME:-}"
 }
 
+# Resolve the stable home for project-scoped durable content (ingest records,
+# durable artifacts shared across hosts). Mirrors resolve_feedback_data_home:
+# host launchers may run under a synthetic HOME (~/.codex-homes/...), but
+# project ingest must land in the login-home Studio root so records stay
+# host-agnostic and visible across Claude/Codex/other adapters. Per-project
+# *runtime* state (events, locks, .runtime, plans) keeps using
+# resolve_project_root_for — it stays host-local because it is
+# session-scoped, not durable cross-host content.
+resolve_project_ingest_data_home() {
+  case "${STUDIO_BYPASS_INGEST_LOGIN_HOME:-0}" in
+    1|true|TRUE|yes|YES)
+      printf '%s\n' "${HOME:-}"
+      return 0
+      ;;
+  esac
+
+  if studio_home_is_synthetic "${HOME:-}"; then
+    local login_home
+    login_home=$(resolve_user_login_home 2>/dev/null || true)
+    if [ -n "$login_home" ] && [ -d "$login_home" ]; then
+      printf '%s\n' "$login_home"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "${HOME:-}"
+}
+
+# Per-project ingest root — durable, host-agnostic destination for
+# /dev-studio manager ingest project records. See #822.
+resolve_project_ingest_root_for() {
+  local project="${1:?usage: resolve_project_ingest_root_for <slug>}"
+  printf '%s\n' "$(resolve_project_ingest_data_home)/.dev-studio/$project/ingest"
+}
+
 # Studio-self feedback inbox for a given source-project slug. Feedback records
 # authored in any project route here (see CLAUDE.md "Analysis sessions and
 # privacy"); generic-dev-studio is the destination because that's where the
