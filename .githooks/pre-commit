@@ -273,7 +273,6 @@ if [ -x "$SCRIPTS/lint-synthetic-home.sh" ]; then
   fi
 fi
 
-<<<<<<< HEAD
 # Gate 2o — jsonl-merge linter (#820 item 7.2). Block the dangerous
 # `cat ... | jq -s 'sort_by ...'` shape that silently destroys ndjson on
 # control-char input. Use scripts/jsonl-merge.sh instead.
