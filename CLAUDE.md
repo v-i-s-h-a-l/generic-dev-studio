@@ -18,7 +18,7 @@ If the user asks "where were we" or similar, invoke `/resume-plan` — it reads 
 | `REVIEW.md` | Diff-review rules with tier (block / ask / warn) |
 | `RELEASES.md` / `THEMES.md` | Release procedure, theme taxonomy |
 | `_shared/rules/*.md`, `_shared/standards/*.md` | Cross-agent discipline, lint contracts |
-| `scripts/` + pre-commit hooks (`hooks/`, `~/.githooks/`) | Mechanical enforcement |
+| `scripts/` + pre-commit hooks (`hooks/`, `~/.githooks/`) | Mechanical enforcement (lint gates: `lint-runtime-paths.sh`, `lint-gh-wrapper.sh`, `lint-synthetic-home.sh`, `lint-artifact-cleanup.sh`) |
 | GitHub issues (label: `enhancement`, `track:*`, `roadmap`) | Tracked work that hasn't shipped yet |
 | Assistant memory (`~/.claude-personal/projects/<hash>/memory/`) | User-specific *context* that genuinely belongs to the user-assistant relationship — preferences, identity hints, prior-session breadcrumbs. **Not workflow rules.** |
 
@@ -221,6 +221,38 @@ a stderr audit line when set. Per-line carve-outs use
 are captured in `scripts/lint-synthetic-home-allowlist.txt` and tracked under
 #710 Phase E for migration; the bypass and the annotation are user-controlled
 and must not be used silently by an assistant.
+
+## Artifact cleanup (hard rule)
+
+Studio shell-script workflows MUST clean their own filesystem state on terminal
+exit (success and failure). Artifact classes covered: Xcode DerivedData
+(default + custom `-derivedDataPath`), git worktrees, `~/.dev-studio/<project>/**`
+ephemeral scratch, `/tmp` and `mktemp` directories, booted simulator devices
+(`xcrun simctl boot`), xcresult bundles, archives, and IPAs. Existing janitor
+scripts (`studio-ios-artifact-janitor.sh`, `node-janitor.sh`,
+`fleet-cleanup.sh`, `sweep-janitor.sh`) remain as a periodic safety net;
+primary enforcement lives in per-workflow EXIT traps registered through the
+shared primitive.
+
+The shared primitive is `scripts/lib-artifact-cleanup.sh` (`register_artifact
+<kind> <path> [--keep-on-handoff]` plus EXIT-trap `finalize_artifacts`). It
+honors `STUDIO_KEEP_ARTIFACTS=1` as a full-retain user override and stamps
+ownership/TTL metadata under a registry directory derived through
+`project_state_dir` from `scripts/lib-paths.sh` (no raw `$HOME/.dev-studio/...`
+formulas).
+
+The wrapper requirement is mechanically enforced by
+`scripts/lint-artifact-cleanup.sh`, which blocks new commits in `scripts/*.sh`,
+`core/**/*.sh`, and `hooks/*` that call `xcodebuild`, `-derivedDataPath`,
+`git worktree add`, or `mktemp -d` without (a) `register_artifact` on the
+same/adjacent line, (b) routing through an approved wrapper (the existing
+janitors plus `scripts/lib-artifact-cleanup.sh` itself), or (c) per-line
+carve-out `# lint-artifact-cleanup:allow next-line — <reason>`.
+`STUDIO_BYPASS_ARTIFACT_CLEANUP_LINT=1` is the emergency/debug lever for the
+pre-commit gate; it emits a stderr audit line when set. Pre-existing call
+sites are captured in `scripts/lint-artifact-cleanup-allowlist.txt` and
+tracked under #854 (umbrella) for migration; the bypass and the annotation
+are user-controlled and must not be used silently by an assistant.
 
 ## Backlog
 

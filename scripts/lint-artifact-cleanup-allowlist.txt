@@ -1,0 +1,79 @@
+# lint-artifact-cleanup allowlist (issue #849 baseline).
+#
+# Files listed here pre-date the lint and are permitted to retain raw
+# `xcodebuild`, `-derivedDataPath`, `git worktree add`, and `mktemp -d`
+# call sites that do not route through scripts/lib-artifact-cleanup.sh
+# `register_artifact` in --strict (whole-tree) mode. Pre-commit (--staged)
+# mode still rejects newly-added lines containing the patterns even in
+# these files — the allowlist only suppresses retroactive flagging of
+# pre-existing content.
+#
+# Seed is drawn from the T-R001 artifact-cleanup audit
+# (_shared/audits/2026-05-10-artifact-cleanup-audit.md, baseline SHA
+# cdbc6e9). Migration of these files to the cleanup primitive is tracked
+# under #710 Phase E and the per-surface sub-issues (T-R002 chain-runner+
+# worker, T-R003 perf/review, T-R005 release/TF, T-R006 structural). Do
+# not add new entries here without an explicit migration plan.
+#
+# Format: one repo-relative path per line. Lines starting with `#` and
+# blank lines are ignored. Approved-wrapper carve-outs
+# (scripts/lib-artifact-cleanup.sh, scripts/studio-ios-artifact-janitor.sh,
+# scripts/node-janitor.sh, scripts/fleet-cleanup.sh,
+# scripts/sweep-janitor.sh) and scripts/test-fixtures/** are exempt by
+# rule, not by this allowlist.
+
+scripts/add-skill.sh
+scripts/analyze-feedback-ingest.sh
+scripts/argus-axe-verify.sh
+scripts/argus-run-tests.sh
+scripts/bootstrap.sh
+scripts/check-xcode-parity.sh
+scripts/configure.sh
+scripts/field-workflow-report.sh
+scripts/graduation-scan.sh
+scripts/ingest-feedback.sh
+scripts/init-worker-manifest.sh
+scripts/install-recipe.sh
+scripts/issue-body-edit.sh
+scripts/lib-build-queue.sh
+scripts/lib-chain-monitor-slack-list.sh
+scripts/lib-dispatch-harvest.sh
+scripts/lib-host-eligibility.sh
+scripts/lib-paths.sh
+scripts/lib-remote-failure.sh
+scripts/lib-stepwise.sh
+scripts/lint-build-invocations.sh
+scripts/lint-runtime-paths.sh
+scripts/manager-reconcile.sh
+scripts/manager-release-branch.sh
+scripts/migrate-ledger.sh
+scripts/node-diagnose.sh
+scripts/node-parity.sh
+scripts/node-warmup.sh
+scripts/phase-review.sh
+scripts/pr-headless-review.sh
+scripts/pr-reviewer-eligibility.sh
+scripts/prd-task-graph-synthesize.sh
+scripts/pre-commit-review.sh
+scripts/rollback-recipe.sh
+scripts/rule-pack-resolve.sh
+scripts/studio-chain-doctor.sh
+scripts/studio-chain-rule-gates.sh
+scripts/studio-chain-runner.sh
+scripts/studio-chain-telemetry-digest.sh
+scripts/studio-checkpoint.sh
+scripts/studio-ios-check-failover.sh
+scripts/studio-ios-check-router.sh
+scripts/studio-pr-baseline-report.sh
+scripts/studio-tf-push.sh
+scripts/studio-weekly.sh
+scripts/swift-test-gate.sh
+scripts/sync-worker.sh
+scripts/task-build-gate.sh
+scripts/task-merge.sh
+scripts/task-test-gate.sh
+scripts/task-worktree-setup.sh
+scripts/test-suggestion-engine.sh
+scripts/v2-router-lint.sh
+scripts/v2-skill-route.sh
+scripts/xcodebuild-shim.sh
