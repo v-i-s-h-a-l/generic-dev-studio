@@ -8,6 +8,8 @@ type: reference
 
 All agents write to a shared append-only event log. Chanakya tails it on wake.
 
+**Append-only is a hard contract (#820 item 7.4).** No tool may rewrite an event-log file in place — that operation has no safe primitive in this codebase, and the naive shape (`cat $a $b | jq -s 'sort_by(.ts) | unique' > merged; mv merged → canonical`) is silently destructive when any record carries control characters (build-log payloads, multi-line error strings). T368 cleanup lost a day's canonical events to exactly that pattern. To merge ndjson files **outside** `events/`, use `scripts/jsonl-merge.sh`; it parses with python (control-char safe), refuses to lose records, retains a timestamped `.bak` under runtime-global logs for 7 days, and **explicitly refuses** to write to any path under `<project>/events/`. Inside `events/`, only `cat >> canonical` is sanctioned; readers (Chanakya tail, sweep aggregators) sort and dedupe at read time. `scripts/lint-jsonl-merge.sh --staged` blocks the dangerous shape at commit time.
+
 ## File Location
 
 ```

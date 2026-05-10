@@ -268,6 +268,19 @@ if [ -x "$SCRIPTS/lint-synthetic-home.sh" ]; then
   fi
 fi
 
+# Gate 2o — jsonl-merge linter (#820 item 7.2). Block the dangerous
+# `cat ... | jq -s 'sort_by ...'` shape that silently destroys ndjson on
+# control-char input. Use scripts/jsonl-merge.sh instead.
+if [ -x "$SCRIPTS/lint-jsonl-merge.sh" ]; then
+  "$SCRIPTS/lint-jsonl-merge.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: dangerous `jq -s sort_by|unique|group_by|add` over ndjson found — use scripts/jsonl-merge.sh (control-char safe, refuses to lose records) per #820\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_JSONL_MERGE_LINT=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
 # Gate 3 — privacy.
 #
 # Reject commits whose staged diff references another project's runtime path.
