@@ -165,15 +165,41 @@ run_smoke_gate() {
   local smoke_rc
   case "$HOST" in
     codex*|*codex*)
-      ( cd "$REPO_ROOT" && env -i \
-        PATH="$PATH" \
-        HOME="$reviewer_home" \
-        LANG="${LANG:-C.UTF-8}" \
-        USER="${USER:-}" \
-        ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
-        STUDIO_HOST="$HOST" \
-        REVIEW_PAYLOAD="$payload" \
-        "${smoke_cmd[@]}" </dev/null >"$stdout_file" 2>"$stderr_file" )
+      # Codex 0.130+ ChatGPT-OAuth auth fails (401 Unauthorized) when (a) HOME
+      # is reassigned to an isolated tmpdir, or (b) CODEX_HOME is set
+      # explicitly — even to its own default $HOME/.codex. Auth state is
+      # reachable only when both are left as the user's real environment.
+      # When the resolved reviewer auth_home equals $HOME/.codex (i.e. no
+      # isolated `.codex-reviewer/` is seeded), drop both overrides so the
+      # smoke can authenticate. Real isolation (a non-default reviewer home)
+      # still uses the override path; that path requires `.codex-reviewer/`
+      # to be seeded with auth state — tracked separately.
+      local _codex_runtime_home="$reviewer_home"
+      local _codex_home_override=1
+      if [ "$reviewer_codex_home" = "$HOME/.codex" ]; then
+        _codex_runtime_home="$HOME"
+        _codex_home_override=0
+      fi
+      if [ "$_codex_home_override" = "1" ]; then
+        ( cd "$REPO_ROOT" && env -i \
+          PATH="$PATH" \
+          HOME="$_codex_runtime_home" \
+          LANG="${LANG:-C.UTF-8}" \
+          USER="${USER:-}" \
+          ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
+          STUDIO_HOST="$HOST" \
+          REVIEW_PAYLOAD="$payload" \
+          "${smoke_cmd[@]}" </dev/null >"$stdout_file" 2>"$stderr_file" )
+      else
+        ( cd "$REPO_ROOT" && env -i \
+          PATH="$PATH" \
+          HOME="$_codex_runtime_home" \
+          LANG="${LANG:-C.UTF-8}" \
+          USER="${USER:-}" \
+          STUDIO_HOST="$HOST" \
+          REVIEW_PAYLOAD="$payload" \
+          "${smoke_cmd[@]}" </dev/null >"$stdout_file" 2>"$stderr_file" )
+      fi
       smoke_rc=$?
       ;;
     *)
