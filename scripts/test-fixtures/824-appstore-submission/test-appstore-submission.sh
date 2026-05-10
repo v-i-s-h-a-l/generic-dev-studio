@@ -92,6 +92,16 @@ asc_api() {
       printf '201\n{"data":{"id":"SHOULD-NOT-REACH"}}\n'
       ;;
 
+    # Build-probe failure: the /relationships/build GET itself returns
+    # non-200. We can't prove the version is bound to our build, so the
+    # submission must halt rather than blindly proceed.
+    probefail::GET::*/relationships/build) printf '503\n{"errors":[{"status":"503","detail":"upstream timeout"}]}\n' ;;
+    probefail::GET::*/relationships/appStoreVersionSubmission) printf '404\n{}\n' ;;
+    probefail::POST::/v1/appStoreVersionSubmissions)
+      touch "$TMPROOT/probefail_post_was_called"
+      printf '201\n{"data":{"id":"SHOULD-NOT-REACH"}}\n'
+      ;;
+
     *) printf '500\n{"errors":[{"detail":"unstubbed scenario %s"}]}\n' "$ASC_SCENARIO::$method::$path" ;;
   esac
 }
@@ -124,8 +134,13 @@ run_submission() {
   rm -f "$TMPROOT/post_was_called" "$TMPROOT/post_attempted" "$TMPROOT/mismatch_post_was_called"
 
   local version_id="VER-1" build_id="BUILD-123"
-  local cur_build_resp cur_build_id
+  local cur_build_resp cur_build_status cur_build_id
   cur_build_resp=$(asc_api GET "/v1/appStoreVersions/${version_id}/relationships/build")
+  cur_build_status=$(asc_status "$cur_build_resp")
+  if [ "$cur_build_status" != "200" ]; then
+    halt_failed prereq "ASC: /relationships/build probe returned HTTP $cur_build_status; refusing to submit without a verifiable build binding"
+    return 1
+  fi
   cur_build_id=$(asc_body "$cur_build_resp" | jq -r '.data.id // empty')
   if [ -n "$cur_build_id" ] && [ "$cur_build_id" != "$build_id" ]; then
     halt_failed prereq "ASC: appStoreVersion ${version_id} is bound to build ${cur_build_id}, not ${build_id}"
@@ -191,6 +206,14 @@ assert "build mismatch does NOT POST" \
   '! [ -f "$TMPROOT/mismatch_post_was_called" ]'
 assert "build mismatch reason names the wrong build" \
   'printf %s "$HALT_DETAIL" | grep -q "BUILD-OTHER-999"'
+
+# Build-probe non-200: halt without submitting.
+ASC_SCENARIO=probefail run_submission && rc=0 || rc=$?
+assert "build-probe non-200 halts non-zero" '[ "$rc" -ne 0 ]'
+assert "build-probe non-200 does NOT POST" \
+  '! [ -f "$TMPROOT/probefail_post_was_called" ]'
+assert "build-probe non-200 reason names the http status" \
+  'printf %s "$HALT_DETAIL" | grep -q "503"'
 
 if [ "$fail" -gt 0 ]; then
   printf 'FAIL: %d test(s) failed\n' "$fail" >&2
