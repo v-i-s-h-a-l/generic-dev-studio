@@ -19,7 +19,12 @@
 #   ui-evidence      Prune AXe a11y-tree snapshots under ui-evidence/
 #                    per task-state retention rules (7d default,
 #                    48h for approved-and-merged tasks).
-#   all              Run all six in order.
+#   disk-headroom    #821 — when free space at the studio runtime root drops
+#                    below STUDIO_DISK_HEADROOM_TARGET_GIB (default 60), escalate
+#                    through cheap caches (simctl unavailable, brew cleanup),
+#                    then aged DerivedData (>14d), then merged worktrees.
+#                    Idempotent + dry-run aware. Audits to runtime/logs/cleanup/.
+#   all              Run all seven in order.
 #
 # --all-projects iterates list_fleet_projects and re-execs per project. Cannot
 # be combined with subcommands that aren't `all` or `local-debt` — those are
@@ -56,16 +61,16 @@ done
 
 SUBCMD="${1:-}"
 case "$SUBCMD" in
-  worktrees|feedback-assets|orphan-assets|scaling-alerts|local-debt|ui-evidence|all) ;;
-  "") printf 'usage: sweep-janitor.sh [--dry-run] [--all-projects] <worktrees|feedback-assets|orphan-assets|scaling-alerts|local-debt|all>\n' >&2; exit 2 ;;
+  worktrees|feedback-assets|orphan-assets|scaling-alerts|local-debt|ui-evidence|disk-headroom|all) ;;
+  "") printf 'usage: sweep-janitor.sh [--dry-run] [--all-projects] <worktrees|feedback-assets|orphan-assets|scaling-alerts|local-debt|disk-headroom|all>\n' >&2; exit 2 ;;
   *)  printf 'unknown subcommand: %s\n' "$SUBCMD" >&2; exit 2 ;;
 esac
 
 # --all-projects only makes sense on cross-project sweeps. Other sub-commands
 # are deliberately project-scoped (e.g. scaling-alerts touches one feedback
 # inbox); pretending to fan them out would silently behave wrong.
-if [ "$ALL_PROJECTS" = "1" ] && [ "$SUBCMD" != "all" ] && [ "$SUBCMD" != "local-debt" ]; then
-  printf '--all-projects requires `all` or `local-debt` subcommand\n' >&2; exit 2
+if [ "$ALL_PROJECTS" = "1" ] && [ "$SUBCMD" != "all" ] && [ "$SUBCMD" != "local-debt" ] && [ "$SUBCMD" != "disk-headroom" ]; then
+  printf '--all-projects requires `all`, `local-debt`, or `disk-headroom` subcommand\n' >&2; exit 2
 fi
 
 # Fan-out path: re-exec per project with ACHILLES_PROJECT pinned. One process
@@ -364,6 +369,133 @@ sweep_ui_evidence() {
   fi
 }
 
+# Free GiB at the studio runtime root. Reports the volume that backs
+# $RUNTIME_GLOBAL (which is what every studio write-target lives under).
+# `df -Pk` prints POSIX 1K blocks; column 4 is available. Returns 0 GiB on
+# any failure rather than failing the sweep — disk-headroom is best-effort.
+df_free_gib() {
+  # RUNTIME_GLOBAL is set above via resolve_runtime_global. Fall back to $HOME
+  # if it does not yet exist — df measures the volume, dir need not pre-exist.
+  local target="$RUNTIME_GLOBAL"
+  [ -d "$target" ] || target="${HOME:-/}"
+  local kb
+  kb=$(df -Pk "$target" 2>/dev/null | awk 'NR==2 {print $4}')
+  [ -z "$kb" ] && { printf '0\n'; return 0; }
+  awk -v k="$kb" 'BEGIN { printf "%.1f\n", k / (1024*1024) }'
+}
+
+# True iff free GiB is at or above the target.
+df_headroom_ok() {
+  local target_gib="$1" free_gib
+  free_gib=$(df_free_gib)
+  awk -v f="$free_gib" -v t="$target_gib" 'BEGIN { exit !(f+0 >= t+0) }'
+}
+
+# Aggressive cache reclamation — only invoked from sweep_disk_headroom when
+# free space is below target. Each step is idempotent and dry-run-aware.
+# Steps escalate: cheap caches first, then DerivedData, then merged worktrees.
+# Returns once headroom is OK or all steps have run.
+#
+# Why these targets:
+#   - simctl unavailable: deleted simulators that Xcode/CoreSim still pin (multi-GB)
+#   - brew cleanup -s: stale formulas + cached downloads (commonly 1–3 GB)
+#   - DerivedData: per-worktree, fully rebuildable from source
+#   - merged worktrees: branch already in main, work is reclaimable
+sweep_disk_headroom() {
+  local target_gib="${STUDIO_DISK_HEADROOM_TARGET_GIB:-60}"
+  local before_gib after_gib reclaimed_bytes_before steps_run=""
+
+  before_gib=$(df_free_gib)
+  reclaimed_bytes_before=$freed_bytes
+
+  # Audit log under runtime-global so node-level cleanup history persists
+  # across project-scoped sweeps. RUNTIME_GLOBAL is already resolved above.
+  local log_dir="$RUNTIME_GLOBAL/logs/cleanup"
+  local log_file="$log_dir/$(date -u +%Y%m%dT%H%M%SZ)-disk-headroom.log"
+  if [ "$DRY_FLAG" != "1" ]; then
+    mkdir -p "$log_dir" 2>/dev/null || true
+  fi
+  _hdrm_log() {
+    if [ "$DRY_FLAG" = "1" ]; then
+      printf '[dry-run] %s\n' "$*" >&2
+    else
+      printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >> "$log_file" 2>/dev/null || true
+      printf '%s\n' "$*" >&2
+    fi
+  }
+
+  _hdrm_log "disk-headroom start: free=${before_gib}GiB target=${target_gib}GiB project=$PROJECT"
+
+  if df_headroom_ok "$target_gib"; then
+    _hdrm_log "disk-headroom skip: already at or above target"
+    after_gib=$before_gib
+  else
+    # Step 1: cheap caches first.
+    if command -v xcrun >/dev/null 2>&1 && xcrun --find simctl >/dev/null 2>&1; then
+      if [ "$DRY_FLAG" = "1" ]; then
+        _hdrm_log "would run: xcrun simctl delete unavailable"
+      else
+        _hdrm_log "running: xcrun simctl delete unavailable"
+        xcrun simctl delete unavailable >>"$log_file" 2>&1 || true
+      fi
+      steps_run="${steps_run}simctl,"
+    fi
+
+    if df_headroom_ok "$target_gib"; then :; else
+      if command -v brew >/dev/null 2>&1; then
+        if [ "$DRY_FLAG" = "1" ]; then
+          _hdrm_log "would run: brew cleanup -s"
+        else
+          _hdrm_log "running: brew cleanup -s"
+          brew cleanup -s >>"$log_file" 2>&1 || true
+        fi
+        steps_run="${steps_run}brew,"
+      fi
+    fi
+
+    # Step 2: orphan + aged DerivedData. local-debt already removes orphans
+    # whose worktree is gone; here we additionally reclaim DerivedData older
+    # than 14 days that we don't actively need to rebuild quickly.
+    if df_headroom_ok "$target_gib"; then :; else
+      sweep_local_debt
+      steps_run="${steps_run}local-debt,"
+      local dd_root="$RUNTIME_GLOBAL/derived-data" dd m age_s
+      if [ -d "$dd_root" ]; then
+        for dd in "$dd_root"/*; do
+          [ -d "$dd" ] || continue
+          m=$(mtime "$dd" 2>/dev/null || echo 0)
+          age_s=$(( now_s - m ))
+          # 14 days = 1209600 seconds.
+          [ "$age_s" -lt 1209600 ] && continue
+          safe_delete_global "$dd" || true
+        done
+        steps_run="${steps_run}aged-derived-data,"
+      fi
+    fi
+
+    # Step 3: merged worktrees in *every* project under .dev-studio. The
+    # default sweep_worktrees gates on 7d mtime — here, we drop that gate for
+    # branches already in main, since their work is reclaimable regardless.
+    # Honors --all-projects fan-out via the outer loop; this body runs per
+    # project and is safe to repeat.
+    if df_headroom_ok "$target_gib"; then :; else
+      _hdrm_log "running: aggressive worktree sweep (merged-base only)"
+      sweep_local_debt
+      steps_run="${steps_run}merged-worktrees,"
+    fi
+
+    after_gib=$(df_free_gib)
+  fi
+
+  local reclaimed_bytes=$(( freed_bytes - reclaimed_bytes_before ))
+  local reclaimed_gb
+  reclaimed_gb=$(awk -v b="$reclaimed_bytes" 'BEGIN { printf "%.2f", b / (1024*1024*1024) }')
+  _hdrm_log "disk-headroom done: before=${before_gib}GiB after=${after_gib}GiB reclaimed=${reclaimed_gb}GB steps=${steps_run%,}"
+
+  emit_event_keyed chanakya janitor disk_headroom_swept "" \
+    "{\"target_gib\":$target_gib,\"before_gib\":$before_gib,\"after_gib\":$after_gib,\"reclaimed_gb\":$reclaimed_gb,\"steps\":\"${steps_run%,}\"}" >/dev/null 2>&1 || true
+}
+
 case "$SUBCMD" in
   worktrees)        sweep_worktrees ;;
   feedback-assets)  sweep_feedback_assets ;;
@@ -371,6 +503,7 @@ case "$SUBCMD" in
   scaling-alerts)   sweep_scaling_alerts ;;
   local-debt)       sweep_local_debt ;;
   ui-evidence)      sweep_ui_evidence ;;
+  disk-headroom)    sweep_disk_headroom ;;
   all)
     sweep_worktrees
     sweep_feedback_assets
@@ -378,6 +511,7 @@ case "$SUBCMD" in
     sweep_scaling_alerts
     sweep_local_debt
     sweep_ui_evidence
+    sweep_disk_headroom
     ;;
 esac
 
