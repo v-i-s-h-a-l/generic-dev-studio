@@ -249,6 +249,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-staleness-triage.sh # scheduled GitHub issue staleness labels + escalation comments for the PM surface
   host-preflight.sh    # pre-task host parity gate: gh auth, git ls-remote credential access, and ShellCheck availability
   studio-gh.sh          # GitHub CLI wrapper for assistant/interactive calls; uses context github_home for auth
+  studio-codex-reviewer-bootstrap.sh # seed ~/.codex-reviewer/ for full HOME-isolated codex-reviewer (closes #866); --verify, --force
   manager-feature-config.sh # /dev-studio manager config: project-scoped feature enable/disable/set/list/doctor
   manager-release-branch.sh # /dev-studio manager branch: release branch status/prepare/sync/PR preflight
   dev-studio-ingest-resolve.sh # resolves /dev-studio manager ingest destination as JSON
