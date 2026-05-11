@@ -154,7 +154,7 @@ No event emitted at the commit boundary; the next event closes the archive phase
 
 ### Step 4 — Archive
 
-Run `xcodebuild archive` against the project, scheme, and configuration declared in `turnip-project-config.md`. The archive lands at `/tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive`.
+Run `xcodebuild archive` against the project, scheme, and configuration declared in `turnip-project-config.md`. The archive lands at `/tmp/<SCHEME>-<NEW_BUILD_NUMBER>.xcarchive` and is registered with the shared artifact-cleanup primitive for delete-on-exit. Operators who need postmortem retention set `STUDIO_KEEP_ARTIFACTS=1`; otherwise the path in events and context is an in-run diagnostic pointer, not a durable handoff artifact.
 
 When running in background mode, write `prepared-context.json` after Step 2 and before this archive starts. The file carries `release_tag`, `build`, `version`, `scheme`, `branch`, `archive_path`, `tf_tag`, and `prev_build`, allowing the wrapper to draft the Slack message while archive/upload continue. The wrapper must still wait for final `status.json` to reach `state=="succeeded"` before sending Slack.
 
@@ -168,7 +168,7 @@ Emit `archive_completed` with `data: { build: NEW_BUILD_NUMBER, version, scheme,
 
 ### Step 5 — Export and upload
 
-Write a transient `ExportOptions.plist` with `method=app-store-connect`, `destination=upload`, `signingStyle=automatic`. Run `xcodebuild -exportArchive` against the archive with the same repo-local keychain flag used for archive. The plist's `destination=upload` means xcodebuild posts the build directly to ASC — there is no separate upload step and no local IPA.
+Write a transient `ExportOptions.plist` with `method=app-store-connect`, `destination=upload`, `signingStyle=automatic`. Run `xcodebuild -exportArchive` against the archive with the same repo-local keychain flag used for archive. The export plist, export log, and export directory are registered with the shared artifact-cleanup primitive. The plist's `destination=upload` means xcodebuild posts the build directly to ASC — there is no separate upload step and no local IPA.
 
 Do not pipe this command through `xcpretty`. The raw output is short and load-bearing for diagnosis.
 

@@ -83,6 +83,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-build-queue.sh"
 # shellcheck source=lib-release-config.sh
 . "$SCRIPT_DIR/lib-release-config.sh"
+# shellcheck source=lib-artifact-cleanup.sh
+. "$SCRIPT_DIR/lib-artifact-cleanup.sh"
 
 if [ "${1:-}" = "compose-message" ]; then
   shift
@@ -1008,6 +1010,7 @@ EOF
   # jump ahead of queued Achilles task builds without preempting in-flight
   # ones (#267). Priority=release → rank 0 → sorts before task (rank 1).
   local ARCHIVE_PATH="/tmp/${SCHEME}-${NEW_BUILD_NUMBER}.xcarchive"
+  [ "$DRY_RUN_FLAG" = "1" ] || register_artifact xcarchive "$ARCHIVE_PATH"
   local TF_TAG
   TF_TAG=$(tf_tag_name "$VERSION" "$NEW_BUILD_NUMBER") || halt_failed prereq "could not derive TF tag for version=$VERSION build=$NEW_BUILD_NUMBER"
   if [ -n "${STUDIO_TF_PUSH_PREPARED_CONTEXT_PATH:-}" ]; then
@@ -1027,12 +1030,30 @@ EOF
   local archive_started_at archive_duration_s=0
   archive_started_at=$(date +%s)
 
-  local _bq_dir _bq_entry="" _bq_lock="" _bq_slots=1
+  local _bq_dir _bq_entry="" _bq_lock="" _bq_slots=1 _bq_role="xcodebuild"
+  _tf_push_finalize() {
+    bq_release_slot_lock "${_bq_lock:-}"
+    _bq_lock=""
+    bq_release "${_bq_entry:-}"
+    _bq_entry=""
+    finalize_artifacts
+  }
+  _tf_push_signal_finalize() {
+    local rc="$1"
+    trap - EXIT INT TERM
+    _tf_push_finalize
+    exit "$rc"
+  }
+  if [ "$DRY_RUN_FLAG" != "1" ]; then
+    trap _tf_push_finalize EXIT
+    trap '_tf_push_signal_finalize 130' INT
+    trap '_tf_push_signal_finalize 143' TERM
+  fi
   _bq_dir="$(resolve_runtime_global)/build-queue/$NODE"
   if [ "$DRY_RUN_FLAG" != "1" ] && [ "${STUDIO_TF_PUSH_SKIP_NODE_PICK:-0}" != "1" ]; then
     _bq_slots=$(bq_node_slots "$NODE")
     _bq_entry=$(STUDIO_BUILD_PRIORITY=release bq_enqueue "$_bq_dir" \
-      "release-${NEW_BUILD_NUMBER}" release xcodebuild asc,slack) \
+      "release-${NEW_BUILD_NUMBER}" release "$_bq_role" asc,slack) \
       || halt_failed prereq "build-queue enqueue failed"
     local _bq_depth _bq_position _bq_queue_data
     _bq_depth=$(find "$_bq_dir" -maxdepth 1 -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
@@ -1044,7 +1065,6 @@ EOF
     _bq_queue_data=$(printf '{"mode":"archive","node":"%s","position":%s,"depth":%s,"slots":%s,"priority":"release","secret_scope":"asc,slack"}' \
       "$NODE" "$_bq_position" "$_bq_depth" "$_bq_slots")
     emit_event_keyed studio release build_queue_position "$RELEASE_TAG" "$_bq_queue_data" >/dev/null 2>&1 || true
-    trap 'bq_release_slot_lock "${_bq_lock:-}"; bq_release "${_bq_entry:-}"' EXIT INT TERM
     bq_wait "$_bq_dir" "$_bq_entry" "$_bq_slots" 1800 "$RELEASE_TAG" "$NODE" studio release \
       || halt_failed prereq "build-queue wait timed out"
     _bq_lock=$(bq_acquire_slot_lock "$(resolve_runtime_global)/xcodebuild-lock/$NODE" "$_bq_slots" 1800) \
@@ -1056,9 +1076,11 @@ EOF
       "$SCHEME" "$NEW_BUILD_NUMBER" "$ARCHIVE_PATH" >&2
   else
     local archive_log="/tmp/${SCHEME}-${NEW_BUILD_NUMBER}-archive.log"
+    register_artifact log "$archive_log"
     (
       HOME="$SIGNING_HOME"
       cd "$PROJECT_ROOT" || exit 1
+      # lint-artifact-cleanup:allow next-line — xcarchive/log registered above; shared finalizer handles EXIT/INT/TERM.
       xcodebuild archive \
         -project "$PROJECT_RELPATH" \
         -scheme "$SCHEME" \
@@ -1101,6 +1123,7 @@ EOF
     printf 'studio-tf-push: [dry-run] would export + upload build %s to ASC\n' "$NEW_BUILD_NUMBER" >&2
   else
     local export_plist="/tmp/ExportOptions-${NEW_BUILD_NUMBER}.plist"
+    register_artifact plist "$export_plist"
     cat > "$export_plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1116,9 +1139,13 @@ EOF
 </plist>
 PLIST
     local export_log="/tmp/${SCHEME}-${NEW_BUILD_NUMBER}-export.log"
+    local export_dir="/tmp/${SCHEME}-${NEW_BUILD_NUMBER}-export"
+    register_artifact log "$export_log"
+    register_artifact export-dir "$export_dir"
+    # lint-artifact-cleanup:allow next-line — export plist/log/dir and xcarchive registered above; shared finalizer handles EXIT/INT/TERM.
     if ! HOME="$SIGNING_HOME" xcodebuild -exportArchive \
         -archivePath "$ARCHIVE_PATH" \
-        -exportPath "/tmp/${SCHEME}-${NEW_BUILD_NUMBER}-export" \
+        -exportPath "$export_dir" \
         -exportOptionsPlist "$export_plist" \
         -allowProvisioningUpdates \
         -authenticationKeyPath "$ASC_KEY_PATH" \
