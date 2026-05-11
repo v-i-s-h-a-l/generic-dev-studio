@@ -31,6 +31,7 @@ timeline
              : v0.11.1 — active role shortcuts + role help
              : v0.12.0 — reviewed work chains + commit taxonomy
              : v0.13.0 — host-aware work chains
+             : v0.14.0 — artifact cleanup + release safety
     Coming next : Issue graph hygiene — duplicate, blocked-by, caused-by, urgent triage
     Deferred : Knowledge layer — memory-query + synthesis across debriefs
              : Lu Ban — a dedicated architect agent for design dialogue
@@ -42,6 +43,7 @@ timeline
 
 ### Story so far
 
+- **[v0.14.0](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.14.0)** — Studio runs leave less cleanup work behind: release/TestFlight archives, export logs, temp artifacts, and rebuildable caches now have explicit cleanup rules and opt-in retention. New lints catch unsafe path, GitHub CLI, synthetic-home, JSONL merge, and artifact-producing script patterns before they land. App Store handoffs now verify the submitted build more carefully and avoid publishing tags or draft releases before ASC accepts the submission, while Codex reviewer auth and worktree/project resolution fixes make cross-host review and recovery less fragile.
 - **[v0.13.0](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.13.0)** — Work chains can now choose a healthy worker host instead of assuming one hardcoded CLI. Host profiles, eligibility smoke checks, and typed halt details make auto-selection explainable, while durable reviewer payloads, startup diagnostics, stale-report warnings, and doctor recommendations make long-chain recovery less dependent on the original session. The release also rounds out chain monitor, iOS execution, release handoff, and GitHub-home normalization work so cross-host chains have a clearer operational trail.
 - **[v0.12.0](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.12.0)** — Studio work can now move from rough planning to reviewed, dependency-aware chains with less session babysitting. The manager work-chain front door, PRD normalization, task-graph synthesis, selective rule packs, checkpoint-aware resumes, and telemetry digests make long arcs easier to launch, audit, and recover. Commit messages now carry a release-friendly taxonomy, TestFlight/App Store drafts can use that metadata directly, and feature-branch merge gates are shared across chain, worktree, and PR paths so dependent branches rebase or retarget instead of quietly accumulating merge commits.
 - **[v0.11.1](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.11.1)** — The `/dev-studio` router is easier to use after a role is selected. Once a session lands in `manager`, short follow-up commands like `status`, `ingest`, `reconcile`, `guard`, and `audit` can keep using that role while the context is clear. `/dev-studio help` shows the role index, `/dev-studio <role> help` shows examples for that role, and bare checkpoint routing still lands in manager unless the role is explicit.
