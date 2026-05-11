@@ -65,7 +65,6 @@ scripts/studio-checkpoint.sh
 scripts/studio-ios-check-failover.sh
 scripts/studio-ios-check-router.sh
 scripts/studio-pr-baseline-report.sh
-scripts/studio-tf-push.sh
 scripts/studio-weekly.sh
 scripts/swift-test-gate.sh
 scripts/sync-worker.sh

@@ -97,6 +97,23 @@ done
 echo "PASS: background handle + prepared/final context"
 
 echo
+echo "=== Test 2c: registered release artifacts finalize on process exit ==="
+cleanup_archive="$TMPHOME/cleanup-default.xcarchive"
+mkdir -p "$cleanup_archive"
+bash -c '. "$1/scripts/lib-artifact-cleanup.sh"; register_artifact xcarchive "$2"' _ "$REPO" "$cleanup_archive"
+[ ! -e "$cleanup_archive" ] || { echo "FAIL: registered archive was not deleted"; exit 1; }
+
+keep_archive="$TMPHOME/cleanup-keep.xcarchive"
+mkdir -p "$keep_archive"
+STUDIO_KEEP_ARTIFACTS=1 bash -c '. "$1/scripts/lib-artifact-cleanup.sh"; register_artifact xcarchive "$2"' _ "$REPO" "$keep_archive" \
+  2>"$TMPHOME/keep-artifacts.err"
+[ -d "$keep_archive" ] || { echo "FAIL: STUDIO_KEEP_ARTIFACTS did not retain archive"; exit 1; }
+grep -q 'STUDIO_KEEP_ARTIFACTS=1' "$TMPHOME/keep-artifacts.err" \
+  || { echo "FAIL: missing keep-artifacts audit line"; cat "$TMPHOME/keep-artifacts.err"; exit 1; }
+rm -rf "$keep_archive"
+echo "PASS: register_artifact deletes by default and honors STUDIO_KEEP_ARTIFACTS"
+
+echo
 echo "=== Test 3: emit subcommand reuses release-tag ==="
 "$REPO/scripts/studio-tf-push.sh" emit slack_drafted --release-tag "$RT" \
   --data '{"build":1,"channel":"#testing","bullet_count":0,"cc_count":0}' >/dev/null
