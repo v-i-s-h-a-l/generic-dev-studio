@@ -434,6 +434,8 @@ Add to `~/.claude/settings.json` under `permissions.allow`:
 
 Optional node monitoring installs `~/Library/LaunchAgents/dev.studio.node-monitor.plist` via `scripts/monitor-install.sh install`. Optional chain monitor background sync installs `~/Library/LaunchAgents/dev.studio.chain-monitor-sync.<project>.plist` via `scripts/schedule-chain-monitor.sh --install`. Those paths are outside `~/.dev-studio/**` by design because launchd only loads user agents from `~/Library/LaunchAgents`.
 
+Optional isolated codex-reviewer auth lives at `~/.codex-reviewer/`. It is created by `scripts/studio-codex-reviewer-bootstrap.sh` (closes #866) and populated by a one-time `CODEX_HOME=~/.codex-reviewer codex login`. Lives outside `~/.dev-studio/**` because the codex CLI resolves auth via `$CODEX_HOME` (and `lib-studio-context.sh` mirrors that lookup at `$HOME/.codex-reviewer`); routing it under `~/.dev-studio` would diverge from the codex convention without buying isolation. When present, `phase-review.sh` and `pr-reviewer-eligibility.sh` switch codex-reviewer to the full-isolation branch (HOME=tmpdir, CODEX_HOME=~/.codex-reviewer); when absent, they fall back to PR #829's no-isolation behavior.
+
 ### Codex Permissions
 
 Codex needs the same runtime root in its workspace-write sandbox. Launch with an explicit writable root:
