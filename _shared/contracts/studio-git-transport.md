@@ -238,6 +238,93 @@ These names are the contract that `#876` implements and `#878` proves.
 
 ---
 
+## Helper API (`scripts/lib-github-transport.sh`)
+
+The helper is sourceable; callers replace any raw `with_login_home_for_github
+git ...` or bare `git fetch/push/ls-remote` invocation against GitHub HTTPS
+with one of the public functions below. The helper does not perform any
+`gh` API calls — those continue to route through `scripts/studio-gh.sh`.
+
+### Public functions
+
+| Function | Underlying git | Purpose |
+|---|---|---|
+| `studio_git_transport_fetch <args...>` | `git fetch` | Fetch from a GitHub HTTPS remote. |
+| `studio_git_transport_push <args...>` | `git push` | Push to a GitHub HTTPS remote. |
+| `studio_git_transport_ls_remote <args...>` | `git ls-remote` | List or probe remote refs. |
+| `studio_git_transport_preflight [remote]` | `git ls-remote --exit-code <remote> HEAD` | Credential-proof preflight (host-preflight.sh contract). |
+| `studio_git_transport_run <op> [--mode] -- <args...>` | `git <args...>` | Generic entry point; `op` is a free-form label for audit logs (`fetch`, `push`, `ls-remote`, `preflight`, `chain-source-sha`, ...). |
+| `studio_git_transport_last_error` | — | Print the human-readable detail from the most recent diagnostic. |
+| `studio_git_transport_last_diagnostic` | — | Print the diagnostic ID (`gh_missing`, `credential_helper_stale`, ...) from the most recent call. |
+
+### Modes
+
+| Mode | Selection | Behavior |
+|---|---|---|
+| `default` | implicit | HTTPS GitHub remote; HOME normalized via `with_login_home_for_github`; `gh auth status` proved up front; `credential.https://github.com.helper=!gh auth git-credential` injected via `git -c`. |
+| `anonymous` | `--anonymous` flag, or `STUDIO_GIT_TRANSPORT_ANONYMOUS=1` | HTTPS; no credential helper. HOME is NOT flipped. Used for recipe fetches against third-party repos. |
+| `ssh` | `--ssh` flag, or `STUDIO_GIT_TRANSPORT_FORCE_SSH=1`, or inherited `STUDIO_BYPASS_PARENT_HOME_FLIP=1` semantics on the caller side | Skip credential normalization entirely; ambient HOME / SSH config used unchanged. Loud stderr audit on every call. |
+
+Per-call mode flags (`--ssh`, `--anonymous`, `--default`) appear between the
+op label and the `--` separator on `studio_git_transport_run`. The env-var
+overrides win over flags so a user can force a mode without rewriting call
+sites.
+
+### Diagnostic IDs
+
+The helper writes one stderr audit line per diagnostic, in the format:
+
+```
+lib-github-transport: <diagnostic_id>: <human-readable detail>
+```
+
+| ID | Emitted when | Severity |
+|---|---|---|
+| `gh_missing` | `command -v gh` failed before any git call. | Fatal (return 127). |
+| `gh_auth_missing` | `gh auth status` failed under normalized `github_home`. | Fatal (return 1). |
+| `credential_helper_stale` | A configured `credential.helper` value (global / system / local / per-URL) names a missing binary or non-executable path. | Warning; transport proceeds with explicit `gh auth git-credential` override. |
+| `network_partition` | `git` returned non-zero after authentication succeeded. | Reflects the git exit code. |
+| `ssh_mode_explicit` | Explicit SSH/isolated-auth mode active. Emitted on every SSH-mode call, plus on failure. | Audit-only at entry; reflects git exit code on failure. |
+
+`STUDIO_GIT_TRANSPORT_LAST_DIAGNOSTIC` and `STUDIO_GIT_TRANSPORT_LAST_ERROR`
+hold the most recent diagnostic ID and detail for callers that want to
+classify failure without re-parsing stderr.
+
+### Example migrations
+
+```bash
+# Before — ls-remote with HOME flip:
+with_login_home_for_github git ls-remote --heads origin "$source_branch"
+
+# After:
+studio_git_transport_ls_remote --heads origin "$source_branch"
+```
+
+```bash
+# Before — ambient push (manager-release-branch.sh):
+git -C "$REPO_ROOT" push "$REMOTE" "$base_sha:refs/heads/$target"
+
+# After:
+( cd "$REPO_ROOT" && studio_git_transport_push "$REMOTE" "$base_sha:refs/heads/$target" )
+```
+
+```bash
+# Before — anonymous third-party probe (update-recipes.sh):
+git ls-remote "https://github.com/$author/$repo.git" HEAD
+
+# After:
+STUDIO_GIT_TRANSPORT_ANONYMOUS=1 \
+  studio_git_transport_ls_remote "https://github.com/$author/$repo.git" HEAD
+```
+
+Stale-helper detection runs before the git invocation in `default` and
+`anonymous` modes; the override carried via `git -c` makes the live transport
+unaffected even when a stale helper is configured. The fixture in
+`scripts/test-fixtures/874-gh-transport-auth/` (delivered by `#878`) is the
+regression seam for this guarantee.
+
+---
+
 ## References
 
 - Parent plan: `/Users/vishalsingh/.dev-studio/generic-dev-studio/plan-chains/manual-sources/874-gh-transport-auth.md`
