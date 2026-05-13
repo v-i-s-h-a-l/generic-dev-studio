@@ -36,6 +36,8 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=scripts/lib-studio-context.sh
 . "$SCRIPT_DIR/lib-studio-context.sh"
+# shellcheck source=scripts/lib-review-host.sh
+. "$SCRIPT_DIR/lib-review-host.sh"
 # shellcheck source=scripts/lib-review-budget.sh
 . "$SCRIPT_DIR/lib-review-budget.sh"
 # shellcheck source=scripts/lib-ledger.sh
@@ -215,6 +217,7 @@ mkdir -p "$payload_parent" \
 tmpdir=$(mktemp -d "$payload_parent/run.XXXXXX") \
   || fail_gate payload_runtime_unavailable "failed to create reviewer payload directory"
 REVIEW_PAYLOAD_STORAGE="studio-runtime"
+# shellcheck disable=SC2329
 cleanup_tmpdir() {
   [ "${STUDIO_KEEP_REVIEW_PAYLOADS:-0}" = "1" ] || rm -rf "$tmpdir"
 }
@@ -225,40 +228,6 @@ summary="$tmpdir/reviewer-summary.md"
 reviewer_home="$tmpdir/reviewer-home"
 mkdir -p "$reviewer_home"
 
-reviewer_codex_home=""
-reviewer_claude_home=""
-reviewer_claude_config_dir=""
-case "$REVIEW_HOST" in
-  codex*|*codex*)
-    export STUDIO_CONTEXT_HOST_PROFILE="$REVIEW_HOST"
-    studio_context_resolve delegated-host-spawn || {
-      fail_gate reviewer_auth_unavailable "codex reviewer auth home unavailable via Studio context"
-    }
-    reviewer_codex_home="$STUDIO_CONTEXT_AUTH_HOME"
-    [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] || {
-      fail_gate reviewer_auth_unavailable "codex reviewer auth home not found via Studio context"
-    }
-    ;;
-  claude*|*claude*)
-    export STUDIO_CONTEXT_HOST_PROFILE="$REVIEW_HOST"
-    studio_context_resolve delegated-host-spawn || {
-      fail_gate reviewer_auth_unavailable "claude reviewer auth home unavailable via Studio context"
-    }
-    reviewer_claude_home="$STUDIO_CONTEXT_AUTH_HOME"
-    [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] || {
-      fail_gate reviewer_auth_unavailable "claude reviewer auth home not found via Studio context"
-    }
-    reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-$reviewer_claude_home/.claude-reviewer}"
-    [ -n "$reviewer_claude_config_dir" ] || {
-      fail_gate reviewer_auth_unavailable "claude reviewer config dir not found; set CLAUDE_REVIEWER_CONFIG_DIR or HOME"
-    }
-    mkdir -p "$reviewer_claude_config_dir"
-    [ -d "$reviewer_claude_config_dir" ] || {
-      fail_gate reviewer_auth_unavailable "failed to create claude reviewer config dir: $reviewer_claude_config_dir"
-    }
-    ;;
-esac
-
 git diff --cached --patch > "$diff_payload"
 
 write_precommit_payload() {
@@ -266,6 +235,7 @@ write_precommit_payload() {
   local line_cap
   line_cap=$(printf '%s\n' "$policy_json" | jq -r '.budget.payload_diff_line_cap')
   printf '# Studio Pre-Commit Review Payload\n\n'
+  # shellcheck disable=SC2016
   printf 'Review context policy:\n\n```json\n%s\n```\n\n' "$(printf '%s' "$policy_json" | jq -c '.')"
   printf 'Metadata:\n\n'
   printf '%s\n' "- repository: $(basename "$REPO_ROOT")"
@@ -315,40 +285,15 @@ review_budget_emit_context_event studio "$patch_id" review_context_budget_resolv
 # shellcheck disable=SC2206
 spawn_argv=( $spawn_command )
 review_prompt="Read $payload, review the staged studio diff, and print STUDIO_REVIEW_VERDICT=<approved|approved_with_fixes|blocked>. If context is insufficient, print REVIEW_CONTEXT_FALLBACK=expanded instead."
-
+review_argv=("${spawn_argv[@]}")
 case "$REVIEW_HOST" in
-  codex*|*codex*)
-    review_cmd=(env -i \
-      PATH="$PATH" \
-      HOME="$reviewer_home" \
-      LANG="${LANG:-C.UTF-8}" \
-      USER="${USER:-}" \
-      ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
-      STUDIO_HOST="$REVIEW_HOST" \
-      REVIEW_PAYLOAD="$payload" \
-      STAGED_PATCH_ID="$patch_id" \
-      "${spawn_argv[@]}" --add-dir "$tmpdir" "$review_prompt")
-    ;;
-  *)
-    review_cmd=(env -i \
-      PATH="$PATH" \
-      HOME="$reviewer_claude_home" \
-      LANG="${LANG:-C.UTF-8}" \
-      USER="${USER:-}" \
-      ${reviewer_claude_config_dir:+CLAUDE_CONFIG_DIR="$reviewer_claude_config_dir"} \
-      CLAUDE_REVIEWER_HOME="$reviewer_claude_home" \
-      STUDIO_HOST="$REVIEW_HOST" \
-      REVIEW_PAYLOAD="$payload" \
-      STAGED_PATCH_ID="$patch_id" \
-      "${spawn_argv[@]}" "--add-dir=$tmpdir" "$review_prompt")
-    ;;
+  codex*|*codex*) review_argv+=(--add-dir "$tmpdir") ;;
+  claude*|*claude*) review_argv+=("--add-dir=$tmpdir") ;;
 esac
+review_cmd=(review_host_run_command "$REVIEW_HOST" "$reviewer_home" --env REVIEW_PAYLOAD "$payload" --env STAGED_PATCH_ID "$patch_id" -- "${review_argv[@]}" "$review_prompt")
 
 run_precommit_reviewer() {
-  ( cd "$REPO_ROOT" && case "$REVIEW_HOST" in
-    codex*|*codex*) "${review_cmd[@]}" > "$summary" 2>"$summary.err" ;;
-    *) "${review_cmd[@]}" </dev/null > "$summary" 2>"$summary.err" ;;
-  esac )
+  "${review_cmd[@]}" > "$summary" 2>"$summary.err"
 }
 
 if ! run_precommit_reviewer; then
