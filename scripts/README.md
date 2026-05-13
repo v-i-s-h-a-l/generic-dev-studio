@@ -122,6 +122,16 @@ scripts/studio-staleness-triage.sh --json             # dry-run PM issue stalene
 # assistant-initiated calls use scripts/studio-gh.sh; migrated auth probes use context github_home
 # legacy gh/PR/issue call sites use with_login_home_for_github until their context migration lands
 # STUDIO_BYPASS_PARENT_HOME_FLIP=1   preserve caller HOME for intentional isolation tests
+#
+# Studio-owned Git network transport (fetch/push/ls-remote against github.com)
+# routes through scripts/lib-github-transport.sh (sourceable):
+#   studio_git_transport_fetch / _push / _ls_remote / _preflight        # default HTTPS + gh auth git-credential
+#   studio_git_transport_run <op> [--ssh|--anonymous|--default] -- ...  # generic entry point with mode flags
+#   studio_git_transport_last_diagnostic / _last_error                  # classify failure without parsing stderr
+# Diagnostic IDs: gh_missing | gh_auth_missing | credential_helper_stale | network_partition | ssh_mode_explicit
+# STUDIO_GIT_TRANSPORT_FORCE_SSH=1   route every call through ambient SSH (no credential normalization)
+# STUDIO_GIT_TRANSPORT_ANONYMOUS=1   skip credential helper (third-party recipe fetches)
+# Stale-helper regression fixture: scripts/test-fixtures/874-gh-transport-auth/test-lib-github-transport.sh
 
 # Chain runner pool sizing:
 # default = 1 local session + one per healthy xcodebuild offload node, RAM-capped at 6 GiB/session
