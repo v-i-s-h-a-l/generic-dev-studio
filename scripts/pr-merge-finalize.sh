@@ -73,6 +73,8 @@ esac
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-github-transport.sh
+. "$SCRIPT_DIR/lib-github-transport.sh"
 # shellcheck source=lib-feature-branch-policy.sh
 . "$SCRIPT_DIR/lib-feature-branch-policy.sh"
 # shellcheck source=lib-ledger.sh
@@ -176,10 +178,10 @@ detach_current_head_worktree_before_merge() {
 delete_remote_head_branch_after_merge() {
   [ -n "$head_ref" ] || return 0
   [ "$head_ref" != "$base_ref" ] || return 0
-  if with_login_home_for_github git push origin --delete "$head_ref" >/dev/null 2>&1; then
+  if studio_git_transport_push origin --delete "$head_ref" >/dev/null 2>&1; then
     return 0
   fi
-  if with_login_home_for_github git ls-remote --exit-code --heads origin "$head_ref" >/dev/null 2>&1; then
+  if studio_git_transport_ls_remote --exit-code --heads origin "$head_ref" >/dev/null 2>&1; then
     cleanup_failed=1
     cleanup_notes="${cleanup_notes}remote_branch_delete_failed;"
   fi
@@ -200,8 +202,8 @@ head_sha=$(printf '%s' "$json" | jq -r '.headRefOid')
 commit_count=$(printf '%s' "$json" | jq -r '.commits | length')
 emit_pr_merge_event pr_merge_finalize_started started 0
 
-with_login_home_for_github git fetch origin "$base_ref" >/dev/null 2>&1 || true
-with_login_home_for_github git fetch origin "$head_ref" >/dev/null 2>&1 || true
+studio_git_transport_fetch origin "$base_ref" >/dev/null 2>&1 || true
+studio_git_transport_fetch origin "$head_ref" >/dev/null 2>&1 || true
 
 if ! feature_branch_policy_evaluate "$(current_worktree_path)" "$head_ref" "$base_ref" "PR head branch"; then
   if [ "${STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE:-0}" = "1" ]; then
@@ -324,11 +326,11 @@ delete_remote_head_branch_after_merge
 
 current_path=$(current_worktree_path)
 control_path=""
-if ! with_login_home_for_github git fetch --prune origin; then
+if ! studio_git_transport_fetch --prune origin; then
   cleanup_failed=1
   cleanup_notes="${cleanup_notes}fetch_prune_failed;"
 fi
-if ! with_login_home_for_github git fetch origin "$base_ref"; then
+if ! studio_git_transport_fetch origin "$base_ref"; then
   cleanup_failed=1
   cleanup_notes="${cleanup_notes}fetch_base_failed;"
 fi

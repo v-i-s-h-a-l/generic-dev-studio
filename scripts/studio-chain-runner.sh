@@ -39,6 +39,8 @@ RUN_PATHS_CONFIGURED=0
 
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
+# shellcheck source=lib-github-transport.sh
+. "$SCRIPT_DIR/lib-github-transport.sh"
 # shellcheck source=lib-chain-git.sh
 . "$SCRIPT_DIR/lib-chain-git.sh"
 # shellcheck source=lib-chain-monitor-notifier.sh
@@ -6516,10 +6518,10 @@ verify_expected_source_sha_or_abort() {
     printf 'DRY-RUN verify origin/%q matches expected source SHA %q before %s\n' "$source_branch" "$expected_sha" "$phase"
     return 0
   fi
-  actual_sha=$(with_login_home_for_github git ls-remote --heads origin "$source_branch" 2>/dev/null | awk 'NR == 1 { print $1 }') || actual_sha=""
+  actual_sha=$(studio_git_transport_ls_remote --heads origin "$source_branch" 2>/dev/null | awk 'NR == 1 { print $1 }') || actual_sha=""
   if [ -z "$actual_sha" ]; then
     summary="cannot verify origin/$source_branch before $phase for chain $chain_name"
-    details_json=$(retryable_halt_details_json network_partition "$summary" 1 with_login_home_for_github git ls-remote --heads origin "$source_branch")
+    details_json=$(retryable_halt_details_json network_partition "$summary" 1 studio_git_transport_ls_remote --heads origin "$source_branch")
     abort_run_with_reason_details network_partition "$summary" "$details_json"
   fi
   if [ "$actual_sha" != "$expected_sha" ]; then
@@ -6541,13 +6543,13 @@ live_preflight() {
   while IFS=$'\t' read -r chain_name branch base expected_source_sha; do
     [ "$expected_source_sha" = "__none__" ] && expected_source_sha=""
     run_retryable_or_abort network_partition "cannot verify origin/$base" \
-      with_login_home_for_github git ls-remote --exit-code --heads origin "$base"
+      studio_git_transport_ls_remote --exit-code --heads origin "$base"
     verify_expected_source_sha_or_abort "$chain_name" "$base" "$expected_source_sha" "chain worktree creation"
     if [ -z "$RESUME_ID" ] && git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/heads/$branch"; then
       printf 'studio-chain-runner: local chain branch already exists: %s\n' "$branch" >&2
       exit 2
     fi
-    if [ -z "$RESUME_ID" ] && with_login_home_for_github git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+    if [ -z "$RESUME_ID" ] && studio_git_transport_ls_remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
       printf 'studio-chain-runner: remote chain branch already exists: %s\n' "$branch" >&2
       exit 2
     fi
@@ -6560,7 +6562,7 @@ EOF
       printf 'studio-chain-runner: local issue branch already exists: %s\n' "$issue_branch" >&2
       exit 2
     fi
-    if [ -z "$RESUME_ID" ] && with_login_home_for_github git ls-remote --exit-code --heads origin "$issue_branch" >/dev/null 2>&1; then
+    if [ -z "$RESUME_ID" ] && studio_git_transport_ls_remote --exit-code --heads origin "$issue_branch" >/dev/null 2>&1; then
       printf 'studio-chain-runner: remote issue branch already exists: %s\n' "$issue_branch" >&2
       exit 2
     fi

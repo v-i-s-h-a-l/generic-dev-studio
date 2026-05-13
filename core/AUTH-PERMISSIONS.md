@@ -71,6 +71,14 @@ GitHub operations are split by mutation scope:
 
 Assistant-initiated GitHub CLI calls route through `scripts/studio-gh.sh`. Migrated GitHub/auth probes source `scripts/lib-studio-context.sh` and run GitHub or credential-probing git commands under the context-backed `github_home`; legacy call sites use the login-home helper only until their context migration lands. Raw `gh` is not a v2 load-bearing path.
 
+Studio-owned Git network transport (fetch, push, ls-remote against `github.com`) routes through `scripts/lib-github-transport.sh`. The helper normalizes `github_home`, proves `gh auth status` before mutation, injects `credential.helper=!gh auth git-credential` so a stale ambient credential helper cannot intercept the call, and emits one of `gh_missing`, `gh_auth_missing`, `credential_helper_stale`, `network_partition`, or `ssh_mode_explicit` on stderr. The contract and call-site inventory live in `_shared/contracts/studio-git-transport.md`; the fixture in `scripts/test-fixtures/874-gh-transport-auth/` is the regression seam for stale-helper detection.
+
+User-controlled overrides (assistants must not set silently):
+
+- `STUDIO_GIT_TRANSPORT_FORCE_SSH=1` — every call switches to `ssh` mode (ambient SSH config, no credential normalization, audit line per call).
+- `STUDIO_GIT_TRANSPORT_ANONYMOUS=1` — `default` mode coerced to `anonymous` (HTTPS, no credential helper) for third-party remote probes.
+- `STUDIO_BYPASS_PARENT_HOME_FLIP=1` — preserves the caller's `HOME` for intentional isolation tests; flows through the helper unchanged.
+
 GitHub credential failures must halt before mutation. Non-interactive tasks set no-prompt behavior for git credential probes and report `github_auth_unavailable`, `github_home_mismatch`, `github_rate_limited`, or `network_partition` instead of opening an interactive prompt.
 
 ## Local Tool Boundaries
