@@ -261,10 +261,16 @@ Every session that writes to this repo must work in a dedicated `git worktree` (
 
 Local `main` is a mirror of `origin/main`, not a work branch. Do not commit,
 merge, rebase, or cherry-pick onto local `main`; do not use local `main` as a
-PR staging branch. The pre-commit hook blocks base-branch commits unless the
-user explicitly sets `STUDIO_BYPASS_MAIN_COMMIT_GUARD=1`. If local `main`
-diverges, preserve any unique commit on a backup branch and realign `main` to
-`origin/main` only with explicit user approval for the destructive reset.
+PR staging branch. The pre-commit hook blocks base-branch commits — extended
+to include the per-project release base (`STUDIO_RELEASE_BRANCH_DEFAULT_BASE`)
+read from the feature-config file — unless the user explicitly sets
+`STUDIO_BYPASS_BRANCH_POLICY=1` (or the legacy
+`STUDIO_BYPASS_MAIN_COMMIT_GUARD=1`). The same `STUDIO_BYPASS_BRANCH_POLICY`
+override is honored by `pr-merge-finalize` for the merge-target gate. See
+`_shared/standards/branch-discipline.md` for the full contract. If local
+`main` diverges, preserve any unique commit on a backup branch and realign
+`main` to `origin/main` only with explicit user approval for the destructive
+reset.
 
 **Why:** parallel Claude Code sessions share the same filesystem and git index. `git add` and `git reset` in one session can silently pick up the other session's unstaged edits, producing accidental co-mingling in commits. The pathspec workaround (`git commit -- <paths>`) is insufficient — it only filters the working-tree layer; pre-staged index pollution from the other session still commits regardless. Worktree isolation is the structural fix.
 
