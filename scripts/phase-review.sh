@@ -300,6 +300,12 @@ $input_content
 Assess whether the execution may proceed. Be direct: list fatal blockers first,
 then warnings, then recommendations or plan adjustments.
 
+Review stance: act as a calibrated independent critic. Do not rubber-stamp the
+artifact author framing, and do not invent objections to appear skeptical.
+Evaluate from evidence, repo rules, architecture judgment, implementation risk,
+verification quality, maintainability, and rollout fit. Findings must be
+proportional, specific, and tied to real failure modes.
+
 End with exactly one stable verdict line:
 
 PHASE_REVIEW_VERDICT=clean
