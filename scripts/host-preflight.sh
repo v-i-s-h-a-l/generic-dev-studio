@@ -15,6 +15,8 @@ umask 022
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=scripts/lib-studio-context.sh
 . "$SCRIPT_DIR/lib-studio-context.sh"
+# shellcheck source=scripts/lib-github-transport.sh
+. "$SCRIPT_DIR/lib-github-transport.sh"
 
 HOST="${1:?usage: host-preflight.sh <host> <repo-root>}"
 REPO="${2:?repo-root required}"
@@ -64,9 +66,11 @@ remote_url=$(git -C "$REPO" remote get-url origin 2>/dev/null || true)
 # `git ls-remote` is the credential-helper proof. It exercises the exact
 # git credential path that later fetch/commit-resolution steps rely on,
 # including gh's credential helper for HTTPS remotes and ssh-agent/keychain
-# access for SSH remotes.
+# access for SSH remotes. Route through the shared transport helper so the
+# diagnostic surface (gh_missing/gh_auth_missing/credential_helper_stale/
+# network_partition/ssh_mode_explicit) is consistent across studio call sites.
 ls_remote_err=$(mktemp 2>/dev/null || printf '/tmp/host-preflight-ls-remote-%s.err' "$$")
-if ! HOME="$github_home" git -C "$REPO" ls-remote --exit-code "$remote_url" HEAD > /dev/null 2>"$ls_remote_err"; then
+if ! ( cd "$REPO" && studio_git_transport_preflight "$remote_url" ) > /dev/null 2>"$ls_remote_err"; then
   detail=$(tail -n 5 "$ls_remote_err" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]\{1,\}/ /g')
   rm -f "$ls_remote_err" 2>/dev/null || true
   printf 'host-preflight: git credential access failed for host=%s remote=%s; git ls-remote ... HEAD failed before task work.\n' "$HOST" "$remote_url" >&2
