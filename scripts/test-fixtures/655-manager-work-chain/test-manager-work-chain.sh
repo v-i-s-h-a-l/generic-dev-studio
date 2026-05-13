@@ -95,4 +95,23 @@ PATH="$BIN:$PATH" HOME="$TMPROOT/home" "$RUN" ios-v2-execution --attended --yes 
 grep -q -- '- Execution mode: `attended`' "$TMPROOT/attended.out" \
   || fail "explicit attended manager work-chain should not be rewritten to auto"
 
+local_manifest="$TMPROOT/local-project-work-chain.yaml"
+cat > "$local_manifest" <<'YAML'
+schema_version: 1
+kind: project-work-chain
+project: turnip-ios
+source: docs/collage-video-import-chain-manifest.yml
+tasks:
+  - id: C-06
+    issue: 51
+YAML
+
+if PATH="$BIN:$PATH" HOME="$TMPROOT/home" "$RUN" "$local_manifest" --dry-run >"$TMPROOT/local-manifest.out" 2>&1; then
+  fail "local project work-chain manifest should be rejected before runner execution"
+fi
+grep -q 'local project work-chain manifest is not runner-compatible' "$TMPROOT/local-manifest.out" \
+  || fail "local project work-chain rejection should explain the manifest mismatch"
+grep -q 'local task ids, not runner chains\[\] issue numbers' "$TMPROOT/local-manifest.out" \
+  || fail "local project work-chain rejection should name the schema mismatch"
+
 printf 'PASS: manager work-chain front door\n'
