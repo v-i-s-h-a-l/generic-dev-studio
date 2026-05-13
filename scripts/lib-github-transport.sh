@@ -213,7 +213,7 @@ studio_git_transport_run() {
     default)
       _sgt_verify_gh || return $?
       _sgt_verify_gh_auth || return 1
-      _sgt_check_stale_helpers || true
+      with_login_home_for_github _sgt_check_stale_helpers || true
       with_login_home_for_github env GIT_TERMINAL_PROMPT=0 git \
         -c "credential.helper=" \
         -c "credential.https://github.com.helper=" \
