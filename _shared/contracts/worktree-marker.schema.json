@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://studio.local/_shared/contracts/worktree-marker.schema.json",
+  "title": "Studio worktree marker",
+  "description": "Per-worktree manifest stamped at creation and heartbeat-touched on every owning-command turn. Consumed by scripts/studio-worktree-gc.sh and scripts/manager-cleanup.sh to decide which worktrees are safe to reap.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "slug", "project", "created_at", "last_touched"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["ingest", "plan", "chain", "worker"],
+      "description": "Owning command class. ingest = manager ingest; plan = manager plan-chain; chain = chain runner / work-chain; worker = task-worktree-setup."
+    },
+    "slug": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Worktree directory basename. Stable id used by STUDIO_KEEP_WORKTREE and gc dry-run output."
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Project slug the worktree belongs to (matches resolve_project for the main checkout)."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp at which the worktree was created. Set once; never updated."
+    },
+    "last_touched": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp of the last owning-command heartbeat. Updated on every manager turn or chain step."
+    },
+    "session_id": {
+      "type": ["string", "null"],
+      "description": "Optional session identifier for ingest/plan kinds."
+    },
+    "chain_id": {
+      "type": ["string", "null"],
+      "description": "Optional chain-run identifier for chain/worker kinds."
+    },
+    "task_id": {
+      "type": ["string", "null"],
+      "description": "Optional task identifier for worker kind."
+    },
+    "host": {
+      "type": ["string", "null"],
+      "description": "Optional canonical host id (claude-code, codex, ...)."
+    },
+    "pid": {
+      "type": ["integer", "null"],
+      "description": "Optional pid of the owning process at marker-write time. Informational only — gc decisions use timestamps and active-chain state, not liveness probes."
+    }
+  }
+}
