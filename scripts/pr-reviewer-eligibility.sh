@@ -21,6 +21,8 @@ SMOKE_TIMEOUT_SEC="${STUDIO_REVIEWER_SMOKE_TIMEOUT_SEC:-45}"
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=scripts/lib-studio-context.sh
 . "$SCRIPT_DIR/lib-studio-context.sh"
+# shellcheck source=scripts/lib-review-host.sh
+. "$SCRIPT_DIR/lib-review-host.sh"
 
 fail() {
   printf 'PR_REVIEWER_ELIGIBLE=0\n'
@@ -81,7 +83,7 @@ eligibility_smoke_payload_parent() {
 }
 
 run_smoke_gate() {
-  local tmpdir payload stdout_file stderr_file reviewer_home reviewer_codex_home reviewer_claude_home reviewer_claude_config_dir payload_parent
+  local tmpdir payload stdout_file stderr_file reviewer_home payload_parent
   payload_parent=$(eligibility_smoke_payload_parent) \
     || fail smoke_payload_runtime_unavailable "Studio runtime context unavailable for reviewer smoke payload"
   mkdir -p "$payload_parent" \
@@ -98,44 +100,6 @@ run_smoke_gate() {
   reviewer_home="$tmpdir/home"
   mkdir -p "$reviewer_home"
   printf '# Reviewer smoke payload\n\nEmit one STUDIO_REVIEW_VERDICT line.\n' > "$payload"
-
-  reviewer_codex_home=""
-  reviewer_claude_config_dir=""
-  case "$HOST" in
-    codex*|*codex*)
-      export STUDIO_CONTEXT_HOST_PROFILE="$HOST"
-      studio_context_resolve delegated-host-spawn || {
-        cleanup_smoke_tmpdir
-        fail smoke_auth_unavailable "codex reviewer auth home unavailable via Studio context"
-      }
-      reviewer_codex_home="$STUDIO_CONTEXT_AUTH_HOME"
-      [ -n "$reviewer_codex_home" ] && [ -d "$reviewer_codex_home" ] || {
-        cleanup_smoke_tmpdir
-        fail smoke_auth_unavailable "codex reviewer auth home not found via Studio context"
-      }
-      ;;
-    claude*|*claude*)
-      export STUDIO_CONTEXT_HOST_PROFILE="$HOST"
-      studio_context_resolve delegated-host-spawn || {
-        cleanup_smoke_tmpdir
-        fail smoke_auth_unavailable "claude reviewer auth home unavailable via Studio context"
-      }
-      reviewer_claude_home="$STUDIO_CONTEXT_AUTH_HOME"
-      [ -n "$reviewer_claude_home" ] && [ -d "$reviewer_claude_home" ] || {
-        cleanup_smoke_tmpdir
-        fail smoke_auth_unavailable "claude reviewer auth home not found via Studio context"
-      }
-      reviewer_claude_config_dir="${CLAUDE_REVIEWER_CONFIG_DIR:-$reviewer_claude_home/.claude-reviewer}"
-      [ -n "$reviewer_claude_config_dir" ] || {
-        cleanup_smoke_tmpdir
-        fail smoke_auth_unavailable "claude reviewer config dir not found; set CLAUDE_REVIEWER_CONFIG_DIR or HOME"
-      }
-      mkdir -p "$reviewer_claude_config_dir" || {
-        cleanup_smoke_tmpdir
-        fail smoke_auth_unavailable "failed to create claude reviewer config dir: $reviewer_claude_config_dir"
-      }
-      ;;
-  esac
 
   # shellcheck disable=SC2206
   local smoke_argv=( $spawn_command )
@@ -163,59 +127,11 @@ run_smoke_gate() {
     smoke_cmd=("${smoke_argv[@]}" "$prompt")
   fi
   local smoke_rc
-  case "$HOST" in
-    codex*|*codex*)
-      # Codex 0.130+ ChatGPT-OAuth auth fails (401 Unauthorized) when (a) HOME
-      # is reassigned to an isolated tmpdir, or (b) CODEX_HOME is set
-      # explicitly — even to its own default $HOME/.codex. Auth state is
-      # reachable only when both are left as the user's real environment.
-      # When the resolved reviewer auth_home equals $HOME/.codex (i.e. no
-      # isolated `.codex-reviewer/` is seeded), drop both overrides so the
-      # smoke can authenticate. Real isolation (a non-default reviewer home)
-      # still uses the override path; that path requires `.codex-reviewer/`
-      # to be seeded with auth state — tracked separately.
-      local _codex_runtime_home="$reviewer_home"
-      local _codex_home_override=1
-      if [ "$reviewer_codex_home" = "$HOME/.codex" ]; then
-        _codex_runtime_home="$HOME"
-        _codex_home_override=0
-      fi
-      if [ "$_codex_home_override" = "1" ]; then
-        ( cd "$REPO_ROOT" && env -i \
-          PATH="$PATH" \
-          HOME="$_codex_runtime_home" \
-          LANG="${LANG:-C.UTF-8}" \
-          USER="${USER:-}" \
-          ${reviewer_codex_home:+CODEX_HOME="$reviewer_codex_home"} \
-          STUDIO_HOST="$HOST" \
-          REVIEW_PAYLOAD="$payload" \
-          "${smoke_cmd[@]}" </dev/null >"$stdout_file" 2>"$stderr_file" )
-      else
-        ( cd "$REPO_ROOT" && env -i \
-          PATH="$PATH" \
-          HOME="$_codex_runtime_home" \
-          LANG="${LANG:-C.UTF-8}" \
-          USER="${USER:-}" \
-          STUDIO_HOST="$HOST" \
-          REVIEW_PAYLOAD="$payload" \
-          "${smoke_cmd[@]}" </dev/null >"$stdout_file" 2>"$stderr_file" )
-      fi
-      smoke_rc=$?
-      ;;
-    *)
-      ( cd "$REPO_ROOT" && env -i \
-      PATH="$PATH" \
-      HOME="$reviewer_claude_home" \
-      LANG="${LANG:-C.UTF-8}" \
-      USER="${USER:-}" \
-      ${reviewer_claude_config_dir:+CLAUDE_CONFIG_DIR="$reviewer_claude_config_dir"} \
-      CLAUDE_REVIEWER_HOME="$reviewer_claude_home" \
-      STUDIO_HOST="$HOST" \
-      REVIEW_PAYLOAD="$payload" \
-      "${smoke_cmd[@]}" </dev/null >"$stdout_file" 2>"$stderr_file" )
-      smoke_rc=$?
-      ;;
-  esac
+  if review_host_run_command "$HOST" "$reviewer_home" --env REVIEW_PAYLOAD "$payload" -- "${smoke_cmd[@]}" >"$stdout_file" 2>"$stderr_file"; then
+    smoke_rc=0
+  else
+    smoke_rc=$?
+  fi
   if [ "$smoke_rc" -ne 0 ]; then
     local detail
     detail=$(first_line "$stderr_file")
