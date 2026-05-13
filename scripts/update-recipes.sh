@@ -38,6 +38,10 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 RECIPES_DIR="$REPO_ROOT/recipes"
 
+# shellcheck source=lib-github-transport.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/lib-github-transport.sh"
+
 if ! command -v yq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
   printf 'update-recipes: yq + git required\n' >&2; exit 2
 fi
@@ -65,9 +69,13 @@ done
 # ---------------------------------------------------------------------------
 fetch_upstream_head() {
   # $1 = author, $2 = repo. Prints the SHA of the upstream's default-branch
-  # HEAD via `git ls-remote`. Empty on failure.
+  # HEAD via `git ls-remote`. Empty on failure. Upstream is third-party, so
+  # route through the shared transport helper in anonymous mode (no credential
+  # helper) to surface stale-helper / network diagnostics without leaking the
+  # studio's gh credentials to an unrelated repo.
   local author="$1" repo="$2" head
-  head=$(git ls-remote "https://github.com/$author/$repo.git" HEAD 2>/dev/null \
+  head=$(STUDIO_GIT_TRANSPORT_ANONYMOUS=1 \
+    studio_git_transport_ls_remote "https://github.com/$author/$repo.git" HEAD 2>/dev/null \
     | awk '{print $1}' | head -1)
   printf '%s' "$head"
 }
@@ -232,7 +240,7 @@ Co-Authored-By: scripts/update-recipes.sh <noreply@dev-studio.local>" \
     return 0
   fi
 
-  git -C "$REPO_ROOT" push -u origin "$branch" >/dev/null 2>&1 || {
+  ( cd "$REPO_ROOT" && studio_git_transport_push -u origin "$branch" ) >/dev/null 2>&1 || {
     printf 'update-recipes: push of %s failed (no remote, or auth?)\n' "$branch" >&2
     git -C "$REPO_ROOT" checkout "$current_branch" >/dev/null 2>&1
     return 1

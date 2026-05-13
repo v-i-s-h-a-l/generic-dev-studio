@@ -9,6 +9,9 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-github-transport.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/lib-github-transport.sh"
 
 PROJECT=""
 REPO_ROOT=""
@@ -86,7 +89,7 @@ default_base="${STUDIO_RELEASE_BRANCH_DEFAULT_BASE:-main}"
 
 fetch_remote() {
   [ "$NO_FETCH" -eq 0 ] || return 0
-  git -C "$REPO_ROOT" fetch --quiet "$REMOTE" "+refs/heads/*:refs/remotes/$REMOTE/*" 2>/dev/null || {
+  ( cd "$REPO_ROOT" && studio_git_transport_fetch --quiet "$REMOTE" "+refs/heads/*:refs/remotes/$REMOTE/*" ) 2>/dev/null || {
     printf 'manager-release-branch: fetch failed for remote %s\n' "$REMOTE" >&2
     return 2
   }
@@ -102,7 +105,7 @@ protected_branch() {
 remote_branch_exists() {
   local branch="$1"
   git -C "$REPO_ROOT" show-ref --verify --quiet "refs/remotes/$REMOTE/$branch" && return 0
-  git -C "$REPO_ROOT" ls-remote --exit-code --heads "$REMOTE" "$branch" >/dev/null 2>&1
+  ( cd "$REPO_ROOT" && studio_git_transport_ls_remote --exit-code --heads "$REMOTE" "$branch" ) >/dev/null 2>&1
 }
 
 ref_for_branch() {
@@ -243,7 +246,7 @@ cmd_prepare_release() {
     printf 'manager-release-branch: refusing to create protected base branch: %s\n' "$target" >&2
     return 2
   fi
-  git -C "$REPO_ROOT" push "$REMOTE" "$base_sha:refs/heads/$target"
+  ( cd "$REPO_ROOT" && studio_git_transport_push "$REMOTE" "$base_sha:refs/heads/$target" )
   printf 'status: created\n'
 }
 

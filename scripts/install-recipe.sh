@@ -36,6 +36,10 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 RECIPES_DIR="$REPO_ROOT/recipes"
 TRUSTED_AUTHORS_FILE="$RECIPES_DIR/trusted-authors.yaml"
 
+# shellcheck source=lib-github-transport.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/lib-github-transport.sh"
+
 if ! command -v yq >/dev/null 2>&1; then
   printf 'install-recipe: yq is required\n' >&2; exit 2
 fi
@@ -77,10 +81,13 @@ fetch_verbatim() {
   local tmpdir
   tmpdir=$(mktemp -d -t recipe-fetch.XXXXXX) || return 1
 
+  # Anonymous mode: upstream is a third-party repo. The shared helper still
+  # provides GIT_TERMINAL_PROMPT=0 + the stale-helper diagnostic seam without
+  # using the studio's gh credentials against an unrelated remote.
   ( cd "$tmpdir" \
     && git init -q . \
     && git remote add origin "https://github.com/$author/$repo.git" \
-    && git fetch -q --depth 1 origin "$sha" \
+    && STUDIO_GIT_TRANSPORT_ANONYMOUS=1 studio_git_transport_fetch -q --depth 1 origin "$sha" \
     && git checkout -q FETCH_HEAD ) || { rm -rf "$tmpdir"; return 1; }
 
   local src="$tmpdir/${path%/}"

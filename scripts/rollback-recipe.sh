@@ -25,6 +25,10 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 RECIPES_DIR="$REPO_ROOT/recipes"
 
+# shellcheck source=lib-github-transport.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/lib-github-transport.sh"
+
 if ! command -v yq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
   printf 'rollback-recipe: yq + git required\n' >&2; exit 2
 fi
@@ -85,11 +89,14 @@ fi
 upstream=$(yq -r '.sources[0].upstream' "$RECIPE_FILE")
 author=$(printf '%s' "$upstream" | awk -F/ '{print $2}')
 repo=$(printf '%s' "$upstream" | awk -F/ '{print $3}')
-if ! git ls-remote --exit-code "https://github.com/$author/$repo.git" "$rollback_sha" >/dev/null 2>&1; then
+# Upstream is a third-party repo; route through the shared helper in anonymous
+# mode for the stale-helper diagnostic seam without using studio gh creds.
+if ! STUDIO_GIT_TRANSPORT_ANONYMOUS=1 \
+    studio_git_transport_ls_remote --exit-code "https://github.com/$author/$repo.git" "$rollback_sha" >/dev/null 2>&1; then
   # ls-remote with a SHA doesn't work for all servers; try a shallow fetch probe
   tmpdir=$(mktemp -d -t rollback-probe.XXXXXX)
   if ! ( cd "$tmpdir" && git init -q . && git remote add origin "https://github.com/$author/$repo.git" \
-         && git fetch -q --depth 1 origin "$rollback_sha" ) >/dev/null 2>&1; then
+         && STUDIO_GIT_TRANSPORT_ANONYMOUS=1 studio_git_transport_fetch -q --depth 1 origin "$rollback_sha" ) >/dev/null 2>&1; then
     rm -rf "$tmpdir"
     printf 'rollback-recipe: target SHA %s not found upstream at %s/%s\n' "$rollback_sha" "$author" "$repo" >&2
     printf 'hint: upstream may have force-pushed; use --to <known-good-sha> instead\n' >&2
