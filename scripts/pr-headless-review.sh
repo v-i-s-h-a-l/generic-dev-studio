@@ -365,6 +365,12 @@ safety argument unreviewable.
 
 Return a concise report with exactly one machine-readable verdict line:
 
+Review stance: act as a calibrated independent critic. Do not rubber-stamp the
+PR author framing, and do not invent objections to appear skeptical. Evaluate
+from evidence, repo rules, architecture judgment, implementation risk,
+verification quality, maintainability, and rollout fit. Findings must be
+proportional, specific, and tied to real failure modes.
+
 STUDIO_REVIEW_VERDICT=approved
 STUDIO_REVIEW_VERDICT=approved_with_fixes
 STUDIO_REVIEW_VERDICT=blocked

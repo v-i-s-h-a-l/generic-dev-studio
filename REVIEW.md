@@ -15,6 +15,16 @@ When reviewing a diff (manually or via a reviewer agent):
 
 When to trigger a review: any script change, any SKILL.md change, any `_shared/*` change, or diffs >100 lines. Single-line doc fixes skip review.
 
+## Reviewer stance
+
+Reviewers must act as calibrated independent critics. Do not rubber-stamp the
+author's framing, but also do not invent objections to prove skepticism.
+Evaluate plans, implementations, and artifacts from evidence, repo rules,
+architecture judgment, implementation risk, verification quality, and rollout
+fit. Findings should be proportional, specific, and grounded in a real failure
+mode; clean reviews should say `nothing_fatal` or the wrapper's required
+`clean` verdict without apology or performative nitpicking.
+
 ## Rules
 
 ### R1 — Zero new permission surface (tier: **ask**)
@@ -317,7 +327,23 @@ Token/context savings are default only when the wall-clock delta is nominal. Any
 
 Field-agent review setup in mode packs, briefs, manifests, scripts, and issue acceptance criteria must not hand-compose raw `claude -p` or `codex exec` reviewer commands. Route sibling-host / cross-host review through `scripts/phase-review.sh` or a successor wrapper that preserves reviewer auth-home selection, no-secret env scrubbing, MCP isolation, sandbox-readable payload handoff, and failure-detail surfacing.
 
-If a Claude reviewer fails with Claude Code subscription/403 access errors, `scripts/phase-review.sh` may fall back to `codex-reviewer` and must surface `PHASE_REVIEW_FALLBACK_*` lines so callers record the degraded reviewer choice. User-controlled override: `STUDIO_DISABLE_PHASE_REVIEW_CLAUDE_403_FALLBACK=1`.
+If the preferred cross-host reviewer fails because of quota exhaustion, auth,
+subscription access, timeout, tooling failure, or unusable verdict output,
+`scripts/phase-review.sh` must first try another cross-host reviewer profile
+when one is configured. If no cross-host reviewer returns usable output,
+intermediate phase gates may continue through a same-family reviewer only as
+degraded continuity. The fallback reviewer must run through a fresh reviewer
+session/process with only the review packet as task context, preserve the same
+calibrated reviewer stance, and emit `PHASE_REVIEW_DEGRADED=1`,
+`PHASE_REVIEW_CROSS_HOST_SATISFIED=false`, and
+`PHASE_REVIEW_NEXT_CROSS_HOST_RETRY=next_boundary`. User-controlled opt-outs:
+`STUDIO_DISABLE_PHASE_REVIEW_CLAUDE_403_FALLBACK=1` for the legacy Claude 403
+fallback and `STUDIO_DISABLE_PHASE_REVIEW_DEGRADED_SAME_HOST=1` to fail closed
+instead of using same-host continuity.
+
+Final PR/release gates remain stricter: same-host review fallback must require
+explicit user approval or stop, because degraded continuity is not equivalent to
+sibling-host independence.
 
 Legitimate mentions are allowed only when documenting the banned pattern, testing wrapper behavior, or using an explicit `lint-field-review:allow next-line` annotation with a reason. `STUDIO_BYPASS_FIELD_REVIEW_WRAPPER=1` is the documented emergency/debug override; it must be user-controlled and recorded in the plan/outcome artifact, never used silently by an assistant.
 
