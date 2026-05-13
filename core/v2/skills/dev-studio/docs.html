@@ -15,6 +15,7 @@
       --line: #cdd5cd;
       --panel: rgba(255, 255, 255, 0.82);
       --panel-strong: #ffffff;
+      --panel-soft: rgba(255, 255, 255, 0.52);
       --accent: #0f6b64;
       --accent-2: #7a4f13;
       --accent-3: #315f9f;
@@ -24,10 +25,18 @@
       --shell-ink: #eef7f2;
       --warn-bg: #fff6df;
       --warn-line: #dfbd65;
+      --warn-ink: #765716;
       --ok-bg: #e7f4ef;
       --ok-line: #9ecfbd;
+      --ok-ink: #255947;
+      --info-bg: #e8f1fb;
+      --info-line: #adc4df;
+      --info-ink: #234f83;
       --header-bg: rgba(251, 252, 250, 0.88);
-      --section-bg: rgba(255, 255, 255, 0.52);
+      --hover-bg: #e7f2ef;
+      --pill-bg: #f6f8f6;
+      --registry-bg: #f3f4f1;
+      --table-head-bg: #eef2ef;
       --shadow: 0 12px 30px rgba(31, 38, 35, 0.08);
       --radius: 8px;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -35,26 +44,35 @@
 
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #09100f;
-        --bg-accent: #131b18;
-        --ink: #e7f2ee;
-        --muted: #90a39d;
-        --line: #25312d;
-        --panel: rgba(16, 24, 22, 0.86);
-        --panel-strong: #121a18;
-        --accent: #7ed8cb;
-        --accent-2: #efbe70;
-        --accent-3: #8ab7ff;
-        --code: #edf7f3;
-        --code-bg: #182522;
-        --shell-bg: #0e1715;
-        --shell-ink: #edf7f3;
-        --warn-bg: #2c2514;
-        --warn-line: #8b7440;
-        --ok-bg: #143126;
-        --ok-line: #2f6a56;
-        --header-bg: rgba(8, 14, 13, 0.9);
-        --section-bg: rgba(255, 255, 255, 0.03);
+        --bg: #101315;
+        --bg-accent: #14191b;
+        --ink: #edf1ec;
+        --muted: #a7b1aa;
+        --line: #313a3d;
+        --panel: #171d20;
+        --panel-strong: #171d20;
+        --panel-soft: #14191b;
+        --accent: #58c7b3;
+        --accent-2: #e0aa57;
+        --accent-3: #7dabdd;
+        --code: #d9f7ed;
+        --code-bg: #20302f;
+        --shell-bg: #090d0e;
+        --shell-ink: #e4f7ef;
+        --warn-bg: #2c2415;
+        --warn-line: #9a7132;
+        --warn-ink: #f0d19a;
+        --ok-bg: #182922;
+        --ok-line: #3e7d68;
+        --ok-ink: #a9dfcf;
+        --info-bg: #172232;
+        --info-line: #46688f;
+        --info-ink: #b8d4f0;
+        --header-bg: #121719;
+        --hover-bg: #1c2929;
+        --pill-bg: #20272a;
+        --registry-bg: #20252a;
+        --table-head-bg: #20272a;
         --shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
       }
     }
@@ -170,6 +188,7 @@
     nav a:hover {
       border-color: var(--accent);
       color: var(--accent);
+      background: var(--hover-bg);
     }
 
     nav {
@@ -201,7 +220,7 @@
       box-shadow: var(--shadow);
       border-bottom: 1px solid var(--line);
       border-radius: var(--radius);
-      background: var(--section-bg);
+      background: var(--panel-soft);
     }
 
     details.section:last-child {
@@ -279,11 +298,13 @@
       border: 1px solid var(--ok-line);
       border-radius: var(--radius);
       background: var(--ok-bg);
+      color: var(--ok-ink);
     }
 
     .notice.warning {
       border-color: var(--warn-line);
       background: var(--warn-bg);
+      color: var(--warn-ink);
     }
 
     .grid {
@@ -326,7 +347,7 @@
       padding: 0.18rem 0.48rem;
       border: 1px solid var(--line);
       border-radius: 999px;
-      background: #f6f8f6;
+      background: var(--pill-bg);
       color: var(--muted);
       font-size: 0.8rem;
       overflow-wrap: anywhere;
@@ -335,24 +356,24 @@
     .status-live {
       border-color: var(--ok-line);
       background: var(--ok-bg);
-      color: #255947;
+      color: var(--ok-ink);
     }
 
     .status-reserved {
       border-color: var(--warn-line);
       background: var(--warn-bg);
-      color: #765716;
+      color: var(--warn-ink);
     }
 
     .status-contract {
-      border-color: #adc4df;
-      background: #e8f1fb;
-      color: #234f83;
+      border-color: var(--info-line);
+      background: var(--info-bg);
+      color: var(--info-ink);
     }
 
     .status-registry {
       border-color: var(--line);
-      background: #f3f4f1;
+      background: var(--registry-bg);
       color: var(--muted);
     }
 
@@ -378,7 +399,7 @@
     }
 
     th {
-      background: #eef2ef;
+      background: var(--table-head-bg);
       font-size: 0.78rem;
       color: var(--muted);
       font-weight: 760;
