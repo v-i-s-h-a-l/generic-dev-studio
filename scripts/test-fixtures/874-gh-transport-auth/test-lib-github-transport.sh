@@ -184,6 +184,45 @@ grep -q 'ls-remote rc=0' <<<"$case2_out" \
 git config --global --unset-all credential.helper || true
 
 # ---------------------------------------------------------------------
+# Case 2b — default mode checks stale credential helpers under the same
+# normalized GitHub HOME used for the git transport, not the caller HOME.
+# This catches synthetic-host sessions whose caller HOME is clean while the
+# login-home credential config is stale.
+# ---------------------------------------------------------------------
+CALLER_HOME="$TMP/caller-home"
+NORMALIZED_HOME="$TMP/normalized-github-home"
+mkdir -p "$CALLER_HOME" "$NORMALIZED_HOME"
+HOME="$NORMALIZED_HOME" git config --global credential.helper "/no/such/path/git-credential-normalized"
+HOME="$CALLER_HOME" git config --global --unset-all credential.helper >/dev/null 2>&1 || true
+write_gh_stub_pass
+case2b_out=$(
+  PATH="/usr/bin:/bin:$PATH_WITH_STUB" \
+  HOME="$CALLER_HOME" \
+  NORMALIZED_HOME="$NORMALIZED_HOME" \
+  "$BASH_BIN" -c "
+    set -eu
+    . '$HELPER'
+    resolve_parent_home_for_github() { printf '%s\n' \"\$NORMALIZED_HOME\"; }
+    studio_git_transport_ls_remote '$BARE' HEAD >/dev/null
+    rc=\$?
+    echo \"ls-remote rc=\$rc\"
+    echo \"diagnostic=\$(studio_git_transport_last_diagnostic)\"
+    exit \$rc
+  " 2>"$TMP/case2b.err"
+) || {
+    printf 'FAIL case 2b: normalized-home ls-remote returned non-zero\n%s\n%s\n' \
+      "$case2b_out" "$(cat "$TMP/case2b.err")" >&2
+    exit 1
+  }
+grep -q 'credential_helper_stale' "$TMP/case2b.err" \
+  || { printf 'FAIL case 2b: missing normalized-home credential_helper_stale diagnostic\n%s\n' \
+         "$(cat "$TMP/case2b.err")" >&2; exit 1; }
+grep -q 'diagnostic=credential_helper_stale' <<<"$case2b_out" \
+  || { printf 'FAIL case 2b: normalized-home stale diagnostic not retained\n%s\n' \
+         "$case2b_out" >&2; exit 1; }
+HOME="$NORMALIZED_HOME" git config --global --unset-all credential.helper || true
+
+# ---------------------------------------------------------------------
 # Case 3 — `gh` not on PATH → `gh_missing` diagnostic, rc 127.
 # ---------------------------------------------------------------------
 PATH_NO_GH="$PATH_WITH_REAL_GIT"
