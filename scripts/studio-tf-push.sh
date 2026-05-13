@@ -77,6 +77,8 @@ umask 022
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-github-transport.sh
+. "$SCRIPT_DIR/lib-github-transport.sh"
 # shellcheck source=lib-ledger.sh
 . "$SCRIPT_DIR/lib-ledger.sh"
 # shellcheck source=lib-build-queue.sh
@@ -223,7 +225,7 @@ ensure_tf_tag() {
 
 push_tf_tag() {
   local tag="$1"
-  git push origin "refs/tags/${tag}"
+  studio_git_transport_push origin "refs/tags/${tag}"
 }
 
 preflight_push_release() {
@@ -251,9 +253,9 @@ preflight_push_release() {
   esac
 
   local push_probe
-  if ! push_probe=$(GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never \
-      git -C "$PROJECT_ROOT" push --dry-run --porcelain -u origin HEAD 2>&1); then
-    halt_failed prereq "GitHub push auth/preflight failed before mutation; no build-number commit created. Run: gh auth status && git -C '$PROJECT_ROOT' push --dry-run -u origin HEAD. Details: $push_probe"
+  if ! push_probe=$( ( cd "$PROJECT_ROOT" && GCM_INTERACTIVE=Never \
+      studio_git_transport_push --dry-run --porcelain -u origin HEAD ) 2>&1); then
+    halt_failed prereq "GitHub push auth/preflight failed before mutation; no build-number commit created. Run: scripts/studio-gh.sh auth status && ( cd '$PROJECT_ROOT' && studio_git_transport_push --dry-run -u origin HEAD ). Details: $push_probe"
   fi
 
   [ -r "$ASC_KEY_PATH" ] || halt_failed prereq "ASC key unreadable at $ASC_KEY_PATH; no mutation occurred"
@@ -994,7 +996,7 @@ EOF
       cd "$oldpwd" || true
       halt_failed prereq "TF tag creation failed"
     }
-    if ! git push -u origin HEAD; then
+    if ! studio_git_transport_push -u origin HEAD; then
       cd "$oldpwd" || true
       halt_failed prereq "STRANDED_RELEASE_STATE: build-number commit ${bump_commit:0:12} and TF tag $TF_TAG exist locally but branch push failed after mutation. Next safe command: git -C '$PROJECT_ROOT' push -u origin HEAD && git -C '$PROJECT_ROOT' push origin refs/tags/$TF_TAG"
     fi
@@ -1252,7 +1254,7 @@ cmd_withdraw_tf_tag() {
   require_cmd git
   (
     cd "$PROJECT_ROOT" || exit 1
-    git fetch --tags origin >/dev/null 2>&1 || exit 1
+    studio_git_transport_fetch --tags origin >/dev/null 2>&1 || exit 1
     local old_commit new_commit
     old_commit=$(local_tag_commit "$OLD_TAG")
     [ -n "$old_commit" ] || { printf 'withdraw-tf-tag: source tag %s not found\n' "$OLD_TAG" >&2; exit 1; }
@@ -1264,8 +1266,8 @@ cmd_withdraw_tf_tag() {
     if [ -z "$new_commit" ]; then
       git tag -a "$NEW_TAG" "$old_commit" -m "WITHDRAWN: TestFlight build ${BUILD} (v${VERSION})"
     fi
-    git push origin "refs/tags/${NEW_TAG}" || exit 1
-    git push origin ":refs/tags/${OLD_TAG}" || exit 1
+    studio_git_transport_push origin "refs/tags/${NEW_TAG}" || exit 1
+    studio_git_transport_push origin ":refs/tags/${OLD_TAG}" || exit 1
     git tag -d "$OLD_TAG" >/dev/null 2>&1 || true
   ) || halt_failed prereq "TF withdrawn tag rename failed"
 
@@ -1329,7 +1331,7 @@ cmd_appstore() {
   # fails, the user already wanted the branch pushed for review purposes.
   (
     cd "$PROJECT_ROOT" || exit 1
-    git push -u origin HEAD || exit 1
+    studio_git_transport_push -u origin HEAD || exit 1
   ) || halt_failed prereq "git push HEAD failed"
 
   # NOTE: git tag, tag push, and `gh release create --draft` are deferred
@@ -1470,7 +1472,7 @@ cmd_appstore() {
   (
     cd "$PROJECT_ROOT" || exit 1
     git tag "$TAG" || exit 1
-    git push origin "$TAG" || exit 1
+    studio_git_transport_push origin "$TAG" || exit 1
   ) || halt_failed prereq "git tag/push failed (post-submission)"
 
   if ! with_login_home_for_github gh release create "$TAG" \
