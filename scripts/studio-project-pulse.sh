@@ -231,6 +231,63 @@ change_total=$(printf '%s\n' "$diff_json" | jq '
 ')
 needs_review_total=$(printf '%s\n' "$diff_json" | jq '.totals.needs_review_now')
 
+# Validate file output before advancing latest.json. Invalid output must not
+# consume the baseline for the next successful pulse.
+out_real=""
+if [ -n "$OUT" ] && [ "$OUT" != "-" ]; then
+  case "$OUT" in
+    /*) out_path="$OUT" ;;
+    *) out_path="$ANALYSIS_DIR/$OUT" ;;
+  esac
+  case "$out_path" in
+    "$PROJECT_ROOT"/*|"$PROJECT_ROOT_REAL"/*) ;;
+    *)
+      printf 'studio-project-pulse: --out must stay under project runtime root: %s\n' "$PROJECT_ROOT" >&2
+      printf 'studio-project-pulse: use a relative path for %s/analysis/ or an absolute path below that root\n' "$PROJECT_ROOT" >&2
+      exit 2
+      ;;
+  esac
+  case "$out_path" in
+    ../*|*/../*|*/..)
+      printf 'studio-project-pulse: --out must not contain parent-directory traversal: %s\n' "$OUT" >&2
+      exit 2
+      ;;
+  esac
+  out_dir=$(dirname "$out_path")
+  existing_parent="$out_dir"
+  missing_suffix=""
+  while [ ! -e "$existing_parent" ]; do
+    missing_suffix="/$(basename "$existing_parent")$missing_suffix"
+    next_parent=$(dirname "$existing_parent")
+    [ "$next_parent" != "$existing_parent" ] || break
+    existing_parent="$next_parent"
+  done
+  existing_parent_real=$(cd "$existing_parent" && pwd -P) || exit 1
+  planned_dir_real="$existing_parent_real$missing_suffix"
+  case "$planned_dir_real" in
+    "$PROJECT_ROOT_REAL"|"$PROJECT_ROOT_REAL"/*) ;;
+    *)
+      printf 'studio-project-pulse: --out parent directory escapes project runtime root: %s\n' "$OUT" >&2
+      exit 2
+      ;;
+  esac
+  mkdir -p "$out_dir"
+  out_dir_real=$(cd "$out_dir" && pwd -P) || exit 1
+  out_real="$out_dir_real/$(basename "$out_path")"
+  case "$out_real" in
+    "$PROJECT_ROOT_REAL"/*) ;;
+    *)
+      printf 'studio-project-pulse: --out must stay under project runtime root: %s\n' "$PROJECT_ROOT" >&2
+      printf 'studio-project-pulse: use a relative path for %s/analysis/ or an absolute path below that root\n' "$PROJECT_ROOT" >&2
+      exit 2
+      ;;
+  esac
+  if [ -L "$out_path" ] || [ -L "$out_real" ]; then
+    printf 'studio-project-pulse: --out must not target a symlink: %s\n' "$OUT" >&2
+    exit 2
+  fi
+fi
+
 # Persist the snapshot before any output, so subsequent runs have a baseline
 # even when --quiet exits before printing.
 if [ "$WRITE_SNAPSHOT" -eq 1 ]; then
@@ -325,57 +382,6 @@ if [ -n "$OUT" ]; then
   if [ "$OUT" = "-" ]; then
     emit
   else
-    case "$OUT" in
-      /*) out_path="$OUT" ;;
-      *) out_path="$ANALYSIS_DIR/$OUT" ;;
-    esac
-    case "$out_path" in
-      "$PROJECT_ROOT"/*|"$PROJECT_ROOT_REAL"/*) ;;
-      *)
-        printf 'studio-project-pulse: --out must stay under project runtime root: %s\n' "$PROJECT_ROOT" >&2
-        printf 'studio-project-pulse: use a relative path for %s/analysis/ or an absolute path below that root\n' "$PROJECT_ROOT" >&2
-        exit 2
-        ;;
-    esac
-    case "$out_path" in
-      ../*|*/../*|*/..)
-        printf 'studio-project-pulse: --out must not contain parent-directory traversal: %s\n' "$OUT" >&2
-        exit 2
-        ;;
-    esac
-    out_dir=$(dirname "$out_path")
-    existing_parent="$out_dir"
-    missing_suffix=""
-    while [ ! -e "$existing_parent" ]; do
-      missing_suffix="/$(basename "$existing_parent")$missing_suffix"
-      next_parent=$(dirname "$existing_parent")
-      [ "$next_parent" != "$existing_parent" ] || break
-      existing_parent="$next_parent"
-    done
-    existing_parent_real=$(cd "$existing_parent" && pwd -P) || exit 1
-    planned_dir_real="$existing_parent_real$missing_suffix"
-    case "$planned_dir_real" in
-      "$PROJECT_ROOT_REAL"|"$PROJECT_ROOT_REAL"/*) ;;
-      *)
-        printf 'studio-project-pulse: --out parent directory escapes project runtime root: %s\n' "$OUT" >&2
-        exit 2
-        ;;
-    esac
-    mkdir -p "$out_dir"
-    out_dir_real=$(cd "$out_dir" && pwd -P) || exit 1
-    out_real="$out_dir_real/$(basename "$out_path")"
-    case "$out_real" in
-      "$PROJECT_ROOT_REAL"/*) ;;
-      *)
-        printf 'studio-project-pulse: --out must stay under project runtime root: %s\n' "$PROJECT_ROOT" >&2
-        printf 'studio-project-pulse: use a relative path for %s/analysis/ or an absolute path below that root\n' "$PROJECT_ROOT" >&2
-        exit 2
-        ;;
-    esac
-    if [ -L "$out_path" ] || [ -L "$out_real" ]; then
-      printf 'studio-project-pulse: --out must not target a symlink: %s\n' "$OUT" >&2
-      exit 2
-    fi
     emit > "$out_real"
     printf 'studio-project-pulse: wrote %s pulse to %s\n' "$FORMAT" "$out_real" >&2
   fi
