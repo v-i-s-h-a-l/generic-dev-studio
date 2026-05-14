@@ -108,6 +108,7 @@ scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker      # lo
 scripts/codex-worker-exec.sh "<prompt>"                                    # internal Codex worker launcher: workspace-write + ~/.dev-studio + ephemeral + no prompts
 # Chain dry-runs show the selected git metadata strategy; sandboxed hosts use issue-local clones so commits stay inside the worker root.
 # Chain worktrees/results are namespaced under the run UUID; resume continues only the selected run, reconciles stale running issues from completed private summaries after required outcome review, and surfaces skipped/integrated/pending issue semantics.
+# Chain progress recaps are persisted under each private run's `progress-recaps/` directory before execution, after task completion, and on halt/finish.
 # Chain startup sweeps stale state locks, old temporary run roots, scoped iOS artifact roots, and oversized private artifacts; tune with STUDIO_CHAIN_TMP_RETENTION_DAYS, STUDIO_CHAIN_RUN_RETENTION_DAYS, STUDIO_CHAIN_ARTIFACT_MAX_BYTES, and STUDIO_IOS_ARTIFACT_* TTL/pressure settings.
 # Chain reports include compact efficiency metrics, test/lint/build outcomes, typed halt records, and decision escrow when automation pauses or continues on a low-risk default.
 # Chain manifest preflight rejects planning artifacts before run creation; project-scoped manifests declare issue_repo or resolve it from the target repo remote.

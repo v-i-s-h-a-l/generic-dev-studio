@@ -4708,6 +4708,7 @@ finish_run() {
       "$(jq -cn --arg attempt_id "$ATTEMPT_ID" --arg reason "$reason" '{attempt_id:$attempt_id, failure_reason:(if $reason == "" then null else $reason end)}')"
   fi
   generate_run_report "$status" "$reason"
+  emit_chain_progress_recaps "finish" ""
   if [ "$status" = "completed" ] && [ -n "${RUN_WORK_ROOT:-}" ]; then
     rm -rf "$RUN_WORK_ROOT" 2>/dev/null || true
   fi
@@ -4716,10 +4717,12 @@ finish_run() {
 }
 
 abort_run() {
-  local reason="${1:-failed}" reason_id
+  local reason="${1:-failed}" reason_id halt_record
   reason_id=$(halt_reason_for_text "$reason")
   if [ "$(halt_class_for_reason "$reason_id")" = "retryable" ] || ! active_halt_reason_exists "$reason_id"; then
-    write_halt_record "$reason_id" "$reason" >/dev/null || log "halt record write failed for: $reason"
+    halt_record=$(write_halt_record "$reason_id" "$reason" || true)
+    [ -n "$halt_record" ] || log "halt record write failed for: $reason"
+    emit_chain_progress_recaps "halt" "$halt_record"
   fi
   finish_run failed "$reason"
   exit 1
@@ -6956,6 +6959,7 @@ elif [ "$YES" -eq 0 ]; then
 else
   live_preflight "$PLAN_JSON"
   write_run_state running ""
+  emit_chain_progress_recaps "before-run" ""
 fi
 
 emit_chain_event chain_run_started "" "$RUN_ID" "" "" running 0 \
@@ -7843,7 +7847,7 @@ render_chain_progress_recap() {
         + "- Boundary: \($boundary)\n"
         + "- Run: `\($run_id)`\n"
         + "- Previous task: \(task_label($previous))\n"
-        + "- Just completed: \(task_label($current))\n"
+        + (if $boundary == "before-run" then "- Current task: \(task_label($current))\n" else "- Just completed: \(task_label($current))\n" end)
         + "- What changed: \(summary_text)\n"
         + "- Verification signals: tests \(signal_count("tests")), lints \(signal_count("lints")), builds \(signal_count("builds"))\n"
         + "- Next task: \(task_label($next))\n"
@@ -7862,6 +7866,41 @@ write_chain_progress_recap() {
   artifact=$(progress_recap_artifact_path "$boundary" "$chain_run_id" "$issue_run_id")
   render_chain_progress_recap "$boundary" "$chain_name" "$chain_run_id" "$issue_run_id" "$issue" "$summary_file" "$halt_record" > "$artifact"
   printf '%s\n' "$artifact"
+}
+
+chain_recap_issue_selector() {
+  local chain_run_id="$1"
+  jq -r --arg chain_run_id "$chain_run_id" '
+    (.chains[] | select(.chain_run_id == $chain_run_id) | .issues) as $issues
+    | (
+        ($issues[]? | select((.status // "") == "running")),
+        ($issues[]? | select((.status // "") == "failed")),
+        ($issues[]? | select((.status // "") == "pending")),
+        ($issues | reverse[]?)
+      )
+    | select(. != null)
+    | [.issue_run_id, (.number | tostring)]
+    | @tsv
+  ' "$RUN_STATE_JSON" 2>/dev/null | head -n 1
+}
+
+emit_chain_progress_recaps() {
+  local boundary="$1" halt_record="${2:-}" chain_name chain_run_id selected issue_run_id issue artifact
+  [ "$DRY_RUN" -eq 0 ] || return 0
+  [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ] || return 0
+  while IFS=$'\t' read -r chain_name chain_run_id; do
+    [ -n "$chain_run_id" ] || continue
+    selected=$(chain_recap_issue_selector "$chain_run_id")
+    issue_run_id=$(printf '%s\n' "$selected" | awk -F '\t' '{print $1}')
+    issue=$(printf '%s\n' "$selected" | awk -F '\t' '{print $2}')
+    artifact=$(write_chain_progress_recap "$boundary" "$chain_name" "$chain_run_id" "$issue_run_id" "$issue" "" "$halt_record" 2>/dev/null || true)
+    if [ -n "$artifact" ] && [ -f "$artifact" ]; then
+      cat "$artifact"
+      printf '\n'
+    fi
+  done <<EOF
+$(jq -r '.chains[]? | [.name, .chain_run_id] | @tsv' "$RUN_STATE_JSON" 2>/dev/null)
+EOF
 }
 
 print_issue_progress_recap() {

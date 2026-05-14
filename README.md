@@ -385,6 +385,11 @@ prints the next `/dev-studio manager work-chain <manifest>` command. Add
 `--interactive` when the generated chain should run attended. If the source is
 too rough, it returns `needs_context` before issue or manifest creation.
 
+Chain runs persist progress recaps under the private run directory before
+execution, after each task, and on halt or finish. Recaps include the previous
+task, current or completed task, verification signals, next task, overall
+progress, direction, and the resume command.
+
 The default leaf integration strategy is `sync_strategy: rebase`: the runner
 rebases the issue leaf onto the current chain branch and fast-forwards the chain
 branch. `sync_strategy: squash` is opt-in for release-bearing chains that need a
