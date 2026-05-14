@@ -103,7 +103,7 @@ scripts/manager-work-chain.sh ios-v2-execution --dry-run # preview the named cha
 scripts/studio-chain-runner.sh --auto workflow-measurement-improvements # unattended safe start/resume for one manifest
 scripts/studio-chain-runner.sh workflow-measurement-improvements --attended --yes # attended run with explicit confirmation bypass
 scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --yes # no routine continue prompts; typed blockers halt
-scripts/studio-chain-runner.sh --resume <run_id> --yes # resume from event-derived state; repair stale projection before scheduling
+scripts/studio-chain-runner.sh --resume <run_id> --host codex --yes # resume with a fresh host override for unfinished chains
 scripts/studio-chain-runner.sh --regenerate-report <run_id> # opt-in refresh for stale private chain-run reports
 scripts/studio-chain-runner.sh --doctor <run_id> --public-safe # inspect recovery state with local paths/details redacted
 STUDIO_CHAIN_TARGET_REPO_ROOT=/repo scripts/studio-chain-runner.sh /tmp/chain.yaml --dry-run # run a non-repo manifest against an explicit checkout
