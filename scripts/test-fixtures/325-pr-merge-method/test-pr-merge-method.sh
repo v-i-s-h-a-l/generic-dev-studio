@@ -79,16 +79,41 @@ run_case() {
   local base="$1" count="$2" expected="$3" out
   out="$TMPROOT/out-$base-$count.txt"
   : > "$MERGE_LOG"
-  BASE_REF="$base" COMMIT_COUNT="$count" \
-    bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
-      --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
-      > "$out" 2>"$out.err"
+  if [ "$base" = "feature" ]; then
+    BASE_REF="$base" COMMIT_COUNT="$count" STUDIO_BYPASS_BRANCH_POLICY=1 \
+      bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
+        --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
+        > "$out" 2>"$out.err"
+  else
+    BASE_REF="$base" COMMIT_COUNT="$count" \
+      bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
+        --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
+        > "$out" 2>"$out.err"
+  fi
   assert "auto $base $count commits reports $expected" "grep -q 'MERGE_METHOD=$expected' '$out'"
   assert "auto $base $count commits calls gh --$expected" "grep -q -- '--$expected' '$MERGE_LOG'"
   assert "auto $base $count commits leaves branch cleanup to git" "! grep -q -- '--delete-branch' '$MERGE_LOG'"
   assert "auto $base $count commits exits zero" "grep -q 'PR_MERGED=1' '$out'"
   assert "auto $base $count commits emits merge-finalize duration" \
     "jq -e 'select(.event==\"pr_merge_finalize_completed\" and .data.duration_s >= 0 and .data.cleanup_failed == true)' '$EVENT_LOG' >/dev/null"
+}
+
+run_merge_target_default_gate_case() {
+  local out rc
+  out="$TMPROOT/out-merge-target-default.txt"
+  : > "$MERGE_LOG"
+
+  set +e
+  BASE_REF=feature COMMIT_COUNT=1 \
+    bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
+      --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
+      > "$out" 2>"$out.err"
+  rc=$?
+  set -e
+
+  assert "default merge-target policy blocks non-main PR base" "[ $rc -ne 0 ]"
+  assert "default merge-target policy explains configured target" "grep -q 'configured merge target main' '$out.err'"
+  assert "default merge-target policy does not invoke gh merge" "! grep -q -- 'pr merge' '$MERGE_LOG'"
 }
 
 run_head_worktree_case() {
@@ -162,6 +187,7 @@ run_feature_merge_commit_gate_case() {
 cd "$WORK" || exit 1
 run_case main 3 rebase
 run_case main 4 merge
+run_merge_target_default_gate_case
 run_case feature 4 rebase
 run_head_worktree_case
 run_feature_merge_commit_gate_case

@@ -232,21 +232,19 @@ _branch_policy_load_features_env() {
 }
 _branch_policy_load_features_env
 
-case "${STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN:-}" in
-  1|true|TRUE|yes|YES|on|ON)
-    expected_base=$(feature_branch_policy_default_base)
-    if [ "$base_ref" != "$expected_base" ]; then
-      detail="PR base ref $base_ref does not match configured merge target $expected_base"
-      if [ "${STUDIO_BYPASS_BRANCH_POLICY:-0}" = "1" ]; then
-        printf 'warning: %s (override STUDIO_BYPASS_BRANCH_POLICY=1)\n' "$detail" >&2
-      else
-        printf 'pr-merge-finalize: %s\n' "$detail" >&2
-        printf 'pr-merge-finalize: retarget the PR to %s, or set STUDIO_BYPASS_BRANCH_POLICY=1 after explicit user approval (see _shared/standards/branch-discipline.md)\n' "$expected_base" >&2
-        exit 1
-      fi
+if feature_branch_policy_merge_target_to_main; then
+  expected_base=$(feature_branch_policy_default_base)
+  if [ "$base_ref" != "$expected_base" ]; then
+    detail="PR base ref $base_ref does not match configured merge target $expected_base"
+    if [ "${STUDIO_BYPASS_BRANCH_POLICY:-0}" = "1" ]; then
+      printf 'warning: %s (override STUDIO_BYPASS_BRANCH_POLICY=1)\n' "$detail" >&2
+    else
+      printf 'pr-merge-finalize: %s\n' "$detail" >&2
+      printf 'pr-merge-finalize: retarget the PR to %s, or set STUDIO_BYPASS_BRANCH_POLICY=1 after explicit user approval (see _shared/standards/branch-discipline.md)\n' "$expected_base" >&2
+      exit 1
     fi
-    ;;
-esac
+  fi
+fi
 
 [ -z "$EXPECTED_HEAD_SHA" ] || [ "$head_sha" = "$EXPECTED_HEAD_SHA" ] || {
   printf 'pr-merge-finalize: refusing merge for PR #%s; reviewed HEAD_SHA=%s but current HEAD_SHA=%s\n' "$number" "$EXPECTED_HEAD_SHA" "$head_sha" >&2
