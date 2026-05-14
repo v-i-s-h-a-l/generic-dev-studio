@@ -66,8 +66,8 @@ manager_context_header_collect() {
 
   manager_context_header_load_policy "$project"
 
-  MANAGER_CONTEXT_DEFAULT_BASE="${STUDIO_RELEASE_BRANCH_DEFAULT_BASE:-main}"
-  MANAGER_CONTEXT_RELEASE_PATTERN="${STUDIO_RELEASE_BRANCH_PATTERN:-release/{version}}"
+  MANAGER_CONTEXT_DEFAULT_BASE=$(feature_branch_policy_default_base)
+  MANAGER_CONTEXT_RELEASE_PATTERN=$(feature_branch_policy_release_branch_pattern)
   case "${STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN:-}" in
     1|true|TRUE|yes|YES|on|ON) MANAGER_CONTEXT_MERGE_TARGET_TO_MAIN=true ;;
     *) MANAGER_CONTEXT_MERGE_TARGET_TO_MAIN=false ;;

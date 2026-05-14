@@ -153,6 +153,8 @@ declare -a REAP_FAILURES=()
 
 TOTAL_BYTES=0
 TOTAL_COUNT=0
+BUDGET_BYTES=0
+BUDGET_COUNT=0
 REAPED_COUNT=0
 REAPABLE_COUNT=0
 
@@ -214,6 +216,27 @@ for proot in "${PROJECT_ROOTS[@]:-}"; do
     TOTAL_BYTES=$((TOTAL_BYTES + bytes))
     TOTAL_COUNT=$((TOTAL_COUNT + 1))
 
+    if _in_csv "$slug" "$KEEP_CSV"; then
+      if [ ! -f "$marker" ]; then
+        _emit_entry "$wt" "$slug" "$proj" "unknown" "" "kept" "0" "$bytes" "STUDIO_KEEP_WORKTREE" \
+          >> "$REPORT_TMP"
+        continue
+      fi
+      kind=$(_worktree_marker_field "$marker" kind)
+      last_touched=$(_worktree_marker_field "$marker" last_touched)
+      if epoch=$(_worktree_marker_iso_to_epoch "$last_touched"); then
+        age=$((NOW_EPOCH - epoch))
+      else
+        age=0
+      fi
+      _emit_entry "$wt" "$slug" "$proj" "$kind" "$last_touched" "kept" "$age" "$bytes" "STUDIO_KEEP_WORKTREE" \
+        >> "$REPORT_TMP"
+      continue
+    fi
+
+    BUDGET_BYTES=$((BUDGET_BYTES + bytes))
+    BUDGET_COUNT=$((BUDGET_COUNT + 1))
+
     if [ ! -f "$marker" ]; then
       _emit_entry "$wt" "$slug" "$proj" "unknown" "" "skipped" "0" "$bytes" "no_marker" \
         >> "$REPORT_TMP"
@@ -241,12 +264,6 @@ for proot in "${PROJECT_ROOTS[@]:-}"; do
       continue
     fi
     age=$((NOW_EPOCH - epoch))
-
-    if _in_csv "$slug" "$KEEP_CSV"; then
-      _emit_entry "$wt" "$slug" "$proj" "$kind" "$last_touched" "kept" "$age" "$bytes" "STUDIO_KEEP_WORKTREE" \
-        >> "$REPORT_TMP"
-      continue
-    fi
 
     active=0
     for id in "$chain_id" "$session_id" "$task_id"; do
@@ -307,10 +324,10 @@ if [ "$WORKTREE_GC_DISABLED" = "1" ]; then
   BUDGET_STATUS="disabled"
   BUDGET_REASON="worktree_gc_scope_off"
 elif [ "$DO_BUDGET" = "1" ]; then
-  if [ "$TOTAL_BYTES" -gt "$DISK_BUDGET_BYTES" ]; then
+  if [ "$BUDGET_BYTES" -gt "$DISK_BUDGET_BYTES" ]; then
     BUDGET_STATUS="alarm"
     BUDGET_REASON="disk_budget_exceeded"
-  elif [ "$TOTAL_COUNT" -gt "$COUNT_BUDGET" ]; then
+  elif [ "$BUDGET_COUNT" -gt "$COUNT_BUDGET" ]; then
     BUDGET_STATUS="alarm"
     BUDGET_REASON="count_budget_exceeded"
   fi
@@ -322,7 +339,7 @@ printf '{"schema_version":1,"kind":"worktree-gc-report","generated_at":"%s","ttl
   "$( [ "$DO_REAP" = "1" ] && printf true || printf false )" \
   "$( [ "$DRY_RUN" = "1" ] && printf true || printf false )" \
   "$TOTAL_COUNT" "$TOTAL_BYTES" "$REAPABLE_COUNT" "$REAPED_COUNT" \
-  "$BUDGET_STATUS" "$BUDGET_REASON" "$TOTAL_BYTES" "$DISK_BUDGET_BYTES" "$TOTAL_COUNT" "$COUNT_BUDGET" \
+  "$BUDGET_STATUS" "$BUDGET_REASON" "$BUDGET_BYTES" "$DISK_BUDGET_BYTES" "$BUDGET_COUNT" "$COUNT_BUDGET" \
   "$ENTRIES_BLOB"
 
 if [ "$BUDGET_STATUS" = "alarm" ]; then
