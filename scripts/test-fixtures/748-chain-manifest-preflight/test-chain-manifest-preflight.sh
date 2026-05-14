@@ -94,6 +94,13 @@ grep -q 'create or map GitHub issues' "$TMPROOT/discover.out" || {
 project_repo="$TMPROOT/project"
 mkdir -p "$project_repo"
 git -C "$project_repo" init -q
+git -C "$project_repo" config user.name "Fixture"
+git -C "$project_repo" config user.email "fixture@example.com"
+git -C "$project_repo" checkout -q -b main
+printf 'base\n' > "$project_repo/README.md"
+git -C "$project_repo" add README.md
+git -C "$project_repo" commit -q -m "base"
+git -C "$project_repo" branch feature/parent
 
 missing_repo_manifest="$TMPROOT/missing-issue-repo.yaml"
 cat >"$missing_repo_manifest" <<YAML
@@ -199,6 +206,31 @@ grep -qF -- '- Expected base SHA: `not pinned`' "$TMPROOT/v2.out" || {
 grep -qF -- '- Independent: `false`' "$TMPROOT/v2.out" || {
   cat "$TMPROOT/v2.out" >&2
   fail "independent flag was not surfaced in explain_plan output"
+}
+
+stacked_parent_manifest="$TMPROOT/stacked-parent-chain.yaml"
+cat >"$stacked_parent_manifest" <<YAML
+schema_version: 1
+target_repo_root: $project_repo
+issue_repo: example/project
+chains:
+  - name: stacked-parent-chain
+    base_ref: main
+    independent: false
+    parent_branch: feature/parent
+    branch: feature/stacked-parent-chain
+    host: codex
+    issues: [74807]
+YAML
+
+PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" STUDIO_BRANCH_POLICY_ALLOW_FEATURE_OFF_FEATURE=1 "$RUNNER" "$stacked_parent_manifest" --dry-run >"$TMPROOT/stacked-parent.out" 2>&1
+grep -qF -- '- Source branch: `main`' "$TMPROOT/stacked-parent.out" || {
+  cat "$TMPROOT/stacked-parent.out" >&2
+  fail "stacked parent manifest did not keep base_ref as the source branch"
+}
+grep -qF -- '- Parent branch: `feature/parent`' "$TMPROOT/stacked-parent.out" || {
+  cat "$TMPROOT/stacked-parent.out" >&2
+  fail "stacked parent manifest did not surface parent_branch metadata"
 }
 
 conflict_manifest="$TMPROOT/conflict-chain.yaml"

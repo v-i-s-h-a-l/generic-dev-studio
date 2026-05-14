@@ -83,8 +83,9 @@ safe to pipe stdout into `jq`.
 `studio-worktree-gc.sh --budget-check` emits an alarm record when either of
 the following thresholds is crossed:
 
-- Total worktree footprint (in bytes) exceeds
-  `STUDIO_WORKTREE_DISK_BUDGET_BYTES` (default 5 GiB).
+- Total worktree footprint (in bytes) exceeds the canonical
+  `STUDIO_BRANCH_POLICY_WORKTREE_DISK_BUDGET_MB` value (default 10240 MiB).
+  `STUDIO_WORKTREE_DISK_BUDGET_BYTES` remains a direct byte-level override.
 - Worktree count exceeds `STUDIO_WORKTREE_COUNT_BUDGET` (default 10).
 
 The alarm record names the candidates that would be reaped under the default

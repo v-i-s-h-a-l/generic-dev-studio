@@ -5420,7 +5420,7 @@ resolve_chain_independent() {
 }
 
 # branch-discipline (v2) precedence resolver.
-# Walks base_ref → parent_branch → source_branch → target_base → base and rejects
+# Walks base_ref → source_branch → target_base → base and rejects
 # conflicting values with a typed manifest_branch_discipline_conflict failure.
 resolve_chain_source_branch() {
   local chain_idx="$1" chain_name="$2"
@@ -5439,10 +5439,9 @@ resolve_chain_source_branch() {
     exit 2
   fi
 
-  for label in base_ref parent_branch source_branch target_base base; do
+  for label in base_ref source_branch target_base base; do
     case "$label" in
       base_ref) value="$base_ref" ;;
-      parent_branch) value="$parent_branch" ;;
       source_branch) value="$source_branch" ;;
       target_base) value="$target_base" ;;
       base) value="$base" ;;

@@ -29,6 +29,8 @@ umask 022
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-feature-branch-policy.sh
+. "$SCRIPT_DIR/lib-feature-branch-policy.sh"
 # shellcheck source=lib-worktree-marker.sh
 . "$SCRIPT_DIR/lib-worktree-marker.sh"
 
@@ -40,8 +42,8 @@ DO_REAP=0
 DO_BUDGET=0
 DRY_RUN=0
 QUIET=0
+WORKTREE_GC_DISABLED=0
 
-DISK_BUDGET_BYTES="${STUDIO_WORKTREE_DISK_BUDGET_BYTES:-$((5 * 1024 * 1024 * 1024))}"
 COUNT_BUDGET="${STUDIO_WORKTREE_COUNT_BUDGET:-10}"
 
 usage() {
@@ -62,6 +64,35 @@ while [ $# -gt 0 ]; do
     *) printf 'studio-worktree-gc.sh: unknown flag %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+CONFIG_PROJECT="${PROJECT_FILTER:-${PROJECT:-}}"
+if [ -z "$CONFIG_PROJECT" ]; then
+  CONFIG_PROJECT=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+fi
+PROJECT="$CONFIG_PROJECT"
+feature_branch_policy_load_config ""
+WORKTREE_GC_SCOPE=$(feature_branch_policy_worktree_gc_scope)
+case "$WORKTREE_GC_SCOPE" in
+  project)
+    [ -n "$PROJECT_FILTER" ] || PROJECT_FILTER="$CONFIG_PROJECT"
+    ;;
+  runtime) ;;
+  off)
+    WORKTREE_GC_DISABLED=1
+    DO_BUDGET=0
+    DO_REAP=0
+    ;;
+  *)
+    printf 'studio-worktree-gc.sh: branch_policy.worktree_gc_scope must be project, runtime, or off (got %s)\n' "$WORKTREE_GC_SCOPE" >&2
+    exit 2
+    ;;
+esac
+
+DISK_BUDGET_MB=$(feature_branch_policy_worktree_disk_budget_mb)
+case "$DISK_BUDGET_MB" in
+  ''|*[!0-9]*) printf 'studio-worktree-gc.sh: branch_policy.worktree_disk_budget_mb must be a non-negative integer (got %s)\n' "$DISK_BUDGET_MB" >&2; exit 2 ;;
+esac
+DISK_BUDGET_BYTES="${STUDIO_WORKTREE_DISK_BUDGET_BYTES:-$((DISK_BUDGET_MB * 1024 * 1024))}"
 
 case "$TTL_DAYS" in
   ''|*[!0-9]*) printf 'studio-worktree-gc.sh: --ttl-days must be a non-negative integer (got %s)\n' "$TTL_DAYS" >&2; exit 2 ;;
@@ -153,12 +184,14 @@ shopt -s nullglob
 STUDIO_HOME_ROOT=$(dirname "$(resolve_project_root_for _lint_safe_placeholder_)")
 
 declare -a PROJECT_ROOTS=()
-if [ -n "$PROJECT_FILTER" ]; then
-  PROJECT_ROOTS+=("$(resolve_project_root_for "$PROJECT_FILTER")")
-else
-  for d in "$STUDIO_HOME_ROOT"/*/ ; do
-    PROJECT_ROOTS+=("${d%/}")
-  done
+if [ "$WORKTREE_GC_DISABLED" != "1" ]; then
+  if [ -n "$PROJECT_FILTER" ]; then
+    PROJECT_ROOTS+=("$(resolve_project_root_for "$PROJECT_FILTER")")
+  else
+    for d in "$STUDIO_HOME_ROOT"/*/ ; do
+      PROJECT_ROOTS+=("${d%/}")
+    done
+  fi
 fi
 
 NOW_EPOCH=$(date -u +%s)
@@ -270,7 +303,10 @@ fi
 
 BUDGET_STATUS="ok"
 BUDGET_REASON=""
-if [ "$DO_BUDGET" = "1" ]; then
+if [ "$WORKTREE_GC_DISABLED" = "1" ]; then
+  BUDGET_STATUS="disabled"
+  BUDGET_REASON="worktree_gc_scope_off"
+elif [ "$DO_BUDGET" = "1" ]; then
   if [ "$TOTAL_BYTES" -gt "$DISK_BUDGET_BYTES" ]; then
     BUDGET_STATUS="alarm"
     BUDGET_REASON="disk_budget_exceeded"
