@@ -20,6 +20,14 @@ grep -Fq 'verified_closeout_line "Worker summary ingested and validated"' "$ROOT
   || fail "closeout inventory is missing worker summary row"
 grep -Fq -- '--verified|--doctor' "$ROOT/scripts/manager-work-chain.sh" \
   || fail "manager front door does not treat --verified as an explicit runner mode"
+grep -Fq -- 'scripts/studio-chain-runner.sh --resume <run_id> [--verified] [--yes] [--host <host>]' "$ROOT/scripts/studio-chain-runner.sh" \
+  || fail "resume usage does not document host override"
+grep -Fq '.host_override = $host_override' "$ROOT/scripts/studio-chain-runner.sh" \
+  || fail "resume path does not persist host override"
+grep -Fq 'if (.status // "pending") == "completed" then' "$ROOT/scripts/studio-chain-runner.sh" \
+  || fail "resume host override rewrites completed chains"
+grep -Fq '.git_metadata_strategy = $git_metadata_strategy' "$ROOT/scripts/studio-chain-runner.sh" \
+  || fail "resume host override does not recompute git metadata strategy"
 
 if "$ROOT/scripts/studio-chain-runner.sh" --verified >/tmp/verified-resume.out 2>/tmp/verified-resume.err; then
   fail "--verified without --resume unexpectedly succeeded"

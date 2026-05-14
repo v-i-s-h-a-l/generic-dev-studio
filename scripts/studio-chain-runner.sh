@@ -6,7 +6,7 @@
 #   scripts/studio-chain-runner.sh <manifest|chain-name|chain-id> [--only <chain>] [--host <host>] [--dry-run] [--yes] [--parallel-chains <n|auto|1>] [--checkpoint auto|off] [--attended|--unattended]
 #   scripts/studio-chain-runner.sh --auto <manifest|chain-name|chain-id> [--only <chain>] [--host <host>] [--dry-run] [--checkpoint auto|off] [--unattended]
 #   scripts/studio-chain-runner.sh --explain-next <manifest|chain-name|chain-id> [--only <chain>]
-#   scripts/studio-chain-runner.sh --resume <run_id> [--verified] [--yes]
+#   scripts/studio-chain-runner.sh --resume <run_id> [--verified] [--yes] [--host <host>]
 #   scripts/studio-chain-runner.sh --regenerate-report <run_id>
 #   scripts/studio-chain-runner.sh --doctor <run_id> [--format markdown|json] [--public-safe]
 #   scripts/studio-chain-runner.sh --list
@@ -6852,6 +6852,7 @@ explain_plan() {
 }
 
 prepare_plan() {
+  local resume_host resume_git_metadata_strategy
   if [ -n "$RESUME_ID" ]; then
     resolve_resume_state
     TARGET_REPO_ROOT=$(jq -r '.target_repo_root // empty' "$RUN_STATE_JSON" 2>/dev/null || true)
@@ -6867,6 +6868,29 @@ prepare_plan() {
     cp "$RUN_STATE_JSON" "$PLAN_JSON"
     jq --arg target_repo_root "$TARGET_REPO_ROOT" --arg issue_repo "$REPO_SLUG" '.target_repo_root = $target_repo_root | .issue_repo = $issue_repo' "$PLAN_JSON" > "$PLAN_JSON.tmp.$$"
     mv "$PLAN_JSON.tmp.$$" "$PLAN_JSON"
+    if [ -n "$HOST_OVERRIDE" ]; then
+      resume_host=$(chain_runner_host_for_profile "$HOST_OVERRIDE")
+      resume_git_metadata_strategy=$(git_metadata_strategy_for_host "$resume_host")
+      jq \
+        --arg host_override "$HOST_OVERRIDE" \
+        --arg host "$resume_host" \
+        --arg git_metadata_strategy "$resume_git_metadata_strategy" \
+        '
+          .host_override = $host_override
+          | .chains |= map(
+              if (.status // "pending") == "completed" then
+                .
+              else
+                .host = $host
+                | .git_metadata_strategy = $git_metadata_strategy
+                | .host_eligibility.resolver.requested_host = $host_override
+                | .host_eligibility.resolver.resolved_host = $host
+                | .host_eligibility.resolver.host_override = $host_override
+              end
+            )
+        ' "$PLAN_JSON" > "$PLAN_JSON.tmp.$$"
+      mv "$PLAN_JSON.tmp.$$" "$PLAN_JSON"
+    fi
   else
     if [ -z "$TARGET_REPO_ROOT" ]; then
       resolve_new_run_manifest_context
