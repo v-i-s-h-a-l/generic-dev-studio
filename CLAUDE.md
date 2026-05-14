@@ -284,7 +284,7 @@ The canonical actionable backlog is the GitHub Projects v2 board documented in
 (track, phase, size, sibling-review status, and table/board/roadmap views);
 GitHub issues remain the durable work items behind each row.
 
-When the user agrees on new work in chat (explicitly: "let's do X", "let's plan Y for later") — **open a GitHub issue** via `scripts/studio-gh.sh issue create` with the appropriate label (`phase-2`, `roadmap`, `enhancement`, `bug`, `polish`). No need to ask permission for items the user has explicitly discussed and agreed to.
+When the user agrees on new work in chat (explicitly: "let's do X", "let's plan Y for later") — **open a GitHub issue** via `scripts/studio-gh-issue-new.sh` with the appropriate label (`phase-2`, `roadmap`, `enhancement`, `bug`, `polish`) so it is also added to the Studio v2 Project board. Use `scripts/studio-gh.sh issue create` only for narrow recovery/debug cases where Project writes are intentionally out of scope. No need to ask permission for items the user has explicitly discussed and agreed to.
 
 When work lands on `main` that closes an issue, close the issue with a one-line note pointing at the commit/PR.
 
