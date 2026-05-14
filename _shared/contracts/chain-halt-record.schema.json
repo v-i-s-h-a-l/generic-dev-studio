@@ -346,7 +346,8 @@
         "permission_expansion_required",
         "unsafe_external_state",
         "implementation_scope_blocked",
-        "checkpoint_drift_detected"
+        "checkpoint_drift_detected",
+        "attended_verification_pending"
       ]
     },
     "stringList": {
@@ -428,7 +429,8 @@
               "enum": [
                 "reviewer_host_ineligible",
                 "model_tool_permission_prompt",
-                "context_output_overflow"
+                "context_output_overflow",
+                "attended_verification_pending"
               ]
             },
             "halt_class": {

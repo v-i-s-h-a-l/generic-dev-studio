@@ -76,6 +76,40 @@ After a bare role landing, later bare subcommands may resolve through that activ
 
 After workflow selection, report the direct one-line invocation the user can run next time.
 
+<!-- v2-dev-studio:verified-resume -->
+## Attended Verified Resume
+
+Attended chain runs may pause for explicit human verification. The pause
+writes a typed halt with `reason_id: attended_verification_pending`
+(`_shared/contracts/chain-halt-record.schema.json`) and surfaces a single
+verified-resume command of the form
+`/dev-studio manager work-chain --resume <run_id> --verified --yes`. The
+manager routes that invocation to `scripts/manager-work-chain.sh`, which
+inspects the canonical verified resume closeout inventory documented in
+`_shared/contracts/completion-summary.md` §Verified Resume Closeout and runs
+each finish step idempotently (test/build evidence, worker summary, commit,
+push, PR, review, merge, issue closure, local main sync, worktree cleanup,
+DerivedData and stale-artifact cleanup, and report regeneration). Unsafe or
+user-sensitive steps stay gated by the existing ask-first and retention
+rules; `--verified --yes` does not widen approval authority.
+
+<!-- v2-dev-studio:chain-recap -->
+## Durable Chain Progress Recap
+
+Chain sessions emit a stable user-facing progress packet at three durable
+boundaries: before execution starts (chain goal, ordered tasks, dependency
+edges, parallel opportunities, expected human checkpoints, and the next
+command), after every completed task (previous task, just completed task,
+what changed, verification evidence summary, next task or command, overall
+progress, and the current chain direction or goal), and on pause, halt, or
+finish (what remains and the exact verified-resume or recovery command).
+The recap is generated from durable run state — chain manifests, event-log
+projections, worker summaries, and halt records — never from ephemeral
+assistant memory, and it does not expose private telemetry payloads,
+secrets, or raw operator prompts. See
+`_shared/contracts/completion-summary.md` §Durable Chain Progress Recap for
+the field-level contract.
+
 <!-- v2-dev-studio:intent -->
 ## Intent detection
 
