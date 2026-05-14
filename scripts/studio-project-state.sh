@@ -1,15 +1,27 @@
 #!/usr/bin/env bash
-# studio-project-state.sh — read the canonical GitHub Projects v2 backlog state.
+# studio-project-state.sh — read the per-project GitHub Projects v2 backlog state.
 #
-# The studio's v2 PM surface lives on the "Studio v2 transition" Project board.
-# This script gives agents a stable, field-aware reader so backlog flows do not
-# reconstruct phase/track/review state from raw `gh issue list` output.
+# Each studio-managed project owns its own Projects v2 board. This script
+# discovers the right board through the per-project portability contract in
+# PM-SURFACE.md §Per-Project Project Board Portability Contract and
+# _shared/contracts/studio-context.md §Project Board Resolution.
+#
+# Discovery order (first match wins):
+#   1. --project-board <owner_kind>:<owner_login>:<n>  (or legacy
+#      --owner + --project-number)
+#   2. STUDIO_PROJECT_BOARD_OVERRIDE env (or legacy STUDIO_PROJECT_OWNER /
+#      STUDIO_PROJECT_NUMBER env)
+#   3. Runtime override at <studio_home>/<project_slug>/config/project-board.yaml
+#   4. Durable repo file at profiles/<project_slug>/project-board.yaml
+#   5. Loud failure naming the missing config and project slug
 #
 # Usage:
 #   scripts/studio-project-state.sh
 #   scripts/studio-project-state.sh --json
 #   scripts/studio-project-state.sh --search "host-agnostic workers"
 #   scripts/studio-project-state.sh --status "Todo"
+#   scripts/studio-project-state.sh --project-board user:v-i-s-h-a-l:1
+#   scripts/studio-project-state.sh --owner v-i-s-h-a-l --project-number 1
 
 set -u
 set -o pipefail
@@ -18,18 +30,21 @@ umask 022
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-studio-context.sh
+. "$SCRIPT_DIR/lib-studio-context.sh"
 
-OWNER="${STUDIO_PROJECT_OWNER:-v-i-s-h-a-l}"
-PROJECT_NUMBER="${STUDIO_PROJECT_NUMBER:-1}"
 LIMIT="${STUDIO_PROJECT_LIMIT:-200}"
 FALLBACK_LIMIT="${STUDIO_PROJECT_SEARCH_FALLBACK_LIMIT:-20}"
 REPO_SLUG="${STUDIO_PROJECT_REPO:-}"
 MODE=human
 QUERY=""
 PROJECT_STATUS=""
+CLI_OWNER=""
+CLI_PROJECT_NUMBER=""
+CLI_PROJECT_BOARD=""
 
 usage() {
-  sed -n '2,14p' "$0"
+  sed -n '2,25p' "$0"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -37,13 +52,73 @@ while [ "$#" -gt 0 ]; do
     --json) MODE=json; shift ;;
     --search) QUERY="${2:?usage: --search <keywords>}"; shift 2 ;;
     --status) PROJECT_STATUS="${2:?usage: --status <project-status>}"; shift 2 ;;
-    --owner) OWNER="${2:?usage: --owner <owner>}"; shift 2 ;;
-    --project-number) PROJECT_NUMBER="${2:?usage: --project-number <number>}"; shift 2 ;;
+    --owner) CLI_OWNER="${2:?usage: --owner <owner>}"; shift 2 ;;
+    --project-number) CLI_PROJECT_NUMBER="${2:?usage: --project-number <number>}"; shift 2 ;;
+    --project-board) CLI_PROJECT_BOARD="${2:?usage: --project-board <owner_kind>:<owner_login>:<n>}"; shift 2 ;;
     --limit) LIMIT="${2:?usage: --limit <n>}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) printf 'studio-project-state: unknown arg: %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+resolve_project_board() {
+  # 1. CLI flag — --project-board wins over --owner / --project-number.
+  if [ -n "$CLI_PROJECT_BOARD" ]; then
+    STUDIO_CONTEXT_PROJECT_BOARD="$CLI_PROJECT_BOARD"
+  elif [ -n "$CLI_OWNER" ] && [ -n "$CLI_PROJECT_NUMBER" ]; then
+    STUDIO_CONTEXT_PROJECT_BOARD="user:$CLI_OWNER:$CLI_PROJECT_NUMBER"
+  elif [ -n "$CLI_OWNER" ] || [ -n "$CLI_PROJECT_NUMBER" ]; then
+    printf 'studio-project-state: --owner and --project-number must be used together (or pass --project-board)\n' >&2
+    exit 2
+  fi
+
+  # 2. Legacy env override — preserved so existing STUDIO_PROJECT_OWNER /
+  # STUDIO_PROJECT_NUMBER consumers keep working until they migrate to
+  # STUDIO_PROJECT_BOARD_OVERRIDE. The new env is checked inside the
+  # context resolver as step 2; the legacy env is treated as a
+  # peer step-2 source synthesized into the same canonical token.
+  if [ -z "${STUDIO_CONTEXT_PROJECT_BOARD:-}" ] \
+      && [ -z "${STUDIO_PROJECT_BOARD_OVERRIDE:-}" ] \
+      && [ -n "${STUDIO_PROJECT_OWNER:-}" ] \
+      && [ -n "${STUDIO_PROJECT_NUMBER:-}" ]; then
+    STUDIO_CONTEXT_PROJECT_BOARD="user:$STUDIO_PROJECT_OWNER:$STUDIO_PROJECT_NUMBER"
+  fi
+
+  # Resolve once with the discovery chain; the validator loud-fails for
+  # pm-surface when project_board is empty.
+  if studio_context_resolve pm-surface; then
+    return 0
+  fi
+
+  # Transitional fallback: the studio's own board is the seed instance of
+  # the portability contract, but profiles/generic-dev-studio/project-board.yaml
+  # is not yet seeded (T-R003 territory). Synthesize the legacy default for
+  # the studio slug only, with a one-line deprecation notice, so existing
+  # usage in generic-dev-studio keeps working. Any other project_slug must
+  # configure a board explicitly — the contract's loud-failure stands.
+  local project_slug_now
+  project_slug_now=$(_studio_context_project_slug "$(_studio_context_repo_root)")
+  if [ "$project_slug_now" = "generic-dev-studio" ]; then
+    printf 'studio-project-state: no project-board config found for generic-dev-studio; using transitional default user:v-i-s-h-a-l:1 (seed profiles/generic-dev-studio/project-board.yaml to make this explicit)\n' >&2
+    STUDIO_CONTEXT_PROJECT_BOARD="user:v-i-s-h-a-l:1"
+    # shellcheck disable=SC2034
+    STUDIO_CONTEXT_PROJECT_BOARD_SOURCE="transitional_default"
+    studio_context_resolve pm-surface || exit 1
+    return 0
+  fi
+  exit 1
+}
+
+resolve_project_board
+
+OWNER=$(printf '%s\n' "$STUDIO_CONTEXT_PROJECT_BOARD" | awk -F: '{print $2}')
+PROJECT_NUMBER=$(printf '%s\n' "$STUDIO_CONTEXT_PROJECT_BOARD" | awk -F: '{print $3}')
+
+if [ -z "$OWNER" ] || [ -z "$PROJECT_NUMBER" ]; then
+  printf 'studio-project-state: failed to parse resolved project_board token: %s\n' \
+    "$STUDIO_CONTEXT_PROJECT_BOARD" >&2
+  exit 1
+fi
 
 command -v gh >/dev/null 2>&1 || {
   printf 'studio-project-state: gh is required on PATH\n' >&2
