@@ -50,6 +50,9 @@ RUN_PATHS_CONFIGURED=0
 # shellcheck disable=SC1091
 # shellcheck source=lib-host-eligibility.sh
 . "$SCRIPT_DIR/lib-host-eligibility.sh"
+# shellcheck source=lib-feature-branch-policy.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/lib-feature-branch-policy.sh"
 
 usage() {
   sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' >&2
@@ -5494,6 +5497,25 @@ resolve_chain_expected_source_sha() {
   normalize_manifest_value "$selected"
 }
 
+validate_chain_parent_lifecycle() {
+  local chain_idx="$1" chain_name="$2" source_branch="$3"
+  local parent_branch parent_sha independent detail
+  parent_branch=$(manifest_chain_field "$chain_idx" parent_branch)
+  parent_sha=$(manifest_chain_field "$chain_idx" parent_sha)
+  independent=$(resolve_chain_independent "$chain_idx")
+
+  [ "$independent" = "true" ] && return 0
+  [ -n "$parent_branch" ] || [ -n "$parent_sha" ] || return 0
+
+  if feature_branch_policy_parent_lifecycle "$TARGET_REPO_ROOT" "$parent_branch" "$parent_sha" "$source_branch" "chain $chain_name"; then
+    return 0
+  fi
+
+  detail="$FEATURE_BRANCH_POLICY_PARENT_DETAIL"
+  printf 'studio-chain-runner: manifest_branch_discipline_conflict: %s\n' "$detail" >&2
+  exit 2
+}
+
 host_sandbox_profile() {
   local host="$1" manifest
   manifest=$(resolve_capabilities_manifest "$host" "$REPO_ROOT") || {
@@ -6098,6 +6120,7 @@ build_plan_json() {
     source_branch=$(resolve_chain_source_branch "$idx" "$name")
     base="$source_branch"
     expected_source_sha=$(resolve_chain_expected_source_sha "$idx" "$name")
+    validate_chain_parent_lifecycle "$idx" "$name" "$source_branch"
     parent_branch=$(manifest_chain_field "$idx" parent_branch)
     parent_sha=$(manifest_chain_field "$idx" parent_sha)
     independent=$(resolve_chain_independent "$idx")

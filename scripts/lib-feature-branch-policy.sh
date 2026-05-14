@@ -69,6 +69,19 @@ feature_branch_policy_worktree_disk_budget_mb() {
   printf '%s\n' "${STUDIO_BRANCH_POLICY_WORKTREE_DISK_BUDGET_MB:-10240}"
 }
 
+feature_branch_policy_ref_sha() {
+  local repo="${1:?usage: feature_branch_policy_ref_sha <repo> <ref>}"
+  local ref="${2:?ref required}"
+  git -C "$repo" rev-parse "$ref^{commit}" 2>/dev/null
+}
+
+feature_branch_policy_is_ancestor() {
+  local repo="${1:?usage: feature_branch_policy_is_ancestor <repo> <ancestor> <descendant>}"
+  local ancestor="${2:?ancestor required}"
+  local descendant="${3:?descendant required}"
+  git -C "$repo" merge-base --is-ancestor "$ancestor" "$descendant" >/dev/null 2>&1
+}
+
 feature_branch_policy_resolve_compare_ref() {
   local repo="${1:?usage: feature_branch_policy_resolve_compare_ref <repo> <base-ref>}"
   local base_ref="${2:?base ref required}"
@@ -166,4 +179,74 @@ feature_branch_policy_evaluate() {
 
   FEATURE_BRANCH_POLICY_DETAIL="$context_label $branch has no merge commits since $compare_ref"
   return 0
+}
+
+feature_branch_policy_parent_lifecycle() {
+  local repo="${1:?usage: feature_branch_policy_parent_lifecycle <repo> <parent-branch> <parent-sha> <base-ref> [context-label]}"
+  local parent_branch="${2:-}"
+  local parent_sha="${3:-}"
+  local base_ref="${4:-}"
+  local context_label="${5:-stacked parent}"
+  local parent_ref="" current_parent_sha="" base_compare_ref="" base_sha=""
+
+  FEATURE_BRANCH_POLICY_PARENT_STATUS="not-applicable"
+  FEATURE_BRANCH_POLICY_PARENT_DETAIL="$context_label has no parent metadata"
+  FEATURE_BRANCH_POLICY_PARENT_REF=""
+  FEATURE_BRANCH_POLICY_PARENT_SHA=""
+  FEATURE_BRANCH_POLICY_PARENT_BASE_REF=""
+
+  [ -n "$parent_branch" ] || [ -n "$parent_sha" ] || return 0
+
+  feature_branch_policy_load_config "$repo"
+
+  if ! feature_branch_policy_allow_feature_off_feature; then
+    FEATURE_BRANCH_POLICY_PARENT_STATUS="failed"
+    FEATURE_BRANCH_POLICY_PARENT_DETAIL="$context_label uses parent metadata but branch_policy.allow_feature_off_feature is disabled"
+    return 1
+  fi
+
+  if [ -n "$base_ref" ]; then
+    base_compare_ref=$(feature_branch_policy_resolve_compare_ref "$repo" "$base_ref" 2>/dev/null || true)
+    FEATURE_BRANCH_POLICY_PARENT_BASE_REF="$base_compare_ref"
+    if [ -n "$base_compare_ref" ]; then
+      base_sha=$(feature_branch_policy_ref_sha "$repo" "$base_compare_ref" 2>/dev/null || true)
+    fi
+  fi
+
+  if [ -n "$parent_sha" ] && [ -n "$base_sha" ] && feature_branch_policy_is_ancestor "$repo" "$parent_sha" "$base_sha"; then
+    FEATURE_BRANCH_POLICY_PARENT_STATUS="parent-merged"
+    FEATURE_BRANCH_POLICY_PARENT_SHA="$parent_sha"
+    FEATURE_BRANCH_POLICY_PARENT_DETAIL="$context_label parent commit $parent_sha is already reachable from $base_compare_ref"
+    return 0
+  fi
+
+  if [ -n "$parent_branch" ]; then
+    parent_ref=$(feature_branch_policy_resolve_compare_ref "$repo" "$parent_branch" 2>/dev/null || true)
+  fi
+
+  if [ -z "$parent_ref" ]; then
+    FEATURE_BRANCH_POLICY_PARENT_STATUS="parent-deleted"
+    FEATURE_BRANCH_POLICY_PARENT_DETAIL="$context_label parent branch $parent_branch is missing and parent_sha is not reachable from ${base_compare_ref:-base ref}"
+    return 1
+  fi
+
+  current_parent_sha=$(feature_branch_policy_ref_sha "$repo" "$parent_ref" 2>/dev/null || true)
+  FEATURE_BRANCH_POLICY_PARENT_REF="$parent_ref"
+  FEATURE_BRANCH_POLICY_PARENT_SHA="$current_parent_sha"
+
+  if [ -z "$parent_sha" ] || [ "$current_parent_sha" = "$parent_sha" ]; then
+    FEATURE_BRANCH_POLICY_PARENT_STATUS="parent-active"
+    FEATURE_BRANCH_POLICY_PARENT_DETAIL="$context_label parent branch $parent_branch is active at ${current_parent_sha:-unknown sha}"
+    return 0
+  fi
+
+  if feature_branch_policy_is_ancestor "$repo" "$parent_sha" "$current_parent_sha"; then
+    FEATURE_BRANCH_POLICY_PARENT_STATUS="parent-advanced"
+    FEATURE_BRANCH_POLICY_PARENT_DETAIL="$context_label parent branch $parent_branch advanced from $parent_sha to $current_parent_sha"
+    return 0
+  fi
+
+  FEATURE_BRANCH_POLICY_PARENT_STATUS="parent-rebased"
+  FEATURE_BRANCH_POLICY_PARENT_DETAIL="$context_label parent branch $parent_branch no longer contains recorded parent_sha $parent_sha; rebase or refresh the chain manifest"
+  return 1
 }
