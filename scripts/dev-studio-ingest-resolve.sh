@@ -5,6 +5,8 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=scripts/lib-paths.sh
 . "$ROOT/scripts/lib-paths.sh"
+# shellcheck source=scripts/lib-manager-context-header.sh
+. "$ROOT/scripts/lib-manager-context-header.sh"
 
 usage() {
   cat >&2 <<'EOF'
@@ -117,6 +119,16 @@ if [ "$resolved_scope" = "studio" ]; then
   fi
 fi
 
+# Render the always-on manager context header as a JSON object so the host
+# surface can prompt the user with branch state + branch-policy fields before
+# any ingest write. The header is informational; --scope / --to remain the
+# user-controlled override surface and the host is expected to display the
+# resolved context with the resolver's output. The pre-flight reuses the same
+# branch resolution primitives wired into manifest schema v2 (T-R002), so
+# ingest and plan-chain agree on which branch the work is anchored to.
+context_header_json=$(manager_context_header_emit_json "$source_root" 2>/dev/null || printf 'null')
+[ -n "$context_header_json" ] || context_header_json=null
+
 jq -n \
   --arg source_project "$source_project" \
   --arg source_root "$source_root" \
@@ -127,6 +139,7 @@ jq -n \
   --argjson public_issue_repo "$public_issue_repo" \
   --argjson requires_privacy_scrub "$requires_privacy_scrub" \
   --arg message_file "$message_file" \
+  --argjson manager_context_header "$context_header_json" \
   '{
     kind: "dev-studio-ingest-route",
     schema_version: 1,
@@ -139,5 +152,22 @@ jq -n \
     public_issue_repo: $public_issue_repo,
     requires_privacy_scrub: $requires_privacy_scrub,
     message_file: (if $message_file == "" then null else $message_file end),
-    local_ingest_policy: "project-profile"
+    local_ingest_policy: "project-profile",
+    manager_context_header: $manager_context_header,
+    source_branch_preflight: (
+      if $manager_context_header == null then null
+      else {
+        kind: "ingest-source-branch-preflight",
+        schema_version: 1,
+        prompt_action: "confirm-or-override",
+        current_branch: $manager_context_header.current_branch,
+        base_ref: $manager_context_header.base_ref,
+        base_sha: $manager_context_header.base_sha,
+        dirty: $manager_context_header.dirty,
+        on_protected_base: $manager_context_header.on_protected_base,
+        policy: $manager_context_header.policy,
+        override_flags: ["--scope studio", "--scope project", "--to <project-slug>"]
+      }
+      end
+    )
   }'
