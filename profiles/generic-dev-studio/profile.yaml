@@ -1,0 +1,16 @@
+schema_version: 1
+kind: studio-v2-project-profile
+profile: generic-dev-studio
+display_name: Generic Dev Studio
+stack: shell
+project_detection:
+  required_any:
+    - PM-SURFACE.md
+    - core/v2/skills/dev-studio/SKILL.md
+  optional:
+    - scripts/studio-project-state.sh
+# The studio repo's own profile is PM/config metadata today; executable
+# operations still live in the global dev-studio router and scripts.
+operations: {}
+rules: []
+plugin_escape_hatches: []
