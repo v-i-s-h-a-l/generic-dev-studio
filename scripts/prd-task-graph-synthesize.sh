@@ -176,10 +176,13 @@ function resource_like(value) {
   if (value ~ /[[:space:]]|--|"|>|<|\$\(|\$\{|;|&&|\|\|/) {
     return 0
   }
+  if (value == ".gitignore") {
+    return 1
+  }
   if (value ~ /^\.[A-Za-z0-9]+$/) {
     return 0
   }
-  return value ~ /(^scripts\/|^_shared\/|^core\/|^hooks\/|^commands\/|^tests\/|^README\.md$|^REVIEW\.md$|^CLAUDE\.md$|^AGENTS\.md$|^ROADMAP\.md$|^ARCHITECTURE\.md$|^hosts\/|[A-Za-z0-9_-]+\.sh$|[A-Za-z0-9_-]+\.md$|[A-Za-z0-9_-]+\.json$|[A-Za-z0-9_-]+\.ya?ml$)/
+  return value ~ /(^scripts\/|^_shared\/|^core\/|^hooks\/|^commands\/|^tests\/|^README\.md$|^REVIEW\.md$|^CLAUDE\.md$|^AGENTS\.md$|^ROADMAP\.md$|^ARCHITECTURE\.md$|^\.gitignore$|^hosts\/|^zaps-app\/|^docs\/|^Documentation\/|^Sources\/|^Tests\/|^Resources\/|^Package\.swift$|[A-Za-z0-9_-]+\.swift$|[A-Za-z0-9_-]+\.pbxproj$|[A-Za-z0-9_-]+\.xcstrings$|[A-Za-z0-9_-]+\.xcscheme$|[A-Za-z0-9_-]+\.sh$|[A-Za-z0-9_-]+\.md$|[A-Za-z0-9_-]+\.json$|[A-Za-z0-9_-]+\.ya?ml$)/
 }
 
 function resources_from_title(title,    rest, value, out) {

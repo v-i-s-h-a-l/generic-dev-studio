@@ -76,6 +76,12 @@ across multiple wrapped lines. The reviewer surfaces the resolved host in
 - Update `hosts/ADAPTER-SPEC.md` with a forward pointer.
 - No new top-level rules in `REVIEW.md`. The block-tier rules are deferred.
 
+### 7. Swift package implementation
+
+- Create `zaps-app/PhotoEditor/Package.swift`.
+- Write `zaps-app/PhotoEditor/Sources/PhotoEditor/PhotoEditor.swift`.
+- Add tests in `zaps-app/PhotoEditor/Tests/PhotoEditorTests/PhotoEditorTests.swift`.
+
 ## Edges and prior art in the repo
 
 - `scripts/foo-consumer.sh` — read-only inventory reference.
@@ -102,6 +108,7 @@ t3=$(writes_for T-R003)
 t4=$(writes_for T-R004)
 t5=$(writes_for T-R005)
 t6=$(writes_for T-R006)
+t7=$(writes_for T-R007)
 
 # Each assertion checks one of the original 10 fatal items from #793.
 
@@ -177,6 +184,20 @@ esac
 case ",$t6," in
   *,hosts/ADAPTER-SPEC.md,*) :;;
   *) fail "T-R006 missing hosts/ADAPTER-SPEC.md (got: $t6)";;
+esac
+
+# T-R007: iOS project paths should be valid write_resources for project plans.
+case ",$t7," in
+  *,zaps-app/PhotoEditor/Package.swift,*) :;;
+  *) fail "T-R007 missing zaps-app/PhotoEditor/Package.swift (got: $t7)";;
+esac
+case ",$t7," in
+  *,zaps-app/PhotoEditor/Sources/PhotoEditor/PhotoEditor.swift,*) :;;
+  *) fail "T-R007 missing Swift source path (got: $t7)";;
+esac
+case ",$t7," in
+  *,zaps-app/PhotoEditor/Tests/PhotoEditorTests/PhotoEditorTests.swift,*) :;;
+  *) fail "T-R007 missing Swift test path (got: $t7)";;
 esac
 
 # Validation must report no parallel-write races and not leave empty
