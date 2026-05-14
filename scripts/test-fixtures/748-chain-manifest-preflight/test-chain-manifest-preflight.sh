@@ -172,4 +172,104 @@ if grep -q 'STUDIO_BYPASS_HOST_RESOLVER' "$TMPROOT/auto-bypass.out"; then
   fail "auto host bypass leaked the retired bypass env name"
 fi
 
+v2_manifest="$TMPROOT/v2-chain.yaml"
+cat >"$v2_manifest" <<YAML
+schema_version: 1
+target_repo_root: $project_repo
+issue_repo: example/project
+chains:
+  - name: v2-chain
+    base_ref: main
+    independent: false
+    branch: feature/v2-chain
+    host: codex
+    issues: [74803]
+YAML
+
+: > "$GH_LOG"
+PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" "$RUNNER" "$v2_manifest" --dry-run >"$TMPROOT/v2.out" 2>&1
+grep -qF -- '- Source branch: `main`' "$TMPROOT/v2.out" || {
+  cat "$TMPROOT/v2.out" >&2
+  fail "v2 base_ref was not resolved as the source branch"
+}
+grep -qF -- '- Expected base SHA: `not pinned`' "$TMPROOT/v2.out" || {
+  cat "$TMPROOT/v2.out" >&2
+  fail "explain_plan should surface 'not pinned' when v2 base_sha is omitted"
+}
+grep -qF -- '- Independent: `false`' "$TMPROOT/v2.out" || {
+  cat "$TMPROOT/v2.out" >&2
+  fail "independent flag was not surfaced in explain_plan output"
+}
+
+conflict_manifest="$TMPROOT/conflict-chain.yaml"
+cat >"$conflict_manifest" <<YAML
+schema_version: 1
+target_repo_root: $project_repo
+issue_repo: example/project
+chains:
+  - name: conflict-chain
+    base_ref: main
+    source_branch: develop
+    branch: feature/conflict-chain
+    host: codex
+    issues: [74804]
+YAML
+
+if PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" "$RUNNER" "$conflict_manifest" --dry-run >"$TMPROOT/conflict.out" 2>&1; then
+  cat "$TMPROOT/conflict.out" >&2
+  fail "v1/v2 base ref conflict unexpectedly passed"
+fi
+grep -q 'manifest_branch_discipline_conflict' "$TMPROOT/conflict.out" || {
+  cat "$TMPROOT/conflict.out" >&2
+  fail "v1/v2 base ref conflict did not emit typed manifest_branch_discipline_conflict"
+}
+
+sha_conflict_manifest="$TMPROOT/sha-conflict-chain.yaml"
+cat >"$sha_conflict_manifest" <<YAML
+schema_version: 1
+target_repo_root: $project_repo
+issue_repo: example/project
+chains:
+  - name: sha-conflict-chain
+    base_ref: main
+    base_sha: 0123456789abcdef0123456789abcdef01234567
+    expected_source_sha: fedcba9876543210fedcba9876543210fedcba98
+    branch: feature/sha-conflict-chain
+    host: codex
+    issues: [74805]
+YAML
+
+if PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" "$RUNNER" "$sha_conflict_manifest" --dry-run >"$TMPROOT/sha-conflict.out" 2>&1; then
+  cat "$TMPROOT/sha-conflict.out" >&2
+  fail "v1/v2 SHA conflict unexpectedly passed"
+fi
+grep -q 'manifest_branch_discipline_conflict' "$TMPROOT/sha-conflict.out" || {
+  cat "$TMPROOT/sha-conflict.out" >&2
+  fail "v1/v2 SHA conflict did not emit typed manifest_branch_discipline_conflict"
+}
+
+independent_conflict_manifest="$TMPROOT/independent-conflict-chain.yaml"
+cat >"$independent_conflict_manifest" <<YAML
+schema_version: 1
+target_repo_root: $project_repo
+issue_repo: example/project
+chains:
+  - name: independent-conflict-chain
+    base_ref: main
+    independent: true
+    parent_branch: feature/parent
+    branch: feature/independent-conflict-chain
+    host: codex
+    issues: [74806]
+YAML
+
+if PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" "$RUNNER" "$independent_conflict_manifest" --dry-run >"$TMPROOT/independent-conflict.out" 2>&1; then
+  cat "$TMPROOT/independent-conflict.out" >&2
+  fail "independent=true with parent_branch unexpectedly passed"
+fi
+grep -q 'manifest_branch_discipline_conflict' "$TMPROOT/independent-conflict.out" || {
+  cat "$TMPROOT/independent-conflict.out" >&2
+  fail "independent=true + parent_branch did not emit typed manifest_branch_discipline_conflict"
+}
+
 printf 'PASS: chain manifest preflight\n'

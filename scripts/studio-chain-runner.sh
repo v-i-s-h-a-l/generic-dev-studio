@@ -5407,15 +5407,39 @@ manifest_chain_field() {
   normalize_manifest_value "$value"
 }
 
+resolve_chain_independent() {
+  local chain_idx="$1" value
+  value=$(yq -r ".chains[$chain_idx].independent // false" "$MANIFEST")
+  case "$value" in
+    true|TRUE|1|yes|YES) printf 'true\n' ;;
+    *) printf 'false\n' ;;
+  esac
+}
+
+# branch-discipline (v2) precedence resolver.
+# Walks base_ref → parent_branch → source_branch → target_base → base and rejects
+# conflicting values with a typed manifest_branch_discipline_conflict failure.
 resolve_chain_source_branch() {
   local chain_idx="$1" chain_name="$2"
-  local source_branch target_base base selected="" label value
+  local base_ref parent_branch source_branch target_base base
+  local independent selected="" label value
+  base_ref=$(manifest_chain_field "$chain_idx" base_ref)
+  parent_branch=$(manifest_chain_field "$chain_idx" parent_branch)
   source_branch=$(manifest_chain_field "$chain_idx" source_branch)
   target_base=$(manifest_chain_field "$chain_idx" target_base)
   base=$(manifest_chain_field "$chain_idx" base)
+  independent=$(resolve_chain_independent "$chain_idx")
 
-  for label in source_branch target_base base; do
+  if [ "$independent" = "true" ] && [ -n "$parent_branch" ]; then
+    printf 'studio-chain-runner: manifest_branch_discipline_conflict: chain %s has independent=true but parent_branch=%s; parent metadata must be omitted for independent chains\n' \
+      "$chain_name" "$parent_branch" >&2
+    exit 2
+  fi
+
+  for label in base_ref parent_branch source_branch target_base base; do
     case "$label" in
+      base_ref) value="$base_ref" ;;
+      parent_branch) value="$parent_branch" ;;
       source_branch) value="$source_branch" ;;
       target_base) value="$target_base" ;;
       base) value="$base" ;;
@@ -5424,7 +5448,7 @@ resolve_chain_source_branch() {
     if [ -z "$selected" ]; then
       selected="$value"
     elif [ "$selected" != "$value" ]; then
-      printf 'studio-chain-runner: conflicting source branch fields for chain %s: %s=%s conflicts with selected source %s\n' \
+      printf 'studio-chain-runner: manifest_branch_discipline_conflict: chain %s has %s=%s but already resolved base ref to %s\n' \
         "$chain_name" "$label" "$value" "$selected" >&2
       exit 2
     fi
@@ -5435,9 +5459,39 @@ resolve_chain_source_branch() {
 }
 
 resolve_chain_expected_source_sha() {
-  local chain_idx="$1" value
-  value=$(yq -r ".chains[$chain_idx].expected_source_sha // .chains[$chain_idx].source_sha // \"\"" "$MANIFEST")
-  normalize_manifest_value "$value"
+  local chain_idx="$1" chain_name="$2"
+  local base_sha parent_sha expected_source_sha source_sha
+  local independent selected="" label value
+  base_sha=$(manifest_chain_field "$chain_idx" base_sha)
+  parent_sha=$(manifest_chain_field "$chain_idx" parent_sha)
+  expected_source_sha=$(manifest_chain_field "$chain_idx" expected_source_sha)
+  source_sha=$(manifest_chain_field "$chain_idx" source_sha)
+  independent=$(resolve_chain_independent "$chain_idx")
+
+  if [ "$independent" = "true" ] && [ -n "$parent_sha" ]; then
+    printf 'studio-chain-runner: manifest_branch_discipline_conflict: chain %s has independent=true but parent_sha=%s; parent metadata must be omitted for independent chains\n' \
+      "$chain_name" "$parent_sha" >&2
+    exit 2
+  fi
+
+  for label in base_sha parent_sha expected_source_sha source_sha; do
+    case "$label" in
+      base_sha) value="$base_sha" ;;
+      parent_sha) value="$parent_sha" ;;
+      expected_source_sha) value="$expected_source_sha" ;;
+      source_sha) value="$source_sha" ;;
+    esac
+    [ -n "$value" ] || continue
+    if [ -z "$selected" ]; then
+      selected="$value"
+    elif [ "$selected" != "$value" ]; then
+      printf 'studio-chain-runner: manifest_branch_discipline_conflict: chain %s has %s=%s but already resolved base sha to %s\n' \
+        "$chain_name" "$label" "$value" "$selected" >&2
+      exit 2
+    fi
+  done
+
+  normalize_manifest_value "$selected"
 }
 
 host_sandbox_profile() {
@@ -6022,7 +6076,7 @@ resolve_resume_state() {
 }
 
 build_plan_json() {
-  local out="$1" chain_count idx name base source_branch expected_source_sha branch requested_host host approved_release_id sync_strategy phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state issue_url
+  local out="$1" chain_count idx name base source_branch expected_source_sha parent_branch parent_sha independent branch requested_host host approved_release_id sync_strategy phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state issue_url
   local chain_run_id issue_run_id issue_slug issue_branch issue_worktree chain_slug chain_worktree worker_pool issue_kind dependencies_json previous_issue
   local tmp chains_tmp issues_tmp mapped_at host_resolution_records_file host_resolution_records_json host_resolution_json resolver_rc resolution_summary
   tmp="$out.tmp.$$"
@@ -6043,7 +6097,10 @@ build_plan_json() {
     [ -n "$ONLY_CHAIN" ] && [ "$name" != "$ONLY_CHAIN" ] && continue
     source_branch=$(resolve_chain_source_branch "$idx" "$name")
     base="$source_branch"
-    expected_source_sha=$(resolve_chain_expected_source_sha "$idx")
+    expected_source_sha=$(resolve_chain_expected_source_sha "$idx" "$name")
+    parent_branch=$(manifest_chain_field "$idx" parent_branch)
+    parent_sha=$(manifest_chain_field "$idx" parent_sha)
+    independent=$(resolve_chain_independent "$idx")
     branch=$(yq -r ".chains[$idx].branch // (\"feature/\" + .chains[$idx].name)" "$MANIFEST")
     requested_host=$(yq -r ".chains[$idx].host // \"auto\"" "$MANIFEST")
     approved_release_id=$(yq -r ".chains[$idx].approved_release_id // \"\"" "$MANIFEST")
@@ -6192,6 +6249,9 @@ build_plan_json() {
       --arg base "$base" \
       --arg source_branch "$source_branch" \
       --arg expected_source_sha "$expected_source_sha" \
+      --arg parent_branch "$parent_branch" \
+      --arg parent_sha "$parent_sha" \
+      --argjson independent "$independent" \
       --arg branch "$branch" \
       --arg host "$host" \
       --arg approved_release_id "$approved_release_id" \
@@ -6208,7 +6268,12 @@ build_plan_json() {
         name:$name,
         base:$base,
         source_branch:$source_branch,
+        base_ref:$source_branch,
         expected_source_sha:(if $expected_source_sha == "" then null else $expected_source_sha end),
+        base_sha:(if $expected_source_sha == "" then null else $expected_source_sha end),
+        parent_branch:(if $parent_branch == "" then null else $parent_branch end),
+        parent_sha:(if $parent_sha == "" then null else $parent_sha end),
+        independent:$independent,
         branch:$branch,
         host:$host,
         approved_release_id:(if $approved_release_id == "" then null else $approved_release_id end),
@@ -6304,9 +6369,9 @@ validate_execution_graph() {
   [ -z "$duplicate_issues" ] || { printf 'studio-chain-runner: duplicate issue IDs across chains: %s\n' "$duplicate_issues" >&2; exit 2; }
   duplicate_branches=$(jq -r '[.chains[].branch, (.chains[].issues[].issue_branch)] | group_by(.)[] | select(length > 1) | .[0]' "$plan" | paste -sd, -)
   [ -z "$duplicate_branches" ] || { printf 'studio-chain-runner: duplicate branch refs in plan: %s\n' "$duplicate_branches" >&2; exit 2; }
-  protected_targets=$(jq -r '.chains[] | (.source_branch // .base) | select(. == "feature" or . == "production" or . == "develop" or . == "trunk")' "$plan" | paste -sd, -)
+  protected_targets=$(jq -r '.chains[] | (.base_ref // .source_branch // .base) | select(. == "feature" or . == "production" or . == "develop" or . == "trunk")' "$plan" | paste -sd, -)
   [ -z "$protected_targets" ] || { printf 'studio-chain-runner: protected source branch targets are not allowed: %s\n' "$protected_targets" >&2; exit 2; }
-  same_source_chain=$(jq -r '.chains[] | select(.branch == (.source_branch // .base)) | .name' "$plan" | paste -sd, -)
+  same_source_chain=$(jq -r '.chains[] | select(.branch == (.base_ref // .source_branch // .base)) | .name' "$plan" | paste -sd, -)
   [ -z "$same_source_chain" ] || { printf 'studio-chain-runner: chain branch must not equal source branch for chains: %s\n' "$same_source_chain" >&2; exit 2; }
   invalid_issue_dependencies=$(jq -r '
     .chains[] as $chain
@@ -6515,7 +6580,7 @@ verify_expected_source_sha_or_abort() {
   local actual_sha summary details_json
   [ -n "$expected_sha" ] && [ "$expected_sha" != "null" ] || return 0
   if [ "$DRY_RUN" -eq 1 ]; then
-    printf 'DRY-RUN verify origin/%q matches expected source SHA %q before %s\n' "$source_branch" "$expected_sha" "$phase"
+    printf 'DRY-RUN verify origin/%q matches expected base SHA %q before %s\n' "$source_branch" "$expected_sha" "$phase"
     return 0
   fi
   actual_sha=$(studio_git_transport_ls_remote --heads origin "$source_branch" 2>/dev/null | awk 'NR == 1 { print $1 }') || actual_sha=""
@@ -6525,7 +6590,14 @@ verify_expected_source_sha_or_abort() {
     abort_run_with_reason_details network_partition "$summary" "$details_json"
   fi
   if [ "$actual_sha" != "$expected_sha" ]; then
-    abort_run_with_reason base_branch_advanced "source branch $source_branch for chain $chain_name changed before $phase: expected $expected_sha, got $actual_sha"
+    case "${STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT:-0}" in
+      1|true|TRUE|yes|YES)
+        printf 'studio-chain-runner: STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT=1 — accepting origin/%s drift before %s for chain %s (expected %s, got %s)\n' \
+          "$source_branch" "$phase" "$chain_name" "$expected_sha" "$actual_sha" >&2
+        return 0
+        ;;
+    esac
+    abort_run_with_reason base_branch_advanced "base branch $source_branch for chain $chain_name changed before $phase: expected $expected_sha, got $actual_sha"
   fi
 }
 
@@ -6554,7 +6626,7 @@ live_preflight() {
       exit 2
     fi
   done <<EOF
-$(jq -r '.chains[] | [.name, .branch, (.source_branch // .base), (.expected_source_sha // .source_sha // "__none__")] | @tsv' "$plan")
+$(jq -r '.chains[] | [.name, .branch, (.base_ref // .source_branch // .base), (.base_sha // .expected_source_sha // .source_sha // "__none__")] | @tsv' "$plan")
 EOF
   while IFS= read -r issue_branch; do
     [ -n "$issue_branch" ] || continue
@@ -6599,8 +6671,11 @@ explain_plan() {
     "## Chain \(.name)\n\n" +
     "- Chain-run UUID: `\(.chain_run_id)`\n" +
     "- Base: `\(.base)`\n" +
-    "- Source branch: `\(.source_branch // .base)`\n" +
-    "- Expected source SHA: `\(.expected_source_sha // .source_sha // "not pinned")`\n" +
+    "- Source branch: `\(.base_ref // .source_branch // .base)`\n" +
+    "- Expected base SHA: `\(.base_sha // .expected_source_sha // .source_sha // "not pinned")`\n" +
+    "- Independent: `\(.independent // false)`\n" +
+    (if (.parent_branch // null) then "- Parent branch: `\(.parent_branch)`\n" else "" end) +
+    (if (.parent_sha // null) then "- Parent SHA: `\(.parent_sha)`\n" else "" end) +
     "- Branch: `\(.branch)`\n" +
     "- Approved release: `\(.approved_release_id // "none")`\n" +
     "- Leaf sync strategy: `\(.sync_strategy // "rebase")`\n" +
@@ -6613,7 +6688,7 @@ explain_plan() {
     "- Worker pool: `\(.worker_pool)`\n" +
     "- Issue scheduler: `dependency-ready nodes up to worker_pool; scalar issue lists preserve manifest order`\n" +
     "- Rule-pack status: `\(.rule_pack_resolution.status // "not-resolved")`; selected `\((.rule_pack_resolution.selected_packs // []) | length)`, skipped `\((.rule_pack_resolution.skipped_packs // []) | length)`, estimated summary tokens `\(.rule_pack_resolution.estimated_context_cost.summary_tokens_estimated // "unknown")`, skipped full-doc tokens `\(.rule_pack_resolution.context_budget.skipped_full_doc_tokens_estimated // "unknown")`, cold-context delta `\(.rule_pack_resolution.context_budget.cold_context_delta_tokens_estimated // "unknown")`\n" +
-    "- Planned PR: base `\(.source_branch // .base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
+    "- Planned PR: base `\(.base_ref // .source_branch // .base)`, head `\(.branch)`, title `studio chain: \(.name)`\n\n" +
     "| Issue | Depends On | Issue State | Runner Status | Lifecycle | Rule Packs | Issue-run UUID | Branch | Worktree |\n|---:|---|---|---|---|---:|---|---|---|\n" +
     ([.issues[] | "| #\(.number) \(.title) | \(if ((.dependencies // []) | length) == 0 then "-" else ((.dependencies // []) | map("#" + tostring) | join(", ")) end) | \(.state) | \(.status) | \(.lifecycle_state // "unknown") | \((.rule_pack_resolution.selected_packs // []) | length) | `\(.issue_run_id)` | `\(.issue_branch)` | `\(.issue_worktree)` |"] | join("\n")) +
     "\n\n### Rule Packs\n\n" +
@@ -6780,7 +6855,7 @@ execute_issue_session() {
   issue_json=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,body,url,state)
   issue_title=$(printf '%s' "$issue_json" | jq -r '.title')
   issue_body=$(printf '%s' "$issue_json" | jq -r '.body // ""')
-  source_branch=$(jq -r --arg id "$chain_run_id" '.chains[] | select(.chain_run_id == $id) | .source_branch // .base // "main"' "$PLAN_JSON")
+  source_branch=$(jq -r --arg id "$chain_run_id" '.chains[] | select(.chain_run_id == $id) | .base_ref // .source_branch // .base // "main"' "$PLAN_JSON")
   summary_path="$worktree/.studio/chain-worker-summary.json"
   start_path="$worktree/.studio/chain-task-start.json"
   chain_artifact_root=$(ios_chain_artifact_root "$chain_run_id")
@@ -8050,10 +8125,10 @@ run_chain_issue_scheduler() {
 
 for ((idx = 0; idx < chain_count; idx++)); do
   name=$(jq -r ".chains[$idx].name" "$PLAN_JSON")
-  base=$(jq -r ".chains[$idx].source_branch // .chains[$idx].base" "$PLAN_JSON")
+  base=$(jq -r ".chains[$idx].base_ref // .chains[$idx].source_branch // .chains[$idx].base" "$PLAN_JSON")
   branch=$(jq -r ".chains[$idx].branch" "$PLAN_JSON")
   host=$(jq -r ".chains[$idx].host" "$PLAN_JSON")
-  expected_source_sha=$(jq -r ".chains[$idx].expected_source_sha // .chains[$idx].source_sha // \"\"" "$PLAN_JSON")
+  expected_source_sha=$(jq -r ".chains[$idx].base_sha // .chains[$idx].expected_source_sha // .chains[$idx].source_sha // \"\"" "$PLAN_JSON")
   approved_release_id=$(jq -r ".chains[$idx].approved_release_id // \"\"" "$PLAN_JSON")
   sync_strategy=$(jq -r ".chains[$idx].sync_strategy // \"rebase\"" "$PLAN_JSON")
   phase_review_mode=$(jq -r ".chains[$idx].phase_review // \"auto\"" "$PLAN_JSON")
