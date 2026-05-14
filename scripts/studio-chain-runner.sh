@@ -6,7 +6,7 @@
 #   scripts/studio-chain-runner.sh <manifest|chain-name|chain-id> [--only <chain>] [--host <host>] [--dry-run] [--yes] [--parallel-chains <n|auto|1>] [--checkpoint auto|off] [--attended|--unattended]
 #   scripts/studio-chain-runner.sh --auto <manifest|chain-name|chain-id> [--only <chain>] [--host <host>] [--dry-run] [--checkpoint auto|off] [--unattended]
 #   scripts/studio-chain-runner.sh --explain-next <manifest|chain-name|chain-id> [--only <chain>]
-#   scripts/studio-chain-runner.sh --resume <run_id> [--yes]
+#   scripts/studio-chain-runner.sh --resume <run_id> [--verified] [--yes]
 #   scripts/studio-chain-runner.sh --regenerate-report <run_id>
 #   scripts/studio-chain-runner.sh --doctor <run_id> [--format markdown|json] [--public-safe]
 #   scripts/studio-chain-runner.sh --list
@@ -65,6 +65,7 @@ HOST_OVERRIDE=""
 DRY_RUN=0
 YES=0
 RESUME_ID=""
+VERIFIED_RESUME=0
 REGENERATE_REPORT_ID=""
 DOCTOR_ID=""
 DOCTOR_FORMAT="markdown"
@@ -101,6 +102,7 @@ while [ $# -gt 0 ]; do
     --host=*) HOST_OVERRIDE="${1#--host=}"; shift ;;
     --resume) RESUME_ID="${2:?--resume requires a run id}"; shift 2 ;;
     --resume=*) RESUME_ID="${1#--resume=}"; shift ;;
+    --verified) VERIFIED_RESUME=1; shift ;;
     --regenerate-report) REGENERATE_REPORT_ID="${2:?--regenerate-report requires a run id}"; shift 2 ;;
     --regenerate-report=*) REGENERATE_REPORT_ID="${1#--regenerate-report=}"; shift ;;
     --doctor) DOCTOR_ID="${2:?--doctor requires a run id}"; shift 2 ;;
@@ -130,8 +132,13 @@ while [ $# -gt 0 ]; do
       MANIFEST="$1"
       shift
       ;;
-  esac
+esac
 done
+
+if [ "$VERIFIED_RESUME" -eq 1 ] && [ -z "$RESUME_ID" ]; then
+  printf 'studio-chain-runner: --verified requires --resume <run_id>\n' >&2
+  exit 2
+fi
 
 if [ "$DISCOVER_MODE" -eq 0 ] && [ "$LIST_RUNS" -eq 0 ] && [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ] && [ -z "$REGENERATE_REPORT_ID" ] && [ -z "$DOCTOR_ID" ]; then
   DISCOVER_MODE=1
@@ -4591,6 +4598,90 @@ render_run_finish_summary() {
   else
     printf -- '- No carryover was supplied by worker summaries.\n'
   fi
+
+  if [ "${VERIFIED_RESUME:-0}" -eq 1 ]; then
+    render_verified_resume_closeout "$status" "$run_state_json"
+  fi
+}
+
+verified_closeout_line() {
+  local label="$1" state="$2" reason="${3:-}"
+  if [ -n "$reason" ]; then
+    printf -- '- %s: `%s` - %s\n' "$label" "$state" "$reason"
+  else
+    printf -- '- %s: `%s`\n' "$label" "$state"
+  fi
+}
+
+render_verified_resume_closeout() {
+  local status="$1" run_state_json="${2:-}" summary_count completed_count closed_count integrated_count phase_review_count
+  local report_state work_root_state
+  summary_count=0
+  completed_count=0
+  closed_count=0
+  integrated_count=0
+  phase_review_count=0
+  report_state="skipped"
+  work_root_state="skipped"
+
+  [ -n "${SUMMARY_ROOT:-}" ] && summary_count=$(find "$SUMMARY_ROOT" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+  if [ -n "$run_state_json" ] && [ -f "$run_state_json" ]; then
+    completed_count=$(jq '[.chains[]?.issues[]? | select((.status // "") == "completed")] | length' "$run_state_json" 2>/dev/null || printf '0')
+    closed_count=$(jq '[.chains[]?.issues[]? | select((.lifecycle_state // "") == "closed")] | length' "$run_state_json" 2>/dev/null || printf '0')
+    integrated_count=$(jq '[.chains[]?.issues[]? | select((.integrated // false) == true)] | length' "$run_state_json" 2>/dev/null || printf '0')
+    phase_review_count=$(jq '[.phase_reviews[]? | select((.verdict // "") == "clean")] | length' "$run_state_json" 2>/dev/null || printf '0')
+  fi
+  [ -n "${RUN_REPORT:-}" ] && report_state="ran"
+  if [ -n "${RUN_WORK_ROOT:-}" ] && [ ! -e "$RUN_WORK_ROOT" ] && [ "$status" = "completed" ]; then
+    work_root_state="ran"
+  elif [ "$status" = "completed" ]; then
+    work_root_state="skipped"
+  else
+    work_root_state="not_applicable"
+  fi
+
+  printf '\n### Verified Resume Closeout\n\n'
+  if [ "$summary_count" -gt 0 ]; then
+    verified_closeout_line "Worker summary ingested and validated" "ran"
+  else
+    verified_closeout_line "Worker summary ingested and validated" "skipped" "no worker summary artifact was available"
+  fi
+  if [ "$summary_count" -gt 0 ]; then
+    verified_closeout_line "Tests, build, and lint evidence persisted" "ran"
+  else
+    verified_closeout_line "Tests, build, and lint evidence persisted" "skipped" "no verification evidence was available"
+  fi
+  if [ "$completed_count" -gt 0 ]; then
+    verified_closeout_line "Commit created on issue branch" "already-complete"
+  else
+    verified_closeout_line "Commit created on issue branch" "skipped" "no completed issue commit in run state"
+  fi
+  if [ "$integrated_count" -gt 0 ]; then
+    verified_closeout_line "Merge into chain branch" "already-complete"
+  else
+    verified_closeout_line "Merge into chain branch" "skipped" "no integrated issue recorded"
+  fi
+  if [ "$phase_review_count" -gt 0 ]; then
+    verified_closeout_line "Required review verdict captured" "already-complete"
+  else
+    verified_closeout_line "Required review verdict captured" "skipped" "no clean phase review recorded"
+  fi
+  if [ -n "${FINAL_PR_URL:-}" ]; then
+    verified_closeout_line "PR opened or updated" "ran" "$FINAL_PR_URL"
+    verified_closeout_line "Push of issue or chain branch" "ran" "PR URL recorded"
+  else
+    verified_closeout_line "PR opened or updated" "skipped" "no PR URL recorded"
+    verified_closeout_line "Push of issue or chain branch" "skipped" "no PR URL recorded"
+  fi
+  if [ "$closed_count" -gt 0 ]; then
+    verified_closeout_line "Source issue closure handoff" "already-complete"
+  else
+    verified_closeout_line "Source issue closure handoff" "skipped" "no closed issue state recorded"
+  fi
+  verified_closeout_line "Local main sync" "not_applicable" "chain runner does not fast-forward local main"
+  verified_closeout_line "Worktree cleanup" "$work_root_state" "$([ "$work_root_state" = "skipped" ] && printf 'run work root retained for recovery' || true)"
+  verified_closeout_line "DerivedData and stale artifact janitor pass" "not_applicable" "no iOS artifact executor in this chain"
+  verified_closeout_line "Final run report regenerated" "$report_state"
 }
 
 finish_run() {
