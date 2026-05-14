@@ -22,6 +22,9 @@
 #   scripts/studio-project-state.sh --status "Todo"
 #   scripts/studio-project-state.sh --project-board user:v-i-s-h-a-l:1
 #   scripts/studio-project-state.sh --owner v-i-s-h-a-l --project-number 1
+#   scripts/studio-project-state.sh --by-track
+#   scripts/studio-project-state.sh --by-phase
+#   scripts/studio-project-state.sh --needs-review
 
 set -u
 set -o pipefail
@@ -42,6 +45,7 @@ PROJECT_STATUS=""
 CLI_OWNER=""
 CLI_PROJECT_NUMBER=""
 CLI_PROJECT_BOARD=""
+REPORT=""
 
 usage() {
   sed -n '2,25p' "$0"
@@ -52,6 +56,9 @@ while [ "$#" -gt 0 ]; do
     --json) MODE=json; shift ;;
     --search) QUERY="${2:?usage: --search <keywords>}"; shift 2 ;;
     --status) PROJECT_STATUS="${2:?usage: --status <project-status>}"; shift 2 ;;
+    --by-track) REPORT=by-track; shift ;;
+    --by-phase) REPORT=by-phase; shift ;;
+    --needs-review) REPORT=needs-review; shift ;;
     --owner) CLI_OWNER="${2:?usage: --owner <owner>}"; shift 2 ;;
     --project-number) CLI_PROJECT_NUMBER="${2:?usage: --project-number <number>}"; shift 2 ;;
     --project-board) CLI_PROJECT_BOARD="${2:?usage: --project-board <owner_kind>:<owner_login>:<n>}"; shift 2 ;;
@@ -493,7 +500,11 @@ items_json=$(
 ) || exit $?
 
 if [ "$MODE" = json ]; then
-  printf '%s\n' "$items_json"
+  if [ "$REPORT" = needs-review ]; then
+    printf '%s\n' "$items_json" | jq '[.[] | select((.sibling_host_reviewed // "") == "Needs review")]'
+  else
+    printf '%s\n' "$items_json"
+  fi
   exit 0
 fi
 
@@ -506,6 +517,55 @@ if [ "$count" -eq 0 ]; then
   fi
   exit 0
 fi
+
+case "$REPORT" in
+  by-track)
+    printf '%s\n' "$items_json" | jq -r '
+      group_by(.track // "")
+      | sort_by(.[0].track // "")
+      | .[]
+      | (.[0].track // "" | if . == "" then "No Track" else . end) as $track
+      | "## \($track) (\(length))",
+        (.[] | "  #\(.issue_number // "-") [\(.status // "No Status")] \(.title) -- phase=\((.phase // "") | if . == "" then "-" else . end) review=\((.sibling_host_reviewed // "") | if . == "" then "-" else . end) \(.url)"),
+        ""
+    '
+    exit 0
+    ;;
+  by-phase)
+    printf '%s\n' "$items_json" | jq -r '
+      group_by(.phase // "")
+      | sort_by(.[0].phase // "")
+      | .[]
+      | (.[0].phase // "" | if . == "" then "No Phase" else . end) as $phase
+      | "## \($phase) (\(length))",
+        (.[] | "  #\(.issue_number // "-") [\(.status // "No Status")] \(.title) -- track=\((.track // "") | if . == "" then "-" else . end) review=\((.sibling_host_reviewed // "") | if . == "" then "-" else . end) \(.url)"),
+        ""
+    '
+    exit 0
+    ;;
+  needs-review)
+    review_json=$(printf '%s\n' "$items_json" | jq '[.[] | select((.sibling_host_reviewed // "") == "Needs review")]')
+    if [ "$(printf '%s\n' "$review_json" | jq 'length')" -eq 0 ]; then
+      printf 'studio-project-state: no Project items need sibling-host review.\n'
+      exit 0
+    fi
+    printf '%s\n' "$review_json" | jq -r '
+      .[]
+      | "#\(.issue_number // "-") [\(.status // "No Status")] \(.title)"
+        + " -- track=\((.track // "") | if . == "" then "-" else . end)"
+        + " phase=\((.phase // "") | if . == "" then "-" else . end)"
+        + " size=\((.size // "") | if . == "" then "-" else . end)"
+        + " \(.url)"
+    '
+    exit 0
+    ;;
+  "")
+    ;;
+  *)
+    printf 'studio-project-state: unsupported report: %s\n' "$REPORT" >&2
+    exit 2
+    ;;
+esac
 
 printf '%s\n' "$items_json" | jq -r '
   .[]
