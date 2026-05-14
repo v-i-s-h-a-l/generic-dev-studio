@@ -23,6 +23,7 @@
 #   delegated-host-spawn
 #   release-action
 #   test-debug-fixture
+#   pm-surface
 
 # No `set -e` here - sourced into scripts that choose their own shell policy.
 
@@ -39,6 +40,7 @@ auth_home
 github_home
 runtime_owner
 data_visibility
+project_board
 EOF
 )
 : "${STUDIO_CONTEXT_OPERATION:=}"
@@ -50,6 +52,8 @@ EOF
 : "${STUDIO_CONTEXT_GITHUB_HOME:=}"
 : "${STUDIO_CONTEXT_RUNTIME_OWNER:=}"
 : "${STUDIO_CONTEXT_DATA_VISIBILITY:=}"
+: "${STUDIO_CONTEXT_PROJECT_BOARD:=}"
+: "${STUDIO_CONTEXT_PROJECT_BOARD_SOURCE:=}"
 : "${STUDIO_CONTEXT_LAST_ERROR:=}"
 
 _studio_context_fail() {
@@ -76,6 +80,7 @@ _studio_context_normalize_operation() {
     delegated-host|delegated-host-spawn|host-spawn) operation="delegated-host-spawn" ;;
     release|release-action) operation="release-action" ;;
     test|debug|test-debug-fixture) operation="test-debug-fixture" ;;
+    pm|pm-surface|project-board) operation="pm-surface" ;;
   esac
   printf '%s\n' "$operation"
 }
@@ -126,13 +131,19 @@ _studio_context_repo_root() {
 }
 
 _studio_context_project_slug() {
-  local repo_root="$1"
+  local repo_root="$1" slug
   if [ -n "${STUDIO_CONTEXT_PROJECT_SLUG:-}" ]; then
     printf '%s\n' "$STUDIO_CONTEXT_PROJECT_SLUG"
     return 0
   fi
   if [ -n "${ACHILLES_PROJECT:-}" ]; then
     printf '%s\n' "$ACHILLES_PROJECT"
+    return 0
+  fi
+  # Prefer resolve_project so linked worktrees (where basename($repo_root) is
+  # the worktree dir, not the main project slug) resolve to the main project.
+  if slug=$(resolve_project 2>/dev/null); then
+    printf '%s\n' "$slug"
     return 0
   fi
   if [ -n "$repo_root" ]; then
@@ -240,6 +251,151 @@ _studio_context_data_visibility() {
   printf '%s\n' "private-runtime"
 }
 
+# Read a project-board YAML file and return the canonical owner_kind:owner_login:project_number
+# token. Empty stdout (exit 0) when required keys are missing — the caller
+# treats that as "not configured here" and walks the next discovery step.
+_studio_context_project_board_token_from_file() {
+  local file="$1" owner_kind owner_login project_number
+  [ -f "$file" ] || { printf '%s\n' ""; return 0; }
+  owner_kind=$(project_board_yaml_scalar "$file" owner_kind 2>/dev/null || true)
+  owner_login=$(project_board_yaml_scalar "$file" owner_login 2>/dev/null || true)
+  project_number=$(project_board_yaml_scalar "$file" project_number 2>/dev/null || true)
+  if [ -z "$owner_kind" ] || [ -z "$owner_login" ] || [ -z "$project_number" ]; then
+    printf '%s\n' ""
+    return 0
+  fi
+  case "$owner_kind" in
+    user|org) ;;
+    *)
+      _studio_context_fail "project-board.yaml owner_kind must be user or org (got '$owner_kind') at $file"
+      return 1
+      ;;
+  esac
+  case "$project_number" in
+    ''|*[!0-9]*)
+      _studio_context_fail "project-board.yaml project_number must be a positive integer (got '$project_number') at $file"
+      return 1
+      ;;
+  esac
+  printf '%s:%s:%s\n' "$owner_kind" "$owner_login" "$project_number"
+}
+
+# Validate a colon-encoded `<owner_kind>:<owner_login>:<project_number>` override.
+_studio_context_project_board_validate_token() {
+  local token="$1" source_label="$2"
+  local owner_kind owner_login project_number
+  owner_kind=${token%%:*}
+  local rest=${token#*:}
+  owner_login=${rest%%:*}
+  project_number=${rest#*:}
+  case "$owner_kind" in
+    user|org) ;;
+    *)
+      _studio_context_fail "$source_label owner_kind must be 'user' or 'org' (expected <user|org>:<login>:<n>, got '$token')"
+      return 1
+      ;;
+  esac
+  if [ -z "$owner_login" ] || [ "$owner_login" = "$token" ]; then
+    _studio_context_fail "$source_label missing owner_login: '$token'"
+    return 1
+  fi
+  case "$project_number" in
+    ''|*[!0-9]*)
+      _studio_context_fail "$source_label project_number must be a positive integer: '$token'"
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+# Resolve the project-board identity for the current context. Walks the
+# discovery order defined in PM-SURFACE.md §Per-Project Project Board
+# Portability Contract and _shared/contracts/studio-context.md §Project
+# Board Resolution:
+#
+#   1. STUDIO_CONTEXT_PROJECT_BOARD (caller-set; treated as a CLI flag handoff)
+#   2. STUDIO_PROJECT_BOARD_OVERRIDE env override
+#   3. Runtime override at <studio_home>/<project_slug>/config/project-board.yaml
+#   4. Durable repo file at profiles/<project_slug>/project-board.yaml
+#   5. Empty (caller decides whether to loud-fail; the validator enforces it
+#      for pm-surface operations)
+#
+# Sets STUDIO_CONTEXT_PROJECT_BOARD and STUDIO_CONTEXT_PROJECT_BOARD_SOURCE
+# directly (not via command substitution) so the source label survives.
+# Source values: cli | env_override | runtime_override | durable | missing.
+_studio_context_project_board() {
+  local repo_root="$1" project_slug="$2"
+  local token=""
+
+  if [ -n "${STUDIO_CONTEXT_PROJECT_BOARD:-}" ]; then
+    _studio_context_project_board_validate_token \
+      "$STUDIO_CONTEXT_PROJECT_BOARD" "STUDIO_CONTEXT_PROJECT_BOARD" || return 1
+    STUDIO_CONTEXT_PROJECT_BOARD_SOURCE="cli"
+    return 0
+  fi
+
+  if [ -n "${STUDIO_PROJECT_BOARD_OVERRIDE:-}" ]; then
+    _studio_context_project_board_validate_token \
+      "$STUDIO_PROJECT_BOARD_OVERRIDE" "STUDIO_PROJECT_BOARD_OVERRIDE" || return 1
+    STUDIO_CONTEXT_PROJECT_BOARD="$STUDIO_PROJECT_BOARD_OVERRIDE"
+    STUDIO_CONTEXT_PROJECT_BOARD_SOURCE="env_override"
+    return 0
+  fi
+
+  if [ -n "$project_slug" ]; then
+    local runtime_yaml
+    runtime_yaml=$(resolve_project_board_config_runtime_for "$project_slug" "$STUDIO_CONTEXT_STUDIO_HOME")
+    if [ -f "$runtime_yaml" ]; then
+      token=$(_studio_context_project_board_token_from_file "$runtime_yaml") || return 1
+      if [ -n "$token" ]; then
+        STUDIO_CONTEXT_PROJECT_BOARD="$token"
+        STUDIO_CONTEXT_PROJECT_BOARD_SOURCE="runtime_override"
+        printf 'lib-studio-context: project_board sourced from runtime override at %s\n' \
+          "$runtime_yaml" >&2
+        return 0
+      fi
+    fi
+  fi
+
+  if [ -n "$repo_root" ] && [ -n "$project_slug" ]; then
+    local durable_yaml
+    durable_yaml=$(resolve_project_board_config_durable_for "$project_slug" "$repo_root")
+    if [ -f "$durable_yaml" ]; then
+      token=$(_studio_context_project_board_token_from_file "$durable_yaml") || return 1
+      if [ -n "$token" ]; then
+        STUDIO_CONTEXT_PROJECT_BOARD="$token"
+        STUDIO_CONTEXT_PROJECT_BOARD_SOURCE="durable"
+        return 0
+      fi
+    fi
+  fi
+
+  STUDIO_CONTEXT_PROJECT_BOARD=""
+  STUDIO_CONTEXT_PROJECT_BOARD_SOURCE="missing"
+  return 0
+}
+
+# Locate the actual project-board.yaml file (if any) that backed the
+# resolution. Returns empty for env_override / cli / missing sources.
+studio_context_project_board_source_path() {
+  local project_slug="${1:-${STUDIO_CONTEXT_PROJECT_SLUG:-}}"
+  local repo_root="${2:-${STUDIO_CONTEXT_REPO_ROOT:-}}"
+  case "${STUDIO_CONTEXT_PROJECT_BOARD_SOURCE:-}" in
+    runtime_override)
+      [ -n "$project_slug" ] || return 1
+      resolve_project_board_config_runtime_for "$project_slug" "$STUDIO_CONTEXT_STUDIO_HOME"
+      ;;
+    durable)
+      [ -n "$project_slug" ] || return 1
+      [ -n "$repo_root" ] || return 1
+      resolve_project_board_config_durable_for "$project_slug" "$repo_root"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 _studio_context_path_is_under() {
   local child="${1%/}" parent="${2%/}"
   [ -n "$child" ] && [ -n "$parent" ] || return 1
@@ -261,7 +417,7 @@ _studio_context_field_has_newline() {
 _studio_context_validate_current() {
   local operation="$1" field value tmpdir
   case "$operation" in
-    read-only|runtime-mutation|repo-mutation|github-operation|delegated-host-spawn|release-action|test-debug-fixture) ;;
+    read-only|runtime-mutation|repo-mutation|github-operation|delegated-host-spawn|release-action|test-debug-fixture|pm-surface) ;;
     *) _studio_context_fail "unsupported operation: $operation"; return 1 ;;
   esac
 
@@ -327,6 +483,21 @@ EOF
       ;;
   esac
 
+  if [ "$operation" = "pm-surface" ]; then
+    [ -n "$STUDIO_CONTEXT_PROJECT_SLUG" ] || { _studio_context_fail "project_slug missing for $operation"; return 1; }
+    if [ -z "$STUDIO_CONTEXT_PROJECT_BOARD" ]; then
+      local durable_hint runtime_hint
+      durable_hint=$(resolve_project_board_config_durable_for "$STUDIO_CONTEXT_PROJECT_SLUG" "${STUDIO_CONTEXT_REPO_ROOT:-}" 2>/dev/null || true)
+      runtime_hint=$(resolve_project_board_config_runtime_for "$STUDIO_CONTEXT_PROJECT_SLUG" "$STUDIO_CONTEXT_STUDIO_HOME" 2>/dev/null || true)
+      _studio_context_fail \
+"project_board missing for $operation (project_slug=$STUDIO_CONTEXT_PROJECT_SLUG); \
+expected one of: --project-board CLI flag, STUDIO_PROJECT_BOARD_OVERRIDE env, \
+runtime override at ${runtime_hint:-<studio_home>/<project_slug>/config/project-board.yaml}, \
+or durable repo file at ${durable_hint:-profiles/<project_slug>/project-board.yaml}"
+      return 1
+    fi
+  fi
+
   if [ "$operation" = "runtime-mutation" ]; then
     tmpdir="${TMPDIR:-/tmp}"
     if _studio_context_path_is_under "$STUDIO_CONTEXT_STUDIO_HOME" "$tmpdir"; then
@@ -361,6 +532,8 @@ studio_context_resolve() {
   STUDIO_CONTEXT_GITHUB_HOME=$(_studio_context_github_home) || return 1
   STUDIO_CONTEXT_RUNTIME_OWNER=$(_studio_context_runtime_owner "$profile") || return 1
   STUDIO_CONTEXT_DATA_VISIBILITY=$(_studio_context_data_visibility) || return 1
+  # Sets STUDIO_CONTEXT_PROJECT_BOARD and STUDIO_CONTEXT_PROJECT_BOARD_SOURCE directly.
+  _studio_context_project_board "$repo_root" "$project_slug" || return 1
 
   _studio_context_validate_current "$operation"
 }
@@ -379,6 +552,8 @@ studio_context_get_cached() {
     github_home) printf '%s\n' "$STUDIO_CONTEXT_GITHUB_HOME" ;;
     runtime_owner) printf '%s\n' "$STUDIO_CONTEXT_RUNTIME_OWNER" ;;
     data_visibility) printf '%s\n' "$STUDIO_CONTEXT_DATA_VISIBILITY" ;;
+    project_board) printf '%s\n' "$STUDIO_CONTEXT_PROJECT_BOARD" ;;
+    project_board_source) printf '%s\n' "$STUDIO_CONTEXT_PROJECT_BOARD_SOURCE" ;;
     operation) printf '%s\n' "$STUDIO_CONTEXT_OPERATION" ;;
     *) _studio_context_fail "unknown context field: ${1:-}"; return 2 ;;
   esac
@@ -398,6 +573,7 @@ studio_context_auth_home()      { studio_context_get auth_home      "${1:-read-o
 studio_context_github_home()    { studio_context_get github_home    "${1:-read-only}"; }
 studio_context_runtime_owner()  { studio_context_get runtime_owner  "${1:-read-only}"; }
 studio_context_data_visibility(){ studio_context_get data_visibility "${1:-read-only}"; }
+studio_context_project_board() { studio_context_get project_board   "${1:-read-only}"; }
 
 studio_context_emit_env() {
   local operation="${1:-read-only}" field value env_name
@@ -411,6 +587,7 @@ studio_context_emit_env() {
   done <<EOF
 $STUDIO_CONTEXT_FIELD_NAMES
 EOF
+  printf 'export STUDIO_CONTEXT_PROJECT_BOARD_SOURCE=%q\n' "$STUDIO_CONTEXT_PROJECT_BOARD_SOURCE"
 }
 
 studio_context_emit_json() {
@@ -432,6 +609,8 @@ studio_context_emit_json() {
     --arg github_home "$STUDIO_CONTEXT_GITHUB_HOME" \
     --arg runtime_owner "$STUDIO_CONTEXT_RUNTIME_OWNER" \
     --arg data_visibility "$STUDIO_CONTEXT_DATA_VISIBILITY" \
+    --arg project_board "$STUDIO_CONTEXT_PROJECT_BOARD" \
+    --arg project_board_source "$STUDIO_CONTEXT_PROJECT_BOARD_SOURCE" \
     '{
       schema_version: ($schema_version | tonumber),
       kind: $kind,
@@ -443,7 +622,9 @@ studio_context_emit_json() {
       auth_home: $auth_home,
       github_home: $github_home,
       runtime_owner: $runtime_owner,
-      data_visibility: $data_visibility
+      data_visibility: $data_visibility,
+      project_board: (if $project_board == "" then null else $project_board end),
+      project_board_source: (if $project_board_source == "" then null else $project_board_source end)
     }'
 }
 
@@ -466,5 +647,7 @@ studio_context_run() {
     STUDIO_CONTEXT_GITHUB_HOME="$STUDIO_CONTEXT_GITHUB_HOME" \
     STUDIO_CONTEXT_RUNTIME_OWNER="$STUDIO_CONTEXT_RUNTIME_OWNER" \
     STUDIO_CONTEXT_DATA_VISIBILITY="$STUDIO_CONTEXT_DATA_VISIBILITY" \
+    STUDIO_CONTEXT_PROJECT_BOARD="$STUDIO_CONTEXT_PROJECT_BOARD" \
+    STUDIO_CONTEXT_PROJECT_BOARD_SOURCE="$STUDIO_CONTEXT_PROJECT_BOARD_SOURCE" \
     "$@"
 }

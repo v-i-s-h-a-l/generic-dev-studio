@@ -114,6 +114,68 @@ resolve_runtime_global() {
   printf '%s\n' "$HOME/.dev-studio/.runtime"
 }
 
+# Per-project Projects v2 board config — durable, repo-checked location.
+# See PM-SURFACE.md §Per-Project Project Board Portability Contract and
+# _shared/contracts/studio-context.md §Project Board Resolution.
+resolve_project_board_config_durable_for() {
+  local project="${1:?usage: resolve_project_board_config_durable_for <slug> [repo_root]}"
+  local repo_root="${2:-}"
+  if [ -z "$repo_root" ]; then
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  fi
+  printf '%s\n' "$repo_root/profiles/$project/project-board.yaml"
+}
+
+resolve_project_board_config_durable() {
+  local project
+  project=$(resolve_project) || return 1
+  resolve_project_board_config_durable_for "$project"
+}
+
+# Per-machine runtime override file for the project board. Overrides the
+# durable repo file during in-flight migrations or machine-local experiments.
+resolve_project_board_config_runtime_for() {
+  local project="${1:?usage: resolve_project_board_config_runtime_for <slug> [studio-home]}"
+  local studio_home="${2:-${STUDIO_CONTEXT_STUDIO_HOME:-}}"
+  if [ -z "$studio_home" ]; then
+    studio_home="$HOME/.dev-studio"
+  fi
+  printf '%s\n' "$studio_home/$project/config/project-board.yaml"
+}
+
+resolve_project_board_config_runtime() {
+  local project
+  project=$(resolve_project) || return 1
+  resolve_project_board_config_runtime_for "$project"
+}
+
+# Read a flat scalar from a simple top-level YAML key. Tolerant of quoted
+# values and inline comments. For list keys (e.g. `tracks:`) callers should
+# use yq when available; this helper is intentionally minimal.
+project_board_yaml_scalar() {
+  local file="${1:?usage: project_board_yaml_scalar <file> <key>}"
+  local key="${2:?usage: project_board_yaml_scalar <file> <key>}"
+  [ -f "$file" ] || return 1
+  awk -v k="$key" '
+    BEGIN { found = 0 }
+    {
+      line = $0
+      # Strip trailing comments outside of quotes (simple heuristic).
+      sub(/[[:space:]]+#.*/, "", line)
+    }
+    line ~ ("^[[:space:]]*" k "[[:space:]]*:") {
+      sub("^[[:space:]]*" k "[[:space:]]*:[[:space:]]*", "", line)
+      # Strip surrounding single or double quotes if present.
+      if (line ~ /^".*"$/) { line = substr(line, 2, length(line) - 2) }
+      else if (line ~ /^'\''.*'\''$/) { line = substr(line, 2, length(line) - 2) }
+      print line
+      found = 1
+      exit
+    }
+    END { if (!found) exit 1 }
+  ' "$file"
+}
+
 resolve_studio_home_for_login_home() {
   local login_home="${1:?usage: resolve_studio_home_for_login_home <login-home>}"
   printf '%s\n' "$login_home/.dev-studio"

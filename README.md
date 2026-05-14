@@ -65,7 +65,7 @@ timeline
 - **[v0.1.0-beta.2](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.1.0-beta.2)** — Workers can run as real Claude sessions (`/achilles worker`), broadcast across N panes with collision-safe slot claiming. Fleet cleanup script for between-session sweeps.
 - **[v0.1.0-beta.1](https://github.com/v-i-s-h-a-l/generic-dev-studio/releases/tag/v0.1.0-beta.1)** — First beta. Three Claude agents — Chanakya plans, Achilles writes, Argus reviews — coordinated over a file-based inbox so work survives Claude restarts. Multi-worker fan-out for parallel tasks.
 
-For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term vision, see [`ROADMAP.md`](ROADMAP.md). For actionable backlog with Project fields, see the [Studio v2 Projects board](https://github.com/users/v-i-s-h-a-l/projects/1).
+For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term vision, see [`ROADMAP.md`](ROADMAP.md). Each studio-managed project owns its own GitHub Projects v2 board through the [per-project Project board portability contract](PM-SURFACE.md#per-project-project-board-portability-contract); for this repo's actionable backlog with Project fields, see the seed instance — the [Studio v2 transition board](https://github.com/users/v-i-s-h-a-l/projects/1).
 
 ---
 
@@ -163,7 +163,8 @@ scripts/field-workflow-report.sh --days 14                  # Field loop timing,
 scripts/studio-pr-baseline-report.sh 366                    # PR-level timing, churn, gate, and generated-file baselines
 scripts/studio-weekly.sh --post                             # weekly GitHub PM digest; cron posts to the pinned summary issue
 scripts/host-preflight.sh codex /repo                       # prove gh/git credential access and report ShellCheck availability before host task work
-scripts/studio-project-state.sh --status Todo               # Project-field backlog reader for Status / Track / Phase / Size / review state
+scripts/studio-project-state.sh --status Todo               # Project-field backlog reader for the current project's board (Status / Track / Phase / Size / review state); discovers per-project board per PM-SURFACE.md portability contract
+scripts/studio-project-state.sh --project-board user:v-i-s-h-a-l:1 --status Todo  # explicit board override (CLI flag wins; also reads STUDIO_PROJECT_BOARD_OVERRIDE, runtime, or profiles/<slug>/project-board.yaml)
 scripts/studio-gh.sh issue list --state open                # assistant-safe GitHub CLI wrapper; uses context github_home for auth
 scripts/manager-reconcile.sh --cwd "$PWD"                   # project report/debrief sync into the project task ledger
 scripts/manager-analyze.sh --cwd "$PWD"                     # studio-checkout analysis and feedback triage

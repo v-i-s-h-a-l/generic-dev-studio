@@ -1,19 +1,21 @@
 # GitHub PM Surface
 
-The primary PM surface for `generic-dev-studio` v2 work is the GitHub
-Projects v2 board:
+The primary PM surface for any studio-managed project is a GitHub Projects v2
+board owned by that project. Each project keeps its own board; studio scripts
+locate the right one through the per-project board portability contract below.
+
+`generic-dev-studio` itself is the seed instance of this pattern. Its board is:
 
 https://github.com/users/v-i-s-h-a-l/projects/1
 
-Project title: `Studio v2 transition`
+Project title: `Studio v2 transition`. It is linked to
+`v-i-s-h-a-l/generic-dev-studio` and is the canonical place to read studio v2
+transition issue state when GitHub fields are needed. Runtime state still
+lives under `~/.dev-studio/**`; the Projects board is planning state only.
 
-The board is linked to `v-i-s-h-a-l/generic-dev-studio` and is the canonical
-place to read v2 transition issue state when GitHub fields are needed. Runtime
-state still lives under `~/.dev-studio/**`; the Projects board is planning
-state only.
-
-Backlog-facing docs should point here first for current planning state. Use
-repo issues for the durable issue body, discussion, labels, and CLI fallback.
+Backlog-facing docs should point at the current project's board first for
+current planning state. Use repo issues for the durable issue body,
+discussion, labels, and CLI fallback.
 
 ## Agent Backlog Reader Contract
 
@@ -51,6 +53,100 @@ Required custom fields:
 
 Built-in fields such as `Parent issue`, `Sub-issues progress`, `Repository`,
 `Labels`, and `Milestone` remain available for GitHub-native tracking.
+
+## Per-Project Project Board Portability Contract
+
+Studio scripts target a single Project board per project. The portability
+contract below lets `generic-dev-studio`, `turnip-ios`, and any future
+studio-managed project each own a board with project-specific Track and Phase
+values while sharing the cross-project planning vocabulary studio agents
+depend on.
+
+### Board ownership
+
+| Decision | Rule |
+|---|---|
+| One board per project | Each studio-managed project owns its own Projects v2 board. The studio's own board does not host other projects' work. |
+| Owner scope | A project board may live under any GitHub owner the project repo links to: a user account (`/users/<user>/projects/<n>`) or an organization (`/orgs/<org>/projects/<n>`). Studio scripts MUST NOT assume the user-owner case. |
+| Repository link | A project board MUST be linked to the project's primary GitHub repository so issues from that repo appear on the board without manual addition. Additional linked repos are allowed. |
+| Studio board scope | The `Studio v2 transition` board is the `generic-dev-studio` project's board. It MUST NOT be used to track another project's work. |
+
+### Portable field contract
+
+Project boards share a core vocabulary; project-specific value sets are
+allowed only on `Track` and `Phase`.
+
+| Field | Cross-project rule |
+|---|---|
+| `Status` | Required. Values fixed to `Todo`, `In Progress`, `Done`. Studio readers compare lanes by these exact strings. |
+| `Size` | Required. Values fixed to `XS`, `S`, `M`, `L`, `XL`. |
+| `Sibling host reviewed` | Required. Values fixed to `Not required`, `Plan clean`, `Outcome clean`, `Needs review`. The phase-review wrappers depend on these exact strings. |
+| `Track` | Required. Each project supplies its own option set. The studio board's track values (`A substrate`, `B PM surface`, …) are one such set; a turnip board may use Turnip-specific tracks. Project scripts MUST NOT assume studio-specific track names. |
+| `Phase` | Required. Each project supplies its own option set. Cross-project tooling treats `Phase` as an opaque string scoped by `Track`. |
+
+Additional project-specific fields are allowed and must be additive. They
+MUST NOT redefine the meaning of the required fields above.
+
+Built-in fields (`Parent issue`, `Sub-issues progress`, `Repository`,
+`Labels`, `Milestone`) remain available on every project board.
+
+### Project board configuration
+
+Each project's board location and field metadata are recorded in a single
+`project-board` config block, owned by the project profile:
+
+| Surface | Location | Visibility |
+|---|---|---|
+| Durable, repo-checked board config | `profiles/<slug>/project-board.yaml` | Public repo |
+| Per-machine override or ad-hoc board | `<studio_home>/<project_slug>/config/project-board.yaml` | Private runtime |
+
+The runtime override exists for in-flight migrations and machine-local
+experiments. When both surfaces exist, the runtime override wins and studio
+readers MUST surface that the override is active.
+
+Required fields in `project-board.yaml`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema_version` | int | `1` for this contract version. |
+| `owner_kind` | enum | `user` or `org`. |
+| `owner_login` | string | GitHub login of the project board owner. |
+| `project_number` | int | Numeric Projects v2 id (the `<n>` in the URL). |
+| `project_title` | string | Human-readable Project title; used only for diagnostics, not for lookup. |
+| `linked_repo` | string | `<owner>/<repo>` of the primary repo linked to the board. |
+| `tracks` | list[string] | Project-specific allowed values for the `Track` field. |
+| `phases` | list[string] | Project-specific allowed values for the `Phase` field. |
+
+`Status`, `Size`, and `Sibling host reviewed` are not configurable; their
+values are fixed by this contract.
+
+### Discovery
+
+Studio scripts MUST resolve the project board in this order:
+
+1. Explicit CLI flag, e.g. `--project-board <owner>/<n>`.
+2. Environment override `STUDIO_PROJECT_BOARD_OVERRIDE=<owner_kind>:<owner_login>:<n>`.
+3. Runtime override at `<studio_home>/<project_slug>/config/project-board.yaml`.
+4. Durable config at `profiles/<slug>/project-board.yaml` inside the current `repo_root`.
+5. Loud failure: no board configured for this project.
+
+Steps 1 and 2 are user-controlled overrides per the studio bypass policy and
+MUST NOT be set silently by an assistant. Step 5 MUST name the missing
+config path and the project slug; it MUST NOT silently fall back to the
+studio's own board.
+
+`project_slug` resolution follows the
+[Studio Context Contract](_shared/contracts/studio-context.md) — usually the
+repo toplevel basename, with explicit override permitted.
+
+### Non-goals
+
+- This contract does not migrate any existing project to a new board.
+- This contract does not centralize project boards under a single GitHub
+  owner. Each project's board owner is recorded per project.
+- This contract does not change the cross-project `Status`, `Size`, or
+  `Sibling host reviewed` value sets; only `Track` and `Phase` are
+  project-defined.
 
 ## Source-Of-Truth Map
 
