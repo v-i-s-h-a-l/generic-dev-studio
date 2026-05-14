@@ -62,7 +62,10 @@ fi
 
 case "$SUBCOMMAND" in
   worktrees)
-    declare -a GC_ARGS=("${PASSTHRU[@]:-}")
+    declare -a GC_ARGS=()
+    if [ "${#PASSTHRU[@]}" -gt 0 ]; then
+      GC_ARGS+=("${PASSTHRU[@]}")
+    fi
     [ "$DO_BUDGET" = "1" ] && GC_ARGS+=("--budget-check")
     [ "$DO_REAP" = "1" ] && GC_ARGS+=("--reap-stale")
     [ "$DRY_RUN" = "1" ] && GC_ARGS+=("--dry-run")

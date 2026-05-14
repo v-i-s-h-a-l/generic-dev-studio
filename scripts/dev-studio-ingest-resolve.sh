@@ -159,7 +159,7 @@ jq -n \
       else {
         kind: "ingest-source-branch-preflight",
         schema_version: 1,
-        prompt_action: "confirm-or-override",
+        action: "surface-context",
         current_branch: $manager_context_header.current_branch,
         base_ref: $manager_context_header.base_ref,
         base_sha: $manager_context_header.base_sha,
