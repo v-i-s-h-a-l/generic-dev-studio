@@ -22,7 +22,8 @@
 # Usage:
 #   scripts/studio-project-pulse.sh
 #   scripts/studio-project-pulse.sh --format json
-#   scripts/studio-project-pulse.sh --format md --out /path/to/pulse.md
+#   scripts/studio-project-pulse.sh --format md --out pulse.md
+#   scripts/studio-project-pulse.sh --format md --out <project-analysis-dir>/pulse.md
 #   scripts/studio-project-pulse.sh --since /path/to/old-snapshot.json
 #   scripts/studio-project-pulse.sh --since none          # baseline only
 #   scripts/studio-project-pulse.sh --no-snapshot         # do not advance the snapshot
@@ -72,6 +73,8 @@ command -v jq >/dev/null 2>&1 || { printf 'studio-project-pulse: jq required\n' 
 
 PROJECT=$(resolve_project) || exit 1
 PROJECT_ROOT=$(resolve_project_root_for "$PROJECT")
+PROJECT_ROOT_REAL=$(cd "$PROJECT_ROOT" && pwd -P) || exit 1
+ANALYSIS_DIR="$PROJECT_ROOT/analysis"
 SNAPSHOT_DIR="$PROJECT_ROOT/.runtime/state/project-board"
 mkdir -p "$SNAPSHOT_DIR"
 
@@ -118,6 +121,8 @@ fi
 
 if [ -n "$prev_path" ]; then
   cp "$prev_path" "$tmpdir/previous.json"
+elif [ "$SINCE" = "none" ]; then
+  cp "$tmpdir/current.json" "$tmpdir/previous.json"
 else
   printf '[]\n' > "$tmpdir/previous.json"
 fi
@@ -320,9 +325,24 @@ if [ -n "$OUT" ]; then
   if [ "$OUT" = "-" ]; then
     emit
   else
-    mkdir -p "$(dirname "$OUT")"
-    emit > "$OUT"
-    printf 'studio-project-pulse: wrote %s pulse to %s\n' "$FORMAT" "$OUT" >&2
+    case "$OUT" in
+      /*) out_path="$OUT" ;;
+      *) out_path="$ANALYSIS_DIR/$OUT" ;;
+    esac
+    out_dir=$(dirname "$out_path")
+    mkdir -p "$out_dir"
+    out_dir_real=$(cd "$out_dir" && pwd -P) || exit 1
+    out_real="$out_dir_real/$(basename "$out_path")"
+    case "$out_real" in
+      "$PROJECT_ROOT_REAL"/*) ;;
+      *)
+        printf 'studio-project-pulse: --out must stay under project runtime root: %s\n' "$PROJECT_ROOT" >&2
+        printf 'studio-project-pulse: use a relative path for %s/analysis/ or an absolute path below that root\n' "$PROJECT_ROOT" >&2
+        exit 2
+        ;;
+    esac
+    emit > "$out_real"
+    printf 'studio-project-pulse: wrote %s pulse to %s\n' "$FORMAT" "$out_real" >&2
   fi
 else
   emit
