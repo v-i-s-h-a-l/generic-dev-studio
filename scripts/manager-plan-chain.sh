@@ -9,6 +9,7 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+_lp_load_project_env 2>/dev/null || true
 
 PROJECT="${STUDIO_MANAGER_PLAN_CHAIN_PROJECT:-}"
 ISSUE_NUMBER=""
@@ -17,6 +18,8 @@ PARENT_ISSUE_NUMBER=""
 SOURCE_FILE=""
 SOURCE_TEXT=""
 FROM_PLAN=""
+FROM_PLAN_JSON=""
+FROM_PLAN_KIND=""
 TITLE=""
 CHAIN_NAME=""
 SOURCE_BRANCH="main"
@@ -694,7 +697,7 @@ expected_task_count_from_source() {
   ' "$SOURCE_MD"
 }
 
-write_planner_artifact() {
+write_generated_planner_artifact() {
   local status="$1" blocked_json="$2"
   local expected_task_count produced_task_count cardinality_findings
   expected_task_count=$(expected_task_count_from_source || true)
@@ -796,6 +799,42 @@ write_planner_artifact() {
         status: $status
       }
   ' > "$PLANNER_ARTIFACT"
+}
+
+write_planner_artifact() {
+  local status="$1" blocked_json="$2"
+  if [ "$FROM_PLAN_KIND" = "planner-output" ] && [ -n "$FROM_PLAN_JSON" ] && [ -r "$FROM_PLAN_JSON" ]; then
+    jq -S \
+      --arg status "$status" \
+      --arg source_path "$SOURCE_MD" \
+      --arg requirement_packet "$REQUIREMENT_PACKET" \
+      --arg task_graph "$TASK_GRAPH" \
+      --arg review_input "$REVIEW_INPUT" \
+      --argjson blocked "$blocked_json" \
+      '
+        .status = $status
+        | .evidence_refs = (((.evidence_refs // []) + [$source_path, $requirement_packet, $task_graph, $review_input]) | unique)
+        | .payload.self_review_findings = (
+            (.payload.self_review_findings // [])
+            + [
+                "Task graph validation status: ready for reviewed planner-output ingest.",
+                "Preserved planner-output contract-specific checks, stop conditions, non-goals, acceptance criteria, and follow-up notes."
+              ]
+            | unique
+          )
+        | .payload.self_review_fixes = (
+            (.payload.self_review_fixes // [])
+            + (if ($blocked | length) > 0
+               then ["Stopped before review, issue creation, and manifest creation because the source needs more context."]
+               else []
+               end)
+            | unique
+          )
+      ' "$FROM_PLAN_JSON" > "$PLANNER_ARTIFACT"
+    return 0
+  fi
+
+  write_generated_planner_artifact "$status" "$blocked_json"
 }
 
 write_review_input() {
@@ -965,6 +1004,42 @@ task_graph_from_planner_output() {
   local plan_json="$1"
   jq -S '
     (.payload.decomposition // []) as $items
+    | (
+        ($items | map({key: (.contract_id // ""), value: (.task_graph_node_id // "")}))
+        + ($items | map({key: (.task_graph_node_id // ""), value: (.task_graph_node_id // "")}))
+        | map(select(.key != "" and .value != ""))
+        | from_entries
+      ) as $id_map
+    | def normalized_deps($item):
+        [($item.dependencies // $item.depends_on // [])[]?
+         | select(type == "string")
+         | ($id_map[.] // .)];
+      (
+        $items
+        | to_entries
+        | map(
+            .value as $item
+            | (.value.task_graph_node_id // ("T-W" + ((.key + 1) | tostring))) as $id
+            | normalized_deps($item) as $deps
+            | {
+                id: $id,
+                kind: "task",
+                source_id: (.value.contract_id // ("worker-contract:" + ((.key + 1) | tostring))),
+                label: (.value.summary // .value.contract_id // "Worker contract"),
+                dependencies: $deps,
+                read_resources: [],
+                write_resources: (.value.allowed_paths // []),
+                status: (if ($deps | length) > 0 then "blocked" else "ready" end)
+              }
+          )
+      ) as $nodes
+    | ($nodes | map(.id)) as $node_ids
+    | (
+        [$nodes[] as $node
+         | $node.dependencies[]?
+         | select(($node_ids | index(.)) | not)
+         | {node_id: $node.id, missing_source_id: .}]
+      ) as $missing_dependencies
     | {
         schema_version: 1,
         kind: "task-graph",
@@ -974,29 +1049,16 @@ task_graph_from_planner_output() {
           fingerprint_sha256: "",
           generator: {name:"manager-plan-chain", version:1}
         },
-        nodes: (
-          $items
-          | to_entries
-          | map({
-              id: (.value.task_graph_node_id // ("T-W" + ((.key + 1) | tostring))),
-              kind: "task",
-              source_id: (.value.contract_id // ("worker-contract:" + ((.key + 1) | tostring))),
-              label: (.value.summary // .value.contract_id // "Worker contract"),
-              dependencies: [],
-              read_resources: [],
-              write_resources: (.value.allowed_paths // []),
-              status: "ready"
-            })
+        nodes: $nodes,
+        edges: (
+          [$nodes[] as $node
+           | $node.dependencies[]?
+           | {from: ., to: $node.id, reason: "planner-output dependency"}]
         ),
-        edges: [],
-        ready_node_ids: (
-          $items
-          | to_entries
-          | map(.value.task_graph_node_id // ("T-W" + ((.key + 1) | tostring)))
-        ),
+        ready_node_ids: ($nodes | map(select((.dependencies // []) | length == 0) | .id)),
         validation: {
-          status: (if ($items | length) > 0 then "valid" else "invalid" end),
-          missing_dependencies: [],
+          status: (if (($items | length) > 0 and ($missing_dependencies | length) == 0) then "valid" else "invalid" end),
+          missing_dependencies: $missing_dependencies,
           parallel_write_races: [],
           packet_conflicts: [],
           unresolved_missing_details: (if ($items | length) > 0 then [] else [{source_id:"M001", text:"Planner output has no decomposition entries."}] end)
@@ -1016,6 +1078,8 @@ prepare_task_graph() {
     from_plan_json="$ARTIFACT_ROOT/from-plan.json"
     yq -o=json '.' "$FROM_PLAN" > "$from_plan_json"
     plan_kind=$(jq -r '.kind // .artifact_kind // ""' "$from_plan_json")
+    FROM_PLAN_JSON="$from_plan_json"
+    FROM_PLAN_KIND="$plan_kind"
     case "$plan_kind" in
       task-graph)
         jq -S '.' "$from_plan_json" > "$TASK_GRAPH"
