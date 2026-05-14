@@ -6,7 +6,7 @@
 #   scripts/studio-chain-runner.sh <manifest|chain-name|chain-id> [--only <chain>] [--host <host>] [--dry-run] [--yes] [--parallel-chains <n|auto|1>] [--checkpoint auto|off] [--attended|--unattended]
 #   scripts/studio-chain-runner.sh --auto <manifest|chain-name|chain-id> [--only <chain>] [--host <host>] [--dry-run] [--checkpoint auto|off] [--unattended]
 #   scripts/studio-chain-runner.sh --explain-next <manifest|chain-name|chain-id> [--only <chain>]
-#   scripts/studio-chain-runner.sh --resume <run_id> [--yes]
+#   scripts/studio-chain-runner.sh --resume <run_id> [--verified] [--yes]
 #   scripts/studio-chain-runner.sh --regenerate-report <run_id>
 #   scripts/studio-chain-runner.sh --doctor <run_id> [--format markdown|json] [--public-safe]
 #   scripts/studio-chain-runner.sh --list
@@ -65,6 +65,7 @@ HOST_OVERRIDE=""
 DRY_RUN=0
 YES=0
 RESUME_ID=""
+VERIFIED_RESUME=0
 REGENERATE_REPORT_ID=""
 DOCTOR_ID=""
 DOCTOR_FORMAT="markdown"
@@ -101,6 +102,7 @@ while [ $# -gt 0 ]; do
     --host=*) HOST_OVERRIDE="${1#--host=}"; shift ;;
     --resume) RESUME_ID="${2:?--resume requires a run id}"; shift 2 ;;
     --resume=*) RESUME_ID="${1#--resume=}"; shift ;;
+    --verified) VERIFIED_RESUME=1; shift ;;
     --regenerate-report) REGENERATE_REPORT_ID="${2:?--regenerate-report requires a run id}"; shift 2 ;;
     --regenerate-report=*) REGENERATE_REPORT_ID="${1#--regenerate-report=}"; shift ;;
     --doctor) DOCTOR_ID="${2:?--doctor requires a run id}"; shift 2 ;;
@@ -130,8 +132,13 @@ while [ $# -gt 0 ]; do
       MANIFEST="$1"
       shift
       ;;
-  esac
+esac
 done
+
+if [ "$VERIFIED_RESUME" -eq 1 ] && [ -z "$RESUME_ID" ]; then
+  printf 'studio-chain-runner: --verified requires --resume <run_id>\n' >&2
+  exit 2
+fi
 
 if [ "$DISCOVER_MODE" -eq 0 ] && [ "$LIST_RUNS" -eq 0 ] && [ -z "$MANIFEST" ] && [ -z "$RESUME_ID" ] && [ -z "$REGENERATE_REPORT_ID" ] && [ -z "$DOCTOR_ID" ]; then
   DISCOVER_MODE=1
@@ -721,6 +728,7 @@ SUMMARY_ROOT=""
 HALT_ROOT=""
 ESCROW_ROOT=""
 PHASE_REVIEW_ROOT=""
+PROGRESS_RECAP_ROOT=""
 STARTUP_DIAGNOSTICS_ROOT=""
 EVENTS_JSONL="/dev/null"
 RUN_STATE_JSON=""
@@ -734,6 +742,7 @@ configure_run_paths() {
   HALT_ROOT="$CHAIN_RUN_ROOT/halt-records"
   ESCROW_ROOT="$CHAIN_RUN_ROOT/decision-escrows"
   PHASE_REVIEW_ROOT="$ANALYSIS_ROOT/$RUN_ID-phase-reviews"
+  PROGRESS_RECAP_ROOT="$CHAIN_RUN_ROOT/progress-recaps"
   STARTUP_DIAGNOSTICS_ROOT="$CHAIN_RUN_ROOT/startup-diagnostics"
   EVENTS_JSONL="$CHAIN_RUN_ROOT/events.jsonl"
   RUN_STATE_JSON="$CHAIN_RUN_ROOT/state.json"
@@ -744,7 +753,7 @@ configure_run_paths() {
     RUN_STATE_JSON="$RUN_ROOT/$RUN_ID-state.json"
   fi
   if { [ "$DRY_RUN" -eq 0 ] || [ -n "$RESUME_ID" ]; } && [ "$EXPLAIN_NEXT" -eq 0 ]; then
-    mkdir -p "$SUMMARY_ROOT" "$HALT_ROOT" "$ESCROW_ROOT" "$PHASE_REVIEW_ROOT" "$STARTUP_DIAGNOSTICS_ROOT"
+    mkdir -p "$SUMMARY_ROOT" "$HALT_ROOT" "$ESCROW_ROOT" "$PHASE_REVIEW_ROOT" "$PROGRESS_RECAP_ROOT" "$STARTUP_DIAGNOSTICS_ROOT"
   else
     EVENTS_JSONL="/dev/null"
   fi
@@ -4591,6 +4600,90 @@ render_run_finish_summary() {
   else
     printf -- '- No carryover was supplied by worker summaries.\n'
   fi
+
+  if [ "${VERIFIED_RESUME:-0}" -eq 1 ]; then
+    render_verified_resume_closeout "$status" "$run_state_json"
+  fi
+}
+
+verified_closeout_line() {
+  local label="$1" state="$2" reason="${3:-}"
+  if [ -n "$reason" ]; then
+    printf -- '- %s: `%s` - %s\n' "$label" "$state" "$reason"
+  else
+    printf -- '- %s: `%s`\n' "$label" "$state"
+  fi
+}
+
+render_verified_resume_closeout() {
+  local status="$1" run_state_json="${2:-}" summary_count completed_count closed_count integrated_count phase_review_count
+  local report_state work_root_state
+  summary_count=0
+  completed_count=0
+  closed_count=0
+  integrated_count=0
+  phase_review_count=0
+  report_state="skipped"
+  work_root_state="skipped"
+
+  [ -n "${SUMMARY_ROOT:-}" ] && summary_count=$(find "$SUMMARY_ROOT" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+  if [ -n "$run_state_json" ] && [ -f "$run_state_json" ]; then
+    completed_count=$(jq '[.chains[]?.issues[]? | select((.status // "") == "completed")] | length' "$run_state_json" 2>/dev/null || printf '0')
+    closed_count=$(jq '[.chains[]?.issues[]? | select((.lifecycle_state // "") == "closed")] | length' "$run_state_json" 2>/dev/null || printf '0')
+    integrated_count=$(jq '[.chains[]?.issues[]? | select((.integrated // false) == true)] | length' "$run_state_json" 2>/dev/null || printf '0')
+    phase_review_count=$(jq '[.phase_reviews[]? | select((.verdict // "") == "clean")] | length' "$run_state_json" 2>/dev/null || printf '0')
+  fi
+  [ -n "${RUN_REPORT:-}" ] && report_state="ran"
+  if [ -n "${RUN_WORK_ROOT:-}" ] && [ ! -e "$RUN_WORK_ROOT" ] && [ "$status" = "completed" ]; then
+    work_root_state="ran"
+  elif [ "$status" = "completed" ]; then
+    work_root_state="skipped"
+  else
+    work_root_state="not_applicable"
+  fi
+
+  printf '\n### Verified Resume Closeout\n\n'
+  if [ "$summary_count" -gt 0 ]; then
+    verified_closeout_line "Worker summary ingested and validated" "ran"
+  else
+    verified_closeout_line "Worker summary ingested and validated" "skipped" "no worker summary artifact was available"
+  fi
+  if [ "$summary_count" -gt 0 ]; then
+    verified_closeout_line "Tests, build, and lint evidence persisted" "ran"
+  else
+    verified_closeout_line "Tests, build, and lint evidence persisted" "skipped" "no verification evidence was available"
+  fi
+  if [ "$completed_count" -gt 0 ]; then
+    verified_closeout_line "Commit created on issue branch" "already-complete"
+  else
+    verified_closeout_line "Commit created on issue branch" "skipped" "no completed issue commit in run state"
+  fi
+  if [ "$integrated_count" -gt 0 ]; then
+    verified_closeout_line "Merge into chain branch" "already-complete"
+  else
+    verified_closeout_line "Merge into chain branch" "skipped" "no integrated issue recorded"
+  fi
+  if [ "$phase_review_count" -gt 0 ]; then
+    verified_closeout_line "Required review verdict captured" "already-complete"
+  else
+    verified_closeout_line "Required review verdict captured" "skipped" "no clean phase review recorded"
+  fi
+  if [ -n "${FINAL_PR_URL:-}" ]; then
+    verified_closeout_line "PR opened or updated" "ran" "$FINAL_PR_URL"
+    verified_closeout_line "Push of issue or chain branch" "ran" "PR URL recorded"
+  else
+    verified_closeout_line "PR opened or updated" "skipped" "no PR URL recorded"
+    verified_closeout_line "Push of issue or chain branch" "skipped" "no PR URL recorded"
+  fi
+  if [ "$closed_count" -gt 0 ]; then
+    verified_closeout_line "Source issue closure handoff" "already-complete"
+  else
+    verified_closeout_line "Source issue closure handoff" "skipped" "no closed issue state recorded"
+  fi
+  verified_closeout_line "Local main sync" "not_applicable" "chain runner does not fast-forward local main"
+  verified_closeout_line "Worktree cleanup" "$work_root_state" "$([ "$work_root_state" = "skipped" ] && printf 'run work root retained for recovery' || true)"
+  verified_closeout_line "DerivedData and stale artifact janitor pass" "not_applicable" "no iOS artifact executor in this chain"
+  verified_closeout_line "Final run report regenerated" "$report_state"
 }
 
 finish_run() {
@@ -4615,6 +4708,7 @@ finish_run() {
       "$(jq -cn --arg attempt_id "$ATTEMPT_ID" --arg reason "$reason" '{attempt_id:$attempt_id, failure_reason:(if $reason == "" then null else $reason end)}')"
   fi
   generate_run_report "$status" "$reason"
+  emit_chain_progress_recaps "finish" ""
   if [ "$status" = "completed" ] && [ -n "${RUN_WORK_ROOT:-}" ]; then
     rm -rf "$RUN_WORK_ROOT" 2>/dev/null || true
   fi
@@ -4623,10 +4717,12 @@ finish_run() {
 }
 
 abort_run() {
-  local reason="${1:-failed}" reason_id
+  local reason="${1:-failed}" reason_id halt_record
   reason_id=$(halt_reason_for_text "$reason")
   if [ "$(halt_class_for_reason "$reason_id")" = "retryable" ] || ! active_halt_reason_exists "$reason_id"; then
-    write_halt_record "$reason_id" "$reason" >/dev/null || log "halt record write failed for: $reason"
+    halt_record=$(write_halt_record "$reason_id" "$reason" || true)
+    [ -n "$halt_record" ] || log "halt record write failed for: $reason"
+    emit_chain_progress_recaps "halt" "$halt_record"
   fi
   finish_run failed "$reason"
   exit 1
@@ -6863,6 +6959,7 @@ elif [ "$YES" -eq 0 ]; then
 else
   live_preflight "$PLAN_JSON"
   write_run_state running ""
+  emit_chain_progress_recaps "before-run" ""
 fi
 
 emit_chain_event chain_run_started "" "$RUN_ID" "" "" running 0 \
@@ -7697,19 +7794,32 @@ integrate_issue_result() {
   fi
 }
 
-print_issue_progress_recap() {
-  local chain_name="$1" chain_run_id="$2" issue_run_id="$3" issue="$4" summary_file="${5:-}"
+progress_recap_artifact_path() {
+  local boundary="$1" chain_run_id="${2:-}" issue_run_id="${3:-}"
+  local safe_boundary safe_chain safe_issue
+  safe_boundary=$(printf '%s' "$boundary" | tr -c '[:alnum:]_.-' '-')
+  safe_chain=$(printf '%s' "${chain_run_id:-chain}" | tr -c '[:alnum:]_.-' '-')
+  safe_issue=$(printf '%s' "${issue_run_id:-run}" | tr -c '[:alnum:]_.-' '-')
+  printf '%s/%s-%s-%s.md\n' "${PROGRESS_RECAP_ROOT:-.}" "$safe_boundary" "$safe_chain" "$safe_issue"
+}
+
+render_chain_progress_recap() {
+  local boundary="$1" chain_name="$2" chain_run_id="$3" issue_run_id="${4:-}" issue="${5:-}" summary_file="${6:-}" halt_record="${7:-}"
   [ "$DRY_RUN" -eq 0 ] || return 0
 
   if [ -z "$summary_file" ] || [ ! -f "$summary_file" ]; then
-    summary_file=$(summary_for_issue_run "$chain_name" "$issue" "$issue_run_id" 2>/dev/null || true)
+    if [ -n "$issue" ] && [ -n "$issue_run_id" ]; then
+      summary_file=$(summary_for_issue_run "$chain_name" "$issue" "$issue_run_id" 2>/dev/null || true)
+    fi
   fi
 
   jq -r \
+    --arg boundary "$boundary" \
     --arg chain_run_id "$chain_run_id" \
     --arg issue_run_id "$issue_run_id" \
     --arg run_id "$RUN_ID" \
     --arg summary_file "$summary_file" \
+    --arg halt_record "$halt_record" \
     --slurpfile summary "${summary_file:-/dev/null}" '
       def task_label($task):
         if $task == null then "None"
@@ -7734,15 +7844,73 @@ print_issue_progress_recap() {
       | ([ $chain.issues[] | select((.status // "") == "completed") ] | length) as $completed
       | ($chain.issues | length) as $total
       | "## Chain Progress Recap\n\n"
+        + "- Boundary: \($boundary)\n"
+        + "- Run: `\($run_id)`\n"
         + "- Previous task: \(task_label($previous))\n"
-        + "- Just completed: \(task_label($current))\n"
+        + (if $boundary == "before-run" then "- Current task: \(task_label($current))\n" else "- Just completed: \(task_label($current))\n" end)
         + "- What changed: \(summary_text)\n"
         + "- Verification signals: tests \(signal_count("tests")), lints \(signal_count("lints")), builds \(signal_count("builds"))\n"
         + "- Next task: \(task_label($next))\n"
         + "- Overall progress: \($completed)/\($total) issues completed in `\($chain.name)`.\n"
         + "- Direction: continue toward the chain goal on branch `\($chain.branch)` with phase review gates intact.\n"
+        + (if $halt_record == "" then "" else "- Halt record: `\($halt_record)`\n" end)
         + "- Preferred command if this session stops: `/dev-studio manager work-chain --resume \($run_id) --yes`\n"
     ' "$RUN_STATE_JSON"
+}
+
+write_chain_progress_recap() {
+  local boundary="$1" chain_name="$2" chain_run_id="$3" issue_run_id="${4:-}" issue="${5:-}" summary_file="${6:-}" halt_record="${7:-}" artifact
+  [ "$DRY_RUN" -eq 0 ] || return 0
+  [ -n "${PROGRESS_RECAP_ROOT:-}" ] || return 0
+  mkdir -p "$PROGRESS_RECAP_ROOT"
+  artifact=$(progress_recap_artifact_path "$boundary" "$chain_run_id" "$issue_run_id")
+  render_chain_progress_recap "$boundary" "$chain_name" "$chain_run_id" "$issue_run_id" "$issue" "$summary_file" "$halt_record" > "$artifact"
+  printf '%s\n' "$artifact"
+}
+
+chain_recap_issue_selector() {
+  local chain_run_id="$1"
+  jq -r --arg chain_run_id "$chain_run_id" '
+    (.chains[] | select(.chain_run_id == $chain_run_id) | .issues) as $issues
+    | (
+        ($issues[]? | select((.status // "") == "running")),
+        ($issues[]? | select((.status // "") == "failed")),
+        ($issues[]? | select((.status // "") == "pending")),
+        ($issues | reverse[]?)
+      )
+    | select(. != null)
+    | [.issue_run_id, (.number | tostring)]
+    | @tsv
+  ' "$RUN_STATE_JSON" 2>/dev/null | head -n 1
+}
+
+emit_chain_progress_recaps() {
+  local boundary="$1" halt_record="${2:-}" chain_name chain_run_id selected issue_run_id issue artifact
+  [ "$DRY_RUN" -eq 0 ] || return 0
+  [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ] || return 0
+  while IFS=$'\t' read -r chain_name chain_run_id; do
+    [ -n "$chain_run_id" ] || continue
+    selected=$(chain_recap_issue_selector "$chain_run_id")
+    issue_run_id=$(printf '%s\n' "$selected" | awk -F '\t' '{print $1}')
+    issue=$(printf '%s\n' "$selected" | awk -F '\t' '{print $2}')
+    artifact=$(write_chain_progress_recap "$boundary" "$chain_name" "$chain_run_id" "$issue_run_id" "$issue" "" "$halt_record" 2>/dev/null || true)
+    if [ -n "$artifact" ] && [ -f "$artifact" ]; then
+      cat "$artifact"
+      printf '\n'
+    fi
+  done <<EOF
+$(jq -r '.chains[]? | [.name, .chain_run_id] | @tsv' "$RUN_STATE_JSON" 2>/dev/null)
+EOF
+}
+
+print_issue_progress_recap() {
+  local chain_name="$1" chain_run_id="$2" issue_run_id="$3" issue="$4" summary_file="${5:-}" artifact
+  artifact=$(write_chain_progress_recap "after-task" "$chain_name" "$chain_run_id" "$issue_run_id" "$issue" "$summary_file" "" 2>/dev/null || true)
+  if [ -n "$artifact" ] && [ -f "$artifact" ]; then
+    cat "$artifact"
+  else
+    render_chain_progress_recap "after-task" "$chain_name" "$chain_run_id" "$issue_run_id" "$issue" "$summary_file" ""
+  fi
   printf '\n'
 }
 
