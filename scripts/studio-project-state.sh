@@ -113,6 +113,7 @@ resolve_project_board
 
 OWNER=$(printf '%s\n' "$STUDIO_CONTEXT_PROJECT_BOARD" | awk -F: '{print $2}')
 PROJECT_NUMBER=$(printf '%s\n' "$STUDIO_CONTEXT_PROJECT_BOARD" | awk -F: '{print $3}')
+OWNER_KIND=$(printf '%s\n' "$STUDIO_CONTEXT_PROJECT_BOARD" | awk -F: '{print $1}')
 
 if [ -z "$OWNER" ] || [ -z "$PROJECT_NUMBER" ]; then
   printf 'studio-project-state: failed to parse resolved project_board token: %s\n' \
@@ -245,6 +246,143 @@ graphql_project_item_for_issue() {
     '
 }
 
+graphql_project_items() {
+  local limit="$1"
+  local batch_size remaining after page_json
+  local tmp_items tmp_page
+  local query
+  tmp_items=$(mktemp -t studio-project-items.XXXXXX)
+  tmp_page=$(mktemp -t studio-project-page.XXXXXX)
+  : > "$tmp_items"
+
+  remaining=$limit
+  after=""
+  while [ "$remaining" -gt 0 ]; do
+    if [ "$remaining" -gt 100 ]; then
+      batch_size=100
+    else
+      batch_size=$remaining
+    fi
+
+    if [ "$OWNER_KIND" = "org" ]; then
+      query=$PROJECT_ITEMS_ORG_QUERY
+    else
+      query=$PROJECT_ITEMS_USER_QUERY
+    fi
+
+    if [ -n "$after" ]; then
+      with_login_home_for_github gh api graphql \
+        -f query="$query" \
+        -f login="$OWNER" \
+        -F number="$PROJECT_NUMBER" \
+        -F first="$batch_size" \
+        -f after="$after" > "$tmp_page" || { rm -f "$tmp_items" "$tmp_page"; return 1; }
+    else
+      with_login_home_for_github gh api graphql \
+        -f query="$query" \
+        -f login="$OWNER" \
+        -F number="$PROJECT_NUMBER" \
+        -F first="$batch_size" > "$tmp_page" || { rm -f "$tmp_items" "$tmp_page"; return 1; }
+    fi
+
+    jq -c '
+      def field_value($name):
+        [
+          .fieldValues.nodes[]
+          | select((.field.name // "") == $name)
+          | (.name // .text // (.number | tostring) // .date // empty)
+        ][0] // "";
+      (.data.user.projectV2.items.nodes // .data.organization.projectV2.items.nodes // [])
+      | .[]
+      | select(.content.number != null)
+      | {
+          content: {
+            number: .content.number,
+            title: (.content.title // ""),
+            url: (.content.url // ""),
+            type: (.type // "")
+          },
+          repository: (.content.repository.nameWithOwner // ""),
+          labels: ((.content.labels.nodes // []) | map(.name)),
+          milestone: (.content.milestone.title // null),
+          title: (.content.title // ""),
+          status: field_value("Status"),
+          track: field_value("Track"),
+          phase: field_value("Phase"),
+          size: field_value("Size"),
+          "sibling host reviewed": field_value("Sibling host reviewed")
+        }
+    ' "$tmp_page" >> "$tmp_items" || { rm -f "$tmp_items" "$tmp_page"; return 1; }
+
+    page_json=$(jq -c '.data.user.projectV2.items.pageInfo // .data.organization.projectV2.items.pageInfo // {}' "$tmp_page") \
+      || { rm -f "$tmp_items" "$tmp_page"; return 1; }
+    after=$(printf '%s\n' "$page_json" | jq -r '.endCursor // ""')
+    if [ "$(printf '%s\n' "$page_json" | jq -r '.hasNextPage // false')" != "true" ] || [ -z "$after" ]; then
+      break
+    fi
+    remaining=$((remaining - batch_size))
+  done
+
+  jq -s '{items: .}' "$tmp_items"
+  rm -f "$tmp_items" "$tmp_page"
+}
+
+PROJECT_ITEMS_FRAGMENT='
+  items(first:$first, after:$after){
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      type
+      content {
+        ... on Issue {
+          number
+          title
+          url
+          repository { nameWithOwner }
+          labels(first:50){ nodes { name } }
+          milestone { title }
+        }
+      }
+      fieldValues(first:50){
+        nodes {
+          ... on ProjectV2ItemFieldTextValue {
+            text
+            field { ... on ProjectV2FieldCommon { name } }
+          }
+          ... on ProjectV2ItemFieldSingleSelectValue {
+            name
+            field { ... on ProjectV2FieldCommon { name } }
+          }
+          ... on ProjectV2ItemFieldNumberValue {
+            number
+            field { ... on ProjectV2FieldCommon { name } }
+          }
+          ... on ProjectV2ItemFieldDateValue {
+            date
+            field { ... on ProjectV2FieldCommon { name } }
+          }
+        }
+      }
+    }
+  }'
+
+PROJECT_ITEMS_USER_QUERY='
+  query($login:String!,$number:Int!,$first:Int!,$after:String){
+    user(login:$login){
+      projectV2(number:$number){
+        '"$PROJECT_ITEMS_FRAGMENT"'
+      }
+    }
+  }'
+
+PROJECT_ITEMS_ORG_QUERY='
+  query($login:String!,$number:Int!,$first:Int!,$after:String){
+    organization(login:$login){
+      projectV2(number:$number){
+        '"$PROJECT_ITEMS_FRAGMENT"'
+      }
+    }
+  }'
+
 fallback_items_for_search() {
   [ -n "$QUERY" ] || { printf '[]\n'; return 0; }
 
@@ -282,7 +420,11 @@ raw_json=$(
     --owner "$OWNER" \
     --limit "$LIMIT" \
     --format json
-) || exit $?
+) || {
+  project_error=$?
+  printf 'studio-project-state: project item-list failed; retrying with direct ProjectV2 GraphQL reader\n' >&2
+  raw_json=$(graphql_project_items "$LIMIT") || exit "$project_error"
+}
 
 items_json=$(
   printf '%s\n' "$raw_json" | jq -c --arg q "$QUERY" --arg project_status "$PROJECT_STATUS" '
@@ -300,7 +442,7 @@ items_json=$(
         size: field("Size"),
         sibling_host_reviewed: field("Sibling host reviewed"),
         labels: (.labels // []),
-        milestone: (.milestone.title // .milestone // null)
+        milestone: (if ((.milestone // null) | type) == "object" then .milestone.title else (.milestone // null) end)
       };
     def haystack:
       [
