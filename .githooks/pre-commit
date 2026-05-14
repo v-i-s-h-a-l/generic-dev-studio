@@ -37,7 +37,11 @@
 #       `register_artifact` or an approved janitor (#710 / T-R004, #849).
 #   3.  privacy gate — reject if staged diff leaks another project's runtime.
 #
-# Main-branch commit guard bypass: `STUDIO_BYPASS_MAIN_COMMIT_GUARD=1 git commit ...`.
+# Base-branch commit guard (extended): refuses commits on main/master/trunk/
+# develop and on the per-project release base resolved from the canonical
+# branch_policy.default_base feature-config value. Bypass:
+# `STUDIO_BYPASS_BRANCH_POLICY=1 git commit ...` (unified) or the legacy
+# `STUDIO_BYPASS_MAIN_COMMIT_GUARD=1`. See _shared/standards/branch-discipline.md.
 # Chain workflow docs guard bypass: `STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1 git commit ...`.
 # HTML theme guard bypass: `STUDIO_BYPASS_HTML_THEME_GUARD=1 git commit ...`.
 # Runtime path lint bypass: `STUDIO_BYPASS_RUNTIME_PATH_LINT=1 git commit ...`.
@@ -58,6 +62,8 @@ PRECOMMIT_STARTED_AT=$(date +%s)
 
 # shellcheck source=lib-ledger.sh
 . "$SCRIPTS/lib-ledger.sh" 2>/dev/null || true
+# shellcheck source=lib-feature-branch-policy.sh
+. "$SCRIPTS/lib-feature-branch-policy.sh" 2>/dev/null || true
 
 emit_precommit_duration() {
   set +e
@@ -78,17 +84,51 @@ emit_precommit_duration() {
 
 trap 'rc=$?; emit_precommit_duration "$rc"' EXIT
 
+# Extended base-branch guard. The canonical list (main/master/trunk/develop)
+# is augmented with the per-project release base read from the feature-config
+# file owned by manager-feature-config (T-R001). The unified
+# STUDIO_BYPASS_BRANCH_POLICY override is documented in
+# _shared/standards/branch-discipline.md and subsumes the legacy
+# STUDIO_BYPASS_MAIN_COMMIT_GUARD bypass; both are honored for compatibility.
 branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
-case "$branch" in
-  main|master|trunk|develop)
-    if [ "${STUDIO_BYPASS_MAIN_COMMIT_GUARD:-0}" != "1" ]; then
-      printf 'pre-commit: refusing to commit on local %s; create a feature worktree from origin/main instead\n' "$branch" >&2
-      printf 'bypass (emergencies only): STUDIO_BYPASS_MAIN_COMMIT_GUARD=1 git commit ...\n' >&2
-      exit 1
+configured_base=""
+# shellcheck source=../scripts/lib-paths.sh
+. "$SCRIPTS/lib-paths.sh" 2>/dev/null || true
+if command -v resolve_studio_home_for_login_home >/dev/null 2>&1 \
+   && command -v resolve_project >/dev/null 2>&1; then
+  _bd_home=$(resolve_studio_home_for_login_home "${HOME:-}" 2>/dev/null || true)
+  _bd_project=$(resolve_project 2>/dev/null || true)
+  if [ -n "$_bd_home" ] && [ -n "$_bd_project" ]; then
+    _bd_cfg="${STUDIO_FEATURE_CONFIG_FILE:-$_bd_home/$_bd_project/config/features.env}"
+    if [ -f "$_bd_cfg" ]; then
+      # shellcheck disable=SC1090
+      . "$_bd_cfg" 2>/dev/null || true
+      if command -v feature_branch_policy_default_base >/dev/null 2>&1; then
+        configured_base=$(feature_branch_policy_default_base)
+      else
+        configured_base="${STUDIO_BRANCH_POLICY_DEFAULT_BASE:-${STUDIO_RELEASE_BRANCH_DEFAULT_BASE:-}}"
+      fi
     fi
-    printf 'pre-commit: STUDIO_BYPASS_MAIN_COMMIT_GUARD=1 — allowing commit on local %s\n' "$branch" >&2
-    ;;
+  fi
+fi
+
+base_match=0
+case "$branch" in
+  main|master|trunk|develop) base_match=1 ;;
 esac
+if [ "$base_match" -eq 0 ] && [ -n "$configured_base" ] && [ "$branch" = "$configured_base" ]; then
+  base_match=1
+fi
+
+if [ "$base_match" -eq 1 ]; then
+  if [ "${STUDIO_BYPASS_BRANCH_POLICY:-0}" = "1" ] || [ "${STUDIO_BYPASS_MAIN_COMMIT_GUARD:-0}" = "1" ]; then
+    printf 'pre-commit: STUDIO_BYPASS_BRANCH_POLICY=1 (or STUDIO_BYPASS_MAIN_COMMIT_GUARD=1) — allowing commit on local %s\n' "$branch" >&2
+  else
+    printf 'pre-commit: refusing to commit on local %s; create a feature worktree from origin/%s instead (see _shared/standards/branch-discipline.md)\n' "$branch" "$branch" >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_BRANCH_POLICY=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
 
 # Gate 1 — regenerate manifest + restage if it changed.
 if [ -x "$SCRIPTS/update-surface-manifest.sh" ]; then

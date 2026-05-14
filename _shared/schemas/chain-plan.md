@@ -35,10 +35,13 @@ execution_policy:
   offload_economics: required
 chains:
   - name: release-bearing-chain-policy
-    source_branch: main
-    # base remains accepted as a backwards-compatible alias for source_branch.
+    base_ref: main
+    # source_branch, target_base, and base remain accepted as v1 aliases of base_ref.
+    independent: false
+    # parent_branch is the v2 alias used by stacked chains; conflicts with base_ref are rejected.
     branch: feature/release-bearing-chain-policy
-    expected_source_sha: 0190f52a90007f018aaa77fe8fa99bbb00000000
+    base_sha: 0190f52a90007f018aaa77fe8fa99bbb00000000
+    # expected_source_sha and source_sha remain accepted as v1 aliases of base_sha.
     host: auto
     approved_release_id: 0190f52a-9000-7f01-8aaa-77fe8fa99bbb
     sync_strategy: rebase
@@ -69,11 +72,16 @@ chains:
 | `rule_packs` | no | `[]` | Global selective rule-pack request. Accepts a string, list, or `{required, optional, advisory, disabled}` object. |
 | `execution_policy` | no | default | Global execution contract block for future policy resolution. Current runners treat it as manifest data until routing implementation projects it. |
 | `chains[].name` | yes | - | Stable chain name; also drives default branch and worktree slugs. |
-| `chains[].source_branch` | no | `main` | Explicit task source branch and final PR base. Chain branches are created from `origin/<source_branch>`, issue branches are created from the chain branch, and PR creation uses this branch as `--base`. |
-| `chains[].base` | no | `main` | Backwards-compatible alias for `source_branch`. If both are present they must name the same branch, otherwise the runner rejects the manifest as ambiguous. |
-| `chains[].target_base` | no | - | Compatibility synonym for `source_branch` for generated manifests that use target-base wording. It must not conflict with `source_branch` or `base`. |
-| `chains[].expected_source_sha` / `chains[].source_sha` | no | - | Optional stale-source guard. When present, mechanical gates and PR finalization verify the selected source branch still points at the expected SHA. |
-| `chains[].branch` | no | `feature/<name>` | Chain branch. It must not equal the source branch/PR base. |
+| `chains[].base_ref` | no | resolves to `parent_branch`, `source_branch`, `target_base`, or `base` if absent; falls back to `main` | v2 canonical name for the chain's source/PR base branch. Chain branches are created from `origin/<base_ref>`, issue branches are created from the chain branch, and PR creation uses this branch as `--base`. |
+| `chains[].base_sha` | no | resolves to `parent_sha`, `expected_source_sha`, or `source_sha` if absent | v2 canonical name for the stale-source guard SHA. When present, mechanical gates and PR finalization verify the selected base branch still points at this SHA. `manager plan-chain` records the current `origin/<base_ref>` SHA here on generation. |
+| `chains[].parent_branch` | no | - | v2 alias of `base_ref` for chains stacked on a parent chain. Must not be set when `independent` is `true`. If both `parent_branch` and `base_ref` (or any v1 source alias) are present, they must name the same branch — otherwise the runner rejects the manifest as ambiguous. |
+| `chains[].parent_sha` | no | - | v2 alias of `base_sha` for stacked chains. Conflicting `parent_sha` and `base_sha` (or v1 SHA aliases) produce a typed manifest/preflight failure. |
+| `chains[].independent` | no | `false` | When `false`, the chain is stacked on the selected parent/source branch and must carry parent branch metadata. When `true`, the chain has no parent-chain dependency and `parent_branch`/`parent_sha` must not be set; the runner still uses `base_ref` (defaulting to `main`) for PR targeting. |
+| `chains[].source_branch` | no | `main` | v1 alias of `base_ref`. Conflicts with `base_ref`/`parent_branch`/`target_base`/`base` produce a typed manifest/preflight failure. |
+| `chains[].base` | no | `main` | v1 alias of `base_ref`. Conflicts with `base_ref`/`parent_branch`/`source_branch`/`target_base` produce a typed manifest/preflight failure. |
+| `chains[].target_base` | no | - | v1 alias of `base_ref` for generated manifests that use target-base wording. Conflicts produce a typed manifest/preflight failure. |
+| `chains[].expected_source_sha` / `chains[].source_sha` | no | - | v1 SHA aliases. Conflicts with `base_sha`/`parent_sha` (or with each other) produce a typed manifest/preflight failure. |
+| `chains[].branch` | no | `feature/<name>` | Chain branch. It must not equal the resolved base ref. |
 | `chains[].host` | no | `auto` | `auto` resolves to the runner default or `--host`. |
 | `chains[].approved_release_id` | no | `null` | Marks the chain as release-bearing. When present, each completed leaf is checked before integration for ancestry back to its launch chain commit and for merge commits introduced in the leaf. |
 | `chains[].sync_strategy` | no | `rebase` | Leaf integration strategy. `rebase` preserves existing behavior; `squash` is used only when this field explicitly says `squash`. |
@@ -82,6 +90,53 @@ chains:
 | `chains[].execution_policy` | no | default | Optional execution contract block for build/test affinity, DerivedData scope, local-manager preference, queue wait, retention, and offload economics. See `_shared/contracts/ios-isolated-execution.md`. |
 | `chains[].rule_packs` | no | inherited | Chain-scoped selective rule-pack request. |
 | `chains[].issues[]` | yes | - | Either an integer issue number or an object with `number`/`issue`, optional `dependencies`/`depends_on`, and optional `rule_packs`. Scalar issue lists are sequential by default. |
+
+## Branch-discipline (v2) precedence and drift
+
+The chain shape carries both v2 branch-discipline fields (`base_ref`, `base_sha`,
+`parent_branch`, `parent_sha`, `independent`) and the v1 aliases
+(`source_branch`, `base`, `target_base`, `expected_source_sha`, `source_sha`).
+The v2 fields are additive — runs that resume across the v1→v2 transition keep
+working.
+
+Source/base-ref resolution (highest precedence first):
+
+1. `base_ref`
+2. `parent_branch` (treated as the parent chain's branch when `independent` is
+   `false`)
+3. `source_branch`
+4. `target_base`
+5. `base`
+6. default `main`
+
+SHA resolution (highest precedence first):
+
+1. `base_sha`
+2. `parent_sha`
+3. `expected_source_sha`
+4. `source_sha`
+5. unset (no drift check at preflight/launch/resume)
+
+If two fields at different precedence layers carry conflicting values, the
+runner rejects the manifest with a typed `manifest_branch_discipline_conflict`
+preflight failure rather than silently picking one. The same rule applies when
+`independent: true` is paired with a non-empty `parent_branch` or `parent_sha`;
+that combination is rejected as ambiguous.
+
+`manager plan-chain` resolves `base_ref` from CLI flags and the surrounding
+environment, then records the current `origin/<base_ref>` SHA into the
+generated manifest as `base_sha`. If the user supplied an expected SHA via
+`--base-sha`/`STUDIO_PLAN_CHAIN_EXPECTED_BASE_SHA`, the resolved SHA must
+match — otherwise plan-chain halts with `base_branch_advanced` unless
+`STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT=1` is set as the documented user-controlled
+override.
+
+`manager work-chain` / `studio-chain-runner` perform the same drift check at
+launch (`live_preflight`) by comparing the recorded `base_sha` against
+`origin/<base_ref>`. `studio-chain-runner --resume` re-runs the check after a
+pause and emits the same typed halt when drift is detected. The
+`STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT=1` override applies at every layer; it
+emits a stderr audit line when set and is never used silently by an assistant.
 
 ## Preflight
 

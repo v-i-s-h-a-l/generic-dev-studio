@@ -35,4 +35,21 @@ if grep -Fq '[ -d "$chain_worktree/.git" ]' "$ROOT/scripts/studio-chain-runner.s
   fail "runner still uses .git directory shape to detect chain worktrees"
 fi
 
+grep -Fq 'STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT' "$ROOT/scripts/studio-chain-runner.sh" \
+  || fail "runner is missing the documented base SHA drift bypass env"
+
+grep -Fq '.base_ref // .source_branch // .base' "$ROOT/scripts/studio-chain-runner.sh" \
+  || fail "runner is missing the v2 base_ref resolution at preflight/launch"
+
+grep -Fq '.base_sha // .expected_source_sha // .source_sha' "$ROOT/scripts/studio-chain-runner.sh" \
+  || fail "runner is missing the v2 base_sha resolution at preflight/launch"
+
+grep -Eq 'live_preflight\b' "$ROOT/scripts/studio-chain-runner.sh" \
+  || fail "runner is missing live_preflight"
+
+# Resume re-runs prepare_plan and live_preflight against the recorded base ref/sha.
+# Guard against a regression that removes the resume drift check entirely.
+grep -nE 'live_preflight "\$PLAN_JSON"' "$ROOT/scripts/studio-chain-runner.sh" | grep -q . \
+  || fail "resume path no longer invokes live_preflight on the plan"
+
 printf 'PASS: chain resume worktree detection\n'

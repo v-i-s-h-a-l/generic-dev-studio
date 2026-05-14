@@ -29,6 +29,13 @@ Role help: bare `help` shows the router-level role index unless a session-local 
 
 `checkpoint` and `resume-checkpoint` route through the selected role. Bare `/dev-studio checkpoint` invocations land in `manager`; role-qualified invocations such as `/dev-studio <role> checkpoint` are owned by that role. Create/update checkpoint commands print the checkpoint id, and that id is enough for `resume-checkpoint`. Checkpoints do not replace summaries, verdicts, release packets, QA/flow checklists, perf verdicts, or event logs.
 
+<!-- v2-dev-studio:manager-context-header -->
+## Manager Context Header
+
+All `/dev-studio manager …` surface invocations render the manager context header before any side effect or further prompt. Hosts source `scripts/lib-manager-context-header.sh` and emit either `manager_context_header_emit_text <repo-root>` (default human-readable) or `manager_context_header_emit_json <repo-root>` (machine-readable). The header carries the project, current branch, dirty flag, resolved `base_ref`/`base_sha`, the `on_protected_base` flag, and the project's branch-policy fields (`default_base`, `release_branch_pattern`, `merge_target_to_main`, `allow_feature_off_feature`) sourced from `~/.dev-studio/<project>/config/features.env` (override: `STUDIO_FEATURE_CONFIG_FILE`).
+
+The header is informational; it does not gate or mutate. Surface enforcement still lives in the pre-commit base-branch guard and the `pr-merge-finalize` merge-target gate (`_shared/standards/branch-discipline.md`). Manager ingest reuses the same primitive as an explicit source-branch pre-flight: `scripts/dev-studio-ingest-resolve.sh` embeds the header under `manager_context_header` and a `source_branch_preflight` block in its JSON output, and the host surfaces both before any ingest write. `--scope studio`, `--scope project`, and `--to <project-slug>` remain the documented non-interactive override surface.
+
 <!-- v2-dev-studio:manager-analyze -->
 ## Manager Analyze Routing
 

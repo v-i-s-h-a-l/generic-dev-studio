@@ -206,12 +206,43 @@ studio_git_transport_fetch origin "$base_ref" >/dev/null 2>&1 || true
 studio_git_transport_fetch origin "$head_ref" >/dev/null 2>&1 || true
 
 if ! feature_branch_policy_evaluate "$(current_worktree_path)" "$head_ref" "$base_ref" "PR head branch"; then
-  if [ "${STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE:-0}" = "1" ]; then
-    printf 'warning: %s (override STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1)\n' "$FEATURE_BRANCH_POLICY_DETAIL" >&2
+  if [ "${STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE:-0}" = "1" ] || [ "${STUDIO_BYPASS_BRANCH_POLICY:-0}" = "1" ]; then
+    printf 'warning: %s (override STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 or STUDIO_BYPASS_BRANCH_POLICY=1)\n' "$FEATURE_BRANCH_POLICY_DETAIL" >&2
   else
     printf 'pr-merge-finalize: %s\n' "$FEATURE_BRANCH_POLICY_DETAIL" >&2
-    printf 'pr-merge-finalize: rebase or retarget the branch before merging, or set STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 after explicit user approval\n' >&2
+    printf 'pr-merge-finalize: rebase or retarget the branch before merging, or set STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 (or STUDIO_BYPASS_BRANCH_POLICY=1) after explicit user approval\n' >&2
     exit 1
+  fi
+fi
+
+# Merge-target policy gate (see _shared/standards/branch-discipline.md).
+# Sources the per-project feature-config file (owned by T-R001) and enforces
+# STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN against the PR's base ref. The
+# expected target is the canonical branch_policy.default_base value.
+_branch_policy_load_features_env() {
+  local studio_home project config_file
+  studio_home=$(resolve_studio_home_for_login_home "${HOME:-}" 2>/dev/null || true)
+  [ -n "$studio_home" ] || return 0
+  project=$(resolve_project 2>/dev/null || true)
+  [ -n "$project" ] || return 0
+  config_file="${STUDIO_FEATURE_CONFIG_FILE:-$studio_home/$project/config/features.env}"
+  [ -f "$config_file" ] || return 0
+  # shellcheck disable=SC1090
+  . "$config_file" 2>/dev/null || true
+}
+_branch_policy_load_features_env
+
+if feature_branch_policy_merge_target_to_main; then
+  expected_base=$(feature_branch_policy_default_base)
+  if [ "$base_ref" != "$expected_base" ]; then
+    detail="PR base ref $base_ref does not match configured merge target $expected_base"
+    if [ "${STUDIO_BYPASS_BRANCH_POLICY:-0}" = "1" ]; then
+      printf 'warning: %s (override STUDIO_BYPASS_BRANCH_POLICY=1)\n' "$detail" >&2
+    else
+      printf 'pr-merge-finalize: %s\n' "$detail" >&2
+      printf 'pr-merge-finalize: retarget the PR to %s, or set STUDIO_BYPASS_BRANCH_POLICY=1 after explicit user approval (see _shared/standards/branch-discipline.md)\n' "$expected_base" >&2
+      exit 1
+    fi
   fi
 fi
 

@@ -94,6 +94,20 @@ grep -q 'create or map GitHub issues' "$TMPROOT/discover.out" || {
 project_repo="$TMPROOT/project"
 mkdir -p "$project_repo"
 git -C "$project_repo" init -q
+git -C "$project_repo" config user.name "Fixture"
+git -C "$project_repo" config user.email "fixture@example.com"
+git -C "$project_repo" checkout -q -b main
+printf 'base\n' > "$project_repo/README.md"
+git -C "$project_repo" add README.md
+git -C "$project_repo" commit -q -m "base"
+git -C "$project_repo" branch feature/parent
+main_sha=$(git -C "$project_repo" rev-parse main)
+git -C "$project_repo" checkout -q feature/parent
+printf 'parent\n' > "$project_repo/parent.txt"
+git -C "$project_repo" add parent.txt
+git -C "$project_repo" commit -q -m "parent work"
+parent_sha=$(git -C "$project_repo" rev-parse feature/parent)
+git -C "$project_repo" checkout -q main
 
 missing_repo_manifest="$TMPROOT/missing-issue-repo.yaml"
 cat >"$missing_repo_manifest" <<YAML
@@ -171,5 +185,157 @@ if grep -q 'STUDIO_BYPASS_HOST_RESOLVER' "$TMPROOT/auto-bypass.out"; then
   cat "$TMPROOT/auto-bypass.out" >&2
   fail "auto host bypass leaked the retired bypass env name"
 fi
+
+v2_manifest="$TMPROOT/v2-chain.yaml"
+cat >"$v2_manifest" <<YAML
+schema_version: 1
+target_repo_root: $project_repo
+issue_repo: example/project
+chains:
+  - name: v2-chain
+    base_ref: main
+    independent: false
+    branch: feature/v2-chain
+    host: codex
+    issues: [74803]
+YAML
+
+: > "$GH_LOG"
+PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" "$RUNNER" "$v2_manifest" --dry-run >"$TMPROOT/v2.out" 2>&1
+grep -qF -- '- Source branch: `main`' "$TMPROOT/v2.out" || {
+  cat "$TMPROOT/v2.out" >&2
+  fail "v2 base_ref was not resolved as the source branch"
+}
+grep -qF -- '- Expected base SHA: `not pinned`' "$TMPROOT/v2.out" || {
+  cat "$TMPROOT/v2.out" >&2
+  fail "explain_plan should surface 'not pinned' when v2 base_sha is omitted"
+}
+grep -qF -- '- Independent: `false`' "$TMPROOT/v2.out" || {
+  cat "$TMPROOT/v2.out" >&2
+  fail "independent flag was not surfaced in explain_plan output"
+}
+
+stacked_parent_manifest="$TMPROOT/stacked-parent-chain.yaml"
+cat >"$stacked_parent_manifest" <<YAML
+schema_version: 1
+target_repo_root: $project_repo
+issue_repo: example/project
+chains:
+  - name: stacked-parent-chain
+    base_ref: main
+    base_sha: $main_sha
+    independent: false
+    parent_branch: feature/parent
+    parent_sha: $parent_sha
+    branch: feature/stacked-parent-chain
+    host: codex
+    issues: [74807]
+YAML
+
+PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" STUDIO_BRANCH_POLICY_ALLOW_FEATURE_OFF_FEATURE=1 "$RUNNER" "$stacked_parent_manifest" --dry-run >"$TMPROOT/stacked-parent.out" 2>&1
+grep -qF -- '- Source branch: `main`' "$TMPROOT/stacked-parent.out" || {
+  cat "$TMPROOT/stacked-parent.out" >&2
+  fail "stacked parent manifest did not keep base_ref as the source branch"
+}
+grep -qF -- '- Parent branch: `feature/parent`' "$TMPROOT/stacked-parent.out" || {
+  cat "$TMPROOT/stacked-parent.out" >&2
+  fail "stacked parent manifest did not surface parent_branch metadata"
+}
+
+parent_only_manifest="$TMPROOT/parent-only-chain.yaml"
+cat >"$parent_only_manifest" <<YAML
+schema_version: 1
+target_repo_root: $project_repo
+issue_repo: example/project
+chains:
+  - name: parent-only-chain
+    independent: false
+    parent_branch: feature/parent
+    parent_sha: $parent_sha
+    branch: feature/parent-only-chain
+    host: codex
+    issues: [74808]
+YAML
+
+PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" STUDIO_BRANCH_POLICY_ALLOW_FEATURE_OFF_FEATURE=1 "$RUNNER" "$parent_only_manifest" --dry-run >"$TMPROOT/parent-only.out" 2>&1
+grep -qF -- '- Source branch: `feature/parent`' "$TMPROOT/parent-only.out" || {
+  cat "$TMPROOT/parent-only.out" >&2
+  fail "parent-only stacked manifest did not use parent_branch as source fallback"
+}
+grep -qF -- '- Expected base SHA: `'"$parent_sha"'`' "$TMPROOT/parent-only.out" || {
+  cat "$TMPROOT/parent-only.out" >&2
+  fail "parent-only stacked manifest did not use parent_sha as source SHA fallback"
+}
+
+conflict_manifest="$TMPROOT/conflict-chain.yaml"
+cat >"$conflict_manifest" <<YAML
+schema_version: 1
+target_repo_root: $project_repo
+issue_repo: example/project
+chains:
+  - name: conflict-chain
+    base_ref: main
+    source_branch: develop
+    branch: feature/conflict-chain
+    host: codex
+    issues: [74804]
+YAML
+
+if PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" "$RUNNER" "$conflict_manifest" --dry-run >"$TMPROOT/conflict.out" 2>&1; then
+  cat "$TMPROOT/conflict.out" >&2
+  fail "v1/v2 base ref conflict unexpectedly passed"
+fi
+grep -q 'manifest_branch_discipline_conflict' "$TMPROOT/conflict.out" || {
+  cat "$TMPROOT/conflict.out" >&2
+  fail "v1/v2 base ref conflict did not emit typed manifest_branch_discipline_conflict"
+}
+
+sha_conflict_manifest="$TMPROOT/sha-conflict-chain.yaml"
+cat >"$sha_conflict_manifest" <<YAML
+schema_version: 1
+target_repo_root: $project_repo
+issue_repo: example/project
+chains:
+  - name: sha-conflict-chain
+    base_ref: main
+    base_sha: 0123456789abcdef0123456789abcdef01234567
+    expected_source_sha: fedcba9876543210fedcba9876543210fedcba98
+    branch: feature/sha-conflict-chain
+    host: codex
+    issues: [74805]
+YAML
+
+if PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" "$RUNNER" "$sha_conflict_manifest" --dry-run >"$TMPROOT/sha-conflict.out" 2>&1; then
+  cat "$TMPROOT/sha-conflict.out" >&2
+  fail "v1/v2 SHA conflict unexpectedly passed"
+fi
+grep -q 'manifest_branch_discipline_conflict' "$TMPROOT/sha-conflict.out" || {
+  cat "$TMPROOT/sha-conflict.out" >&2
+  fail "v1/v2 SHA conflict did not emit typed manifest_branch_discipline_conflict"
+}
+
+independent_conflict_manifest="$TMPROOT/independent-conflict-chain.yaml"
+cat >"$independent_conflict_manifest" <<YAML
+schema_version: 1
+target_repo_root: $project_repo
+issue_repo: example/project
+chains:
+  - name: independent-conflict-chain
+    base_ref: main
+    independent: true
+    parent_branch: feature/parent
+    branch: feature/independent-conflict-chain
+    host: codex
+    issues: [74806]
+YAML
+
+if PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" "$RUNNER" "$independent_conflict_manifest" --dry-run >"$TMPROOT/independent-conflict.out" 2>&1; then
+  cat "$TMPROOT/independent-conflict.out" >&2
+  fail "independent=true with parent_branch unexpectedly passed"
+fi
+grep -q 'manifest_branch_discipline_conflict' "$TMPROOT/independent-conflict.out" || {
+  cat "$TMPROOT/independent-conflict.out" >&2
+  fail "independent=true + parent_branch did not emit typed manifest_branch_discipline_conflict"
+}
 
 printf 'PASS: chain manifest preflight\n'
