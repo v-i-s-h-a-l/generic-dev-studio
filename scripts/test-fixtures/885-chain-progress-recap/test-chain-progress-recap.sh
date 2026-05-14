@@ -25,5 +25,13 @@ grep -Fq 'Boundary: \($boundary)' "$RUNNER" \
   || fail "recap renderer does not include boundary"
 grep -Fq 'Preferred command if this session stops' "$RUNNER" \
   || fail "recap renderer does not include resume command"
+grep -Fq 'emit_chain_progress_recaps()' "$RUNNER" \
+  || fail "runner is missing recap emission helper"
+grep -Fq 'emit_chain_progress_recaps "before-run" ""' "$RUNNER" \
+  || fail "runner does not emit a before-run recap"
+grep -Fq 'emit_chain_progress_recaps "halt" "$halt_record"' "$RUNNER" \
+  || fail "runner does not emit a halt recap"
+grep -Fq 'emit_chain_progress_recaps "finish" ""' "$RUNNER" \
+  || fail "runner does not emit a finish recap"
 
 printf 'PASS: chain progress recap generator\n'
