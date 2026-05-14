@@ -265,6 +265,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-project-state.sh # Project board reader; supports --status, --search, --by-track, --by-phase, --needs-review
   studio-project-add.sh # add/update an issue on the Studio v2 Project board with planning fields
   studio-gh-issue-new.sh # create a Studio issue and add it to the Project board
+  studio-project-pulse.sh # manual Project board pulse: diff current state against the last on-disk snapshot, surface added/closed/started/needs-review
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   compose-build-release-message.sh # taxonomy-aware TestFlight/App Store bullet composer
   appstore-watch.sh     # polls ASC; publishes release + promotes PR only at READY_FOR_SALE after release approval is recorded
