@@ -218,7 +218,7 @@ fi
 # Merge-target policy gate (see _shared/standards/branch-discipline.md).
 # Sources the per-project feature-config file (owned by T-R001) and enforces
 # STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN against the PR's base ref. The
-# expected target falls back to STUDIO_RELEASE_BRANCH_DEFAULT_BASE then "main".
+# expected target is the canonical branch_policy.default_base value.
 _branch_policy_load_features_env() {
   local studio_home project config_file
   studio_home=$(resolve_studio_home_for_login_home "${HOME:-}" 2>/dev/null || true)
@@ -234,7 +234,7 @@ _branch_policy_load_features_env
 
 case "${STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN:-}" in
   1|true|TRUE|yes|YES|on|ON)
-    expected_base="${STUDIO_RELEASE_BRANCH_DEFAULT_BASE:-main}"
+    expected_base=$(feature_branch_policy_default_base)
     if [ "$base_ref" != "$expected_base" ]; then
       detail="PR base ref $base_ref does not match configured merge target $expected_base"
       if [ "${STUDIO_BYPASS_BRANCH_POLICY:-0}" = "1" ]; then

@@ -24,6 +24,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=lib-feature-branch-policy.sh
 . "$SCRIPT_DIR/lib-feature-branch-policy.sh"
+# shellcheck source=lib-worktree-marker.sh
+. "$SCRIPT_DIR/lib-worktree-marker.sh"
 
 TASK_ID="${1:?usage: task-worktree-setup.sh <task-id> <repo-root>}"
 REPO_ROOT="${2:?repo-root required}"
@@ -86,6 +88,10 @@ else
     printf 'error: git worktree add %s -b %s %s failed\n' "$WORKTREE" "$BRANCH" "$ORIG_HEAD" >&2
     exit 2
   fi
+  worktree_marker_write "$WORKTREE" worker --project "$PROJECT" --task-id "$TASK_ID" --host "${STUDIO_HOST:-}" --pid "$$" || {
+    printf 'error: writing worktree marker for %s failed\n' "$WORKTREE" >&2
+    exit 2
+  }
 fi
 
 printf 'export PROJECT=%s\n' "$PROJECT"

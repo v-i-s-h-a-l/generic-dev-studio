@@ -38,8 +38,8 @@
 #   3.  privacy gate — reject if staged diff leaks another project's runtime.
 #
 # Base-branch commit guard (extended): refuses commits on main/master/trunk/
-# develop and on the per-project release base resolved from the feature-config
-# file (STUDIO_RELEASE_BRANCH_DEFAULT_BASE). Bypass:
+# develop and on the per-project release base resolved from the canonical
+# branch_policy.default_base feature-config value. Bypass:
 # `STUDIO_BYPASS_BRANCH_POLICY=1 git commit ...` (unified) or the legacy
 # `STUDIO_BYPASS_MAIN_COMMIT_GUARD=1`. See _shared/standards/branch-discipline.md.
 # Chain workflow docs guard bypass: `STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1 git commit ...`.
@@ -62,6 +62,8 @@ PRECOMMIT_STARTED_AT=$(date +%s)
 
 # shellcheck source=lib-ledger.sh
 . "$SCRIPTS/lib-ledger.sh" 2>/dev/null || true
+# shellcheck source=lib-feature-branch-policy.sh
+. "$SCRIPTS/lib-feature-branch-policy.sh" 2>/dev/null || true
 
 emit_precommit_duration() {
   set +e
@@ -101,7 +103,11 @@ if command -v resolve_studio_home_for_login_home >/dev/null 2>&1 \
     if [ -f "$_bd_cfg" ]; then
       # shellcheck disable=SC1090
       . "$_bd_cfg" 2>/dev/null || true
-      configured_base="${STUDIO_RELEASE_BRANCH_DEFAULT_BASE:-}"
+      if command -v feature_branch_policy_default_base >/dev/null 2>&1; then
+        configured_base=$(feature_branch_policy_default_base)
+      else
+        configured_base="${STUDIO_BRANCH_POLICY_DEFAULT_BASE:-${STUDIO_RELEASE_BRANCH_DEFAULT_BASE:-}}"
+      fi
     fi
   fi
 fi
