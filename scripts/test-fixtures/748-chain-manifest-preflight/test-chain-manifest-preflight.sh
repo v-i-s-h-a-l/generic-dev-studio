@@ -101,6 +101,13 @@ printf 'base\n' > "$project_repo/README.md"
 git -C "$project_repo" add README.md
 git -C "$project_repo" commit -q -m "base"
 git -C "$project_repo" branch feature/parent
+main_sha=$(git -C "$project_repo" rev-parse main)
+git -C "$project_repo" checkout -q feature/parent
+printf 'parent\n' > "$project_repo/parent.txt"
+git -C "$project_repo" add parent.txt
+git -C "$project_repo" commit -q -m "parent work"
+parent_sha=$(git -C "$project_repo" rev-parse feature/parent)
+git -C "$project_repo" checkout -q main
 
 missing_repo_manifest="$TMPROOT/missing-issue-repo.yaml"
 cat >"$missing_repo_manifest" <<YAML
@@ -216,8 +223,10 @@ issue_repo: example/project
 chains:
   - name: stacked-parent-chain
     base_ref: main
+    base_sha: $main_sha
     independent: false
     parent_branch: feature/parent
+    parent_sha: $parent_sha
     branch: feature/stacked-parent-chain
     host: codex
     issues: [74807]

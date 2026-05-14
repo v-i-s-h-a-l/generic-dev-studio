@@ -5476,10 +5476,9 @@ resolve_chain_expected_source_sha() {
     exit 2
   fi
 
-  for label in base_sha parent_sha expected_source_sha source_sha; do
+  for label in base_sha expected_source_sha source_sha; do
     case "$label" in
       base_sha) value="$base_sha" ;;
-      parent_sha) value="$parent_sha" ;;
       expected_source_sha) value="$expected_source_sha" ;;
       source_sha) value="$source_sha" ;;
     esac
