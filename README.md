@@ -262,6 +262,9 @@ scripts/                # multi-worker fleet (BETA)
   manager-analyze.sh    # /dev-studio manager analyze: studio-checkout analysis + feedback triage
   ingest-feedback.sh    # routes studio-feedback records to analysis + GH issue create/comment/defer
   analyze-feedback-ingest.sh # studio feedback triage: consolidate into existing/new GH issues before processed/
+  studio-project-state.sh # Project board reader; supports --status, --search, --by-track, --by-phase, --needs-review
+  studio-project-add.sh # add/update an issue on the Studio v2 Project board with planning fields
+  studio-gh-issue-new.sh # create a Studio issue and add it to the Project board
   detect-edits.sh       # sweep-time blind-spot detector — brief_edited + debrief_edited
   compose-build-release-message.sh # taxonomy-aware TestFlight/App Store bullet composer
   appstore-watch.sh     # polls ASC; publishes release + promotes PR only at READY_FOR_SALE after release approval is recorded
