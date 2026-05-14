@@ -28,11 +28,14 @@ itself.
 | `github_home` | yes for GitHub operations | Home/config root used for `gh` and Git credential lookups. May equal `auth_home`, but is modeled separately. | Host profile |
 | `runtime_owner` | yes | Owner of writes: `project`, `machine`, `host`, `reviewer`, or `temporary`. | Resolver |
 | `data_visibility` | yes | Visibility class: `public-repo`, `private-runtime`, `host-auth`, `secret`, or `temporary`. | Resolver or caller |
+| `project_board` | yes for PM-surface operations | Per-project Projects v2 board identity (`owner_kind`, `owner_login`, `project_number`, `linked_repo`, allowed `tracks`, allowed `phases`). | Per-project board config under the [PM Surface portability contract](../../PM-SURFACE.md#per-project-project-board-portability-contract) |
 
 Scripts may infer `project_slug` from `repo_root` when the operation is scoped
 to the current repository. Scripts must not infer `studio_home`, `auth_home`, or
 `github_home` from raw ambient `HOME` unless the context resolver has already
 classified that home as safe for the requested ownership and visibility class.
+Scripts must not infer `project_board` from ambient state — see the
+[Project Board Resolution](#project-board-resolution) rules below.
 
 ## Root Types
 
@@ -43,6 +46,8 @@ classified that home as safe for the requested ownership and visibility class.
 | Machine-global runtime | Machine | Private runtime | `~/.dev-studio/.runtime/nodes.json`, machine locks | Resolve from `studio_home`; only machine-shared resources belong here. |
 | Host auth | Host or reviewer | Host auth / secret | Claude, Codex, Gemini, reviewer configs | Resolve from `host_profile`; never copy into Studio state. |
 | GitHub auth | Host or reviewer | Host auth / secret | `gh` config, Git credentials | Use `github_home`; assistant-initiated GitHub calls still go through `scripts/studio-gh.sh`. |
+| Project board config (durable) | Project | Public repo | `profiles/<slug>/project-board.yaml` | Repo-checked board identity and project-defined `Track`/`Phase` value sets. |
+| Project board config (runtime override) | Project | Private runtime | `<studio_home>/<project_slug>/config/project-board.yaml` | Per-machine override of durable board config; overrides MUST be surfaced to the user. |
 | Project checkout | Temporary or project | Public repo plus local diff | Main checkout, issue worktree, chain worktree | Resolve as `repo_root`; never treat it as durable runtime state. |
 | Temporary artifacts | Temporary | Temporary | `$TMPDIR/studio-chain-runner/**`, scratch scans | May be regenerated; any resume-critical reference must also be recorded under durable Studio state. |
 
@@ -74,6 +79,24 @@ read-only, runtime mutation, repo mutation, GitHub operation, delegated host
 spawn, release action, or test/debug fixture. The resolver may only infer paths
 that are safe for that operation class.
 
+## Project Board Resolution
+
+PM-surface operations require a `project_board` envelope field. The resolver
+populates it by walking, in order:
+
+1. Explicit CLI flag, e.g. `--project-board <owner_kind>:<owner_login>:<n>`.
+2. Environment override `STUDIO_PROJECT_BOARD_OVERRIDE=<owner_kind>:<owner_login>:<n>`.
+3. Runtime override file at `<studio_home>/<project_slug>/config/project-board.yaml`.
+4. Durable repo file at `profiles/<slug>/project-board.yaml` inside `repo_root`.
+5. Loud failure naming the missing config and `project_slug`.
+
+The resolver MUST NOT silently fall back to another project's board when the
+current project lacks board config. The field contract — which fields are
+fixed cross-project and which are project-defined — is owned by
+[PM-SURFACE.md §Per-Project Project Board Portability Contract](../../PM-SURFACE.md#per-project-project-board-portability-contract).
+Steps 1 and 2 are user-controlled bypass surfaces and MUST follow the bypass
+policy below.
+
 ## Loud-Failure Rules
 
 The resolver must fail before mutation when:
@@ -87,6 +110,8 @@ The resolver must fail before mutation when:
 - A reviewer profile would inherit the parent host's general auth home.
 - A secret-class path would be written under public repo content.
 - A temporary artifact is recorded as the only resume-critical location.
+- `project_board` is required for the operation but no durable, runtime, or
+  override source supplies it for the current `project_slug`.
 
 Errors should name the missing or unsafe field, the attempted operation class,
 and the user-controlled override if one exists. Errors must not print tokens,
