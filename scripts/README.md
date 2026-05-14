@@ -115,7 +115,8 @@ scripts/codex-worker-exec.sh "<prompt>"                                    # int
 # Release-bearing chain manifests declare approved_release_id plus sync_strategy; rebase is the default, and squash is used only when the manifest explicitly opts in.
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer
 scripts/host-preflight.sh codex /repo                 # gh/git credential proof plus ShellCheck availability before host task work
-scripts/studio-project-state.sh --status Todo         # field-aware backlog reader for the Studio v2 Projects board
+scripts/studio-project-state.sh --status Todo         # field-aware backlog reader for the current project's GitHub Projects v2 board
+scripts/studio-project-state.sh --project-board user:v-i-s-h-a-l:1 --status Todo  # explicit board override; resolver walks CLI flag > STUDIO_PROJECT_BOARD_OVERRIDE > runtime <studio_home>/<slug>/config/project-board.yaml > durable profiles/<slug>/project-board.yaml; loud-fails when no board is configured for the current project (PM-SURFACE.md per-project portability contract). Legacy --owner / --project-number and STUDIO_PROJECT_OWNER / STUDIO_PROJECT_NUMBER are still accepted as peer inputs and synthesize into the canonical owner_kind:owner_login:n token.
 scripts/studio-gh.sh issue list --state open          # gh wrapper for narrow issue lookups; uses context github_home for auth
 scripts/studio-dependency-export.sh --issue 443       # Mermaid graph from native GitHub blocked_by dependencies; no body parsing
 scripts/issue-body-edit.sh 463 --repo owner/repo --body-file generated.md --apply  # guarded issue body replacement; dry-run unless --apply; STUDIO_BYPASS_ISSUE_BODY_GUARD=1 is user-controlled emergency/debug bypass
