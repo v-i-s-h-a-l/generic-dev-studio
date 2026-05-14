@@ -292,6 +292,8 @@ When work lands on `main` that closes an issue, close the issue with a one-line 
 
 When the user asks "what's pending?" / "what's on the list?" / "what's next?" — run `scripts/studio-project-state.sh --status Todo` and surface Project fields (`Status`, `Track`, `Phase`, `Size`, `Sibling host reviewed`) for backlog planning. Use `scripts/studio-gh.sh issue list` only for narrow issue lookups that do not need Project fields. Don't load either list speculatively into context.
 
+When the user asks "what changed on the board?" / "board pulse" / "what's been added or closed?" — run `scripts/studio-project-pulse.sh` (PM-SURFACE.md §Project Pulse Reader). The pulse is manual-only and diffs the current board against the last on-disk snapshot under `~/.dev-studio/<project>/.runtime/state/project-board/`; do not auto-run it on every session, and do not propose wiring it to a cron / LaunchAgent / per-session hook without an explicit cadence decision from the user (#896 non-goal: no noisy notifications).
+
 ## Cross-host phase review (hard rule)
 
 For any multi-issue arc (umbrella + sub-issues), substrate redesign, or batch operation that spans more than one logical unit of work, **enforce sibling-host review at every phase boundary**:
