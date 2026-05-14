@@ -1,0 +1,35 @@
+schema_version: 1
+owner_kind: user
+owner_login: v-i-s-h-a-l
+project_number: 1
+project_title: Studio v2 transition
+linked_repo: v-i-s-h-a-l/generic-dev-studio
+tracks:
+  - A substrate
+  - B PM surface
+  - C agent topology
+  - D chain mode
+  - v1 forge-safety
+  - v1 apollo
+  - backlog
+phases:
+  - B1
+  - B2
+  - B3
+  - B4
+  - A0
+  - A0.5
+  - A1
+  - A2
+  - A3
+  - A4
+  - A5
+  - A6
+  - A7
+  - A8
+  - A9
+  - A10
+  - A11
+  - C
+  - D
+  - v1
