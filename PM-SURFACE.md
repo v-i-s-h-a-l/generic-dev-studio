@@ -34,6 +34,31 @@ flow: `Status`, `Track`, `Phase`, `Size`, and `Sibling host reviewed`. Raw
 but it is not sufficient for backlog planning because it cannot see Project
 fields.
 
+## Project Pulse Reader
+
+For periodic "what changed on the board since last time" reporting, use the
+pulse reader:
+
+```bash
+scripts/studio-project-pulse.sh                      # human pulse to stdout, snapshot advances
+scripts/studio-project-pulse.sh --format md --out ~/.dev-studio/<project>/analysis/<date>-project-pulse.md
+scripts/studio-project-pulse.sh --since none         # baseline snapshot only, no diff
+scripts/studio-project-pulse.sh --quiet              # silent exit when nothing changed (cron-friendly)
+```
+
+Cadence is **manual-only**. The script snapshots the current Project state to
+`~/.dev-studio/<project>/.runtime/state/project-board/<utc>.json` (with a
+`latest.json` symlink) and diffs against the previous snapshot, surfacing
+items added, started, closed, removed-while-open, needing sibling-host
+review, and status changes. It calls `scripts/studio-project-state.sh --json`
+under the hood, so it follows the same board portability contract; no
+Project writes happen during a pulse run.
+
+Wiring the pulse to `/loop`, a LaunchAgent, or a per-chain hook is
+intentionally deferred until manual runs have established the right cadence
+and signal-to-noise ratio (#896 non-goal: no noisy notifications without an
+explicit cadence decision).
+
 ## Project Writer Contract
 
 Studio issue filing should use the Project-aware helper:

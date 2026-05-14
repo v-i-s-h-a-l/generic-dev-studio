@@ -233,6 +233,7 @@ scripts/feedback-retroactive-sweep.sh --project generic-dev-studio --since YYYY-
 scripts/studio-project-state.sh --by-track              # read Studio v2 Project board grouped by Track
 scripts/studio-project-add.sh 123 --track "B PM surface" # add/update an issue on the Studio v2 Project board
 scripts/studio-gh-issue-new.sh --title "..." --body-file issue.md # create a Studio issue and add it to the Project board
+scripts/studio-project-pulse.sh                         # manual Project board pulse (PM-SURFACE.md §Project Pulse Reader); diffs current board state against ~/.dev-studio/<project>/.runtime/state/project-board/latest.json and reports added/closed/started/needs-review (#896); --format human|json|md, --out <path>, --since latest|none|<path>, --no-snapshot, --quiet, --project-board <token>
 
 # Studio PR autopilot primitives (#318):
 scripts/pr-reviewer-eligibility.sh codex-reviewer       # no-prompt/no-secret reviewer preflight + real verdict-emitting smoke gate
