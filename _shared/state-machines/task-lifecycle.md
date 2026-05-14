@@ -119,9 +119,29 @@ stateDiagram-v2
   archived --> [*]
 ```
 
+## Attended Verification Pause
+
+Attended chain runs may pause a task that is otherwise still `in-progress`,
+`self-reviewed`, or `merged` for explicit human verification. The pause is
+not a new task state — it is a typed chain-level halt with
+`reason_id: attended_verification_pending` and `halt_class: human-needed`
+defined in `_shared/contracts/chain-halt-record.schema.json`, and its
+checkpoint shape lives in `_shared/contracts/completion-summary.md`
+§Attended Verification Checkpoint.
+
+While the chain is paused, the task's primary state does not advance. Side
+states behave as usual: `blocked` may be entered if verification depends on
+an external blocker, and `cancelled` remains available for operator abort.
+On operator confirmation, the verified resume route runs the canonical
+closeout inventory and transitions the task forward on the existing edges
+(typically `merged → user-verifying → verified`) without inventing new
+transitions.
+
 ## Related
 
 - `brief-lifecycle.md` — the brief artifact's lifecycle (mostly orthogonal but aligns at `dispatched`).
 - `review-lifecycle.md` — Argus verdict sub-states.
 - `events.md` — `task_state_changed` event catalog entry.
 - `chanakya-principles.md` — user-facing summary (5-state simplified view).
+- `_shared/contracts/chain-halt-record.schema.json` — `attended_verification_pending` reason ID and class mapping.
+- `_shared/contracts/completion-summary.md` — verified resume closeout inventory and durable chain progress recap shape.
