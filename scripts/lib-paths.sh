@@ -135,8 +135,12 @@ resolve_project_board_config_durable() {
 # Per-machine runtime override file for the project board. Overrides the
 # durable repo file during in-flight migrations or machine-local experiments.
 resolve_project_board_config_runtime_for() {
-  local project="${1:?usage: resolve_project_board_config_runtime_for <slug>}"
-  printf '%s\n' "$HOME/.dev-studio/$project/config/project-board.yaml"
+  local project="${1:?usage: resolve_project_board_config_runtime_for <slug> [studio-home]}"
+  local studio_home="${2:-${STUDIO_CONTEXT_STUDIO_HOME:-}}"
+  if [ -z "$studio_home" ]; then
+    studio_home="$HOME/.dev-studio"
+  fi
+  printf '%s\n' "$studio_home/$project/config/project-board.yaml"
 }
 
 resolve_project_board_config_runtime() {

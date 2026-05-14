@@ -344,7 +344,7 @@ _studio_context_project_board() {
 
   if [ -n "$project_slug" ]; then
     local runtime_yaml
-    runtime_yaml=$(resolve_project_board_config_runtime_for "$project_slug")
+    runtime_yaml=$(resolve_project_board_config_runtime_for "$project_slug" "$STUDIO_CONTEXT_STUDIO_HOME")
     if [ -f "$runtime_yaml" ]; then
       token=$(_studio_context_project_board_token_from_file "$runtime_yaml") || return 1
       if [ -n "$token" ]; then
@@ -383,7 +383,7 @@ studio_context_project_board_source_path() {
   case "${STUDIO_CONTEXT_PROJECT_BOARD_SOURCE:-}" in
     runtime_override)
       [ -n "$project_slug" ] || return 1
-      resolve_project_board_config_runtime_for "$project_slug"
+      resolve_project_board_config_runtime_for "$project_slug" "$STUDIO_CONTEXT_STUDIO_HOME"
       ;;
     durable)
       [ -n "$project_slug" ] || return 1
@@ -488,7 +488,7 @@ EOF
     if [ -z "$STUDIO_CONTEXT_PROJECT_BOARD" ]; then
       local durable_hint runtime_hint
       durable_hint=$(resolve_project_board_config_durable_for "$STUDIO_CONTEXT_PROJECT_SLUG" "${STUDIO_CONTEXT_REPO_ROOT:-}" 2>/dev/null || true)
-      runtime_hint=$(resolve_project_board_config_runtime_for "$STUDIO_CONTEXT_PROJECT_SLUG" 2>/dev/null || true)
+      runtime_hint=$(resolve_project_board_config_runtime_for "$STUDIO_CONTEXT_PROJECT_SLUG" "$STUDIO_CONTEXT_STUDIO_HOME" 2>/dev/null || true)
       _studio_context_fail \
 "project_board missing for $operation (project_slug=$STUDIO_CONTEXT_PROJECT_SLUG); \
 expected one of: --project-board CLI flag, STUDIO_PROJECT_BOARD_OVERRIDE env, \
