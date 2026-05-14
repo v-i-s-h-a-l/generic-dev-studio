@@ -143,6 +143,7 @@ env -i \
   HOME="$case2_home" \
   GH_STUB_LOG="$GH_STUB_LOG" \
   ACHILLES_PROJECT="sample-app" \
+  STUDIO_CONTEXT_STUDIO_HOME="$case2_home/.dev-studio" \
   STUDIO_CONTEXT_REPO_ROOT="$case2_repo" \
   STUDIO_PROJECT_REPO="Sample-Org/sample-app" \
   bash "$ROOT/scripts/studio-project-state.sh" --json \
@@ -153,6 +154,62 @@ assert "case2 runtime override beats durable" \
   "grep -q '^project item-list 42 --owner experiments-user' '$GH_STUB_LOG'"
 assert "case2 surfaces runtime override notice on stderr" \
   "grep -q 'project_board sourced from runtime override' '$TMPROOT/case2.err'"
+
+###############################################################################
+# Case 2b — runtime override uses STUDIO_CONTEXT_STUDIO_HOME, not ambient HOME.
+###############################################################################
+case2b_synthetic_home="$TMPROOT/case2b/synthetic-home"
+case2b_studio_home="$TMPROOT/case2b/resolved-studio-home"
+case2b_repo="$TMPROOT/case2b/repo"
+mkdir -p \
+  "$case2b_synthetic_home/.dev-studio/sample-app/config" \
+  "$case2b_studio_home/sample-app/config" \
+  "$case2b_repo/profiles/sample-app"
+cat > "$case2b_synthetic_home/.dev-studio/sample-app/config/project-board.yaml" <<YAML
+schema_version: 1
+owner_kind: user
+owner_login: wrong-synthetic-home
+project_number: 13
+YAML
+cat > "$case2b_studio_home/sample-app/config/project-board.yaml" <<YAML
+schema_version: 1
+owner_kind: user
+owner_login: resolved-studio-home
+project_number: 44
+project_title: Resolved studio home board
+linked_repo: resolved-studio-home/sample-app
+tracks: [Runtime]
+phases: [R1]
+YAML
+cat > "$case2b_repo/profiles/sample-app/project-board.yaml" <<YAML
+schema_version: 1
+owner_kind: org
+owner_login: DurableOrg
+project_number: 8
+project_title: Durable fallback
+linked_repo: DurableOrg/sample-app
+tracks: [Feature]
+phases: [P1]
+YAML
+
+export GH_STUB_LOG="$TMPROOT/gh-case2b.log"
+: > "$GH_STUB_LOG"
+env -i \
+  PATH="$PATH" \
+  HOME="$case2b_synthetic_home" \
+  GH_STUB_LOG="$GH_STUB_LOG" \
+  ACHILLES_PROJECT="sample-app" \
+  STUDIO_CONTEXT_STUDIO_HOME="$case2b_studio_home" \
+  STUDIO_CONTEXT_REPO_ROOT="$case2b_repo" \
+  STUDIO_PROJECT_REPO="Sample-Org/sample-app" \
+  bash "$ROOT/scripts/studio-project-state.sh" --json \
+  >"$TMPROOT/case2b.out" 2>"$TMPROOT/case2b.err"
+case2b_rc=$?
+assert "case2b context studio home runtime override exits zero" "[ '$case2b_rc' -eq 0 ]"
+assert "case2b ignores synthetic HOME runtime override" \
+  "grep -q '^project item-list 44 --owner resolved-studio-home' '$GH_STUB_LOG'"
+assert "case2b stderr names resolved studio home path" \
+  "grep -q '$case2b_studio_home/sample-app/config/project-board.yaml' '$TMPROOT/case2b.err'"
 
 ###############################################################################
 # Case 3 — STUDIO_PROJECT_BOARD_OVERRIDE env beats yaml files.
