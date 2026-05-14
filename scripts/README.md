@@ -87,7 +87,7 @@ scripts/studio-chain-runner.sh workflow-measurement-improvements --unattended --
 scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements # show the supervisor's next action without mutating state
 scripts/prd-intake-normalize.sh prd.md                                     # normalize PRD/transcript/issue brief language into a requirement packet
 scripts/prd-task-graph-synthesize.sh packet.md                             # synthesize deterministic scheduler graph; flags missing prereqs, write races, and unbounded tasks
-scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from state.json; reconciles completed worker summaries before scheduling dependents
+scripts/studio-chain-runner.sh --resume <run_id> --host codex --yes        # resume with a fresh host override for unfinished chains
 scripts/studio-chain-runner.sh --resume <run_id> --verified --yes          # resume after human verification and print closeout statuses
 scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
 scripts/studio-chain-runner.sh --regenerate-report <run_id>                # opt-in refresh for stale private chain-run reports
