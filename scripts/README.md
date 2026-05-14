@@ -76,6 +76,7 @@ scripts/studio-chain-runner.sh --discover                                  # bar
 scripts/studio-chain-runner.sh --discover ios-v2-execution                 # filtered discovery for one chain, chain id, or manifest
 /dev-studio manager work-chain ios-v2-execution --dry-run                  # preferred user-facing preview path
 /dev-studio manager work-chain --resume <run_id> --yes                     # preferred user-facing resume path from summaries/halt records
+/dev-studio manager work-chain --resume <run_id> --verified --yes          # attended verification resume with closeout inventory
 scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute # reviewed source/issue to unattended issue-backed work-chain execution
 scripts/manager-work-chain.sh --from-plan task-graph.json --chain my-chain # plan-chain gate, native issue links, Project fields, then unattended execution
 /dev-studio manager work-chain --doctor <run_id>                           # preferred read-only recovery recommendation for an existing run
@@ -87,6 +88,7 @@ scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements 
 scripts/prd-intake-normalize.sh prd.md                                     # normalize PRD/transcript/issue brief language into a requirement packet
 scripts/prd-task-graph-synthesize.sh packet.md                             # synthesize deterministic scheduler graph; flags missing prereqs, write races, and unbounded tasks
 scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from state.json; reconciles completed worker summaries before scheduling dependents
+scripts/studio-chain-runner.sh --resume <run_id> --verified --yes          # resume after human verification and print closeout statuses
 scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
 scripts/studio-chain-runner.sh --regenerate-report <run_id>                # opt-in refresh for stale private chain-run reports
 scripts/studio-chain-runner.sh --doctor <run_id> --public-safe             # read-only recovery recommendation with local paths/details redacted
