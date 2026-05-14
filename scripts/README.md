@@ -76,6 +76,7 @@ scripts/studio-chain-runner.sh --discover                                  # bar
 scripts/studio-chain-runner.sh --discover ios-v2-execution                 # filtered discovery for one chain, chain id, or manifest
 /dev-studio manager work-chain ios-v2-execution --dry-run                  # preferred user-facing preview path
 /dev-studio manager work-chain --resume <run_id> --yes                     # preferred user-facing resume path from summaries/halt records
+/dev-studio manager work-chain --resume <run_id> --verified --yes          # attended verification resume with closeout inventory
 scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute # reviewed source/issue to unattended issue-backed work-chain execution
 scripts/manager-work-chain.sh --from-plan task-graph.json --chain my-chain # plan-chain gate, native issue links, Project fields, then unattended execution
 /dev-studio manager work-chain --doctor <run_id>                           # preferred read-only recovery recommendation for an existing run
@@ -87,6 +88,7 @@ scripts/studio-chain-runner.sh --explain-next workflow-measurement-improvements 
 scripts/prd-intake-normalize.sh prd.md                                     # normalize PRD/transcript/issue brief language into a requirement packet
 scripts/prd-task-graph-synthesize.sh packet.md                             # synthesize deterministic scheduler graph; flags missing prereqs, write races, and unbounded tasks
 scripts/studio-chain-runner.sh --resume <run_id> --yes                     # resume from state.json; reconciles completed worker summaries before scheduling dependents
+scripts/studio-chain-runner.sh --resume <run_id> --verified --yes          # resume after human verification and print closeout statuses
 scripts/studio-chain-runner.sh --list                                      # list persisted chain runs and report paths
 scripts/studio-chain-runner.sh --regenerate-report <run_id>                # opt-in refresh for stale private chain-run reports
 scripts/studio-chain-runner.sh --doctor <run_id> --public-safe             # read-only recovery recommendation with local paths/details redacted
@@ -106,6 +108,7 @@ scripts/studio-checkpoint.sh resume --checkpoint-id <id> --role worker      # lo
 scripts/codex-worker-exec.sh "<prompt>"                                    # internal Codex worker launcher: workspace-write + ~/.dev-studio + ephemeral + no prompts
 # Chain dry-runs show the selected git metadata strategy; sandboxed hosts use issue-local clones so commits stay inside the worker root.
 # Chain worktrees/results are namespaced under the run UUID; resume continues only the selected run, reconciles stale running issues from completed private summaries after required outcome review, and surfaces skipped/integrated/pending issue semantics.
+# Chain progress recaps are persisted under each private run's `progress-recaps/` directory before execution, after task completion, and on halt/finish.
 # Chain startup sweeps stale state locks, old temporary run roots, scoped iOS artifact roots, and oversized private artifacts; tune with STUDIO_CHAIN_TMP_RETENTION_DAYS, STUDIO_CHAIN_RUN_RETENTION_DAYS, STUDIO_CHAIN_ARTIFACT_MAX_BYTES, and STUDIO_IOS_ARTIFACT_* TTL/pressure settings.
 # Chain reports include compact efficiency metrics, test/lint/build outcomes, typed halt records, and decision escrow when automation pauses or continues on a low-risk default.
 # Chain manifest preflight rejects planning artifacts before run creation; project-scoped manifests declare issue_repo or resolve it from the target repo remote.
