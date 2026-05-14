@@ -18,6 +18,10 @@ printf '%s\n' "$*" >> "$log"
 
 case "$1 $2" in
   "project item-list")
+    if [ "${GH_STUB_ITEM_LIST_FAIL:-0}" = "1" ]; then
+      printf 'GraphQL: fixture item-list failure\n' >&2
+      exit 1
+    fi
     printf '%s\n' '{
       "items": [
         {
@@ -71,6 +75,61 @@ case "$1 $2" in
     ;;
   "api graphql")
     case "$*" in
+      *"projectV2"*)
+        printf '%s\n' '{
+          "data": {
+            "user": {
+              "projectV2": {
+                "items": {
+                  "pageInfo": {"hasNextPage": false, "endCursor": null},
+                  "nodes": [
+                    {
+                      "type": "ISSUE",
+                      "content": {
+                        "number": 443,
+                        "title": "Adopt GitHub as primary PM surface",
+                        "url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/443",
+                        "repository": {"nameWithOwner": "v-i-s-h-a-l/generic-dev-studio"},
+                        "labels": {"nodes": [{"name": "enhancement"}, {"name": "track:pm-surface"}]},
+                        "milestone": null
+                      },
+                      "fieldValues": {
+                        "nodes": [
+                          {"name": "Todo", "field": {"name": "Status"}},
+                          {"name": "B PM surface", "field": {"name": "Track"}},
+                          {"name": "B1", "field": {"name": "Phase"}},
+                          {"name": "M", "field": {"name": "Size"}},
+                          {"name": "Needs review", "field": {"name": "Sibling host reviewed"}}
+                        ]
+                      }
+                    },
+                    {
+                      "type": "ISSUE",
+                      "content": {
+                        "number": 446,
+                        "title": "Chain mode enhancements",
+                        "url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/446",
+                        "repository": {"nameWithOwner": "v-i-s-h-a-l/generic-dev-studio"},
+                        "labels": {"nodes": [{"name": "enhancement"}, {"name": "track:workflow"}]},
+                        "milestone": null
+                      },
+                      "fieldValues": {
+                        "nodes": [
+                          {"name": "Done", "field": {"name": "Status"}},
+                          {"name": "D chain mode", "field": {"name": "Track"}},
+                          {"name": "D", "field": {"name": "Phase"}},
+                          {"name": "M", "field": {"name": "Size"}},
+                          {"name": "Outcome clean", "field": {"name": "Sibling host reviewed"}}
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }'
+        ;;
       *"number=443"*)
         printf '%s\n' '{
           "data": {
@@ -185,6 +244,12 @@ bash "$ROOT/scripts/studio-project-state.sh" --json --status Done >"$TMPROOT/sta
 status_rc=$?
 assert "json status exits zero" "[ '$status_rc' -eq 0 ]"
 assert "json is valid" "jq -e 'length == 1 and .[0].issue_number == 446 and .[0].status == \"Done\"' '$TMPROOT/status.json' >/dev/null"
+
+GH_STUB_ITEM_LIST_FAIL=1 bash "$ROOT/scripts/studio-project-state.sh" --json --status Done >"$TMPROOT/direct-fallback.json" 2>"$TMPROOT/direct-fallback.err"
+direct_fallback_rc=$?
+assert "direct graphql fallback exits zero" "[ '$direct_fallback_rc' -eq 0 ]"
+assert "direct graphql fallback prints project fields" "jq -e 'length == 1 and .[0].issue_number == 446 and .[0].status == \"Done\" and .[0].track == \"D chain mode\" and .[0].sibling_host_reviewed == \"Outcome clean\"' '$TMPROOT/direct-fallback.json' >/dev/null"
+assert "direct graphql fallback reports item-list retry" "grep -q 'retrying with direct ProjectV2 GraphQL reader' '$TMPROOT/direct-fallback.err'"
 
 if [ "$failures" -ne 0 ]; then
   printf 'FAIL: %s assertion(s)\n' "$failures" >&2
