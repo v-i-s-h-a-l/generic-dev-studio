@@ -237,6 +237,16 @@ yq -e '
   (.chains[0].issues | length) >= 2
 ' "$MANIFEST" >/dev/null || fail "generated work-chain manifest is not runnable shape"
 
+yq -e '
+  .chains[0].base_ref == "main" and
+  .chains[0].source_branch == "main" and
+  .chains[0].independent == false and
+  ((.chains[0].base_sha // "") | test("^[0-9a-f]{7,}$"))
+' "$MANIFEST" >/dev/null || {
+  yq -P '.chains[0]' "$MANIFEST" >&2
+  fail "generated work-chain manifest missing v2 branch-discipline fields"
+}
+
 grep -q 'PHASE_REVIEW_VERDICT=clean' "$REVIEW" || fail "phase review artifact missing clean verdict"
 grep -q '^project item-add 1 --owner v-i-s-h-a-l --url https://github.com/example/project/issues/9101 ' "$GH_LOG" \
   || fail "parent issue was not added to the Project"
@@ -328,6 +338,54 @@ jq -e '
   cat "$TMPROOT/cardinality.out" >&2
   cat "$TMPROOT/cardinality.err" >&2
   fail "cardinality mismatch was not surfaced in self-review"
+}
+
+bad_sha="deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+: > "$GH_LOG"
+if PATH="$BIN:$PATH" \
+HOME="$TMPROOT/home" \
+GH_LOG="$GH_LOG" \
+ISSUE_COUNTER="$ISSUE_COUNTER" \
+CLAUDE_REVIEWER_HOME="$TMPROOT/claude-reviewer" \
+CLAUDE_REVIEWER_CONFIG_DIR="$TMPROOT/claude-reviewer/.claude-reviewer" \
+STUDIO_PARENT_HOST=codex \
+STUDIO_MANAGER_PLAN_CHAIN_PROJECT=generic-dev-studio \
+STUDIO_MANAGER_PLAN_CHAIN_RUN_ID=drift \
+  "$RUN" --source-file "$SOURCE" --repo example/project --chain drift-chain --base-sha "$bad_sha" >"$TMPROOT/drift.out" 2>"$TMPROOT/drift.err"; then
+  cat "$TMPROOT/drift.out" >&2
+  cat "$TMPROOT/drift.err" >&2
+  fail "mismatched --base-sha unexpectedly passed"
+fi
+grep -q 'base_branch_advanced' "$TMPROOT/drift.err" || {
+  cat "$TMPROOT/drift.err" >&2
+  fail "drift halt did not emit typed base_branch_advanced"
+}
+if grep -q '^issue create --repo example/project ' "$GH_LOG"; then
+  cat "$GH_LOG" >&2
+  fail "drift halt should fire before worker issues are created"
+fi
+
+: > "$GH_LOG"
+PATH="$BIN:$PATH" \
+HOME="$TMPROOT/home" \
+GH_LOG="$GH_LOG" \
+ISSUE_COUNTER="$ISSUE_COUNTER" \
+CLAUDE_REVIEWER_HOME="$TMPROOT/claude-reviewer" \
+CLAUDE_REVIEWER_CONFIG_DIR="$TMPROOT/claude-reviewer/.claude-reviewer" \
+STUDIO_PARENT_HOST=codex \
+STUDIO_MANAGER_PLAN_CHAIN_PROJECT=generic-dev-studio \
+STUDIO_MANAGER_PLAN_CHAIN_RUN_ID=drift-bypass \
+STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT=1 \
+  "$RUN" --source-file "$SOURCE" --repo example/project --chain drift-bypass-chain --base-sha "$bad_sha" >"$TMPROOT/drift-bypass.out" 2>"$TMPROOT/drift-bypass.err"
+
+grep -q 'Status: `ready`' "$TMPROOT/drift-bypass.out" || {
+  cat "$TMPROOT/drift-bypass.out" >&2
+  cat "$TMPROOT/drift-bypass.err" >&2
+  fail "drift bypass did not produce ready output"
+}
+grep -q 'STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT=1' "$TMPROOT/drift-bypass.err" || {
+  cat "$TMPROOT/drift-bypass.err" >&2
+  fail "drift bypass did not emit a stderr audit line"
 }
 
 printf 'PASS: manager plan-chain orchestration\n'

@@ -76,6 +76,29 @@ pre-commit hook blocks base-branch commits unless the user explicitly sets
 
 **Worktree lifecycle for interactive sessions:** create before the first write; push/merge after the session's logical unit of work is done; remove immediately after. If the session ends without writing anything, the worktree cleanup is a no-op.
 
+**Worktree marker + 3-layer cleanup.** Every studio-owned worktree under
+`~/.dev-studio/<project>/worktrees/<slug>/` carries a marker file
+(`.studio-worktree.json`) written by `scripts/lib-worktree-marker.sh` and
+heartbeat-touched on every owning-command turn. Three cleanup layers cover
+the failure modes:
+
+1. **On finalize / abort:** the owning command (ingest, plan-chain,
+   work-chain, task-worktree-setup) removes its worktree.
+2. **On session start:** bootstrap invokes
+   `scripts/studio-worktree-gc.sh --reap-stale` so crashed sessions cannot
+   accumulate (default TTL 7 days; tune via `--ttl-days` or
+   `STUDIO_WORKTREE_GC_TTL_DAYS`).
+3. **Disk-budget alarm:** `scripts/studio-worktree-gc.sh --budget-check`
+   surfaces a one-line warning when the total worktree footprint crosses
+   `STUDIO_WORKTREE_DISK_BUDGET_BYTES` (default 5 GiB) or the count crosses
+   `STUDIO_WORKTREE_COUNT_BUDGET` (default 10), and points the user at
+   `scripts/manager-cleanup.sh --worktrees`.
+
+User-controlled override: `STUDIO_KEEP_WORKTREE=<slug>[,<slug>...]` exempts
+named worktrees from layers 2 and 3. Assistants must not set it on their own
+initiative. Schema and gc semantics live in
+[`_shared/contracts/worktree-marker.md`](_shared/contracts/worktree-marker.md).
+
 ## Commit discipline policy (initial taxonomy + message discipline)
 
 Use this policy for assistant-authored commits in this repository.

@@ -12,6 +12,9 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-github-transport.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/lib-github-transport.sh"
+# shellcheck source=lib-feature-branch-policy.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/lib-feature-branch-policy.sh"
 
 PROJECT=""
 REPO_ROOT=""
@@ -84,15 +87,45 @@ if [ -n "$PROJECT" ]; then
   fi
 fi
 
-release_pattern="${STUDIO_RELEASE_BRANCH_PATTERN:-release/{version}}"
-default_base="${STUDIO_RELEASE_BRANCH_DEFAULT_BASE:-main}"
+feature_branch_policy_load_config "$REPO_ROOT"
+release_pattern=$(feature_branch_policy_release_branch_pattern)
+default_base=$(feature_branch_policy_default_base)
 
 fetch_remote() {
+  local remote_url
   [ "$NO_FETCH" -eq 0 ] || return 0
+  remote_url=$(git -C "$REPO_ROOT" remote get-url "$REMOTE" 2>/dev/null || printf '')
+  case "$remote_url" in
+    /*|file://*|../*|./*)
+      git -C "$REPO_ROOT" fetch --quiet "$REMOTE" "+refs/heads/*:refs/remotes/$REMOTE/*" 2>/dev/null || {
+        printf 'manager-release-branch: fetch failed for remote %s\n' "$REMOTE" >&2
+        return 2
+      }
+      return 0
+      ;;
+  esac
   ( cd "$REPO_ROOT" && studio_git_transport_fetch --quiet "$REMOTE" "+refs/heads/*:refs/remotes/$REMOTE/*" ) 2>/dev/null || {
     printf 'manager-release-branch: fetch failed for remote %s\n' "$REMOTE" >&2
     return 2
   }
+}
+
+remote_is_local() {
+  local remote_url
+  remote_url=$(git -C "$REPO_ROOT" remote get-url "$REMOTE" 2>/dev/null || printf '')
+  case "$remote_url" in
+    /*|file://*|../*|./*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+push_branch_ref() {
+  local refspec="$1"
+  if remote_is_local; then
+    git -C "$REPO_ROOT" push "$REMOTE" "$refspec"
+    return $?
+  fi
+  ( cd "$REPO_ROOT" && studio_git_transport_push "$REMOTE" "$refspec" )
 }
 
 protected_branch() {
@@ -246,7 +279,7 @@ cmd_prepare_release() {
     printf 'manager-release-branch: refusing to create protected base branch: %s\n' "$target" >&2
     return 2
   fi
-  ( cd "$REPO_ROOT" && studio_git_transport_push "$REMOTE" "$base_sha:refs/heads/$target" )
+  push_branch_ref "$base_sha:refs/heads/$target"
   printf 'status: created\n'
 }
 

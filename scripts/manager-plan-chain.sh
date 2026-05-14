@@ -20,6 +20,10 @@ FROM_PLAN=""
 TITLE=""
 CHAIN_NAME=""
 SOURCE_BRANCH="main"
+BASE_SHA_EXPECTED="${STUDIO_PLAN_CHAIN_EXPECTED_BASE_SHA:-}"
+PARENT_BRANCH=""
+PARENT_SHA=""
+INDEPENDENT="false"
 TARGET_REPO_ROOT=""
 HOST="auto"
 REVIEW_HOST="${STUDIO_REVIEW_HOST:-claude-reviewer}"
@@ -1136,6 +1140,59 @@ create_worker_issues() {
   done < <(jq -c '.payload.decomposition[]' "$PLANNER_ARTIFACT")
 }
 
+resolve_origin_base_sha() {
+  local repo="$1" ref="$2" sha
+  sha=$(git -C "$repo" rev-parse --verify --quiet "refs/remotes/origin/$ref^{commit}" 2>/dev/null || true)
+  if [ -z "$sha" ]; then
+    sha=$(git -C "$repo" rev-parse --verify --quiet "refs/heads/$ref^{commit}" 2>/dev/null || true)
+  fi
+  printf '%s\n' "$sha"
+}
+
+resolve_base_sha_or_halt() {
+  local resolved
+  resolved=$(resolve_origin_base_sha "$TARGET_REPO_ROOT" "$SOURCE_BRANCH" || true)
+  if [ -z "$resolved" ]; then
+    BASE_SHA=""
+    if [ -n "$BASE_SHA_EXPECTED" ]; then
+      case "${STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT:-0}" in
+        1|true|TRUE|yes|YES)
+          printf 'manager-plan-chain: STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT=1 — proceeding without verifying origin/%s (expected %s)\n' \
+            "$SOURCE_BRANCH" "$BASE_SHA_EXPECTED" >&2
+          BASE_SHA="$BASE_SHA_EXPECTED"
+          return 0
+          ;;
+      esac
+      printf 'manager-plan-chain: base_branch_advanced: cannot resolve origin/%s in %s to verify expected base SHA %s; rerun after `git fetch origin %s` or set STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT=1\n' \
+        "$SOURCE_BRANCH" "$TARGET_REPO_ROOT" "$BASE_SHA_EXPECTED" "$SOURCE_BRANCH" >&2
+      exit 2
+    fi
+    return 0
+  fi
+  BASE_SHA="$resolved"
+  if [ -n "$BASE_SHA_EXPECTED" ] && [ "$BASE_SHA" != "$BASE_SHA_EXPECTED" ]; then
+    case "${STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT:-0}" in
+      1|true|TRUE|yes|YES)
+        printf 'manager-plan-chain: STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT=1 — accepting origin/%s drift (expected %s, got %s)\n' \
+          "$SOURCE_BRANCH" "$BASE_SHA_EXPECTED" "$BASE_SHA" >&2
+        return 0
+        ;;
+    esac
+    printf 'manager-plan-chain: base_branch_advanced: origin/%s for chain %s changed since plan was reviewed: expected %s, got %s; rerun the planner or set STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT=1\n' \
+      "$SOURCE_BRANCH" "$CHAIN_NAME" "$BASE_SHA_EXPECTED" "$BASE_SHA" >&2
+    exit 2
+  fi
+}
+
+validate_branch_discipline_inputs() {
+  if [ "$INDEPENDENT" = "true" ]; then
+    if [ -n "$PARENT_BRANCH" ] || [ -n "$PARENT_SHA" ]; then
+      printf 'manager-plan-chain: manifest_branch_discipline_conflict: --independent cannot be combined with --parent-branch/--parent-sha\n' >&2
+      exit 2
+    fi
+  fi
+}
+
 write_chain_manifest() {
   local manifest_json branch
   branch="feature/$CHAIN_NAME"
@@ -1147,6 +1204,10 @@ write_chain_manifest() {
     --arg issue_repo "$ISSUE_REPO" \
     --arg chain_name "$CHAIN_NAME" \
     --arg source_branch "$SOURCE_BRANCH" \
+    --arg base_sha "${BASE_SHA:-}" \
+    --arg parent_branch "$PARENT_BRANCH" \
+    --arg parent_sha "$PARENT_SHA" \
+    --argjson independent "$INDEPENDENT" \
     --arg branch "$branch" \
     --arg host "$HOST" \
     --arg planner_artifact "$PLANNER_ARTIFACT" \
@@ -1168,9 +1229,11 @@ write_chain_manifest() {
             review_artifact: $review_artifact
           },
           chains: [
-            {
+            ({
               name: $chain_name,
+              base_ref: $source_branch,
               source_branch: $source_branch,
+              independent: $independent,
               branch: $branch,
               host: $host,
               phase_review: "required",
@@ -1186,6 +1249,9 @@ write_chain_manifest() {
                   })
               )
             }
+            | (if $base_sha == "" then . else . + {base_sha:$base_sha} end)
+            | (if $parent_branch == "" then . else . + {parent_branch:$parent_branch} end)
+            | (if $parent_sha == "" then . else . + {parent_sha:$parent_sha} end))
           ]
         }
     ' > "$manifest_json"
@@ -1215,8 +1281,16 @@ while [ "$#" -gt 0 ]; do
     --project=*) PROJECT="${1#--project=}"; shift ;;
     --target-repo-root) TARGET_REPO_ROOT="${2:?--target-repo-root requires a path}"; shift 2 ;;
     --target-repo-root=*) TARGET_REPO_ROOT="${1#--target-repo-root=}"; shift ;;
-    --source-branch|--base) SOURCE_BRANCH="${2:?--source-branch requires a branch}"; shift 2 ;;
-    --source-branch=*|--base=*) SOURCE_BRANCH="${1#*=}"; shift ;;
+    --source-branch|--base|--base-ref) SOURCE_BRANCH="${2:?--source-branch requires a branch}"; shift 2 ;;
+    --source-branch=*|--base=*|--base-ref=*) SOURCE_BRANCH="${1#*=}"; shift ;;
+    --base-sha) BASE_SHA_EXPECTED="${2:?--base-sha requires a sha}"; shift 2 ;;
+    --base-sha=*) BASE_SHA_EXPECTED="${1#--base-sha=}"; shift ;;
+    --parent-branch) PARENT_BRANCH="${2:?--parent-branch requires a branch}"; shift 2 ;;
+    --parent-branch=*) PARENT_BRANCH="${1#--parent-branch=}"; shift ;;
+    --parent-sha) PARENT_SHA="${2:?--parent-sha requires a sha}"; shift 2 ;;
+    --parent-sha=*) PARENT_SHA="${1#--parent-sha=}"; shift ;;
+    --independent) INDEPENDENT="true"; shift ;;
+    --no-independent) INDEPENDENT="false"; shift ;;
     --host) HOST="${2:?--host requires a host}"; shift 2 ;;
     --host=*) HOST="${1#--host=}"; shift ;;
     --review-host) REVIEW_HOST="${2:?--review-host requires a profile}"; shift 2 ;;
@@ -1261,6 +1335,10 @@ require_tool yq
 case "$AUTOMATION_MODE" in
   unattended|interactive) ;;
   *) printf 'manager-plan-chain: automation mode must be unattended or interactive: %s\n' "$AUTOMATION_MODE" >&2; exit 2 ;;
+esac
+case "$INDEPENDENT" in
+  true|false) ;;
+  *) printf 'manager-plan-chain: --independent value must be true/false: %s\n' "$INDEPENDENT" >&2; exit 2 ;;
 esac
 case "$POPULATE_PROJECT_FIELDS" in
   0|1) ;;
@@ -1469,6 +1547,9 @@ if ! review_allows_manifest "$review_verdict"; then
   print_result "blocked" "$blocked_json" "$REVIEW_ARTIFACT" "" ""
   exit 1
 fi
+
+validate_branch_discipline_inputs
+resolve_base_sha_or_halt
 
 prepare_project_field_metadata
 create_worker_issues
