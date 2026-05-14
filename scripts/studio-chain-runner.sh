@@ -5420,8 +5420,8 @@ resolve_chain_independent() {
 }
 
 # branch-discipline (v2) precedence resolver.
-# Walks base_ref → source_branch → target_base → base and rejects
-# conflicting values with a typed manifest_branch_discipline_conflict failure.
+# Walks base_ref → source_branch → target_base → base, then falls back to
+# parent_branch for legacy stacked manifests that omit an explicit base/source.
 resolve_chain_source_branch() {
   local chain_idx="$1" chain_name="$2"
   local base_ref parent_branch source_branch target_base base
@@ -5455,6 +5455,10 @@ resolve_chain_source_branch() {
       exit 2
     fi
   done
+
+  if [ -z "$selected" ] && [ -n "$parent_branch" ]; then
+    selected="$parent_branch"
+  fi
 
   [ -n "$selected" ] || selected="main"
   printf '%s\n' "$selected"
@@ -5491,6 +5495,10 @@ resolve_chain_expected_source_sha() {
       exit 2
     fi
   done
+
+  if [ -z "$selected" ] && [ -n "$parent_sha" ]; then
+    selected="$parent_sha"
+  fi
 
   normalize_manifest_value "$selected"
 }

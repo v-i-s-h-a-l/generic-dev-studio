@@ -242,6 +242,31 @@ grep -qF -- '- Parent branch: `feature/parent`' "$TMPROOT/stacked-parent.out" ||
   fail "stacked parent manifest did not surface parent_branch metadata"
 }
 
+parent_only_manifest="$TMPROOT/parent-only-chain.yaml"
+cat >"$parent_only_manifest" <<YAML
+schema_version: 1
+target_repo_root: $project_repo
+issue_repo: example/project
+chains:
+  - name: parent-only-chain
+    independent: false
+    parent_branch: feature/parent
+    parent_sha: $parent_sha
+    branch: feature/parent-only-chain
+    host: codex
+    issues: [74808]
+YAML
+
+PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" STUDIO_BRANCH_POLICY_ALLOW_FEATURE_OFF_FEATURE=1 "$RUNNER" "$parent_only_manifest" --dry-run >"$TMPROOT/parent-only.out" 2>&1
+grep -qF -- '- Source branch: `feature/parent`' "$TMPROOT/parent-only.out" || {
+  cat "$TMPROOT/parent-only.out" >&2
+  fail "parent-only stacked manifest did not use parent_branch as source fallback"
+}
+grep -qF -- '- Expected base SHA: `'"$parent_sha"'`' "$TMPROOT/parent-only.out" || {
+  cat "$TMPROOT/parent-only.out" >&2
+  fail "parent-only stacked manifest did not use parent_sha as source SHA fallback"
+}
+
 conflict_manifest="$TMPROOT/conflict-chain.yaml"
 cat >"$conflict_manifest" <<YAML
 schema_version: 1
