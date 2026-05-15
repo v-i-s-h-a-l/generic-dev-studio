@@ -19,6 +19,7 @@ usage() {
 Usage:
   scripts/manager-composite-chain.sh init --manifest <composite.yaml> [--run-id <uuidv7>] [--json]
   scripts/manager-composite-chain.sh plan-active-child (--state <path>|--run-id <uuidv7>) [--json]
+  scripts/manager-composite-chain.sh execute-active-child (--state <path>|--run-id <uuidv7>) [--json]
   scripts/manager-composite-chain.sh status (--state <path>|--run-id <uuidv7>) [--json]
   scripts/manager-composite-chain.sh validate-state --state <path>
   scripts/manager-composite-chain.sh validate-manifest --manifest <composite.yaml>
@@ -195,6 +196,14 @@ plan_result_path_for() {
   printf '%s/plan-chains/%s/result.json\n' "$project_root" "$plan_run_id"
 }
 
+child_chain_runs_root() {
+  local artifact_home project_root project
+  project="${STUDIO_COMPOSITE_PLAN_CHAIN_PROJECT:-generic-dev-studio}"
+  artifact_home=$(resolve_parent_home_for_github)
+  project_root=$(HOME="$artifact_home" resolve_project_root_for "$project")
+  printf '%s/chain-runs\n' "$project_root"
+}
+
 write_halt_record() {
   local state_file="$1" child_id="$2" reason_id="$3" summary="$4" details_ref="$5" halt_record now
   now=$(iso_ts_now)
@@ -260,6 +269,67 @@ run_child_plan_command() {
   STUDIO_MANAGER_PLAN_CHAIN_RUN_ID="$plan_run_id" "${cmd[@]}" > "$stdout_path" 2> "$stderr_path"
 }
 
+child_work_command_json() {
+  local work_chain_manifest="${1:?usage: child_work_command_json <manifest>}"
+  jq -cn \
+    --arg script "${STUDIO_COMPOSITE_WORK_CHAIN_SCRIPT:-$SCRIPT_DIR/manager-work-chain.sh}" \
+    --arg manifest "$work_chain_manifest" \
+    '[$script, $manifest, "--attended", "--yes"]'
+}
+
+run_child_work_command() {
+  local command_json="$1" stdout_path="$2" stderr_path="$3"
+  local -a cmd=()
+  while IFS= read -r arg; do
+    cmd+=("$arg")
+  done < <(printf '%s\n' "$command_json" | jq -r '.[]')
+  [ "${#cmd[@]}" -gt 0 ] || fail "empty child work-chain command" 1
+  "${cmd[@]}" > "$stdout_path" 2> "$stderr_path"
+}
+
+child_run_id_from_output() {
+  local stdout_path="$1" stderr_path="$2"
+  # shellcheck disable=SC2016
+  sed -nE 's/.*Run UUID:[[:space:]]*`?([0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})`?.*/\1/p' \
+    "$stdout_path" "$stderr_path" 2>/dev/null | tail -n 1
+}
+
+child_run_state_for_id() {
+  local child_run_id="$1" root
+  [ -n "$child_run_id" ] || return 1
+  validate_run_id "$child_run_id"
+  root=$(child_chain_runs_root) || return 1
+  [ -f "$root/$child_run_id/state.json" ] || return 1
+  printf '%s/%s/state.json\n' "$root" "$child_run_id"
+}
+
+latest_child_run_state_for_manifest() {
+  local work_chain_manifest="$1" root row
+  root=$(child_chain_runs_root) || return 1
+  [ -d "$root" ] || return 1
+  row=$(
+    find "$root" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null | sort | while IFS= read -r candidate; do
+      jq -r --arg manifest "$work_chain_manifest" '
+        select((.manifest // "") == $manifest)
+        | [(.updated_at // .started_at // ""), (.run_id // ""), input_filename]
+        | @tsv
+      ' "$candidate" 2>/dev/null || true
+    done | sort | tail -n 1
+  )
+  [ -n "$row" ] || return 1
+  printf '%s\n' "$row" | awk -F '\t' '{print $3}'
+}
+
+resolve_child_run_state() {
+  local work_chain_manifest="$1" stdout_path="$2" stderr_path="$3" child_run_id child_state
+  child_run_id=$(child_run_id_from_output "$stdout_path" "$stderr_path" || true)
+  if [ -n "$child_run_id" ] && child_state=$(child_run_state_for_id "$child_run_id" 2>/dev/null); then
+    printf '%s\n' "$child_state"
+    return 0
+  fi
+  latest_child_run_state_for_manifest "$work_chain_manifest"
+}
+
 persist_planned_child_state() {
   local state_file="$1" child_index="$2" result_json="$3" now next_command
   now=$(iso_ts_now)
@@ -302,6 +372,84 @@ persist_planning_halt_state() {
     | .next_command = $next_command
     | .updated_at = $now
   ' --argjson idx "$child_index" --arg reason_id "$reason_id" --arg summary "$summary" --arg details_ref "$details_ref" --arg halt_record "$halt_record" --arg child_id "$child_id" --arg now "$now" --arg next_command "$next_command"
+}
+
+persist_running_child_state() {
+  local state_file="$1" child_index="$2" command_json="$3" stdout_path="$4" stderr_path="$5" now
+  now=$(iso_ts_now)
+  # shellcheck disable=SC2016
+  atomic_update_state "$state_file" '
+    .state = "running_child"
+    | .children[$idx].status = "running"
+    | .children[$idx].refs.work_command = $command
+    | .children[$idx].refs.work_stdout = $stdout_path
+    | .children[$idx].refs.work_stderr = $stderr_path
+    | .children[$idx].idempotency_keys.run = ("composite:" + .composite_run_id + ":child:" + .children[$idx].id + ":run")
+    | .children[$idx].blocked_reason = null
+    | .children[$idx].updated_at = $now
+    | .updated_at = $now
+    | .blocked_reason = null
+    | .active_halt_ref = null
+    | .next_command = ("/dev-studio manager composite-chain status --run-id " + .composite_run_id)
+  ' --argjson idx "$child_index" --argjson command "$command_json" --arg stdout_path "$stdout_path" --arg stderr_path "$stderr_path" --arg now "$now"
+}
+
+persist_child_completion_state() {
+  local state_file="$1" child_index="$2" child_state="$3" now remaining next_command
+  now=$(iso_ts_now)
+  remaining=$(jq --argjson idx "$child_index" '[.children[] | select(.ordinal != $idx and .status == "pending")] | length' "$state_file")
+  if [ "$remaining" -eq 0 ]; then
+    next_command=""
+  else
+    next_command="/dev-studio manager composite-chain plan-active-child --run-id $(jq -r '.composite_run_id' "$state_file")"
+  fi
+  # shellcheck disable=SC2016
+  atomic_update_state "$state_file" '
+    ($child[0]) as $c
+    | ([($c.chains[]?.issues[]? | (.url // .issue_url // .provenance.issue.url // empty))]
+        + ((.children[$idx].refs.child_issues // []) | map(.url // empty))
+        | map(select(. != "")) | unique) as $issue_urls
+    | ([($c.chains[]? | (.pr_url // empty))] | map(select(. != "")) | unique) as $pr_urls
+    | ([($c.chains[]?.issues[]? | (.summary // empty))] | map(select(. != "")) | unique) as $summaries
+    | .children[$idx].status = "completed"
+    | .children[$idx].refs.child_run_id = ($c.run_id // null)
+    | .children[$idx].refs.child_run_state = $child_state
+    | .children[$idx].refs.child_run_report = ($c.report // null)
+    | .children[$idx].refs.completion_summary = (($summaries[0] // $c.report) // .children[$idx].refs.completion_summary)
+    | .children[$idx].refs.completion_summaries = $summaries
+    | .children[$idx].refs.issue_url = ($issue_urls[0] // .children[$idx].refs.issue_url)
+    | .children[$idx].refs.issue_urls = $issue_urls
+    | .children[$idx].refs.pr_url = ($pr_urls[0] // .children[$idx].refs.pr_url)
+    | .children[$idx].refs.pr_urls = $pr_urls
+    | .children[$idx].blocked_reason = null
+    | .children[$idx].completed_at = $now
+    | .children[$idx].updated_at = $now
+    | .state = (if $remaining == 0 then "completed" else "child_completed" end)
+    | .completed_at = (if $remaining == 0 then $now else .completed_at end)
+    | .blocked_reason = null
+    | .active_halt_ref = null
+    | .next_command = (if $next_command == "" then null else $next_command end)
+    | .updated_at = $now
+  ' --argjson idx "$child_index" --slurpfile child "$child_state" --arg child_state "$child_state" --arg now "$now" --argjson remaining "$remaining" --arg next_command "$next_command"
+}
+
+persist_child_execution_halt_state() {
+  local state_file="$1" child_index="$2" child_id="$3" reason_id="$4" summary="$5" details_ref="$6" child_state="${7:-}" halt_record now next_command
+  now=$(iso_ts_now)
+  halt_record=$(write_halt_record "$state_file" "$child_id" "$reason_id" "$summary" "$details_ref")
+  next_command="/dev-studio manager composite-chain status --run-id $(jq -r '.composite_run_id' "$state_file")"
+  # shellcheck disable=SC2016
+  atomic_update_state "$state_file" '
+    .state = "halted"
+    | .children[$idx].status = "halted"
+    | .children[$idx].refs.child_run_state = (if $child_state == "" then (.children[$idx].refs.child_run_state // null) else $child_state end)
+    | .children[$idx].blocked_reason = {reason_id: $reason_id, summary: $summary, details_ref: (if $details_ref == "" then null else $details_ref end)}
+    | .children[$idx].updated_at = $now
+    | .blocked_reason = {reason_id: $reason_id, summary: $summary, details_ref: (if $details_ref == "" then null else $details_ref end)}
+    | .active_halt_ref = {reason_id: $reason_id, halt_record: $halt_record, child_id: $child_id}
+    | .next_command = $next_command
+    | .updated_at = $now
+  ' --argjson idx "$child_index" --arg reason_id "$reason_id" --arg summary "$summary" --arg details_ref "$details_ref" --arg halt_record "$halt_record" --arg child_id "$child_id" --arg child_state "$child_state" --arg now "$now" --arg next_command "$next_command"
 }
 
 write_initial_state() {
@@ -587,6 +735,81 @@ cmd_plan_active_child() {
   exit "$final_rc"
 }
 
+cmd_execute_active_child() {
+  local run_id="" state_file="" output_json=0 child_index child_id child_status work_chain_manifest command_json
+  local attempt_dir stdout_path stderr_path rc final_rc=0 child_state="" run_status reason_id summary details_ref
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --run-id) run_id="${2:?--run-id requires a uuidv7}"; shift 2 ;;
+      --run-id=*) run_id="${1#--run-id=}"; shift ;;
+      --state) state_file="${2:?--state requires a path}"; shift 2 ;;
+      --state=*) state_file="${1#--state=}"; shift ;;
+      --json) output_json=1; shift ;;
+      --parent-issue|--parent-issue=*|--issue|--issue=*) reject_parent_issue_parsing ;;
+      -h|--help) usage ;;
+      *) fail "unknown execute-active-child argument: $1" 2 ;;
+    esac
+  done
+  if [ -z "$state_file" ] && [ -n "$run_id" ]; then
+    validate_run_id "$run_id"
+    state_file=$(state_path_for_run_id "$run_id")
+  fi
+  [ -n "$state_file" ] || fail "execute-active-child requires --state <path> or --run-id <uuidv7>" 2
+  validate_state "$state_file"
+
+  if [ "$(jq -r '.state' "$state_file")" = "halted" ]; then
+    fail "composite chain is halted; inspect blocked_reason and active_halt_ref before retrying" 1
+  fi
+  child_index=$(jq -r '[.children | to_entries[] | select(.value.status == "planned")] | if length == 1 then .[0].key else empty end' "$state_file")
+  [ -n "$child_index" ] || fail "execute-active-child requires exactly one planned child" 1
+  child_status=$(jq -r --argjson idx "$child_index" '.children[$idx].status' "$state_file")
+  [ "$child_status" = "planned" ] || fail "active child must be planned before execution" 1
+  child_id=$(jq -r --argjson idx "$child_index" '.children[$idx].id' "$state_file")
+  work_chain_manifest=$(jq -r --argjson idx "$child_index" '.children[$idx].refs.work_chain_manifest // ""' "$state_file")
+  [ -n "$work_chain_manifest" ] && [ "$work_chain_manifest" != "null" ] || fail "planned child is missing refs.work_chain_manifest" 1
+  [ -f "$work_chain_manifest" ] || fail "planned child work-chain manifest not found: $work_chain_manifest" 1
+
+  attempt_dir="$(dirname "$state_file")/execution/$child_id"
+  mkdir -p "$attempt_dir"
+  stdout_path="$attempt_dir/manager-work-chain.out"
+  stderr_path="$attempt_dir/manager-work-chain.err"
+  command_json=$(child_work_command_json "$work_chain_manifest")
+  persist_running_child_state "$state_file" "$child_index" "$command_json" "$stdout_path" "$stderr_path"
+
+  set +e
+  run_child_work_command "$command_json" "$stdout_path" "$stderr_path"
+  rc=$?
+  set -e
+
+  child_state=$(resolve_child_run_state "$work_chain_manifest" "$stdout_path" "$stderr_path" 2>/dev/null || true)
+  if [ -z "$child_state" ] || [ ! -f "$child_state" ]; then
+    reason_id="child_run_state_missing"
+    summary="Child work-chain command did not leave a durable chain run state."
+    [ "$rc" -ne 0 ] && summary="Child work-chain command exited $rc without leaving a durable chain run state."
+    persist_child_execution_halt_state "$state_file" "$child_index" "$child_id" "$reason_id" "$summary" "$stderr_path"
+    final_rc=1
+  else
+    run_status=$(jq -r '.status // "unknown"' "$child_state")
+    if [ "$rc" -eq 0 ] && [ "$run_status" = "completed" ]; then
+      persist_child_completion_state "$state_file" "$child_index" "$child_state"
+    else
+      reason_id="child_run_failed"
+      summary="Child work-chain stopped with status: $run_status."
+      [ "$rc" -ne 0 ] && summary="Child work-chain command exited $rc with status: $run_status."
+      details_ref="$child_state"
+      persist_child_execution_halt_state "$state_file" "$child_index" "$child_id" "$reason_id" "$summary" "$details_ref" "$child_state"
+      final_rc=1
+    fi
+  fi
+
+  if [ "$output_json" -eq 1 ]; then
+    print_status_json "$state_file"
+  else
+    print_status_text "$state_file"
+  fi
+  exit "$final_rc"
+}
+
 cmd_validate_state() {
   local state_file=""
   while [ "$#" -gt 0 ]; do
@@ -626,6 +849,7 @@ fi
 case "$1" in
   init) shift; cmd_init "$@" ;;
   plan-active-child) shift; cmd_plan_active_child "$@" ;;
+  execute-active-child) shift; cmd_execute_active_child "$@" ;;
   status) shift; cmd_status "$@" ;;
   validate-state) shift; cmd_validate_state "$@" ;;
   validate-manifest) shift; cmd_validate_manifest "$@" ;;
