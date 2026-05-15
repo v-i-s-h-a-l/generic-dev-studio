@@ -7,7 +7,7 @@
 # Usage:
 #   scripts/validate-contract.sh <schema-name> <file>
 #
-# <schema-name>: worker-report | debrief | review-verdict | handoff | chain-task-envelope | chain-halt-record | chain-decision-escrow | task-graph | apollo-scenario | apollo-code-area | apollo-signpost-plan
+# <schema-name>: worker-report | debrief | review-verdict | handoff | chain-task-envelope | chain-halt-record | chain-decision-escrow | task-graph | apollo-scenario | apollo-code-area | apollo-signpost-plan | composite-chain-state
 # <file>:        path to artifact (JSON or YAML — check-jsonschema handles both)
 #
 # Exit 0  — payload is valid against the named schema.
@@ -43,8 +43,9 @@ case "$SCHEMA_NAME" in
   apollo-scenario) SCHEMA_FILE="$REPO_ROOT/_shared/contracts/apollo-scenario.schema.json" ;;
   apollo-code-area) SCHEMA_FILE="$REPO_ROOT/_shared/contracts/apollo-code-area.schema.json" ;;
   apollo-signpost-plan) SCHEMA_FILE="$REPO_ROOT/_shared/contracts/apollo-signpost-plan.schema.json" ;;
+  composite-chain-state) SCHEMA_FILE="$REPO_ROOT/_shared/contracts/composite-chain-state.schema.json" ;;
   *)
-    printf 'validate-contract: unknown schema %s (want worker-report|debrief|review-verdict|handoff|chain-task-envelope|chain-halt-record|chain-decision-escrow|task-graph|apollo-scenario|apollo-code-area|apollo-signpost-plan)\n' \
+    printf 'validate-contract: unknown schema %s (want worker-report|debrief|review-verdict|handoff|chain-task-envelope|chain-halt-record|chain-decision-escrow|task-graph|apollo-scenario|apollo-code-area|apollo-signpost-plan|composite-chain-state)\n' \
       "$SCHEMA_NAME" >&2
     exit 2
     ;;
