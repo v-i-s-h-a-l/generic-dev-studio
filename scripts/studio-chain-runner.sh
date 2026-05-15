@@ -7059,6 +7059,8 @@ Rules:
 - Keep changes scoped to this issue.
 - Commit the result on the current branch.
 - Include "Closes #$issue" in the commit message.
+- Include "Change-Type: <type>" and "Studio-Host: $host" trailers.
+- If $host is codex, include exactly one "Co-authored-by: Codex <noreply@openai.com>" trailer.
 - Before exit, write $summary_path as valid JSON.
 - Do not add or commit $summary_path; it is a private parent-runner artifact.
 - Do not open a PR.
