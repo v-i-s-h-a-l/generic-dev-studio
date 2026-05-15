@@ -117,6 +117,23 @@ _host_eligibility_expression_end() {
   _host_eligibility_fail "unterminated resolver expression in profile value: $input"
 }
 
+_host_eligibility_codex_auth_home() {
+  local login_home="$1"
+  if [ -n "${CODEX_WORKER_HOME:-}" ]; then
+    printf '%s\n' "$CODEX_WORKER_HOME"
+    return 0
+  fi
+  if [ -n "${CODEX_HOME:-}" ]; then
+    printf '%s\n' "$CODEX_HOME"
+    return 0
+  fi
+  if studio_home_is_synthetic "${HOME:-}" && [ -d "${HOME:-}/.codex" ]; then
+    printf '%s\n' "$HOME/.codex"
+    return 0
+  fi
+  printf '%s\n' "$login_home/.codex"
+}
+
 _host_eligibility_expand_expr() {
   local expr="$1" login_home="$2" github_home="$3" env_name fallback env_value
 
@@ -127,6 +144,10 @@ _host_eligibility_expand_expr() {
       ;;
     github_home)
       printf '%s\n' "$github_home"
+      return 0
+      ;;
+    codex_auth_home)
+      _host_eligibility_codex_auth_home "$login_home"
       return 0
       ;;
   esac

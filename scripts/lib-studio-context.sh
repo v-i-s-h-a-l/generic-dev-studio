@@ -178,12 +178,7 @@ _studio_context_auth_home_for_profile() {
   fi
   case "$profile" in
     codex)
-      if [ -n "${CODEX_HOME:-}" ]; then
-        printf '%s\n' "$CODEX_HOME"
-      else
-        login_home=$(_studio_context_login_home) || return 1
-        printf '%s\n' "$login_home/.codex"
-      fi
+      _studio_context_codex_auth_home
       ;;
     codex-reviewer)
       if [ -n "${CODEX_REVIEWER_HOME:-}" ]; then
@@ -195,7 +190,7 @@ _studio_context_auth_home_for_profile() {
         if [ -d "$login_home/.codex-reviewer" ]; then
           printf '%s\n' "$login_home/.codex-reviewer"
         else
-          printf '%s\n' "$login_home/.codex"
+          _studio_context_codex_auth_home
         fi
       fi
       ;;
@@ -219,6 +214,24 @@ _studio_context_auth_home_for_profile() {
       printf '%s\n' ""
       ;;
   esac
+}
+
+_studio_context_codex_auth_home() {
+  local login_home
+  if [ -n "${CODEX_WORKER_HOME:-}" ]; then
+    printf '%s\n' "$CODEX_WORKER_HOME"
+    return 0
+  fi
+  if [ -n "${CODEX_HOME:-}" ]; then
+    printf '%s\n' "$CODEX_HOME"
+    return 0
+  fi
+  if studio_home_is_synthetic "${HOME:-}" && [ -d "${HOME:-}/.codex" ]; then
+    printf '%s\n' "$HOME/.codex"
+    return 0
+  fi
+  login_home=$(_studio_context_login_home) || return 1
+  printf '%s\n' "$login_home/.codex"
 }
 
 _studio_context_github_home() {
