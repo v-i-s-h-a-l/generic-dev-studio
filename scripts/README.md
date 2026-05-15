@@ -78,6 +78,9 @@ scripts/studio-chain-runner.sh --discover ios-v2-execution                 # fil
 /dev-studio manager work-chain --resume <run_id> --yes                     # preferred user-facing resume path from summaries/halt records
 /dev-studio manager work-chain --resume <run_id> --verified --yes          # attended verification resume with closeout inventory
 scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute # reviewed source/issue to unattended issue-backed work-chain execution
+scripts/manager-composite-chain.sh init --manifest composite.yaml --json    # selected MVP equivalent to --composite-manifest; initialize explicit sequential state without starting children
+scripts/manager-composite-chain.sh status --run-id <run_id>                 # non-mutating composite-chain status and next resume command
+scripts/manager-composite-chain.sh resume --run-id <run_id>                 # clean-session continuation for the active planned/running child
 scripts/manager-work-chain.sh --from-plan task-graph.json --chain my-chain # plan-chain gate, native issue links, Project fields, then unattended execution
 /dev-studio manager work-chain --doctor <run_id>                           # preferred read-only recovery recommendation for an existing run
 scripts/manager-work-chain.sh ios-v2-execution --dry-run                   # preview the named chain through the manager front door
@@ -111,6 +114,7 @@ scripts/codex-worker-exec.sh "<prompt>"                                    # int
 # Chain progress recaps are persisted under each private run's `progress-recaps/` directory before execution, after task completion, and on halt/finish.
 # Chain startup sweeps stale state locks, old temporary run roots, scoped iOS artifact roots, and oversized private artifacts; tune with STUDIO_CHAIN_TMP_RETENTION_DAYS, STUDIO_CHAIN_RUN_RETENTION_DAYS, STUDIO_CHAIN_ARTIFACT_MAX_BYTES, and STUDIO_IOS_ARTIFACT_* TTL/pressure settings.
 # Chain reports include compact efficiency metrics, test/lint/build outcomes, typed halt records, and decision escrow when automation pauses or continues on a low-risk default.
+# Composite parent-chain mode is a manager/router addition beside plan-chain and work-chain. The selected MVP equivalent to a `work-chain --composite-manifest <file>` flag is `scripts/manager-composite-chain.sh init --manifest <file>` or `/dev-studio manager composite-chain init --manifest <file>`; parent-issue natural-language extraction and `work-chain --composite-parent <issue>` are future/non-MVP. Use `status --run-id <run_id>` for non-mutating progress inspection, then continue from a clean session with `plan-active-child`, `execute-active-child`, or `resume` as the status output directs. Sequential mode plans only the next eligible child after prior children complete or skip; existing gates remain in force for each child: plan review, issue creation, worker execution, verification, PR review/merge policy, and closeout.
 # Chain manifest preflight rejects planning artifacts before run creation; project-scoped manifests declare issue_repo or resolve it from the target repo remote.
 # Release-bearing chain manifests declare approved_release_id plus sync_strategy; rebase is the default, and squash is used only when the manifest explicitly opts in.
 scripts/studio-chain-reviewed.sh v2-transition --host codex --review-host claude-reviewer  # pre-run phase review, then chain PRs reviewed by the selected reviewer

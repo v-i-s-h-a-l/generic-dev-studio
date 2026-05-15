@@ -1,0 +1,341 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "composite-chain-state.schema.json",
+  "schema": 1,
+  "title": "Composite Chain State",
+  "description": "Durable private-runtime state for a sequential composite supervisor that plans and runs one existing child chain at a time.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "composite_run_id",
+    "source_ref",
+    "state",
+    "children",
+    "current_child_index",
+    "current_child_id",
+    "active_halt_ref",
+    "blocked_reason",
+    "next_command",
+    "idempotency_keys",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "composite-chain-state" },
+    "composite_run_id": { "$ref": "debrief.schema.json#/$defs/uuidv7" },
+    "source_ref": { "$ref": "#/$defs/sourceRef" },
+    "manifest": { "$ref": "#/$defs/compositeManifest" },
+    "state": {
+      "enum": [
+        "initialized",
+        "child_ready",
+        "planning_child",
+        "child_planned",
+        "running_child",
+        "child_completed",
+        "halted",
+        "completed"
+      ]
+    },
+    "children": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/child" }
+    },
+    "current_child_index": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "current_child_id": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "active_halt_ref": {
+      "oneOf": [
+        { "$ref": "#/$defs/haltRef" },
+        { "type": "null" }
+      ]
+    },
+    "blocked_reason": {
+      "oneOf": [
+        { "$ref": "#/$defs/blockedReason" },
+        { "type": "null" }
+      ]
+    },
+    "next_command": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "idempotency_keys": { "$ref": "#/$defs/idempotencyKeys" },
+    "created_at": { "$ref": "debrief.schema.json#/$defs/rfc3339" },
+    "updated_at": { "$ref": "debrief.schema.json#/$defs/rfc3339" },
+    "completed_at": {
+      "oneOf": [
+        { "$ref": "debrief.schema.json#/$defs/rfc3339" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "not": {
+        "properties": {
+          "children": {
+            "contains": {
+              "type": "object",
+              "properties": {
+                "status": { "enum": ["planning", "running"] }
+              },
+              "required": ["status"]
+            },
+            "minContains": 2
+          }
+        },
+        "required": ["children"]
+      }
+    }
+  ],
+  "$defs": {
+    "sourceRef": {
+      "type": "object",
+      "required": ["source_type"],
+      "properties": {
+        "source_type": { "enum": ["parent_issue", "manifest"] },
+        "parent_issue_url": {
+          "type": ["string", "null"],
+          "format": "uri"
+        },
+        "manifest_path": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "manifest_ref": {
+          "type": ["string", "null"],
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true,
+      "oneOf": [
+        {
+          "properties": {
+            "source_type": { "const": "parent_issue" },
+            "parent_issue_url": { "type": "string", "format": "uri" }
+          },
+          "required": ["parent_issue_url"]
+        },
+        {
+          "properties": {
+            "source_type": { "const": "manifest" },
+            "manifest_path": { "type": "string", "minLength": 1 }
+          },
+          "required": ["manifest_path"]
+        }
+      ]
+    },
+    "compositeManifest": {
+      "type": "object",
+      "required": ["kind", "schema_version", "name", "mode", "children"],
+      "properties": {
+        "kind": { "const": "composite-chain" },
+        "schema_version": { "const": 1 },
+        "name": { "$ref": "#/$defs/stableId" },
+        "mode": { "const": "sequential" },
+        "children": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/manifestChild" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "manifestChild": {
+      "type": "object",
+      "required": ["id", "source_type"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" },
+        "source_type": { "enum": ["issue", "manifest"] },
+        "issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "manifest_path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true,
+      "oneOf": [
+        {
+          "properties": {
+            "source_type": { "const": "issue" },
+            "issue": { "type": "integer", "minimum": 1 }
+          },
+          "required": ["issue"]
+        },
+        {
+          "properties": {
+            "source_type": { "const": "manifest" },
+            "manifest_path": { "type": "string", "minLength": 1 }
+          },
+          "required": ["manifest_path"]
+        }
+      ]
+    },
+    "child": {
+      "type": "object",
+      "required": [
+        "id",
+        "ordinal",
+        "source",
+        "status",
+        "refs",
+        "idempotency_keys",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source": { "$ref": "#/$defs/childSource" },
+        "status": {
+          "enum": [
+            "pending",
+            "planning",
+            "planned",
+            "running",
+            "completed",
+            "halted",
+            "skipped"
+          ]
+        },
+        "refs": { "$ref": "#/$defs/childRefs" },
+        "blocked_reason": {
+          "oneOf": [
+            { "$ref": "#/$defs/blockedReason" },
+            { "type": "null" }
+          ]
+        },
+        "idempotency_keys": { "$ref": "#/$defs/idempotencyKeys" },
+        "created_at": { "$ref": "debrief.schema.json#/$defs/rfc3339" },
+        "updated_at": { "$ref": "debrief.schema.json#/$defs/rfc3339" },
+        "completed_at": {
+          "oneOf": [
+            { "$ref": "debrief.schema.json#/$defs/rfc3339" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "childSource": {
+      "type": "object",
+      "required": ["source_type"],
+      "properties": {
+        "source_type": { "enum": ["issue", "manifest"] },
+        "issue": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "issue_url": {
+          "type": ["string", "null"],
+          "format": "uri"
+        },
+        "manifest_path": {
+          "type": ["string", "null"],
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "childRefs": {
+      "type": "object",
+      "required": [
+        "planner_artifact",
+        "review_artifact",
+        "work_chain_manifest",
+        "child_run_id",
+        "issue_url",
+        "pr_url",
+        "completion_summary"
+      ],
+      "properties": {
+        "planner_artifact": { "$ref": "#/$defs/nullablePath" },
+        "review_artifact": { "$ref": "#/$defs/nullablePath" },
+        "work_chain_manifest": { "$ref": "#/$defs/nullablePath" },
+        "child_run_id": {
+          "oneOf": [
+            { "$ref": "debrief.schema.json#/$defs/uuidv7" },
+            { "type": "null" }
+          ]
+        },
+        "issue_url": {
+          "type": ["string", "null"],
+          "format": "uri"
+        },
+        "pr_url": {
+          "type": ["string", "null"],
+          "format": "uri"
+        },
+        "completion_summary": { "$ref": "#/$defs/nullablePath" }
+      },
+      "additionalProperties": true
+    },
+    "haltRef": {
+      "type": "object",
+      "required": ["reason_id", "halt_record"],
+      "properties": {
+        "reason_id": { "$ref": "#/$defs/reasonId" },
+        "halt_record": { "$ref": "#/$defs/path" },
+        "child_id": {
+          "type": ["string", "null"],
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "blockedReason": {
+      "type": "object",
+      "required": ["reason_id", "summary"],
+      "properties": {
+        "reason_id": { "$ref": "#/$defs/reasonId" },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 280
+        },
+        "details_ref": { "$ref": "#/$defs/nullablePath" }
+      },
+      "additionalProperties": true
+    },
+    "idempotencyKeys": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "nullablePath": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stableId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "reasonId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    }
+  }
+}

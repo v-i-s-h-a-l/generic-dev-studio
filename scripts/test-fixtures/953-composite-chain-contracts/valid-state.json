@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "kind": "composite-chain-state",
+  "composite_run_id": "019e2c8a-74a0-7339-acea-b00cc80d580d",
+  "source_ref": {
+    "source_type": "parent_issue",
+    "parent_issue_url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/953"
+  },
+  "manifest": {
+    "kind": "composite-chain",
+    "schema_version": 1,
+    "name": "benchmark-insights-roadmap",
+    "mode": "sequential",
+    "children": [
+      {
+        "id": "ui-ia-redesign",
+        "source_type": "issue",
+        "issue": 123
+      },
+      {
+        "id": "similar-scenario-insight",
+        "source_type": "issue",
+        "issue": 124
+      }
+    ]
+  },
+  "state": "running_child",
+  "children": [
+    {
+      "id": "ui-ia-redesign",
+      "ordinal": 0,
+      "source": {
+        "source_type": "issue",
+        "issue": 123,
+        "issue_url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/123"
+      },
+      "status": "running",
+      "refs": {
+        "planner_artifact": "/private/runtime/composite/plan-ui-ia-redesign.md",
+        "review_artifact": "/private/runtime/composite/plan-ui-ia-redesign-review.md",
+        "work_chain_manifest": "/private/runtime/composite/ui-ia-redesign-work-chain.yaml",
+        "child_run_id": "019e2c8a-7f71-7c87-a586-b94d3c1280a6",
+        "issue_url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/123",
+        "pr_url": null,
+        "completion_summary": null
+      },
+      "blocked_reason": null,
+      "idempotency_keys": {
+        "planning": "composite:benchmark-insights-roadmap:ui-ia-redesign:planning",
+        "run": "composite:benchmark-insights-roadmap:ui-ia-redesign:run"
+      },
+      "created_at": "2026-05-15T16:51:05Z",
+      "updated_at": "2026-05-15T17:00:00Z",
+      "completed_at": null
+    },
+    {
+      "id": "similar-scenario-insight",
+      "ordinal": 1,
+      "source": {
+        "source_type": "issue",
+        "issue": 124,
+        "issue_url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/124"
+      },
+      "status": "pending",
+      "refs": {
+        "planner_artifact": null,
+        "review_artifact": null,
+        "work_chain_manifest": null,
+        "child_run_id": null,
+        "issue_url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/124",
+        "pr_url": null,
+        "completion_summary": null
+      },
+      "blocked_reason": null,
+      "idempotency_keys": {
+        "planning": "composite:benchmark-insights-roadmap:similar-scenario-insight:planning"
+      },
+      "created_at": "2026-05-15T16:51:05Z",
+      "updated_at": "2026-05-15T16:51:05Z",
+      "completed_at": null
+    }
+  ],
+  "current_child_index": 0,
+  "current_child_id": "ui-ia-redesign",
+  "active_halt_ref": null,
+  "blocked_reason": null,
+  "next_command": "/dev-studio manager work-chain ui-ia-redesign --attended --yes",
+  "idempotency_keys": {
+    "state_update": "composite:benchmark-insights-roadmap:state",
+    "active_child": "composite:benchmark-insights-roadmap:child:ui-ia-redesign"
+  },
+  "created_at": "2026-05-15T16:51:05Z",
+  "updated_at": "2026-05-15T17:00:00Z",
+  "completed_at": null
+}
