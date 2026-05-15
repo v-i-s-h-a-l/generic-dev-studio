@@ -50,7 +50,19 @@ run_case() {
 valid_message="Valid commit
 
 Change-Type: feature
+Studio-Host: codex
+Co-authored-by: Codex <noreply@openai.com>"
+
+codex_missing_coauthor_message="Missing Codex coauthor
+
+Change-Type: feature
 Studio-Host: codex"
+
+codex_bad_coauthor_message="Bad Codex coauthor
+
+Change-Type: feature
+Studio-Host: codex
+Co-authored-by: Codex <codex@openai.com>"
 
 invalid_type_message="Invalid change-type
 
@@ -75,6 +87,8 @@ human_repo="$TMPROOT/human"
 mkdir -p "$human_repo"
 
 run_case "valid_automation" 0 "$automation_repo" "$valid_message" ""
+run_case "codex_missing_coauthor_warns" 0 "$automation_repo" "$codex_missing_coauthor_message" "Codex-hosted commits should include GitHub-visible credit"
+run_case "codex_bad_coauthor_warns" 0 "$automation_repo" "$codex_bad_coauthor_message" "Codex co-author trailer should be exactly"
 run_case "invalid_change_type_fails" 1 "$automation_repo" "$invalid_type_message" "invalid Change-Type trailer: unknown"
 run_case "missing_host_fails_in_automation" 1 "$automation_repo" "$missing_host_message" "missing trailer Studio-Host"
 run_case "missing_host_warns_for_human" 0 "$human_repo" "$missing_host_message" "passed with 1 warning(s)"

@@ -351,9 +351,11 @@ Commit discipline is part of review quality for host-routed changes:
 - **Warn (note but proceed unless risk increases):**
   - Missing or shallow `Caveats` for behavior-risky changes.
   - Host identity is only inferred from `Co-authored-by:` text while machine-readable host metadata exists in `.studio/chain-task-start.json` / `.studio/chain-worker-summary.json`.
+  - Codex-authored commits omit `Co-authored-by: Codex <noreply@openai.com>` or use an invented Codex email address.
 
 **How to check:**
 - Prefer machine-readable host identity from `.studio/chain-task-start.json` / `.studio/chain-worker-summary.json` (`host`, `model`, `model_version`) over parsing `Co-authored-by:` in commit footers.
+- For Codex-hosted commits, keep `Studio-Host: codex` and add the GitHub-visible Codex co-author trailer `Co-authored-by: Codex <noreply@openai.com>`.
 - Verify the commit subject is imperative and change-oriented; use `git log`/`git show` on staged commits or PR payload to validate body structure.
 - Verify taxonomy labels stay within the canonical set above.
 - Block-and-ask findings should be explicit in review output; hard blocks must state the minimum fix.
