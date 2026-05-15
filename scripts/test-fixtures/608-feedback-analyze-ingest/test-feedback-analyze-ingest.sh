@@ -78,6 +78,11 @@ ts: 2026-05-05T00:04:00Z
 This record includes a token-shaped string: ghp_12345678901234567890.
 MD
 
+cat > "$INBOX/006-sparse.md" <<'MD'
+---
+---
+MD
+
 OUT="$TMPROOT/out.json"
 ACTIONS="$TMPROOT/actions.jsonl"
 DRY_OUT="$TMPROOT/dry-run.json"
@@ -88,10 +93,11 @@ DRY_OUT="$TMPROOT/dry-run.json"
 
 jq -e '
   .mode == "dry-run"
-  and .inbox_count_before == 5
-  and .inbox_count_after == 5
+  and .inbox_count_before == 6
+  and .inbox_count_after == 6
   and .destination_count == 4
-  and (.policy_holds | length) == 1
+  and (.policy_holds | length) == 2
+  and (.policy_holds[] | select(.source_file == "sample-project/006-sparse.md" and .policy_reason == "scope_not_public_studio"))
 ' "$DRY_OUT" >/dev/null
 
 [ ! -d "$INBOX/processed" ] || fail "dry-run should not move feedback records"
@@ -105,11 +111,12 @@ jq -e '
 jq -e '
   .kind == "manager_analyze_feedback_ingest"
   and .mode == "apply"
-  and .inbox_count_before == 5
-  and .inbox_count_after == 1
+  and .inbox_count_before == 6
+  and .inbox_count_after == 2
   and .destination_count == 4
-  and (.policy_holds | length) == 1
+  and (.policy_holds | length) == 2
   and (.policy_holds[] | select(.source_file == "sample-project/005-unsafe.md" and .policy_reason == "privacy_scrub_required"))
+  and (.policy_holds[] | select(.source_file == "sample-project/006-sparse.md" and .policy_reason == "scope_not_public_studio"))
 ' "$OUT" >/dev/null
 
 jq -e '
@@ -136,6 +143,7 @@ jq -s -e '
 [ -f "$INBOX/processed/003-existing.md" ] || fail "existing-match source was not processed"
 [ -f "$INBOX/processed/004-distinct.md" ] || fail "distinct source was not processed"
 [ -f "$INBOX/005-unsafe.md" ] || fail "unsafe source should remain in inbox"
+[ -f "$INBOX/006-sparse.md" ] || fail "sparse source should remain in inbox"
 
 EVENT_LOG="$HOME/.dev-studio/generic-dev-studio/events/$(date -u +%Y-%m-%d).jsonl"
 [ -f "$EVENT_LOG" ] || fail "feedback_ingested events were not emitted"
