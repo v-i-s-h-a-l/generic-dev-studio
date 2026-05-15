@@ -282,6 +282,17 @@ Emitted by `scripts/studio-chain-runner.sh`. Agent field is `studio`, mode field
 | `chain_worker_summary_ingested` | A worker completion envelope is validated or gap-filled into the private summary root. | `run_id`, `chain_run_id`, `issue_run_id`, `summary`, `status`, `telemetry_gaps` |
 | `chain_telemetry_gap` | A worker summary or chain stage lacks optional model, token, test, lint, or build telemetry. | `run_id`, `chain_run_id`, `issue_run_id`, `gap_kind`, `stage`, `reason`, `status` |
 | `chain_auth_normalized` | The runner proves GitHub auth through the login-home path before live chain mutation. | `run_id`, `home_source`, `github_auth`, `secrets`, `status` |
+| `composite_chain_started` | A composite sequential supervisor starts from an explicit parent issue or manifest source. | `composite_run_id`, `source_type` (`parent_issue`\|`manifest`), `parent_issue` or `manifest_ref`, `child_count`, `status` |
+| `composite_child_planning_started` | The supervisor selects one pending child and delegates planning to `manager plan-chain`. | `composite_run_id`, `child_id`, `child_index`, `issue_number` or `manifest_ref`, `status` |
+| `composite_child_planning_completed` | The active child has a reviewed planner artifact and work-chain manifest. | `composite_run_id`, `child_id`, `child_index`, `review_status`, `status` |
+| `composite_child_run_started` | The supervisor delegates the active child to `manager work-chain` / `studio-chain-runner`. | `composite_run_id`, `child_id`, `child_index`, `child_run_id`, `issue_number`, `status` |
+| `composite_child_run_completed` | The active child has a durable completion summary and can no longer block later child discovery. | `composite_run_id`, `child_id`, `child_index`, `child_run_id`, `issue_number`, `pr_url`, `status` |
+| `composite_chain_halted` | The supervisor records an active halt or delegates to a child halt/resume path. | `composite_run_id`, `child_id`, `reason_id`, `halt_class`, `next_action_id`, `status` |
+| `composite_chain_completed` | Every ordered child is completed or explicitly skipped. | `composite_run_id`, `child_count`, `completed_count`, `skipped_count`, `status` |
+
+Composite chain events are public-safe summaries. Private artifact paths stay in
+runtime state; issue comments may mention only issue numbers, PR URLs, run IDs,
+child IDs, and abstract reason IDs.
 
 ### Cross-agent events (every agent emits)
 
