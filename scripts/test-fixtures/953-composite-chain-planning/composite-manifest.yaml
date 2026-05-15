@@ -1,0 +1,14 @@
+kind: composite-chain
+schema_version: 1
+name: sequential-planning-fixture
+mode: sequential
+children:
+  - id: first-child
+    source_type: issue
+    issue: 123
+  - id: second-child
+    source_type: issue
+    issue: 124
+  - id: third-child
+    source_type: issue
+    issue: 125
