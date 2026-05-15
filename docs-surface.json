@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-15T09:15:02Z",
+  "generated_at": "2026-05-15T11:03:41Z",
   "schema": 1,
   "commands": [
     {"name": "dev-studio", "source": "commands/dev-studio.md", "description": "Studio v2 umbrella router. Dispatches by canonical role from any project: manager, worker, reviewer, perf, planner, qa-engineer, flow-tester, release-manager.", "agent": null, "scope": "global"},
