@@ -118,9 +118,12 @@ infer_scope() {
   explicit=$(get_field "$file" scope)
   if [ -n "$explicit" ]; then
     printf '%s\n' "$explicit"
-    return
+    return 0
   fi
-  [ -n "$kind" ] && printf 'generic-dev-studio\n'
+  if [ -n "$kind" ]; then
+    printf 'generic-dev-studio\n'
+  fi
+  return 0
 }
 
 kind_to_label() {
@@ -379,7 +382,7 @@ fi
 if [ -d "$INBOX_ROOT" ]; then
   while IFS= read -r file; do
     [ -n "$file" ] || continue
-    rel="${file#$INBOX_ROOT/}"
+    rel="${file#"$INBOX_ROOT"/}"
     kind=$(get_field "$file" kind)
     ts=$(get_field "$file" ts)
     title=$(get_title "$file")
