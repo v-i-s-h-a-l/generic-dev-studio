@@ -30,6 +30,18 @@ cat > "$TMPROOT/good/allow.md" <<'MD'
 Run claude -p "review this plan" for the synthetic bad case.
 MD
 
+cat > "$TMPROOT/good/host-profile.yaml" <<'YAML'
+profiles:
+  claude:
+    capabilities:
+      - reviewer
+    eligibility_smoke_command: "claude -p --permission-mode dontAsk 'Print STUDIO_HOST_PROFILE_SMOKE=ok'"
+  codex:
+    capabilities:
+      - worker
+    eligibility_smoke_command: "codex exec --ignore-user-config --ignore-rules --ephemeral --sandbox read-only -c approval_policy=never 'Print STUDIO_HOST_PROFILE_SMOKE=ok'"
+YAML
+
 cat > "$TMPROOT/bad/raw-claude.md" <<'MD'
 # Planner review
 

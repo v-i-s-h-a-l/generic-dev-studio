@@ -31,7 +31,10 @@ profiles:
 ```
 
 `default_order` is `claude,codex`. It is alphabetical and does not encode a
-quality preference. Runtime consumers can override ordering with
+quality preference. Runtime consumers filter that list by capability before
+selection. The shipped default keeps Claude review-only, so worker, planner,
+and perf auto-selection resolve to Codex unless a custom profile or explicit
+host override says otherwise. Runtime consumers can override ordering with
 `STUDIO_AUTO_HOST_ORDER`; this contract only defines the shipped default.
 
 ## Profile Fields
@@ -83,17 +86,16 @@ profiles:
     auth_home: "${env.CLAUDE_HOME:-${login_home}}"
     github_home: "${github_home}"
     capabilities:
-      - worker
       - reviewer
-      - planner
-      - perf
     synthetic_home_behavior: login-home-runtime
     eligibility_smoke_command: "claude -p --permission-mode dontAsk 'Print STUDIO_HOST_PROFILE_SMOKE=ok'"
 ```
 
 This resolves the host binary from `PATH`, keeps Claude auth under the real
 login home unless `CLAUDE_HOME` is set, and keeps GitHub operations out of a
-synthetic host home.
+synthetic host home. In the repo default, Claude is intentionally limited to
+reviewer capability so implementation chains do not consume Claude Code plan
+limits.
 
 ## Validation Expectations
 

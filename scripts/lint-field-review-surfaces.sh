@@ -23,7 +23,6 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
 ERRORS=0
-emit_error() { printf '%s\n' "$1"; ERRORS=$((ERRORS + 1)); }
 
 collect_targets() {
   case "${1:-}" in
@@ -33,7 +32,7 @@ collect_targets() {
             case "$f" in
               core/v2/*|chains/*|scripts/*|_shared/*|hosts/*|REVIEW.md|CLAUDE.md|AGENTS.md)
                 case "$f" in
-                  *.md|*.sh|*.yaml|*.yml|*.json|CLAUDE.md|AGENTS.md|REVIEW.md) printf '%s\n' "$f" ;;
+                  *.md|*.sh|*.yaml|*.yml|*.json) printf '%s\n' "$f" ;;
                 esac
                 ;;
             esac
@@ -105,6 +104,9 @@ scan_file() {
     function has_review_context(text) {
       return text ~ /(reviewer|review host|review setup|review this|cross-host|sibling-host|phase[ -]?gate|phase plan|plan[ -]?review|outcome[ -]?review|verdict|qa|flow|release-manager|perf|planner|architect|field-agent)/
     }
+    function is_host_eligibility_smoke(line) {
+      return line ~ /^[[:space:]]*eligibility_smoke_command:[[:space:]]*["'\''"]?(claude[[:space:]]+-p|codex[[:space:]]+exec)([[:space:]]|["'\''"]|$)/
+    }
     function documents_banned_pattern(text) {
       return text ~ /(must not|do not|forbid|forbidden|banned|retired|instead of raw|bypass|wrapper|document|testing|test fixture)/
     }
@@ -131,6 +133,7 @@ scan_file() {
             had = 1
           }
         } else if (has_raw_command(lines[i]) &&
+            !is_host_eligibility_smoke(lines[i]) &&
             !(allowed_annotation(lines[i]) || allowed_annotation(prev1)) &&
             has_review_context(window) &&
             !documents_banned_pattern(window)) {
