@@ -10,10 +10,7 @@ profiles:
     auth_home: "${env.CLAUDE_HOME:-${login_home}}"
     github_home: "${github_home}"
     capabilities:
-      - worker
       - reviewer
-      - planner
-      - perf
     synthetic_home_behavior: login-home-runtime
     eligibility_smoke_command: "claude -p --permission-mode dontAsk 'Print STUDIO_HOST_PROFILE_SMOKE=ok'"
   codex:

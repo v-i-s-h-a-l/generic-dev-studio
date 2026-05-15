@@ -67,21 +67,37 @@ for host_id in claude codex; do
     ] | sort)
   '
   assert_eq "$host_id host_id round trip" "$host_id" "$(jq -r '.host_id' "$profile_json")"
-  assert_json_field "$host_id capabilities round trip" "$profile_json" '.capabilities | length == 4'
+  case "$host_id" in
+    claude)
+      assert_json_field "$host_id is review-only by default" "$profile_json" '.capabilities == ["reviewer"]'
+      ;;
+    codex)
+      assert_json_field "$host_id implementation capabilities round trip" "$profile_json" '.capabilities == ["worker", "reviewer", "planner", "perf"]'
+      ;;
+  esac
   assert_json_field "$host_id auth_home round trip" "$profile_json" '.auth_home | length > 0'
   assert_json_field "$host_id github_home round trip" "$profile_json" '.github_home | length > 0'
   assert_json_field "$host_id smoke command round trip" "$profile_json" '.eligibility_smoke_command | length > 0'
 done
 
 worker_order=$(host_profile_list_for_capability worker | paste -sd, -)
-assert_eq "default worker order" "claude,codex" "$worker_order"
+assert_eq "default worker order" "codex" "$worker_order"
+
+planner_order=$(host_profile_list_for_capability planner | paste -sd, -)
+assert_eq "default planner order" "codex" "$planner_order"
+
+perf_order=$(host_profile_list_for_capability perf | paste -sd, -)
+assert_eq "default perf order" "codex" "$perf_order"
+
+reviewer_order=$(host_profile_list_for_capability reviewer | paste -sd, -)
+assert_eq "default reviewer order" "claude,codex" "$reviewer_order"
 
 HOST_PROFILE_LOADED_FILE=
 STUDIO_HOST_PROFILE_FILE="$CUSTOM_PROFILE" host_profile_load_file || fail "STUDIO_HOST_PROFILE_FILE override did not load"
 assert_eq "env override loaded file" "$CUSTOM_PROFILE" "$HOST_PROFILE_LOADED_FILE"
 
-reviewer_order=$(host_profile_list_for_capability reviewer | paste -sd, -)
-assert_eq "custom reviewer order" "alpha" "$reviewer_order"
+custom_reviewer_order=$(host_profile_list_for_capability reviewer | paste -sd, -)
+assert_eq "custom reviewer order" "alpha" "$custom_reviewer_order"
 
 export STUDIO_AUTO_HOST_ORDER="beta,alpha"
 worker_override_order=$(host_profile_list_for_capability worker | paste -sd, -)
