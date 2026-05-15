@@ -16,7 +16,7 @@ profiles:
   codex:
     host_id: codex
     binary_path: codex
-    auth_home: "${env.CODEX_WORKER_HOME:-${env.CODEX_HOME:-${login_home}/.codex}}"
+    auth_home: "${codex_auth_home}"
     github_home: "${github_home}"
     capabilities:
       - worker

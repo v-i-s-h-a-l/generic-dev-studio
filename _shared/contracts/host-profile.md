@@ -58,6 +58,7 @@ paths. Consumers expand only the variables they explicitly support.
 |---|---|
 | `${login_home}` | Real account home resolved by `resolve_user_login_home`; never a synthetic host home. |
 | `${github_home}` | GitHub home resolved by `resolve_parent_home_for_github`. |
+| `${codex_auth_home}` | Codex credential/config home resolved as `CODEX_WORKER_HOME`, then `CODEX_HOME`, then synthetic caller `$HOME/.codex` when launched from a Codex synthetic home, then `${login_home}/.codex`. |
 | `${env.NAME}` | Environment variable `NAME`, if present. |
 | `${env.NAME:-fallback}` | Environment variable `NAME`, otherwise the fallback expression. |
 
@@ -69,7 +70,7 @@ falling back to ambient `HOME`.
 | Behavior | Meaning |
 |---|---|
 | `login-home-runtime` | Runtime and GitHub paths use `${login_home}` when ambient `HOME` is synthetic. |
-| `codex-auth-home-runtime` | Runtime and GitHub paths use `${login_home}` when ambient `HOME` is synthetic; Codex auth prefers `CODEX_WORKER_HOME`, then `CODEX_HOME`, then `${login_home}/.codex`. |
+| `codex-auth-home-runtime` | Runtime and GitHub paths use `${login_home}` when ambient `HOME` is synthetic; Codex auth prefers `CODEX_WORKER_HOME`, then `CODEX_HOME`, then synthetic caller `$HOME/.codex` when available, then `${login_home}/.codex`. |
 
 ## Fully Worked Example
 
