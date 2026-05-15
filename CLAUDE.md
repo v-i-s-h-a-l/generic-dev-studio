@@ -112,6 +112,11 @@ Use machine-readable host metadata as the source of truth whenever it is present
 
 Do not infer host identity only from a `Co-authored-by:` footer. If host metadata is not available from tooling, assistant-authored commits should append a `Co-authored-by:` footer for the host identity.
 
+Codex-authored commits should include the official Codex co-author trailer for
+GitHub-visible credit in addition to `Studio-Host: codex`:
+`Co-authored-by: Codex <noreply@openai.com>`. Do not use invented Codex email
+addresses such as `codex@openai.com`.
+
 ### Commit-taxonomy values (initial set)
 
 The initial taxonomy values are:

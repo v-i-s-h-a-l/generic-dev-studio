@@ -4,6 +4,7 @@
 # Supported trailers:
 #   Change-Type: <change-type>
 #   Studio-Host: <host-id>
+#   Co-authored-by: Codex <noreply@openai.com>
 #
 # Exit 0 on pass (or warnings with explicit env bypass), 1 on hard failures.
 
@@ -56,11 +57,20 @@ fail() { errs=$((errs + 1)); printf 'lint-commit-message: ERROR: %s\n' "$1" >&2;
 change_type=""
 studio_host=""
 coauthored_by_seen=0
+codex_coauthor_seen=0
+bad_codex_coauthor=""
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
     Change-Type:*) change_type=$(trim "${line#Change-Type:}") ;;
     Studio-Host:*) studio_host=$(trim "${line#Studio-Host:}") ;;
-    Co-authored-by:*) coauthored_by_seen=1 ;;
+    Co-authored-by:*)
+      coauthored_by_seen=1
+      coauthor=$(trim "${line#Co-authored-by:}")
+      case "$coauthor" in
+        "Codex <noreply@openai.com>") codex_coauthor_seen=1 ;;
+        "Codex <"*) bad_codex_coauthor="$coauthor" ;;
+      esac
+      ;;
   esac
 done < "$COMMIT_FILE"
 
@@ -110,6 +120,16 @@ fi
 if [ "$coauthored_by_seen" -eq 1 ] && [ -z "$studio_host" ] && [ "$errs" -eq 0 ]; then
   warn "Co-authored-by is for human-visible credit and is not used for host attribution."
 fi
+
+case "$studio_host" in
+  codex|codex-reviewer)
+    if [ -n "$bad_codex_coauthor" ]; then
+      warn "Codex co-author trailer should be exactly: Co-authored-by: Codex <noreply@openai.com> (found: $bad_codex_coauthor)"
+    elif [ "$codex_coauthor_seen" -eq 0 ]; then
+      warn "Codex-hosted commits should include GitHub-visible credit: Co-authored-by: Codex <noreply@openai.com>"
+    fi
+    ;;
+esac
 
 if [ "$errs" -gt 0 ]; then
   printf 'commit message must include valid Change-Type and Studio-Host trailers\n' >&2
