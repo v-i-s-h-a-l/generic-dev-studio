@@ -20,6 +20,7 @@ Usage:
   scripts/manager-composite-chain.sh init --manifest <composite.yaml> [--run-id <uuidv7>] [--json]
   scripts/manager-composite-chain.sh plan-active-child (--state <path>|--run-id <uuidv7>) [--json]
   scripts/manager-composite-chain.sh execute-active-child (--state <path>|--run-id <uuidv7>) [--json]
+  scripts/manager-composite-chain.sh resume (--state <path>|--run-id <uuidv7>) [--json]
   scripts/manager-composite-chain.sh status (--state <path>|--run-id <uuidv7>) [--json]
   scripts/manager-composite-chain.sh validate-state --state <path>
   scripts/manager-composite-chain.sh validate-manifest --manifest <composite.yaml>
@@ -277,6 +278,15 @@ child_work_command_json() {
     '[$script, $manifest, "--attended", "--yes"]'
 }
 
+child_resume_command_json() {
+  local child_run_id="${1:?usage: child_resume_command_json <child-run-id>}"
+  validate_run_id "$child_run_id"
+  jq -cn \
+    --arg script "${STUDIO_COMPOSITE_WORK_CHAIN_SCRIPT:-$SCRIPT_DIR/manager-work-chain.sh}" \
+    --arg child_run_id "$child_run_id" \
+    '[$script, "--resume", $child_run_id, "--yes"]'
+}
+
 run_child_work_command() {
   local command_json="$1" stdout_path="$2" stderr_path="$3"
   local -a cmd=()
@@ -285,6 +295,11 @@ run_child_work_command() {
   done < <(printf '%s\n' "$command_json" | jq -r '.[]')
   [ "${#cmd[@]}" -gt 0 ] || fail "empty child work-chain command" 1
   "${cmd[@]}" > "$stdout_path" 2> "$stderr_path"
+}
+
+run_child_resume_command() {
+  local command_json="$1" stdout_path="$2" stderr_path="$3"
+  run_child_work_command "$command_json" "$stdout_path" "$stderr_path"
 }
 
 child_run_id_from_output() {
@@ -330,10 +345,43 @@ resolve_child_run_state() {
   latest_child_run_state_for_manifest "$work_chain_manifest"
 }
 
+active_child_halt_json() {
+  local child_state="${1:?usage: active_child_halt_json <child-state>}"
+  jq -c '
+    [(.halt_records // [])[]
+      | select((.status // "paused") == "paused" or (.status // "") == "terminated")
+    ] | last // null
+  ' "$child_state"
+}
+
+child_halt_allows_resume() {
+  local child_state="${1:?usage: child_halt_allows_resume <child-state>}"
+  jq -e '
+    [(.halt_records // [])[]
+      | select((.status // "paused") == "paused" or (.status // "") == "terminated")
+    ] | last as $halt
+    | if $halt == null then true
+      else (($halt.halt_class // "") != "fatal") and (($halt.next_command // "") != "")
+      end
+  ' "$child_state" >/dev/null
+}
+
+next_pending_child_tsv() {
+  local state_file="${1:?usage: next_pending_child_tsv <state>}"
+  jq -r '
+    first(
+      .children
+      | to_entries[]
+      | select(.value.status == "pending")
+      | "\(.key)\t\(.value.id)"
+    ) // empty
+  ' "$state_file"
+}
+
 persist_planned_child_state() {
   local state_file="$1" child_index="$2" result_json="$3" now next_command
   now=$(iso_ts_now)
-  next_command="/dev-studio manager composite-chain status --run-id $(jq -r '.composite_run_id' "$state_file")"
+  next_command="/dev-studio manager composite-chain execute-active-child --run-id $(jq -r '.composite_run_id' "$state_file")"
   # shellcheck disable=SC2016
   atomic_update_state "$state_file" '
     ($result[0]) as $r
@@ -390,18 +438,23 @@ persist_running_child_state() {
     | .updated_at = $now
     | .blocked_reason = null
     | .active_halt_ref = null
-    | .next_command = ("/dev-studio manager composite-chain status --run-id " + .composite_run_id)
+    | .next_command = ("/dev-studio manager composite-chain resume --run-id " + .composite_run_id)
   ' --argjson idx "$child_index" --argjson command "$command_json" --arg stdout_path "$stdout_path" --arg stderr_path "$stderr_path" --arg now "$now"
 }
 
 persist_child_completion_state() {
-  local state_file="$1" child_index="$2" child_state="$3" now remaining next_command
+  local state_file="$1" child_index="$2" child_state="$3" now remaining next_command next_child next_idx next_id
   now=$(iso_ts_now)
   remaining=$(jq --argjson idx "$child_index" '[.children[] | select(.ordinal != $idx and .status == "pending")] | length' "$state_file")
   if [ "$remaining" -eq 0 ]; then
     next_command=""
+    next_idx="null"
+    next_id=""
   else
     next_command="/dev-studio manager composite-chain plan-active-child --run-id $(jq -r '.composite_run_id' "$state_file")"
+    next_child=$(next_pending_child_tsv "$state_file")
+    next_idx=${next_child%%$'\t'*}
+    next_id=${next_child#*$'\t'}
   fi
   # shellcheck disable=SC2016
   atomic_update_state "$state_file" '
@@ -425,31 +478,41 @@ persist_child_completion_state() {
     | .children[$idx].completed_at = $now
     | .children[$idx].updated_at = $now
     | .state = (if $remaining == 0 then "completed" else "child_completed" end)
+    | .current_child_index = (if $remaining == 0 then null else $next_idx end)
+    | .current_child_id = (if $remaining == 0 then null else $next_id end)
     | .completed_at = (if $remaining == 0 then $now else .completed_at end)
     | .blocked_reason = null
     | .active_halt_ref = null
     | .next_command = (if $next_command == "" then null else $next_command end)
     | .updated_at = $now
-  ' --argjson idx "$child_index" --slurpfile child "$child_state" --arg child_state "$child_state" --arg now "$now" --argjson remaining "$remaining" --arg next_command "$next_command"
+  ' --argjson idx "$child_index" --slurpfile child "$child_state" --arg child_state "$child_state" --arg now "$now" --argjson remaining "$remaining" --arg next_command "$next_command" --argjson next_idx "$next_idx" --arg next_id "$next_id"
 }
 
 persist_child_execution_halt_state() {
   local state_file="$1" child_index="$2" child_id="$3" reason_id="$4" summary="$5" details_ref="$6" child_state="${7:-}" halt_record now next_command
+  local child_run_id="" child_halt_ref="" next_safe_action="Inspect the child halt, correct the cause, then resume the composite chain."
   now=$(iso_ts_now)
   halt_record=$(write_halt_record "$state_file" "$child_id" "$reason_id" "$summary" "$details_ref")
-  next_command="/dev-studio manager composite-chain status --run-id $(jq -r '.composite_run_id' "$state_file")"
+  next_command="/dev-studio manager composite-chain resume --run-id $(jq -r '.composite_run_id' "$state_file")"
+  if [ -n "$child_state" ] && [ -f "$child_state" ]; then
+    child_run_id=$(jq -r '.run_id // empty' "$child_state")
+    child_halt_ref=$(active_child_halt_json "$child_state" | jq -r '.path // .halt_record // empty')
+    next_safe_action=$(active_child_halt_json "$child_state" | jq -r '.next_safe_action // "Inspect the child halt, correct the cause, then resume the composite chain."')
+  fi
   # shellcheck disable=SC2016
   atomic_update_state "$state_file" '
     .state = "halted"
     | .children[$idx].status = "halted"
+    | .children[$idx].refs.child_run_id = (if $child_run_id == "" then (.children[$idx].refs.child_run_id // null) else $child_run_id end)
     | .children[$idx].refs.child_run_state = (if $child_state == "" then (.children[$idx].refs.child_run_state // null) else $child_state end)
-    | .children[$idx].blocked_reason = {reason_id: $reason_id, summary: $summary, details_ref: (if $details_ref == "" then null else $details_ref end)}
+    | .children[$idx].refs.child_halt_ref = (if $child_halt_ref == "" then (.children[$idx].refs.child_halt_ref // null) else $child_halt_ref end)
+    | .children[$idx].blocked_reason = {reason_id: $reason_id, summary: $summary, details_ref: (if $details_ref == "" then null else $details_ref end), next_safe_action: $next_safe_action}
     | .children[$idx].updated_at = $now
-    | .blocked_reason = {reason_id: $reason_id, summary: $summary, details_ref: (if $details_ref == "" then null else $details_ref end)}
-    | .active_halt_ref = {reason_id: $reason_id, halt_record: $halt_record, child_id: $child_id}
+    | .blocked_reason = {reason_id: $reason_id, summary: $summary, details_ref: (if $details_ref == "" then null else $details_ref end), next_safe_action: $next_safe_action}
+    | .active_halt_ref = {reason_id: $reason_id, halt_record: $halt_record, child_id: $child_id, child_run_id: (if $child_run_id == "" then null else $child_run_id end), child_halt_ref: (if $child_halt_ref == "" then null else $child_halt_ref end), next_safe_action: $next_safe_action}
     | .next_command = $next_command
     | .updated_at = $now
-  ' --argjson idx "$child_index" --arg reason_id "$reason_id" --arg summary "$summary" --arg details_ref "$details_ref" --arg halt_record "$halt_record" --arg child_id "$child_id" --arg child_state "$child_state" --arg now "$now" --arg next_command "$next_command"
+  ' --argjson idx "$child_index" --arg reason_id "$reason_id" --arg summary "$summary" --arg details_ref "$details_ref" --arg halt_record "$halt_record" --arg child_id "$child_id" --arg child_state "$child_state" --arg child_run_id "$child_run_id" --arg child_halt_ref "$child_halt_ref" --arg next_safe_action "$next_safe_action" --arg now "$now" --arg next_command "$next_command"
 }
 
 write_initial_state() {
@@ -538,6 +601,7 @@ print_status_json() {
   local state_file="$1"
   jq --arg state_path "$state_file" '
     def active_status: .status == "planning" or .status == "running";
+    def selected_child: if .current_child_index == null then null else .children[.current_child_index] end;
     {
       composite_run_id,
       state_path: $state_path,
@@ -549,9 +613,12 @@ print_status_json() {
       ),
       completed_children: [.children[] | select(.status == "completed") | {id, ordinal}],
       remaining_children: [.children[] | select(.status == "pending") | {id, ordinal, source}],
-      active_child_run_id: ([.children[] | select(active_status) | .refs.child_run_id][0] // null),
+      active_child_id: (selected_child | if . == null then null else .id end),
+      active_child_run_id: ((selected_child.refs.child_run_id // null) // ([.children[] | select(active_status) | .refs.child_run_id][0] // null)),
+      child_halt_ref: (selected_child.refs.child_halt_ref // .active_halt_ref.child_halt_ref // null),
       blocked_reason,
       active_halt_ref,
+      next_safe_action: (.active_halt_ref.next_safe_action // .blocked_reason.next_safe_action // null),
       next_resume_command: .next_command
     }
   ' "$state_file"
@@ -566,6 +633,7 @@ print_status_text() {
       end;
     def child_line: "- " + .id + " (" + (.ordinal | tostring) + ", " + .status + ", " + source_label + ")";
     def active_status: .status == "planning" or .status == "running";
+    def selected_child: if .current_child_index == null then null else .children[.current_child_index] end;
 
     "Composite chain: " + .composite_run_id,
     "State path: " + $state_path,
@@ -575,8 +643,10 @@ print_status_text() {
     (([.children[] | select(.status == "completed") | child_line] | if length == 0 then ["- none"] else . end)[]),
     "Remaining children:",
     (([.children[] | select(.status == "pending") | child_line] | if length == 0 then ["- none"] else . end)[]),
-    "Active child run id: " + (([.children[] | select(active_status) | .refs.child_run_id][0] // null) // "none"),
+    "Active child run id: " + (((selected_child.refs.child_run_id // null) // ([.children[] | select(active_status) | .refs.child_run_id][0] // null)) // "none"),
+    "Child halt ref: " + ((selected_child.refs.child_halt_ref // .active_halt_ref.child_halt_ref // null) // "none"),
     "Blocked/halt reason: " + (if .blocked_reason == null then "none" else (.blocked_reason.reason_id + " — " + .blocked_reason.summary) end),
+    "Next safe action: " + ((.active_halt_ref.next_safe_action // .blocked_reason.next_safe_action // null) // "none"),
     "Next resume command: " + (.next_command // "none")
   ' "$state_file"
 }
@@ -810,6 +880,136 @@ cmd_execute_active_child() {
   exit "$final_rc"
 }
 
+cmd_resume() {
+  local run_id="" state_file="" output_json=0 state child_index child_id work_chain_manifest
+  local child_state="" child_run_id="" command_json attempt_dir stdout_path stderr_path rc run_status reason_id summary details_ref
+  local plan_run_id="" result_json="" result_status="" final_rc=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --run-id) run_id="${2:?--run-id requires a uuidv7}"; shift 2 ;;
+      --run-id=*) run_id="${1#--run-id=}"; shift ;;
+      --state) state_file="${2:?--state requires a path}"; shift 2 ;;
+      --state=*) state_file="${1#--state=}"; shift ;;
+      --json) output_json=1; shift ;;
+      --parent-issue|--parent-issue=*|--issue|--issue=*) reject_parent_issue_parsing ;;
+      -h|--help) usage ;;
+      *) fail "unknown resume argument: $1" 2 ;;
+    esac
+  done
+  if [ -z "$state_file" ] && [ -n "$run_id" ]; then
+    validate_run_id "$run_id"
+    state_file=$(state_path_for_run_id "$run_id")
+  fi
+  [ -n "$state_file" ] || fail "resume requires --state <path> or --run-id <uuidv7>" 2
+  validate_state "$state_file"
+
+  state=$(jq -r '.state' "$state_file")
+  case "$state" in
+    completed)
+      ;;
+    child_ready|initialized|child_completed)
+      # Durable state already knows the next pending child. Surface, do not skip
+      # the explicit child planning/review gate by planning automatically.
+      ;;
+    planning_child)
+      child_index=$(jq -r '[.children | to_entries[] | select(.value.status == "planning")] | if length == 1 then .[0].key else empty end' "$state_file")
+      [ -n "$child_index" ] || fail "resume found planning_child state without exactly one planning child; inspect state before retrying" 1
+      child_id=$(jq -r --argjson idx "$child_index" '.children[$idx].id' "$state_file")
+      plan_run_id=$(jq -r --argjson idx "$child_index" '.children[$idx].refs.plan_run_id // empty' "$state_file")
+      [ -n "$plan_run_id" ] || fail "resume cannot reconcile planning child without refs.plan_run_id" 1
+      result_json=$(plan_result_path_for "$plan_run_id")
+      if [ ! -f "$result_json" ]; then
+        persist_planning_halt_state "$state_file" "$child_index" "$child_id" "child_plan_state_missing" "Child planning was in progress but no durable manager-plan-chain result exists." ""
+        final_rc=1
+      else
+        result_status=$(jq -r '.status // "unknown"' "$result_json")
+        if [ "$result_status" = "ready" ] || [ "$result_status" = "executed" ]; then
+          persist_planned_child_state "$state_file" "$child_index" "$result_json"
+        else
+          persist_planning_halt_state "$state_file" "$child_index" "$child_id" "child_plan_blocked" "Child planning stopped with manager-plan-chain status: $result_status." "$result_json"
+          final_rc=1
+        fi
+      fi
+      ;;
+    child_planned)
+      if [ "$output_json" -eq 1 ]; then
+        cmd_execute_active_child --state "$state_file" --json
+      else
+        cmd_execute_active_child --state "$state_file"
+      fi
+      ;;
+    running_child|halted)
+      child_index=$(jq -r '
+        [.children | to_entries[] | select(.value.status == "running" or .value.status == "halted")]
+        | if length == 1 then .[0].key elif length == 0 then empty else "ambiguous" end
+      ' "$state_file")
+      [ "$child_index" != "ambiguous" ] || fail "resume found multiple running/halted children; inspect state before retrying" 1
+      [ -n "$child_index" ] || fail "resume found $state state without one running or halted child; inspect state before retrying" 1
+      child_id=$(jq -r --argjson idx "$child_index" '.children[$idx].id' "$state_file")
+      work_chain_manifest=$(jq -r --argjson idx "$child_index" '.children[$idx].refs.work_chain_manifest // ""' "$state_file")
+      child_run_id=$(jq -r --argjson idx "$child_index" '.children[$idx].refs.child_run_id // empty' "$state_file")
+      child_state=$(jq -r --argjson idx "$child_index" '.children[$idx].refs.child_run_state // empty' "$state_file")
+
+      if { [ -z "$child_state" ] || [ ! -f "$child_state" ]; } && [ -n "$child_run_id" ]; then
+        child_state=$(child_run_state_for_id "$child_run_id" 2>/dev/null || true)
+      fi
+      if { [ -z "$child_state" ] || [ ! -f "$child_state" ]; } && [ -n "$work_chain_manifest" ] && [ "$work_chain_manifest" != "null" ]; then
+        child_state=$(latest_child_run_state_for_manifest "$work_chain_manifest" 2>/dev/null || true)
+      fi
+      if [ -n "$child_state" ] && [ -f "$child_state" ]; then
+        child_run_id=$(jq -r '.run_id // empty' "$child_state")
+        run_status=$(jq -r '.status // "unknown"' "$child_state")
+        if [ "$run_status" = "completed" ]; then
+          persist_child_completion_state "$state_file" "$child_index" "$child_state"
+        elif child_halt_allows_resume "$child_state"; then
+          [ -n "$child_run_id" ] || fail "child halt is resumable but child state has no run_id" 1
+          attempt_dir="$(dirname "$state_file")/resume/$child_id"
+          mkdir -p "$attempt_dir"
+          stdout_path="$attempt_dir/manager-work-chain-resume.out"
+          stderr_path="$attempt_dir/manager-work-chain-resume.err"
+          command_json=$(child_resume_command_json "$child_run_id")
+
+          set +e
+          run_child_resume_command "$command_json" "$stdout_path" "$stderr_path"
+          rc=$?
+          set -e
+
+          child_state=$(child_run_state_for_id "$child_run_id" 2>/dev/null || printf '%s\n' "$child_state")
+          run_status=$(jq -r '.status // "unknown"' "$child_state")
+          if [ "$rc" -eq 0 ] && [ "$run_status" = "completed" ]; then
+            persist_child_completion_state "$state_file" "$child_index" "$child_state"
+          else
+            reason_id=$(active_child_halt_json "$child_state" | jq -r '.reason_id // "child_run_halted"')
+            summary="Child work-chain resume stopped with status: $run_status."
+            [ "$rc" -ne 0 ] && summary="Child work-chain resume exited $rc with status: $run_status."
+            persist_child_execution_halt_state "$state_file" "$child_index" "$child_id" "$reason_id" "$summary" "$child_state" "$child_state"
+            final_rc=1
+          fi
+        else
+          reason_id=$(active_child_halt_json "$child_state" | jq -r '.reason_id // "child_run_halted"')
+          summary="Child work-chain is halted and is not safe for automatic composite resume."
+          persist_child_execution_halt_state "$state_file" "$child_index" "$child_id" "$reason_id" "$summary" "$child_state" "$child_state"
+          final_rc=1
+        fi
+      else
+        details_ref=$(jq -r --argjson idx "$child_index" '.children[$idx].refs.work_stderr // ""' "$state_file")
+        persist_child_execution_halt_state "$state_file" "$child_index" "$child_id" "child_run_state_missing" "Resume could not find durable child chain state." "$details_ref"
+        final_rc=1
+      fi
+      ;;
+    *)
+      fail "resume does not understand composite state: $state" 1
+      ;;
+  esac
+
+  if [ "$output_json" -eq 1 ]; then
+    print_status_json "$state_file"
+  else
+    print_status_text "$state_file"
+  fi
+  exit "$final_rc"
+}
+
 cmd_validate_state() {
   local state_file=""
   while [ "$#" -gt 0 ]; do
@@ -850,6 +1050,7 @@ case "$1" in
   init) shift; cmd_init "$@" ;;
   plan-active-child) shift; cmd_plan_active_child "$@" ;;
   execute-active-child) shift; cmd_execute_active_child "$@" ;;
+  resume) shift; cmd_resume "$@" ;;
   status) shift; cmd_status "$@" ;;
   validate-state) shift; cmd_validate_state "$@" ;;
   validate-manifest) shift; cmd_validate_manifest "$@" ;;
