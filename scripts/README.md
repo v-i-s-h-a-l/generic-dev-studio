@@ -78,6 +78,8 @@ scripts/studio-chain-runner.sh --discover ios-v2-execution                 # fil
 /dev-studio manager work-chain --resume <run_id> --yes                     # preferred user-facing resume path from summaries/halt records
 /dev-studio manager work-chain --resume <run_id> --verified --yes          # attended verification resume with closeout inventory
 scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute # reviewed source/issue to unattended issue-backed work-chain execution
+scripts/manager-composite-chain.sh init --manifest composite.yaml --json    # initialize explicit composite-chain state without starting children
+scripts/manager-composite-chain.sh status --run-id <run_id>                 # non-mutating composite-chain status and next resume command
 scripts/manager-work-chain.sh --from-plan task-graph.json --chain my-chain # plan-chain gate, native issue links, Project fields, then unattended execution
 /dev-studio manager work-chain --doctor <run_id>                           # preferred read-only recovery recommendation for an existing run
 scripts/manager-work-chain.sh ios-v2-execution --dry-run                   # preview the named chain through the manager front door

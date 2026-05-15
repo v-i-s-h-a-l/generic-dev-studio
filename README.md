@@ -86,6 +86,8 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio manager config list  # project-scoped opt-in feature settings and doctor checks
 /dev-studio manager branch status --source feature/foo --target release/26.5.0 # release branch preflight
 /dev-studio manager plan-chain <goal-or-issue> --execute # reviewed PRD-to-chain automation; default unattended, --interactive for attended
+/dev-studio manager composite-chain init --manifest composite.yaml # initialize explicit composite-chain state without starting children
+/dev-studio manager composite-chain status --run-id <run_id> # non-mutating composite-chain recap and next resume command
 /dev-studio manager work-chain ios-v2-execution # auto-run the iOS v2 execution chain; bare call discovers available chains
 /dev-studio manager work-chain ios-v2-execution --dry-run # preferred preview path for attended planning
 /dev-studio manager work-chain --from-plan task-graph.json --chain my-chain # create/link issues, populate Project fields, then auto-run
@@ -242,6 +244,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-chain-doctor.sh   # read-only chain-run recovery recommendation from state, events, reports, halts, checkpoints, retries, and phase reviews
   studio-chain-rule-gates.sh # deterministic chain workflow gates for git hygiene, artifact roots, cache keys, cleanup TTLs, and telemetry redaction
   manager-plan-chain.sh # manager-owned source/issue/plan to reviewed issue-backed work-chain orchestration with native issue links, Project fields, telemetry, and optional execution
+  manager-composite-chain.sh # explicit composite-chain manifest init/status front door; status is non-mutating
   manager-work-chain.sh # manager front door for work-chain discovery/start/resume plus --from-plan unattended execution routing
   chain-monitor-sync.sh # locked/idempotent chain monitor active/archived Slack List row sync from manifests, runtime manifests, and event-derived persisted chain-run state
   manager-chain-monitor.sh # manager front door for monitor configure/sync/status/recovery while preserving login-home ownership

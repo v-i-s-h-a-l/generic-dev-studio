@@ -73,6 +73,12 @@ supplies the task context and runtime slug.
      parent/sub-issues when available, populated on the configured Project
      board, and handed off as a runnable work-chain manifest. Add `--execute`
      for one-command unattended launch and `--interactive` for attended mode.
+     For `manager composite-chain`, call
+     `$STUDIO_REPO/scripts/manager-composite-chain.sh`. `init --manifest`
+     initializes private runtime state for an explicit `kind: composite-chain`
+     manifest without starting child planning or execution, and `status`
+     prints a validated, non-mutating recap from `--run-id` or `--state`.
+     Parent issue text parsing is unsupported in the MVP.
      For `manager work-chain`, prefer the
      `/dev-studio manager work-chain ...` command in user-facing next steps,
      especially after ingest or attended planning; script paths are secondary
@@ -123,6 +129,7 @@ supplies the task context and runtime slug.
    | `config` | manager | `/dev-studio manager config list` |
    | `branch` | manager | `/dev-studio manager branch status --source feature/foo --target release/26.5.0` |
    | `plan-chain` | manager | `/dev-studio manager plan-chain 758 --repo v-i-s-h-a-l/generic-dev-studio --execute` |
+   | `composite-chain` | manager | `/dev-studio manager composite-chain status --run-id <run_id>` |
    | `work-chain` | manager | `/dev-studio manager work-chain --from-plan task-graph.json --chain my-chain` |
    | `add` | manager | `/dev-studio manager add <url>` |
    | `sync` | host-adapter | `/dev-studio host-adapter sync` |
@@ -171,11 +178,13 @@ supplies the task context and runtime slug.
    from this index:
 
    - `manager`: `status`, `resume-plan`, `ingest`, `guard`, `audit`,
-     `analyze`, `reconcile`, `config`, `branch`, `plan-chain`, `work-chain`,
+     `analyze`, `reconcile`, `config`, `branch`, `plan-chain`,
+     `composite-chain`, `work-chain`,
      `add`; examples:
      `/dev-studio manager ingest "capture this"`, `/dev-studio manager
      config list`, `/dev-studio manager branch status --source feature/foo
-     --target release/26.5.0`, `/dev-studio manager plan-chain 758 --execute`.
+     --target release/26.5.0`, `/dev-studio manager plan-chain 758 --execute`,
+     `/dev-studio manager composite-chain status --run-id <run_id>`.
    - `worker`: bounded contract execution plus `checkpoint` and
      `resume-checkpoint`; example: `/dev-studio worker T123`.
    - `reviewer`: `review`, plan/outcome/diff/PR/release-packet review plus
