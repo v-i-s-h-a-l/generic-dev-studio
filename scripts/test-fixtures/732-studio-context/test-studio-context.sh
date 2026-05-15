@@ -12,10 +12,11 @@ BIN="$TMPROOT/bin"
 LOGIN_HOME="$TMPROOT/login-home"
 SYNTH_HOME="$TMPROOT/.codex-homes/personal"
 CODEX_AUTH="$LOGIN_HOME/.codex"
+SYNTH_CODEX_AUTH="$SYNTH_HOME/.codex"
 CODEX_REVIEWER_AUTH="$LOGIN_HOME/.codex-reviewer"
 CLAUDE_REVIEWER_AUTH="$LOGIN_HOME/.claude-reviewer"
 FAKE_AUTH="$TMPROOT/fake-profile-auth"
-mkdir -p "$BIN" "$LOGIN_HOME" "$SYNTH_HOME" "$CODEX_AUTH" "$CODEX_REVIEWER_AUTH" "$CLAUDE_REVIEWER_AUTH" "$FAKE_AUTH"
+mkdir -p "$BIN" "$LOGIN_HOME" "$SYNTH_HOME" "$CODEX_AUTH" "$SYNTH_CODEX_AUTH" "$CODEX_REVIEWER_AUTH" "$CLAUDE_REVIEWER_AUTH" "$FAKE_AUTH"
 
 cat > "$BIN/dscl" <<SH
 #!/usr/bin/env bash
@@ -62,6 +63,14 @@ assert_eq "codex github_home normalized to login home" "$LOGIN_HOME" "$(json_fie
 assert_eq "codex runtime owner remains project" "project" "$(json_field "$codex_json" runtime_owner)"
 assert_eq "codex data visibility remains private runtime" "private-runtime" "$(json_field "$codex_json" data_visibility)"
 
+codex_implicit_json="$TMPROOT/codex-implicit-context.json"
+PATH="$BIN:$PATH" HOME="$SYNTH_HOME" STUDIO_CONTEXT_PROJECT_SLUG=generic-dev-studio STUDIO_CONTEXT_HOST_PROFILE=codex \
+  bash -c ". '$ROOT/scripts/lib-studio-context.sh'; studio_context_emit_json delegated-host-spawn" \
+  >"$codex_implicit_json"
+
+assert_eq "codex synthetic launch implicit auth_home" "$SYNTH_CODEX_AUTH" "$(json_field "$codex_implicit_json" auth_home)"
+assert_eq "codex synthetic launch implicit github_home normalized" "$LOGIN_HOME" "$(json_field "$codex_implicit_json" github_home)"
+
 codex_reviewer_json="$TMPROOT/codex-reviewer-context.json"
 PATH="$BIN:$PATH" HOME="$SYNTH_HOME" STUDIO_CONTEXT_PROJECT_SLUG=generic-dev-studio STUDIO_CONTEXT_HOST_PROFILE=codex-reviewer \
   bash -c ". '$ROOT/scripts/lib-studio-context.sh'; studio_context_emit_json delegated-host-spawn" \
@@ -84,7 +93,15 @@ PATH="$BIN:$PATH" HOME="$SYNTH_HOME" STUDIO_CONTEXT_PROJECT_SLUG=generic-dev-stu
   bash -c ". '$ROOT/scripts/lib-studio-context.sh'; studio_context_emit_json delegated-host-spawn" \
   >"$codex_reviewer_fallback_json"
 
-assert_eq "codex reviewer falls back to logged-in codex profile" "$CODEX_AUTH" "$(json_field "$codex_reviewer_fallback_json" auth_home)"
+assert_eq "codex reviewer falls back to synthetic codex profile" "$SYNTH_CODEX_AUTH" "$(json_field "$codex_reviewer_fallback_json" auth_home)"
+
+rm -rf "$SYNTH_CODEX_AUTH"
+codex_reviewer_login_fallback_json="$TMPROOT/codex-reviewer-login-fallback-context.json"
+PATH="$BIN:$PATH" HOME="$SYNTH_HOME" STUDIO_CONTEXT_PROJECT_SLUG=generic-dev-studio STUDIO_CONTEXT_HOST_PROFILE=codex-reviewer \
+  bash -c ". '$ROOT/scripts/lib-studio-context.sh'; studio_context_emit_json delegated-host-spawn" \
+  >"$codex_reviewer_login_fallback_json"
+
+assert_eq "codex reviewer falls back to logged-in codex profile" "$CODEX_AUTH" "$(json_field "$codex_reviewer_login_fallback_json" auth_home)"
 
 if [ "$(json_field "$codex_json" studio_home)" = "$(json_field "$codex_json" auth_home)" ]; then
   fail "durable Studio state and Codex auth home collapsed to the same root"
