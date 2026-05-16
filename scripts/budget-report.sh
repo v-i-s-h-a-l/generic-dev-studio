@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
 done
 
 # Context-window baseline for ctx_util_pct. Standard Claude context is 200K;
-# override via env for 1M-context sessions (e.g. Opus 4.7).
+# override via env for explicitly approved larger-context sessions.
 CTX_WINDOW_TOKENS=${CTX_WINDOW_TOKENS:-200000}
 
 BUDGETS="$REPO_ROOT/_shared/schemas/token-budgets.json"

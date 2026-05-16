@@ -72,7 +72,6 @@ models:
     capability_tier: heavyweight
     role_suitability:
       - implementer
-      - reviewer
       - architect
     stable_aliases: []
     snapshot_ids:
@@ -104,6 +103,8 @@ models:
     role_suitability:
       - implementer
       - reviewer
+      - planner
+      - architect
       - editor
       - triage
     stable_aliases:

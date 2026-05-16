@@ -3,7 +3,7 @@
 #
 # Usage:
 #   scripts/resolve-reviewer-model.sh --review-host <host> [--implementation-host <host>]
-#       [--role reviewer.heavyweight] [--allow-same-family]
+#       [--role reviewer.heavyweight|planner.heavyweight] [--allow-same-family]
 
 set -u
 umask 022
@@ -49,6 +49,7 @@ shell_assign() {
 
 adapter_family() {
   local host="$1" family
+  # shellcheck disable=SC2016 # yq uses strenv(HOST_NAME), not shell expansion.
   family=$(HOST_NAME="$host" yq -r '
     (.adapter_profiles[strenv(HOST_NAME)].provider_family // "") as $direct
     | if $direct != "" then $direct
@@ -85,10 +86,11 @@ fi
 selected_key=""
 while IFS= read -r key; do
   [ -n "$key" ] && [ "$key" != "null" ] || continue
-  if MODEL_KEY="$key" REVIEW_FAMILY="$review_family" REVIEW_HOST_NAME="$REVIEW_HOST" yq -e '
+  # shellcheck disable=SC2016 # yq uses strenv(...) values supplied for this invocation.
+  if MODEL_KEY="$key" REVIEW_FAMILY="$review_family" REVIEW_HOST_NAME="$REVIEW_HOST" ROLE_NAME="$ROLE" yq -e '
       .models[strenv(MODEL_KEY)] != null
       and .models[strenv(MODEL_KEY)].provider_family == strenv(REVIEW_FAMILY)
-      and ((.models[strenv(MODEL_KEY)].role_suitability // []) | contains(["reviewer"]))
+      and ((.models[strenv(MODEL_KEY)].role_suitability // []) | contains([(strenv(ROLE_NAME) | split(".")[0])]))
       and ((.models[strenv(MODEL_KEY)].adapter_profiles // []) | contains([strenv(REVIEW_HOST_NAME)]))
     ' "$CATALOG" >/dev/null 2>&1; then
     selected_key="$key"
