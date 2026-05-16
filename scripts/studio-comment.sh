@@ -8,24 +8,29 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 usage() {
   cat <<'USAGE' >&2
 Usage:
-  scripts/studio-comment.sh --dry-run --target issue:<n>|pr:<n> --kind <kind> --idempotency-key <key> --summary <text> [--evidence <text>] [--next <text>]
-  scripts/studio-comment.sh --post    --target issue:<n>|pr:<n> --kind <kind> --idempotency-key <key> --summary <text> [--evidence <text>] [--next <text>]
+  scripts/studio-comment.sh --dry-run --target issue:<n>|pr:<n> --kind <kind> --idempotency-key <key> --summary <text> [--planning-signal <text>] [--links <text>] [--evidence <text>] [--next <text>]
+  scripts/studio-comment.sh --post    --target issue:<n>|pr:<n> --kind <kind> --idempotency-key <key> --summary <text> [--planning-signal <text>] [--links <text>] [--evidence <text>] [--next <text>] [--repo owner/repo]
 
 Supported kinds:
   chain-progress, chain-issue-started, chain-issue-completed,
-  chain-issue-blocked, chain-review, chain-final-summary
+  chain-issue-blocked, chain-review, chain-final-summary,
+  feedback-ingest, staleness-triage
 
 The first body line is the studio-comment:v1 marker. Dry-run prints the
 structured JSON payload and never calls GitHub. Posting routes through
-scripts/studio-gh.sh; do not call GitHub comment commands directly.
+scripts/studio-gh.sh and updates an existing matching idempotency marker when
+one is already present; do not call GitHub comment commands directly.
 USAGE
 }
 
 mode=""
+repo=""
 target=""
 kind=""
 idempotency_key=""
 summary=""
+planning_signal=""
+links=""
 evidence=""
 next_step=""
 source="studio-comment"
@@ -45,6 +50,11 @@ while [ "$#" -gt 0 ]; do
       target="$2"
       shift 2
       ;;
+    --repo)
+      [ "$#" -ge 2 ] || { printf 'studio-comment: --repo requires a value\n' >&2; exit 2; }
+      repo="$2"
+      shift 2
+      ;;
     --kind)
       [ "$#" -ge 2 ] || { printf 'studio-comment: --kind requires a value\n' >&2; exit 2; }
       kind="$2"
@@ -58,6 +68,16 @@ while [ "$#" -gt 0 ]; do
     --summary)
       [ "$#" -ge 2 ] || { printf 'studio-comment: --summary requires a value\n' >&2; exit 2; }
       summary="$2"
+      shift 2
+      ;;
+    --planning-signal)
+      [ "$#" -ge 2 ] || { printf 'studio-comment: --planning-signal requires a value\n' >&2; exit 2; }
+      planning_signal="$2"
+      shift 2
+      ;;
+    --links)
+      [ "$#" -ge 2 ] || { printf 'studio-comment: --links requires a value\n' >&2; exit 2; }
+      links="$2"
       shift 2
       ;;
     --evidence)
@@ -94,7 +114,7 @@ done
 [ -n "$summary" ] || { printf 'studio-comment: --summary is required\n' >&2; exit 2; }
 
 case "$kind" in
-  chain-progress|chain-issue-started|chain-issue-completed|chain-issue-blocked|chain-review|chain-final-summary) ;;
+  chain-progress|chain-issue-started|chain-issue-completed|chain-issue-blocked|chain-review|chain-final-summary|feedback-ingest|staleness-triage) ;;
   *)
     printf 'studio-comment: unsupported kind: %s\n' "$kind" >&2
     exit 2
@@ -114,6 +134,20 @@ case "$target" in
     ;;
 esac
 
+if [ -n "$repo" ]; then
+  case "$repo" in
+    *[!A-Za-z0-9._/-]*|*/*/*|/*|*/|"")
+      printf 'studio-comment: --repo must be owner/repo\n' >&2
+      exit 2
+      ;;
+    */*) ;;
+    *)
+      printf 'studio-comment: --repo must be owner/repo\n' >&2
+      exit 2
+      ;;
+  esac
+fi
+
 case "$idempotency_key" in
   *[!A-Za-z0-9._:/-]*|"")
     printf 'studio-comment: idempotency key contains unsupported characters\n' >&2
@@ -128,7 +162,7 @@ case "$source" in
     ;;
 esac
 
-payload_blob=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$target" "$kind" "$idempotency_key" "$summary" "$evidence" "$next_step")
+payload_blob=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' "$target" "$kind" "$idempotency_key" "$summary" "$planning_signal" "$links" "$evidence" "$next_step")
 # shellcheck disable=SC2016 # Literal private-path patterns include shell syntax.
 if printf '%s' "$payload_blob" | grep -Eq '(^|[[:space:]])(/Users/|/private/|/var/folders/|/tmp/|~[A-Za-z0-9._-]*/|~/?\.dev-studio|\$HOME/\.dev-studio|\$\{HOME\}/\.dev-studio)'; then
   printf 'studio-comment: public comment content appears to contain a local/private path\n' >&2
@@ -143,6 +177,20 @@ marker="<!-- studio-comment:v1 kind=$kind idempotency_key=$idempotency_key targe
 body="$marker
 ### Summary
 $summary"
+
+if [ -n "$planning_signal" ]; then
+  body="$body
+
+### Planning Signal
+$planning_signal"
+fi
+
+if [ -n "$links" ]; then
+  body="$body
+
+### Links
+$links"
+fi
 
 if [ -n "$evidence" ]; then
   body="$body
@@ -159,7 +207,7 @@ $next_step"
 fi
 
 emit_json() {
-  BODY="$body" MARKER="$marker" KIND="$kind" IDEMPOTENCY_KEY="$idempotency_key" TARGET="$target" SOURCE="$source" DRY_RUN="$1" \
+  BODY="$body" MARKER="$marker" KIND="$kind" IDEMPOTENCY_KEY="$idempotency_key" TARGET="$target" SOURCE="$source" REPO="$repo" DRY_RUN="$1" \
     python3 - <<'PY'
 import hashlib
 import json
@@ -173,6 +221,7 @@ payload = {
     "idempotency_key": os.environ["IDEMPOTENCY_KEY"],
     "target": os.environ["TARGET"],
     "source": os.environ["SOURCE"],
+    "repo": os.environ["REPO"] or None,
     "body": body,
     "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
     "dry_run": os.environ["DRY_RUN"] == "1",
@@ -191,5 +240,18 @@ case "$target" in
   pr:*) comment_subcommand="pr" ;;
 esac
 
-printf '%s\n' "$body" | "$SCRIPT_DIR/studio-gh.sh" "$comment_subcommand" comment "$target_number" --body-file -
+if [ -z "$repo" ]; then
+  repo=$("$SCRIPT_DIR/studio-gh.sh" repo view --json nameWithOwner --jq .nameWithOwner)
+fi
+
+existing_comment_id=$(
+  MARKER="$marker" "$SCRIPT_DIR/studio-gh.sh" api "repos/$repo/issues/$target_number/comments" --paginate \
+    --jq '.[] | select((.body // "") | startswith(env.MARKER)) | .id' 2>/dev/null | tail -n 1
+)
+
+if [ -n "$existing_comment_id" ]; then
+  "$SCRIPT_DIR/studio-gh.sh" api --method PATCH "repos/$repo/issues/comments/$existing_comment_id" -f body="$body" >/dev/null
+else
+  printf '%s\n' "$body" | "$SCRIPT_DIR/studio-gh.sh" "$comment_subcommand" comment "$target_number" --repo "$repo" --body-file -
+fi
 emit_json 0
