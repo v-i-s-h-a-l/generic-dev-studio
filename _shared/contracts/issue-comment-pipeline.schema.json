@@ -1,62 +1,516 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://generic-dev-studio.local/contracts/issue-comment-pipeline.schema.json",
-  "title": "studio-comment:v1",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "schema_version",
-    "marker",
-    "kind",
-    "idempotency_key",
-    "target",
-    "source",
-    "body"
+  "title": "Issue comment pipeline contracts",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/studio_comment_v1"
+    },
+    {
+      "$ref": "#/$defs/issue_context_packet_v1"
+    }
   ],
-  "properties": {
-    "schema_version": {
-      "const": 1
+  "$defs": {
+    "studio_comment_v1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "marker",
+        "kind",
+        "idempotency_key",
+        "target",
+        "source",
+        "body"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "marker": {
+          "type": "string",
+          "pattern": "^<!-- studio-comment:v1 kind=[A-Za-z0-9._:/-]+ idempotency_key=[A-Za-z0-9._:/-]+ target=(issue|pr):[0-9]+ source=[A-Za-z0-9._:/-]+ -->$"
+        },
+        "kind": {
+          "enum": [
+            "chain-progress",
+            "chain-issue-started",
+            "chain-issue-completed",
+            "chain-issue-blocked",
+            "chain-review",
+            "chain-final-summary"
+          ]
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9._:/-]+$"
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^(issue|pr):[0-9]+$"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 80,
+          "pattern": "^[A-Za-z0-9._:/-]+$"
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "dry_run": {
+          "type": "boolean"
+        }
+      }
     },
-    "marker": {
-      "type": "string",
-      "pattern": "^<!-- studio-comment:v1 kind=[A-Za-z0-9._:/-]+ idempotency_key=[A-Za-z0-9._:/-]+ target=(issue|pr):[0-9]+ source=[A-Za-z0-9._:/-]+ -->$"
+    "issue_context_packet_v1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "generated_at",
+        "source_issue",
+        "included_comment_range",
+        "raw_archive",
+        "comments",
+        "signals",
+        "provenance"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "issue-context-packet"
+        },
+        "generated_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_issue": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "number",
+            "title",
+            "state",
+            "url",
+            "body_sha256"
+          ],
+          "properties": {
+            "number": {
+              "type": "integer"
+            },
+            "title": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "updated_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "closed_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "author": {
+              "type": "string"
+            },
+            "body_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        "included_comment_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "first_comment_ordinal",
+            "last_comment_ordinal",
+            "first_comment_created_at",
+            "last_comment_created_at",
+            "included_count",
+            "total_count"
+          ],
+          "properties": {
+            "first_comment_ordinal": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "last_comment_ordinal": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "first_comment_created_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "last_comment_created_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "included_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total_count": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "raw_archive": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "local_private",
+            "issue_json",
+            "comments_json",
+            "planner_prompt_uses_raw_comments"
+          ],
+          "properties": {
+            "local_private": {
+              "const": true
+            },
+            "issue_json": {
+              "type": "string"
+            },
+            "comments_json": {
+              "type": "string"
+            },
+            "planner_prompt_uses_raw_comments": {
+              "const": false
+            }
+          }
+        },
+        "comments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/packet_comment"
+          }
+        },
+        "signals": {
+          "$ref": "#/$defs/signal_map"
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provenance_row"
+          }
+        }
+      }
     },
-    "kind": {
-      "enum": [
-        "chain-progress",
-        "chain-issue-started",
-        "chain-issue-completed",
-        "chain-issue-blocked",
-        "chain-review",
-        "chain-final-summary"
-      ]
+    "signal_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions",
+        "constraints",
+        "failures",
+        "acceptance_changes",
+        "conflicts",
+        "open_questions"
+      ],
+      "properties": {
+        "decisions": {
+          "$ref": "#/$defs/signal_entries"
+        },
+        "constraints": {
+          "$ref": "#/$defs/signal_entries"
+        },
+        "failures": {
+          "$ref": "#/$defs/signal_entries"
+        },
+        "acceptance_changes": {
+          "$ref": "#/$defs/signal_entries"
+        },
+        "conflicts": {
+          "$ref": "#/$defs/signal_entries"
+        },
+        "open_questions": {
+          "$ref": "#/$defs/signal_entries"
+        }
+      }
     },
-    "idempotency_key": {
-      "type": "string",
-      "minLength": 8,
-      "maxLength": 160,
-      "pattern": "^[A-Za-z0-9._:/-]+$"
+    "signal_entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "comment_id",
+          "comment_ordinal",
+          "url",
+          "text"
+        ],
+        "properties": {
+          "comment_id": {
+            "type": "string"
+          },
+          "comment_ordinal": {
+            "type": "integer"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      }
     },
-    "target": {
-      "type": "string",
-      "pattern": "^(issue|pr):[0-9]+$"
+    "packet_comment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "id",
+        "url",
+        "created_at",
+        "updated_at",
+        "author",
+        "marker",
+        "body_sha256",
+        "public_safe",
+        "duplicate_of",
+        "stale_reasons",
+        "signals"
+      ],
+      "properties": {
+        "ordinal": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "author": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "login",
+            "type",
+            "classification"
+          ],
+          "properties": {
+            "login": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "classification": {
+              "enum": [
+                "human",
+                "marked_agent",
+                "legacy_unmarked_agent"
+              ]
+            }
+          }
+        },
+        "marker": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/marker_metadata"
+            }
+          ]
+        },
+        "body_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "public_safe": {
+          "type": "boolean"
+        },
+        "duplicate_of": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stale_reasons": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "superseded_duplicate_idempotency_key",
+              "after_issue_closed",
+              "private_or_secret_shaped_content_redacted"
+            ]
+          }
+        },
+        "signals": {
+          "$ref": "#/$defs/comment_signal_map"
+        }
+      }
     },
-    "source": {
-      "type": "string",
-      "minLength": 3,
-      "maxLength": 80,
-      "pattern": "^[A-Za-z0-9._:/-]+$"
+    "comment_signal_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions",
+        "constraints",
+        "failures",
+        "acceptance_changes",
+        "conflicts",
+        "open_questions"
+      ],
+      "properties": {
+        "decisions": {
+          "$ref": "#/$defs/comment_signal_entries"
+        },
+        "constraints": {
+          "$ref": "#/$defs/comment_signal_entries"
+        },
+        "failures": {
+          "$ref": "#/$defs/comment_signal_entries"
+        },
+        "acceptance_changes": {
+          "$ref": "#/$defs/comment_signal_entries"
+        },
+        "conflicts": {
+          "$ref": "#/$defs/comment_signal_entries"
+        },
+        "open_questions": {
+          "$ref": "#/$defs/comment_signal_entries"
+        }
+      }
     },
-    "body": {
-      "type": "string",
-      "minLength": 1
+    "comment_signal_entries": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     },
-    "body_sha256": {
-      "type": "string",
-      "pattern": "^[a-f0-9]{64}$"
+    "marker_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "idempotency_key",
+        "target",
+        "source"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      }
     },
-    "dry_run": {
-      "type": "boolean"
+    "provenance_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "comment_id",
+        "url",
+        "created_at",
+        "author",
+        "marker",
+        "stale_reasons"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "comment_id": {
+          "type": "string"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "author": {
+          "type": "object"
+        },
+        "marker": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/marker_metadata"
+            }
+          ]
+        },
+        "stale_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

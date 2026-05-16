@@ -134,3 +134,39 @@ STUDIO_BYPASS_COMMENT_STRUCTURE_LINT=1 git commit ...
 
 The bypass prints an audit line and is user-controlled. Assistants must not set
 it silently.
+
+## Context Packet Reader
+
+`scripts/issue-context-packet.sh` reads an issue body plus comments and writes a
+bounded planning packet. It extends the writer contract by recognizing the same
+first-line `studio-comment:v1` marker; it does not replace writer semantics or
+make comments authoritative.
+
+Inputs:
+
+- Live GitHub reads use `scripts/studio-gh.sh api` for the issue and paginated
+  REST comments.
+- Fixture or pre-fetched reads may pass `--issue-json` and `--comments-json`.
+
+Outputs under `--out-dir`:
+
+- `packet.md`: cited planner-facing Markdown with source issue, included comment
+  range, decisions, constraints, failures, acceptance changes, conflicts, open
+  questions, and provenance table.
+- `packet.json`: machine-readable sidecar with issue refs, comment ids, urls,
+  timestamps, author classification, marker metadata, duplicate/stale metadata,
+  and extracted signal categories.
+- `raw/issue.json` and `raw/comments.json`: local/private archive for audit only.
+  Raw comments are not used as the direct planner prompt.
+
+Author classification is intentionally conservative:
+
+- `marked_agent`: comment starts with a valid `studio-comment:v1` marker.
+- `legacy_unmarked_agent`: unmarked bot-shaped author.
+- `human`: unmarked non-bot author.
+
+Duplicate structured comments are detected by repeated `idempotency_key`; older
+instances are marked stale with `superseded_duplicate_idempotency_key`. Comments
+created after an issue's `closed_at` timestamp are marked `after_issue_closed`.
+Private-path or secret-shaped content is excluded from extracted signals and
+marked `private_or_secret_shaped_content_redacted` in the sidecar.
