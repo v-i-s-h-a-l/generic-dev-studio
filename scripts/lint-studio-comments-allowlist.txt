@@ -1,0 +1,13 @@
+# Legacy unstructured GitHub issue/PR comment writers allowed during the
+# centralized comment pipeline migration.
+#
+# One repo-relative path per line. `--strict` skips these files entirely.
+# `--staged` still flags newly-added unstructured comment lines in them.
+scripts/analyze-feedback-ingest.sh
+scripts/ingest-feedback.sh
+scripts/pr-autopilot.sh
+scripts/pr-merge-finalize.sh
+scripts/studio-chain-runner.sh
+scripts/studio-staleness-triage.sh
+scripts/studio-weekly.sh
+scripts/sweep-process-events.sh
