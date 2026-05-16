@@ -119,6 +119,10 @@ responsible for passing only public-safe content.
 studio issue/PR comments. `scripts/lint-studio-comments.sh --staged` blocks
 new unstructured `issue comment` and `pr comment` GitHub CLI call sites outside
 that writer and outside explicitly allowlisted legacy migration entries.
+The same lint runs from the pre-commit hook, so new agent issue/PR comment
+producers must route through the shared writer unless the operator is
+intentionally migrating a legacy call site with the annotation below or the
+explicit user-controlled bypass.
 
 Per-line carve-out:
 
@@ -141,6 +145,23 @@ it silently.
 bounded planning packet. It extends the writer contract by recognizing the same
 first-line `studio-comment:v1` marker; it does not replace writer semantics or
 make comments authoritative.
+
+Use comment-aware planning when public issue comments contain decisions,
+constraints, failures, acceptance changes, conflicts, or open questions that
+would otherwise be missed by an issue-body-only plan. The manager front door is
+`scripts/manager-plan-chain.sh --issue <n> --include-comments ...` for one
+issue, or `scripts/manager-plan-chain.sh --issue-set <csv> --include-comments
+...` for a related cluster. The equivalent router guidance is
+`/dev-studio manager plan-chain ...` with the same `--include-comments`,
+`--issue`, or `--issue-set` selectors. The resulting packet and sidecar are
+planning evidence only; issue bodies, manifests, state files, event logs,
+reviewed plan artifacts, and worker summaries remain authoritative.
+
+Composite chains use the same rule for issue-sourced children: when the status
+flow directs a child planning step and comments are needed, the child planner
+uses the public-safe issue-context packet. Manifest-sourced children keep their
+source-file planning path. The composite status/resume surfaces do not make
+parent issue comments a manifest substitute.
 
 Inputs:
 
