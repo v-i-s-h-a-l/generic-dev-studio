@@ -242,7 +242,7 @@ child_plan_command_json() {
         --arg child_id "$child_id" \
         --arg repo_root "$REPO_ROOT" \
         --arg project "$project" \
-        '[$script, "--issue", $issue, "--repo", $issue_repo, "--chain", $child_id, "--project", $project, "--target-repo-root", $repo_root, "--no-execute"]'
+        '[$script, "--issue", $issue, "--repo", $issue_repo, "--chain", $child_id, "--project", $project, "--target-repo-root", $repo_root, "--include-comments", "--no-execute"]'
       ;;
     manifest)
       manifest_path=$(jq -r --argjson idx "$child_index" '.children[$idx].source.manifest_path' "$state_file")
@@ -256,6 +256,25 @@ child_plan_command_json() {
       ;;
     *)
       fail "unsupported child source_type for planning: $source_type" 1
+      ;;
+  esac
+}
+
+child_comment_context_json() {
+  local state_file="$1" child_index="$2" source_type issue
+  source_type=$(jq -r --argjson idx "$child_index" '.children[$idx].source.source_type' "$state_file")
+  case "$source_type" in
+    issue)
+      issue=$(jq -r --argjson idx "$child_index" '.children[$idx].source.issue' "$state_file")
+      jq -cn \
+        --arg issue "$issue" \
+        '{comments_included:true, mode:"issue-context-packet", packet_path:null, comment_sidecar_path:null, body_only_explicit:false, source:"child_issue", issue:($issue | tonumber)}'
+      ;;
+    manifest)
+      jq -cn '{comments_included:false, mode:"body-only", packet_path:null, comment_sidecar_path:null, body_only_explicit:true, source:"child_manifest", issue:null}'
+      ;;
+    *)
+      fail "unsupported child source_type for comment context: $source_type" 1
       ;;
   esac
 }
@@ -395,6 +414,7 @@ persist_planned_child_state() {
     | .children[$idx].refs.child_issues = ($r.created_issues // [])
     | .children[$idx].refs.parent_issue = ($r.parent_issue // null)
     | .children[$idx].refs.plan_result = $result_path
+    | .children[$idx].refs.comment_context = ($r.source_context // .children[$idx].refs.comment_context // null)
     | .children[$idx].blocked_reason = null
     | .children[$idx].updated_at = $now
     | .updated_at = $now
@@ -608,7 +628,7 @@ print_status_json() {
       state,
       current_child: (
         if .current_child_index == null then null
-        else .children[.current_child_index] | {id, ordinal, status, source}
+        else .children[.current_child_index] | {id, ordinal, status, source, comment_context: (.refs.comment_context // null)}
         end
       ),
       completed_children: [.children[] | select(.status == "completed") | {id, ordinal}],
@@ -639,6 +659,7 @@ print_status_text() {
     "State path: " + $state_path,
     "State: " + .state,
     "Current child: " + (if .current_child_index == null then "none" else (.children[.current_child_index] | .id + " (" + .status + ")") end),
+    "Comment context: " + (if selected_child == null then "none" else (((selected_child.refs.comment_context // {}).mode // "unknown") + " (comments included: " + (((selected_child.refs.comment_context // {}).comments_included // false) | tostring) + ")") end),
     "Completed children:",
     (([.children[] | select(.status == "completed") | child_line] | if length == 0 then ["- none"] else . end)[]),
     "Remaining children:",
@@ -711,7 +732,7 @@ cmd_status() {
 
 cmd_plan_active_child() {
   local run_id="" state_file="" output_json=0 eligible child_index child_id now issue_repo command_json plan_run_id
-  local attempt_dir stdout_path stderr_path result_json rc result_status reason_id summary details_ref final_rc=0
+  local attempt_dir stdout_path stderr_path result_json rc result_status reason_id summary details_ref final_rc=0 comment_context_json
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --run-id) run_id="${2:?--run-id requires a uuidv7}"; shift 2 ;;
@@ -752,6 +773,7 @@ cmd_plan_active_child() {
   result_json=$(plan_result_path_for "$plan_run_id")
   issue_repo=$(resolve_issue_repo_slug)
   command_json=$(child_plan_command_json "$state_file" "$child_index" "$child_id" "$issue_repo")
+  comment_context_json=$(child_comment_context_json "$state_file" "$child_index")
 
   # shellcheck disable=SC2016
   atomic_update_state "$state_file" '
@@ -763,13 +785,14 @@ cmd_plan_active_child() {
     | .children[$idx].refs.plan_run_id = $plan_run_id
     | .children[$idx].refs.plan_stdout = $stdout_path
     | .children[$idx].refs.plan_stderr = $stderr_path
+    | .children[$idx].refs.comment_context = $comment_context
     | .children[$idx].blocked_reason = null
     | .children[$idx].updated_at = $now
     | .updated_at = $now
     | .blocked_reason = null
     | .active_halt_ref = null
     | .next_command = ("/dev-studio manager composite-chain status --run-id " + .composite_run_id)
-  ' --argjson idx "$child_index" --arg child_id "$child_id" --argjson command "$command_json" --arg plan_run_id "$plan_run_id" --arg stdout_path "$stdout_path" --arg stderr_path "$stderr_path" --arg now "$now"
+  ' --argjson idx "$child_index" --arg child_id "$child_id" --argjson command "$command_json" --argjson comment_context "$comment_context_json" --arg plan_run_id "$plan_run_id" --arg stdout_path "$stdout_path" --arg stderr_path "$stderr_path" --arg now "$now"
 
   set +e
   run_child_plan_command "$plan_run_id" "$command_json" "$stdout_path" "$stderr_path"
