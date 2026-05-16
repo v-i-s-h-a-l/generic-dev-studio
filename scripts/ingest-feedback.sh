@@ -20,7 +20,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-# shellcheck source=lib-paths.sh
+# shellcheck source=scripts/lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
 
 REPO="v-i-s-h-a-l/generic-dev-studio"
@@ -317,6 +317,12 @@ build_comment_body() {
   printf 'Additional studio-feedback signal (%s, %s):\n\n%s\n' "${ts:-unknown}" "$disposition" "$body"
 }
 
+comment_idempotency_key() {
+  local issue_number="$1" rel="$2" disposition="$3" checksum
+  checksum=$(printf '%s\n%s\n%s\n' "$issue_number" "$rel" "$disposition" | cksum | awk '{print $1}')
+  printf 'feedback-ingest:issue-%s:%s' "$issue_number" "$checksum"
+}
+
 issue_number_from_url() {
   sed -n 's#.*/issues/\([0-9][0-9]*\).*#\1#p' <<<"$1"
 }
@@ -359,17 +365,49 @@ create_issue() {
 }
 
 comment_issue() {
-  local number="$1" body="$2" action
+  local number="$1" url="$2" source_file_rel="$3" ts="$4" kind="$5" disposition="$6" detail="$7" action payload body idempotency_key summary planning links evidence
+  idempotency_key=$(comment_idempotency_key "$number" "$source_file_rel" "$disposition")
+  summary="Additional studio-feedback signal for issue #$number ($disposition)."
+  planning="Use this public-safe feedback as a planning signal for future scope, acceptance, or follow-up triage; do not treat the comment as the source of truth over issue bodies or reviewed artifacts."
+  links="- Destination issue: $url
+- Feedback record: $source_file_rel"
+  evidence="Feedback kind: ${kind:-unknown}
+Feedback timestamp: ${ts:-unknown}
+
+$detail"
   if [ -n "$ACTIONS_FILE" ]; then
+    payload=$("$SCRIPT_DIR/studio-comment.sh" \
+      --dry-run \
+      --target "issue:$number" \
+      --repo "$REPO" \
+      --kind feedback-ingest \
+      --idempotency-key "$idempotency_key" \
+      --source ingest-feedback \
+      --summary "$summary" \
+      --planning-signal "$planning" \
+      --links "$links" \
+      --evidence "$evidence")
+    body=$(printf '%s\n' "$payload" | jq -r '.body')
     action=$(jq -cn \
       --arg action comment_issue \
       --argjson issue_number "$number" \
+      --arg idempotency_key "$idempotency_key" \
       --arg body "$body" \
-      '{action:$action,issue_number:$issue_number,body:$body}')
+      '{action:$action,issue_number:$issue_number,idempotency_key:$idempotency_key,body:$body}')
     record_action "$action"
     return
   fi
-  printf '%s' "$body" | "$SCRIPT_DIR/studio-gh.sh" issue comment "$number" --repo "$REPO" --body-file - >/dev/null 2>&1
+  "$SCRIPT_DIR/studio-comment.sh" \
+    --post \
+    --target "issue:$number" \
+    --repo "$REPO" \
+    --kind feedback-ingest \
+    --idempotency-key "$idempotency_key" \
+    --source ingest-feedback \
+    --summary "$summary" \
+    --planning-signal "$planning" \
+    --links "$links" \
+    --evidence "$evidence" >/dev/null 2>&1
 }
 
 emit_feedback_event() {
@@ -416,8 +454,8 @@ skipped_count=0
 STUDIO_ROOT=$(resolve_project_root_for generic-dev-studio)
 printf '%s\n' "$FILES" | while IFS= read -r file; do
   [ -n "$file" ] || continue
-  rel="${file#$STUDIO_ROOT/}"
-  source_file_rel="${file#$INBOX_BASE/}"
+  rel="${file#"$STUDIO_ROOT"/}"
+  source_file_rel="${file#"$INBOX_BASE"/}"
   src_dir=$(dirname "$file")
   src_proj=$(basename "$src_dir")
   fname=$(basename "$file")
@@ -467,7 +505,7 @@ printf '%s\n' "$FILES" | while IFS= read -r file; do
         issue_number=$(printf '%s\n' "$clustered" | awk -F '\t' '{print $1}')
         issue_url=$(printf '%s\n' "$clustered" | awk -F '\t' '{print $2}')
         comment=$(build_comment_body "$file" "${ts:-unknown}" "added to same-batch issue")
-        if ! comment_issue "$issue_number" "$comment"; then
+        if ! comment_issue "$issue_number" "$issue_url" "$source_file_rel" "$ts" "$kind" "added to same-batch issue" "$comment"; then
           printf 'ingest-feedback: issue comment failed for %s — leaving in place\n' "$rel" >&2
           skipped_count=$((skipped_count+1))
           continue
@@ -487,7 +525,7 @@ printf '%s\n' "$FILES" | while IFS= read -r file; do
         issue_url=$(printf '%s\n' "$candidate" | awk -F '\t' '{print $3}')
         if [ "$match_state" = "strong" ]; then
           comment=$(build_comment_body "$file" "${ts:-unknown}" "added to existing issue")
-          if ! comment_issue "$issue_number" "$comment"; then
+          if ! comment_issue "$issue_number" "$issue_url" "$source_file_rel" "$ts" "$kind" "added to existing issue" "$comment"; then
             printf 'ingest-feedback: issue comment failed for %s — leaving in place\n' "$rel" >&2
             skipped_count=$((skipped_count+1))
             continue
@@ -549,6 +587,7 @@ done
 remaining=$(find "$INBOX_BASE" -mindepth 2 -maxdepth 2 -type f -name '*.md' \
               -not -path '*/processed/*' 2>/dev/null | wc -l | tr -d ' ')
 if [ "$remaining" != "0" ]; then
+  # shellcheck disable=SC2016 # The operator command is intentionally literal.
   printf 'ingest-feedback: %s record(s) remain unprocessed in %s — run `/studio analyze` to triage\n' \
     "$remaining" "$INBOX_BASE" >&2
 fi

@@ -1,0 +1,79 @@
+[
+  {
+    "id": 1001,
+    "html_url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/982#issuecomment-1001",
+    "created_at": "2026-05-16T20:05:00Z",
+    "updated_at": "2026-05-16T20:05:00Z",
+    "user": {
+      "login": "human-reviewer",
+      "type": "User"
+    },
+    "body": "Decision: use issue body as authoritative scope. Constraint: comments must not become source of truth. Open question: should stale duplicates be excluded from summaries?"
+  },
+  {
+    "id": 1002,
+    "html_url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/982#issuecomment-1002",
+    "created_at": "2026-05-16T20:10:00Z",
+    "updated_at": "2026-05-16T20:10:00Z",
+    "user": {
+      "login": "codex",
+      "type": "User"
+    },
+    "body": "<!-- studio-comment:v1 kind=chain-issue-started idempotency_key=centralized-comment-pipeline:issue-982:chain-issue-started target=issue:982 source=studio-comment -->\n### Summary\nIssue #982 started. Acceptance change: packet sidecar should include marker metadata and author classification.\n\n### Evidence\n- planner contract loaded"
+  },
+  {
+    "id": 1003,
+    "html_url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/982#issuecomment-1003",
+    "created_at": "2026-05-16T20:15:00Z",
+    "updated_at": "2026-05-16T20:15:00Z",
+    "user": {
+      "login": "studio-bot[bot]",
+      "type": "Bot"
+    },
+    "body": "Legacy unmarked agent note: failure observed in earlier fixture because JSON validation was missing."
+  },
+  {
+    "id": 1004,
+    "html_url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/982#issuecomment-1004",
+    "created_at": "2026-05-16T20:20:00Z",
+    "updated_at": "2026-05-16T20:20:00Z",
+    "user": {
+      "login": "codex",
+      "type": "User"
+    },
+    "body": "<!-- studio-comment:v1 kind=chain-progress idempotency_key=centralized-comment-pipeline:issue-982:chain-progress target=issue:982 source=studio-comment -->\n### Summary\nDecision: first progress comment. This will be superseded by a duplicate idempotency key."
+  },
+  {
+    "id": 1005,
+    "html_url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/982#issuecomment-1005",
+    "created_at": "2026-05-16T20:25:00Z",
+    "updated_at": "2026-05-16T20:25:00Z",
+    "user": {
+      "login": "codex",
+      "type": "User"
+    },
+    "body": "<!-- studio-comment:v1 kind=chain-progress idempotency_key=centralized-comment-pipeline:issue-982:chain-progress target=issue:982 source=studio-comment -->\n### Summary\nDecision: duplicate/idempotent progress comment is the latest version. Conflict: earlier progress comment should be stale."
+  },
+  {
+    "id": 1006,
+    "html_url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/982#issuecomment-1006",
+    "created_at": "2026-05-16T22:05:00Z",
+    "updated_at": "2026-05-16T22:05:00Z",
+    "user": {
+      "login": "late-human",
+      "type": "User"
+    },
+    "body": "After close note: however, do we need a follow-up for update-in-place posting?"
+  },
+  {
+    "id": 1007,
+    "html_url": "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/982#issuecomment-1007",
+    "created_at": "2026-05-16T22:06:00Z",
+    "updated_at": "2026-05-16T22:06:00Z",
+    "user": {
+      "login": "late-human",
+      "type": "User"
+    },
+    "body": "Decision: private diagnostics live under /private/var/folders/example and must be redacted from extracted signals."
+  }
+]

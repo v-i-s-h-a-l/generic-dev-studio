@@ -9,6 +9,7 @@ MANAGER="$ROOT/scripts/manager-composite-chain.sh"
 STUB="$FIXTURE_DIR/stub-manager-plan-chain.sh"
 RUN_ID="019e2c8a-9560-7000-8000-000000000001"
 HALT_RUN_ID="019e2c8a-9560-7000-8000-000000000002"
+MANIFEST_CHILD_RUN_ID="019e2c8a-9560-7000-8000-000000000003"
 TMPROOT="${TMPDIR:-/tmp}/composite-chain-planning.$$"
 
 trap 'rm -rf "$TMPROOT"' EXIT
@@ -35,6 +36,7 @@ HOME="$TMPROOT/home" ACHILLES_PROJECT=generic-dev-studio \
 
 [ "$(wc -l < "$plan_log" | tr -d ' ')" = "1" ] || fail "expected exactly one child plan invocation"
 grep -Fq -- "--issue 123" "$plan_log" || fail "first eligible child issue was not planned"
+grep -Fq -- "--include-comments" "$plan_log" || fail "issue child planning did not request comment-aware context"
 if grep -Fq -- "--issue 124" "$plan_log" || grep -Fq -- "--issue 125" "$plan_log"; then
   fail "later child was planned eagerly"
 fi
@@ -47,6 +49,9 @@ jq -e '
   and (.children[0].refs.planner_artifact | type == "string")
   and (.children[0].refs.review_artifact | type == "string")
   and (.children[0].refs.work_chain_manifest | type == "string")
+  and .children[0].refs.comment_context.comments_included == true
+  and .children[0].refs.comment_context.mode == "issue-context-packet"
+  and (.children[0].refs.comment_context.packet_path | type == "string")
   and (.children[0].refs.child_issues | length) == 1
   and .children[1].status == "pending"
   and .children[1].refs.planner_artifact == null
@@ -55,6 +60,11 @@ jq -e '
   and .children[2].status == "pending"
   and .children[2].refs.planner_artifact == null
 ' "$state_path" >/dev/null || fail "planned state did not persist only the active child refs"
+
+jq -e '
+  .current_child.comment_context.comments_included == true
+  and .current_child.comment_context.mode == "issue-context-packet"
+' "$TMPROOT/plan.json" >/dev/null || fail "status json did not surface comment-aware child planning context"
 
 halt_log="$TMPROOT/halt-plan-calls.log"
 halt_init_json=$(HOME="$TMPROOT/home-halt" ACHILLES_PROJECT=generic-dev-studio \
@@ -73,11 +83,14 @@ fi
 
 [ "$halt_rc" -ne 0 ] || fail "blocked child plan unexpectedly exited zero"
 [ "$(wc -l < "$halt_log" | tr -d ' ')" = "1" ] || fail "expected exactly one failed child plan invocation"
+grep -Fq -- "--include-comments" "$halt_log" || fail "blocked issue child planning did not request comment-aware context"
 HOME="$TMPROOT/home-halt" ACHILLES_PROJECT=generic-dev-studio "$MANAGER" validate-state --state "$halt_state_path" >/dev/null
 jq -e '
   .state == "halted"
   and .children[0].status == "halted"
   and .children[0].blocked_reason.reason_id == "child_plan_blocked"
+  and .children[0].refs.comment_context.comments_included == true
+  and .children[0].refs.comment_context.mode == "issue-context-packet"
   and .blocked_reason.reason_id == "child_plan_blocked"
   and (.active_halt_ref.halt_record | type == "string")
   and (.next_command | contains("composite-chain status --run-id"))
@@ -87,5 +100,38 @@ jq -e '
 
 halt_record=$(jq -r '.active_halt_ref.halt_record' "$halt_state_path")
 [ -f "$halt_record" ] || fail "halt record was not written"
+
+manifest_child_source="$TMPROOT/child-source.md"
+manifest_child_manifest="$TMPROOT/manifest-child-composite.yaml"
+printf '# Child source\n' > "$manifest_child_source"
+cat > "$manifest_child_manifest" <<YAML
+kind: composite-chain
+schema_version: 1
+name: manifest-child-planning-fixture
+mode: sequential
+children:
+  - id: manifest-child
+    source_type: manifest
+    manifest_path: $manifest_child_source
+YAML
+
+manifest_log="$TMPROOT/manifest-plan-calls.log"
+manifest_init_json=$(HOME="$TMPROOT/home-manifest" ACHILLES_PROJECT=generic-dev-studio \
+  "$MANAGER" init --manifest "$manifest_child_manifest" --run-id "$MANIFEST_CHILD_RUN_ID" --json)
+manifest_state_path=$(printf '%s\n' "$manifest_init_json" | jq -r '.state_path')
+
+HOME="$TMPROOT/home-manifest" ACHILLES_PROJECT=generic-dev-studio \
+  STUDIO_COMPOSITE_PLAN_CHAIN_SCRIPT="$STUB" STUB_PLAN_LOG="$manifest_log" \
+  "$MANAGER" plan-active-child --run-id "$MANIFEST_CHILD_RUN_ID" --json > "$TMPROOT/manifest-plan.json"
+
+grep -Fq -- "--source-file $manifest_child_source" "$manifest_log" || fail "manifest child source-file planning changed"
+if grep -Fq -- "--include-comments" "$manifest_log"; then
+  fail "manifest child planning unexpectedly requested comment-aware context"
+fi
+HOME="$TMPROOT/home-manifest" ACHILLES_PROJECT=generic-dev-studio "$MANAGER" validate-state --state "$manifest_state_path" >/dev/null
+jq -e '
+  .children[0].refs.comment_context.comments_included == false
+  and .children[0].refs.comment_context.mode == "body-only"
+' "$manifest_state_path" >/dev/null || fail "manifest child planning did not preserve body-only context"
 
 printf 'PASS: composite chain planning\n'

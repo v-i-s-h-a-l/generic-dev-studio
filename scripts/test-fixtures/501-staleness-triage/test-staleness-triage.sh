@@ -23,5 +23,13 @@ jq -e '.issues[] | select(.number == 12) | (.add_labels == ["stale"])' "$OUT" >/
 jq -e '.issues[] | select(.number == 13) | (.add_labels == ["stale","stale:escalated"])' "$OUT" >/dev/null
 jq -e '.issues[] | select(.number == 14) | (.add_labels == ["stale:escalated","stale:archive-candidate"])' "$OUT" >/dev/null
 jq -e '.issues[] | select(.number == 15) | (.reason == "excluded" and (.add_labels | length) == 0)' "$OUT" >/dev/null
+jq -e '
+  .issues[] | select(.number == 13)
+  | .comment.kind == "staleness-triage"
+    and (.comment.marker | startswith("<!-- studio-comment:v1 kind=staleness-triage "))
+    and .comment.idempotency_key == "staleness-triage:issue-13:escalated"
+    and (.comment.body | contains("### Planning Signal"))
+    and (.comment.body | contains("### Links"))
+' "$OUT" >/dev/null
 
 printf 'PASS: studio staleness triage plan\n'

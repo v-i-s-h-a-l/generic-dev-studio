@@ -14,6 +14,14 @@ if [ -n "${STUB_PLAN_LOG:-}" ]; then
   printf '%s\n' "$*" >> "$STUB_PLAN_LOG"
 fi
 
+include_comments=0
+for arg in "$@"; do
+  if [ "$arg" = "--include-comments" ]; then
+    include_comments=1
+    break
+  fi
+done
+
 status="${STUB_PLAN_STATUS:-ready}"
 exit_code="${STUB_PLAN_EXIT_CODE:-0}"
 planner="$artifact_root/planner-output.json"
@@ -28,6 +36,7 @@ jq -n \
   --arg status "$status" \
   --arg artifact_root "$artifact_root" \
   --arg planner "$planner" \
+  --argjson include_comments "$include_comments" \
   --arg review "$review" \
   --arg work_chain "$work_chain" \
   '{
@@ -36,6 +45,13 @@ jq -n \
     status: $status,
     artifact_root: $artifact_root,
     planner_artifact: $planner,
+    source_context: {
+      comments_included: ($include_comments == 1),
+      mode: (if $include_comments == 1 then "issue-context-packet" else "body-only" end),
+      packet_path: (if $include_comments == 1 then ($artifact_root + "/issue-context-packet/packet.md") else null end),
+      comment_sidecar_path: (if $include_comments == 1 then ($artifact_root + "/issue-context-packet/packet.json") else null end),
+      body_only_explicit: ($include_comments != 1)
+    },
     review_artifact: $review,
     work_chain: (if $status == "ready" then $work_chain else null end),
     created_issues: [

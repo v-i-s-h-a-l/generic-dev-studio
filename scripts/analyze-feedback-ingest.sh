@@ -10,7 +10,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
-# shellcheck source=lib-paths.sh
+# shellcheck source=scripts/lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
 
 REPO="v-i-s-h-a-l/generic-dev-studio"
@@ -242,6 +242,37 @@ build_comment_body() {
   printf 'Additional studio-feedback signal (%s, %s):\n\n%s\n' "${ts:-unknown}" "$disposition" "$body"
 }
 
+comment_idempotency_key() {
+  local issue_number="$1" rel="$2" disposition="$3" checksum
+  checksum=$(printf '%s\n%s\n%s\n' "$issue_number" "$rel" "$disposition" | cksum | awk '{print $1}')
+  printf 'feedback-ingest:issue-%s:%s' "$issue_number" "$checksum"
+}
+
+build_structured_comment_json() {
+  local number="$1" url="$2" rel="$3" ts="$4" kind="$5" disposition="$6" detail="$7"
+  local idempotency_key summary planning links evidence
+  idempotency_key=$(comment_idempotency_key "$number" "$rel" "$disposition")
+  summary="Additional studio-feedback signal for issue #$number ($disposition)."
+  planning="Use this public-safe feedback as a planning signal for future scope, acceptance, or follow-up triage; do not treat the comment as the source of truth over issue bodies or reviewed artifacts."
+  links="- Destination issue: $url
+- Feedback record: $rel"
+  evidence="Feedback kind: ${kind:-unknown}
+Feedback timestamp: ${ts:-unknown}
+
+$detail"
+  "$SCRIPT_DIR/studio-comment.sh" \
+    --dry-run \
+    --target "issue:$number" \
+    --repo "$REPO" \
+    --kind feedback-ingest \
+    --idempotency-key "$idempotency_key" \
+    --source analyze-feedback-ingest \
+    --summary "$summary" \
+    --planning-signal "$planning" \
+    --links "$links" \
+    --evidence "$evidence"
+}
+
 next_fixture_issue=9000
 
 create_issue() {
@@ -279,17 +310,39 @@ create_issue() {
 }
 
 comment_issue() {
-  local number="$1" body="$2" action
+  local number="$1" url="$2" rel="$3" ts="$4" kind="$5" disposition="$6" detail="$7" action payload body idempotency_key summary planning links evidence
+  idempotency_key=$(comment_idempotency_key "$number" "$rel" "$disposition")
+  summary="Additional studio-feedback signal for issue #$number ($disposition)."
+  planning="Use this public-safe feedback as a planning signal for future scope, acceptance, or follow-up triage; do not treat the comment as the source of truth over issue bodies or reviewed artifacts."
+  links="- Destination issue: $url
+- Feedback record: $rel"
+  evidence="Feedback kind: ${kind:-unknown}
+Feedback timestamp: ${ts:-unknown}
+
+$detail"
   if [ -n "$ACTIONS_FILE" ]; then
+    payload=$(build_structured_comment_json "$number" "$url" "$rel" "$ts" "$kind" "$disposition" "$detail")
+    body=$(printf '%s\n' "$payload" | jq -r '.body')
     action=$(jq -cn \
       --arg action comment_issue \
       --argjson issue_number "$number" \
+      --arg idempotency_key "$idempotency_key" \
       --arg body "$body" \
-      '{action:$action,issue_number:$issue_number,body:$body}')
+      '{action:$action,issue_number:$issue_number,idempotency_key:$idempotency_key,body:$body}')
     record_action "$action"
     return
   fi
-  printf '%s' "$body" | "$SCRIPT_DIR/studio-gh.sh" issue comment "$number" --repo "$REPO" --body-file - >/dev/null
+  "$SCRIPT_DIR/studio-comment.sh" \
+    --post \
+    --target "issue:$number" \
+    --repo "$REPO" \
+    --kind feedback-ingest \
+    --idempotency-key "$idempotency_key" \
+    --source analyze-feedback-ingest \
+    --summary "$summary" \
+    --planning-signal "$planning" \
+    --links "$links" \
+    --evidence "$evidence" >/dev/null
 }
 
 append_private_analysis() {
@@ -379,7 +432,7 @@ fi
 if [ -d "$INBOX_ROOT" ]; then
   while IFS= read -r file; do
     [ -n "$file" ] || continue
-    rel="${file#$INBOX_ROOT/}"
+    rel="${file#"$INBOX_ROOT"/}"
     kind=$(get_field "$file" kind)
     ts=$(get_field "$file" ts)
     title=$(get_title "$file")
@@ -406,7 +459,7 @@ if [ -d "$INBOX_ROOT" ]; then
       issue_url=$(printf '%s\n' "$existing" | awk -F '\t' '{print $2}')
       comment=$(build_comment_body "$file" "$ts" "matched existing issue")
       if [ "$APPLY" -eq 1 ]; then
-        comment_issue "$issue_number" "$comment"
+        comment_issue "$issue_number" "$issue_url" "$rel" "$ts" "$kind" "matched existing issue" "$comment"
       fi
       append_private_analysis "$file" "$rel"
       move_processed "$file"
@@ -422,7 +475,7 @@ if [ -d "$INBOX_ROOT" ]; then
       issue_url=$(printf '%s\n' "$clustered" | awk -F '\t' '{print $2}')
       comment=$(build_comment_body "$file" "$ts" "consolidated with related feedback")
       if [ "$APPLY" -eq 1 ]; then
-        comment_issue "$issue_number" "$comment"
+        comment_issue "$issue_number" "$issue_url" "$rel" "$ts" "$kind" "consolidated with related feedback" "$comment"
       fi
       append_private_analysis "$file" "$rel"
       move_processed "$file"

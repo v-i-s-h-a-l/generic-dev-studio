@@ -24,6 +24,8 @@
 #   2m. lint-gh-wrapper.sh --staged — block raw `gh` invocations outside
 #       scripts/studio-gh.sh / with_login_home_for_github (#710 Phase C2,
 #       #815).
+#   2m2. lint-studio-comments.sh --staged — block unstructured GitHub
+#       issue/PR comment writers outside scripts/studio-comment.sh (#981).
 #   2l. lint-runtime-paths.sh --staged — block raw `$HOME/.dev-studio` /
 #       `~/.dev-studio` / `${HOME}/.dev-studio` formulas in newly-added
 #       lines outside the resolver layer (#710 Phase C1, #814).
@@ -46,6 +48,7 @@
 # HTML theme guard bypass: `STUDIO_BYPASS_HTML_THEME_GUARD=1 git commit ...`.
 # Runtime path lint bypass: `STUDIO_BYPASS_RUNTIME_PATH_LINT=1 git commit ...`.
 # GH wrapper lint bypass: `STUDIO_BYPASS_GH_WRAPPER_LINT=1 git commit ...`.
+# Comment structure lint bypass: `STUDIO_BYPASS_COMMENT_STRUCTURE_LINT=1 git commit ...`.
 # Synthetic-home lint bypass: `STUDIO_BYPASS_SYNTHETIC_HOME_LINT=1 git commit ...`.
 # Artifact-cleanup lint bypass: `STUDIO_BYPASS_ARTIFACT_CLEANUP_LINT=1 git commit ...`.
 # Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/2g/2h/2i/2j/2k/2l/2m/2n/2o/3.
@@ -298,6 +301,17 @@ if [ -x "$SCRIPTS/lint-gh-wrapper.sh" ]; then
   if [ "$rc" -ne 0 ]; then
     printf '\npre-commit: raw `gh` invocation found outside the wrapper layer — call scripts/studio-gh.sh (assistant-initiated) or with_login_home_for_github (in-script) per CLAUDE.md §GitHub CLI home normalization\n' >&2
     printf 'bypass (emergencies only): STUDIO_BYPASS_GH_WRAPPER_LINT=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2m2 — structured public issue/PR comment linter (#981).
+if [ -x "$SCRIPTS/lint-studio-comments.sh" ]; then
+  "$SCRIPTS/lint-studio-comments.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: unstructured GitHub issue/PR comment writer found — route public comments through scripts/studio-comment.sh and the studio-comment:v1 contract\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_COMMENT_STRUCTURE_LINT=1 git commit ...\n' >&2
     exit 1
   fi
 fi

@@ -158,3 +158,20 @@ startup_failure_class, launch_stage, prompt_boundary_status
 ```
 
 Do not publish local paths, exact node or machine names, branch/work-project details, prompts, token totals, cache totals, velocity data, private task details, or raw reviewer output. Detailed reconstruction lives in the private report under the run directory.
+
+Structured public comments emitted by studio automation use the
+`studio-comment:v1` marker and body contract in
+`_shared/contracts/issue-comment-pipeline.md`. The comment payload is a
+public-safe projection of private telemetry, not an authoritative state store.
+When a comment and private telemetry disagree, readers must trust the private
+chain-run telemetry, issue/PR bodies, manifests, reviewed phase artifacts, and
+worker summaries.
+
+Agent-authored public issue/PR comments must be emitted by
+`scripts/studio-comment.sh` or an implementation that preserves the same
+`studio-comment:v1` marker contract. `scripts/lint-studio-comments.sh --staged`
+is part of the pre-commit comment-structure gate and blocks new unstructured
+`issue comment` / `pr comment` writers outside that path. The only accepted
+escape hatches are explicit user-controlled migration paths documented in
+`_shared/contracts/issue-comment-pipeline.md`; automation must not use them to
+publish private telemetry or bypass the source-of-truth hierarchy.
