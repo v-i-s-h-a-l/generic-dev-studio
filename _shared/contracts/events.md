@@ -325,7 +325,7 @@ Transport stays JSONL. These are attribute names, not a protocol change.
 |---|---|
 | `gen_ai.agent.id` | Task ID or round ID for the current operation. |
 | `gen_ai.conversation.id` | Same as task ID — the logical conversation thread. |
-| `gen_ai.request.model` | Model identifier (e.g. `claude-opus-4-7`). |
+| `gen_ai.request.model` | Model identifier (e.g. `claude-sonnet-4-20250514`). |
 | `gen_ai.usage.input_tokens` | Integer. Omit when not available (e.g. most mid-session events). |
 | `gen_ai.usage.output_tokens` | Integer. Omit when not available. |
 

@@ -29,7 +29,6 @@ set -u
 umask 022
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
-REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
 # shellcheck source=scripts/lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
@@ -258,6 +257,16 @@ fi
 spawn_command=$(printf '%s\n' "$eligibility" | sed -n 's/^SPAWN_COMMAND=//p' | head -1)
 [ -n "$spawn_command" ] || fail "missing spawn command for $review_host"
 
+parent_host_for_model=$(resolve_current_studio_host unknown)
+resolver_args=(--review-host "$review_host" --implementation-host "$parent_host_for_model" --role reviewer.heavyweight)
+if ! review_host_is_cross_family "$parent_host_for_model" "$review_host"; then
+  resolver_args+=(--allow-same-family)
+fi
+model_resolution=$("$SCRIPT_DIR/resolve-reviewer-model.sh" "${resolver_args[@]}" 2>&1) \
+  || fail "failed to resolve reviewer model for $review_host: $model_resolution"
+# resolve-reviewer-model.sh is repo-owned and emits only %q-quoted shell assignments.
+eval "$model_resolution"
+
 tmpdir=$(mktemp -d -t phase-review.XXXXXX) || fail "mktemp failed"
 trap 'rm -rf "$tmpdir"' EXIT
 
@@ -266,6 +275,14 @@ mkdir -p "$reviewer_home"
 
 # shellcheck disable=SC2206
 spawn_argv=( $spawn_command )
+case "$review_host" in
+  codex*|*codex*)
+    spawn_argv+=(-m "$REVIEWER_MODEL_ID" -c "model_reasoning_effort=$REVIEWER_MODEL_REASONING_EFFORT")
+    ;;
+  claude*|*claude*)
+    spawn_argv+=(--model "$REVIEWER_MODEL_ID")
+    ;;
+esac
 
 input_content=$(cat "$input")
 input_bytes=$(wc -c < "$input" 2>/dev/null | tr -d ' ' || printf '0')
@@ -316,7 +333,12 @@ review_argv=("${spawn_argv[@]}")
 case "$review_host" in
   claude*|*claude*) review_argv+=("--add-dir=$input_dir") ;;
 esac
-review_cmd=(review_host_run_command "$review_host" "$reviewer_home" --env REVIEW_PAYLOAD "$input" -- "${review_argv[@]}" "$prompt")
+review_cmd=(review_host_run_command "$review_host" "$reviewer_home" \
+  --env REVIEW_PAYLOAD "$input" \
+  --env STUDIO_REVIEW_MODEL_ID "$REVIEWER_MODEL_ID" \
+  --env STUDIO_REVIEW_REASONING_EFFORT "$REVIEWER_MODEL_REASONING_EFFORT" \
+  --env STUDIO_REVIEW_PROVIDER_FAMILY "$REVIEWER_MODEL_PROVIDER_FAMILY" \
+  -- "${review_argv[@]}" "$prompt")
 
 if ! "${review_cmd[@]}" > "$output" 2>"$err_output"; then
   detail=$(failure_detail "$err_output")
@@ -348,6 +370,8 @@ printf 'PHASE_REVIEW_OUTPUT=%s\n' "$output"
 printf 'PHASE_REVIEW_ERR=%s\n' "$err_output"
 printf 'PHASE_REVIEW_VERDICT=%s\n' "$verdict"
 printf 'PHASE_REVIEW_CONTEXT_TOKENS=%s\n' "$input_estimated_tokens"
+printf 'PHASE_REVIEW_MODEL_ID=%s\n' "$REVIEWER_MODEL_ID"
+printf 'PHASE_REVIEW_REASONING_EFFORT=%s\n' "$REVIEWER_MODEL_REASONING_EFFORT"
 if review_host_is_cross_family "$parent_host_for_meta" "$review_host"; then
   printf 'PHASE_REVIEW_CROSS_HOST_SATISFIED=true\n'
 else

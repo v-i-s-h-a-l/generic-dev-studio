@@ -25,7 +25,7 @@ mode: task                                       # task | direct-debrief
 state: emitted                                   # emitted | ingested | superseded
 completed_at: 2026-04-22T12:40:51Z
 executed_with:                                   # 2.1.0; multi-model accountability — populated from scripts/emit-agent-boot.sh data
-  model_id: "claude-opus-4-7"                    # canonical model id (e.g. "claude-opus-4-7", "claude-sonnet-4-6", "gpt-5-codex")
+  model_id: "claude-sonnet-4-20250514"           # canonical model id (e.g. "claude-sonnet-4-20250514", "gpt-5-codex")
   host: claude-code                              # claude-code | codex | <future-host>
   session_id: "session-42"                       # producer session id (matches agent-boot event)
   duration_s: 8246                               # integer seconds — wall-clock duration of the implementing session
