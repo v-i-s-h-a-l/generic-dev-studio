@@ -24,6 +24,9 @@ official_sources:
   anthropic_models:
     url: https://docs.anthropic.com/en/docs/about-claude/models/all-models
     last_verified_at: 2026-05-02T00:00:00Z
+  aws_bedrock_claude_sonnet_4_6:
+    url: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html
+    last_verified_at: 2026-05-17T00:00:00Z
 provider_families:
   openai:
     display_name: OpenAI
@@ -91,8 +94,8 @@ models:
       url: https://docs.anthropic.com/en/docs/about-claude/models/all-models
       last_verified_at: 2026-05-02T00:00:00Z
   sonnet:
-    id: claude-sonnet-4-20250514
-    display_name: Claude Sonnet 4
+    id: claude-sonnet-4-6
+    display_name: Claude Sonnet 4.6
     provider_family: anthropic
     adapter_profiles:
       - claude-code
@@ -108,23 +111,23 @@ models:
       - editor
       - triage
     stable_aliases:
-      - claude-sonnet-4-0
+      - claude-sonnet-4-6
     snapshot_ids:
-      - claude-sonnet-4-20250514
+      - claude-sonnet-4-6
     reasoning_effort:
       supported: true
       levels:
         - medium
         - high
-      default: medium
+      default: high
       provider_name: extended_thinking
-    released_at: 2025-05-14
-    variant_1m: false
+    released_at: 2026-02-17
+    variant_1m: true
     supports_fast: true
     knowledge_cutoff: null
     source:
-      url: https://docs.anthropic.com/en/docs/about-claude/models/all-models
-      last_verified_at: 2026-05-02T00:00:00Z
+      url: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html
+      last_verified_at: 2026-05-17T00:00:00Z
   haiku:
     id: claude-3-5-haiku-20241022
     display_name: Claude Haiku 3.5
