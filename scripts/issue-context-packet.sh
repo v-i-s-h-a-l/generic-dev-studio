@@ -9,11 +9,13 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   scripts/issue-context-packet.sh --repo <owner/repo> --issue <n> --out-dir <dir>
+  scripts/issue-context-packet.sh --repo <owner/repo> --issue-set <csv> --out-dir <dir>
   scripts/issue-context-packet.sh --issue-json <file> --comments-json <file> --out-dir <dir>
 
 Options:
   --repo <owner/repo>       Repository for live GitHub reads.
   --issue <n>               Issue number for live GitHub reads.
+  --issue-set <csv>         Comma-separated issue numbers or #refs for cluster reads.
   --issue-json <file>       Fixture or pre-fetched issue JSON.
   --comments-json <file>    Fixture or pre-fetched comments JSON.
   --out-dir <dir>           Directory for packet.md, packet.json, and raw/.
@@ -28,6 +30,7 @@ USAGE
 
 repo=""
 issue_number=""
+issue_set=""
 issue_json=""
 comments_json=""
 out_dir=""
@@ -43,6 +46,11 @@ while [ "$#" -gt 0 ]; do
     --issue)
       [ "$#" -ge 2 ] || { printf 'issue-context-packet: --issue requires a value\n' >&2; exit 2; }
       issue_number="$2"
+      shift 2
+      ;;
+    --issue-set)
+      [ "$#" -ge 2 ] || { printf 'issue-context-packet: --issue-set requires a value\n' >&2; exit 2; }
+      issue_set="$2"
       shift 2
       ;;
     --issue-json)
@@ -86,7 +94,8 @@ if [ -n "$issue_json" ] || [ -n "$comments_json" ]; then
   }
 else
   [ -n "$repo" ] || { printf 'issue-context-packet: --repo is required for live reads\n' >&2; exit 2; }
-  [ -n "$issue_number" ] || { printf 'issue-context-packet: --issue is required for live reads\n' >&2; exit 2; }
+  [ -n "$issue_number" ] || [ -n "$issue_set" ] || { printf 'issue-context-packet: --issue or --issue-set is required for live reads\n' >&2; exit 2; }
+  [ -z "$issue_number" ] || [ -z "$issue_set" ] || { printf 'issue-context-packet: --issue and --issue-set are mutually exclusive\n' >&2; exit 2; }
 fi
 
 mkdir -p "$out_dir/raw"
@@ -96,13 +105,41 @@ if [ -z "$issue_json" ]; then
     */*) ;;
     *) printf 'issue-context-packet: --repo must be owner/repo\n' >&2; exit 2 ;;
   esac
-  case "$issue_number" in
-    *[!0-9]*|"") printf 'issue-context-packet: --issue must be numeric\n' >&2; exit 2 ;;
-  esac
-  issue_json="$out_dir/raw/issue.json"
-  comments_json="$out_dir/raw/comments.json"
-  "$SCRIPT_DIR/studio-gh.sh" api "repos/$repo/issues/$issue_number" >"$issue_json"
-  "$SCRIPT_DIR/studio-gh.sh" api --paginate --slurp "repos/$repo/issues/$issue_number/comments?per_page=100" >"$comments_json"
+  if [ -n "$issue_set" ]; then
+    mkdir -p "$out_dir/raw/issues"
+    issue_files=()
+    : > "$out_dir/raw/comments.ndjson"
+    old_ifs=$IFS
+    IFS=,
+    for issue_ref in $issue_set; do
+      IFS=$old_ifs
+      issue_ref=$(printf '%s' "$issue_ref" | sed -E 's/^[[:space:]]*#?//; s/[[:space:]]*$//')
+      case "$issue_ref" in
+        *[!0-9]*|"") printf 'issue-context-packet: --issue-set entries must be numeric issue refs: %s\n' "$issue_ref" >&2; exit 2 ;;
+      esac
+      mkdir -p "$out_dir/raw/issues/$issue_ref"
+      issue_file="$out_dir/raw/issues/$issue_ref/issue.json"
+      comments_file="$out_dir/raw/issues/$issue_ref/comments.json"
+      "$SCRIPT_DIR/studio-gh.sh" api "repos/$repo/issues/$issue_ref" >"$issue_file"
+      "$SCRIPT_DIR/studio-gh.sh" api --paginate --slurp "repos/$repo/issues/$issue_ref/comments?per_page=100" >"$comments_file"
+      issue_files+=("$issue_file")
+      jq -c --argjson issue_number "$issue_ref" '{issue_number:$issue_number, comments:.}' "$comments_file" >> "$out_dir/raw/comments.ndjson"
+      IFS=,
+    done
+    IFS=$old_ifs
+    issue_json="$out_dir/raw/issue.json"
+    comments_json="$out_dir/raw/comments.json"
+    jq -s '.' "${issue_files[@]}" >"$issue_json"
+    jq -s '.' "$out_dir/raw/comments.ndjson" >"$comments_json"
+  else
+    case "$issue_number" in
+      *[!0-9]*|"") printf 'issue-context-packet: --issue must be numeric\n' >&2; exit 2 ;;
+    esac
+    issue_json="$out_dir/raw/issue.json"
+    comments_json="$out_dir/raw/comments.json"
+    "$SCRIPT_DIR/studio-gh.sh" api "repos/$repo/issues/$issue_number" >"$issue_json"
+    "$SCRIPT_DIR/studio-gh.sh" api --paginate --slurp "repos/$repo/issues/$issue_number/comments?per_page=100" >"$comments_json"
+  fi
 else
   cp "$issue_json" "$out_dir/raw/issue.json"
   cp "$comments_json" "$out_dir/raw/comments.json"
@@ -248,7 +285,7 @@ def normalize_issue(raw):
     return issue
 
 
-def normalize_comment(raw, ordinal):
+def normalize_comment(raw, ordinal, issue_number):
     body = val(raw, "body", default="") or ""
     first = body.splitlines()[0].strip() if body.splitlines() else ""
     marker_match = MARKER_RE.match(first)
@@ -263,6 +300,7 @@ def normalize_comment(raw, ordinal):
         classification = "human"
     return {
         "ordinal": ordinal,
+        "issue_number": issue_number,
         "id": str(val(raw, "id", "databaseId", default=f"ordinal-{ordinal}")),
         "url": val(raw, "html_url", "url", default=None),
         "created_at": val(raw, "created_at", "createdAt", default=None),
@@ -278,10 +316,32 @@ def normalize_comment(raw, ordinal):
     }
 
 
+def issue_raw_items(raw):
+    if isinstance(raw, list):
+        return raw
+    return [raw]
+
+
+def comments_by_issue(raw, fallback_issue_number):
+    if isinstance(raw, list) and all(isinstance(item, dict) and "comments" in item for item in raw):
+        grouped = []
+        for item in raw:
+            issue_number = item.get("issue_number")
+            for comment in as_list(item.get("comments", [])):
+                grouped.append((issue_number, comment))
+        return grouped
+    return [(fallback_issue_number, comment) for comment in as_list(raw)]
+
+
 issue_raw = load_json(os.environ["ISSUE_JSON"])
-comments_raw = as_list(load_json(os.environ["COMMENTS_JSON"]))
-issue = normalize_issue(issue_raw)
-comments = [normalize_comment(raw, idx + 1) for idx, raw in enumerate(comments_raw)]
+issue_items = issue_raw_items(issue_raw)
+issues = [normalize_issue(item) for item in issue_items]
+issue = issues[0]
+comments_raw = load_json(os.environ["COMMENTS_JSON"])
+comments = [
+    normalize_comment(raw, idx + 1, issue_number)
+    for idx, (issue_number, raw) in enumerate(comments_by_issue(comments_raw, issue["number"]))
+]
 comments.sort(key=lambda c: (iso_sort_key(c["created_at"]), c["ordinal"]))
 for idx, comment in enumerate(comments, start=1):
     comment["ordinal"] = idx
@@ -296,8 +356,9 @@ for comment in comments:
     if marker and marker.get("idempotency_key") and latest_by_key.get(marker["idempotency_key"]) != comment["id"]:
         comment["duplicate_of"] = latest_by_key[marker["idempotency_key"]]
         comment["stale_reasons"].append("superseded_duplicate_idempotency_key")
-    if issue["closed_at"] and comment["created_at"] and parse_time(comment["created_at"]) and parse_time(issue["closed_at"]):
-        if parse_time(comment["created_at"]) > parse_time(issue["closed_at"]):
+    comment_issue = next((item for item in issues if item["number"] == comment["issue_number"]), issue)
+    if comment_issue["closed_at"] and comment["created_at"] and parse_time(comment["created_at"]) and parse_time(comment_issue["closed_at"]):
+        if parse_time(comment["created_at"]) > parse_time(comment_issue["closed_at"]):
             comment["stale_reasons"].append("after_issue_closed")
     if not comment["public_safe"]:
         comment["stale_reasons"].append("private_or_secret_shaped_content_redacted")
@@ -406,10 +467,30 @@ md = [
     "# Issue Context Packet",
     "",
     "## Source Issues",
-    f"- Issue #{issue['number']}: {issue['title']} ({issue['state']})",
-    f"- URL: {issue['url'] or 'not provided'}",
-    f"- Issue body sha256: `{issue['body_sha256']}`",
+]
+
+for raw, item in zip(issue_items, issues):
+    md.extend([
+        f"- Issue #{item['number']}: {item['title']} ({item['state']})",
+        f"  - URL: {item['url'] or 'not provided'}",
+        f"  - Issue body sha256: `{item['body_sha256']}`",
+    ])
+
+md.extend([
     "",
+    "## Issue Bodies",
+])
+
+for raw, item in zip(issue_items, issues):
+    body = val(raw, "body", default="") or ""
+    md.extend([
+        f"### Issue #{item['number']}",
+        "",
+        body if body.strip() else "_No issue body provided._",
+        "",
+    ])
+
+md.extend([
     "## Included Comment Range",
     f"- Included comments: {included_range['included_count']} of {included_range['total_count']}",
     f"- Ordinal range: {included_range['first_comment_ordinal']} to {included_range['last_comment_ordinal']}",
@@ -429,15 +510,15 @@ md = [
     md_category("Open Questions", "open_questions"),
     "",
     "## Provenance",
-    "| Ref | Comment ID | Created | Author | Classification | Marker Kind | Stale Reasons | URL |",
-    "|---|---:|---|---|---|---|---|---|",
-]
+    "| Ref | Issue | Comment ID | Created | Author | Classification | Marker Kind | Stale Reasons | URL |",
+    "|---|---:|---:|---|---|---|---|---|---|",
+])
 
 for c in comments:
     marker_kind = c["marker"]["kind"] if c["marker"] else ""
     stale = ", ".join(c["stale_reasons"]) if c["stale_reasons"] else ""
     md.append(
-        f"| C{c['ordinal']} | {c['id']} | {c['created_at'] or ''} | "
+        f"| C{c['ordinal']} | #{c['issue_number']} | {c['id']} | {c['created_at'] or ''} | "
         f"{c['author']['login']} | {c['author']['classification']} | {marker_kind} | {stale} | {c['url'] or ''} |"
     )
 
