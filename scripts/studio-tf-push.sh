@@ -980,7 +980,7 @@ Bump build number to ${NEW_BUILD_NUMBER}
 
 Preparing TestFlight build ${NEW_BUILD_NUMBER} (v${VERSION}) from branch ${BRANCH}.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+Studio-Host: release-manager
 EOF
 )"; then
       cd "$oldpwd" || true

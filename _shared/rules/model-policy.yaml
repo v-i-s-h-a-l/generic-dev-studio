@@ -35,30 +35,44 @@ roles:
   reviewer.heavyweight:
     purpose: Argus-style PR review, safety-floor review, cross-file regression review
     role_suitability: reviewer
-    reasoning_effort: high
+    reasoning_effort: medium
     independent_provider_family_required: true
     model_preferences:
-      - opus
+      - sonnet
       - openai_gpt_5_5
       - openai_gpt_5_3_codex
       - openai_gpt_5_2
       - openai_gpt_5
+      - opus
     downgrade_requires_telemetry: true
   reviewer.fallback:
     purpose: user-approved same-family fallback when no independent eligible reviewer can run
     role_suitability: reviewer
-    reasoning_effort: high
+    reasoning_effort: medium
     user_approved_bypass_required: true
     model_preferences:
-      - opus
+      - sonnet
       - openai_gpt_5_5
       - openai_gpt_5_3_codex
       - openai_gpt_5_2
       - openai_gpt_5
+      - opus
+  planner.heavyweight:
+    purpose: Claude planner/architect planning, decomposition, and plan review preparation
+    role_suitability: planner
+    reasoning_effort: medium
+    model_preferences:
+      - sonnet
+      - openai_gpt_5_5
+      - openai_gpt_5_3_codex
+      - openai_gpt_5_2
+      - openai_gpt_5
+      - opus
+    opus_requires_explicit_extreme_need: true
   reviewer.reasoning_effort:
-    default: high
+    default: medium
     routine_after_telemetry: medium
-    rule: "Do not silently downgrade Argus-style review or non-trivial implementation to cheaper/faster models."
+    rule: "Use Sonnet for Claude review/planner defaults. Opus is a last-resort tier only when explicitly justified as extreme need; do not use unverified Opus snapshots such as Opus 4.7 by default."
 reviewer_selection:
   default_role: reviewer.heavyweight
   fallback_role: reviewer.fallback
