@@ -143,8 +143,8 @@ fi
 grep -q 'PHASE_REVIEW_HOST=claude-reviewer' "$out"
 grep -q 'PHASE_REVIEW_OUTPUT=' "$out"
 grep -q 'PHASE_REVIEW_VERDICT=clean' "$out"
-grep -q 'PHASE_REVIEW_MODEL_ID=claude-sonnet-4-20250514' "$out"
-grep -q 'PHASE_REVIEW_REASONING_EFFORT=medium' "$out"
+grep -q 'PHASE_REVIEW_MODEL_ID=claude-sonnet-4-6' "$out"
+grep -q 'PHASE_REVIEW_REASONING_EFFORT=high' "$out"
 grep -q 'nothing fatal' "$output"
 [ ! -s "$output.err" ]
 
