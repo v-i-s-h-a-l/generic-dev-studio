@@ -158,3 +158,11 @@ startup_failure_class, launch_stage, prompt_boundary_status
 ```
 
 Do not publish local paths, exact node or machine names, branch/work-project details, prompts, token totals, cache totals, velocity data, private task details, or raw reviewer output. Detailed reconstruction lives in the private report under the run directory.
+
+Structured public comments emitted by studio automation use the
+`studio-comment:v1` marker and body contract in
+`_shared/contracts/issue-comment-pipeline.md`. The comment payload is a
+public-safe projection of private telemetry, not an authoritative state store.
+When a comment and private telemetry disagree, readers must trust the private
+chain-run telemetry, issue/PR bodies, manifests, reviewed phase artifacts, and
+worker summaries.

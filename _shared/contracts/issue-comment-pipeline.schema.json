@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://generic-dev-studio.local/contracts/issue-comment-pipeline.schema.json",
+  "title": "studio-comment:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "marker",
+    "kind",
+    "idempotency_key",
+    "target",
+    "source",
+    "body"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "marker": {
+      "type": "string",
+      "pattern": "^<!-- studio-comment:v1 kind=[A-Za-z0-9._:/-]+ idempotency_key=[A-Za-z0-9._:/-]+ target=(issue|pr):[0-9]+ source=[A-Za-z0-9._:/-]+ -->$"
+    },
+    "kind": {
+      "enum": [
+        "chain-progress",
+        "chain-issue-started",
+        "chain-issue-completed",
+        "chain-issue-blocked",
+        "chain-review",
+        "chain-final-summary"
+      ]
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9._:/-]+$"
+    },
+    "target": {
+      "type": "string",
+      "pattern": "^(issue|pr):[0-9]+$"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9._:/-]+$"
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1
+    },
+    "body_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "dry_run": {
+      "type": "boolean"
+    }
+  }
+}
