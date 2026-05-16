@@ -69,7 +69,7 @@ for host_id in claude codex; do
   assert_eq "$host_id host_id round trip" "$host_id" "$(jq -r '.host_id' "$profile_json")"
   case "$host_id" in
     claude)
-      assert_json_field "$host_id is review-only by default" "$profile_json" '.capabilities == ["reviewer"]'
+      assert_json_field "$host_id planner/reviewer capabilities round trip" "$profile_json" '.capabilities == ["reviewer", "planner"]'
       ;;
     codex)
       assert_json_field "$host_id implementation capabilities round trip" "$profile_json" '.capabilities == ["worker", "reviewer", "planner", "perf"]'
@@ -84,7 +84,7 @@ worker_order=$(host_profile_list_for_capability worker | paste -sd, -)
 assert_eq "default worker order" "codex" "$worker_order"
 
 planner_order=$(host_profile_list_for_capability planner | paste -sd, -)
-assert_eq "default planner order" "codex" "$planner_order"
+assert_eq "default planner order" "claude,codex" "$planner_order"
 
 perf_order=$(host_profile_list_for_capability perf | paste -sd, -)
 assert_eq "default perf order" "codex" "$perf_order"
