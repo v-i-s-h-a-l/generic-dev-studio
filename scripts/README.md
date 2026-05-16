@@ -78,6 +78,8 @@ scripts/studio-chain-runner.sh --discover ios-v2-execution                 # fil
 /dev-studio manager work-chain --resume <run_id> --yes                     # preferred user-facing resume path from summaries/halt records
 /dev-studio manager work-chain --resume <run_id> --verified --yes          # attended verification resume with closeout inventory
 scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute # reviewed source/issue to unattended issue-backed work-chain execution
+scripts/manager-plan-chain.sh --issue 758 --include-comments --repo v-i-s-h-a-l/generic-dev-studio --dry-run # plan from public-safe issue body + comment packet, recording packet/sidecar artifacts
+scripts/manager-plan-chain.sh --issue-set 758,759 --include-comments --repo v-i-s-h-a-l/generic-dev-studio --dry-run # cluster packet intake for related issues before reviewed chain creation
 scripts/manager-composite-chain.sh init --manifest composite.yaml --json    # selected MVP equivalent to --composite-manifest; initialize explicit sequential state without starting children
 scripts/manager-composite-chain.sh status --run-id <run_id>                 # non-mutating composite-chain status and next resume command
 scripts/manager-composite-chain.sh resume --run-id <run_id>                 # clean-session continuation for the active planned/running child
