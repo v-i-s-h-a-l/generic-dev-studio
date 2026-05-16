@@ -13,10 +13,15 @@ _lp_load_project_env 2>/dev/null || true
 
 PROJECT="${STUDIO_MANAGER_PLAN_CHAIN_PROJECT:-}"
 ISSUE_NUMBER=""
+ISSUE_SET=""
 ISSUE_REPO=""
 PARENT_ISSUE_NUMBER=""
 SOURCE_FILE=""
 SOURCE_TEXT=""
+INCLUDE_COMMENTS=0
+COMMENT_PACKET_DIR=""
+COMMENT_PACKET_MD=""
+COMMENT_PACKET_JSON=""
 FROM_PLAN=""
 FROM_PLAN_JSON=""
 FROM_PLAN_KIND=""
@@ -61,6 +66,7 @@ usage() {
   cat <<'EOF' >&2
 Usage:
   scripts/manager-plan-chain.sh [--issue N] [--repo owner/repo] [--chain name] [goal text]
+  scripts/manager-plan-chain.sh --issue-set N,N [--include-comments] [--repo owner/repo] [--chain name]
   scripts/manager-plan-chain.sh --source-file source.md [--chain name]
   scripts/manager-plan-chain.sh --from-plan task-graph.json [--chain name]
   scripts/manager-plan-chain.sh --source-file prd.md --execute [--interactive]
@@ -721,6 +727,9 @@ write_generated_planner_artifact() {
     --arg requirement_packet "$REQUIREMENT_PACKET" \
     --arg task_graph "$TASK_GRAPH" \
     --arg review_input "$REVIEW_INPUT" \
+    --argjson include_comments "$INCLUDE_COMMENTS" \
+    --arg comment_packet "$COMMENT_PACKET_MD" \
+    --arg comment_sidecar "$COMMENT_PACKET_JSON" \
     --arg status "$status" \
     --argjson blocked "$blocked_json" \
     --argjson cardinality_findings "$cardinality_findings" \
@@ -737,6 +746,13 @@ write_generated_planner_artifact() {
         subject_ref: $subject_ref,
         idempotency_key: ("manager-plan-chain:" + $subject_ref),
         payload: {
+          source_context: {
+            comments_included: ($include_comments == 1),
+            mode: (if $include_comments == 1 then "issue-context-packet" else "body-only" end),
+            packet_path: (if $comment_packet == "" then null else $comment_packet end),
+            comment_sidecar_path: (if $comment_sidecar == "" then null else $comment_sidecar end),
+            body_only_explicit: ($include_comments != 1)
+          },
           scope: ($tasks | map(.label)),
           non_goals: ["Do not execute implementation work inside the planning session."],
           dependencies: ($g.edges // []),
@@ -794,7 +810,7 @@ write_generated_planner_artifact() {
             manager_decision_needed: (if $status == "needs_context" then "Provide or refine the missing context, then rerun manager plan-chain." else "" end)
           }
         },
-        evidence_refs: [$source_path, $requirement_packet, $task_graph, $review_input],
+        evidence_refs: ([$source_path, $requirement_packet, $task_graph, $review_input, $comment_packet, $comment_sidecar] | map(select(. != "")) | unique),
         privacy_classification: "private-runtime",
         status: $status
       }
@@ -876,6 +892,9 @@ write_result_json() {
     --arg source_ref "$SOURCE_LABEL" \
     --arg artifact_root "$ARTIFACT_ROOT" \
     --arg planner_artifact "$PLANNER_ARTIFACT" \
+    --argjson include_comments "$INCLUDE_COMMENTS" \
+    --arg comment_packet "$COMMENT_PACKET_MD" \
+    --arg comment_sidecar "$COMMENT_PACKET_JSON" \
     --arg review_artifact "$review_path" \
     --arg work_chain "$manifest_path" \
     --arg clean_session_command "$clean_command" \
@@ -901,6 +920,13 @@ write_result_json() {
       source_ref: $source_ref,
       artifact_root: $artifact_root,
       planner_artifact: $planner_artifact,
+      source_context: {
+        comments_included: ($include_comments == 1),
+        mode: (if $include_comments == 1 then "issue-context-packet" else "body-only" end),
+        packet_path: (if $comment_packet == "" then null else $comment_packet end),
+        comment_sidecar_path: (if $comment_sidecar == "" then null else $comment_sidecar end),
+        body_only_explicit: ($include_comments != 1)
+      },
       review_artifact: (if $review_artifact == "" then null else $review_artifact end),
       work_chain: (if $work_chain == "" then null else $work_chain end),
       blocked_decisions: $blocked,
@@ -926,6 +952,11 @@ print_result() {
   printf '# Manager Plan-Chain Result\n\n'
   printf -- '- Status: `%s`\n' "$status"
   printf -- '- Planner artifact: `%s`\n' "$PLANNER_ARTIFACT"
+  if [ "$INCLUDE_COMMENTS" -eq 1 ]; then
+    printf -- '- Source context: `comments included` (packet `%s`, sidecar `%s`)\n' "$COMMENT_PACKET_MD" "$COMMENT_PACKET_JSON"
+  else
+    printf -- '- Source context: `body-only`\n'
+  fi
   if [ -n "$review_path" ]; then
     printf -- '- Review artifact: `%s`\n' "$review_path"
   else
@@ -980,6 +1011,71 @@ source_from_issue() {
     printf 'Issue state: %s\n\n' "$issue_state"
     printf '%s\n' "$issue_json" | jq -r '.body // ""'
   } > "$SOURCE_MD"
+}
+
+source_from_comment_packet() {
+  local packet_args=()
+  COMMENT_PACKET_DIR="$ARTIFACT_ROOT/issue-context-packet"
+  COMMENT_PACKET_MD="$COMMENT_PACKET_DIR/packet.md"
+  COMMENT_PACKET_JSON="$COMMENT_PACKET_DIR/packet.json"
+  packet_args=(--repo "$ISSUE_REPO" --out-dir "$COMMENT_PACKET_DIR")
+  if [ -n "$ISSUE_SET" ]; then
+    packet_args+=(--issue-set "$ISSUE_SET")
+  else
+    packet_args+=(--issue "$ISSUE_NUMBER")
+  fi
+  "$SCRIPT_DIR/issue-context-packet.sh" "${packet_args[@]}" > "$COMMENT_PACKET_DIR.run"
+  [ -s "$COMMENT_PACKET_MD" ] || {
+    printf 'manager-plan-chain: comment packet builder did not write %s\n' "$COMMENT_PACKET_MD" >&2
+    exit 1
+  }
+  cp "$COMMENT_PACKET_MD" "$SOURCE_MD"
+  if [ -z "$TITLE" ]; then
+    TITLE=$(jq -r '.source_issue.title // "Issue Context Packet"' "$COMMENT_PACKET_JSON")
+  fi
+  {
+    printf '# Comment-Aware Planning Source\n\n'
+    jq -r '
+      (if type == "array" then .[] else . end)
+      | "## Issue #\(.number): \(.title // "Untitled")\n\n"
+        + (.body // "_No issue body provided._")
+        + "\n"
+    ' "$COMMENT_PACKET_DIR/raw/issue.json"
+    printf '\n## Edges and References\n\n'
+    printf 'The issue-context packet below is public-safe planning context. Issue bodies remain the source of truth for worker scope; comments supply decisions, constraints, failures, acceptance changes, conflicts, and open questions with provenance.\n\n'
+    sed -n '/^## Included Comment Range/,$p' "$COMMENT_PACKET_MD"
+  } > "$SOURCE_MD"
+}
+
+source_from_issue_set_body_only() {
+  local old_ifs issue_ref issue_json issue_url issue_state first_title
+  : > "$SOURCE_MD"
+  printf '# Issue Set\n\n' > "$SOURCE_MD"
+  old_ifs=$IFS
+  IFS=,
+  for issue_ref in $ISSUE_SET; do
+    IFS=$old_ifs
+    issue_ref=$(printf '%s' "$issue_ref" | sed -E 's/^[[:space:]]*#?//; s/[[:space:]]*$//')
+    case "$issue_ref" in
+      *[!0-9]*|"") printf 'manager-plan-chain: --issue-set entries must be numeric issue refs: %s\n' "$issue_ref" >&2; exit 2 ;;
+    esac
+    issue_json=$("$SCRIPT_DIR/studio-gh.sh" issue view "$issue_ref" --repo "$ISSUE_REPO" --json number,title,body,url,state) || {
+      printf 'manager-plan-chain: failed to read issue #%s from %s\n' "$issue_ref" "$ISSUE_REPO" >&2
+      exit 1
+    }
+    [ -n "${first_title:-}" ] || first_title=$(printf '%s\n' "$issue_json" | jq -r '.title // ("Issue " + (.number | tostring))')
+    issue_url=$(printf '%s\n' "$issue_json" | jq -r '.url // ""')
+    issue_state=$(printf '%s\n' "$issue_json" | jq -r '.state // "unknown"')
+    {
+      printf '## Issue #%s: %s\n\n' "$issue_ref" "$(printf '%s\n' "$issue_json" | jq -r '.title // ""')"
+      [ -z "$issue_url" ] || printf 'Source URL: %s\n' "$issue_url"
+      printf 'Issue state: %s\n\n' "$issue_state"
+      printf '%s\n\n' "$issue_json" | jq -r '.body // ""'
+    } >> "$SOURCE_MD"
+    IFS=,
+  done
+  IFS=$old_ifs
+  [ -n "$TITLE" ] || TITLE="Issue cluster ${ISSUE_SET}"
 }
 
 source_from_file_or_text() {
@@ -1276,6 +1372,9 @@ write_chain_manifest() {
     --arg host "$HOST" \
     --arg planner_artifact "$PLANNER_ARTIFACT" \
     --arg review_artifact "$REVIEW_ARTIFACT" \
+    --argjson include_comments "$INCLUDE_COMMENTS" \
+    --arg comment_packet "$COMMENT_PACKET_MD" \
+    --arg comment_sidecar "$COMMENT_PACKET_JSON" \
     --arg generated_at "$(now_utc)" \
     '
       def issue_number_for($id):
@@ -1290,7 +1389,13 @@ write_chain_manifest() {
             script: "scripts/manager-plan-chain.sh",
             generated_at: $generated_at,
             planner_artifact: $planner_artifact,
-            review_artifact: $review_artifact
+            review_artifact: $review_artifact,
+            source_context: {
+              comments_included: ($include_comments == 1),
+              mode: (if $include_comments == 1 then "issue-context-packet" else "body-only" end),
+              packet_path: (if $comment_packet == "" then null else $comment_packet end),
+              comment_sidecar_path: (if $comment_sidecar == "" then null else $comment_sidecar end)
+            }
           },
           chains: [
             ({
@@ -1326,6 +1431,10 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --issue) ISSUE_NUMBER="${2:?--issue requires a number}"; shift 2 ;;
     --issue=*) ISSUE_NUMBER="${1#--issue=}"; shift ;;
+    --issue-set) ISSUE_SET="${2:?--issue-set requires a csv list}"; shift 2 ;;
+    --issue-set=*) ISSUE_SET="${1#--issue-set=}"; shift ;;
+    --include-comments) INCLUDE_COMMENTS=1; shift ;;
+    --body-only) INCLUDE_COMMENTS=0; shift ;;
     --parent-issue) PARENT_ISSUE_NUMBER="${2:?--parent-issue requires a number}"; CREATE_PARENT_ISSUE=manual; shift 2 ;;
     --parent-issue=*) PARENT_ISSUE_NUMBER="${1#--parent-issue=}"; CREATE_PARENT_ISSUE=manual; shift ;;
     --no-parent-issue) CREATE_PARENT_ISSUE=0; PARENT_ISSUE_NUMBER=""; shift ;;
@@ -1412,15 +1521,27 @@ case "$LINK_SUB_ISSUES" in
   0|1) ;;
   *) printf 'manager-plan-chain: sub-issue mode must be 0 or 1: %s\n' "$LINK_SUB_ISSUES" >&2; exit 2 ;;
 esac
+case "$INCLUDE_COMMENTS" in
+  0|1) ;;
+  *) printf 'manager-plan-chain: include-comments mode must be 0 or 1: %s\n' "$INCLUDE_COMMENTS" >&2; exit 2 ;;
+esac
 PARENT_ISSUE_NUMBER="${PARENT_ISSUE_NUMBER#\#}"
 case "$PROJECT_NUMBER" in
   ''|*[!0-9]*) printf 'manager-plan-chain: --project-number must be numeric: %s\n' "$PROJECT_NUMBER" >&2; exit 2 ;;
 esac
+[ -z "$ISSUE_NUMBER" ] || [ -z "$ISSUE_SET" ] || {
+  printf 'manager-plan-chain: --issue and --issue-set are mutually exclusive\n' >&2
+  exit 2
+}
+[ "$INCLUDE_COMMENTS" -eq 0 ] || [ -n "$ISSUE_NUMBER" ] || [ -n "$ISSUE_SET" ] || {
+  printf 'manager-plan-chain: --include-comments requires --issue or --issue-set\n' >&2
+  exit 2
+}
 
 if [ "${#POSITIONAL[@]}" -gt 0 ]; then
-  if [ -z "$SOURCE_FILE" ] && [ -z "$ISSUE_NUMBER" ] && [ -z "$FROM_PLAN" ] && [ "${#POSITIONAL[@]}" -eq 1 ] && [ -r "${POSITIONAL[0]}" ]; then
+  if [ -z "$SOURCE_FILE" ] && [ -z "$ISSUE_NUMBER" ] && [ -z "$ISSUE_SET" ] && [ -z "$FROM_PLAN" ] && [ "${#POSITIONAL[@]}" -eq 1 ] && [ -r "${POSITIONAL[0]}" ]; then
     SOURCE_FILE="${POSITIONAL[0]}"
-  elif [ -z "$SOURCE_FILE" ] && [ -z "$ISSUE_NUMBER" ] && [ -z "$FROM_PLAN" ] && [ "${#POSITIONAL[@]}" -eq 1 ] && [[ "${POSITIONAL[0]}" =~ ^#?[0-9]+$ ]]; then
+  elif [ -z "$SOURCE_FILE" ] && [ -z "$ISSUE_NUMBER" ] && [ -z "$ISSUE_SET" ] && [ -z "$FROM_PLAN" ] && [ "${#POSITIONAL[@]}" -eq 1 ] && [[ "${POSITIONAL[0]}" =~ ^#?[0-9]+$ ]]; then
     ISSUE_NUMBER="${POSITIONAL[0]#\#}"
   else
     SOURCE_TEXT="${POSITIONAL[*]}"
@@ -1437,7 +1558,7 @@ fi
 #
 # Bypass: STUDIO_PLAN_CHAIN_ALLOW_INLINE_PATHS=1 (for prompts that legitimately
 # mention paths as prose, not as input artifacts).
-if [ -z "$SOURCE_FILE" ] && [ -z "$ISSUE_NUMBER" ] && [ -z "$FROM_PLAN" ] && [ -n "$SOURCE_TEXT" ]; then
+if [ -z "$SOURCE_FILE" ] && [ -z "$ISSUE_NUMBER" ] && [ -z "$ISSUE_SET" ] && [ -z "$FROM_PLAN" ] && [ -n "$SOURCE_TEXT" ]; then
   case "${STUDIO_PLAN_CHAIN_ALLOW_INLINE_PATHS:-0}" in
     1|true|TRUE|yes|YES) ;;
     *)
@@ -1487,6 +1608,9 @@ ISSUE_REPO=$(resolve_issue_repo "$TARGET_REPO_ROOT")
 if [ -n "$ISSUE_NUMBER" ]; then
   SUBJECT_REF="issue:$ISSUE_NUMBER"
   SOURCE_LABEL="$ISSUE_REPO#$ISSUE_NUMBER"
+elif [ -n "$ISSUE_SET" ]; then
+  SUBJECT_REF="issue-set:$(printf '%s' "$ISSUE_SET" | tr -d '[:space:]')"
+  SOURCE_LABEL="$ISSUE_REPO#$(printf '%s' "$ISSUE_SET" | tr -d '[:space:]')"
 elif [ -n "$FROM_PLAN" ]; then
   SUBJECT_REF="plan:$(basename "$FROM_PLAN")"
   SOURCE_LABEL="$FROM_PLAN"
@@ -1501,6 +1625,7 @@ fi
 if [ -z "$TITLE" ]; then
   case "$SUBJECT_REF" in
     issue:*) TITLE="Issue ${ISSUE_NUMBER}" ;;
+    issue-set:*) TITLE="Issue set ${ISSUE_SET}" ;;
     plan:*) TITLE=$(basename "$FROM_PLAN") ;;
     source:*) TITLE=$(basename "$SOURCE_FILE") ;;
     *) TITLE=$(truncate_title "$SOURCE_TEXT") ;;
@@ -1544,8 +1669,12 @@ printf 'null\n' > "$PARENT_ISSUE_JSON"
 printf '{"enabled":false,"items":[]}\n' > "$PROJECT_FIELDS_JSON"
 printf '{"outcome":"not_run"}\n' > "$CLEANUP_JSON"
 
-if [ -n "$ISSUE_NUMBER" ]; then
+if [ "$INCLUDE_COMMENTS" -eq 1 ]; then
+  source_from_comment_packet
+elif [ -n "$ISSUE_NUMBER" ]; then
   source_from_issue
+elif [ -n "$ISSUE_SET" ]; then
+  source_from_issue_set_body_only
 elif [ -n "$FROM_PLAN" ]; then
   printf '# From Plan\n\n- Source: `%s`\n' "$FROM_PLAN" > "$SOURCE_MD"
 else

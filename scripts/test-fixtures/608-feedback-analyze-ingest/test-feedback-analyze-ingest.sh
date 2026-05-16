@@ -131,6 +131,17 @@ jq -s -e '
   and ([ .[] | select(.action == "comment_issue" and .issue_number == 606) ] | length) == 1
 ' "$ACTIONS" >/dev/null
 
+jq -s -e '
+  all(.[] | select(.action == "comment_issue");
+    (.body | startswith("<!-- studio-comment:v1 kind=feedback-ingest "))
+    and (.body | contains("idempotency_key=feedback-ingest:issue-"))
+    and (.body | contains("### Summary"))
+    and (.body | contains("### Planning Signal"))
+    and (.body | contains("### Links"))
+    and (.body | contains("Destination issue: https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/"))
+    and (.idempotency_key | startswith("feedback-ingest:issue-")))
+' "$ACTIONS" >/dev/null
+
 [ -f "$INBOX/processed/001-related.md" ] || fail "related source was not processed"
 [ -f "$INBOX/processed/002-related.md" ] || fail "consolidated source was not processed"
 [ -f "$INBOX/processed/003-existing.md" ] || fail "existing-match source was not processed"

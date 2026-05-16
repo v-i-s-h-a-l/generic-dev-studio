@@ -36,6 +36,16 @@ Every event is a single JSON object on one line:
 | `task` | string | yes* | Task ID (`T001`, `build-20260418-143000`). Use `""` for system events. |
 | `data` | object | yes | Event-specific payload. May be `{}`. |
 
+## Public Comment Projection
+
+Event rows are private runtime facts unless a separate public writer projects a
+bounded summary. Public GitHub issue/PR comments must use the
+`studio-comment:v1` contract in
+`_shared/contracts/issue-comment-pipeline.md`; comments may summarize event
+status and public-safe identifiers, but they must not replace event logs as the
+source of truth or expose raw event payloads, local paths, prompts, secrets,
+token totals, or private artifact locations.
+
 ## Atomicity Requirement
 
 **Events MUST fit in a single line of ≤ 4096 bytes.** POSIX guarantees `O_APPEND` writes are atomic on pipes and regular files when the write is ≤ PIPE_BUF (4096 bytes on macOS/Linux). Exceeding this risks interleaved writes from concurrent agents.
