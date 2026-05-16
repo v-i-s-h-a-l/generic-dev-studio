@@ -7,19 +7,19 @@
   },
   "comment": "Deprecated 2026-04-22. Originally held per-million USD token rates to derive cost_usd on agent_session_completed events. The user is on the Claude Max plan (flat subscription, no per-token billing), so $-denominated telemetry was misleading — dropped in Phase 2.6 (see _shared/patterns/consumption-telemetry.md). Kept one cycle for any out-of-tree reader; remove at Phase 2.7 cutover. The rate values below are frozen and no longer read by budget-report.sh.",
   "rates": {
-    "claude-opus-4-7": {
+    "claude-opus-4-6": {
       "input": 15.00,
       "output": 75.00,
       "cache_read": 1.50,
       "cache_write": 18.75
     },
-    "claude-sonnet-4-7": {
+    "claude-sonnet-4-6": {
       "input": 3.00,
       "output": 15.00,
       "cache_read": 0.30,
       "cache_write": 3.75
     },
-    "claude-haiku-4-7": {
+    "claude-haiku-4-6": {
       "input": 0.80,
       "output": 4.00,
       "cache_read": 0.08,

@@ -72,7 +72,7 @@ roles:
   reviewer.reasoning_effort:
     default: medium
     routine_after_telemetry: medium
-    rule: "Use Sonnet for Claude review/planner defaults. Opus is a last-resort tier only when explicitly justified as extreme need; do not use unverified Opus snapshots such as Opus 4.7 by default."
+    rule: "Use Sonnet 4.6 with high effort for Claude review/planner defaults. Opus is a last-resort tier only when explicitly justified as extreme need; do not use unverified Opus snapshots such as Opus 4.7 by default."
 reviewer_selection:
   default_role: reviewer.heavyweight
   fallback_role: reviewer.fallback

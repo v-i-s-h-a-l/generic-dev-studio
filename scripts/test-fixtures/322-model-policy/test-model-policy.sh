@@ -40,8 +40,8 @@ bash "$ROOT/scripts/resolve-reviewer-model.sh" \
 claude_rc=$?
 assert "claude reviewer resolves for openai implementation" "[ '$claude_rc' -eq 0 ]"
 assert "claude reviewer uses anthropic family" "grep -q '^REVIEWER_MODEL_PROVIDER_FAMILY=anthropic$' '$claude_out'"
-assert "claude reviewer uses sonnet" "grep -q '^REVIEWER_MODEL_ID=claude-sonnet-4-20250514$' '$claude_out'"
-assert "claude reviewer uses medium reasoning" "grep -q '^REVIEWER_MODEL_REASONING_EFFORT=medium$' '$claude_out'"
+assert "claude reviewer uses sonnet 4.6" "grep -q '^REVIEWER_MODEL_ID=claude-sonnet-4-6$' '$claude_out'"
+assert "claude reviewer uses high reasoning" "grep -q '^REVIEWER_MODEL_REASONING_EFFORT=high$' '$claude_out'"
 
 planner_out="$TMPROOT/planner.out"
 bash "$ROOT/scripts/resolve-reviewer-model.sh" \
@@ -50,7 +50,8 @@ bash "$ROOT/scripts/resolve-reviewer-model.sh" \
   --role planner.heavyweight >"$planner_out" 2>"$planner_out.err"
 planner_rc=$?
 assert "claude planner resolves for openai implementation" "[ '$planner_rc' -eq 0 ]"
-assert "claude planner uses sonnet" "grep -q '^REVIEWER_MODEL_ID=claude-sonnet-4-20250514$' '$planner_out'"
+assert "claude planner uses sonnet 4.6" "grep -q '^REVIEWER_MODEL_ID=claude-sonnet-4-6$' '$planner_out'"
+assert "claude planner uses high reasoning" "grep -q '^REVIEWER_MODEL_REASONING_EFFORT=high$' '$planner_out'"
 
 same_out="$TMPROOT/same.out"
 if bash "$ROOT/scripts/resolve-reviewer-model.sh" \
