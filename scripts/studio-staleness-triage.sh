@@ -140,8 +140,14 @@ build_plan() {
         | [ $stale_label, $escalate_label, $archive_label ] | map(select(has_label($issue; .) == true));
       def comment($tier; $days; $threshold):
         {
-          marker: ("<!-- studio-staleness-triage:" + $tier + ":issue-" + (.number | tostring) + " -->"),
-          body: ("<!-- studio-staleness-triage:" + $tier + ":issue-" + (.number | tostring) + " -->\nStaleness triage: this issue has had no recorded activity for " + ($days | tostring) + " days (threshold: " + ($threshold | tostring) + " days). Please move it forward, re-scope it, or archive it if it is no longer relevant.")
+          kind: "staleness-triage",
+          idempotency_key: ("staleness-triage:issue-" + (.number | tostring) + ":" + $tier),
+          marker: ("<!-- studio-comment:v1 kind=staleness-triage idempotency_key=staleness-triage:issue-" + (.number | tostring) + ":" + $tier + " target=issue:" + (.number | tostring) + " source=studio-staleness-triage -->"),
+          summary: ("Issue #" + (.number | tostring) + " has had no recorded activity for " + ($days | tostring) + " days (threshold: " + ($threshold | tostring) + " days)."),
+          planning_signal: "Review whether this issue should move forward, be re-scoped, or be archived. Labels are triage hints only; the issue body and project board remain authoritative.",
+          links: ("- Issue: " + (.url // ("https://github.com/" + $repo + "/issues/" + (.number | tostring)))),
+          next: "Move it forward, re-scope it, or archive it if it is no longer relevant.",
+          body: ("<!-- studio-comment:v1 kind=staleness-triage idempotency_key=staleness-triage:issue-" + (.number | tostring) + ":" + $tier + " target=issue:" + (.number | tostring) + " source=studio-staleness-triage -->\n### Summary\nIssue #" + (.number | tostring) + " has had no recorded activity for " + ($days | tostring) + " days (threshold: " + ($threshold | tostring) + " days).\n\n### Planning Signal\nReview whether this issue should move forward, be re-scoped, or be archived. Labels are triage hints only; the issue body and project board remain authoritative.\n\n### Links\n- Issue: " + (.url // ("https://github.com/" + $repo + "/issues/" + (.number | tostring))) + "\n\n### Next\nMove it forward, re-scope it, or archive it if it is no longer relevant.")
         };
       ($exclude_labels | split(",") | map(select(length > 0))) as $excluded
       | map(select(((.state // "OPEN") | ascii_downcase) == "open"))
@@ -228,12 +234,6 @@ ensure_label() {
     --description "$description"
 }
 
-comment_already_posted() {
-  local issue="$1" marker="$2"
-  with_login_home_for_github gh issue view "$issue" --repo "$REPO" --json comments \
-    --jq '.comments[].body' | grep -Fqx "$marker"
-}
-
 apply_plan() {
   local plan_file="$1"
 
@@ -243,7 +243,7 @@ apply_plan() {
 
   jq -c '.issues[] | select(((.add_labels | length) + (.remove_labels | length) + (if .comment == null then 0 else 1 end)) > 0)' "$plan_file" |
     while IFS= read -r issue_json; do
-      local issue labels marker body
+      local issue labels marker summary planning links next_step
       issue=$(printf '%s\n' "$issue_json" | jq -r '.number')
 
       labels=$(printf '%s\n' "$issue_json" | jq -r '.add_labels[]?')
@@ -267,9 +267,22 @@ EOF
       fi
 
       marker=$(printf '%s\n' "$issue_json" | jq -r '.comment.marker // empty')
-      if [ -n "$marker" ] && ! comment_already_posted "$issue" "$marker"; then
-        body=$(printf '%s\n' "$issue_json" | jq -r '.comment.body')
-        with_login_home_for_github gh issue comment "$issue" --repo "$REPO" --body "$body"
+      if [ -n "$marker" ]; then
+        summary=$(printf '%s\n' "$issue_json" | jq -r '.comment.summary')
+        planning=$(printf '%s\n' "$issue_json" | jq -r '.comment.planning_signal')
+        links=$(printf '%s\n' "$issue_json" | jq -r '.comment.links')
+        next_step=$(printf '%s\n' "$issue_json" | jq -r '.comment.next')
+        "$SCRIPT_DIR/studio-comment.sh" \
+          --post \
+          --target "issue:$issue" \
+          --repo "$REPO" \
+          --kind staleness-triage \
+          --idempotency-key "$(printf '%s\n' "$issue_json" | jq -r '.comment.idempotency_key')" \
+          --source studio-staleness-triage \
+          --summary "$summary" \
+          --planning-signal "$planning" \
+          --links "$links" \
+          --next "$next_step" >/dev/null
       fi
     done
 }
