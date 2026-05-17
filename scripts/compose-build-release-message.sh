@@ -41,6 +41,11 @@ def sentence(value: str) -> str:
     return value
 
 
+def note_sentence(value: str) -> str:
+    value = sentence(value)
+    return "" if value.lower() == "none" else value
+
+
 def crash_link(text: str) -> str:
     for link in URL_RE.findall(text or ""):
         if "crash" in link.lower() or "firebase" in link.lower():
@@ -86,8 +91,11 @@ def parse_block(block: str) -> dict[str, object]:
         "body": body,
         "trailers": trailers,
         "change_type": trailers.get("change-type", "").lower(),
-        "affected_areas": trailers.get("affected-areas", ""),
+        "affected_areas": trailers.get("areas", "") or trailers.get("affected-areas", ""),
+        "impact": trailers.get("impact", ""),
         "problem": trailers.get("problem", ""),
+        "release_note": trailers.get("release-note", ""),
+        "risk": trailers.get("risk", ""),
         "solution": trailers.get("solution", ""),
         "caveat": trailers.get("caveat", "") or trailers.get("caveats", ""),
         "changelog": trailers.get("changelog", ""),
@@ -121,20 +129,26 @@ def inferred_metadata(commit: dict[str, object]) -> dict[str, object]:
 
 
 def plain_bullet(commit: dict[str, object]) -> str:
+    release_note = note_sentence(str(commit.get("release_note") or ""))
+    changelog = note_sentence(str(commit.get("changelog") or ""))
+    impact = note_sentence(str(commit.get("impact") or ""))
     problem = sentence(str(commit.get("problem") or ""))
     solution = sentence(str(commit.get("solution") or ""))
-    changelog = sentence(str(commit.get("changelog") or ""))
     subject = sentence(str(commit.get("subject") or ""))
     caveat = sentence(str(commit.get("caveat") or ""))
 
-    if changelog:
+    if release_note:
+        bullet = release_note
+    elif changelog:
         bullet = changelog
+    elif impact:
+        bullet = impact
     elif problem and solution and solution.lower() not in problem.lower():
         bullet = f"{problem} - {solution}"
     else:
         bullet = problem or solution or subject
     if caveat:
-        bullet = f"{bullet} (caveat: {caveat})"
+        bullet = f"{bullet} (note: {caveat})"
     return trim(bullet, 260)
 
 
