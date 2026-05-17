@@ -95,7 +95,7 @@ jq -e '.status == "ok" and ([.overrides[] | select(.id == "dirty_tree_and_index"
 rm -f "$repo/dirty.txt"
 
 bad_plan="$TMPROOT/bad-plan.json"
-jq '.chains[0].expected_source_sha = "0000000000000000000000000000000000000000" | .chains[0].issues[0].issue_worktree = "/tmp/outside-gate-root"' "$plan" >"$bad_plan"
+jq '.chains[0].expected_source_sha = "0000000000000000000000000000000000000000" | .chains[0].approved_release_id = "rel-676" | .chains[0].issues[0].issue_worktree = "/tmp/outside-gate-root"' "$plan" >"$bad_plan"
 if STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 \
   "$GATES" --plan "$bad_plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" --audit-log "$TMPROOT/bad-audit.jsonl" >"$TMPROOT/bad.json"; then
   cat "$TMPROOT/bad.json" >&2

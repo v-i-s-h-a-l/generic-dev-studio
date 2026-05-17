@@ -440,6 +440,14 @@ sync strategies, leaves that no longer descend from the launch chain commit, and
 post-launch merge commits in the leaf. User-controlled emergency overrides are
 audited through the matching `STUDIO_BYPASS_CHAIN_*` variables.
 
+For non-release chains, `expected_source_sha` / `base_sha` records the planned
+base as provenance rather than freezing unrelated work out of `main`. When the
+base advances, finalization fetches, rebases the chain branch onto the live
+base, records both `planned_base_sha` and `finalized_base_sha`, and only
+continues after a clean rebase. Rebase conflicts still halt with
+`base_branch_advanced`; release-bearing chains keep the stricter source-SHA
+gate.
+
 Approved-release promotion is also HEAD-bound. `pr-merge-finalize` records the
 release approval only after it finds the studio review-gate comment for the
 current PR `HEAD_SHA`; App Store promotion routes through that same finalizer, so
