@@ -185,7 +185,8 @@ jq -n \
     end;
   def ts_epoch: try ((. // "") | fromdateiso8601) catch 0;
   def clean: if . == null or . == "" then null else . end;
-  def halt_active: ((.status // "") == "paused" or (.status // "") == "terminated");
+  def halt_active($run_status): ($run_status != "completed") and ((.status // "") == "paused" or (.status // "") == "terminated");
+  def halt_historical($run_status): ($run_status == "completed") and ((.status // "") == "paused" or (.status // "") == "terminated");
   def halt_priority:
     if (.halt_class // "") == "fatal" then 50
     elif (.halt_class // "") == "human-needed" then 40
@@ -391,6 +392,7 @@ jq -n \
     end;
 
   ($state[0] // {}) as $s |
+  ($s.status // "unknown") as $run_status |
   [ $events[] | .created_at? // empty | select(. != "") ] as $event_times |
   ($event_times | max // "") as $latest_event_at |
   ([($s.updated_at // ""), $latest_event_at] | map(select(. != "")) | max // "") as $latest_source_at |
@@ -410,12 +412,13 @@ jq -n \
   [ $halts[] | . as $h | ($h.path // $h.__artifact_path // "\($h.reason_id // "unknown"):\($h.created_at // "")") as $key | $h + {__key:$key} ] as $halt_raw |
   (reduce $halt_raw[] as $h ({}; .[$h.__key] = $h) | [.[]]) as $halt_rows |
   [ $halt_rows | to_entries[] | .value + {__index:.key} ] as $halt_rows_i |
-  [ $halt_rows_i[] | select(halt_active) ] as $active_halts_raw |
+  [ $halt_rows_i[] | select(halt_active($run_status)) ] as $active_halts_raw |
   [ $active_halts_raw[] | . + {__priority: halt_priority} ] as $active_halts_scored |
   ($active_halts_scored | sort_by(.__priority, (.created_at // ""), .__index) | last) as $active_raw |
   (if $active_raw == null then null else ($active_raw | public_halt) end) as $active_blocker |
   (if $active_raw == null then null else ($active_raw | retry_state) end) as $active_retry_state |
-  [ $halt_rows_i[] | select(halt_active) | public_halt ] as $active_halts |
+  [ $halt_rows_i[] | select(halt_active($run_status)) | public_halt ] as $active_halts |
+  [ $halt_rows_i[] | select(halt_historical($run_status)) | public_halt ] as $historical_halts |
   [ $halt_rows_i[] | select((.status // "") == "superseded") | public_halt ] as $superseded_halts |
   ([($s.phase_reviews // [])[]? | . + {__source:"state"}]
     + [ $events[] | select((.event // "") == "chain_phase_review_completed") | {
@@ -463,6 +466,7 @@ jq -n \
       latest_event_at: (if $latest_event_at == "" then null else $latest_event_at end),
       latest_source_at: (if $latest_source_at == "" then null else $latest_source_at end),
       active_halt_count: ($active_halts | length),
+      historical_halt_count: ($historical_halts | length),
       superseded_halt_count: ($superseded_halts | length),
       phase_review_counts: ($phase_reviews | group_by(.verdict) | map({key:.[0].verdict, value:length}) | from_entries),
       checkpoint_drift_count: $checkpoint_drift_count,
@@ -487,6 +491,7 @@ jq -n \
     ]),
     active_blocker: $active_blocker,
     active_halts: $active_halts,
+    historical_halts: $historical_halts,
     superseded_halts: $superseded_halts,
     retry_coalescing: {
       active_retry_state: $active_retry_state,
@@ -529,6 +534,7 @@ jq -r '
   "- Updated: `\(cell(.truth_state.state_updated_at))`",
   "- Latest event: `\(cell(.truth_state.latest_event_at))`",
   "- Active halts: `\(.truth_state.active_halt_count)`",
+  "- Historical halts: `\(.truth_state.historical_halt_count)`",
   "- Superseded halts: `\(.truth_state.superseded_halt_count)`",
   "- Checkpoint drift records: `\(.truth_state.checkpoint_drift_count)`",
   "- Read warnings: `\(.truth_state.read_warning_count)`",
@@ -552,6 +558,15 @@ jq -r '
      "| Reason | Class | Retry State | Count | Cooldown Until | Issue | Next Safe Action | Artifact |",
      "|---|---|---|---:|---|---|---|---|",
      (.active_halts[] | "| \(.reason_id) | \(.halt_class) | \(cell(.retry_state)) | \(cell(.retry_count)) | \(cell(.cooldown_until)) | \(cell(.issue)) | \(cell(.next_safe_action)) | \(cell(.path)) |")
+   end),
+  "",
+  "## Historical Halt Records",
+  "",
+  (if (.historical_halts | length) == 0 then "- none"
+   else
+     "| Reason | Class | Status | Issue | Artifact |",
+     "|---|---|---|---|---|",
+     (.historical_halts[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(cell(.issue)) | \(cell(.path)) |")
    end),
   "",
   "## Phase Reviews",

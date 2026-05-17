@@ -494,6 +494,7 @@ persist_child_completion_state() {
     | .children[$idx].refs.issue_urls = $issue_urls
     | .children[$idx].refs.pr_url = ($pr_urls[0] // .children[$idx].refs.pr_url)
     | .children[$idx].refs.pr_urls = $pr_urls
+    | .children[$idx].refs.child_halt_ref = null
     | .children[$idx].blocked_reason = null
     | .children[$idx].completed_at = $now
     | .children[$idx].updated_at = $now
@@ -622,6 +623,9 @@ print_status_json() {
   jq --arg state_path "$state_file" '
     def active_status: .status == "planning" or .status == "running";
     def selected_child: if .current_child_index == null then null else .children[.current_child_index] end;
+    def composite_halted: (.state // "") == "halted";
+    def selected_child_halt_ref: (selected_child.refs.child_halt_ref // .active_halt_ref.child_halt_ref // null);
+    def historical_child_halt_refs: ([.children[]?.refs.child_halt_ref? // empty] + [.active_halt_ref.child_halt_ref? // .active_halt_ref.halt_record? // empty] | unique);
     {
       composite_run_id,
       state_path: $state_path,
@@ -635,10 +639,13 @@ print_status_json() {
       remaining_children: [.children[] | select(.status == "pending") | {id, ordinal, source}],
       active_child_id: (selected_child | if . == null then null else .id end),
       active_child_run_id: ((selected_child.refs.child_run_id // null) // ([.children[] | select(active_status) | .refs.child_run_id][0] // null)),
-      child_halt_ref: (selected_child.refs.child_halt_ref // .active_halt_ref.child_halt_ref // null),
-      blocked_reason,
-      active_halt_ref,
-      next_safe_action: (.active_halt_ref.next_safe_action // .blocked_reason.next_safe_action // null),
+      child_halt_ref: (if composite_halted then selected_child_halt_ref else null end),
+      historical_child_halt_refs: (if composite_halted then [] else historical_child_halt_refs end),
+      blocked_reason: (if composite_halted then .blocked_reason else null end),
+      historical_blocked_reason: (if composite_halted then null else .blocked_reason end),
+      active_halt_ref: (if composite_halted then .active_halt_ref else null end),
+      historical_halt_ref: (if composite_halted then null else .active_halt_ref end),
+      next_safe_action: (if composite_halted then (.active_halt_ref.next_safe_action // .blocked_reason.next_safe_action // null) else null end),
       next_resume_command: .next_command
     }
   ' "$state_file"
@@ -654,6 +661,9 @@ print_status_text() {
     def child_line: "- " + .id + " (" + (.ordinal | tostring) + ", " + .status + ", " + source_label + ")";
     def active_status: .status == "planning" or .status == "running";
     def selected_child: if .current_child_index == null then null else .children[.current_child_index] end;
+    def composite_halted: (.state // "") == "halted";
+    def selected_child_halt_ref: (selected_child.refs.child_halt_ref // .active_halt_ref.child_halt_ref // null);
+    def historical_child_halt_refs: ([.children[]?.refs.child_halt_ref? // empty] + [.active_halt_ref.child_halt_ref? // .active_halt_ref.halt_record? // empty] | unique);
 
     "Composite chain: " + .composite_run_id,
     "State path: " + $state_path,
@@ -665,9 +675,10 @@ print_status_text() {
     "Remaining children:",
     (([.children[] | select(.status == "pending") | child_line] | if length == 0 then ["- none"] else . end)[]),
     "Active child run id: " + (((selected_child.refs.child_run_id // null) // ([.children[] | select(active_status) | .refs.child_run_id][0] // null)) // "none"),
-    "Child halt ref: " + ((selected_child.refs.child_halt_ref // .active_halt_ref.child_halt_ref // null) // "none"),
-    "Blocked/halt reason: " + (if .blocked_reason == null then "none" else (.blocked_reason.reason_id + " — " + .blocked_reason.summary) end),
-    "Next safe action: " + ((.active_halt_ref.next_safe_action // .blocked_reason.next_safe_action // null) // "none"),
+    "Child halt ref: " + ((if composite_halted then selected_child_halt_ref else null end) // "none"),
+    "Historical child halt refs: " + (if composite_halted or (historical_child_halt_refs | length) == 0 then "none" else (historical_child_halt_refs | join(", ")) end),
+    "Blocked/halt reason: " + (if (composite_halted and .blocked_reason != null) then (.blocked_reason.reason_id + " — " + .blocked_reason.summary) else "none" end),
+    "Next safe action: " + ((if composite_halted then (.active_halt_ref.next_safe_action // .blocked_reason.next_safe_action // null) else null end) // "none"),
     "Next resume command: " + (.next_command // "none")
   ' "$state_file"
 }
