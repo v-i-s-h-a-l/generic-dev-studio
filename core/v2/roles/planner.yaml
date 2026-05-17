@@ -13,6 +13,9 @@ inputs:
   - kind: shaped-intent
     required: true
     description: Manager-shaped goal, impact, constraints, non-goals, dependencies, and explicit planning ask.
+  - kind: issue-context-packet
+    required: false
+    description: Public-safe packet.md plus packet.json from scripts/issue-context-packet.sh for issue or issue-set intake; default for issue refs and URLs unless body-only is explicit.
   - kind: repo-context
     required: false
     description: Current repository state, prior decisions, reusable APIs, contracts, and relevant docs needed to plan safely.
@@ -39,20 +42,27 @@ writes:
 idempotency_key: planner:{subject_ref}:{planning_scope}
 decision_rights:
   - Define in-scope and out-of-scope work for a shaped request without changing manager-owned priority or final acceptance.
+  - Use public-safe issue comments as planning evidence for decisions, constraints, failures, acceptance changes, conflicts, and open questions when issue intake provides an issue-context packet.
   - Discover and require reuse of existing APIs, scripts, schemas, profiles, and conventions before proposing new substrate.
   - Scan task sets for accumulated design debt after repeated changes and propose refactoring follow-ups with reason, affected area, risk, and suggested timing.
   - Decompose L/XL work into S/M worker contracts and combine related XS leaves only when acceptance criteria remain explicit.
   - Mark a plan blocked when dependencies, authority, reusable API evidence, or acceptance criteria are insufficient.
 escalation_triggers:
   - Scope, dependencies, or priorities conflict in a way that cannot be reduced without changing the manager-owned brief.
+  - Issue body, packet comments, or comment summaries conflict in a way that would change scope, acceptance criteria, blockers, or worker contracts.
   - The requested implementation would require qa-engineer, flow-tester, release-manager, operator approval, or permission expansion not granted by the planning contract.
   - Reusable API discovery finds multiple incompatible approaches and the tradeoff changes user-visible behavior, runtime risk, or chain cost.
   - Acceptance criteria cannot be made testable or bounded without manager clarification.
 failure_semantics:
   - Return needs_context with exact missing inputs rather than inventing scope, dependencies, APIs, or acceptance criteria.
+  - Return needs_context when comment/body or comment/comment conflicts cannot be reduced without silently choosing an authority or changing manager-owned goals.
   - Return blocked for irreducible conflicts and escalate to manager; the planner must not silently choose between conflicting manager-owned goals.
   - Preserve partial planner outputs with stable idempotency key and explicit unsafe-to-dispatch status when decomposition is incomplete.
 verification_floor:
+  - Issue refs and issue URLs use scripts/issue-context-packet.sh by default; body-only issue intake is allowed only when explicit and recorded in planner evidence.
+  - Planner prompts use packet.md plus packet.json evidence only; raw comments remain private/local archive inputs and are never pasted directly into prompts.
+  - Planner output records comment-context mode, packet path, sidecar path, and whether body-only was explicit when issue intake is used.
+  - Public-safe comments inform planning but never override issue bodies, manifests, runtime state, event logs, reviewed plan artifacts, or worker summaries.
   - Planner output names scope, non-goals, dependencies, risks, reusable API findings, acceptance criteria, and explicit review ask.
   - Each worker contract produced by the planner has bounded ownership, required checks, stop conditions, and a private summary artifact path.
   - Planner output distinguishes dispatch-blocking refactors from deferred refactoring follow-ups that the manager can capture as separate work.
