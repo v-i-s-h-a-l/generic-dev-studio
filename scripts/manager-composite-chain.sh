@@ -494,6 +494,7 @@ persist_child_completion_state() {
     | .children[$idx].refs.issue_urls = $issue_urls
     | .children[$idx].refs.pr_url = ($pr_urls[0] // .children[$idx].refs.pr_url)
     | .children[$idx].refs.pr_urls = $pr_urls
+    | .children[$idx].refs.child_halt_ref = null
     | .children[$idx].blocked_reason = null
     | .children[$idx].completed_at = $now
     | .children[$idx].updated_at = $now

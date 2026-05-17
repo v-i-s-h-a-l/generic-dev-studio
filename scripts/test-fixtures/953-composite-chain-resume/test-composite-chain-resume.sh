@@ -12,8 +12,10 @@ WORK_STUB="$EXECUTION_FIXTURE_DIR/stub-manager-work-chain.sh"
 RUN_ID="019e2c8a-9580-7000-8000-000000000001"
 HALT_RUN_ID="019e2c8a-9580-7000-8000-000000000002"
 COMPLETE_RUN_ID="019e2c8a-9580-7000-8000-000000000003"
+STALE_MISSING_RUN_ID="019e2c8a-9580-7000-8000-000000000004"
 CHILD_HALT_RUN_ID="019e2c8a-9580-7000-8000-000000000102"
 CHILD_COMPLETE_RUN_ID="019e2c8a-9580-7000-8000-000000000103"
+CHILD_STALE_COMPLETE_RUN_ID="019e2c8a-9580-7000-8000-000000000104"
 TMPROOT="${TMPDIR:-/tmp}/composite-chain-resume.$$"
 
 trap 'rm -rf "$TMPROOT"' EXIT
@@ -24,13 +26,27 @@ fail() {
 }
 
 plan_first_child() {
-  local home="$1" run_id="$2" plan_log="$3" init_json
+  local home="$1" run_id="$2" plan_log="$3" manifest="${4:-$MANIFEST}" init_json
   init_json=$(HOME="$home" ACHILLES_PROJECT=generic-dev-studio \
-    "$MANAGER" init --manifest "$MANIFEST" --run-id "$run_id" --json)
+    "$MANAGER" init --manifest "$manifest" --run-id "$run_id" --json)
   HOME="$home" ACHILLES_PROJECT=generic-dev-studio \
     STUDIO_COMPOSITE_PLAN_CHAIN_SCRIPT="$PLAN_STUB" STUB_PLAN_LOG="$plan_log" \
     "$MANAGER" plan-active-child --run-id "$run_id" --json > "$TMPROOT/$run_id-plan.json"
   printf '%s\n' "$init_json" | jq -r '.state_path'
+}
+
+write_single_child_manifest() {
+  local manifest="$1"
+  cat > "$manifest" <<'YAML'
+kind: composite-chain
+schema_version: 1
+name: stale-missing-reconcile
+mode: sequential
+children:
+  - id: first-child
+    source_type: issue
+    issue: 9004
+YAML
 }
 
 write_child_state() {
@@ -169,10 +185,62 @@ HOME="$complete_home" ACHILLES_PROJECT=generic-dev-studio "$MANAGER" validate-st
 jq -e '
   .state == "child_completed"
   and .children[0].status == "completed"
+  and .children[0].blocked_reason == null
   and .children[1].status == "pending"
   and .current_child_id == "second-child"
   and .current_child_index == 1
   and (.next_command | contains("composite-chain plan-active-child --run-id"))
 ' "$complete_state_path" >/dev/null || fail "completed child did not advance composite pointer to the next pending child"
+
+stale_home="$TMPROOT/home-stale-missing"
+stale_manifest="$TMPROOT/stale-missing-manifest.yaml"
+write_single_child_manifest "$stale_manifest"
+stale_state_path=$(plan_first_child "$stale_home" "$STALE_MISSING_RUN_ID" "$TMPROOT/stale-plan.log" "$stale_manifest")
+stale_work_manifest=$(jq -r '.children[0].refs.work_chain_manifest' "$stale_state_path")
+stale_details_ref="$(dirname "$stale_state_path")/execution/first-child/manager-work-chain.err"
+mkdir -p "$(dirname "$stale_details_ref")"
+printf 'no durable state yet\n' > "$stale_details_ref"
+
+jq \
+  --arg details_ref "$stale_details_ref" '
+    .state = "halted"
+    | .children[0].status = "halted"
+    | .children[0].blocked_reason = {
+        reason_id: "child_run_state_missing",
+        summary: "Resume could not find durable child chain state.",
+        details_ref: $details_ref
+      }
+    | .blocked_reason = .children[0].blocked_reason
+    | .active_halt_ref = {
+        reason_id: "child_run_state_missing",
+        halt_record: ((.source_ref.manifest_path | split("/")[:-1] | join("/")) + "/stale-missing-placeholder.json"),
+        child_id: "first-child"
+      }
+    | .children[0].refs.child_halt_ref = .active_halt_ref.halt_record
+    | .next_command = ("/dev-studio manager composite-chain resume --run-id " + .composite_run_id)
+  ' "$stale_state_path" > "$stale_state_path.tmp"
+mv "$stale_state_path.tmp" "$stale_state_path"
+
+HOME="$stale_home" ACHILLES_PROJECT=generic-dev-studio "$MANAGER" validate-state --state "$stale_state_path" >/dev/null
+stale_halt_record=$(jq -r '.active_halt_ref.halt_record' "$stale_state_path")
+mkdir -p "$(dirname "$stale_halt_record")"
+printf '{"reason_id":"child_run_state_missing"}\n' > "$stale_halt_record"
+stale_child_state=$(write_child_state "$stale_home" "$CHILD_STALE_COMPLETE_RUN_ID" "$stale_work_manifest" "completed")
+
+HOME="$stale_home" ACHILLES_PROJECT=generic-dev-studio "$MANAGER" resume --run-id "$STALE_MISSING_RUN_ID" --json > "$TMPROOT/stale-resume.json"
+HOME="$stale_home" ACHILLES_PROJECT=generic-dev-studio "$MANAGER" validate-state --state "$stale_state_path" >/dev/null
+[ -f "$stale_halt_record" ] || fail "historical child_run_state_missing halt record was deleted during reconciliation"
+jq -e \
+  --arg stale_child_state "$stale_child_state" '
+  .state == "completed"
+  and .children[0].status == "completed"
+  and .children[0].refs.child_run_id == "019e2c8a-9580-7000-8000-000000000104"
+  and .children[0].refs.child_run_state == $stale_child_state
+  and .children[0].refs.child_halt_ref == null
+  and .children[0].blocked_reason == null
+  and .blocked_reason == null
+  and .active_halt_ref == null
+  and .next_command == null
+' "$stale_state_path" >/dev/null || fail "stale child_run_state_missing blocker survived completed child reconciliation"
 
 printf 'PASS: composite chain resume\n'
