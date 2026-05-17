@@ -12,6 +12,8 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=scripts/lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=scripts/lib-manager-structured-output.sh
+. "$SCRIPT_DIR/lib-manager-structured-output.sh"
 
 REPO="v-i-s-h-a-l/generic-dev-studio"
 INBOX_ROOT=""
@@ -183,14 +185,49 @@ issue_number_from_url() {
   sed -n 's#.*/issues/\([0-9][0-9]*\).*#\1#p' <<<"$1"
 }
 
+inbox_count_before=0
+if [ -d "$INBOX_ROOT" ]; then
+  inbox_count_before=$(find "$INBOX_ROOT" -mindepth 2 -maxdepth 2 -type f -name '*.md' \
+    -not -path '*/processed/*' 2>/dev/null | wc -l | tr -d ' ')
+fi
+
+emit_lookup_failure() {
+  local reason="$1" message="$2" mode_label
+  mode_label=$([ "$APPLY" -eq 1 ] && printf apply || printf dry-run)
+  manager_failure_json "manager_analyze_feedback_ingest" "$mode_label" "issue_lookup" "$reason" "$message" \
+    | jq \
+      --arg repo "$REPO" \
+      --arg inbox_root "$INBOX_ROOT" \
+      --argjson before "$inbox_count_before" \
+      '. + {
+        repo: $repo,
+        inbox_root: $inbox_root,
+        inbox_count_before: $before,
+        inbox_count_after: $before,
+        destination_count: 0,
+        destinations: [],
+        policy_holds: []
+      }'
+}
+
 if [ -n "$ISSUES_FILE" ]; then
-  cp "$ISSUES_FILE" "$ISSUES_JSON"
+  if ! cp "$ISSUES_FILE" "$ISSUES_JSON" 2>"$TMPDIR/issues.err"; then
+    emit_lookup_failure "issues_file_unreadable" "$(head -n 20 "$TMPDIR/issues.err")"
+    exit 1
+  fi
 else
+  set +e
   "$SCRIPT_DIR/studio-gh.sh" issue list \
     --repo "$REPO" \
     --state open \
     --limit 200 \
-    --json number,title,body,url,state > "$ISSUES_JSON"
+    --json number,title,body,url,state > "$ISSUES_JSON" 2>"$TMPDIR/issues.err"
+  issue_lookup_rc=$?
+  set -e
+  if [ "$issue_lookup_rc" -ne 0 ]; then
+    emit_lookup_failure "github_issue_lookup_failed" "$(head -n 20 "$TMPDIR/issues.err")"
+    exit "$issue_lookup_rc"
+  fi
 fi
 
 issues_tsv() {
@@ -422,12 +459,6 @@ remember_cluster_destination() {
   local key="$1" number="$2" url="$3"
   printf '%s\t%s\t%s\n' "$key" "$number" "$url" >> "$CLUSTERS_TSV"
 }
-
-inbox_count_before=0
-if [ -d "$INBOX_ROOT" ]; then
-  inbox_count_before=$(find "$INBOX_ROOT" -mindepth 2 -maxdepth 2 -type f -name '*.md' \
-    -not -path '*/processed/*' 2>/dev/null | wc -l | tr -d ' ')
-fi
 
 if [ -d "$INBOX_ROOT" ]; then
   while IFS= read -r file; do
