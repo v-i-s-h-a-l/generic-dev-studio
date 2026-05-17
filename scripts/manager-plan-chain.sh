@@ -9,6 +9,8 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
 # shellcheck source=lib-paths.sh
 . "$SCRIPT_DIR/lib-paths.sh"
+# shellcheck source=lib-feature-branch-policy.sh
+. "$SCRIPT_DIR/lib-feature-branch-policy.sh"
 _lp_load_project_env 2>/dev/null || true
 
 PROJECT="${STUDIO_MANAGER_PLAN_CHAIN_PROJECT:-}"
@@ -28,7 +30,8 @@ FROM_PLAN_JSON=""
 FROM_PLAN_KIND=""
 TITLE=""
 CHAIN_NAME=""
-SOURCE_BRANCH="main"
+SOURCE_BRANCH="${STUDIO_MANAGER_PLAN_CHAIN_BASE_REF:-${STUDIO_MANAGER_PLAN_CHAIN_SOURCE_BRANCH:-}}"
+SOURCE_BRANCH_EXPLICIT=0
 BASE_SHA_EXPECTED="${STUDIO_PLAN_CHAIN_EXPECTED_BASE_SHA:-}"
 PARENT_BRANCH=""
 PARENT_SHA=""
@@ -1519,8 +1522,8 @@ while [ "$#" -gt 0 ]; do
     --project=*) PROJECT="${1#--project=}"; shift ;;
     --target-repo-root) TARGET_REPO_ROOT="${2:?--target-repo-root requires a path}"; shift 2 ;;
     --target-repo-root=*) TARGET_REPO_ROOT="${1#--target-repo-root=}"; shift ;;
-    --source-branch|--base|--base-ref) SOURCE_BRANCH="${2:?--source-branch requires a branch}"; shift 2 ;;
-    --source-branch=*|--base=*|--base-ref=*) SOURCE_BRANCH="${1#*=}"; shift ;;
+    --source-branch|--base|--base-ref) SOURCE_BRANCH="${2:?--source-branch requires a branch}"; SOURCE_BRANCH_EXPLICIT=1; shift 2 ;;
+    --source-branch=*|--base=*|--base-ref=*) SOURCE_BRANCH="${1#*=}"; SOURCE_BRANCH_EXPLICIT=1; shift ;;
     --base-sha) BASE_SHA_EXPECTED="${2:?--base-sha requires a sha}"; shift 2 ;;
     --base-sha=*) BASE_SHA_EXPECTED="${1#--base-sha=}"; shift ;;
     --parent-branch) PARENT_BRANCH="${2:?--parent-branch requires a branch}"; shift 2 ;;
@@ -1672,6 +1675,11 @@ TARGET_REPO_ROOT=$(cd "$TARGET_REPO_ROOT" && pwd -P)
 [ -n "$PROJECT" ] || PROJECT=$(basename "$TARGET_REPO_ROOT")
 [ -n "$PROJECT" ] || PROJECT="generic-dev-studio"
 ISSUE_REPO=$(resolve_issue_repo "$TARGET_REPO_ROOT")
+if [ -z "$SOURCE_BRANCH" ]; then
+  CURRENT_TARGET_BRANCH=$(git -C "$TARGET_REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+  [ "$CURRENT_TARGET_BRANCH" = "HEAD" ] && CURRENT_TARGET_BRANCH=""
+  SOURCE_BRANCH=$(feature_branch_policy_task_base_ref "$TARGET_REPO_ROOT" "$CURRENT_TARGET_BRANCH")
+fi
 
 if [ -n "$ISSUE_NUMBER" ]; then
   SUBJECT_REF="issue:$ISSUE_NUMBER"

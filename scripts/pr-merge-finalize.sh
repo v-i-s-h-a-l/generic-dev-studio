@@ -295,14 +295,13 @@ _branch_policy_load_features_env() {
 _branch_policy_load_features_env
 
 if feature_branch_policy_merge_target_to_main; then
-  expected_base=$(feature_branch_policy_default_base)
-  if [ "$base_ref" != "$expected_base" ]; then
-    detail="PR base ref $base_ref does not match configured merge target $expected_base"
+  if feature_branch_policy_is_mainline_branch "$base_ref" && ! feature_branch_policy_is_main_merge_source "$head_ref"; then
+    detail="PR base ref $base_ref is protected; only release or hotfix branches may merge directly into $base_ref"
     if [ "${STUDIO_BYPASS_BRANCH_POLICY:-0}" = "1" ]; then
       printf 'warning: %s (override STUDIO_BYPASS_BRANCH_POLICY=1)\n' "$detail" >&2
     else
       printf 'pr-merge-finalize: %s\n' "$detail" >&2
-      printf 'pr-merge-finalize: retarget the PR to %s, or set STUDIO_BYPASS_BRANCH_POLICY=1 after explicit user approval (see _shared/standards/branch-discipline.md)\n' "$expected_base" >&2
+      printf 'pr-merge-finalize: retarget the PR to the current release branch or known feature branch, or set STUDIO_BYPASS_BRANCH_POLICY=1 after explicit user approval (see _shared/standards/branch-discipline.md)\n' >&2
       exit 1
     fi
   fi

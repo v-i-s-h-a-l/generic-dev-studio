@@ -27,28 +27,11 @@ Role help: bare `help` shows the router-level role index unless a session-local 
 <!-- v2-dev-studio:issue-intake -->
 ## Issue Intake
 
-Issue-sourced planning is comment-aware by default. `/dev-studio planner #N`,
-`/dev-studio planner <issue-url>`, and manager planning surfaces that receive
-`--issue <n>` or `--issue-set <csv>` use `scripts/issue-context-packet.sh` to
-produce `packet.md` plus `packet.json` before planning. `--include-comments`
-is accepted as a compatibility no-op alias for the default packet mode;
-`--body-only` is the explicit escape hatch and must be recorded as such in
-planner evidence.
+Issue-sourced planning is comment-aware by default. Planner and manager surfaces that receive `--issue <n>` or `--issue-set <csv>` use `scripts/issue-context-packet.sh`; `--include-comments` is a compatibility no-op and `--body-only` is the explicit escape hatch.
 
-Raw issue comments are archived only as private/local packet inputs and must
-not be pasted directly into planner prompts. Public-safe comments inform
-planning decisions, constraints, failures, acceptance changes, conflicts, and
-open questions; they never override issue bodies, manifests, runtime state,
-event logs, reviewed plan artifacts, or worker summaries. Comment/body or
-comment/comment conflicts must be surfaced as conflicts or `needs_context`
-rather than silently resolved by the planner.
+Raw issue comments are private/local packet inputs. Public-safe comments inform planning but never override issue bodies, manifests, runtime state, event logs, reviewed plan artifacts, or worker summaries; conflicts become explicit conflicts or `needs_context`.
 
-Direct worker issue launches do not fetch comments by default. When a worker
-is launched directly from an issue or issue URL instead of a reviewed planner
-artifact, the host must print or record a warning that the launch may bypass
-comment-aware planning and should be routed through planner/manager intake
-when public issue comments may affect scope, acceptance, blockers, or open
-questions.
+Direct worker issue launches do not fetch comments by default. If launched directly from an issue or issue URL, print or record that comment-aware planning may have been bypassed.
 
 <!-- v2-dev-studio:lifecycle -->
 ## Lifecycle Actions
@@ -58,9 +41,9 @@ questions.
 <!-- v2-dev-studio:manager-context-header -->
 ## Manager Context Header
 
-All `/dev-studio manager …` surface invocations render the manager context header before any side effect or further prompt. Hosts source `scripts/lib-manager-context-header.sh` and emit either `manager_context_header_emit_text <repo-root>` (default human-readable) or `manager_context_header_emit_json <repo-root>` (machine-readable). The header carries the project, current branch, dirty flag, resolved `base_ref`/`base_sha`, the `on_protected_base` flag, and the project's branch-policy fields (`default_base`, `release_branch_pattern`, `merge_target_to_main`, `allow_feature_off_feature`) sourced from `~/.dev-studio/<project>/config/features.env` (override: `STUDIO_FEATURE_CONFIG_FILE`).
+All `/dev-studio manager …` surface invocations render the manager context header before any side effect or further prompt. Hosts source `scripts/lib-manager-context-header.sh` and emit either `manager_context_header_emit_text <repo-root>` (default human-readable) or `manager_context_header_emit_json <repo-root>` (machine-readable). The header carries the project, current branch, dirty flag, resolved `base_ref`/`base_sha`, the `on_protected_base` flag, and the project's branch-policy fields (`default_base`, `release_branch_pattern`, `merge_target_to_main`, `allow_feature_off_feature`) sourced from `~/.dev-studio/<project>/config/features.env` (override: `STUDIO_FEATURE_CONFIG_FILE`). `manager plan-chain` uses the same branch-policy helpers to choose an unspecified PR base: known feature branch first, newest release branch second, configured default base last.
 
-The header is informational; it does not gate or mutate. Surface enforcement still lives in the pre-commit base-branch guard and the `pr-merge-finalize` merge-target gate (`_shared/standards/branch-discipline.md`). Manager ingest reuses the same primitive as an explicit source-branch pre-flight: `scripts/dev-studio-ingest-resolve.sh` embeds the header under `manager_context_header` and a `source_branch_preflight` block in its JSON output, and the host surfaces both before any ingest write. `--scope studio`, `--scope project`, and `--to <project-slug>` remain the documented non-interactive override surface.
+The header is informational; it does not gate or mutate. Surface enforcement still lives in the pre-commit base-branch guard and the `pr-merge-finalize` mainline-source gate (`_shared/standards/branch-discipline.md`). Manager ingest reuses the same primitive as an explicit source-branch pre-flight: `scripts/dev-studio-ingest-resolve.sh` embeds the header under `manager_context_header` and a `source_branch_preflight` block in its JSON output, and the host surfaces both before any ingest write. `--scope studio`, `--scope project`, and `--to <project-slug>` remain the documented non-interactive override surface.
 
 <!-- v2-dev-studio:manager-analyze -->
 ## Manager Analyze Routing
@@ -105,36 +88,12 @@ After workflow selection, report the direct one-line invocation the user can run
 <!-- v2-dev-studio:verified-resume -->
 ## Attended Verified Resume
 
-Attended chain runs may pause for explicit human verification. The pause
-writes a typed halt with `reason_id: attended_verification_pending`
-(`_shared/contracts/chain-halt-record.schema.json`) and surfaces a single
-verified-resume command of the form
-`/dev-studio manager work-chain --resume <run_id> --verified --yes`. The
-manager routes that invocation to `scripts/manager-work-chain.sh`, which
-inspects the canonical verified resume closeout inventory documented in
-`_shared/contracts/completion-summary.md` §Verified Resume Closeout and runs
-each finish step idempotently (test/build evidence, worker summary, commit,
-push, PR, review, merge, issue closure, local main sync, worktree cleanup,
-DerivedData and stale-artifact cleanup, and report regeneration). Unsafe or
-user-sensitive steps stay gated by the existing ask-first and retention
-rules; `--verified --yes` does not widen approval authority.
+Attended chain runs may pause with `reason_id: attended_verification_pending` and resume through `/dev-studio manager work-chain --resume <run_id> --verified --yes`. The manager routes to `scripts/manager-work-chain.sh` and follows `_shared/contracts/completion-summary.md` §Verified Resume Closeout; `--verified --yes` does not widen approval authority.
 
 <!-- v2-dev-studio:chain-recap -->
 ## Durable Chain Progress Recap
 
-Chain sessions emit a stable user-facing progress packet at three durable
-boundaries: before execution starts (chain goal, ordered tasks, dependency
-edges, parallel opportunities, expected human checkpoints, and the next
-command), after every completed task (previous task, just completed task,
-what changed, verification evidence summary, next task or command, overall
-progress, and the current chain direction or goal), and on pause, halt, or
-finish (what remains and the exact verified-resume or recovery command).
-The recap is generated from durable run state — chain manifests, event-log
-projections, worker summaries, and halt records — never from ephemeral
-assistant memory, and it does not expose private telemetry payloads,
-secrets, or raw operator prompts. See
-`_shared/contracts/completion-summary.md` §Durable Chain Progress Recap for
-the field-level contract.
+Chain sessions emit stable user-facing progress packets before execution, after every completed task, and on pause/halt/finish. Recaps come from durable run state, not assistant memory, and follow `_shared/contracts/completion-summary.md` §Durable Chain Progress Recap.
 
 <!-- v2-dev-studio:intent -->
 ## Intent detection

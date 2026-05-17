@@ -16,13 +16,13 @@ cat > "$BIN/gh" <<'SH'
 set -u
 
 json_payload() {
-  local n="${COMMIT_COUNT:-1}" base="${BASE_REF:-main}" repo="${PR_REPO_SLUG:-v-i-s-h-a-l/generic-dev-studio}" commits="" i=0
+  local n="${COMMIT_COUNT:-1}" base="${BASE_REF:-main}" head="${HEAD_REF:-feature}" repo="${PR_REPO_SLUG:-v-i-s-h-a-l/generic-dev-studio}" commits="" i=0
   while [ "$i" -lt "$n" ]; do
     if [ "$i" -gt 0 ]; then commits="$commits,"; fi
     commits="${commits}{\"oid\":\"c$i\"}"
     i=$((i + 1))
   done
-  printf '{"number":123,"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefName":"feature","headRefOid":"abc123","headRepositoryOwner":{"login":"owner"},"baseRefName":"%s","url":"https://github.com/%s/pull/123","commits":[%s]}\n' "$base" "$repo" "$commits"
+  printf '{"number":123,"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefName":"%s","headRefOid":"abc123","headRepositoryOwner":{"login":"owner"},"baseRefName":"%s","url":"https://github.com/%s/pull/123","commits":[%s]}\n' "$head" "$base" "$repo" "$commits"
 }
 
 case "$1 $2" in
@@ -52,6 +52,11 @@ export MERGE_LOG="$TMPROOT/merge.log"
 export HOME="$TMPROOT/home"
 export ACHILLES_PROJECT="pr-merge-method"
 EVENT_LOG="$HOME/.dev-studio/$ACHILLES_PROJECT/events/$(date -u +%Y-%m-%d).jsonl"
+
+# shellcheck source=scripts/lib-paths.sh
+. "$ROOT/scripts/lib-paths.sh"
+# shellcheck source=scripts/lib-feature-branch-policy.sh
+. "$ROOT/scripts/lib-feature-branch-policy.sh"
 
 (
   cd "$WORK" || exit 1
@@ -85,7 +90,7 @@ run_case() {
         --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
         > "$out" 2>"$out.err"
   else
-    BASE_REF="$base" COMMIT_COUNT="$count" \
+    BASE_REF="$base" HEAD_REF="release/fixture" COMMIT_COUNT="$count" \
       bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
         --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
         > "$out" 2>"$out.err"
@@ -103,28 +108,61 @@ run_merge_target_default_gate_case() {
   out="$TMPROOT/out-merge-target-default.txt"
   : > "$MERGE_LOG"
 
+  BASE_REF=feature/source HEAD_REF=feature/task COMMIT_COUNT=1 \
+    bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
+      --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
+      > "$out.allowed" 2>"$out.allowed.err"
+  assert "default branch policy allows feature PRs to target known feature base" "grep -q 'PR_MERGED=1' '$out.allowed'"
+  assert "default branch policy merges known feature base through GitHub" "grep -q -- 'pr merge' '$MERGE_LOG'"
+
+  : > "$MERGE_LOG"
   set +e
-  BASE_REF=feature COMMIT_COUNT=1 \
+  BASE_REF=main HEAD_REF=feature/task COMMIT_COUNT=1 \
     bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
       --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
       > "$out" 2>"$out.err"
   rc=$?
   set -e
 
-  assert "default merge-target policy blocks non-main PR base" "[ $rc -ne 0 ]"
-  assert "default merge-target policy explains configured target" "grep -q 'configured merge target main' '$out.err'"
-  assert "default merge-target policy does not invoke gh merge" "! grep -q -- 'pr merge' '$MERGE_LOG'"
+  assert "default branch policy blocks feature PRs to main" "[ $rc -ne 0 ]"
+  assert "default branch policy explains protected main source rule" "grep -q 'only release or hotfix branches may merge directly into main' '$out.err'"
+  assert "default branch policy does not invoke gh merge for feature to main" "! grep -q -- 'pr merge' '$MERGE_LOG'"
+
+  : > "$MERGE_LOG"
+  STUDIO_BYPASS_BRANCH_POLICY=1 BASE_REF=main HEAD_REF=feature/task COMMIT_COUNT=1 \
+    bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
+      --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
+      > "$out.bypass" 2>"$out.bypass.err"
+  assert "branch policy bypass allows feature PRs to main" "grep -q 'PR_MERGED=1' '$out.bypass'"
+  assert "branch policy bypass emits warning for feature to main" "grep -q 'warning: PR base ref main is protected' '$out.bypass.err'"
+  assert "branch policy bypass reaches gh merge" "grep -q -- 'pr merge' '$MERGE_LOG'"
+
+  : > "$MERGE_LOG"
+  STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN=0 BASE_REF=main HEAD_REF=feature/task COMMIT_COUNT=1 \
+    bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
+      --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
+      > "$out.disabled" 2>"$out.disabled.err"
+  assert "disabled mainline-source gate allows feature PRs to main" "grep -q 'PR_MERGED=1' '$out.disabled'"
+  assert "disabled mainline-source gate reaches gh merge" "grep -q -- 'pr merge' '$MERGE_LOG'"
+
+  : > "$MERGE_LOG"
+  BASE_REF=main HEAD_REF=hotfix/urgent COMMIT_COUNT=1 \
+    bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
+      --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
+      > "$out.hotfix" 2>"$out.hotfix.err"
+  assert "default branch policy allows hotfix PRs to main" "grep -q 'PR_MERGED=1' '$out.hotfix'"
+  assert "default branch policy merges hotfix to main through GitHub" "grep -q -- 'pr merge' '$MERGE_LOG'"
 }
 
 run_head_worktree_case() {
   local out main_wt branch_after
   out="$TMPROOT/out-head-worktree.txt"
   main_wt="$TMPROOT/main-worktree"
-  git -C "$WORK" branch -f feature HEAD
-  git -C "$WORK" checkout -q feature
+  git -C "$WORK" branch -f release/fixture HEAD
+  git -C "$WORK" checkout -q release/fixture
   git -C "$WORK" worktree add -q "$main_wt" main
   : > "$MERGE_LOG"
-  BASE_REF=main COMMIT_COUNT=1 \
+  BASE_REF=main HEAD_REF=release/fixture COMMIT_COUNT=1 \
     bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
       --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
       > "$out" 2>"$out.err"
@@ -142,7 +180,7 @@ run_target_repo_auto_merge_lock_case() {
   : > "$MERGE_LOG"
 
   set +e
-  PR_REPO_SLUG=owner/repo BASE_REF=main COMMIT_COUNT=1 \
+  PR_REPO_SLUG=owner/repo BASE_REF=main HEAD_REF=release/fixture COMMIT_COUNT=1 \
     bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
       --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
       > "$out" 2>"$out.err"
@@ -155,7 +193,7 @@ run_target_repo_auto_merge_lock_case() {
   assert "target repo auto-merge lock does not invoke gh merge" "! grep -q -- 'pr merge' '$MERGE_LOG'"
 
   : > "$MERGE_LOG"
-  PR_REPO_SLUG=owner/repo BASE_REF=main COMMIT_COUNT=1 STUDIO_TARGET_REPO_AUTO_MERGE=1 \
+  PR_REPO_SLUG=owner/repo BASE_REF=main HEAD_REF=release/fixture COMMIT_COUNT=1 STUDIO_TARGET_REPO_AUTO_MERGE=1 \
     bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
       --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
       > "$out.allowed" 2>"$out.allowed.err"
@@ -163,7 +201,7 @@ run_target_repo_auto_merge_lock_case() {
   assert "target repo config unlock reaches gh merge" "grep -q -- 'pr merge' '$MERGE_LOG'"
 
   : > "$MERGE_LOG"
-  PR_REPO_SLUG=owner/repo BASE_REF=main COMMIT_COUNT=1 \
+  PR_REPO_SLUG=owner/repo BASE_REF=main HEAD_REF=release/fixture COMMIT_COUNT=1 \
     bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
       --bypass-review \
       --allow-target-repo-auto-merge \
@@ -175,7 +213,8 @@ run_target_repo_auto_merge_lock_case() {
 
 prepare_feature_branch_with_merge_commit() {
   git -C "$WORK" checkout -q main
-  git -C "$WORK" branch -D feature sibling >/dev/null 2>&1 || true
+  git -C "$WORK" branch -D feature sibling release/base >/dev/null 2>&1 || true
+  git -C "$WORK" branch release/base main
 
   git -C "$WORK" checkout -q -b feature
   printf 'feature\n' > feature.txt
@@ -200,7 +239,7 @@ run_feature_merge_commit_gate_case() {
   : > "$MERGE_LOG"
 
   set +e
-  BASE_REF=main COMMIT_COUNT=2 \
+  BASE_REF=release/base HEAD_REF=feature COMMIT_COUNT=2 \
     bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
       --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
       > "$out" 2>"$out.err"
@@ -212,13 +251,38 @@ run_feature_merge_commit_gate_case() {
   assert "merge-commit feature history does not invoke gh merge" "! grep -q -- 'pr merge' '$MERGE_LOG'"
 
   : > "$MERGE_LOG"
-  BASE_REF=main COMMIT_COUNT=2 STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 \
+  BASE_REF=release/base HEAD_REF=feature COMMIT_COUNT=2 STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1 \
     bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
       --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
       > "$out.bypass" 2>"$out.bypass.err"
   assert "merge-commit bypass allows finalize" "grep -q 'PR_MERGED=1' '$out.bypass'"
   assert "merge-commit bypass still records merge method" "grep -q 'MERGE_METHOD=rebase' '$out.bypass'"
   assert "merge-commit bypass reaches gh merge" "grep -q -- '--rebase' '$MERGE_LOG'"
+}
+
+run_task_base_resolution_case() {
+  local selected
+  git -C "$WORK" checkout -q main
+  git -C "$WORK" branch -D release/old release/new feature-current >/dev/null 2>&1 || true
+
+  git -C "$WORK" checkout -q -b release/old main
+  printf 'old\n' > release-old.txt
+  git -C "$WORK" add release-old.txt
+  git -C "$WORK" commit -q -m 'old release branch'
+
+  git -C "$WORK" checkout -q -b release/new main
+  printf 'new\n' > release-new.txt
+  git -C "$WORK" add release-new.txt
+  git -C "$WORK" commit -q -m 'new release branch'
+
+  selected=$(feature_branch_policy_task_base_ref "$WORK" main)
+  assert "task base defaults to latest release branch from main" "[ '$selected' = 'release/new' ]"
+
+  git -C "$WORK" checkout -q -b feature-current main
+  selected=$(feature_branch_policy_task_base_ref "$WORK" feature-current)
+  assert "task base keeps known feature branch" "[ '$selected' = 'feature-current' ]"
+
+  git -C "$WORK" checkout -q main
 }
 
 cd "$WORK" || exit 1
@@ -229,6 +293,7 @@ run_target_repo_auto_merge_lock_case
 run_case feature 4 rebase
 run_head_worktree_case
 run_feature_merge_commit_gate_case
+run_task_base_resolution_case
 
 if [ "$failures" -ne 0 ]; then
   printf 'FAIL: %s assertion(s)\n' "$failures" >&2

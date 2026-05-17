@@ -77,7 +77,7 @@ scripts/studio-chain-runner.sh --discover ios-v2-execution                 # fil
 /dev-studio manager work-chain ios-v2-execution --dry-run                  # preferred user-facing preview path
 /dev-studio manager work-chain --resume <run_id> --yes                     # preferred user-facing resume path from summaries/halt records
 /dev-studio manager work-chain --resume <run_id> --verified --yes          # attended verification resume with closeout inventory
-scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute # reviewed source/issue to unattended issue-backed work-chain execution
+scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute # reviewed issue-backed work-chain; default PR base is known feature, then latest release branch
 scripts/manager-plan-chain.sh --issue 758 --include-comments --repo v-i-s-h-a-l/generic-dev-studio --dry-run # plan from public-safe issue body + comment packet, recording packet/sidecar artifacts
 scripts/manager-plan-chain.sh --issue-set 758,759 --include-comments --repo v-i-s-h-a-l/generic-dev-studio --dry-run # cluster packet intake for related issues before reviewed chain creation
 scripts/issue-context-packet.sh --repo owner/repo --issue 758 --out-dir /tmp/packet # build a public-safe packet from issue body + comments; comments are planning signals, not authority
@@ -270,7 +270,7 @@ scripts/lint-project-skill-links.sh [--host codex]      # repo-local project ski
 scripts/pr-headless-review.sh <pr>                      # run smoke-eligible reviewer; target repo PRs stop before merge unless pr_policy.target_repo_auto_merge is explicitly enabled
 scripts/pr-headless-review.sh <pr> --no-require-cross-host  # opt out of default independent-provider reviewer policy for explicit non-safety-floor runs
 scripts/pr-autopilot.sh <pr> --verdict approved         # post reviewer gate, then merge only when merge-finalize policy allows it
-scripts/pr-merge-finalize.sh <pr> --method auto         # reuses chain branch gates; target repos are review-only by default, and --release-id can record approval before merge
+scripts/pr-merge-finalize.sh <pr> --method auto         # reuses chain branch gates; feature-to-main is blocked unless head is release/hotfix, target repos are review-only by default
 scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-host claude-code  # policy-backed reviewer model/profile resolver
 scripts/check-model-catalog.sh --print-refresh-checklist # validate model catalog + print official-doc refresh checklist
 scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1
