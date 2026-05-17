@@ -48,6 +48,8 @@ cat > "$REPO/.studio/chain-worker-summary.json" <<'JSON'
   "status": "blocked",
   "issue_number": 584,
   "issue_title": "Parent finalize fixture",
+  "host": "codex",
+  "change_type": "bugfix-wip",
   "commit_before": "base",
   "commit_after": null,
   "blocked_reason": "Unable to stage or commit: filesystem denies writes inside .git creating .git/index.lock with Operation not permitted.",
@@ -104,11 +106,17 @@ if chain_git_parent_finalize_summary_eligible "$TMPROOT/primary-advanced-summary
 fi
 chain_git_parent_finalize_has_public_diff "$REPO" \
   || fail "public diff was not detected"
-chain_git_parent_finalize_issue_commit "$REPO" 584 "$REPO/.studio/chain-worker-summary.json" \
+chain_git_parent_finalize_issue_commit "$REPO" 584 "$REPO/.studio/chain-worker-summary.json" codex \
   || fail "parent finalize did not commit"
 
 git -C "$REPO" log -1 --format=%B | grep -q 'Closes #584' \
   || fail "parent commit did not close issue"
+git -C "$REPO" log -1 --format=%B | grep -q 'Change-Type: bugfix-wip' \
+  || fail "parent commit did not include Change-Type trailer"
+git -C "$REPO" log -1 --format=%B | grep -q 'Studio-Host: codex' \
+  || fail "parent commit did not include Studio-Host trailer"
+git -C "$REPO" log -1 --format=%B | grep -q 'Co-authored-by: Codex <noreply@openai.com>' \
+  || fail "parent commit did not include Codex coauthor trailer"
 git -C "$REPO" log -1 --format=%s | grep -qx 'Parent finalize fixture (#584)' \
   || fail "parent commit subject did not use issue title"
 git -C "$REPO" diff-tree --no-commit-id --name-only -r HEAD | grep -qx 'README.md' \
@@ -173,6 +181,33 @@ cat > "$TMPROOT/unknown-outcome/.studio/chain-worker-summary.json" <<'JSON'
 JSON
 if chain_git_parent_finalize_summary_eligible "$TMPROOT/unknown-outcome/.studio/chain-worker-summary.json"; then
   fail "unknown passed_* outcome was eligible"
+fi
+
+MISSING_CHANGE_REPO="$TMPROOT/missing-change-type-repo"
+mkdir -p "$MISSING_CHANGE_REPO/.studio"
+git -C "$MISSING_CHANGE_REPO" init -q
+git -C "$MISSING_CHANGE_REPO" config user.email studio@example.invalid
+git -C "$MISSING_CHANGE_REPO" config user.name "Studio Test"
+printf 'base\n' > "$MISSING_CHANGE_REPO/README.md"
+git -C "$MISSING_CHANGE_REPO" add README.md
+git -C "$MISSING_CHANGE_REPO" commit -q -m "base"
+printf 'base\nchange\n' > "$MISSING_CHANGE_REPO/README.md"
+cat > "$TMPROOT/missing-change-type-summary.json" <<'JSON'
+{
+  "schema_version": 1,
+  "kind": "completion",
+  "status": "blocked",
+  "issue_number": 584,
+  "issue_title": "Missing change type fixture",
+  "host": "codex",
+  "commit_before": "base",
+  "commit_after": null,
+  "blocked_reason": "Unable to stage or commit: .git/index.lock Operation not permitted.",
+  "tests": [{"command": "fixture", "outcome": "passed"}]
+}
+JSON
+if chain_git_parent_finalize_issue_commit "$MISSING_CHANGE_REPO" 584 "$TMPROOT/missing-change-type-summary.json" codex; then
+  fail "parent finalize committed without change_type"
 fi
 
 mkdir -p "$TMPROOT/secret/.studio"
