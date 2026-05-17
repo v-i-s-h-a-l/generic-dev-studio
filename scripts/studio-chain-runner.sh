@@ -7923,6 +7923,8 @@ run_issue_job() {
   log "issue #$issue -> $issue_branch"
   if [ "$DRY_RUN" -eq 0 ]; then
     chain_git_prepare_issue_workspace "$TARGET_REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy"
+    chain_git_configure_github_identity "$issue_worktree" \
+      || abort_run_with_reason github_auth_unavailable "cannot configure GitHub commit identity for issue #$issue worktree"
     before=$(git -C "$issue_worktree" rev-parse HEAD)
   else
     printf 'DRY-RUN git metadata strategy for host %q: %s\n' "$host" "$git_metadata_strategy"
@@ -8001,6 +8003,8 @@ run_issue_job() {
     log "issue #$issue exited $worker_rc with no summary and no public diff; retrying once in a fresh issue worktree"
     mark_issue_retry_attempt "$issue_run_id" "worker_summary_missing_no_changes"
     chain_git_prepare_issue_workspace "$TARGET_REPO_ROOT" "$chain_worktree" "$branch" "$issue_worktree" "$issue_branch" "$git_metadata_strategy"
+    chain_git_configure_github_identity "$issue_worktree" \
+      || abort_run_with_reason github_auth_unavailable "cannot configure GitHub commit identity for retry issue #$issue worktree"
     before=$(git -C "$issue_worktree" rev-parse HEAD)
     mark_issue_state "$issue_run_id" running "$before"
     issue_started_at=$(now_epoch)
@@ -8750,13 +8754,19 @@ for ((idx = 0; idx < chain_count; idx++)); do
     mkdir -p "$chain_results_dir"
     if [ -n "$RESUME_ID" ] && git_checkout_exists "$chain_worktree"; then
       git -C "$chain_worktree" checkout "$branch"
+      chain_git_configure_github_identity "$chain_worktree" \
+        || abort_run_with_reason github_auth_unavailable "cannot configure GitHub commit identity for chain $name worktree"
     elif ! git_checkout_exists "$chain_worktree"; then
       git -C "$TARGET_REPO_ROOT" worktree add -B "$branch" "$chain_worktree" "origin/$base"
       git -C "$chain_worktree" checkout "$branch"
       git -C "$chain_worktree" reset --hard "origin/$base"
+      chain_git_configure_github_identity "$chain_worktree" \
+        || abort_run_with_reason github_auth_unavailable "cannot configure GitHub commit identity for chain $name worktree"
     else
       git -C "$chain_worktree" checkout "$branch"
       git -C "$chain_worktree" reset --hard "origin/$base"
+      chain_git_configure_github_identity "$chain_worktree" \
+        || abort_run_with_reason github_auth_unavailable "cannot configure GitHub commit identity for chain $name worktree"
     fi
   else
     mkdir -p "$chain_results_dir"
