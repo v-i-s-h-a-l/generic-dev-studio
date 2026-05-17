@@ -13,17 +13,22 @@ JSON_OUT="$TMP_DIR/testflight.json"
 cat >"$COMMITS" <<'EOF'
 aaa111 | Add smarter release composer
 Change-Type: feature
-Problem: Release writers had to classify every commit by hand.
-Solution: The composer now groups taxonomy metadata into release sections.
+Impact: Release writers can draft TestFlight and App Store notes from compact metadata.
+Areas: release composer, TestFlight, App Store
+Release-Note: Release writers now get cleaner build notes from compact commit metadata.
+Why: Release writers had to classify every commit by hand.
+Risk: low; parser fallback remains compatible.
 ---
 bbb222 | Fix shipped editor upload retry
 Change-Type: bugfix-shipped
+Changelog: Editor upload retry now recovers after the first failed request.
 Problem: Upload retry sometimes stopped after the first failed request.
 Solution: Retry state now survives the transient failure.
+Caveat: Retry requires network connectivity to return.
 ---
 ccc333 | Draft fix for flaky tester invite sync
 Change-Type: bugfix-wip
-Problem: Tester invite sync is still being verified.
+Impact: Tester invite sync has a narrower temporary failure mode while verification continues.
 Solution: A partial guard narrows the failure while testing continues.
 ---
 ddd444 | Repair regression in release marker finalization
@@ -33,11 +38,14 @@ Solution: Finalization now records every completed step.
 ---
 eee555 | Update release docs
 Change-Type: docs
-Problem: Internal release docs were stale.
-Solution: The examples now match the current scripts.
+Release-Note: none
+Impact: Internal release docs explain the compact metadata fallback order.
 ---
 fff666 | Handle missing taxonomy trailers from old commits
 Old commit body without structured metadata.
+---
+ggg777 | Subject fallback remains safe
+Change-Type: bugfix-shipped
 ---
 999aaa | Crash fix from Crashlytics
 Change-Type: bugfix-shipped
@@ -70,22 +78,38 @@ assert_not_contains() {
 }
 
 assert_contains "$TF_OUT" "*New*"
-assert_contains "$TF_OUT" "Release writers had to classify every commit by hand"
+assert_contains "$TF_OUT" "Release writers now get cleaner build notes from compact commit metadata"
 assert_contains "$TF_OUT" "*Fixed*"
-assert_contains "$TF_OUT" "Upload retry sometimes stopped after the first failed request"
-assert_contains "$TF_OUT" "Work-in-progress fix: Tester invite sync is still being verified"
+assert_contains "$TF_OUT" "Editor upload retry now recovers after the first failed request"
+assert_contains "$TF_OUT" "Editor upload retry now recovers after the first failed request (note: Retry requires network connectivity to return)"
+assert_contains "$TF_OUT" "Work-in-progress fix: Tester invite sync has a narrower temporary failure mode while verification continues"
 assert_contains "$TF_OUT" "regression bug fix: Release finalization could skip marker cleanup"
 assert_contains "$TF_OUT" "Handle missing taxonomy trailers from old commits"
+assert_contains "$TF_OUT" "Subject fallback remains safe"
+assert_contains "$TF_OUT" "technical: Internal release docs explain the compact metadata fallback order"
 assert_contains "$TF_OUT" "https://console.firebase.google.com/project/demo/crashlytics/app/ios:demo/issues/123"
 
 assert_contains "$APP_OUT" "*New*"
-assert_contains "$APP_OUT" "Upload retry sometimes stopped after the first failed request"
+assert_contains "$APP_OUT" "Editor upload retry now recovers after the first failed request"
 assert_contains "$APP_OUT" "Fixed crash https://console.firebase.google.com/project/demo/crashlytics/app/ios:demo/issues/123"
+assert_contains "$APP_OUT" "Subject fallback remains safe"
 assert_not_contains "$APP_OUT" "Work-in-progress fix"
-assert_not_contains "$APP_OUT" "Internal release docs were stale"
+assert_not_contains "$APP_OUT" "Internal release docs explain the compact metadata fallback order"
 
 assert_not_contains "$TF_OUT" "Change-Type:"
+assert_not_contains "$TF_OUT" "Release-Note:"
+assert_not_contains "$TF_OUT" "Impact:"
+assert_not_contains "$TF_OUT" "Areas:"
+assert_not_contains "$TF_OUT" "Risk:"
+assert_not_contains "$TF_OUT" "Caveat:"
+assert_not_contains "$TF_OUT" "caveat:"
 assert_not_contains "$APP_OUT" "Change-Type:"
+assert_not_contains "$APP_OUT" "Release-Note:"
+assert_not_contains "$APP_OUT" "Impact:"
+assert_not_contains "$APP_OUT" "Areas:"
+assert_not_contains "$APP_OUT" "Risk:"
+assert_not_contains "$APP_OUT" "Caveat:"
+assert_not_contains "$APP_OUT" "caveat:"
 
 jq -e '
   .channel == "testflight"

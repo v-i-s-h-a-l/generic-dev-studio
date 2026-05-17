@@ -278,7 +278,7 @@ scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-s
 scripts/detect-edits.sh --quiet                         # emits brief_edited + debrief_edited
 
 # App Store submission watcher (auto-invoked by every sweep):
-scripts/studio-tf-push.sh compose-message --channel testflight < commits.txt # taxonomy-aware release/TestFlight bullet composer
+scripts/studio-tf-push.sh compose-message --channel testflight < commits.txt # taxonomy-aware release/TestFlight bullet composer; prefers Release-Note, then legacy fallbacks
 scripts/appstore-watch.sh                               # idempotent; publishes release + promotes PR only at READY_FOR_SALE after release approval is recorded
 ```
 
