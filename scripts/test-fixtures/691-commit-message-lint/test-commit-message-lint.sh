@@ -47,31 +47,123 @@ run_case() {
   printf 'PASS: %s\n' "$case_name"
 }
 
-valid_message="Valid commit
+valid_message="feature: enforce structured commit metadata
+
+Affected-Areas: commit hooks, release messages
+
+Problem: Automated commits need consistent metadata for humans, release notes, and agents.
+
+Solution: Require the structured commit sections and trailers.
+
+Changelog: Commit messages now carry a release-ready summary.
+
+Implementation notes: The commit-msg lint checks the canonical field labels.
+
+Caveats: None.
 
 Change-Type: feature
 Studio-Host: codex
 Co-authored-by: Codex <noreply@openai.com>"
 
-codex_missing_coauthor_message="Missing Codex coauthor
+codex_missing_coauthor_message="feature: enforce structured commit metadata
+
+Affected-Areas: commit hooks, release messages
+
+Problem: Automated commits need consistent metadata for humans, release notes, and agents.
+
+Solution: Require the structured commit sections and trailers.
+
+Changelog: Commit messages now carry a release-ready summary.
+
+Implementation notes: The commit-msg lint checks the canonical field labels.
+
+Caveats: None.
 
 Change-Type: feature
 Studio-Host: codex"
 
-codex_bad_coauthor_message="Bad Codex coauthor
+codex_bad_coauthor_message="feature: enforce structured commit metadata
+
+Affected-Areas: commit hooks, release messages
+
+Problem: Automated commits need consistent metadata for humans, release notes, and agents.
+
+Solution: Require the structured commit sections and trailers.
+
+Changelog: Commit messages now carry a release-ready summary.
+
+Implementation notes: The commit-msg lint checks the canonical field labels.
+
+Caveats: None.
 
 Change-Type: feature
 Studio-Host: codex
 Co-authored-by: Codex <codex@openai.com>"
 
-invalid_type_message="Invalid change-type
+invalid_type_message="unknown: enforce structured commit metadata
+
+Affected-Areas: commit hooks, release messages
+
+Problem: Automated commits need consistent metadata for humans, release notes, and agents.
+
+Solution: Require the structured commit sections and trailers.
+
+Changelog: Commit messages now carry a release-ready summary.
+
+Implementation notes: The commit-msg lint checks the canonical field labels.
+
+Caveats: None.
 
 Change-Type: unknown
 Studio-Host: codex"
 
-missing_host_message="Missing host metadata
+missing_host_message="docs: document structured commit metadata
+
+Affected-Areas: commit docs
+
+Problem: Commit metadata expectations were unclear.
+
+Solution: Document the structured shape.
+
+Changelog: Commit message docs now show the required release summary field.
+
+Implementation notes: Documentation-only fixture.
+
+Caveats: None.
 
 Change-Type: docs"
+
+missing_changelog_message="feature: enforce structured commit metadata
+
+Affected-Areas: commit hooks, release messages
+
+Problem: Automated commits need consistent metadata for humans, release notes, and agents.
+
+Solution: Require the structured commit sections and trailers.
+
+Implementation notes: The commit-msg lint checks the canonical field labels.
+
+Caveats: None.
+
+Change-Type: feature
+Studio-Host: codex"
+
+bad_subject_message="Structured metadata without taxonomy prefix
+
+Affected-Areas: commit hooks, release messages
+
+Problem: Automated commits need consistent metadata for humans, release notes, and agents.
+
+Solution: Require the structured commit sections and trailers.
+
+Changelog: Commit messages now carry a release-ready summary.
+
+Implementation notes: The commit-msg lint checks the canonical field labels.
+
+Caveats: None.
+
+Change-Type: feature
+Studio-Host: codex"
 
 automation_repo="$TMPROOT/automation"
 mkdir -p "$automation_repo/.studio"
@@ -91,7 +183,9 @@ run_case "codex_missing_coauthor_warns" 0 "$automation_repo" "$codex_missing_coa
 run_case "codex_bad_coauthor_warns" 0 "$automation_repo" "$codex_bad_coauthor_message" "Codex co-author trailer should be exactly"
 run_case "invalid_change_type_fails" 1 "$automation_repo" "$invalid_type_message" "invalid Change-Type trailer: unknown"
 run_case "missing_host_fails_in_automation" 1 "$automation_repo" "$missing_host_message" "missing trailer Studio-Host"
-run_case "missing_host_warns_for_human" 0 "$human_repo" "$missing_host_message" "passed with 1 warning(s)"
+run_case "missing_changelog_fails_in_automation" 1 "$automation_repo" "$missing_changelog_message" "missing required Changelog"
+run_case "bad_subject_fails_in_automation" 1 "$automation_repo" "$bad_subject_message" "commit subject must start with 'feature: '"
+run_case "missing_host_warns_for_human" 0 "$human_repo" "$missing_host_message" "passed with"
 run_case "bypass_allows_hard_failure_case" 0 "$automation_repo" "$missing_host_message" "commit trailer lint bypassed via STUDIO_BYPASS_COMMIT_TRAILER_LINT=1" 1
 
 printf 'PASS: commit-message lint fixture suite\n'
