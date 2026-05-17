@@ -19,6 +19,7 @@ PARENT_ISSUE_NUMBER=""
 SOURCE_FILE=""
 SOURCE_TEXT=""
 INCLUDE_COMMENTS=0
+BODY_ONLY_EXPLICIT=0
 COMMENT_PACKET_DIR=""
 COMMENT_PACKET_MD=""
 COMMENT_PACKET_JSON=""
@@ -66,7 +67,7 @@ usage() {
   cat <<'EOF' >&2
 Usage:
   scripts/manager-plan-chain.sh [--issue N] [--repo owner/repo] [--chain name] [goal text]
-  scripts/manager-plan-chain.sh --issue-set N,N [--include-comments] [--repo owner/repo] [--chain name]
+  scripts/manager-plan-chain.sh --issue-set N,N [--body-only] [--repo owner/repo] [--chain name]
   scripts/manager-plan-chain.sh --source-file source.md [--chain name]
   scripts/manager-plan-chain.sh --from-plan task-graph.json [--chain name]
   scripts/manager-plan-chain.sh --source-file prd.md --execute [--interactive]
@@ -77,6 +78,10 @@ GitHub issues for reviewed worker contracts, links them as native sub-issues
 when a parent is available, populates configured Project fields, writes a
 runnable chain manifest under ~/.dev-studio/<project>/plan-chains, and prints
 the clean-session manager work-chain command.
+
+Issue and issue-set sources use issue-context-packet by default so public-safe
+comments inform planning. --include-comments is accepted as a compatibility
+alias; --body-only is the explicit escape hatch.
 
 Default automation mode is unattended. Use --execute to launch the generated
 work-chain after a clean plan review. Use --interactive/--attended when the
@@ -732,6 +737,7 @@ write_generated_planner_artifact() {
     --arg task_graph "$TASK_GRAPH" \
     --arg review_input "$REVIEW_INPUT" \
     --argjson include_comments "$INCLUDE_COMMENTS" \
+    --argjson body_only_explicit "$BODY_ONLY_EXPLICIT" \
     --arg comment_packet "$COMMENT_PACKET_MD" \
     --arg comment_sidecar "$COMMENT_PACKET_JSON" \
     --arg status "$status" \
@@ -755,7 +761,7 @@ write_generated_planner_artifact() {
             mode: (if $include_comments == 1 then "issue-context-packet" else "body-only" end),
             packet_path: (if $comment_packet == "" then null else $comment_packet end),
             comment_sidecar_path: (if $comment_sidecar == "" then null else $comment_sidecar end),
-            body_only_explicit: ($include_comments != 1)
+            body_only_explicit: ($body_only_explicit == 1)
           },
           scope: ($tasks | map(.label)),
           non_goals: ["Do not execute implementation work inside the planning session."],
@@ -862,6 +868,22 @@ write_review_input() {
     printf '# Manager Plan-Chain Phase Plan\n\n'
     printf '## Goal\n\n'
     printf 'Create a reviewed, issue-backed work-chain from `%s` without executing worker implementation.\n\n' "$SUBJECT_REF"
+    printf '## Source Context\n\n'
+    if [ "$INCLUDE_COMMENTS" -eq 1 ]; then
+      printf -- "- Mode: \`issue-context-packet\`\n"
+      printf -- "- Packet: \`%s\`\n" "$COMMENT_PACKET_MD"
+      printf -- "- Sidecar: \`%s\`\n" "$COMMENT_PACKET_JSON"
+      printf -- "- Body-only explicit: \`false\`\n\n"
+    else
+      printf -- "- Mode: \`body-only\`\n"
+      printf -- "- Packet: \`not used\`\n"
+      printf -- "- Sidecar: \`not used\`\n"
+      if [ "$BODY_ONLY_EXPLICIT" -eq 1 ]; then
+        printf -- "- Body-only explicit: \`true\`\n\n"
+      else
+        printf -- "- Body-only explicit: \`false\`\n\n"
+      fi
+    fi
     printf '## Scope\n\n'
     printf 'In:\n'
     printf -- '- Use the planner artifact at `%s`.\n' "$PLANNER_ARTIFACT"
@@ -897,6 +919,7 @@ write_result_json() {
     --arg artifact_root "$ARTIFACT_ROOT" \
     --arg planner_artifact "$PLANNER_ARTIFACT" \
     --argjson include_comments "$INCLUDE_COMMENTS" \
+    --argjson body_only_explicit "$BODY_ONLY_EXPLICIT" \
     --arg comment_packet "$COMMENT_PACKET_MD" \
     --arg comment_sidecar "$COMMENT_PACKET_JSON" \
     --arg review_artifact "$review_path" \
@@ -929,7 +952,7 @@ write_result_json() {
         mode: (if $include_comments == 1 then "issue-context-packet" else "body-only" end),
         packet_path: (if $comment_packet == "" then null else $comment_packet end),
         comment_sidecar_path: (if $comment_sidecar == "" then null else $comment_sidecar end),
-        body_only_explicit: ($include_comments != 1)
+        body_only_explicit: ($body_only_explicit == 1)
       },
       review_artifact: (if $review_artifact == "" then null else $review_artifact end),
       work_chain: (if $work_chain == "" then null else $work_chain end),
@@ -1378,6 +1401,7 @@ write_chain_manifest() {
     --arg planner_artifact "$PLANNER_ARTIFACT" \
     --arg review_artifact "$REVIEW_ARTIFACT" \
     --argjson include_comments "$INCLUDE_COMMENTS" \
+    --argjson body_only_explicit "$BODY_ONLY_EXPLICIT" \
     --arg comment_packet "$COMMENT_PACKET_MD" \
     --arg comment_sidecar "$COMMENT_PACKET_JSON" \
     --arg generated_at "$(now_utc)" \
@@ -1433,7 +1457,8 @@ write_chain_manifest() {
               comments_included: ($include_comments == 1),
               mode: (if $include_comments == 1 then "issue-context-packet" else "body-only" end),
               packet_path: (if $comment_packet == "" then null else $comment_packet end),
-              comment_sidecar_path: (if $comment_sidecar == "" then null else $comment_sidecar end)
+              comment_sidecar_path: (if $comment_sidecar == "" then null else $comment_sidecar end),
+              body_only_explicit: ($body_only_explicit == 1)
             }
           },
           chains: [
@@ -1473,8 +1498,8 @@ while [ "$#" -gt 0 ]; do
     --issue=*) ISSUE_NUMBER="${1#--issue=}"; shift ;;
     --issue-set) ISSUE_SET="${2:?--issue-set requires a csv list}"; shift 2 ;;
     --issue-set=*) ISSUE_SET="${1#--issue-set=}"; shift ;;
-    --include-comments) INCLUDE_COMMENTS=1; shift ;;
-    --body-only) INCLUDE_COMMENTS=0; shift ;;
+    --include-comments) INCLUDE_COMMENTS=1; BODY_ONLY_EXPLICIT=0; shift ;;
+    --body-only) INCLUDE_COMMENTS=0; BODY_ONLY_EXPLICIT=1; shift ;;
     --parent-issue) PARENT_ISSUE_NUMBER="${2:?--parent-issue requires a number}"; CREATE_PARENT_ISSUE=manual; shift 2 ;;
     --parent-issue=*) PARENT_ISSUE_NUMBER="${1#--parent-issue=}"; CREATE_PARENT_ISSUE=manual; shift ;;
     --no-parent-issue) CREATE_PARENT_ISSUE=0; PARENT_ISSUE_NUMBER=""; shift ;;
@@ -1573,11 +1598,6 @@ esac
   printf 'manager-plan-chain: --issue and --issue-set are mutually exclusive\n' >&2
   exit 2
 }
-[ "$INCLUDE_COMMENTS" -eq 0 ] || [ -n "$ISSUE_NUMBER" ] || [ -n "$ISSUE_SET" ] || {
-  printf 'manager-plan-chain: --include-comments requires --issue or --issue-set\n' >&2
-  exit 2
-}
-
 if [ "${#POSITIONAL[@]}" -gt 0 ]; then
   if [ -z "$SOURCE_FILE" ] && [ -z "$ISSUE_NUMBER" ] && [ -z "$ISSUE_SET" ] && [ -z "$FROM_PLAN" ] && [ "${#POSITIONAL[@]}" -eq 1 ] && [ -r "${POSITIONAL[0]}" ]; then
     SOURCE_FILE="${POSITIONAL[0]}"
@@ -1587,6 +1607,14 @@ if [ "${#POSITIONAL[@]}" -gt 0 ]; then
     SOURCE_TEXT="${POSITIONAL[*]}"
   fi
 fi
+
+if [ "$BODY_ONLY_EXPLICIT" -eq 0 ] && { [ -n "$ISSUE_NUMBER" ] || [ -n "$ISSUE_SET" ]; }; then
+  INCLUDE_COMMENTS=1
+fi
+[ "$INCLUDE_COMMENTS" -eq 0 ] || [ -n "$ISSUE_NUMBER" ] || [ -n "$ISSUE_SET" ] || {
+  printf 'manager-plan-chain: --include-comments requires --issue or --issue-set\n' >&2
+  exit 2
+}
 
 # #823: inline refinement prompts that *reference* prior plan/review artifacts
 # previously got synthesized as a single worker task with empty allowed_paths
@@ -1734,9 +1762,12 @@ prepare_task_graph
 blocked_json=$(blocked_decisions_json)
 graph_status=$(jq -r '.validation.status // "invalid"' "$TASK_GRAPH")
 if [ "$graph_status" != "valid" ] || [ "$(printf '%s\n' "$blocked_json" | jq 'length')" -gt 0 ]; then
-  write_review_input_placeholder="$REVIEW_INPUT"
-  printf '# Manager Plan-Chain Needs Context\n\nTask graph validation blocked review and issue creation.\n' > "$write_review_input_placeholder"
   write_planner_artifact "needs_context" "$blocked_json"
+  write_review_input
+  {
+    printf '\n## Needs Context\n\n'
+    printf 'Task graph validation blocked review and issue creation.\n'
+  } >> "$REVIEW_INPUT"
   write_telemetry_artifact "needs_context"
   write_result_json "needs_context" "$blocked_json" "" "" "" "$ISSUE_MAP" ""
   print_result "needs_context" "$blocked_json" "" "" ""
