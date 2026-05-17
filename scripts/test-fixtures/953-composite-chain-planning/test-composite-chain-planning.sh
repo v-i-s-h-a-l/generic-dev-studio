@@ -36,7 +36,9 @@ HOME="$TMPROOT/home" ACHILLES_PROJECT=generic-dev-studio \
 
 [ "$(wc -l < "$plan_log" | tr -d ' ')" = "1" ] || fail "expected exactly one child plan invocation"
 grep -Fq -- "--issue 123" "$plan_log" || fail "first eligible child issue was not planned"
-grep -Fq -- "--include-comments" "$plan_log" || fail "issue child planning did not request comment-aware context"
+if grep -Fq -- "--include-comments" "$plan_log"; then
+  fail "issue child planning should rely on default comment-aware planning, not --include-comments"
+fi
 if grep -Fq -- "--issue 124" "$plan_log" || grep -Fq -- "--issue 125" "$plan_log"; then
   fail "later child was planned eagerly"
 fi
@@ -83,7 +85,9 @@ fi
 
 [ "$halt_rc" -ne 0 ] || fail "blocked child plan unexpectedly exited zero"
 [ "$(wc -l < "$halt_log" | tr -d ' ')" = "1" ] || fail "expected exactly one failed child plan invocation"
-grep -Fq -- "--include-comments" "$halt_log" || fail "blocked issue child planning did not request comment-aware context"
+if grep -Fq -- "--include-comments" "$halt_log"; then
+  fail "blocked issue child planning should rely on default comment-aware planning, not --include-comments"
+fi
 HOME="$TMPROOT/home-halt" ACHILLES_PROJECT=generic-dev-studio "$MANAGER" validate-state --state "$halt_state_path" >/dev/null
 jq -e '
   .state == "halted"
