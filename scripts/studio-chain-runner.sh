@@ -41,6 +41,8 @@ RUN_PATHS_CONFIGURED=0
 . "$SCRIPT_DIR/lib-ledger.sh"
 # shellcheck source=lib-github-transport.sh
 . "$SCRIPT_DIR/lib-github-transport.sh"
+# shellcheck source=lib-studio-context.sh
+. "$SCRIPT_DIR/lib-studio-context.sh"
 # shellcheck source=lib-chain-git.sh
 . "$SCRIPT_DIR/lib-chain-git.sh"
 # shellcheck source=lib-chain-monitor-notifier.sh
@@ -3113,8 +3115,8 @@ startup_host_profile_json() {
 }
 
 write_child_launch_context() {
-  local context_path="$1" chain_name="$2" issue="$3" host="$4" worktree="$5" issue_branch="$6" summary_path="$7" start_path="$8" launch_home="$9" codex_auth_home="${10:-}" spawn_argv0="${11:-}" capture_streams="${12:-false}"
-  local created_at host_profile env_shape worktree_exists start_exists summary_exists launch_home_status codex_auth_home_status tail_bytes
+  local context_path="$1" chain_name="$2" issue="$3" host="$4" worktree="$5" issue_branch="$6" summary_path="$7" start_path="$8" launch_home="$9" codex_auth_home="${10:-}" github_home="${11:-}" spawn_argv0="${12:-}" capture_streams="${13:-false}"
+  local created_at host_profile env_shape worktree_exists start_exists summary_exists launch_home_status codex_auth_home_status github_home_status tail_bytes
   created_at=$(iso_ts_now)
   tail_bytes=$(startup_tail_bytes)
   host_profile=$(startup_host_profile_json "$host" "$spawn_argv0")
@@ -3123,6 +3125,7 @@ write_child_launch_context() {
   [ -f "$start_path" ] && start_exists=true || start_exists=false
   [ -f "$summary_path" ] && summary_exists=true || summary_exists=false
   [ -n "$launch_home" ] && [ -d "$launch_home" ] && launch_home_status=present || launch_home_status=missing
+  [ -n "$github_home" ] && [ -d "$github_home" ] && github_home_status=present || github_home_status=missing
   case "$host" in
     codex*|*codex*)
       [ -n "$codex_auth_home" ] && [ -d "$codex_auth_home" ] && codex_auth_home_status=present || codex_auth_home_status=missing
@@ -3146,6 +3149,8 @@ write_child_launch_context() {
     --arg launch_home_status "$launch_home_status" \
     --arg codex_auth_home "$codex_auth_home" \
     --arg codex_auth_home_status "$codex_auth_home_status" \
+    --arg github_home "$github_home" \
+    --arg github_home_status "$github_home_status" \
     --argjson worktree_exists "$worktree_exists" \
     --argjson start_exists "$start_exists" \
     --argjson summary_exists "$summary_exists" \
@@ -3174,15 +3179,19 @@ write_child_launch_context() {
         launch_home: (if $launch_home == "" then null else $launch_home end),
         launch_home_status: $launch_home_status,
         codex_auth_home: (if $codex_auth_home == "" then null else $codex_auth_home end),
-        codex_auth_home_status: $codex_auth_home_status
+        codex_auth_home_status: $codex_auth_home_status,
+        github_home: (if $github_home == "" then null else $github_home end),
+        github_home_status: $github_home_status
       },
       environment_shape: ($env_shape + {
         explicit_env_keys: (["STUDIO_RUN_ID", "STUDIO_CHAIN_RUN_ID", "STUDIO_ISSUE_RUN_ID", "STUDIO_CHAIN_ARTIFACT_ROOT"]
           + (if $launch_home == "" then [] else ["HOME"] end)
-          + (if $codex_auth_home == "" then [] else ["CODEX_HOME"] end)),
+          + (if $codex_auth_home == "" then [] else ["CODEX_HOME"] end)
+          + (if $github_home == "" then [] else ["STUDIO_CONTEXT_GITHUB_HOME"] end)),
         explicit_env_key_count: ((["STUDIO_RUN_ID", "STUDIO_CHAIN_RUN_ID", "STUDIO_ISSUE_RUN_ID", "STUDIO_CHAIN_ARTIFACT_ROOT"]
           + (if $launch_home == "" then [] else ["HOME"] end)
-          + (if $codex_auth_home == "" then [] else ["CODEX_HOME"] end)) | length)
+          + (if $codex_auth_home == "" then [] else ["CODEX_HOME"] end)
+          + (if $github_home == "" then [] else ["STUDIO_CONTEXT_GITHUB_HOME"] end)) | length)
       }),
       stream_capture: {
         enabled: $capture_streams,
@@ -3435,6 +3444,8 @@ codex_home_for_worker() {
     printf '%s\n' "$CODEX_HOME"
   elif [ -n "${CALLER_HOME:-}" ] && [ -d "$CALLER_HOME/.codex" ]; then
     printf '%s\n' "$CALLER_HOME/.codex"
+  elif [ -n "$launch_home" ] && [ -d "$launch_home" ]; then
+    printf '%s\n' "$launch_home"
   elif [ -n "$launch_home" ] && [ -d "$launch_home/.codex" ]; then
     printf '%s\n' "$launch_home/.codex"
   elif [ -n "${HOME:-}" ] && [ -d "$HOME/.codex" ]; then
@@ -5965,29 +5976,139 @@ resolve_chain_worker_host() {
   fi
 }
 
+worker_launch_context_json() {
+  local host="$1" operation="${2:-delegated-host-spawn}" profile
+  profile=$(chain_host_profile_for_runner_host "$host")
+  STUDIO_CONTEXT_HOST_PROFILE="$profile" \
+    STUDIO_CONTEXT_REPO_ROOT="${TARGET_REPO_ROOT:-$REPO_ROOT}" \
+    STUDIO_CONTEXT_PROJECT_SLUG="generic-dev-studio" \
+    studio_context_emit_json "$operation"
+}
+
+worker_launch_context_field() {
+  local host="$1" field="$2" operation="${3:-read-only}" profile
+  profile=$(chain_host_profile_for_runner_host "$host")
+  STUDIO_CONTEXT_HOST_PROFILE="$profile" \
+    STUDIO_CONTEXT_REPO_ROOT="${TARGET_REPO_ROOT:-$REPO_ROOT}" \
+    STUDIO_CONTEXT_PROJECT_SLUG="generic-dev-studio" \
+    studio_context_get "$field" "$operation" 2>/dev/null || true
+}
+
 host_launch_home() {
-  resolve_user_login_home 2>/dev/null || true
+  local host="${1:-${PARENT_STUDIO_HOST:-unknown}}"
+  worker_launch_context_field "$host" auth_home read-only
+}
+
+github_home_for_worker_launch() {
+  local host="${1:-${PARENT_STUDIO_HOST:-unknown}}"
+  worker_launch_context_field "$host" github_home read-only
+}
+
+studio_home_for_worker_launch() {
+  local host="${1:-${PARENT_STUDIO_HOST:-unknown}}"
+  worker_launch_context_field "$host" studio_home read-only
+}
+
+worker_host_profile_for_launch() {
+  local host="${1:-${PARENT_STUDIO_HOST:-unknown}}"
+  worker_launch_context_field "$host" host_profile read-only
 }
 
 codex_auth_home_for_worker_launch() {
-  local launch_home="${1:-}"
-  if [ -n "${CODEX_WORKER_HOME:-}" ]; then
-    printf '%s\n' "$CODEX_WORKER_HOME"
-  elif [ -n "${CODEX_HOME:-}" ]; then
-    printf '%s\n' "$CODEX_HOME"
-  elif [ -n "$CALLER_HOME" ] && [ -d "$CALLER_HOME/.codex" ]; then
-    printf '%s\n' "$CALLER_HOME/.codex"
-  elif [ -n "$launch_home" ] && [ -d "$launch_home/.codex" ]; then
-    printf '%s\n' "$launch_home/.codex"
-  elif [ -n "${HOME:-}" ] && [ -d "$HOME/.codex" ]; then
-    printf '%s\n' "$HOME/.codex"
-  fi
+  local host="${1:-codex}"
+  case "$host" in
+    codex*|*codex*) worker_launch_context_field "$host" auth_home read-only ;;
+    *) printf '%s\n' "" ;;
+  esac
+}
+
+write_prelaunch_auth_failure_summary() {
+  local summary_path="$1" chain_name="$2" issue="$3" issue_title="$4" host="$5" chain_run_id="$6" issue_run_id="$7" before="$8" launch_home="$9" codex_auth_home="${10:-}" github_home="${11:-}" context_error="${12:-}"
+  local created_at ended_at auth_status github_status
+  created_at=$(iso_ts_now)
+  ended_at="$created_at"
+  [ -n "$codex_auth_home" ] && [ -d "$codex_auth_home" ] && auth_status=present || auth_status=missing
+  [ -n "$github_home" ] && [ -d "$github_home" ] && github_status=present || github_status=missing
+  mkdir -p "$(dirname "$summary_path")"
+  jq -n \
+    --arg created_at "$created_at" \
+    --arg ended_at "$ended_at" \
+    --arg run_id "$RUN_ID" \
+    --arg chain_run_id "$chain_run_id" \
+    --arg issue_run_id "$issue_run_id" \
+    --arg chain "$chain_name" \
+    --arg issue "$issue" \
+    --arg issue_title "$issue_title" \
+    --arg host "$host" \
+    --arg commit_before "$before" \
+    --arg launch_home "$launch_home" \
+    --arg codex_auth_home "$codex_auth_home" \
+    --arg codex_auth_home_status "$auth_status" \
+    --arg github_home "$github_home" \
+    --arg github_home_status "$github_status" \
+    --arg context_error "$context_error" \
+    '{
+      schema_version: 1,
+      kind: "completion",
+      created_at: $created_at,
+      status: "blocked",
+      run_id: $run_id,
+      chain_run_id: $chain_run_id,
+      issue_run_id: $issue_run_id,
+      chain: $chain,
+      issue_number: ($issue | tonumber),
+      issue_title: $issue_title,
+      host: $host,
+      model: null,
+      model_version: null,
+      effort: null,
+      started_at: $created_at,
+      ended_at: $ended_at,
+      duration_s: 0,
+      exit_code: 70,
+      halt_reason_id: "test_build_infra_unavailable",
+      blocked_reason: "codex_auth_home unavailable before child execution",
+      next_safe_action: "Repair the Codex auth_home/CODEX_HOME for this host, then resume the chain.",
+      commit_before: $commit_before,
+      commit_after: $commit_before,
+      files_changed: 0,
+      additions: 0,
+      deletions: 0,
+      generated_file_count: 0,
+      tests: [],
+      lints: [],
+      builds: [],
+      start_envelope_read: false,
+      source_repo_confirmed: null,
+      source_issue_confirmed: ($issue | tonumber),
+      self_review_performed: false,
+      self_review_findings: [],
+      self_review_fixes: [],
+      final_verification_evidence: [],
+      tokens: null,
+      telemetry_gaps: ["model", "tokens"],
+      execution_telemetry: {
+        routing: {reason_class: "prelaunch_auth_home_unavailable"},
+        auth_profile: {
+          launch_home: (if $launch_home == "" then null else $launch_home end),
+          codex_auth_home: (if $codex_auth_home == "" then null else $codex_auth_home end),
+          codex_auth_home_status: $codex_auth_home_status,
+          github_home: (if $github_home == "" then null else $github_home end),
+          github_home_status: $github_home_status,
+          context_error_present: ($context_error != "")
+        },
+        privacy: {
+          secret_values_persisted: false,
+          raw_auth_output_persisted: false
+        }
+      }
+    }' > "$summary_path"
 }
 
 host_preflight() {
   local host="$1" repo="$2" launch_home profile eligibility outcome detail duration_ms record
   HOST_PREFLIGHT_LAST_DETAILS_JSON="null"
-  launch_home=$(host_launch_home)
+  launch_home=$(github_home_for_worker_launch "$host")
   if [ "$DRY_RUN" -eq 1 ]; then
     if ! host_resolver_bypassed; then
       profile=$(chain_host_profile_for_runner_host "$host")
@@ -6999,6 +7120,7 @@ execute_issue_session() {
   local chain_name="$1" chain_branch="$2" issue="$3" host="$4" git_metadata_strategy="$5" worktree="$6" issue_branch="$7" chain_run_id="$8" issue_run_id="$9" before="${10}" phase_review_context="${11:-[]}" rule_pack_resolution="${12:-null}"
   local issue_json issue_title issue_body spawn prompt summary_path start_path source_branch chain_artifact_root tool_preflight_prompt
   local startup_context stdout_raw stderr_raw capture_streams child_rc restore_errexit
+  local launch_context_json launch_context_rc launch_context_error github_home studio_home worker_host_profile
   local -a spawn_argv
   local launch_home="" codex_auth_home=""
 
@@ -7018,9 +7140,26 @@ execute_issue_session() {
   spawn=$(host_spawn_command "$host")
   # shellcheck disable=SC2206
   spawn_argv=( $spawn )
-  launch_home=$(host_launch_home)
+  launch_context_error=""
+  mkdir -p "$RUN_WORK_ROOT"
+  set +e
+  launch_context_json=$(worker_launch_context_json "$host" delegated-host-spawn 2>"$RUN_WORK_ROOT/worker-launch-context-$issue_run_id.err")
+  launch_context_rc=$?
+  set -e
+  if [ "$launch_context_rc" -eq 0 ] && printf '%s\n' "$launch_context_json" | jq -e . >/dev/null 2>&1; then
+    launch_home=$(printf '%s\n' "$launch_context_json" | jq -r '.auth_home // ""')
+    github_home=$(printf '%s\n' "$launch_context_json" | jq -r '.github_home // ""')
+    studio_home=$(printf '%s\n' "$launch_context_json" | jq -r '.studio_home // ""')
+    worker_host_profile=$(printf '%s\n' "$launch_context_json" | jq -r '.host_profile // ""')
+  else
+    launch_context_error=$(tail -n 5 "$RUN_WORK_ROOT/worker-launch-context-$issue_run_id.err" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]\{1,\}/ /g')
+    launch_home=$(host_launch_home "$host")
+    github_home=$(github_home_for_worker_launch "$host")
+    studio_home=$(studio_home_for_worker_launch "$host")
+    worker_host_profile=$(worker_host_profile_for_launch "$host")
+  fi
   case "$host" in
-    codex*|*codex*) codex_auth_home=$(codex_auth_home_for_worker_launch "$launch_home") ;;
+    codex*|*codex*) codex_auth_home="${launch_home:-$(codex_auth_home_for_worker_launch "$host")}" ;;
   esac
   capture_streams=false
   if startup_capture_enabled; then
@@ -7030,7 +7169,16 @@ execute_issue_session() {
   stdout_raw=$(startup_stdout_raw_path "$issue_run_id")
   stderr_raw=$(startup_stderr_raw_path "$issue_run_id")
   if [ "$DRY_RUN" -eq 0 ]; then
-    write_child_launch_context "$startup_context" "$chain_name" "$issue" "$host" "$worktree" "$issue_branch" "$summary_path" "$start_path" "$launch_home" "$codex_auth_home" "${spawn_argv[0]:-}" "$capture_streams"
+    write_child_launch_context "$startup_context" "$chain_name" "$issue" "$host" "$worktree" "$issue_branch" "$summary_path" "$start_path" "$launch_home" "$codex_auth_home" "$github_home" "${spawn_argv[0]:-}" "$capture_streams"
+    case "$host" in
+      codex*|*codex*)
+        if [ "$launch_context_rc" -ne 0 ] || [ -z "$codex_auth_home" ] || [ ! -d "$codex_auth_home" ]; then
+          write_prelaunch_auth_failure_summary "$summary_path" "$chain_name" "$issue" "$issue_title" "$host" "$chain_run_id" "$issue_run_id" "$before" "$launch_home" "$codex_auth_home" "$github_home" "$launch_context_error"
+          update_child_launch_context_exit "$startup_context" 70
+          return 70
+        fi
+        ;;
+    esac
   fi
 
   prompt=$(cat <<EOF
@@ -7122,7 +7270,9 @@ EOF
 
   if [ "$DRY_RUN" -eq 1 ]; then
     printf 'DRY-RUN cd %q && ' "$worktree"
+    [ -z "$launch_home" ] || printf 'HOME=%q ' "$launch_home"
     [ -z "$codex_auth_home" ] || printf 'CODEX_HOME=%q ' "$codex_auth_home"
+    [ -z "$github_home" ] || printf 'STUDIO_CONTEXT_GITHUB_HOME=%q ' "$github_home"
     printf '%q ' "${spawn_argv[@]}"
     printf '%q\n' "$prompt"
     return 0
@@ -7139,6 +7289,12 @@ EOF
         env \
         HOME="$launch_home" \
         CODEX_HOME="$codex_auth_home" \
+        STUDIO_CONTEXT_STUDIO_HOME="$studio_home" \
+        STUDIO_CONTEXT_PROJECT_SLUG="generic-dev-studio" \
+        STUDIO_CONTEXT_REPO_ROOT="$TARGET_REPO_ROOT" \
+        STUDIO_CONTEXT_HOST_PROFILE="$worker_host_profile" \
+        STUDIO_CONTEXT_AUTH_HOME="$codex_auth_home" \
+        STUDIO_CONTEXT_GITHUB_HOME="$github_home" \
         STUDIO_RUN_ID="$RUN_ID" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
@@ -7149,6 +7305,12 @@ EOF
       (cd "$worktree" && run_child_with_optional_startup_capture "$capture_streams" "$stdout_raw" "$stderr_raw" \
         env \
         HOME="$launch_home" \
+        STUDIO_CONTEXT_STUDIO_HOME="$studio_home" \
+        STUDIO_CONTEXT_PROJECT_SLUG="generic-dev-studio" \
+        STUDIO_CONTEXT_REPO_ROOT="$TARGET_REPO_ROOT" \
+        STUDIO_CONTEXT_HOST_PROFILE="$worker_host_profile" \
+        STUDIO_CONTEXT_AUTH_HOME="$launch_home" \
+        STUDIO_CONTEXT_GITHUB_HOME="$github_home" \
         STUDIO_RUN_ID="$RUN_ID" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
@@ -7161,6 +7323,12 @@ EOF
       (cd "$worktree" && run_child_with_optional_startup_capture "$capture_streams" "$stdout_raw" "$stderr_raw" \
         env \
         CODEX_HOME="$codex_auth_home" \
+        STUDIO_CONTEXT_STUDIO_HOME="$studio_home" \
+        STUDIO_CONTEXT_PROJECT_SLUG="generic-dev-studio" \
+        STUDIO_CONTEXT_REPO_ROOT="$TARGET_REPO_ROOT" \
+        STUDIO_CONTEXT_HOST_PROFILE="$worker_host_profile" \
+        STUDIO_CONTEXT_AUTH_HOME="$codex_auth_home" \
+        STUDIO_CONTEXT_GITHUB_HOME="$github_home" \
         STUDIO_RUN_ID="$RUN_ID" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
@@ -7171,6 +7339,12 @@ EOF
       (cd "$worktree" && run_child_with_optional_startup_capture "$capture_streams" "$stdout_raw" "$stderr_raw" \
         env \
         STUDIO_RUN_ID="$RUN_ID" \
+        STUDIO_CONTEXT_STUDIO_HOME="$studio_home" \
+        STUDIO_CONTEXT_PROJECT_SLUG="generic-dev-studio" \
+        STUDIO_CONTEXT_REPO_ROOT="$TARGET_REPO_ROOT" \
+        STUDIO_CONTEXT_HOST_PROFILE="$worker_host_profile" \
+        STUDIO_CONTEXT_AUTH_HOME="$launch_home" \
+        STUDIO_CONTEXT_GITHUB_HOME="$github_home" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
         STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \
@@ -7520,7 +7694,7 @@ run_issue_job() {
 
   after=$(git -C "$issue_worktree" rev-parse HEAD)
   worker_telemetry_file="$CHAIN_RUN_ROOT/worker-telemetry-$issue_run_id.json"
-  worker_launch_home=$(host_launch_home)
+  worker_launch_home=$(host_launch_home "$host")
   collect_codex_worker_session_telemetry "$host" "$issue_worktree" "$issue_started_at" "$worker_launch_home" > "$worker_telemetry_file" || printf '{}\n' > "$worker_telemetry_file"
   summary_file=$(ingest_worker_summary "$name" "$issue" "$host" "$issue_worktree" "$before" "$after" "$worker_rc" "$issue_started_at" "$chain_run_id" "$issue_run_id" "$worker_telemetry_file")
   effective_worker_rc=$(chain_git_parent_finalize_effective_worker_rc "$worker_rc" "$summary_file")
@@ -7540,7 +7714,7 @@ run_issue_job() {
     child_worker_rc=$worker_rc
     after=$(git -C "$issue_worktree" rev-parse HEAD)
     worker_telemetry_file="$CHAIN_RUN_ROOT/worker-telemetry-$issue_run_id-retry-1.json"
-    worker_launch_home=$(host_launch_home)
+    worker_launch_home=$(host_launch_home "$host")
     collect_codex_worker_session_telemetry "$host" "$issue_worktree" "$issue_started_at" "$worker_launch_home" > "$worker_telemetry_file" || printf '{}\n' > "$worker_telemetry_file"
     summary_file=$(ingest_worker_summary "$name" "$issue" "$host" "$issue_worktree" "$before" "$after" "$worker_rc" "$issue_started_at" "$chain_run_id" "$issue_run_id" "$worker_telemetry_file")
     effective_worker_rc=$(chain_git_parent_finalize_effective_worker_rc "$worker_rc" "$summary_file")
