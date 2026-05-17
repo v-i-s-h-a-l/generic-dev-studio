@@ -805,7 +805,7 @@ event_stage() {
     chain_worker_summary_ingested|chain_telemetry_gap|checkpoint_auto_created|checkpoint_auto_loaded|checkpoint_context_savings_estimated|chain_ios_artifact_cleanup_completed) printf 'ingest\n' ;;
     chain_pr_opened|chain_review_completed) printf 'review\n' ;;
     chain_completed|chain_issue_merged) printf 'merge\n' ;;
-    chain_issue_closed) printf 'close\n' ;;
+    chain_issue_closed|chain_parent_closeout_completed) printf 'close\n' ;;
     chain_resume_attempt_*|chain_supervisor_decision|chain_state_projection_repaired) printf 'resume\n' ;;
     chain_halt_recorded|chain_decision_escrow_*|chain_run_completed) printf 'finalize\n' ;;
     *) printf 'execute\n' ;;
@@ -1393,6 +1393,34 @@ mark_issue_closed() {
          }
      )'
   chain_monitor_notify_issue_state_change "$issue_run_id" state-updated
+}
+
+mark_parent_closeout_completed() {
+  local chain_run_id="$1" parent_issue="$2" pr_url="${3:-}" project_result="${4:-}" closeout_mode="${5:-closed}"
+  local transition_at
+  transition_at=$(iso_ts_now)
+  [ -n "$project_result" ] || project_result='{}'
+  update_state_jq \
+    --arg chain_run_id "$chain_run_id" \
+    --arg parent_issue "$parent_issue" \
+    --arg pr_url "$pr_url" \
+    --arg closeout_mode "$closeout_mode" \
+    --arg transition_at "$transition_at" \
+    --argjson project_result "$project_result" \
+    '(.chains[] | select(.chain_run_id == $chain_run_id)) |= (
+       .parent_issue = ((.parent_issue // {}) + {
+         number:(($parent_issue | tonumber?) // (.parent_issue.number // null)),
+         state:"CLOSED"
+       })
+       | .parent_closeout = {
+           status:"completed",
+           completed_at:$transition_at,
+           mode:$closeout_mode,
+           pr_url:(if $pr_url == "" then null else $pr_url end),
+           project:$project_result
+         }
+     )'
+  chain_monitor_notify_chain_state_change "$chain_run_id" state-updated
 }
 
 sanitize_checkpoint_component() {
@@ -6329,7 +6357,7 @@ resolve_resume_state() {
 }
 
 build_plan_json() {
-  local out="$1" chain_count idx name base source_branch expected_source_sha parent_branch parent_sha independent branch requested_host host approved_release_id sync_strategy phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state issue_url
+  local out="$1" chain_count idx name base source_branch expected_source_sha parent_branch parent_sha parent_issue_json independent branch requested_host host approved_release_id sync_strategy phase_review_mode checkpoint_mode git_metadata_strategy issue_count i issue issue_json issue_title issue_state issue_url
   local chain_run_id issue_run_id issue_slug issue_branch issue_worktree chain_slug chain_worktree worker_pool issue_kind dependencies_json previous_issue
   local tmp chains_tmp issues_tmp mapped_at host_resolution_records_file host_resolution_records_json host_resolution_json resolver_rc resolution_summary
   tmp="$out.tmp.$$"
@@ -6354,6 +6382,24 @@ build_plan_json() {
     validate_chain_parent_lifecycle "$idx" "$name" "$source_branch"
     parent_branch=$(manifest_chain_field "$idx" parent_branch)
     parent_sha=$(manifest_chain_field "$idx" parent_sha)
+    parent_issue_json=$(yq -o=json ".chains[$idx].parent_issue // null" "$MANIFEST" | jq -c '
+      def empty_to_null($value): if (($value // "") | tostring) == "" then null else $value end;
+      if . == null then null
+      elif type == "object" then
+        {
+          number: ((.number // .issue_number) | tonumber?),
+          url: empty_to_null(.url // .html_url // .issue_url),
+          id: empty_to_null(.id),
+          project_item_id: empty_to_null(.project_item_id),
+          title: empty_to_null(.title)
+        }
+      else null
+      end
+    ')
+    if ! printf '%s\n' "$parent_issue_json" | jq -e '. == null or (.number | type == "number")' >/dev/null; then
+      printf 'studio-chain-runner: invalid parent_issue for chain %s\n' "$name" >&2
+      exit 2
+    fi
     independent=$(resolve_chain_independent "$idx")
     branch=$(yq -r ".chains[$idx].branch // (\"feature/\" + .chains[$idx].name)" "$MANIFEST")
     requested_host=$(yq -r ".chains[$idx].host // \"auto\"" "$MANIFEST")
@@ -6505,6 +6551,7 @@ build_plan_json() {
       --arg expected_source_sha "$expected_source_sha" \
       --arg parent_branch "$parent_branch" \
       --arg parent_sha "$parent_sha" \
+      --argjson parent_issue "$parent_issue_json" \
       --argjson independent "$independent" \
       --arg branch "$branch" \
       --arg host "$host" \
@@ -6527,6 +6574,8 @@ build_plan_json() {
         base_sha:(if $expected_source_sha == "" then null else $expected_source_sha end),
         parent_branch:(if $parent_branch == "" then null else $parent_branch end),
         parent_sha:(if $parent_sha == "" then null else $parent_sha end),
+        parent_issue:$parent_issue,
+        parent_closeout:null,
         independent:$independent,
         branch:$branch,
         host:$host,
@@ -7572,6 +7621,121 @@ detach_chain_worktree_for_merge_cleanup() {
   [ "$current_branch" = "$chain_branch" ] || return 0
   log "detaching $chain_worktree from $chain_branch before PR merge cleanup"
   run git -C "$chain_worktree" checkout --detach HEAD
+}
+
+parent_issue_number_for_chain() {
+  local chain_run_id="$1"
+  jq -r --arg id "$chain_run_id" '
+    .chains[]?
+    | select((.chain_run_id // "") == $id)
+    | (.parent_issue.number // empty)
+  ' "$RUN_STATE_JSON" 2>/dev/null | head -n 1
+}
+
+parent_child_issues_closed() {
+  local parent_issue="$1" child_issues issue state
+  child_issues=$(jq -r --argjson parent_issue "$parent_issue" '
+    [
+      .chains[]?
+      | select((.parent_issue.number // null) == $parent_issue)
+      | .issues[]?.number
+    ] | unique | .[]?
+  ' "$RUN_STATE_JSON")
+
+  if [ -z "$child_issues" ]; then
+    return 1
+  fi
+
+  while IFS= read -r issue; do
+    [ -n "$issue" ] || continue
+    if ! jq -e --argjson parent_issue "$parent_issue" --argjson issue "$issue" '
+      .chains[]?
+      | select((.parent_issue.number // null) == $parent_issue)
+      | .issues[]?
+      | select((.number // .issue // null) == $issue)
+      | select((.closed // false) == true or (.lifecycle_state // "") == "closed")
+    ' "$RUN_STATE_JSON" >/dev/null; then
+      return 1
+    fi
+    if [ "$DRY_RUN" -eq 0 ]; then
+      state=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json state --jq '.state' 2>/dev/null || true)
+      if [ "$state" != "CLOSED" ]; then
+        return 1
+      fi
+    fi
+  done <<EOF
+$child_issues
+EOF
+
+  return 0
+}
+
+parent_closeout_already_completed() {
+  local chain_run_id="$1"
+  jq -e --arg id "$chain_run_id" '
+    .chains[]?
+    | select((.chain_run_id // "") == $id)
+    | (.parent_closeout.status // "") == "completed"
+  ' "$RUN_STATE_JSON" >/dev/null 2>&1
+}
+
+closeout_parent_issue_after_children() {
+  local chain_name="$1" chain_run_id="$2" parent_issue parent_state comment_summary comment_links project_result closeout_mode
+  parent_issue=$(parent_issue_number_for_chain "$chain_run_id")
+  [ -n "$parent_issue" ] || return 0
+
+  if parent_closeout_already_completed "$chain_run_id"; then
+    log "resume skip completed parent closeout for #$parent_issue in chain $chain_name"
+    return 0
+  fi
+
+  if ! parent_child_issues_closed "$parent_issue"; then
+    log "parent issue #$parent_issue remains open: not all generated children for chain $chain_name are closed"
+    return 0
+  fi
+
+  comment_summary="Parent issue #$parent_issue closeout completed for chain-run UUID $chain_run_id."
+  comment_links="Chain run: $RUN_ID"
+  if [ -n "$FINAL_PR_URL" ]; then
+    comment_links="$comment_links
+PR: $FINAL_PR_URL"
+  else
+    comment_links="$comment_links
+PR: unavailable"
+  fi
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf 'DRY-RUN scripts/studio-comment.sh --post --target issue:%s --kind chain-parent-closeout --idempotency-key %q --summary %q --links %q --repo %q\n' \
+      "$parent_issue" "chain:$chain_run_id:parent:$parent_issue:closeout" "$comment_summary" "$comment_links" "$REPO_SLUG"
+    printf 'DRY-RUN GitHub issue close parent=%q repo=%q\n' "$parent_issue" "$REPO_SLUG"
+    printf 'DRY-RUN scripts/studio-project-add.sh %q --repo %q --status Done --json\n' "$parent_issue" "$REPO_SLUG"
+    project_result='{"dry_run":true}'
+    mark_parent_closeout_completed "$chain_run_id" "$parent_issue" "$FINAL_PR_URL" "$project_result" "dry-run"
+    return 0
+  fi
+
+  "$SCRIPT_DIR/studio-comment.sh" --post \
+    --target "issue:$parent_issue" \
+    --kind chain-parent-closeout \
+    --idempotency-key "chain:$chain_run_id:parent:$parent_issue:closeout" \
+    --summary "$comment_summary" \
+    --links "$comment_links" \
+    --repo "$REPO_SLUG" || abort_run "parent issue #$parent_issue summary comment failed"
+
+  parent_state=$(with_login_home_for_github gh issue view "$parent_issue" --repo "$REPO_SLUG" --json state --jq '.state') \
+    || abort_run "parent issue #$parent_issue state read failed"
+  closeout_mode="already-closed"
+  if [ "$parent_state" != "CLOSED" ]; then
+    with_login_home_for_github gh issue close "$parent_issue" --repo "$REPO_SLUG" \
+      || abort_run "parent issue #$parent_issue close failed"
+    closeout_mode="closed"
+  fi
+
+  project_result=$("$SCRIPT_DIR/studio-project-add.sh" "$parent_issue" --repo "$REPO_SLUG" --status Done --json) \
+    || abort_run "parent issue #$parent_issue Project status update failed"
+  mark_parent_closeout_completed "$chain_run_id" "$parent_issue" "$FINAL_PR_URL" "$project_result" "$closeout_mode"
+  emit_chain_event chain_parent_closeout_completed "$parent_issue" "$RUN_ID" "$chain_run_id" "" completed 0 \
+    "$(jq -cn --argjson parent_issue "$parent_issue" --arg pr_url "$FINAL_PR_URL" --arg mode "$closeout_mode" --argjson project "$project_result" '{parent_issue:$parent_issue, pr_url:(if $pr_url == "" then null else $pr_url end), mode:$mode, project:$project}')"
 }
 
 chain_worktree_registered() {
@@ -8629,6 +8793,8 @@ PR: $FINAL_PR_URL"
     fi
     mark_issue_closed "$chain_run_id" "$issue_run_id" "$issue" "$FINAL_PR_URL"
   done
+
+  closeout_parent_issue_after_children "$name" "$chain_run_id"
 
   if [ "$DRY_RUN" -eq 0 ]; then
     run_retryable_or_abort network_partition "fetch origin failed during chain cleanup" \

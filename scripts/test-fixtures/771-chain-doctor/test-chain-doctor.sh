@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Verifies chain doctor recommends safe recovery actions from existing run artifacts.
+# shellcheck disable=SC2016
 
 set -eu
 
@@ -300,6 +301,103 @@ jq -e '
 ' "$RUNNER_JSON" >/dev/null || {
   cat "$RUNNER_JSON" >&2
   fail "runner --doctor pass-through or public-safe redaction failed"
+}
+
+mkdir -p "$RUNS/run-parent-closeout-drift" "$RUNS/run-parent-closeout-blocked"
+cat > "$RUNS/run-parent-closeout-drift/state.json" <<'JSON'
+{
+  "schema_version": 1,
+  "run_id": "run-parent-closeout-drift",
+  "issue_repo": "example/project",
+  "manifest": "chains/doctor.yaml",
+  "status": "completed",
+  "started_at": "2026-05-09T00:00:00Z",
+  "updated_at": "2026-05-09T00:05:00Z",
+  "chains": [
+    {
+      "name": "doctor-parent",
+      "chain_run_id": "chain-parent-closeout",
+      "parent_issue": {"number": 99010, "state": "OPEN", "project_status": "Todo"},
+      "parent_closeout": null,
+      "issues": [
+        {"number": 99011, "issue_run_id": "issue-99011", "status": "completed", "integrated": true, "closed": true, "lifecycle_state": "closed"}
+      ]
+    }
+  ],
+  "halt_records": []
+}
+JSON
+cat > "$TMPROOT/native-parent-closeout.json" <<'JSON'
+[
+  {
+    "parent_issue": 99010,
+    "parent_state": "OPEN",
+    "children": [
+      {"number": 99011, "state": "CLOSED", "title": "Closed child"}
+    ]
+  }
+]
+JSON
+
+PARENT_DRIFT_JSON="$TMPROOT/parent-closeout-drift.json"
+STUDIO_CHAIN_DOCTOR_NATIVE_CHILDREN_FIXTURE="$TMPROOT/native-parent-closeout.json" \
+  "$DOCTOR" --chain-run-root "$RUNS/run-parent-closeout-drift" --format json > "$PARENT_DRIFT_JSON"
+jq -e '
+  .truth_state.parent_closeout_drift_count == 1
+  and .recommendation.action == "close_parent_issue"
+  and .parent_closeout_records[0].all_children_closeout_ready == true
+  and .parent_closeout_records[0].drift_detected == true
+' "$PARENT_DRIFT_JSON" >/dev/null || {
+  cat "$PARENT_DRIFT_JSON" >&2
+  fail "parent closeout drift was not detected"
+}
+
+cat > "$RUNS/run-parent-closeout-blocked/state.json" <<'JSON'
+{
+  "schema_version": 1,
+  "run_id": "run-parent-closeout-blocked",
+  "issue_repo": "example/project",
+  "manifest": "chains/doctor.yaml",
+  "status": "completed",
+  "started_at": "2026-05-09T00:00:00Z",
+  "updated_at": "2026-05-09T00:05:00Z",
+  "chains": [
+    {
+      "name": "doctor-parent",
+      "chain_run_id": "chain-parent-closeout",
+      "parent_issue": {"number": 99020, "state": "OPEN", "project_status": "Todo"},
+      "parent_closeout": null,
+      "issues": [
+        {"number": 99021, "issue_run_id": "issue-99021", "status": "blocked", "integrated": false, "closed": false, "lifecycle_state": "blocked"}
+      ]
+    }
+  ],
+  "halt_records": []
+}
+JSON
+cat > "$TMPROOT/native-parent-blocked.json" <<'JSON'
+[
+  {
+    "parent_issue": 99020,
+    "parent_state": "OPEN",
+    "children": [
+      {"number": 99021, "state": "OPEN", "title": "Blocked child"}
+    ]
+  }
+]
+JSON
+
+PARENT_BLOCKED_JSON="$TMPROOT/parent-closeout-blocked.json"
+STUDIO_CHAIN_DOCTOR_NATIVE_CHILDREN_FIXTURE="$TMPROOT/native-parent-blocked.json" \
+  "$DOCTOR" --chain-run-root "$RUNS/run-parent-closeout-blocked" --format json > "$PARENT_BLOCKED_JSON"
+jq -e '
+  .truth_state.parent_closeout_drift_count == 0
+  and .parent_closeout_records[0].drift_detected == false
+  and any(.parent_closeout_records[0].blockers[]; .reason_id == "child_not_closed" and .status == "blocked")
+  and any(.parent_closeout_records[0].blockers[]; .set == "native" and .reason_id == "child_not_closed")
+' "$PARENT_BLOCKED_JSON" >/dev/null || {
+  cat "$PARENT_BLOCKED_JSON" >&2
+  fail "blocked child did not keep parent closeout closed"
 }
 
 printf 'PASS: chain doctor recovery recommendations\n'

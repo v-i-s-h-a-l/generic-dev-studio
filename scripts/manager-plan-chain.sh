@@ -465,7 +465,7 @@ parse_issue_url_from_create_output() {
 }
 
 create_or_resolve_parent_issue() {
-  local body_file create_out issue_number issue_url issue_id project_item_id parent_title
+  local body_file create_out issue_number issue_url issue_api issue_id project_item_id parent_title
   if [ "$CREATE_PARENT_ISSUE" = "0" ]; then
     printf 'null\n' > "$PARENT_ISSUE_JSON"
     return 0
@@ -473,14 +473,17 @@ create_or_resolve_parent_issue() {
   if [ -n "$PARENT_ISSUE_NUMBER" ]; then
     issue_number="$PARENT_ISSUE_NUMBER"
     issue_url=$(issue_url_for_number "$issue_number")
-    issue_id=$(issue_database_id "$issue_number")
+    issue_api=$(issue_api_json "$issue_number")
+    issue_id=$(printf '%s\n' "$issue_api" | jq -r '.id // empty')
+    parent_title=$(printf '%s\n' "$issue_api" | jq -r '.title // empty')
     project_item_id=$(add_issue_to_project_and_set_fields "$issue_number" "$issue_url" "parent")
     jq -n \
       --argjson number "$issue_number" \
       --arg url "$issue_url" \
       --arg id "$issue_id" \
       --arg project_item_id "$project_item_id" \
-      '{number:$number, url:$url, id:$id, created:false, project_item_id:$project_item_id}' > "$PARENT_ISSUE_JSON"
+      --arg title "$parent_title" \
+      '{number:$number, url:$url, id:$id, created:false, project_item_id:$project_item_id, title:$title}' > "$PARENT_ISSUE_JSON"
     return 0
   fi
   [ "$CREATE_PARENT_ISSUE" = "auto" ] || {
@@ -512,7 +515,8 @@ create_or_resolve_parent_issue() {
     --arg url "$issue_url" \
     --arg id "$issue_id" \
     --arg project_item_id "$project_item_id" \
-    '{number:$number, url:$url, id:$id, created:true, project_item_id:$project_item_id}' > "$PARENT_ISSUE_JSON"
+    --arg title "$parent_title" \
+    '{number:$number, url:$url, id:$id, created:true, project_item_id:$project_item_id, title:$title}' > "$PARENT_ISSUE_JSON"
 }
 
 verify_sub_issue_api_for_parent() {
@@ -1360,6 +1364,7 @@ write_chain_manifest() {
   jq -n \
     --slurpfile graph "$TASK_GRAPH" \
     --slurpfile issues "$ISSUE_MAP" \
+    --slurpfile parent "$PARENT_ISSUE_JSON" \
     --arg target_repo_root "$TARGET_REPO_ROOT" \
     --arg issue_repo "$ISSUE_REPO" \
     --arg chain_name "$CHAIN_NAME" \
@@ -1377,9 +1382,43 @@ write_chain_manifest() {
     --arg comment_sidecar "$COMMENT_PACKET_JSON" \
     --arg generated_at "$(now_utc)" \
     '
+      def issue_url_for_number($number):
+        if $number == null then null else "https://github.com/" + $issue_repo + "/issues/" + ($number | tostring) end;
+      def issue_number_from_url($url):
+        ($url // "" | capture("/issues/(?<number>[0-9]+)")? | .number | tonumber?) // null;
+      def empty_to_null($value):
+        if ($value // "") == "" then null else $value end;
+      def normalize_parent_issue($value):
+        if $value == null then null
+        elif ($value | type) == "object" then
+          ($value.url // $value.html_url // $value.issue_url // null) as $url
+          | ($value.number // $value.issue_number // issue_number_from_url($url)) as $number
+          | if $number == null and $url == null then null else {
+              number: $number,
+              url: ($url // issue_url_for_number($number)),
+              id: empty_to_null($value.id),
+              project_item_id: empty_to_null($value.project_item_id),
+              title: empty_to_null($value.title)
+            } end
+        elif ($value | type) == "string" then
+          (issue_number_from_url($value)) as $number
+          | if $number == null then null else {
+              number: $number,
+              url: $value,
+              id: null,
+              project_item_id: null,
+              title: null
+            } end
+        else null
+        end;
       def issue_number_for($id):
         ($issues[0][]? | select(.node_id == $id) | .number) // null;
       $graph[0] as $g
+      | (normalize_parent_issue(
+          [$parent[0], $g.parent_issue, $g.parent_issue_url, $g.source.parent_issue, $g.source.parent_issue_url]
+          | map(select(. != null and . != ""))
+          | .[0] // null
+        )) as $parent_issue
       | ($g.nodes // [] | map(select(.kind == "task"))) as $tasks
       | {
           schema_version: 1,
@@ -1420,7 +1459,8 @@ write_chain_manifest() {
             }
             | (if $base_sha == "" then . else . + {base_sha:$base_sha} end)
             | (if $parent_branch == "" then . else . + {parent_branch:$parent_branch} end)
-            | (if $parent_sha == "" then . else . + {parent_sha:$parent_sha} end))
+            | (if $parent_sha == "" then . else . + {parent_sha:$parent_sha} end)
+            | (if $parent_issue == null then . else . + {parent_issue:$parent_issue} end))
           ]
         }
     ' > "$manifest_json"

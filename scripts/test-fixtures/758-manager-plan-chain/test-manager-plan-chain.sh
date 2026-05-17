@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Regression fixture: manager plan-chain reviews planner output before chain creation.
+# shellcheck disable=SC2016
 
 set -euo pipefail
 
@@ -246,6 +247,22 @@ yq -e '
   yq -P '.chains[0]' "$MANIFEST" >&2
   fail "generated work-chain manifest missing v2 branch-discipline fields"
 }
+
+yq -e '
+  .chains[0].parent_issue.number == 9101 and
+  .chains[0].parent_issue.url == "https://github.com/example/project/issues/9101" and
+  .chains[0].parent_issue.project_item_id == "PVTI_9101"
+' "$MANIFEST" >/dev/null || {
+  yq -P '.chains[0].parent_issue' "$MANIFEST" >&2
+  fail "generated work-chain manifest did not preserve parent issue metadata"
+}
+
+grep -Fq 'def normalize_parent_issue' "$RUN" \
+  || fail "manager plan-chain no longer normalizes mixed parent issue artifact shapes"
+grep -Fq '$g.parent_issue_url' "$RUN" \
+  || fail "manager plan-chain no longer accepts parent issue URL artifacts"
+grep -Fq 'elif ($value | type) == "string" then' "$RUN" \
+  || fail "manager plan-chain no longer accepts string parent issue artifacts"
 
 grep -q 'PHASE_REVIEW_VERDICT=clean' "$REVIEW" || fail "phase review artifact missing clean verdict"
 grep -q '^project item-add 1 --owner v-i-s-h-a-l --url https://github.com/example/project/issues/9101 ' "$GH_LOG" \
