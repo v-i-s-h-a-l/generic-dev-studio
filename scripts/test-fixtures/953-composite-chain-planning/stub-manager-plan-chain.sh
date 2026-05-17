@@ -15,12 +15,25 @@ if [ -n "${STUB_PLAN_LOG:-}" ]; then
 fi
 
 include_comments=0
+issue_source=0
+body_only=0
 for arg in "$@"; do
-  if [ "$arg" = "--include-comments" ]; then
-    include_comments=1
-    break
-  fi
+  case "$arg" in
+    --issue)
+      issue_source=1
+      ;;
+    --include-comments)
+      include_comments=1
+      ;;
+    --body-only)
+      body_only=1
+      ;;
+  esac
 done
+
+if [ "$issue_source" -eq 1 ] && [ "$body_only" -eq 0 ]; then
+  include_comments=1
+fi
 
 status="${STUB_PLAN_STATUS:-ready}"
 exit_code="${STUB_PLAN_EXIT_CODE:-0}"

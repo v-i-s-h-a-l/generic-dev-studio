@@ -242,7 +242,7 @@ child_plan_command_json() {
         --arg child_id "$child_id" \
         --arg repo_root "$REPO_ROOT" \
         --arg project "$project" \
-        '[$script, "--issue", $issue, "--repo", $issue_repo, "--chain", $child_id, "--project", $project, "--target-repo-root", $repo_root, "--include-comments", "--no-execute"]'
+        '[$script, "--issue", $issue, "--repo", $issue_repo, "--chain", $child_id, "--project", $project, "--target-repo-root", $repo_root, "--no-execute"]'
       ;;
     manifest)
       manifest_path=$(jq -r --argjson idx "$child_index" '.children[$idx].source.manifest_path' "$state_file")
