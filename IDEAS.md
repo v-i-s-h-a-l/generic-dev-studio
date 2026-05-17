@@ -30,6 +30,8 @@ Capture file for ideas that surface in conversation. `/capture` appends here ret
 
 - 2026-04-28 08:37 — Host-agnostic capture wrapper: existing `/capture` is useful but Claude-shaped through transcript paths and the Agent tool. Future work should preserve the behavior (dedupe session ideas into `IDEAS.md`, remind when pickable) behind a Forge wrapper that can read host-specific transcript/session state through adapters. [theme/host-agnostic]
 
+- 2026-05-17 10:21 — Build-to-build commit impact digest: after the compact commit record migration settles, add a scoped digest that compares two build or release boundaries and groups commits by `Areas`, `Impact`, `Release-Note`, and `Risk`. Keep it advisory at first: consume existing commit-body fields, collapse `Release-Note: none` out of tester-facing output, preserve uncategorized areas instead of enforcing a strict taxonomy, and emit a short operator/release summary plus a regression-triage index. Defer full regression-engine behavior, required area normalization, and automated risk scoring until real compact-record data shows the useful shape. [theme/release] [theme/triage]
+
 ---
 
 ## In design
