@@ -1,37 +1,16 @@
 #!/usr/bin/env bash
 # Git workspace helpers for studio-chain-runner issue sessions.
 
-CHAIN_GIT_SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
-if ! command -v with_login_home_for_github >/dev/null 2>&1 && [ -f "$CHAIN_GIT_SCRIPT_DIR/lib-paths.sh" ]; then
-  # shellcheck source=lib-paths.sh
-  . "$CHAIN_GIT_SCRIPT_DIR/lib-paths.sh"
-fi
-
 chain_git_configure_github_identity() {
   local worktree="${1:?usage: chain_git_configure_github_identity <worktree>}"
-  local user_json login id name email git_name git_email
+  local git_name git_email
 
-  user_json=$(with_login_home_for_github gh api user 2>/dev/null) || {
-    printf 'chain-git: cannot resolve GitHub profile for commit identity\n' >&2
+  git_name="${STUDIO_GIT_AUTHOR_NAME:-v-i-s-h-a-l}"
+  git_email="${STUDIO_GIT_AUTHOR_EMAIL:-vishalsingh2706@gmail.com}"
+  [ -n "$git_name" ] && [ -n "$git_email" ] || {
+    printf 'chain-git: canonical commit identity is incomplete\n' >&2
     return 1
   }
-  login=$(printf '%s\n' "$user_json" | jq -r '.login // empty')
-  id=$(printf '%s\n' "$user_json" | jq -r '.id // empty')
-  name=$(printf '%s\n' "$user_json" | jq -r '.name // empty')
-  email=$(printf '%s\n' "$user_json" | jq -r '.email // empty')
-  if [ -z "$login" ]; then
-    printf 'chain-git: GitHub profile is missing login for commit identity\n' >&2
-    return 1
-  fi
-  git_name="${name:-$login}"
-  if [ -n "$email" ]; then
-    git_email="$email"
-  elif [ -n "$id" ]; then
-    git_email="$id+$login@users.noreply.github.com"
-  else
-    printf 'chain-git: GitHub profile is missing email and id for commit identity\n' >&2
-    return 1
-  fi
 
   git -C "$worktree" config user.name "$git_name"
   git -C "$worktree" config user.email "$git_email"

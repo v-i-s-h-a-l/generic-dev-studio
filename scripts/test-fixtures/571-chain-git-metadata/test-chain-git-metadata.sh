@@ -92,12 +92,12 @@ SH
 chmod +x "$BIN/gh"
 
 PATH="$BIN:$PATH" HOME="$HOME_DIR" chain_git_configure_github_identity "$CHAIN_WORKTREE"
-[ "$(git -C "$CHAIN_WORKTREE" config user.name)" = "fixture-login" ] || {
-  printf 'GitHub identity did not set user.name from profile login\n' >&2
+[ "$(git -C "$CHAIN_WORKTREE" config user.name)" = "v-i-s-h-a-l" ] || {
+  printf 'GitHub identity did not set canonical user.name\n' >&2
   exit 1
 }
-[ "$(git -C "$CHAIN_WORKTREE" config user.email)" = "571+fixture-login@users.noreply.github.com" ] || {
-  printf 'GitHub identity did not set noreply user.email from profile id/login\n' >&2
+[ "$(git -C "$CHAIN_WORKTREE" config user.email)" = "vishalsingh2706@gmail.com" ] || {
+  printf 'GitHub identity did not set canonical user.email\n' >&2
   exit 1
 }
 
