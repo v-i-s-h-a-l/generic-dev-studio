@@ -116,6 +116,23 @@ chain_run_state_projection_json() {
       | (.chains[]? | select($cid != "" and ((.chain_run_id // "") | tostring) == $cid) | .issues[]?) |= (
           complete_issue_from_chain($cid; $at; $data)
         );
+    def complete_parent_closeout_from_event($e):
+      (event_chain_id($e)) as $cid
+      | (event_at($e)) as $at
+      | ($e.data // {}) as $data
+      | (.chains[]? | select($cid != "" and ((.chain_run_id // "") | tostring) == $cid)) |= (
+          .parent_issue = ((.parent_issue // {}) + {
+            number: (($data.parent_issue // .parent_issue.number // null) | tonumber?),
+            state: "CLOSED"
+          })
+          | .parent_closeout = {
+              status: "completed",
+              completed_at: $at,
+              mode: ($data.mode // "closed"),
+              pr_url: ($data.pr_url // null),
+              project: ($data.project // null)
+            }
+        );
     def apply_event($e):
       (($e.event // "") | tostring) as $name
       | (($e.status // $e.data.status // "") | tostring) as $status
@@ -133,6 +150,7 @@ chain_run_state_projection_json() {
         elif $name == "chain_issue_completed" and $status == "failed" then update_issue_from_event($e; "failed"; "failed"; (($e.data.failure_reason // "chain_issue_completed_failed") | tostring); false; false)
         elif $name == "chain_issue_merged" then update_issue_from_event($e; "completed"; "merged"; "chain-branch-integration"; true; false)
         elif $name == "chain_issue_closed" then update_issue_from_event($e; "completed"; "closed"; "issue-closed"; true; true)
+        elif $name == "chain_parent_closeout_completed" then complete_parent_closeout_from_event($e)
         else .
         end;
     . as $state
@@ -164,6 +182,13 @@ chain_run_state_projection_fingerprint_json() {
         name:(.name // null),
         status:(.status // null),
         pr_url:(.pr_url // null),
+        parent_issue:(.parent_issue // null),
+        parent_closeout:(if (.parent_closeout // null) == null then null else {
+          status:(.parent_closeout.status // null),
+          mode:(.parent_closeout.mode // null),
+          pr_url:(.parent_closeout.pr_url // null),
+          project:(.parent_closeout.project // null)
+        } end),
         failure_reason:(.failure_reason // null),
         completed_at:(.completed_at // null),
         issues:[(.issues // [])[]? | {
