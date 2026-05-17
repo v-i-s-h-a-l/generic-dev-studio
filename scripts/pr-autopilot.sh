@@ -6,6 +6,7 @@
 #       [--review-host <host>] [--summary-file <path>] [--expected-head-sha <sha>] [--method auto|merge|squash|rebase]
 #       [--parent-host <host>] [--eligible-review-hosts <csv>] [--cross-host true|false]
 #       [--review-model-id <id>] [--review-model-provider-family <family>] [--review-reasoning-effort <effort>]
+#       [--allow-target-repo-auto-merge --user-approved-bypass <url>]
 #   scripts/pr-autopilot.sh <pr> --bypass-review --user-approved-bypass <url>
 #
 # The reviewer itself runs without GitHub/API tokens. This parent-side wrapper
@@ -16,7 +17,7 @@ set -eu
 umask 022
 
 usage() {
-  printf 'usage: pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked [--review-host <host>] [--summary-file <path>] [--expected-head-sha <sha>] [--method auto|merge|squash|rebase] [--parent-host <host>] [--eligible-review-hosts <csv>] [--cross-host true|false] [--review-model-id <id>] [--review-model-provider-family <family>] [--review-reasoning-effort <effort>]\n' >&2
+  printf 'usage: pr-autopilot.sh <pr> --verdict approved|approved_with_fixes|blocked [--review-host <host>] [--summary-file <path>] [--expected-head-sha <sha>] [--method auto|merge|squash|rebase] [--parent-host <host>] [--eligible-review-hosts <csv>] [--cross-host true|false] [--review-model-id <id>] [--review-model-provider-family <family>] [--review-reasoning-effort <effort>] [--allow-target-repo-auto-merge --user-approved-bypass <url>]\n' >&2
   printf '   or: pr-autopilot.sh <pr> --bypass-review --user-approved-bypass <url>\n' >&2
   exit 2
 }
@@ -43,6 +44,7 @@ EXPECTED_HEAD_SHA=""
 METHOD="auto"
 BYPASS_REVIEW=0
 USER_APPROVED_BYPASS=""
+ALLOW_TARGET_REPO_AUTO_MERGE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -62,11 +64,17 @@ while [ $# -gt 0 ]; do
     --summary-file) SUMMARY_FILE="${2:?}"; shift 2 ;;
     --expected-head-sha) EXPECTED_HEAD_SHA="${2:?}"; shift 2 ;;
     --method) METHOD="${2:?}"; shift 2 ;;
+    --allow-target-repo-auto-merge) ALLOW_TARGET_REPO_AUTO_MERGE=1; shift ;;
     --bypass-review) BYPASS_REVIEW=1; shift ;;
     --user-approved-bypass) USER_APPROVED_BYPASS="${2:?}"; shift 2 ;;
     *) printf 'pr-autopilot: unknown flag %s\n' "$1" >&2; usage ;;
   esac
 done
+
+[ "$ALLOW_TARGET_REPO_AUTO_MERGE" -eq 0 ] || [ -n "$USER_APPROVED_BYPASS" ] || {
+  printf 'pr-autopilot: --allow-target-repo-auto-merge requires --user-approved-bypass <url>\n' >&2
+  exit 2
+}
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-ledger.sh
@@ -133,7 +141,11 @@ if [ "$BYPASS_REVIEW" -eq 1 ]; then
     printf 'pr-autopilot: --bypass-review requires --user-approved-bypass <url>\n' >&2
     exit 1
   }
-  "$SCRIPT_DIR/pr-merge-finalize.sh" "$PR" --method "$METHOD" --bypass-review --user-approved-bypass "$USER_APPROVED_BYPASS"
+  finalize_args=("$SCRIPT_DIR/pr-merge-finalize.sh" "$PR" --method "$METHOD" --bypass-review --user-approved-bypass "$USER_APPROVED_BYPASS")
+  if [ "$ALLOW_TARGET_REPO_AUTO_MERGE" -eq 1 ]; then
+    finalize_args+=(--allow-target-repo-auto-merge)
+  fi
+  "${finalize_args[@]}"
   exit $?
 fi
 
@@ -209,4 +221,9 @@ if [ "$VERDICT" = "blocked" ]; then
   exit 1
 fi
 
-"$SCRIPT_DIR/pr-merge-finalize.sh" "$PR" --method "$METHOD" --expected-head-sha "$HEAD_SHA"
+finalize_args=("$SCRIPT_DIR/pr-merge-finalize.sh" "$PR" --method "$METHOD" --expected-head-sha "$HEAD_SHA")
+if [ "$ALLOW_TARGET_REPO_AUTO_MERGE" -eq 1 ]; then
+  finalize_args+=(--allow-target-repo-auto-merge)
+  [ -n "$USER_APPROVED_BYPASS" ] && finalize_args+=(--user-approved-bypass "$USER_APPROVED_BYPASS")
+fi
+"${finalize_args[@]}"

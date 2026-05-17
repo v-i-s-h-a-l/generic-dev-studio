@@ -5,6 +5,7 @@
 #   scripts/pr-headless-review.sh <pr> [--review-host <host>] [--method auto|merge|squash|rebase]
 #       [--require-cross-host-when-available|--no-require-cross-host]
 #       [--allow-same-host-review --user-approved-bypass <github-url>]
+#       [--allow-target-repo-auto-merge --user-approved-bypass <github-url>]
 #
 # The parent studio session owns GitHub access. This script materializes the
 # PR metadata/diff into a temp file, spawns the reviewer with an env-scrubbed
@@ -15,7 +16,7 @@ set -eu
 umask 022
 
 usage() {
-  printf 'usage: pr-headless-review.sh <pr> [--review-host <host>] [--method auto|merge|squash|rebase] [--require-cross-host-when-available|--no-require-cross-host] [--allow-same-host-review --user-approved-bypass <github-url>]\n' >&2
+  printf 'usage: pr-headless-review.sh <pr> [--review-host <host>] [--method auto|merge|squash|rebase] [--require-cross-host-when-available|--no-require-cross-host] [--allow-same-host-review --user-approved-bypass <github-url>] [--allow-target-repo-auto-merge --user-approved-bypass <github-url>]\n' >&2
   exit 2
 }
 
@@ -46,6 +47,7 @@ REVIEW_HOST="${STUDIO_REVIEW_HOST:-}"
 METHOD="auto"
 EXPLICIT_REVIEW_HOST=0
 ALLOW_SAME_HOST_REVIEW=0
+ALLOW_TARGET_REPO_AUTO_MERGE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -54,6 +56,7 @@ while [ $# -gt 0 ]; do
     --require-cross-host-when-available) CROSS_HOST_REQUIRED=1; shift ;;
     --no-require-cross-host) CROSS_HOST_REQUIRED=0; shift ;;
     --allow-same-host-review) ALLOW_SAME_HOST_REVIEW=1; shift ;;
+    --allow-target-repo-auto-merge) ALLOW_TARGET_REPO_AUTO_MERGE=1; shift ;;
     --user-approved-bypass) CROSS_HOST_BYPASS_URL="${2:?--user-approved-bypass requires a value}"; shift 2 ;;
     *) printf 'pr-headless-review: unknown flag %s\n' "$1" >&2; usage ;;
   esac
@@ -70,6 +73,10 @@ case "$CROSS_HOST_REQUIRED" in
 esac
 [ "$ALLOW_SAME_HOST_REVIEW" -eq 0 ] || [ -n "$CROSS_HOST_BYPASS_URL" ] || {
   printf 'pr-headless-review: --allow-same-host-review requires --user-approved-bypass <github-url>\n' >&2
+  exit 2
+}
+[ "$ALLOW_TARGET_REPO_AUTO_MERGE" -eq 0 ] || [ -n "$CROSS_HOST_BYPASS_URL" ] || {
+  printf 'pr-headless-review: --allow-target-repo-auto-merge requires --user-approved-bypass <github-url>\n' >&2
   exit 2
 }
 if [ -n "$CROSS_HOST_BYPASS_URL" ]; then
@@ -586,4 +593,7 @@ autopilot_args=(
 [ -z "$FALLBACK_FROM_CSV" ] || autopilot_args+=(--fallback-from "$FALLBACK_FROM_CSV")
 [ -z "$FALLBACK_FAILURES_TEXT" ] || autopilot_args+=(--fallback-failures "$FALLBACK_FAILURES_TEXT")
 [ -z "$CROSS_HOST_BYPASS_URL" ] || autopilot_args+=(--cross-host-bypass-url "$CROSS_HOST_BYPASS_URL")
+if [ "$ALLOW_TARGET_REPO_AUTO_MERGE" -eq 1 ]; then
+  autopilot_args+=(--allow-target-repo-auto-merge --user-approved-bypass "$CROSS_HOST_BYPASS_URL")
+fi
 "$AUTOPILOT" "${autopilot_args[@]}"

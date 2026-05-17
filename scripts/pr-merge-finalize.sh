@@ -4,7 +4,8 @@
 # Usage:
 #   scripts/pr-merge-finalize.sh <pr-number-or-url> [--method auto|merge|squash|rebase] \
 #       [--expected-head-sha <sha>] [--release-id <uuid>] [--record-release-approval-only] \
-#       [--bypass-review --user-approved-bypass <url>]
+#       [--bypass-review --user-approved-bypass <url>] \
+#       [--allow-target-repo-auto-merge --user-approved-bypass <url>]
 #
 # This script intentionally performs GitHub PR flow only. It never pushes a
 # base branch directly. Branch deletion is delegated to gh pr merge
@@ -14,7 +15,7 @@ set -eu
 umask 022
 
 usage() {
-  printf 'usage: pr-merge-finalize.sh <pr-number-or-url> [--method auto|merge|squash|rebase] [--expected-head-sha <sha>] [--release-id <uuid>] [--record-release-approval-only] [--bypass-review --user-approved-bypass <url>]\n' >&2
+  printf 'usage: pr-merge-finalize.sh <pr-number-or-url> [--method auto|merge|squash|rebase] [--expected-head-sha <sha>] [--release-id <uuid>] [--record-release-approval-only] [--bypass-review --user-approved-bypass <url>] [--allow-target-repo-auto-merge --user-approved-bypass <url>]\n' >&2
   exit 2
 }
 
@@ -28,6 +29,7 @@ RELEASE_ID=""
 RECORD_RELEASE_APPROVAL_ONLY=0
 BYPASS_REVIEW=0
 USER_APPROVED_BYPASS=""
+ALLOW_TARGET_REPO_AUTO_MERGE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --method)
@@ -48,6 +50,10 @@ while [ $# -gt 0 ]; do
       ;;
     --bypass-review)
       BYPASS_REVIEW=1
+      shift
+      ;;
+    --allow-target-repo-auto-merge)
+      ALLOW_TARGET_REPO_AUTO_MERGE=1
       shift
       ;;
     --user-approved-bypass)
@@ -95,6 +101,8 @@ base_ref=""
 head_ref=""
 release_approval_recorded=0
 release_approval_reference_url=""
+base_repo_slug=""
+studio_repo_slug="${STUDIO_STUDIO_REPO_SLUG:-v-i-s-h-a-l/generic-dev-studio}"
 
 emit_pr_merge_event() {
   local event="$1" status="${2:-}" rc="${3:-0}" duration_s cleanup_json
@@ -187,6 +195,55 @@ delete_remote_head_branch_after_merge() {
   fi
 }
 
+github_repo_slug_from_pr_url() {
+  local pr_url="$1" slug
+  slug=$(printf '%s\n' "$pr_url" | sed -E 's#^https://github\.com/([^/]+/[^/]+)/pull/[0-9]+.*#\1#')
+  [ "$slug" != "$pr_url" ] || return 1
+  printf '%s\n' "$slug"
+}
+
+bool_enabled() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+target_repo_auto_merge_enabled() {
+  bool_enabled "${STUDIO_TARGET_REPO_AUTO_MERGE:-0}" || bool_enabled "${STUDIO_ALLOW_TARGET_REPO_AUTO_MERGE:-0}"
+}
+
+guard_target_repo_auto_merge() {
+  [ "$RECORD_RELEASE_APPROVAL_ONLY" -eq 0 ] || return 0
+  [ -n "$base_repo_slug" ] || return 0
+  [ "$base_repo_slug" != "$studio_repo_slug" ] || return 0
+
+  if target_repo_auto_merge_enabled; then
+    printf 'warning: target repo auto-merge enabled for %s by STUDIO_TARGET_REPO_AUTO_MERGE/STUDIO_ALLOW_TARGET_REPO_AUTO_MERGE\n' "$base_repo_slug" >&2
+    return 0
+  fi
+
+  if [ "$ALLOW_TARGET_REPO_AUTO_MERGE" -eq 1 ]; then
+    [ -n "$USER_APPROVED_BYPASS" ] || {
+      printf 'pr-merge-finalize: --allow-target-repo-auto-merge requires --user-approved-bypass <url>\n' >&2
+      exit 1
+    }
+    case "$USER_APPROVED_BYPASS" in
+      https://github.com/*/issues/*|https://github.com/*/pull/*|https://github.com/*/discussions/*) ;;
+      *) printf 'pr-merge-finalize: target repo auto-merge approval must be a GitHub issue, PR, comment, or discussion URL\n' >&2; exit 1 ;;
+    esac
+    printf 'warning: target repo auto-merge explicitly user-approved for %s via %s\n' "$base_repo_slug" "$USER_APPROVED_BYPASS" >&2
+    return 0
+  fi
+
+  printf 'pr-merge-finalize: refusing automatic merge for target repository %s\n' "$base_repo_slug" >&2
+  printf 'pr-merge-finalize: review gate may create/approve the PR, but target repo main merges require the user to merge manually.\n' >&2
+  printf 'pr-merge-finalize: unlock persistently only on explicit user request: /dev-studio manager config set pr_policy.target_repo_auto_merge true\n' >&2
+  printf 'pr-merge-finalize: one-shot override: pass --allow-target-repo-auto-merge --user-approved-bypass <github-url>\n' >&2
+  printf 'PR_MERGED=0\n'
+  exit 1
+}
+
 json=$(with_login_home_for_github gh pr view "$PR" --json number,state,isDraft,mergeable,mergeStateStatus,headRefName,headRefOid,headRepositoryOwner,baseRefName,url,commits) \
   || { printf 'pr-merge-finalize: failed to read PR %s\n' "$PR" >&2; exit 1; }
 
@@ -197,6 +254,11 @@ merge_state=$(printf '%s' "$json" | jq -r '.mergeStateStatus')
 base_ref=$(printf '%s' "$json" | jq -r '.baseRefName')
 head_ref=$(printf '%s' "$json" | jq -r '.headRefName')
 url=$(printf '%s' "$json" | jq -r '.url')
+base_repo_slug=$(github_repo_slug_from_pr_url "$url" 2>/dev/null) || {
+  printf 'pr-merge-finalize: could not determine PR base repository from %s\n' "$url" >&2
+  printf 'PR_MERGED=0\n'
+  exit 1
+}
 number=$(printf '%s' "$json" | jq -r '.number')
 head_sha=$(printf '%s' "$json" | jq -r '.headRefOid')
 commit_count=$(printf '%s' "$json" | jq -r '.commits | length')
@@ -325,6 +387,8 @@ if [ "$RECORD_RELEASE_APPROVAL_ONLY" -eq 1 ]; then
   printf 'PR_MERGED=0\n'
   exit 0
 fi
+
+guard_target_repo_auto_merge
 
 if [ "$METHOD" = "auto" ]; then
   if [ "$commit_count" -lt 4 ]; then

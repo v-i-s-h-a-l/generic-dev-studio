@@ -121,6 +121,9 @@ setting_key() {
     branch_policy.worktree_disk_budget_mb|branch-policy.worktree-disk-budget-mb|branch_policy_worktree_disk_budget_mb)
       printf 'STUDIO_BRANCH_POLICY_WORKTREE_DISK_BUDGET_MB\n'
       ;;
+    pr_policy.target_repo_auto_merge|pr-policy.target-repo-auto-merge|pr_policy_target_repo_auto_merge|target_repo_auto_merge|target-repo-auto-merge)
+      printf 'STUDIO_TARGET_REPO_AUTO_MERGE\n'
+      ;;
     release_branch_workflow.default_release_base|default_release_base|default-release-base)
       printf 'STUDIO_RELEASE_BRANCH_DEFAULT_BASE\n'
       ;;
@@ -333,6 +336,8 @@ EOF
   printf '  merge_target_to_main: %s\n' "$(branch_policy_value merge_target_to_main)"
   printf '  worktree_gc_scope: %s\n' "$(branch_policy_value worktree_gc_scope)"
   printf '  worktree_disk_budget_mb: %s\n' "$(branch_policy_value worktree_disk_budget_mb)"
+  printf '\nPR policy:\n'
+  printf '  target_repo_auto_merge: %s\n' "$(value_of STUDIO_TARGET_REPO_AUTO_MERGE)"
 }
 
 cmd_get() {
@@ -464,6 +469,10 @@ cmd_set() {
     STUDIO_BRANCH_POLICY_SCHEMA_VERSION)
       [ "$value" = "1" ] || { printf 'manager-feature-config: branch_policy.schema_version must be 1\n' >&2; return 2; }
       write_branch_policy_field schema_version "$value"
+      ;;
+    STUDIO_TARGET_REPO_AUTO_MERGE)
+      value=$(normalize_bool "$value") || { printf 'manager-feature-config: pr_policy.target_repo_auto_merge must be true or false\n' >&2; return 2; }
+      write_setting "$key" "$value"
       ;;
     *)
       write_setting "$key" "$value"

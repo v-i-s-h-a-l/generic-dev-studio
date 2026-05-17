@@ -256,6 +256,36 @@ are captured in `scripts/lint-synthetic-home-allowlist.txt` and tracked under
 #710 Phase E for migration; the bypass and the annotation are user-controlled
 and must not be used silently by an assistant.
 
+## Target repository auto-merge lock (hard rule)
+
+For target project repositories (for example `turnip-ios` and future app/client
+repos), assistants must not automatically merge PRs into `main` or the
+configured integration branch unless the user explicitly unlocks that behavior.
+The default studio workflow may create branches, open PRs, run review gates, and
+leave approved PRs for the user to merge manually; it must not complete
+`gh pr merge` for non-studio repositories by default.
+
+Mechanical enforcement lives in `scripts/pr-merge-finalize.sh`. If the PR base
+repository is not `v-i-s-h-a-l/generic-dev-studio`, the finalizer refuses to
+merge after review and prints `PR_MERGED=0`. Persistent unlock is user
+controlled via:
+
+```bash
+/dev-studio manager config set pr_policy.target_repo_auto_merge true
+```
+
+One-shot unlock is also user controlled and must carry a GitHub URL documenting
+the approval:
+
+```bash
+scripts/pr-headless-review.sh <pr> --allow-target-repo-auto-merge --user-approved-bypass <github-url>
+scripts/pr-merge-finalize.sh <pr> --allow-target-repo-auto-merge --user-approved-bypass <github-url>
+```
+
+Assistants must not set `STUDIO_TARGET_REPO_AUTO_MERGE=1`,
+`STUDIO_ALLOW_TARGET_REPO_AUTO_MERGE=1`, or pass the one-shot unlock on their
+own initiative. The user owns that switch.
+
 ## Artifact cleanup (hard rule)
 
 Studio shell-script workflows MUST clean their own filesystem state on terminal

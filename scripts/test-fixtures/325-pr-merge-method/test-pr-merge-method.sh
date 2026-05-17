@@ -16,13 +16,13 @@ cat > "$BIN/gh" <<'SH'
 set -u
 
 json_payload() {
-  local n="${COMMIT_COUNT:-1}" base="${BASE_REF:-main}" commits="" i=0
+  local n="${COMMIT_COUNT:-1}" base="${BASE_REF:-main}" repo="${PR_REPO_SLUG:-v-i-s-h-a-l/generic-dev-studio}" commits="" i=0
   while [ "$i" -lt "$n" ]; do
     if [ "$i" -gt 0 ]; then commits="$commits,"; fi
     commits="${commits}{\"oid\":\"c$i\"}"
     i=$((i + 1))
   done
-  printf '{"number":123,"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefName":"feature","headRefOid":"abc123","headRepositoryOwner":{"login":"owner"},"baseRefName":"%s","url":"https://github.com/owner/repo/pull/123","commits":[%s]}\n' "$base" "$commits"
+  printf '{"number":123,"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefName":"feature","headRefOid":"abc123","headRepositoryOwner":{"login":"owner"},"baseRefName":"%s","url":"https://github.com/%s/pull/123","commits":[%s]}\n' "$base" "$repo" "$commits"
 }
 
 case "$1 $2" in
@@ -136,6 +136,43 @@ run_head_worktree_case() {
   git -C "$WORK" checkout -q main
 }
 
+run_target_repo_auto_merge_lock_case() {
+  local out rc
+  out="$TMPROOT/out-target-auto-merge-lock.txt"
+  : > "$MERGE_LOG"
+
+  set +e
+  PR_REPO_SLUG=owner/repo BASE_REF=main COMMIT_COUNT=1 \
+    bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
+      --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
+      > "$out" 2>"$out.err"
+  rc=$?
+  set -e
+
+  assert "target repo auto-merge lock blocks default merge" "[ $rc -ne 0 ]"
+  assert "target repo auto-merge lock reports no merge" "grep -q 'PR_MERGED=0' '$out'"
+  assert "target repo auto-merge lock explains manual merge" "grep -q 'target repository owner/repo' '$out.err'"
+  assert "target repo auto-merge lock does not invoke gh merge" "! grep -q -- 'pr merge' '$MERGE_LOG'"
+
+  : > "$MERGE_LOG"
+  PR_REPO_SLUG=owner/repo BASE_REF=main COMMIT_COUNT=1 STUDIO_TARGET_REPO_AUTO_MERGE=1 \
+    bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
+      --bypass-review --user-approved-bypass https://github.com/owner/repo/pull/123 \
+      > "$out.allowed" 2>"$out.allowed.err"
+  assert "target repo config unlock allows merge" "grep -q 'PR_MERGED=1' '$out.allowed'"
+  assert "target repo config unlock reaches gh merge" "grep -q -- 'pr merge' '$MERGE_LOG'"
+
+  : > "$MERGE_LOG"
+  PR_REPO_SLUG=owner/repo BASE_REF=main COMMIT_COUNT=1 \
+    bash "$ROOT/scripts/pr-merge-finalize.sh" 123 --method auto \
+      --bypass-review \
+      --allow-target-repo-auto-merge \
+      --user-approved-bypass https://github.com/owner/repo/issues/1 \
+      > "$out.oneshot" 2>"$out.oneshot.err"
+  assert "target repo one-shot unlock allows merge" "grep -q 'PR_MERGED=1' '$out.oneshot'"
+  assert "target repo one-shot unlock reaches gh merge" "grep -q -- 'pr merge' '$MERGE_LOG'"
+}
+
 prepare_feature_branch_with_merge_commit() {
   git -C "$WORK" checkout -q main
   git -C "$WORK" branch -D feature sibling >/dev/null 2>&1 || true
@@ -188,6 +225,7 @@ cd "$WORK" || exit 1
 run_case main 3 rebase
 run_case main 4 merge
 run_merge_target_default_gate_case
+run_target_repo_auto_merge_lock_case
 run_case feature 4 rebase
 run_head_worktree_case
 run_feature_merge_commit_gate_case

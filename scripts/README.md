@@ -267,10 +267,10 @@ scripts/v2-cutover.sh --status                          # report A9 v1 archive /
 scripts/v2-cutover.sh --validate                        # validate the A9 cutover manifest and rollback playbook
 scripts/lint-build-release-message.sh --file draft.md --channel appstore   # A11 message shape + duplicate lint
 scripts/lint-project-skill-links.sh [--host codex]      # repo-local project skill discovery link invariant + repair helper
-scripts/pr-headless-review.sh <pr>                      # run smoke-eligible reviewer, then merge only if the reused chain-style feature-branch gate keeps head history linear relative to its base
+scripts/pr-headless-review.sh <pr>                      # run smoke-eligible reviewer; target repo PRs stop before merge unless pr_policy.target_repo_auto_merge is explicitly enabled
 scripts/pr-headless-review.sh <pr> --no-require-cross-host  # opt out of default independent-provider reviewer policy for explicit non-safety-floor runs
-scripts/pr-autopilot.sh <pr> --verdict approved         # post reviewer gate, then merge if non-blocked
-scripts/pr-merge-finalize.sh <pr> --method auto         # reuses the chain runner's feature-branch gate; can record release approval with --release-id before merge
+scripts/pr-autopilot.sh <pr> --verdict approved         # post reviewer gate, then merge only when merge-finalize policy allows it
+scripts/pr-merge-finalize.sh <pr> --method auto         # reuses chain branch gates; target repos are review-only by default, and --release-id can record approval before merge
 scripts/resolve-reviewer-model.sh --review-host codex-reviewer --implementation-host claude-code  # policy-backed reviewer model/profile resolver
 scripts/check-model-catalog.sh --print-refresh-checklist # validate model catalog + print official-doc refresh checklist
 scripts/recommend-model.sh --size s --kind impl --cross-file-count 3 --novelty-score 1

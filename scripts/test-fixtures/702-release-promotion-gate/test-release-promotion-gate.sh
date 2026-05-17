@@ -145,8 +145,17 @@ grep -Fq 'no approved studio review gate comment found' "$TMPROOT/missing.err" \
   || fail "missing-comment error did not name the review gate"
 
 : >"$MERGE_LOG"
-write_release rel-merge
+write_release rel-target-lock
 COMMENT_MODE=approved bash "$ROOT/scripts/pr-merge-finalize.sh" 123 \
+  --release-id rel-target-lock \
+  --method merge >"$TMPROOT/target-lock.out" 2>"$TMPROOT/target-lock.err" && fail "target repo release merge unexpectedly bypassed auto-merge lock"
+grep -Fq 'PR_MERGED=0' "$TMPROOT/target-lock.out" || fail "target repo release lock did not report PR_MERGED=0"
+[ ! -s "$MERGE_LOG" ] || fail "target repo release lock called gh pr merge"
+assert_release_approved rel-target-lock
+
+: >"$MERGE_LOG"
+write_release rel-merge
+COMMENT_MODE=approved STUDIO_TARGET_REPO_AUTO_MERGE=1 bash "$ROOT/scripts/pr-merge-finalize.sh" 123 \
   --release-id rel-merge \
   --method merge >"$TMPROOT/merge.out" 2>"$TMPROOT/merge.err"
 grep -Fq 'PR_MERGED=1' "$TMPROOT/merge.out" || fail "merge path did not report PR_MERGED=1"

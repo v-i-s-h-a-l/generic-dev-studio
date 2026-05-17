@@ -27,6 +27,11 @@ when a project has not written a value yet.
    `STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN` is truthy, `pr-merge-finalize`
    refuses to merge a PR whose base ref is not the project's canonical
    integration branch.
+4. **Target project PRs are not auto-merged by default.** For PRs whose GitHub
+   base repository is not the studio repository, reviewer/autopilot flows may
+   create and approve the PR but must stop before `gh pr merge`. A human merges
+   the target repo PR unless the user explicitly unlocks auto-merge with
+   `pr_policy.target_repo_auto_merge` or a one-shot approved override.
 
 ## Per-project policy file
 
@@ -43,6 +48,7 @@ following settings participate in branch discipline:
 | `STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN` | `merge_target_to_main` | pr-merge-finalize |
 | `STUDIO_BRANCH_POLICY_WORKTREE_GC_SCOPE` | `worktree_gc_scope` | Studio-owned worktree cleanup |
 | `STUDIO_BRANCH_POLICY_WORKTREE_DISK_BUDGET_MB` | `worktree_disk_budget_mb` | Studio-owned worktree cleanup |
+| `STUDIO_TARGET_REPO_AUTO_MERGE` | `pr_policy.target_repo_auto_merge` | pr-merge-finalize target-repo auto-merge lock |
 
 Legacy release branch settings are still supported:
 
@@ -92,6 +98,7 @@ Surface-specific bypasses still apply for backwards compatibility:
 | pre-commit base-branch guard | `STUDIO_BYPASS_MAIN_COMMIT_GUARD=1` | `STUDIO_BYPASS_BRANCH_POLICY=1` |
 | pr-merge-finalize merge-commit gate | `STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1` | `STUDIO_BYPASS_BRANCH_POLICY=1` |
 | pr-merge-finalize merge-target gate | none | `STUDIO_BYPASS_BRANCH_POLICY=1` |
+| pr-merge-finalize target-repo auto-merge lock | `STUDIO_TARGET_REPO_AUTO_MERGE=1`, or `--allow-target-repo-auto-merge --user-approved-bypass <github-url>` | none |
 
 Assistants must not set the bypass on their own initiative; it is the user's
 lever per the rule in CLAUDE.md §"Where workflow rules live".
