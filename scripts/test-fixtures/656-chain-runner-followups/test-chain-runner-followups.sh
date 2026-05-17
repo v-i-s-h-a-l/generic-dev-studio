@@ -245,4 +245,28 @@ if grep -q -- "--resume $RUN_ID" "$RUN_REPORT"; then
   exit 1
 fi
 
+jq '
+  .halt_records = [
+    {
+      "path": "'"$HALT_ROOT"'/historical.json",
+      "reason_id": "cwd_auth_profile_mismatch",
+      "halt_class": "recoverable",
+      "status": "paused",
+      "next_command": "scripts/studio-chain-runner.sh --resume '"$RUN_ID"' --yes"
+    }
+  ]
+' "$RUN_STATE_JSON" > "$RUN_STATE_JSON.tmp"
+mv "$RUN_STATE_JSON.tmp" "$RUN_STATE_JSON"
+generate_run_report completed ""
+grep -q "No active halt records. Historical halt records: 1" "$RUN_REPORT" || {
+  printf 'completed report did not demote unsuperseded halt to historical\n' >&2
+  cat "$RUN_REPORT" >&2
+  exit 1
+}
+if grep -q -- "--resume $RUN_ID" "$RUN_REPORT"; then
+  printf 'completed historical report still advertised stale resume command\n' >&2
+  cat "$RUN_REPORT" >&2
+  exit 1
+fi
+
 printf 'PASS: chain-runner follow-up telemetry and halt supersession\n'

@@ -66,6 +66,52 @@ printf '%s\n' "$status_output" | grep -Fq "Blocked/halt reason: none" \
 printf '%s\n' "$status_output" | grep -Fq "Next resume command: /dev-studio manager composite-chain status --run-id $RUN_ID" \
   || fail "status missing next resume command"
 
+historical_halt="$TMPROOT/historical-child-halt.json"
+printf '{"reason_id":"child_run_state_missing"}\n' > "$historical_halt"
+historical_state="$TMPROOT/historical-completed-state.json"
+jq --arg historical_halt "$historical_halt" '
+  .state = "completed"
+  | .children[].status = "completed"
+  | .children[0].refs.child_halt_ref = $historical_halt
+  | .children[0].blocked_reason = {
+      reason_id: "child_run_state_missing",
+      summary: "Recovered after child state appeared."
+    }
+  | .current_child_index = null
+  | .current_child_id = null
+  | .blocked_reason = .children[0].blocked_reason
+  | .active_halt_ref = {
+      reason_id: "child_run_state_missing",
+      halt_record: $historical_halt,
+      child_id: "ui-ia-redesign"
+    }
+  | .next_command = null
+' "$state_path" > "$historical_state"
+historical_status=$(HOME="$TMPROOT/home" ACHILLES_PROJECT=generic-dev-studio "$MANAGER" status --state "$historical_state")
+printf '%s\n' "$historical_status" | grep -Fq "Child halt ref: none" \
+  || fail "completed status reported historical child halt as active"
+printf '%s\n' "$historical_status" | grep -Fq "Blocked/halt reason: none" \
+  || fail "completed status reported historical blocked reason as active"
+printf '%s\n' "$historical_status" | grep -Fq "Next safe action: none" \
+  || fail "completed status reported historical next action as active"
+printf '%s\n' "$historical_status" | grep -Fq "Historical child halt refs: $historical_halt" \
+  || fail "completed status did not preserve historical halt reference"
+
+historical_json="$TMPROOT/historical-status.json"
+HOME="$TMPROOT/home" ACHILLES_PROJECT=generic-dev-studio "$MANAGER" status --state "$historical_state" --json > "$historical_json"
+jq -e --arg historical_halt "$historical_halt" '
+  .state == "completed"
+  and .child_halt_ref == null
+  and .blocked_reason == null
+  and .active_halt_ref == null
+  and .next_safe_action == null
+  and (.historical_child_halt_refs | index($historical_halt))
+  and .historical_blocked_reason.reason_id == "child_run_state_missing"
+' "$historical_json" >/dev/null || {
+  cat "$historical_json" >&2
+  fail "completed status JSON did not demote historical halt fields"
+}
+
 if HOME="$TMPROOT/home" ACHILLES_PROJECT=generic-dev-studio \
     "$MANAGER" status --parent-issue 953 >"$TMPROOT/parent.out" 2>"$TMPROOT/parent.err"; then
   fail "parent issue parsing unexpectedly succeeded"

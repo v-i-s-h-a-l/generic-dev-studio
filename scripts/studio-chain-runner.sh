@@ -4362,7 +4362,7 @@ generate_run_report() {
     halt_count=0
     [ -n "$halt_dir" ] && halt_count=$(find "$halt_dir" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
     if [ -n "${RUN_STATE_JSON:-}" ] && [ -f "$RUN_STATE_JSON" ] && [ "$(jq '(.halt_records // []) | length' "$RUN_STATE_JSON" 2>/dev/null || printf 0)" -gt 0 ]; then
-      jq -r --argjson now_epoch "$ended_epoch" '
+      jq -r --argjson now_epoch "$ended_epoch" --arg report_status "$status" '
         def cell($v):
           if $v == null or $v == "" then "missing"
           else ($v | tostring | gsub("\\|"; "\\|"))
@@ -4391,13 +4391,21 @@ generate_run_report() {
             end
           | gsub("\\|"; "\\|")
           | .[0:240];
-        (.halt_records // []) as $records
-        | ($records | map(select((.status // "") == "paused" or (.status // "") == "terminated"))) as $active
+        (if $report_status == "completed" then "completed" else (.status // "unknown") end) as $run_status
+        | (.halt_records // []) as $records
+        | ($records | map(select(($run_status != "completed") and ((.status // "") == "paused" or (.status // "") == "terminated")))) as $active
+        | ($records | map(select(($run_status == "completed") and ((.status // "") == "paused" or (.status // "") == "terminated")))) as $historical
         | ($records | map(select((.status // "") == "superseded"))) as $superseded
         | if ($active | length) > 0 then
             ["| Reason | Class | Status | Retry | Issue | Issue-run UUID | Summary | Details | Next Safe Action | Next Command | Artifact |",
              "|---|---|---|---|---|---|---|---|---|---|---|"],
             ($active[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(retry_cell) | \(issue_label) | \(cell(.issue_context.issue_run_id)) | \(cell(.summary)) | \(detail_cell) | \(cell(.next_safe_action)) | \(.next_command // "hard stop") | \(.path // "missing") |")
+          elif ($historical | length) > 0 then
+            "No active halt records. Historical halt records: \($historical | length) (run completed after recovery).",
+            "",
+            "| Reason | Class | Status | Issue | Artifact |",
+            "|---|---|---|---|---|",
+            ($historical[] | "| \(.reason_id) | \(.halt_class) | \(.status) | \(issue_label) | \(.path // "missing") |")
           elif ($superseded | length) > 0 then
             "No active halt records. Superseded halt records: \($superseded | length) (run completed after resume).",
             "",
