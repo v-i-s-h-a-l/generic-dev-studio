@@ -216,15 +216,35 @@ chain_git_parent_finalize_has_public_diff() {
     | grep -q .
 }
 
+chain_git_valid_change_type() {
+  case "${1:-}" in
+    feature|bugfix-shipped|bugfix-wip|regression-fix|refactor|docs|test|chore|release) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 chain_git_parent_finalize_issue_commit() {
-  local issue_worktree="${1:?usage: chain_git_parent_finalize_issue_commit <issue-worktree> <issue-number> <summary-file>}"
+  local issue_worktree="${1:?usage: chain_git_parent_finalize_issue_commit <issue-worktree> <issue-number> <summary-file> [host] }"
   local issue="${2:?issue number required}"
   local summary_file="${3:?summary file required}"
-  local issue_title subject
+  local host="${4:-}"
+  local issue_title subject change_type
 
   chain_git_parent_finalize_summary_eligible "$summary_file" || return 1
   chain_git_parent_finalize_has_public_diff "$issue_worktree" || return 1
   issue_title=$(jq -r '.issue_title // empty' "$summary_file" 2>/dev/null || true)
+  change_type=$(jq -r '.change_type // .commit_change_type // .commit_metadata.change_type // .commit_trailers.change_type // empty' "$summary_file" 2>/dev/null || true)
+  if ! chain_git_valid_change_type "$change_type"; then
+    printf 'chain-git: parent finalize refusing commit without valid summary change_type trailer value\n' >&2
+    return 1
+  fi
+  if [ -z "$host" ] || [ "$host" = "unknown" ]; then
+    host=$(jq -r '.host // .worker_host // empty' "$summary_file" 2>/dev/null || true)
+  fi
+  if [ -z "$host" ] || [ "$host" = "unknown" ]; then
+    printf 'chain-git: parent finalize refusing commit without known worker host\n' >&2
+    return 1
+  fi
 
   git -C "$issue_worktree" reset -q -- .studio '.git[0-9]*' '.git-*' 2>/dev/null || true
   rm -rf "$issue_worktree/.studio"
@@ -248,7 +268,23 @@ chain_git_parent_finalize_issue_commit() {
   else
     subject="Implement #$issue"
   fi
-  git -C "$issue_worktree" commit -m "$subject" -m "Closes #$issue"
+  case "$host" in
+    codex|codex-*|*codex*)
+      git -C "$issue_worktree" commit \
+        -m "$subject" \
+        -m "Closes #$issue" \
+        -m "Change-Type: $change_type" \
+        -m "Studio-Host: $host" \
+        -m "Co-authored-by: Codex <noreply@openai.com>"
+      ;;
+    *)
+      git -C "$issue_worktree" commit \
+        -m "$subject" \
+        -m "Closes #$issue" \
+        -m "Change-Type: $change_type" \
+        -m "Studio-Host: $host"
+      ;;
+  esac
 }
 
 chain_git_parent_finalize_event_payload() {

@@ -7327,6 +7327,7 @@ Rules:
 - Include "Change-Type: <type>" and "Studio-Host: $host" trailers.
 - If $host is codex, include exactly one "Co-authored-by: Codex <noreply@openai.com>" trailer.
 - Before exit, write $summary_path as valid JSON.
+- Set summary field "change_type" to the same value used in the Change-Type trailer.
 - Do not add or commit $summary_path; it is a private parent-runner artifact.
 - Do not open a PR.
 - Do not merge to the source branch ($source_branch) or main.
@@ -7345,6 +7346,7 @@ Summary JSON fields:
 - issue_number: $issue
 - issue_title: "$issue_title"
 - host: "$host"
+- change_type: feature|bugfix-shipped|bugfix-wip|regression-fix|refactor|docs|test|chore|release
 - model/model_version/effort when known, otherwise null
 - started_at/ended_at/duration_s
 - exit_code
@@ -7854,7 +7856,7 @@ run_issue_job() {
     && chain_git_parent_finalize_summary_eligible "$summary_file" \
     && chain_git_parent_finalize_has_public_diff "$issue_worktree"; then
     log "issue #$issue worker could not write git metadata; parent finalizing commit"
-    if chain_git_parent_finalize_issue_commit "$issue_worktree" "$issue" "$summary_file"; then
+    if chain_git_parent_finalize_issue_commit "$issue_worktree" "$issue" "$summary_file" "$host"; then
       after=$(git -C "$issue_worktree" rev-parse HEAD)
       refresh_summary_commit_metrics "$summary_file" "$issue_worktree" "$before" "$after" true
       parent_finalized=true
