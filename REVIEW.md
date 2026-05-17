@@ -363,6 +363,7 @@ Commit discipline is part of review quality for host-routed changes:
 **How to check:**
 - Prefer machine-readable host identity from `.studio/chain-task-start.json` / `.studio/chain-worker-summary.json` (`host`, `model`, `model_version`) over parsing `Co-authored-by:` in commit footers.
 - For Codex-hosted commits, keep `Studio-Host: codex` and add the GitHub-visible Codex co-author trailer `Co-authored-by: Codex <noreply@openai.com>`.
+- The primary Git author/committer should be the authenticated GitHub profile used for GitHub operations; host credit is additive metadata, not a replacement for the main author identity.
 - Verify the commit subject is imperative and change-oriented; use `git log`/`git show` on staged commits or PR payload to validate body structure.
 - Verify `Release-Note` is the preferred tester/release-facing source; legacy `Changelog` remains accepted during producer migration.
 - Verify `Areas` names the modules, product surfaces, commands, scripts, or workflows most likely to explain a future regression.

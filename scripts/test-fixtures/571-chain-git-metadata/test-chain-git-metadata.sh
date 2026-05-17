@@ -60,6 +60,18 @@ cat > "$BIN/gh" <<'SH'
 #!/usr/bin/env bash
 set -eu
 
+if [ "$1" = "api" ] && [ "$2" = "user" ]; then
+  cat <<'JSON'
+{
+  "login": "fixture-login",
+  "name": null,
+  "email": null,
+  "id": 571
+}
+JSON
+  exit 0
+fi
+
 if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
   issue="$3"
   cat <<JSON
@@ -78,6 +90,16 @@ printf 'unexpected gh invocation: %s\n' "$*" >&2
 exit 1
 SH
 chmod +x "$BIN/gh"
+
+PATH="$BIN:$PATH" HOME="$HOME_DIR" chain_git_configure_github_identity "$CHAIN_WORKTREE"
+[ "$(git -C "$CHAIN_WORKTREE" config user.name)" = "fixture-login" ] || {
+  printf 'GitHub identity did not set user.name from profile login\n' >&2
+  exit 1
+}
+[ "$(git -C "$CHAIN_WORKTREE" config user.email)" = "571+fixture-login@users.noreply.github.com" ] || {
+  printf 'GitHub identity did not set noreply user.email from profile id/login\n' >&2
+  exit 1
+}
 
 manifest="$TMPROOT/chain.yaml"
 cat > "$manifest" <<'YAML'

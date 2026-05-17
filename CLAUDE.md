@@ -117,6 +117,11 @@ GitHub-visible credit in addition to `Studio-Host: codex`:
 `Co-authored-by: Codex <noreply@openai.com>`. Do not use invented Codex email
 addresses such as `codex@openai.com`.
 
+The primary Git author/committer for studio automation must remain the
+authenticated GitHub profile used for GitHub operations. Host credit such as
+Codex belongs in `Studio-Host` and `Co-authored-by` metadata; it must not
+replace the primary GitHub author identity.
+
 ### Commit-taxonomy values (initial set)
 
 The initial taxonomy values are:
