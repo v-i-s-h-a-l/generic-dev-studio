@@ -27,6 +27,14 @@ release does not overstate an unshipped fix. Missing trailers must fall back to
 the subject/body without leaking raw trailer names into Slack or App Store
 bullets.
 
+Host-authored commits use the stricter canonical shape: subject
+`<Change-Type>: <developer what/why headline>`, then `Affected-Areas:`,
+`Problem:`, `Solution:`, `Changelog:`, `Implementation notes:`, `Caveats:`,
+`Change-Type:`, and `Studio-Host:`. `Affected-Areas:` is the module/surface
+index for future regression triage. The composer treats `Changelog:` as the
+preferred tester/release-facing bullet, while `Implementation notes:` remains
+detailed context for agents and reviewers.
+
 ## Headline
 
 - **TF:** `[iOS] build <NEW_BUILD_NUMBER> is available on TestFlight`. `<!here>` is opt-in via release config and is off by default.

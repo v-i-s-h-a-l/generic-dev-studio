@@ -341,11 +341,16 @@ Commit discipline is part of review quality for host-routed changes:
 
 - **Block (hard gate):**
   - Commit messages are missing an explicit taxonomy label (`feature`, `bugfix-shipped`, `bugfix-wip`, `regression-fix`, `refactor`, `docs`, `test`, `chore`, `release`) in the subject or body.
+  - Host-authored commit subjects do not start with `<taxonomy>: `.
+  - Host-authored commits omit any required structured field: `Affected-Areas`, `Problem`, `Solution`, `Changelog`, `Implementation notes`, or `Caveats`.
   - Feature-branch history includes merge commits before the PR merge/rebase path.
 
 - **Ask (investigate before merge):**
   - Subject does not explain *why* the change was made.
-  - Non-trivial change lacks `Problem`, `Solution`, or `Implementation notes` sections in the commit body.
+  - `Changelog` is too implementation-heavy to become a TestFlight/release bullet.
+  - `Affected-Areas` is too broad to help regression triage, or lists unrelated areas without a shared problem/solution.
+  - A commit combines unrelated logical changes that should be separate for retrospective debugging.
+  - Non-trivial human-authored change lacks `Problem`, `Solution`, or `Implementation notes` sections in the commit body.
   - Subject/body does not distinguish `bugfix-shipped` vs `bugfix-wip` for a bugfix change.
 
 - **Warn (note but proceed unless risk increases):**
@@ -357,6 +362,8 @@ Commit discipline is part of review quality for host-routed changes:
 - Prefer machine-readable host identity from `.studio/chain-task-start.json` / `.studio/chain-worker-summary.json` (`host`, `model`, `model_version`) over parsing `Co-authored-by:` in commit footers.
 - For Codex-hosted commits, keep `Studio-Host: codex` and add the GitHub-visible Codex co-author trailer `Co-authored-by: Codex <noreply@openai.com>`.
 - Verify the commit subject is imperative and change-oriented; use `git log`/`git show` on staged commits or PR payload to validate body structure.
+- Verify `Changelog` is a brief tester/release-facing overview and `Implementation notes` carries the detailed automation/reviewer context.
+- Verify `Affected-Areas` names the modules, product surfaces, commands, scripts, or workflows most likely to explain a future regression.
 - Verify taxonomy labels stay within the canonical set above.
 - Block-and-ask findings should be explicit in review output; hard blocks must state the minimum fix.
 

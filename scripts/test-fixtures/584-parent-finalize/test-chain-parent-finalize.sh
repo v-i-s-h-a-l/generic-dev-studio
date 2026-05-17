@@ -50,6 +50,12 @@ cat > "$REPO/.studio/chain-worker-summary.json" <<'JSON'
   "issue_title": "Parent finalize fixture",
   "host": "codex",
   "change_type": "bugfix-wip",
+  "affected_areas": "chain parent finalization, commit metadata",
+  "problem": "Worker completed the file changes but could not update primary git metadata.",
+  "solution": "Parent finalization creates the commit from the public diff.",
+  "changelog": "Parent finalization now preserves structured commit metadata.",
+  "implementation_notes": "The parent commit path reads structured fields from the worker summary.",
+  "caveats": "Only applies when parent finalization is eligible.",
   "commit_before": "base",
   "commit_after": null,
   "blocked_reason": "Unable to stage or commit: filesystem denies writes inside .git creating .git/index.lock with Operation not permitted.",
@@ -111,13 +117,17 @@ chain_git_parent_finalize_issue_commit "$REPO" 584 "$REPO/.studio/chain-worker-s
 
 git -C "$REPO" log -1 --format=%B | grep -q 'Closes #584' \
   || fail "parent commit did not close issue"
+git -C "$REPO" log -1 --format=%B | grep -q 'Affected-Areas: chain parent finalization, commit metadata' \
+  || fail "parent commit did not include Affected-Areas field"
 git -C "$REPO" log -1 --format=%B | grep -q 'Change-Type: bugfix-wip' \
   || fail "parent commit did not include Change-Type trailer"
 git -C "$REPO" log -1 --format=%B | grep -q 'Studio-Host: codex' \
   || fail "parent commit did not include Studio-Host trailer"
 git -C "$REPO" log -1 --format=%B | grep -q 'Co-authored-by: Codex <noreply@openai.com>' \
   || fail "parent commit did not include Codex coauthor trailer"
-git -C "$REPO" log -1 --format=%s | grep -qx 'Parent finalize fixture (#584)' \
+git -C "$REPO" log -1 --format=%B | grep -q 'Changelog: Parent finalization now preserves structured commit metadata.' \
+  || fail "parent commit did not include Changelog field"
+git -C "$REPO" log -1 --format=%s | grep -qx 'bugfix-wip: Parent finalize fixture (#584)' \
   || fail "parent commit subject did not use issue title"
 git -C "$REPO" diff-tree --no-commit-id --name-only -r HEAD | grep -qx 'README.md' \
   || fail "README diff missing from parent commit"

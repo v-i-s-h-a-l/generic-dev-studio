@@ -86,9 +86,10 @@ def parse_block(block: str) -> dict[str, object]:
         "body": body,
         "trailers": trailers,
         "change_type": trailers.get("change-type", "").lower(),
+        "affected_areas": trailers.get("affected-areas", ""),
         "problem": trailers.get("problem", ""),
         "solution": trailers.get("solution", ""),
-        "caveat": trailers.get("caveat", ""),
+        "caveat": trailers.get("caveat", "") or trailers.get("caveats", ""),
         "changelog": trailers.get("changelog", ""),
     }
 

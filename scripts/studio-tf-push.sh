@@ -976,10 +976,21 @@ cmd_push() {
       printf 'studio-tf-push: pbxproj already at target build=%s version=%s; skipping bump commit\n' \
         "$NEW_BUILD_NUMBER" "$VERSION" >&2
     elif ! git commit -m "$(cat <<EOF
-Bump build number to ${NEW_BUILD_NUMBER}
+release: bump build number to ${NEW_BUILD_NUMBER}
 
-Preparing TestFlight build ${NEW_BUILD_NUMBER} (v${VERSION}) from branch ${BRANCH}.
+Affected-Areas: release-manager, TestFlight build metadata, Xcode project versioning
 
+Problem: TestFlight build ${NEW_BUILD_NUMBER} (v${VERSION}) needs a committed project-version bump before archive and upload.
+
+Solution: Update the Xcode project build and marketing version for branch ${BRANCH}.
+
+Changelog: Preparing TestFlight build ${NEW_BUILD_NUMBER} (v${VERSION}) from branch ${BRANCH}.
+
+Implementation notes: The release-manager workflow updated zaps-app/Turnip.xcodeproj/project.pbxproj.
+
+Caveats: Release upload and Slack send still depend on the later gated workflow steps.
+
+Change-Type: release
 Studio-Host: release-manager
 EOF
 )"; then

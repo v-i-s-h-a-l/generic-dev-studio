@@ -228,7 +228,7 @@ chain_git_parent_finalize_issue_commit() {
   local issue="${2:?issue number required}"
   local summary_file="${3:?summary file required}"
   local host="${4:-}"
-  local issue_title subject change_type
+  local issue_title subject change_type affected_areas problem solution changelog implementation_notes caveats
 
   chain_git_parent_finalize_summary_eligible "$summary_file" || return 1
   chain_git_parent_finalize_has_public_diff "$issue_worktree" || return 1
@@ -243,6 +243,16 @@ chain_git_parent_finalize_issue_commit() {
   fi
   if [ -z "$host" ] || [ "$host" = "unknown" ]; then
     printf 'chain-git: parent finalize refusing commit without known worker host\n' >&2
+    return 1
+  fi
+  affected_areas=$(jq -r '.affected_areas // .commit_affected_areas // .commit_metadata.affected_areas // empty' "$summary_file" 2>/dev/null || true)
+  problem=$(jq -r '.problem // .commit_problem // .commit_metadata.problem // empty' "$summary_file" 2>/dev/null || true)
+  solution=$(jq -r '.solution // .commit_solution // .commit_metadata.solution // empty' "$summary_file" 2>/dev/null || true)
+  changelog=$(jq -r '.changelog // .commit_changelog // .commit_metadata.changelog // empty' "$summary_file" 2>/dev/null || true)
+  implementation_notes=$(jq -r '.implementation_notes // .commit_implementation_notes // .commit_metadata.implementation_notes // empty' "$summary_file" 2>/dev/null || true)
+  caveats=$(jq -r '.caveats // .commit_caveats // .commit_metadata.caveats // empty' "$summary_file" 2>/dev/null || true)
+  if [ -z "$affected_areas" ] || [ -z "$problem" ] || [ -z "$solution" ] || [ -z "$changelog" ] || [ -z "$implementation_notes" ] || [ -z "$caveats" ]; then
+    printf 'chain-git: parent finalize refusing commit without complete structured commit summary fields\n' >&2
     return 1
   fi
 
@@ -264,22 +274,34 @@ chain_git_parent_finalize_issue_commit() {
   fi
 
   if [ -n "$issue_title" ]; then
-    subject="$issue_title (#$issue)"
+    subject="$change_type: $issue_title (#$issue)"
   else
-    subject="Implement #$issue"
+    subject="$change_type: implement #$issue"
   fi
   case "$host" in
     codex|codex-*|*codex*)
-      git -C "$issue_worktree" commit \
+      STUDIO_HOST="$host" git -C "$issue_worktree" commit \
         -m "$subject" \
+        -m "Affected-Areas: $affected_areas" \
+        -m "Problem: $problem" \
+        -m "Solution: $solution" \
+        -m "Changelog: $changelog" \
+        -m "Implementation notes: $implementation_notes" \
+        -m "Caveats: $caveats" \
         -m "Closes #$issue" \
         -m "Change-Type: $change_type" \
         -m "Studio-Host: $host" \
         -m "Co-authored-by: Codex <noreply@openai.com>"
       ;;
     *)
-      git -C "$issue_worktree" commit \
+      STUDIO_HOST="$host" git -C "$issue_worktree" commit \
         -m "$subject" \
+        -m "Affected-Areas: $affected_areas" \
+        -m "Problem: $problem" \
+        -m "Solution: $solution" \
+        -m "Changelog: $changelog" \
+        -m "Implementation notes: $implementation_notes" \
+        -m "Caveats: $caveats" \
         -m "Closes #$issue" \
         -m "Change-Type: $change_type" \
         -m "Studio-Host: $host"
