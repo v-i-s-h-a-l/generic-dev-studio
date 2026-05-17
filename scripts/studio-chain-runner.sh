@@ -7323,6 +7323,10 @@ Rules:
 - Implement only issue #$issue.
 - Keep changes scoped to this issue.
 - Commit the result on the current branch.
+- Use commit subject "<change-type>: <developer-readable why/what headline>".
+- Include commit body fields "Affected-Areas:", "Problem:", "Solution:", "Changelog:", "Implementation notes:", and "Caveats:".
+- Use "Affected-Areas:" for comma-separated modules, surfaces, commands, or workflows likely to be relevant in regression triage.
+- Use "Changelog:" for a brief tester/release-facing bullet; keep implementation detail out of it.
 - Include "Closes #$issue" in the commit message.
 - Include "Change-Type: <type>" and "Studio-Host: $host" trailers.
 - If $host is codex, include exactly one "Co-authored-by: Codex <noreply@openai.com>" trailer.
@@ -7347,6 +7351,7 @@ Summary JSON fields:
 - issue_title: "$issue_title"
 - host: "$host"
 - change_type: feature|bugfix-shipped|bugfix-wip|regression-fix|refactor|docs|test|chore|release
+- affected_areas, problem, solution, changelog, implementation_notes, caveats matching the commit body fields
 - model/model_version/effort when known, otherwise null
 - started_at/ended_at/duration_s
 - exit_code
@@ -7414,6 +7419,7 @@ EOF
         STUDIO_CONTEXT_HOST_PROFILE="$worker_host_profile" \
         STUDIO_CONTEXT_AUTH_HOME="$codex_auth_home" \
         STUDIO_CONTEXT_GITHUB_HOME="$github_home" \
+        STUDIO_HOST="$host" \
         STUDIO_RUN_ID="$RUN_ID" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
@@ -7430,6 +7436,7 @@ EOF
         STUDIO_CONTEXT_HOST_PROFILE="$worker_host_profile" \
         STUDIO_CONTEXT_AUTH_HOME="$launch_home" \
         STUDIO_CONTEXT_GITHUB_HOME="$github_home" \
+        STUDIO_HOST="$host" \
         STUDIO_RUN_ID="$RUN_ID" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
@@ -7448,6 +7455,7 @@ EOF
         STUDIO_CONTEXT_HOST_PROFILE="$worker_host_profile" \
         STUDIO_CONTEXT_AUTH_HOME="$codex_auth_home" \
         STUDIO_CONTEXT_GITHUB_HOME="$github_home" \
+        STUDIO_HOST="$host" \
         STUDIO_RUN_ID="$RUN_ID" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
@@ -7464,6 +7472,7 @@ EOF
         STUDIO_CONTEXT_HOST_PROFILE="$worker_host_profile" \
         STUDIO_CONTEXT_AUTH_HOME="$launch_home" \
         STUDIO_CONTEXT_GITHUB_HOME="$github_home" \
+        STUDIO_HOST="$host" \
         STUDIO_CHAIN_RUN_ID="$chain_run_id" \
         STUDIO_ISSUE_RUN_ID="$issue_run_id" \
         STUDIO_CHAIN_ARTIFACT_ROOT="$chain_artifact_root" \

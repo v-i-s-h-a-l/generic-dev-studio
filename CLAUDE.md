@@ -135,9 +135,9 @@ The initial taxonomy values are:
 
 ### Commit message discipline
 
-- **Subject:** should state why the change was made and include one taxonomy label via a subject prefix or explicit body marker.
-- **Body:** include `Problem`, `Solution`, `Implementation notes`, and `Caveats` when useful.
-- **Churn rules:** XS WIP feature tasks may be one commit; larger independent changes should be split by logical behavior/tests/docs/workflow boundaries.
+- **Subject:** must start with `<taxonomy>: ` and then state the developer-readable what/why headline.
+- **Body:** host-authored commits must include `Affected-Areas`, `Problem`, `Solution`, `Changelog`, `Implementation notes`, and `Caveats`. `Affected-Areas` is the module/surface index for regression triage. `Changelog` is the brief TestFlight/release bullet source; keep implementation detail in `Implementation notes`.
+- **Churn rules:** Commits should be logically grouped for future regression triage. Prefer smaller commits, but the hard requirement is no unrelated behavior, docs, test, or workflow changes in the same commit unless the body explains the shared problem/solution.
 - **Branch shape:** feature branches should not contain merge commits. Existing chain integration already enforces this via rebase + fast-forward-only merge paths in `scripts/lib-chain-git.sh`; do not treat this as greenfield.
 - **Dependencies:** dependent branches should rebase or retarget rather than feature-to-feature merge.
 
