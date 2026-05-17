@@ -7373,9 +7373,13 @@ Rules:
 - Keep changes scoped to this issue.
 - Commit the result on the current branch.
 - Use commit subject "<change-type>: <developer-readable why/what headline>".
-- Include commit body fields "Affected-Areas:", "Problem:", "Solution:", "Changelog:", "Implementation notes:", and "Caveats:".
-- Use "Affected-Areas:" for comma-separated modules, surfaces, commands, or workflows likely to be relevant in regression triage.
-- Use "Changelog:" for a brief tester/release-facing bullet; keep implementation detail out of it.
+- Include compact commit body fields "Impact:", "Areas:", "Release-Note:", "Why:", and "Risk:".
+- Use "Impact:" for the one-line net behavior or workflow change.
+- Use "Areas:" for comma-separated modules, surfaces, commands, or workflows likely to be relevant in regression triage.
+- Use "Release-Note:" for a brief tester/release-facing bullet, or "none"; keep implementation detail out of it.
+- Use "Why:" for the one-line cause, trigger, or intent.
+- Use "Risk:" as "none|low|medium|high" plus a short reason.
+- Include optional "Details:" only when larger, risky, or cross-surface changes need deeper implementation context.
 - Include "Closes #$issue" in the commit message.
 - Include "Change-Type: <type>" and "Studio-Host: $host" trailers.
 - If $host is codex, include exactly one "Co-authored-by: Codex <noreply@openai.com>" trailer.
@@ -7400,7 +7404,8 @@ Summary JSON fields:
 - issue_title: "$issue_title"
 - host: "$host"
 - change_type: feature|bugfix-shipped|bugfix-wip|regression-fix|refactor|docs|test|chore|release
-- affected_areas, problem, solution, changelog, implementation_notes, caveats matching the commit body fields
+- impact, areas, release_note, why, risk matching the compact commit body fields
+- details when the commit includes a Details field, otherwise null or omitted
 - model/model_version/effort when known, otherwise null
 - started_at/ended_at/duration_s
 - exit_code

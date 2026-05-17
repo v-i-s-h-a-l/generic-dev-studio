@@ -50,12 +50,12 @@ cat > "$REPO/.studio/chain-worker-summary.json" <<'JSON'
   "issue_title": "Parent finalize fixture",
   "host": "codex",
   "change_type": "bugfix-wip",
-  "affected_areas": "chain parent finalization, commit metadata",
-  "problem": "Worker completed the file changes but could not update primary git metadata.",
-  "solution": "Parent finalization creates the commit from the public diff.",
-  "changelog": "Parent finalization now preserves structured commit metadata.",
-  "implementation_notes": "The parent commit path reads structured fields from the worker summary.",
-  "caveats": "Only applies when parent finalization is eligible.",
+  "impact": "Parent finalization creates the commit from the public diff.",
+  "areas": "chain parent finalization, commit metadata",
+  "release_note": "Parent finalization now preserves structured commit metadata.",
+  "why": "Worker completed the file changes but could not update primary git metadata.",
+  "risk": "low; only applies when parent finalization is eligible.",
+  "details": "The parent commit path reads compact fields from the worker summary.",
   "commit_before": "base",
   "commit_after": null,
   "blocked_reason": "Unable to stage or commit: filesystem denies writes inside .git creating .git/index.lock with Operation not permitted.",
@@ -117,16 +117,22 @@ chain_git_parent_finalize_issue_commit "$REPO" 584 "$REPO/.studio/chain-worker-s
 
 git -C "$REPO" log -1 --format=%B | grep -q 'Closes #584' \
   || fail "parent commit did not close issue"
-git -C "$REPO" log -1 --format=%B | grep -q 'Affected-Areas: chain parent finalization, commit metadata' \
-  || fail "parent commit did not include Affected-Areas field"
+git -C "$REPO" log -1 --format=%B | grep -q 'Impact: Parent finalization creates the commit from the public diff.' \
+  || fail "parent commit did not include Impact field"
+git -C "$REPO" log -1 --format=%B | grep -q 'Areas: chain parent finalization, commit metadata' \
+  || fail "parent commit did not include Areas field"
+git -C "$REPO" log -1 --format=%B | grep -q 'Release-Note: Parent finalization now preserves structured commit metadata.' \
+  || fail "parent commit did not include Release-Note field"
+git -C "$REPO" log -1 --format=%B | grep -q 'Why: Worker completed the file changes but could not update primary git metadata.' \
+  || fail "parent commit did not include Why field"
+git -C "$REPO" log -1 --format=%B | grep -q 'Risk: low; only applies when parent finalization is eligible.' \
+  || fail "parent commit did not include Risk field"
 git -C "$REPO" log -1 --format=%B | grep -q 'Change-Type: bugfix-wip' \
   || fail "parent commit did not include Change-Type trailer"
 git -C "$REPO" log -1 --format=%B | grep -q 'Studio-Host: codex' \
   || fail "parent commit did not include Studio-Host trailer"
 git -C "$REPO" log -1 --format=%B | grep -q 'Co-authored-by: Codex <noreply@openai.com>' \
   || fail "parent commit did not include Codex coauthor trailer"
-git -C "$REPO" log -1 --format=%B | grep -q 'Changelog: Parent finalization now preserves structured commit metadata.' \
-  || fail "parent commit did not include Changelog field"
 git -C "$REPO" log -1 --format=%s | grep -qx 'bugfix-wip: Parent finalize fixture (#584)' \
   || fail "parent commit subject did not use issue title"
 git -C "$REPO" diff-tree --no-commit-id --name-only -r HEAD | grep -qx 'README.md' \
@@ -141,6 +147,41 @@ fi
 if git -C "$REPO" diff-tree --no-commit-id --name-only -r HEAD | grep -Eq '^\.git(2|-protected)/'; then
   fail "private git metadata dir was committed"
 fi
+
+LEGACY_REPO="$TMPROOT/legacy-repo"
+mkdir -p "$LEGACY_REPO/.studio"
+git -C "$LEGACY_REPO" init -q
+git -C "$LEGACY_REPO" config user.email studio@example.invalid
+git -C "$LEGACY_REPO" config user.name "Studio Test"
+printf 'base\n' > "$LEGACY_REPO/README.md"
+git -C "$LEGACY_REPO" add README.md
+git -C "$LEGACY_REPO" commit -q -m "base"
+printf 'base\nlegacy\n' > "$LEGACY_REPO/README.md"
+cat > "$LEGACY_REPO/.studio/chain-worker-summary.json" <<'JSON'
+{
+  "schema_version": 1,
+  "kind": "completion",
+  "status": "blocked",
+  "issue_number": 584,
+  "issue_title": "Legacy summary fixture",
+  "host": "codex",
+  "change_type": "bugfix-wip",
+  "affected_areas": "chain parent finalization, commit metadata",
+  "problem": "Worker completed the file changes but could not update primary git metadata.",
+  "solution": "Parent finalization creates the commit from the public diff.",
+  "changelog": "Parent finalization now preserves structured commit metadata.",
+  "implementation_notes": "The parent commit path reads structured fields from the worker summary.",
+  "caveats": "Only applies when parent finalization is eligible.",
+  "commit_before": "base",
+  "commit_after": null,
+  "blocked_reason": "Unable to stage or commit: filesystem denies writes inside .git creating .git/index.lock with Operation not permitted.",
+  "tests": [{"command": "fixture", "outcome": "passed"}]
+}
+JSON
+chain_git_parent_finalize_issue_commit "$LEGACY_REPO" 584 "$LEGACY_REPO/.studio/chain-worker-summary.json" codex \
+  || fail "parent finalize did not derive compact commit fields from legacy summary"
+git -C "$LEGACY_REPO" log -1 --format=%B | grep -q 'Risk: low; Only applies when parent finalization is eligible.' \
+  || fail "legacy caveats were not converted to a valid compact Risk field"
 
 PAYLOAD=$(chain_git_parent_finalize_event_payload "$REPO/.studio/chain-worker-summary.json" base "$(git -C "$REPO" rev-parse HEAD)" codex)
 printf '%s\n' "$PAYLOAD" | jq -e '

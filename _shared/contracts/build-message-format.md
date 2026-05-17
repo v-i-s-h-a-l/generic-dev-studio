@@ -19,21 +19,28 @@ changed without reading prose.
 
 When drafting from commits, prefer explicit trailers over subject guessing:
 `Change-Type: feature|bugfix-shipped|bugfix-wip|regression-fix|refactor|docs|test|chore|release`,
-plus `Problem:`, `Solution:`, `Caveat:`, or `Changelog:`. `feature` maps to
-`*New*`, shipped bug fixes map to `*Fixed*`, and internal work maps to
-`*Technical notes*` for TestFlight only. `bugfix-wip` is visible in TestFlight
-as a work-in-progress testing note and is omitted from App Store copy so the
-release does not overstate an unshipped fix. Missing trailers must fall back to
-the subject/body without leaking raw trailer names into Slack or App Store
-bullets.
+plus compact `Release-Note:`, `Impact:`, `Areas:`, `Why:`, and `Risk:` fields
+or legacy `Changelog:`, `Problem:`, `Solution:`, and `Caveat:` fields. The
+tester-facing bullet source falls back in this order: `Release-Note:`,
+`Changelog:`, `Impact:`, `Problem:`/`Solution:`, then subject. A literal
+`Release-Note: none` means the compact field does not contribute copy; the
+composer continues through the remaining fallbacks for TestFlight technical
+notes or legacy compatibility. `feature` maps to `*New*`, shipped bug fixes
+map to `*Fixed*`, and internal work maps to `*Technical notes*` for TestFlight
+only. `bugfix-wip` is visible in TestFlight as a work-in-progress testing note
+and is omitted from App Store copy so the release does not overstate an
+unshipped fix. Missing trailers must fall back to the subject/body without
+leaking raw trailer names into Slack or App Store bullets.
 
 Host-authored commits use the stricter canonical shape: subject
-`<Change-Type>: <developer what/why headline>`, then `Affected-Areas:`,
-`Problem:`, `Solution:`, `Changelog:`, `Implementation notes:`, `Caveats:`,
-`Change-Type:`, and `Studio-Host:`. `Affected-Areas:` is the module/surface
-index for future regression triage. The composer treats `Changelog:` as the
-preferred tester/release-facing bullet, while `Implementation notes:` remains
-detailed context for agents and reviewers.
+`<Change-Type>: <developer what/why headline>`, then compact `Impact:`,
+`Areas:`, `Release-Note:`, `Why:`, and `Risk:` fields, with `Details:` when
+deeper implementation context is needed. Legacy host commits with
+`Affected-Areas:`, `Problem:`, `Solution:`, `Changelog:`, `Implementation
+notes:`, and `Caveats:` remain valid inputs. `Areas:` / `Affected-Areas:` are
+the module/surface indexes for future regression triage. The composer treats
+`Release-Note:` as the preferred tester/release-facing bullet and keeps
+implementation detail out of the rendered Slack/App Store copy.
 
 ## Headline
 

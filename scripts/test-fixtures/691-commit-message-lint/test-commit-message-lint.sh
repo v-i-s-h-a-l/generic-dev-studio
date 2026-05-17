@@ -29,7 +29,7 @@ run_case() {
   local out="$TMPROOT/$case_name.out"
   printf '%s\n' "$message" > "$msg_file"
 
-  if (cd "$root" && STUDIO_COMMIT_MSG_LINT_REPO_ROOT="$root" STUDIO_BYPASS_COMMIT_TRAILER_LINT="$bypass" "$LINT_SCRIPT" --file "$msg_file" >"$out" 2>&1); then
+  if (cd "$root" && unset STUDIO_HOST && STUDIO_COMMIT_MSG_LINT_REPO_ROOT="$root" STUDIO_BYPASS_COMMIT_TRAILER_LINT="$bypass" "$LINT_SCRIPT" --file "$msg_file" >"$out" 2>&1); then
     rc=0
   else
     rc=$?
@@ -60,6 +60,24 @@ Changelog: Commit messages now carry a release-ready summary.
 Implementation notes: The commit-msg lint checks the canonical field labels.
 
 Caveats: None.
+
+Change-Type: feature
+Studio-Host: codex
+Co-authored-by: Codex <noreply@openai.com>"
+
+compact_valid_message="feature: enforce compact commit metadata
+
+Impact: Hosted commit lint now accepts the compact impact schema.
+
+Areas: commit hooks, release messages
+
+Release-Note: Commit messages now carry compact release-note metadata.
+
+Why: Compact fields keep commit bodies shorter while preserving triage metadata.
+
+Risk: low - accept-either transition preserves legacy commit producers.
+
+Details: The lint keeps legacy verbose fields valid until producer migration completes.
 
 Change-Type: feature
 Studio-Host: codex
@@ -148,6 +166,49 @@ Caveats: None.
 Change-Type: feature
 Studio-Host: codex"
 
+compact_missing_risk_message="feature: enforce compact commit metadata
+
+Impact: Hosted commit lint now accepts the compact impact schema.
+
+Areas: commit hooks, release messages
+
+Release-Note: Commit messages now carry compact release-note metadata.
+
+Why: Compact fields keep commit bodies shorter while preserving triage metadata.
+
+Change-Type: feature
+Studio-Host: codex"
+
+compact_invalid_risk_message="feature: enforce compact commit metadata
+
+Impact: Hosted commit lint now accepts the compact impact schema.
+
+Areas: commit hooks, release messages
+
+Release-Note: Commit messages now carry compact release-note metadata.
+
+Why: Compact fields keep commit bodies shorter while preserving triage metadata.
+
+Risk: urgent - no taxonomy value.
+
+Change-Type: feature
+Studio-Host: codex"
+
+compact_risk_without_reason_message="feature: enforce compact commit metadata
+
+Impact: Hosted commit lint now accepts the compact impact schema.
+
+Areas: commit hooks, release messages
+
+Release-Note: Commit messages now carry compact release-note metadata.
+
+Why: Compact fields keep commit bodies shorter while preserving triage metadata.
+
+Risk: low
+
+Change-Type: feature
+Studio-Host: codex"
+
 bad_subject_message="Structured metadata without taxonomy prefix
 
 Affected-Areas: commit hooks, release messages
@@ -179,13 +240,18 @@ human_repo="$TMPROOT/human"
 mkdir -p "$human_repo"
 
 run_case "valid_automation" 0 "$automation_repo" "$valid_message" ""
+run_case "compact_valid_automation" 0 "$automation_repo" "$compact_valid_message" ""
 run_case "codex_missing_coauthor_warns" 0 "$automation_repo" "$codex_missing_coauthor_message" "Codex-hosted commits should include GitHub-visible credit"
 run_case "codex_bad_coauthor_warns" 0 "$automation_repo" "$codex_bad_coauthor_message" "Codex co-author trailer should be exactly"
 run_case "invalid_change_type_fails" 1 "$automation_repo" "$invalid_type_message" "invalid Change-Type trailer: unknown"
 run_case "missing_host_fails_in_automation" 1 "$automation_repo" "$missing_host_message" "missing trailer Studio-Host"
-run_case "missing_changelog_fails_in_automation" 1 "$automation_repo" "$missing_changelog_message" "missing required Changelog"
+run_case "missing_changelog_fails_in_automation" 1 "$automation_repo" "$missing_changelog_message" "missing required commit metadata"
+run_case "compact_missing_risk_fails_in_automation" 1 "$automation_repo" "$compact_missing_risk_message" "Missing compact: Risk"
+run_case "compact_invalid_risk_fails_in_automation" 1 "$automation_repo" "$compact_invalid_risk_message" "invalid Risk field"
+run_case "compact_risk_without_reason_fails_in_automation" 1 "$automation_repo" "$compact_risk_without_reason_message" "plus a short reason"
 run_case "bad_subject_fails_in_automation" 1 "$automation_repo" "$bad_subject_message" "commit subject must start with 'feature: '"
 run_case "missing_host_warns_for_human" 0 "$human_repo" "$missing_host_message" "passed with"
+run_case "compact_missing_risk_warns_for_human" 0 "$human_repo" "$compact_missing_risk_message" "passed with"
 run_case "bypass_allows_hard_failure_case" 0 "$automation_repo" "$missing_host_message" "commit trailer lint bypassed via STUDIO_BYPASS_COMMIT_TRAILER_LINT=1" 1
 
 printf 'PASS: commit-message lint fixture suite\n'
