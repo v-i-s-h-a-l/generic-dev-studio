@@ -978,17 +978,17 @@ cmd_push() {
     elif ! git commit -m "$(cat <<EOF
 release: bump build number to ${NEW_BUILD_NUMBER}
 
-Affected-Areas: release-manager, TestFlight build metadata, Xcode project versioning
+Impact: TestFlight build ${NEW_BUILD_NUMBER} (v${VERSION}) has a committed project-version bump before archive and upload.
 
-Problem: TestFlight build ${NEW_BUILD_NUMBER} (v${VERSION}) needs a committed project-version bump before archive and upload.
+Areas: release-manager, TestFlight build metadata, Xcode project versioning
 
-Solution: Update the Xcode project build and marketing version for branch ${BRANCH}.
+Release-Note: Preparing TestFlight build ${NEW_BUILD_NUMBER} (v${VERSION}) from branch ${BRANCH}.
 
-Changelog: Preparing TestFlight build ${NEW_BUILD_NUMBER} (v${VERSION}) from branch ${BRANCH}.
+Why: TestFlight upload requires the Xcode project build and marketing version to match the release branch metadata.
 
-Implementation notes: The release-manager workflow updated zaps-app/Turnip.xcodeproj/project.pbxproj.
+Risk: low; only zaps-app/Turnip.xcodeproj/project.pbxproj version fields are updated before existing gated release steps.
 
-Caveats: Release upload and Slack send still depend on the later gated workflow steps.
+Details: The release-manager workflow updated zaps-app/Turnip.xcodeproj/project.pbxproj; release upload and Slack send still depend on later gated workflow steps.
 
 Change-Type: release
 Studio-Host: release-manager
