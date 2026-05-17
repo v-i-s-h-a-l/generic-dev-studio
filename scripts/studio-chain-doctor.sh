@@ -90,17 +90,59 @@ events_jsonl="$TMPDIR_DOCTOR/events.jsonl"
 halts_jsonl="$TMPDIR_DOCTOR/halts.jsonl"
 drifts_jsonl="$TMPDIR_DOCTOR/drifts.jsonl"
 warnings_jsonl="$TMPDIR_DOCTOR/read-warnings.jsonl"
+native_children_jsonl="$TMPDIR_DOCTOR/native-parent-children.jsonl"
 doctor_json="$TMPDIR_DOCTOR/doctor.json"
 : > "$events_jsonl"
 : > "$halts_jsonl"
 : > "$drifts_jsonl"
 : > "$warnings_jsonl"
+: > "$native_children_jsonl"
 
 record_read_warning() {
   local artifact="$1" reason_id="$2" summary="$3"
   jq -cn --arg artifact "$artifact" --arg reason_id "$reason_id" --arg summary "$summary" \
     '{artifact:$artifact, reason_id:$reason_id, summary:$summary}' >> "$warnings_jsonl"
   printf 'studio-chain-doctor: warning: %s: %s\n' "$reason_id" "$artifact" >&2
+}
+
+record_native_parent_children() {
+  local parent_issue="$1" repo="$2" parent_state="$3" status="$4" reason_id="$5" summary="$6" children_file="${7:-}"
+  if [ -n "$children_file" ] && [ -f "$children_file" ]; then
+    jq -cn \
+      --argjson parent_issue "$parent_issue" \
+      --arg repo "$repo" \
+      --arg parent_state "$parent_state" \
+      --arg status "$status" \
+      --arg reason_id "$reason_id" \
+      --arg summary "$summary" \
+      --slurpfile children "$children_file" \
+      '{
+        parent_issue:$parent_issue,
+        repo:(if $repo == "" then null else $repo end),
+        parent_state:(if $parent_state == "" then null else $parent_state end),
+        status:$status,
+        reason_id:(if $reason_id == "" then null else $reason_id end),
+        summary:(if $summary == "" then null else $summary end),
+        children:($children[0] // [])
+      }' >> "$native_children_jsonl"
+  else
+    jq -cn \
+      --argjson parent_issue "$parent_issue" \
+      --arg repo "$repo" \
+      --arg parent_state "$parent_state" \
+      --arg status "$status" \
+      --arg reason_id "$reason_id" \
+      --arg summary "$summary" \
+      '{
+        parent_issue:$parent_issue,
+        repo:(if $repo == "" then null else $repo end),
+        parent_state:(if $parent_state == "" then null else $parent_state end),
+        status:$status,
+        reason_id:(if $reason_id == "" then null else $reason_id end),
+        summary:(if $summary == "" then null else $summary end),
+        children:[]
+      }' >> "$native_children_jsonl"
+  fi
 }
 
 if [ -f "$EVENTS_JSONL" ]; then
@@ -156,6 +198,55 @@ case "$now_epoch" in
   ''|*[!0-9]*) now_epoch=$(date -u +%s) ;;
 esac
 
+issue_repo=$(jq -r '.issue_repo // empty' "$STATE_JSON" 2>/dev/null || true)
+while IFS= read -r parent_issue; do
+  [ -n "$parent_issue" ] || continue
+  if [ -n "${STUDIO_CHAIN_DOCTOR_NATIVE_CHILDREN_FIXTURE:-}" ]; then
+    fixture_parent="$TMPDIR_DOCTOR/native-fixture-$parent_issue.json"
+    if jq --argjson parent_issue "$parent_issue" '[.[]? | select((.parent_issue // null) == $parent_issue)][0] // empty' \
+      "$STUDIO_CHAIN_DOCTOR_NATIVE_CHILDREN_FIXTURE" > "$fixture_parent" 2>/dev/null &&
+      [ -s "$fixture_parent" ]; then
+      fixture_children="$TMPDIR_DOCTOR/native-fixture-$parent_issue-children.json"
+      fixture_parent_state=$(jq -r '.parent_state // empty' "$fixture_parent")
+      jq '[.children[]? | {number:(.number // null), state:(.state // null), title:(.title // null), url:(.url // null)}]' "$fixture_parent" > "$fixture_children"
+      record_native_parent_children "$parent_issue" "$issue_repo" "$fixture_parent_state" "readable" "" "" "$fixture_children"
+    else
+      record_native_parent_children "$parent_issue" "$issue_repo" "" "unreadable" "parent_native_children_fixture_missing" "native sub-issues fixture did not include this parent"
+      record_read_warning "$STUDIO_CHAIN_DOCTOR_NATIVE_CHILDREN_FIXTURE" "parent_native_children_fixture_missing" "native sub-issues fixture did not include parent issue #$parent_issue"
+    fi
+    continue
+  fi
+  if [ -z "$issue_repo" ]; then
+    record_native_parent_children "$parent_issue" "" "" "unreadable" "parent_native_children_repo_missing" "run state did not include issue_repo, so native sub-issues could not be read"
+    record_read_warning "parent_issue#$parent_issue" "parent_native_children_repo_missing" "run state did not include issue_repo, so native sub-issues could not be read"
+    continue
+  fi
+
+  parent_state=""
+  if ! parent_state=$("$SCRIPT_DIR/studio-gh.sh" issue view "$parent_issue" --repo "$issue_repo" --json state --jq '.state' 2>/dev/null); then
+    record_native_parent_children "$parent_issue" "$issue_repo" "" "unreadable" "parent_issue_unreadable" "parent issue state could not be read"
+    record_read_warning "parent_issue#$parent_issue" "parent_issue_unreadable" "parent issue state could not be read"
+    continue
+  fi
+
+  native_tmp="$TMPDIR_DOCTOR/native-$parent_issue.json"
+  if ! "$SCRIPT_DIR/studio-gh.sh" api "/repos/$issue_repo/issues/$parent_issue/sub_issues" > "$native_tmp" 2>/dev/null; then
+    record_native_parent_children "$parent_issue" "$issue_repo" "$parent_state" "unreadable" "parent_native_children_unreadable" "native sub-issues API membership could not be read"
+    record_read_warning "parent_issue#$parent_issue/sub_issues" "parent_native_children_unreadable" "native sub-issues API membership could not be read"
+    continue
+  fi
+  if ! jq -e 'type == "array"' "$native_tmp" >/dev/null 2>&1; then
+    record_native_parent_children "$parent_issue" "$issue_repo" "$parent_state" "unreadable" "parent_native_children_malformed" "native sub-issues API response was not an array"
+    record_read_warning "parent_issue#$parent_issue/sub_issues" "parent_native_children_malformed" "native sub-issues API response was not an array"
+    continue
+  fi
+  children_tmp="$TMPDIR_DOCTOR/native-$parent_issue-children.json"
+  jq '[.[] | {number:(.number // null), state:(.state // null), title:(.title // null), url:(.html_url // .url // null)}]' "$native_tmp" > "$children_tmp"
+  record_native_parent_children "$parent_issue" "$issue_repo" "$parent_state" "readable" "" "" "$children_tmp"
+done <<EOF
+$(jq -r '.chains[]? | .parent_issue.number? // empty' "$STATE_JSON" 2>/dev/null | sort -n -u)
+EOF
+
 jq -n \
   --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg run_id "$RUN_ID" \
@@ -172,7 +263,8 @@ jq -n \
   --slurpfile events "$events_jsonl" \
   --slurpfile halts "$halts_jsonl" \
   --slurpfile drifts "$drifts_jsonl" \
-  --slurpfile warnings "$warnings_jsonl" '
+  --slurpfile warnings "$warnings_jsonl" \
+  --slurpfile native_parent_children "$native_children_jsonl" '
   def safe_path:
     if $public_safe then
       if . == null or . == "" then .
@@ -258,13 +350,57 @@ jq -n \
       reason_id: (.reason_id // "unknown"),
       summary: (.summary // null)
     };
+  def issue_number: ((.number // .issue // .issue_number // null) | tonumber?);
+  def generated_child_public:
+    issue_number as $n
+    | {
+      issue_number:$n,
+      issue_run_id:(.issue_run_id // null),
+      status:(.status // "unknown"),
+      lifecycle_state:(.lifecycle_state // null),
+      closed: (((.closed // false) == true) or ((.lifecycle_state // "") == "closed")),
+      integrated: ((.integrated // false) == true),
+      closeout_ready: (
+        ($n != null)
+        and (((.closed // false) == true) or ((.lifecycle_state // "") == "closed"))
+        and ((.status // "") == "completed")
+        and ((.integrated // false) == true)
+      ),
+      blocker_reason: (
+        if $n == null then "missing_issue_number"
+        elif (((.closed // false) == true) or ((.lifecycle_state // "") == "closed")) | not then "child_not_closed"
+        elif ((.status // "") != "completed") then "child_not_completed"
+        elif ((.integrated // false) != true) then "child_unmerged"
+        else null
+        end
+      )
+    };
+  def native_child_public:
+    {
+      issue_number:((.number // null) | tonumber?),
+      state:(.state // null),
+      title:(.title // null),
+      url:(.url // null),
+      closed:((.state // "") == "CLOSED"),
+      blocker_reason:(if ((.number // null) | tonumber?) == null then "missing_issue_number" elif ((.state // "") == "CLOSED") then null else "child_not_closed" end)
+    };
+  def native_parent_public:
+    {
+      parent_issue:.parent_issue,
+      repo:(.repo // null),
+      parent_state:(.parent_state // null),
+      status:(.status // "unreadable"),
+      reason_id:(.reason_id // null),
+      summary:(.summary // null),
+      children:([(.children // [])[]? | native_child_public])
+    };
   def report_freshness($generated_at; $latest_source_at):
     if ($report_exists | not) then "missing"
     elif (($generated_at // "") == "") then "unknown"
     elif ($latest_source_at != "" and (($generated_at // "") < $latest_source_at)) then "stale"
     else "fresh"
     end;
-  def recommend($report; $active; $retry; $blocked_phase; $ambiguous_phase; $checkpoint_drift_count; $read_warning_count):
+  def recommend($report; $active; $retry; $blocked_phase; $ambiguous_phase; $checkpoint_drift_count; $read_warning_count; $parent_closeout_drift_count):
     if $active != null then
       ($active.reason_id // "unknown") as $reason |
       ($active.halt_class // "unknown") as $class |
@@ -359,6 +495,16 @@ jq -n \
         deferred_resume_command: null,
         reason_id: "checkpoint_drift_detected"
       }
+    elif $parent_closeout_drift_count > 0 then
+      {
+        action: "close_parent_issue",
+        priority: "operator",
+        likely_root_cause: "A chain parent remains open or Todo after all generated and native children are closed.",
+        safest_next_action: "Inspect parent closeout drift records, then run the chain parent closeout path or close/update the parent issue idempotently.",
+        safest_next_command: "inspect parent closeout drift records in the doctor output",
+        deferred_resume_command: null,
+        reason_id: "parent_closeout_drift_detected"
+      }
     elif $report.freshness == "stale" then
       {
         action: "regenerate_report",
@@ -438,7 +584,77 @@ jq -n \
   ($checkpoint_drifts | length) as $checkpoint_drift_count |
   [ $warnings[] | warning_public ] as $read_warnings |
   ($read_warnings | length) as $read_warning_count |
-  (recommend($report; $active_raw; $active_retry_state; $blocked_phase; $ambiguous_phase; $checkpoint_drift_count; $read_warning_count)) as $recommendation |
+  [ $native_parent_children[] | native_parent_public ] as $native_parent_rows |
+  [ $s.chains[]?
+    | select((.parent_issue.number // null) != null)
+    | . as $chain
+    | ($chain.parent_issue.number | tonumber?) as $parent_number
+    | ([ $chain.issues[]? | generated_child_public ]) as $generated_children
+    | (($native_parent_rows[]? | select(.parent_issue == $parent_number)) // {
+        parent_issue:$parent_number,
+        repo:($s.issue_repo // null),
+        parent_state:($chain.parent_issue.state // null),
+        status:"unreadable",
+        reason_id:"parent_native_children_missing",
+        summary:"native sub-issues were not read for this parent",
+        children:[]
+      }) as $native
+    | ([
+        $generated_children[]? | select((.closeout_ready // false) | not) | {
+          set:"generated",
+          issue_number:.issue_number,
+          reason_id:.blocker_reason,
+          status:.status,
+          lifecycle_state:.lifecycle_state,
+          integrated:.integrated
+        }
+      ] + [
+        if (($native.status // "") != "readable") then {
+          set:"native",
+          issue_number:null,
+          reason_id:($native.reason_id // "parent_native_children_unreadable"),
+          status:($native.status // "unreadable"),
+          lifecycle_state:null,
+          integrated:null
+        } else empty end
+      ] + [
+        $native.children[]? | select((.closed // false) | not) | {
+          set:"native",
+          issue_number:.issue_number,
+          reason_id:.blocker_reason,
+          status:.state,
+          lifecycle_state:null,
+          integrated:null
+        }
+      ]) as $blockers
+    | ($chain.parent_closeout.status // "") as $closeout_status
+    | ($native.parent_state // $chain.parent_issue.state // null) as $parent_state
+    | ($chain.parent_issue.project_status // $chain.parent_closeout.project.fields.Status // null) as $project_status
+    | {
+        chain_name:($chain.name // null),
+        chain_run_id:($chain.chain_run_id // null),
+        parent_issue:$parent_number,
+        parent_state:$parent_state,
+        project_status:$project_status,
+        parent_closeout_status:(if $closeout_status == "" then null else $closeout_status end),
+        generated_children:$generated_children,
+        native_children:$native.children,
+        native_children_status:($native.status // "unreadable"),
+        native_children_reason_id:($native.reason_id // null),
+        blockers:$blockers,
+        all_children_closeout_ready:(($blockers | length) == 0 and ($generated_children | length) > 0 and (($native.status // "") == "readable")),
+        drift_detected:(
+          ($closeout_status != "completed")
+          and (($blockers | length) == 0)
+          and (($generated_children | length) > 0)
+          and (($native.status // "") == "readable")
+          and (($parent_state == "OPEN") or ($project_status == "Todo"))
+        )
+      }
+  ] as $parent_closeout_records |
+  [ $parent_closeout_records[] | select(.drift_detected == true) ] as $parent_closeout_drifts |
+  ($parent_closeout_drifts | length) as $parent_closeout_drift_count |
+  (recommend($report; $active_raw; $active_retry_state; $blocked_phase; $ambiguous_phase; $checkpoint_drift_count; $read_warning_count; $parent_closeout_drift_count)) as $recommendation |
   {
     schema_version: 1,
     kind: "studio-chain-doctor",
@@ -470,6 +686,7 @@ jq -n \
       superseded_halt_count: ($superseded_halts | length),
       phase_review_counts: ($phase_reviews | group_by(.verdict) | map({key:.[0].verdict, value:length}) | from_entries),
       checkpoint_drift_count: $checkpoint_drift_count,
+      parent_closeout_drift_count: $parent_closeout_drift_count,
       read_warning_count: $read_warning_count
     },
     report: $report,
@@ -502,6 +719,8 @@ jq -n \
     },
     phase_reviews: $phase_reviews,
     checkpoint_drift_records: $checkpoint_drifts,
+    parent_closeout_records: $parent_closeout_records,
+    parent_closeout_drifts: $parent_closeout_drifts,
     read_warnings: $read_warnings,
     recommendation: $recommendation,
     privacy: {
@@ -537,6 +756,7 @@ jq -r '
   "- Historical halts: `\(.truth_state.historical_halt_count)`",
   "- Superseded halts: `\(.truth_state.superseded_halt_count)`",
   "- Checkpoint drift records: `\(.truth_state.checkpoint_drift_count)`",
+  "- Parent closeout drift records: `\(.truth_state.parent_closeout_drift_count)`",
   "- Read warnings: `\(.truth_state.read_warning_count)`",
   "",
   "## Stale Artifacts",
@@ -585,6 +805,15 @@ jq -r '
      "| Checkpoint | Status | Artifact | Read Set | Summary |",
      "|---|---|---|---|---|",
      (.checkpoint_drift_records[] | "| \(cell(.checkpoint_id)) | \(cell(.drift_status // .reason_id)) | \(cell(.path)) | \(cell(.read_set_artifact)) | \(cell(.summary)) |")
+   end),
+  "",
+  "## Parent Closeout Drift",
+  "",
+  (if (.parent_closeout_records | length) == 0 then "- none"
+   else
+     "| Parent | Chain | Parent State | Project Status | Generated | Native | Blockers | Drift |",
+     "|---|---|---|---|---:|---:|---:|---|",
+     (.parent_closeout_records[] | "| #\(.parent_issue) | \(cell(.chain_name)) | \(cell(.parent_state)) | \(cell(.project_status)) | \((.generated_children // []) | length) | \((.native_children // []) | length) | \((.blockers // []) | length) | \(.drift_detected) |")
    end),
   "",
   "## Privacy",
