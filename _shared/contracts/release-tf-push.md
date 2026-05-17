@@ -148,7 +148,7 @@ Withdrawn App Store/GitHub release convention:
 - Prepend a withdrawal banner to the release body with the replacement release link when known.
 - Update the release artifact to `state: withdrawn` and set `superseded_by` to the replacement release-id once the replacement exists; the replacement artifact sets `replaces`.
 
-For App Store submissions, `studio-tf-push.sh appstore` writes the submitted release artifact and the source PR metadata only. It does not record studio approval. Approval belongs to `scripts/pr-merge-finalize.sh`, which verifies the HEAD_SHA-bound review-gate comment and records `approved_at`, `approved_by`, `approval_review_head_sha`, and `approval_review_comment_url` on the release artifact before the App Store watcher can promote the PR to `main`.
+For App Store submissions, `studio-tf-push.sh appstore` writes the submitted release artifact and the source PR metadata only. It does not record studio approval. Approval belongs to `scripts/pr-merge-finalize.sh`, which verifies the HEAD_SHA-bound review-gate comment and records `approved_at`, `approved_by`, `approval_review_head_sha`, and `approval_review_comment_url` on the release artifact before the App Store watcher can promote the PR. Target project repositories still obey the target-repo auto-merge lock; without explicit `pr_policy.target_repo_auto_merge`, the watcher leaves the approved PR for manual merge.
 
 No event emitted at the commit boundary; the next event closes the archive phase.
 
