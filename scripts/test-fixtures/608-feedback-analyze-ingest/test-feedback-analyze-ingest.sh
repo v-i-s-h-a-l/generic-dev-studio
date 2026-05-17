@@ -81,6 +81,7 @@ MD
 OUT="$TMPROOT/out.json"
 ACTIONS="$TMPROOT/actions.jsonl"
 DRY_OUT="$TMPROOT/dry-run.json"
+LOOKUP_FAIL_OUT="$TMPROOT/lookup-failure.json"
 
 "$RUN" \
   --inbox-root "$HOME/.dev-studio/generic-dev-studio/feedback-inbox" \
@@ -95,6 +96,25 @@ jq -e '
 ' "$DRY_OUT" >/dev/null
 
 [ ! -d "$INBOX/processed" ] || fail "dry-run should not move feedback records"
+
+if "$RUN" \
+  --inbox-root "$HOME/.dev-studio/generic-dev-studio/feedback-inbox" \
+  --issues-file "$TMPROOT/missing-issues.json" > "$LOOKUP_FAIL_OUT"; then
+  fail "missing issues fixture should fail"
+fi
+
+jq -e '
+  .kind == "manager_analyze_feedback_ingest"
+  and .status == "failed"
+  and .mode == "dry-run"
+  and .failure.stage == "issue_lookup"
+  and .failure.reason == "issues_file_unreadable"
+  and .inbox_count_before == 5
+  and .inbox_count_after == 5
+  and .destination_count == 0
+  and (.destinations | length) == 0
+  and (.policy_holds | length) == 0
+' "$LOOKUP_FAIL_OUT" >/dev/null
 
 "$RUN" \
   --apply \
