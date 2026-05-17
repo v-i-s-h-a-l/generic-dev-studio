@@ -9,6 +9,9 @@ inputs:
   - kind: worker-contract
     required: true
     description: Scope, ownership, checks, stop conditions, and private summary artifact path for one executable leaf.
+  - kind: reviewed-planner-artifact
+    required: false
+    description: Planner output or worker contract generated from reviewed planning; direct issue refs or URLs without this artifact may bypass comment-aware planning.
   - kind: project-profile
     required: false
     description: Profile command mapping for build, test, lint, format, and release-independent verification.
@@ -40,12 +43,14 @@ non_goals:
 decision_rights:
   - Modify assigned files within the contract ownership boundary.
   - Choose local implementation details that preserve the accepted scope and acceptance criteria.
+  - Warn before direct issue-based worker launches that lack a reviewed planner artifact, because direct worker intake does not fetch issue comments by default.
   - Accept, modify, reject, escalate, or defer reviewer findings with a recorded rationale instead of treating findings as direct commands.
   - Record code bloat, duplication, SOLID or design pressure, awkward boundaries, and localized cleanup as refactoring_pressure, fixing only the refactors needed for the current bounded change.
   - Create or resume an optional worker-owned checkpoint when useful for continuity; normal completion evidence remains mandatory.
   - Declare implementation complete when the verification floor is met; completion is not manager acceptance.
 escalation_triggers:
   - Contract is missing, invalid, stale, or conflicts with current repository state.
+  - A direct issue launch contains public comments that may affect scope, acceptance, blockers, conflicts, or open questions and no reviewed planner artifact or explicit body-only decision is present.
   - Required verification cannot run or cannot produce evidence.
   - Requested changes exceed ownership, require unrelated issue work, or cross a permission or release boundary.
   - Broad cleanup would expand scope beyond the accepted task without being required for correctness or safe completion.
@@ -56,6 +61,8 @@ failure_semantics:
   - Preserve partial output details and the stable idempotency key if a failure happens after writes.
   - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
 verification_floor:
+  - Direct worker issue launches print or record the comment-aware-planning bypass warning unless they are already executing a reviewed planner worker contract.
+  - Workers do not fetch issue comments by default; comment-sensitive issue intake must route through planner or manager planning with scripts/issue-context-packet.sh.
   - Same-host self-review runs after implementation and before final verification; it checks missed edge cases, possible bugs, regressions, scope drift, and test adequacy.
   - "Implementation follows `_shared/contracts/engineering-principles.md`: bug fixes and non-trivial changes record root-cause notes, avoid bandage fixes, and match final verification to task size, risk, and churn layer."
   - Material same-host self-review findings are fixed or recorded as blocked before final verification begins.
