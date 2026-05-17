@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
 # lint-commit-message.sh - validate commit trailers for studio-managed commits.
 #
-# Supported fields:
+# Supported compact fields:
 #   <change-type>: <developer headline>
+#   Impact: <net behavior/workflow change>
+#   Areas: <module/surface list>
+#   Release-Note: <tester/release-facing bullet source, or none>
+#   Why: <cause, trigger, or intent>
+#   Risk: <none|low|medium|high> <short reason>
+#   Details: <optional deeper implementation notes>
+#   Change-Type: <change-type>
+#   Studio-Host: <host-id>
+#   Co-authored-by: Codex <noreply@openai.com>
+#
+# Legacy verbose fields remain accepted during the producer migration:
 #   Affected-Areas: <module/surface list>
 #   Problem: <why this was needed>
 #   Solution: <what changed>
 #   Changelog: <tester/release-facing bullet source>
 #   Implementation notes: <automation/reviewer details>
 #   Caveats: <risks, limits, skipped verification, or None>
-#   Change-Type: <change-type>
-#   Studio-Host: <host-id>
-#   Co-authored-by: Codex <noreply@openai.com>
 #
 # Exit 0 on pass (or warnings with explicit env bypass), 1 on hard failures.
 
@@ -63,6 +71,11 @@ fail() { errs=$((errs + 1)); printf 'lint-commit-message: ERROR: %s\n' "$1" >&2;
 
 change_type=""
 studio_host=""
+impact=""
+areas=""
+release_note=""
+why=""
+risk=""
 affected_areas=""
 problem=""
 solution=""
@@ -74,6 +87,11 @@ codex_coauthor_seen=0
 bad_codex_coauthor=""
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
+    Impact:*) impact=$(trim "${line#Impact:}") ;;
+    Areas:*) areas=$(trim "${line#Areas:}") ;;
+    Release-Note:*) release_note=$(trim "${line#Release-Note:}") ;;
+    Why:*) why=$(trim "${line#Why:}") ;;
+    Risk:*) risk=$(trim "${line#Risk:}") ;;
     Problem:*) problem=$(trim "${line#Problem:}") ;;
     Affected-Areas:*) affected_areas=$(trim "${line#Affected-Areas:}") ;;
     Solution:*) solution=$(trim "${line#Solution:}") ;;
@@ -92,6 +110,27 @@ while IFS= read -r line || [ -n "$line" ]; do
       ;;
   esac
 done < "$COMMIT_FILE"
+
+compact_missing_labels() {
+  local labels=""
+  [ -n "$impact" ] || labels="${labels} Impact"
+  [ -n "$areas" ] || labels="${labels} Areas"
+  [ -n "$release_note" ] || labels="${labels} Release-Note"
+  [ -n "$why" ] || labels="${labels} Why"
+  [ -n "$risk" ] || labels="${labels} Risk"
+  printf '%s' "${labels# }"
+}
+
+verbose_missing_labels() {
+  local labels=""
+  [ -n "$affected_areas" ] || labels="${labels} Affected-Areas"
+  [ -n "$problem" ] || labels="${labels} Problem"
+  [ -n "$solution" ] || labels="${labels} Solution"
+  [ -n "$changelog" ] || labels="${labels} Changelog"
+  [ -n "$implementation_notes" ] || labels="${labels} Implementation notes"
+  [ -n "$caveats" ] || labels="${labels} Caveats"
+  printf '%s' "${labels# }"
+}
 
 valid_change_type() {
   case "$1" in
@@ -141,24 +180,43 @@ if [ -n "$change_type" ] && valid_change_type "$change_type"; then
   esac
 fi
 
-require_field() {
-  local label="$1" value="$2" purpose="$3"
-  if [ -n "$value" ]; then
-    return 0
+risk_value=""
+if [ -n "$risk" ]; then
+  risk_value="${risk%%[[:space:]:,-]*}"
+  risk_prefix_valid=0
+  case "$risk_value" in
+    none|low|medium|high) risk_prefix_valid=1 ;;
+    *)
+      if [ "$strict_for_hosted" -eq 1 ]; then
+        fail "invalid Risk field: expected none|low|medium|high plus a short reason"
+      else
+        warn "invalid Risk field: expected none|low|medium|high plus a short reason"
+      fi
+      ;;
+  esac
+  risk_reason="${risk#"$risk_value"}"
+  risk_reason="${risk_reason#"${risk_reason%%[![:space:]:,-]*}"}"
+  risk_reason=$(trim "$risk_reason")
+  if [ "$risk_prefix_valid" -eq 1 ] && [ -z "$risk_reason" ]; then
+    if [ "$strict_for_hosted" -eq 1 ]; then
+      fail "invalid Risk field: expected none|low|medium|high plus a short reason"
+    else
+      warn "invalid Risk field: expected none|low|medium|high plus a short reason"
+    fi
   fi
-  if [ "$strict_for_hosted" -eq 1 ]; then
-    fail "missing required ${label}: ${purpose}"
-  else
-    warn "missing recommended ${label}: ${purpose}"
-  fi
-}
+fi
 
-require_field "Affected-Areas" "$affected_areas" "module/surface list for regression triage"
-require_field "Problem" "$problem" "why the change was needed"
-require_field "Solution" "$solution" "what changed"
-require_field "Changelog" "$changelog" "brief TestFlight/release bullet source"
-require_field "Implementation notes" "$implementation_notes" "details agents and reviewers can use"
-require_field "Caveats" "$caveats" "risks, limits, skipped work, or None"
+compact_missing=$(compact_missing_labels)
+verbose_missing=$(verbose_missing_labels)
+if [ -z "$compact_missing" ] || [ -z "$verbose_missing" ]; then
+  :
+else
+  if [ "$strict_for_hosted" -eq 1 ]; then
+    fail "missing required commit metadata: provide compact fields (Impact, Areas, Release-Note, Why, Risk) or legacy fields (Affected-Areas, Problem, Solution, Changelog, Implementation notes, Caveats). Missing compact: ${compact_missing}; missing legacy: ${verbose_missing}"
+  else
+    warn "missing recommended commit metadata: provide compact fields (Impact, Areas, Release-Note, Why, Risk) or legacy fields (Affected-Areas, Problem, Solution, Changelog, Implementation notes, Caveats). Missing compact: ${compact_missing}; missing legacy: ${verbose_missing}"
+  fi
+fi
 
 if [ -z "$studio_host" ]; then
   if [ "$strict_for_hosted" -eq 1 ]; then

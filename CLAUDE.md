@@ -136,7 +136,8 @@ The initial taxonomy values are:
 ### Commit message discipline
 
 - **Subject:** must start with `<taxonomy>: ` and then state the developer-readable what/why headline.
-- **Body:** host-authored commits must include `Affected-Areas`, `Problem`, `Solution`, `Changelog`, `Implementation notes`, and `Caveats`. `Affected-Areas` is the module/surface index for regression triage. `Changelog` is the brief TestFlight/release bullet source; keep implementation detail in `Implementation notes`.
+- **Body:** host-authored commits should use the compact impact schema: `Impact`, `Areas`, `Release-Note`, `Why`, and `Risk`. `Impact` is the one-line net behavior or workflow change; `Areas` is the regression-triage index; `Release-Note` is the brief tester/release bullet source, or `none`; `Why` records the cause, trigger, or intent; `Risk` is `none|low|medium|high` plus a short reason. Add `Details` only when larger, risky, or cross-surface changes need deeper implementation context.
+- **Transition compatibility:** legacy hosted commits with `Affected-Areas`, `Problem`, `Solution`, `Changelog`, `Implementation notes`, and `Caveats` still pass lint while existing producers migrate. New host-authored commits should prefer the compact schema.
 - **Churn rules:** Commits should be logically grouped for future regression triage. Prefer smaller commits, but the hard requirement is no unrelated behavior, docs, test, or workflow changes in the same commit unless the body explains the shared problem/solution.
 - **Branch shape:** feature branches should not contain merge commits. Existing chain integration already enforces this via rebase + fast-forward-only merge paths in `scripts/lib-chain-git.sh`; do not treat this as greenfield.
 - **Dependencies:** dependent branches should rebase or retarget rather than feature-to-feature merge.
