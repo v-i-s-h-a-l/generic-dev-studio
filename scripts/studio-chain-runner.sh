@@ -800,7 +800,7 @@ event_data() {
 event_stage() {
   case "$1" in
     chain_run_started|chain_plan_prepared|chain_phase_review_completed) printf 'plan\n' ;;
-    chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed|chain_rule_gate_completed|chain_stale_lock_removed) printf 'preflight\n' ;;
+    chain_auth_normalized|chain_host_preflight_*|chain_artifact_validation_failed|chain_rule_gate_completed|chain_stale_lock_removed|chain_source_freshness_checked) printf 'preflight\n' ;;
     chain_started|chain_issue_started|chain_issue_completed|chain_issue_validated|chain_parent_commit_finalized|chain_issue_scheduler_blocked) printf 'execute\n' ;;
     chain_worker_summary_ingested|chain_telemetry_gap|checkpoint_auto_created|checkpoint_auto_loaded|checkpoint_context_savings_estimated|chain_ios_artifact_cleanup_completed) printf 'ingest\n' ;;
     chain_pr_opened|chain_review_completed) printf 'review\n' ;;
@@ -6879,20 +6879,30 @@ validate_release_chain_leaf_policy() {
 }
 
 verify_expected_source_sha_or_abort() {
-  local chain_name="$1" source_branch="$2" expected_sha="$3" phase="$4"
+  local chain_name="$1" source_branch="$2" expected_sha="$3" phase="$4" strict="${5:-allow-drift}"
   local actual_sha summary details_json
+  SOURCE_SHA_ACTUAL=""
+  SOURCE_SHA_DRIFTED=0
   [ -n "$expected_sha" ] && [ "$expected_sha" != "null" ] || return 0
   if [ "$DRY_RUN" -eq 1 ]; then
     printf 'DRY-RUN verify origin/%q matches expected base SHA %q before %s\n' "$source_branch" "$expected_sha" "$phase"
+    SOURCE_SHA_ACTUAL="$expected_sha"
     return 0
   fi
   actual_sha=$(studio_git_transport_ls_remote --heads origin "$source_branch" 2>/dev/null | awk 'NR == 1 { print $1 }') || actual_sha=""
+  SOURCE_SHA_ACTUAL="$actual_sha"
   if [ -z "$actual_sha" ]; then
     summary="cannot verify origin/$source_branch before $phase for chain $chain_name"
     details_json=$(retryable_halt_details_json network_partition "$summary" 1 studio_git_transport_ls_remote --heads origin "$source_branch")
     abort_run_with_reason_details network_partition "$summary" "$details_json"
   fi
   if [ "$actual_sha" != "$expected_sha" ]; then
+    SOURCE_SHA_DRIFTED=1
+    if [ "$strict" != "strict" ]; then
+      printf 'studio-chain-runner: origin/%s advanced before %s for chain %s; planned=%s current=%s\n' \
+        "$source_branch" "$phase" "$chain_name" "$expected_sha" "$actual_sha" >&2
+      return 0
+    fi
     case "${STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT:-0}" in
       1|true|TRUE|yes|YES)
         printf 'studio-chain-runner: STUDIO_BYPASS_CHAIN_BASE_SHA_DRIFT=1 — accepting origin/%s drift before %s for chain %s (expected %s, got %s)\n' \
@@ -6905,7 +6915,7 @@ verify_expected_source_sha_or_abort() {
 }
 
 live_preflight() {
-  local plan="$1" reviewer_host chain_name branch issue_branch base expected_source_sha
+  local plan="$1" reviewer_host chain_name branch issue_branch base expected_source_sha approved_release_id strict_source_sha
   run_retryable_or_abort github_auth_unavailable "GitHub auth is not available" \
     with_login_home_for_github gh auth status
   emit_chain_event chain_auth_normalized "" "$RUN_ID" "" "" completed 0 \
@@ -6915,11 +6925,16 @@ live_preflight() {
     printf 'studio-chain-runner: reviewer host unavailable: %s\n' "$reviewer_host" >&2
     exit 2
   }
-  while IFS=$'\t' read -r chain_name branch base expected_source_sha; do
+  while IFS=$'\t' read -r chain_name branch base expected_source_sha approved_release_id; do
     [ "$expected_source_sha" = "__none__" ] && expected_source_sha=""
+    [ "$approved_release_id" = "__none__" ] && approved_release_id=""
     run_retryable_or_abort network_partition "cannot verify origin/$base" \
       studio_git_transport_ls_remote --exit-code --heads origin "$base"
-    verify_expected_source_sha_or_abort "$chain_name" "$base" "$expected_source_sha" "chain worktree creation"
+    strict_source_sha="allow-drift"
+    if [ -n "$approved_release_id" ] && [ "$approved_release_id" != "null" ]; then
+      strict_source_sha="strict"
+    fi
+    verify_expected_source_sha_or_abort "$chain_name" "$base" "$expected_source_sha" "chain worktree creation" "$strict_source_sha"
     if [ -z "$RESUME_ID" ] && git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/heads/$branch"; then
       printf 'studio-chain-runner: local chain branch already exists: %s\n' "$branch" >&2
       exit 2
@@ -6929,7 +6944,7 @@ live_preflight() {
       exit 2
     fi
   done <<EOF
-$(jq -r '.chains[] | [.name, .branch, (.base_ref // .source_branch // .base), (.base_sha // .expected_source_sha // .source_sha // "__none__")] | @tsv' "$plan")
+$(jq -r '.chains[] | [.name, .branch, (.base_ref // .source_branch // .base), (.base_sha // .expected_source_sha // .source_sha // "__none__"), (.approved_release_id // "__none__")] | @tsv' "$plan")
 EOF
   while IFS= read -r issue_branch; do
     [ -n "$issue_branch" ] || continue
@@ -7542,9 +7557,11 @@ EOF
 }
 
 finalize_chain_pr() {
-  local chain_name="$1" chain_branch="$2" chain_worktree="$3" base="$4" chain_run_id="$5" implementation_host="${6:-}" expected_source_sha="${7:-}"
+  local chain_name="$1" chain_branch="$2" chain_worktree="$3" base="$4" chain_run_id="$5" implementation_host="${6:-}" expected_source_sha="${7:-}" approved_release_id="${8:-}"
   local pr_url pr_number review_started_at review_rc review_duration review_out review_verdict review_model review_effort review_host review_parent_host
+  local planned_base_sha finalized_base_sha rebase_rc rebase_out strict_source_sha
   [ -n "$implementation_host" ] || implementation_host=$(resolve_current_studio_host unknown)
+  planned_base_sha="$expected_source_sha"
 
   if [ "$chain_branch" = "$base" ]; then
     abort_run_with_reason branch_worktree_conflict "chain branch $chain_branch must not equal PR base/source branch"
@@ -7552,8 +7569,31 @@ finalize_chain_pr() {
   log "rebasing $chain_branch on origin/$base"
   run_retryable_or_abort network_partition "fetch origin failed for $chain_branch" \
     with_login_home_for_github git -C "$chain_worktree" fetch origin --prune
-  verify_expected_source_sha_or_abort "$chain_name" "$base" "$expected_source_sha" "PR finalization"
-  run git -C "$chain_worktree" rebase "origin/$base"
+  strict_source_sha="allow-drift"
+  if [ -n "$approved_release_id" ] && [ "$approved_release_id" != "null" ]; then
+    strict_source_sha="strict"
+  fi
+  verify_expected_source_sha_or_abort "$chain_name" "$base" "$expected_source_sha" "PR finalization" "$strict_source_sha"
+  finalized_base_sha="$SOURCE_SHA_ACTUAL"
+  rebase_out="$CHAIN_RUN_ROOT/rebase-$chain_run_id.out"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf 'DRY-RUN git -C %q rebase %q\n' "$chain_worktree" "origin/$base"
+  else
+    set +e
+    git -C "$chain_worktree" rebase "origin/$base" >"$rebase_out" 2>&1
+    rebase_rc=$?
+    set -e
+    if [ "$rebase_rc" -ne 0 ]; then
+      cat "$rebase_out" >&2 || true
+      abort_run_with_reason_details base_branch_advanced \
+        "base branch $base for chain $chain_name advanced and rebase failed before PR finalization" \
+        "$(jq -cn --arg chain "$chain_name" --arg base "$base" --arg planned "$planned_base_sha" --arg finalized "$finalized_base_sha" --arg branch "$chain_branch" --arg artifact "$rebase_out" '{chain:$chain, base:$base, planned_base_sha:(if $planned == "" then null else $planned end), finalized_base_sha:(if $finalized == "" then null else $finalized end), branch:$branch, rebase_output:$artifact}')"
+    fi
+  fi
+  if [ "${SOURCE_SHA_DRIFTED:-0}" -eq 1 ]; then
+    emit_chain_event chain_source_freshness_checked "" "$RUN_ID" "$chain_run_id" "" completed 0 \
+      "$(jq -cn --arg chain "$chain_name" --arg base "$base" --arg planned "$planned_base_sha" --arg finalized "$finalized_base_sha" --arg branch "$chain_branch" --arg rebase_output "$rebase_out" '{chain:$chain, base:$base, source_branch:$base, planned_base_sha:(if $planned == "" then null else $planned end), finalized_base_sha:(if $finalized == "" then null else $finalized end), branch:$branch, rebase:"clean", rebase_output:$rebase_output}')"
+  fi
   run_retryable_or_abort network_partition "push failed for $chain_branch" \
     with_login_home_for_github git -C "$chain_worktree" push -u origin "$chain_branch"
 
@@ -7582,7 +7622,7 @@ Review gate: \`scripts/pr-headless-review.sh <pr> --method auto\`.")
   FINAL_PR_URL="$pr_url"
   log "opened PR $pr_url"
   emit_chain_event chain_pr_opened "$pr_number" "$RUN_ID" "$chain_run_id" "" completed 0 \
-    "$(jq -cn --arg pr_url "$pr_url" --arg pr_number "$pr_number" --arg branch "$chain_branch" --arg base "$base" '{pr_url:$pr_url, pr_number:$pr_number, branch:$branch, base:$base, source_branch:$base}')"
+    "$(jq -cn --arg pr_url "$pr_url" --arg pr_number "$pr_number" --arg branch "$chain_branch" --arg base "$base" --arg planned "$planned_base_sha" --arg finalized "$finalized_base_sha" '{pr_url:$pr_url, pr_number:$pr_number, branch:$branch, base:$base, source_branch:$base, planned_base_sha:(if $planned == "" then null else $planned end), finalized_base_sha:(if $finalized == "" then null else $finalized end)}')"
   if ! with_login_home_for_github gh pr comment "$pr_number" --repo "$REPO_SLUG" --body "Chain run: \`$RUN_ID\`
 
 Private telemetry report: local only; resolve by run ID on the machine that ran the chain.
@@ -8780,13 +8820,13 @@ for ((idx = 0; idx < chain_count; idx++)); do
 
   run_chain_issue_scheduler "$idx" "$name" "$branch" "$chain_worktree" "$host" "$git_metadata_strategy" "$chain_run_id" "$phase_review_mode" "$checkpoint_mode" "$issue_count" "$chain_results_dir"
 
-  finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id" "$host" "$expected_source_sha"
+  finalize_chain_pr "$name" "$branch" "$chain_worktree" "$base" "$chain_run_id" "$host" "$expected_source_sha" "$approved_release_id"
   chain_duration=$(duration_since "$chain_started_at")
   final_chain_head=$(git -C "$chain_worktree" rev-parse HEAD 2>/dev/null || true)
   mark_chain_state "$chain_run_id" completed "$FINAL_PR_URL"
   mark_chain_issues_completed_after_pr "$chain_run_id" "$final_chain_head"
   emit_chain_event chain_completed "" "$RUN_ID" "$chain_run_id" "" completed "$chain_duration" \
-    "$(jq -cn --arg name "$name" --arg pr_url "$FINAL_PR_URL" --arg commit_after "$final_chain_head" '{chain:$name, pr_url:(if $pr_url == "" then null else $pr_url end), commit_after:(if $commit_after == "" then null else $commit_after end)}')"
+    "$(jq -cn --arg name "$name" --arg pr_url "$FINAL_PR_URL" --arg commit_after "$final_chain_head" --arg planned "$expected_source_sha" --arg finalized "${SOURCE_SHA_ACTUAL:-}" '{chain:$name, pr_url:(if $pr_url == "" then null else $pr_url end), commit_after:(if $commit_after == "" then null else $commit_after end), planned_base_sha:(if $planned == "" then null else $planned end), finalized_base_sha:(if $finalized == "" then null else $finalized end)}')"
   run_ios_artifact_chain_cleanup "$name" "$chain_run_id" completed
 
   for ((i = 0; i < issue_count; i++)); do

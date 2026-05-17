@@ -105,7 +105,7 @@ if PATH="$BIN:$PATH" HOME="$HOME_DIR" "$RUNNER" "$conflict_manifest" --dry-run >
   cat "$TMPROOT/conflict.out" >&2
   fail "conflicting source_branch/base manifest unexpectedly passed"
 fi
-grep -q 'conflicting source branch fields' "$TMPROOT/conflict.out" \
+grep -Eq 'conflicting source branch fields|manifest_branch_discipline_conflict' "$TMPROOT/conflict.out" \
   || fail "conflicting source branch failure was not explained"
 
 same_branch_manifest="$TMPROOT/source-same-branch.yaml"
@@ -166,13 +166,21 @@ jq -e '
 
 bad_plan="$TMPROOT/source-plan-bad.json"
 jq --arg main_sha "$main_sha" '.chains[0].expected_source_sha = $main_sha' "$plan" > "$bad_plan"
-if "$GATES" --plan "$bad_plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" > "$TMPROOT/bad-gates.json"; then
-  cat "$TMPROOT/bad-gates.json" >&2
-  fail "stale source SHA gate unexpectedly passed"
+"$GATES" --plan "$bad_plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" > "$TMPROOT/bad-gates.json"
+jq -e '
+  .status == "ok"
+  and ([.checks[] | select(.id == "expected_source_branch_sha" and .status == "passed" and (.detail | contains("freshness rebase required")))] | length == 1)
+' "$TMPROOT/bad-gates.json" >/dev/null || fail "stale non-release source SHA did not pass with freshness rebase detail"
+
+release_bad_plan="$TMPROOT/source-plan-release-bad.json"
+jq --arg main_sha "$main_sha" '.chains[0].expected_source_sha = $main_sha | .chains[0].approved_release_id = "rel-664"' "$plan" > "$release_bad_plan"
+if "$GATES" --plan "$release_bad_plan" --repo "$repo" --expected-run-work-root "$TMPROOT/run-work" > "$TMPROOT/release-bad-gates.json"; then
+  cat "$TMPROOT/release-bad-gates.json" >&2
+  fail "release-bearing stale source SHA gate unexpectedly passed"
 fi
 jq -e '
   .status == "halt"
-  and ([.failures[] | select(.id == "expected_source_branch_sha" and (.detail | contains("feature/source-target")))] | length == 1)
-' "$TMPROOT/bad-gates.json" >/dev/null || fail "stale source SHA failure did not name source branch"
+  and ([.failures[] | select(.id == "expected_source_branch_sha" and (.detail | contains("release-bearing chain")))] | length == 1)
+' "$TMPROOT/release-bad-gates.json" >/dev/null || fail "release-bearing stale source SHA failure did not name strict policy"
 
 printf 'PASS: source-branch chain execution\n'

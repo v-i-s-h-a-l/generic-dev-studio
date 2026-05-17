@@ -194,10 +194,14 @@ while IFS=$'\t' read -r chain_name base expected_sha branch approved_release_id 
 
   if [ -n "$expected_sha" ] && [ "$expected_sha" != "null" ]; then
     actual_sha=$(git -C "$REPO" rev-parse --verify "origin/$base" 2>/dev/null || git -C "$REPO" rev-parse --verify "$base" 2>/dev/null || true)
-    if [ "$actual_sha" = "$expected_sha" ]; then
+    if [ -z "$actual_sha" ]; then
+      gate_fail expected_source_branch_sha hard STUDIO_BYPASS_SOURCE_SHA_GATE "chain $chain_name cannot resolve source branch $base for planned source SHA $expected_sha"
+    elif [ "$actual_sha" = "$expected_sha" ]; then
       gate_pass expected_source_branch_sha hard STUDIO_BYPASS_SOURCE_SHA_GATE "chain $chain_name source SHA matches $expected_sha"
+    elif [ -n "$approved_release_id" ] && [ "$approved_release_id" != "null" ]; then
+      gate_fail expected_source_branch_sha hard STUDIO_BYPASS_SOURCE_SHA_GATE "release-bearing chain $chain_name expected $expected_sha for source branch $base, got ${actual_sha:-missing}"
     else
-      gate_fail expected_source_branch_sha hard STUDIO_BYPASS_SOURCE_SHA_GATE "chain $chain_name expected $expected_sha for source branch $base, got ${actual_sha:-missing}"
+      gate_pass expected_source_branch_sha hard STUDIO_BYPASS_SOURCE_SHA_GATE "chain $chain_name planned source SHA $expected_sha; current source branch $base is ${actual_sha:-missing}; freshness rebase required before PR handoff"
     fi
   else
     gate_skip expected_source_branch_sha hard STUDIO_BYPASS_SOURCE_SHA_GATE "chain $chain_name does not declare expected_source_sha/source_sha"
