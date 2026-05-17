@@ -95,6 +95,12 @@ if [ "$1" = "api" ]; then
   esac
 fi
 
+if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+  issue="$3"
+  issue_json "$issue"
+  exit 0
+fi
+
 printf 'unexpected gh invocation: %s\n' "$*" >&2
 exit 1
 SH
@@ -105,28 +111,38 @@ HOME="$TMPROOT/home" \
 GH_LOG="$GH_LOG" \
 STUDIO_MANAGER_PLAN_CHAIN_PROJECT=generic-dev-studio \
 STUDIO_MANAGER_PLAN_CHAIN_RUN_ID=single-comments \
-  "$RUN" --issue 980 --include-comments --repo example/project --chain comments-single --allow-missing-details --dry-run --no-project-fields >"$TMPROOT/single.out" 2>"$TMPROOT/single.err"
+  "$RUN" --issue 980 --repo example/project --chain comments-single --allow-missing-details --dry-run --no-project-fields >"$TMPROOT/single.out" 2>"$TMPROOT/single.err"
 
 SINGLE_ROOT="$TMPROOT/home/.dev-studio/generic-dev-studio/plan-chains/single-comments"
 SINGLE_RESULT="$SINGLE_ROOT/result.json"
 SINGLE_PLANNER="$SINGLE_ROOT/planner-output.json"
+SINGLE_PHASE_PLAN="$SINGLE_ROOT/phase-plan.md"
 
 jq -e '
   (.status == "dry_run" or .status == "needs_context")
   and .source_context.comments_included == true
+  and .source_context.mode == "issue-context-packet"
   and (.source_context.packet_path | endswith("/issue-context-packet/packet.md"))
   and (.source_context.comment_sidecar_path | endswith("/issue-context-packet/packet.json"))
+  and .source_context.body_only_explicit == false
 ' "$SINGLE_RESULT" >/dev/null || {
   cat "$TMPROOT/single.out" >&2
   cat "$TMPROOT/single.err" >&2
-  fail "single issue result did not record comment packet paths"
+  fail "single issue result did not record default comment packet paths"
 }
 
 jq -e '
   .payload.source_context.comments_included == true
+  and .payload.source_context.mode == "issue-context-packet"
+  and .payload.source_context.body_only_explicit == false
   and any(.evidence_refs[]; endswith("/issue-context-packet/packet.md"))
   and any(.evidence_refs[]; endswith("/issue-context-packet/packet.json"))
-' "$SINGLE_PLANNER" >/dev/null || fail "planner artifact did not record packet evidence"
+' "$SINGLE_PLANNER" >/dev/null || fail "planner artifact did not record default packet evidence"
+
+grep -q "Mode: \`issue-context-packet\`" "$SINGLE_PHASE_PLAN" \
+  || fail "phase plan did not record default issue-context-packet mode"
+grep -q "Body-only explicit: \`false\`" "$SINGLE_PHASE_PLAN" \
+  || fail "phase plan did not record non-explicit body-only state"
 
 grep -q '## Issue Bodies' "$SINGLE_ROOT/issue-context-packet/packet.md" \
   || fail "packet markdown did not include issue body section"
@@ -140,8 +156,28 @@ PATH="$BIN:$PATH" \
 HOME="$TMPROOT/home" \
 GH_LOG="$GH_LOG" \
 STUDIO_MANAGER_PLAN_CHAIN_PROJECT=generic-dev-studio \
+STUDIO_MANAGER_PLAN_CHAIN_RUN_ID=alias-comments \
+  "$RUN" --issue 980 --include-comments --repo example/project --chain comments-alias --allow-missing-details --dry-run --no-project-fields >"$TMPROOT/alias.out" 2>"$TMPROOT/alias.err"
+
+ALIAS_RESULT="$TMPROOT/home/.dev-studio/generic-dev-studio/plan-chains/alias-comments/result.json"
+jq -e '
+  (.status == "dry_run" or .status == "needs_context")
+  and .source_context.comments_included == true
+  and .source_context.mode == "issue-context-packet"
+  and .source_context.body_only_explicit == false
+' "$ALIAS_RESULT" >/dev/null || {
+  cat "$TMPROOT/alias.out" >&2
+  cat "$TMPROOT/alias.err" >&2
+  fail "--include-comments alias did not preserve issue-context-packet mode"
+}
+
+: > "$GH_LOG"
+PATH="$BIN:$PATH" \
+HOME="$TMPROOT/home" \
+GH_LOG="$GH_LOG" \
+STUDIO_MANAGER_PLAN_CHAIN_PROJECT=generic-dev-studio \
 STUDIO_MANAGER_PLAN_CHAIN_RUN_ID=cluster-comments \
-  "$RUN" --issue-set 980,#981 --include-comments --repo example/project --chain comments-cluster --allow-missing-details --dry-run --no-project-fields >"$TMPROOT/cluster.out" 2>"$TMPROOT/cluster.err"
+  "$RUN" --issue-set 980,#981 --repo example/project --chain comments-cluster --allow-missing-details --dry-run --no-project-fields >"$TMPROOT/cluster.out" 2>"$TMPROOT/cluster.err"
 
 CLUSTER_ROOT="$TMPROOT/home/.dev-studio/generic-dev-studio/plan-chains/cluster-comments"
 CLUSTER_RESULT="$CLUSTER_ROOT/result.json"
@@ -173,5 +209,47 @@ grep -q 'repos/example/project/issues/980/comments' "$GH_LOG" \
   || fail "cluster did not fetch issue 980 comments"
 grep -q 'repos/example/project/issues/981/comments' "$GH_LOG" \
   || fail "cluster did not fetch issue 981 comments"
+
+: > "$GH_LOG"
+PATH="$BIN:$PATH" \
+HOME="$TMPROOT/home" \
+GH_LOG="$GH_LOG" \
+STUDIO_MANAGER_PLAN_CHAIN_PROJECT=generic-dev-studio \
+STUDIO_MANAGER_PLAN_CHAIN_RUN_ID=body-only \
+  "$RUN" --issue 980 --body-only --repo example/project --chain comments-body-only --allow-missing-details --dry-run --no-project-fields >"$TMPROOT/body-only.out" 2>"$TMPROOT/body-only.err"
+
+BODY_ONLY_ROOT="$TMPROOT/home/.dev-studio/generic-dev-studio/plan-chains/body-only"
+BODY_ONLY_RESULT="$BODY_ONLY_ROOT/result.json"
+BODY_ONLY_PLANNER="$BODY_ONLY_ROOT/planner-output.json"
+BODY_ONLY_PHASE_PLAN="$BODY_ONLY_ROOT/phase-plan.md"
+
+jq -e '
+  (.status == "dry_run" or .status == "needs_context")
+  and .source_context.comments_included == false
+  and .source_context.mode == "body-only"
+  and .source_context.packet_path == null
+  and .source_context.comment_sidecar_path == null
+  and .source_context.body_only_explicit == true
+' "$BODY_ONLY_RESULT" >/dev/null || {
+  cat "$TMPROOT/body-only.out" >&2
+  cat "$TMPROOT/body-only.err" >&2
+  fail "body-only result did not record explicit escape hatch"
+}
+
+jq -e '
+  .payload.source_context.comments_included == false
+  and .payload.source_context.mode == "body-only"
+  and .payload.source_context.body_only_explicit == true
+' "$BODY_ONLY_PLANNER" >/dev/null || fail "planner artifact did not record explicit body-only mode"
+
+grep -q "Mode: \`body-only\`" "$BODY_ONLY_PHASE_PLAN" \
+  || fail "phase plan did not record explicit body-only mode"
+grep -q "Body-only explicit: \`true\`" "$BODY_ONLY_PHASE_PLAN" \
+  || fail "phase plan did not record explicit body-only state"
+grep -q 'issue view 980' "$GH_LOG" \
+  || fail "body-only issue source did not fetch issue body"
+if grep -q 'repos/example/project/issues/980/comments' "$GH_LOG"; then
+  fail "body-only issue source fetched comments"
+fi
 
 printf 'PASS: manager plan-chain comment-aware intake\n'
