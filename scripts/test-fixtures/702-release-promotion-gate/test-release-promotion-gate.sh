@@ -39,7 +39,7 @@ cat >"$BIN/gh" <<'SH'
 set -eu
 
 pr_json() {
-  printf '{"number":123,"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefName":"feature","headRefOid":"abc123","headRepositoryOwner":{"login":"owner"},"baseRefName":"main","url":"https://github.com/owner/repo/pull/123","commits":[{"oid":"abc123"}]}\n'
+  printf '{"number":123,"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefName":"release/appstore-fixture","headRefOid":"abc123","headRepositoryOwner":{"login":"owner"},"baseRefName":"main","url":"https://github.com/owner/repo/pull/123","commits":[{"oid":"abc123"}]}\n'
 }
 
 case "$1 $2" in

@@ -26,7 +26,7 @@ cat >"$BIN/gh" <<'SH'
 set -eu
 
 pr_json() {
-  printf '{"number":69903,"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefName":"feature/release-bearing-policy-approval","headRefOid":"abc699","headRepositoryOwner":{"login":"owner"},"baseRefName":"main","url":"https://github.com/owner/repo/pull/69903","commits":[{"oid":"abc699"}]}\n'
+  printf '{"number":69903,"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefName":"release/release-bearing-policy-approval","headRefOid":"abc699","headRepositoryOwner":{"login":"owner"},"baseRefName":"main","url":"https://github.com/owner/repo/pull/69903","commits":[{"oid":"abc699"}]}\n'
 }
 
 case "$1 $2" in
@@ -53,7 +53,7 @@ chmod +x "$BIN/gh"
   git add README.md
   git commit -q -m init
   git branch -M main
-  git checkout -q -b feature/release-bearing-policy-approval
+  git checkout -q -b release/release-bearing-policy-approval
   printf 'feature\n' >feature.txt
   git add feature.txt
   git commit -q -m feature
@@ -64,7 +64,7 @@ HOME="$HOME_DIR" ACHILLES_PROJECT="$PROJECT" bash -c '
   . "$1/scripts/lib-ledger.sh"
   write_appstore_release_submission_artifact "rel-699-missing-approval" "1.0.0" "699" "699-release" "abc699" \
     "https://github.com/owner/repo/releases/tag/699-release" "69903" \
-    "https://github.com/owner/repo/pull/69903" "feature/release-bearing-policy-approval" \
+    "https://github.com/owner/repo/pull/69903" "release/release-bearing-policy-approval" \
     "app-id" "build-id" "version-id" "" "" "" "fixture summary" >/dev/null
 ' bash "$ROOT"
 

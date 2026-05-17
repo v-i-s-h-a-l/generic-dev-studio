@@ -32,7 +32,10 @@ persisted as environment keys so shell entrypoints can read the same values:
 | `branch_policy.worktree_disk_budget_mb` | `STUDIO_BRANCH_POLICY_WORKTREE_DISK_BUDGET_MB` | `10240` |
 | `pr_policy.target_repo_auto_merge` | `STUDIO_TARGET_REPO_AUTO_MERGE` | unset / `0` |
 
-Boolean values are normalized to `1` or `0` by the manager config command.
+`merge_target_to_main` is a legacy field name for the mainline-source gate:
+when truthy, only release and hotfix heads may merge into `main`, `master`,
+`trunk`, or `develop`. Boolean values are normalized to `1` or `0` by the
+manager config command.
 `worktree_gc_scope` is one of `project`, `runtime`, or `off`.
 
 ## Lazy Elicitation And Migration

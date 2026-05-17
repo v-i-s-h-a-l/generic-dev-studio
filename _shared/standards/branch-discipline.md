@@ -19,15 +19,20 @@ when a project has not written a value yet.
    protected base via `is_protected_branch` (`scripts/lib-paths.sh`) or via
    the per-project release-branch pattern. Pull, then fast-forward; never
    commit directly.
-2. **Feature branches do not merge into other feature branches.** Dependent
-   work rebases or retargets onto the integration base. The merge-commit
-   audit lives in `feature_branch_policy_evaluate`
-   (`scripts/lib-feature-branch-policy.sh`).
-3. **Feature PRs land on the configured merge target.** When
+2. **Task PRs default away from main.** `manager plan-chain` resolves an
+   unspecified PR base to a known current feature branch when one is checked
+   out; otherwise it uses the newest release branch matching
+   `branch_policy.release_branch_pattern`; only when neither exists does it
+   fall back to `branch_policy.default_base`.
+3. **Feature branches do not merge into other feature branches with merge
+   commits.** Dependent work rebases or retargets onto the known feature or
+   release base. The merge-commit audit lives in
+   `feature_branch_policy_evaluate` (`scripts/lib-feature-branch-policy.sh`).
+4. **Mainline merges are release/hotfix only by default.** When
    `STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN` is truthy, `pr-merge-finalize`
-   refuses to merge a PR whose base ref is not the project's canonical
-   integration branch.
-4. **Target project PRs are not auto-merged by default.** For PRs whose GitHub
+   refuses to merge a PR into `main`, `master`, `trunk`, or `develop` unless
+   the PR head branch is a release branch or `hotfix/*`.
+5. **Target project PRs are not auto-merged by default.** For PRs whose GitHub
    base repository is not the studio repository, reviewer/autopilot flows may
    create and approve the PR but must stop before `gh pr merge`. A human merges
    the target repo PR unless the user explicitly unlocks auto-merge with
@@ -45,7 +50,7 @@ following settings participate in branch discipline:
 | `STUDIO_BRANCH_POLICY_DEFAULT_BASE` | `default_base` | manager config, branch workflow, pre-commit, pr-merge-finalize |
 | `STUDIO_BRANCH_POLICY_RELEASE_BRANCH_PATTERN` | `release_branch_pattern` | manager config, branch workflow, pre-commit |
 | `STUDIO_BRANCH_POLICY_ALLOW_FEATURE_OFF_FEATURE` | `allow_feature_off_feature` | plan-chain and work-chain stacked-parent checks |
-| `STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN` | `merge_target_to_main` | pr-merge-finalize |
+| `STUDIO_BRANCH_POLICY_MERGE_TARGET_TO_MAIN` | `merge_target_to_main` | pr-merge-finalize mainline-source gate |
 | `STUDIO_BRANCH_POLICY_WORKTREE_GC_SCOPE` | `worktree_gc_scope` | Studio-owned worktree cleanup |
 | `STUDIO_BRANCH_POLICY_WORKTREE_DISK_BUDGET_MB` | `worktree_disk_budget_mb` | Studio-owned worktree cleanup |
 | `STUDIO_TARGET_REPO_AUTO_MERGE` | `pr_policy.target_repo_auto_merge` | pr-merge-finalize target-repo auto-merge lock |
@@ -97,7 +102,7 @@ Surface-specific bypasses still apply for backwards compatibility:
 |---|---|---|
 | pre-commit base-branch guard | `STUDIO_BYPASS_MAIN_COMMIT_GUARD=1` | `STUDIO_BYPASS_BRANCH_POLICY=1` |
 | pr-merge-finalize merge-commit gate | `STUDIO_BYPASS_FEATURE_MERGE_COMMIT_GATE=1` | `STUDIO_BYPASS_BRANCH_POLICY=1` |
-| pr-merge-finalize merge-target gate | none | `STUDIO_BYPASS_BRANCH_POLICY=1` |
+| pr-merge-finalize mainline-source gate | none | `STUDIO_BYPASS_BRANCH_POLICY=1` |
 | pr-merge-finalize target-repo auto-merge lock | `STUDIO_TARGET_REPO_AUTO_MERGE=1`, or `--allow-target-repo-auto-merge --user-approved-bypass <github-url>` | none |
 
 Assistants must not set the bypass on their own initiative; it is the user's
@@ -111,7 +116,7 @@ lever per the rule in CLAUDE.md §"Where workflow rules live".
   namespace.
 - `scripts/manager-release-branch.sh` — uses the release branch policy for
   status, prepare, sync, and PR preflight.
-- `scripts/pr-merge-finalize.sh` — applies PR merge-commit and merge-target
+- `scripts/pr-merge-finalize.sh` — applies PR merge-commit and mainline-source
   gates before invoking GitHub.
 - `.githooks/pre-commit` — applies the base-branch guard.
 

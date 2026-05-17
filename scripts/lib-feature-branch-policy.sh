@@ -69,6 +69,83 @@ feature_branch_policy_worktree_disk_budget_mb() {
   printf '%s\n' "${STUDIO_BRANCH_POLICY_WORKTREE_DISK_BUDGET_MB:-10240}"
 }
 
+feature_branch_policy_release_branch_glob() {
+  local pattern
+  pattern=$(feature_branch_policy_release_branch_pattern)
+  printf '%s\n' "${pattern//\{version\}/*}"
+}
+
+feature_branch_policy_is_mainline_branch() {
+  case "${1:-}" in
+    main|master|trunk|develop) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+feature_branch_policy_is_hotfix_branch() {
+  case "${1:-}" in
+    hotfix/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+feature_branch_policy_is_release_branch() {
+  local branch="${1:-}" configured_glob
+  [ -n "$branch" ] || return 1
+  configured_glob=$(feature_branch_policy_release_branch_glob)
+  case "$branch" in
+    $configured_glob|release/*|releases/*|v/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+feature_branch_policy_is_main_merge_source() {
+  local branch="${1:-}"
+  feature_branch_policy_is_release_branch "$branch" || feature_branch_policy_is_hotfix_branch "$branch"
+}
+
+feature_branch_policy_latest_release_branch() {
+  local repo="${1:?usage: feature_branch_policy_latest_release_branch <repo>}" ref branch
+  feature_branch_policy_load_config "$repo"
+  git -C "$repo" for-each-ref --sort=-committerdate --format='%(refname:short)' refs/remotes/origin refs/heads 2>/dev/null |
+    while IFS= read -r ref; do
+      [ -n "$ref" ] || continue
+      case "$ref" in
+        origin/HEAD) continue ;;
+        origin/*) branch="${ref#origin/}" ;;
+        *) branch="$ref" ;;
+      esac
+      feature_branch_policy_is_release_branch "$branch" || continue
+      printf '%s\n' "$branch"
+      return 0
+    done
+}
+
+feature_branch_policy_task_base_ref() {
+  local repo="${1:?usage: feature_branch_policy_task_base_ref <repo> [known-branch]}"
+  local known_branch="${2:-}" latest_release="" configured_base=""
+
+  feature_branch_policy_load_config "$repo"
+
+  if [ -n "$known_branch" ] \
+     && ! feature_branch_policy_is_mainline_branch "$known_branch" \
+     && ! feature_branch_policy_is_release_branch "$known_branch" \
+     && ! feature_branch_policy_is_hotfix_branch "$known_branch"; then
+    printf '%s\n' "$known_branch"
+    return 0
+  fi
+
+  latest_release=$(feature_branch_policy_latest_release_branch "$repo" 2>/dev/null | head -n 1)
+  if [ -n "$latest_release" ]; then
+    printf '%s\n' "$latest_release"
+    return 0
+  fi
+
+  configured_base=$(feature_branch_policy_default_base)
+  [ -n "$configured_base" ] || configured_base="main"
+  printf '%s\n' "$configured_base"
+}
+
 feature_branch_policy_ref_sha() {
   local repo="${1:?usage: feature_branch_policy_ref_sha <repo> <ref>}"
   local ref="${2:?ref required}"

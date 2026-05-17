@@ -286,6 +286,24 @@ Assistants must not set `STUDIO_TARGET_REPO_AUTO_MERGE=1`,
 `STUDIO_ALLOW_TARGET_REPO_AUTO_MERGE=1`, or pass the one-shot unlock on their
 own initiative. The user owns that switch.
 
+## PR base branch policy (hard rule)
+
+When planning or launching target-project task work, do not default PRs to
+`main`. If the work is already on or explicitly tied to a feature branch, the
+task PR should target that feature branch. Otherwise, target the newest release
+branch matching the project's configured release pattern. Fall back to the
+configured default base only when no known feature or release branch exists.
+
+Mechanical defaults live in `scripts/manager-plan-chain.sh` via
+`feature_branch_policy_task_base_ref`. Mechanical merge enforcement lives in
+`scripts/pr-merge-finalize.sh`: with branch policy enabled, PRs into `main`,
+`master`, `trunk`, or `develop` are allowed only when the head branch is a
+release branch or `hotfix/*`. Ordinary feature/task branches must retarget to a
+release branch or known feature branch before merge.
+
+The emergency override is `STUDIO_BYPASS_BRANCH_POLICY=1`. Assistants must not
+set it on their own initiative; the user owns that switch.
+
 ## Artifact cleanup (hard rule)
 
 Studio shell-script workflows MUST clean their own filesystem state on terminal

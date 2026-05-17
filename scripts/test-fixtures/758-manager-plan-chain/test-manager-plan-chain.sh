@@ -217,6 +217,8 @@ grep -q '^issue create --repo example/project ' "$GH_LOG" || {
 RESULT="$TMPROOT/home/.dev-studio/generic-dev-studio/plan-chains/happy/result.json"
 MANIFEST="$TMPROOT/home/.dev-studio/generic-dev-studio/plan-chains/happy/work-chain.yaml"
 REVIEW="$TMPROOT/home/.dev-studio/generic-dev-studio/plan-chains/happy/plan-review.md"
+EXPECTED_BASE=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'main')
+[ "$EXPECTED_BASE" = "HEAD" ] && EXPECTED_BASE="main"
 
 jq -e '
   .status == "ready" and
@@ -238,9 +240,9 @@ yq -e '
   (.chains[0].issues | length) >= 2
 ' "$MANIFEST" >/dev/null || fail "generated work-chain manifest is not runnable shape"
 
-yq -e '
-  .chains[0].base_ref == "main" and
-  .chains[0].source_branch == "main" and
+EXPECTED_BASE="$EXPECTED_BASE" yq -e '
+  .chains[0].base_ref == env(EXPECTED_BASE) and
+  .chains[0].source_branch == env(EXPECTED_BASE) and
   .chains[0].independent == false and
   ((.chains[0].base_sha // "") | test("^[0-9a-f]{7,}$"))
 ' "$MANIFEST" >/dev/null || {
