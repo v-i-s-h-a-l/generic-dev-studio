@@ -75,6 +75,7 @@ write_child_launch_context \
   "$START_PATH" \
   "" \
   "" \
+  "" \
   "scripts/codex-worker-exec.sh" \
   true
 

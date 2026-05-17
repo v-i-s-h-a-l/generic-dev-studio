@@ -17,7 +17,7 @@ fail() {
 command -v jq >/dev/null 2>&1 || fail "jq required"
 
 RUNS="$TMPROOT/chain-runs"
-mkdir -p "$RUNS/run-stale" "$RUNS/run-retry" "$RUNS/run-reviewer"
+mkdir -p "$RUNS/run-stale" "$RUNS/run-retry" "$RUNS/run-reviewer" "$RUNS/run-completed-historical"
 
 cat > "$RUNS/run-stale/report.md" <<'MD'
 # Studio Chain Run Report
@@ -142,6 +142,82 @@ if grep -q 'Recommended action: `retry_after_transient_check`' "$RETRY_MD"; then
   cat "$RETRY_MD" >&2
   fail "retryable halt recommended blind resume during cooldown"
 fi
+
+cat > "$RUNS/run-completed-historical/report.md" <<'MD'
+# Studio Chain Run Report
+
+- Status: `completed`
+MD
+cat > "$RUNS/run-completed-historical/state.json" <<JSON
+{
+  "schema_version": 1,
+  "run_id": "run-completed-historical",
+  "manifest": "chains/doctor.yaml",
+  "status": "completed",
+  "started_at": "2026-05-09T00:00:00Z",
+  "updated_at": "2026-05-09T00:03:00Z",
+  "report": "$RUNS/run-completed-historical/report.md",
+  "report_generated_at": "2026-05-09T00:03:00Z",
+  "chains": [
+    {
+      "name": "doctor",
+      "issues": [
+        {"issue_number": 77104, "issue_run_id": "issue-run-completed", "status": "completed"}
+      ]
+    }
+  ],
+  "halt_records": [
+    {
+      "path": "$RUNS/run-completed-historical/halt-records/recovered.json",
+      "created_at": "2026-05-09T00:02:00Z",
+      "reason_id": "cwd_auth_profile_mismatch",
+      "halt_class": "recoverable",
+      "status": "paused",
+      "summary": "worker recovered after auth home was corrected",
+      "issue_context": {
+        "issue_number": 77104,
+        "issue_run_id": "issue-run-completed",
+        "title": "Recovered fixture"
+      },
+      "next_command": "scripts/studio-chain-runner.sh --resume run-completed-historical --yes",
+      "next_safe_action": "Historical recovery action that should not be active after completion."
+    }
+  ]
+}
+JSON
+
+COMPLETED_HISTORICAL_MD="$TMPROOT/completed-historical.md"
+"$DOCTOR" --chain-run-root "$RUNS/run-completed-historical" > "$COMPLETED_HISTORICAL_MD"
+grep -q 'Active blocker: `none`' "$COMPLETED_HISTORICAL_MD" || {
+  cat "$COMPLETED_HISTORICAL_MD" >&2
+  fail "completed run reported historical halt as active blocker"
+}
+grep -q 'Recommended action: `no_recovery_needed`' "$COMPLETED_HISTORICAL_MD" || {
+  cat "$COMPLETED_HISTORICAL_MD" >&2
+  fail "completed run with historical halt recommended recovery"
+}
+grep -q 'Historical halts: `1`' "$COMPLETED_HISTORICAL_MD" || {
+  cat "$COMPLETED_HISTORICAL_MD" >&2
+  fail "completed run did not preserve historical halt count"
+}
+if grep -q 'Deferred resume command:' "$COMPLETED_HISTORICAL_MD"; then
+  cat "$COMPLETED_HISTORICAL_MD" >&2
+  fail "completed run exposed stale resume command"
+fi
+
+COMPLETED_HISTORICAL_JSON="$TMPROOT/completed-historical.json"
+"$DOCTOR" --chain-run-root "$RUNS/run-completed-historical" --format json > "$COMPLETED_HISTORICAL_JSON"
+jq -e '
+  .truth_state.active_halt_count == 0
+  and .truth_state.historical_halt_count == 1
+  and .active_blocker == null
+  and (.active_halts | length) == 0
+  and (.historical_halts | length) == 1
+  and .recommendation.action == "no_recovery_needed"
+' "$COMPLETED_HISTORICAL_JSON" >/dev/null || {
+  cat "$COMPLETED_HISTORICAL_JSON" >&2
+  fail "completed historical halt JSON did not demote active blocker"
+}
 
 cat > "$RUNS/run-reviewer/state.json" <<JSON
 {
