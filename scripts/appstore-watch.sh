@@ -12,7 +12,7 @@
 #
 # On terminal state (PENDING_DEVELOPER_RELEASE / READY_FOR_SALE):
 #   1. gh release edit <tag> --draft=false
-#   2. Threaded Slack reply on the original #releases message
+#   2. Slack closeout on the original #releases message
 #   3. Delete marker
 #   4. Emit appstore_released
 # Steps 1 and 2 are tracked in marker.finalize_progress for idempotency —
@@ -287,12 +287,22 @@ PY
       if [ -r "$SLACK_TOKEN_FILE" ] && [ -n "$PARENT_TS" ] && [ -n "$CHANNEL" ]; then
         SLACK_BOT_TOKEN=$(cat "$SLACK_TOKEN_FILE")
         MSG="🎉 Live on App Store — notes: $URL"
-        BODY=$(python3 - "$CHANNEL" "$PARENT_TS" "$MSG" <<'PY'
+        if [ "$STATE" = "READY_FOR_SALE" ]; then
+          SLACK_ENDPOINT=https://slack.com/api/chat.update
+          BODY=$(python3 - "$CHANNEL" "$PARENT_TS" "$MSG" <<'PY'
+import json, sys
+print(json.dumps({'channel': sys.argv[1], 'ts': sys.argv[2], 'text': sys.argv[3]}))
+PY
+)
+        else
+          SLACK_ENDPOINT=https://slack.com/api/chat.postMessage
+          BODY=$(python3 - "$CHANNEL" "$PARENT_TS" "$MSG" <<'PY'
 import json, sys
 print(json.dumps({'channel': sys.argv[1], 'thread_ts': sys.argv[2], 'text': sys.argv[3]}))
 PY
 )
-        if curl -s --max-time 20 -X POST https://slack.com/api/chat.postMessage \
+        fi
+        if curl -s --max-time 20 -X POST "$SLACK_ENDPOINT" \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$BODY" >/dev/null 2>&1; then

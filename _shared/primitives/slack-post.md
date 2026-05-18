@@ -63,6 +63,21 @@ curl -sS -X POST https://slack.com/api/chat.postMessage \
   -d "{\"channel\":\"CHANNEL_ID\",\"thread_ts\":\"$PARENT_TS\",\"text\":\"DETAIL\"}"
 ```
 
+## Parent Updates (chat.update)
+
+When a later lifecycle event changes the meaning of an existing top-level
+announcement, update that parent message instead of posting a new reply:
+
+```bash
+curl -sS -X POST https://slack.com/api/chat.update \
+  -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"channel\":\"CHANNEL_ID\",\"ts\":\"$PARENT_TS\",\"text\":\"UPDATED_MESSAGE_TEXT\"}"
+```
+
+Use the parent message `ts`, not `thread_ts`. This keeps release-channel parent
+messages current when App Store Connect reaches `READY_FOR_SALE`.
+
 ## <!here> Rule
 
 Use `<!here>` only in top-level (non-thread) messages. Slack does not propagate `<!here>` in thread replies — never include it there.
