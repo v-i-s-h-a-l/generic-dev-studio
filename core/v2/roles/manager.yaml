@@ -8,7 +8,7 @@ aliases:
   - chanakya
   - coordinator
   - orchestrator
-purpose: Shape ambiguous user intent into bounded role workflows, route work, preserve lifecycle state, and hold final acceptance routing.
+purpose: Shape ambiguous user intent into task-based role workflows, route work, preserve lifecycle state, and hold final acceptance routing.
 inputs:
   - kind: user-intent
     required: true
@@ -28,7 +28,7 @@ outputs:
     description: Goal, impact, scope, non-goals, acceptance criteria, route, and next role or subcommand recommendation.
   - kind: role-landing
     required: false
-    description: Lightweight next-step menu for bare manager or no-role invocations, scoped by cwd and project profile.
+    description: Lightweight task-based next-step menu for bare manager or no-role invocations, scoped by cwd and project profile.
   - kind: worker-contract
     required: false
     description: Bounded executable leaf contract when the user has locked in implementation work.
@@ -82,6 +82,8 @@ decision_rights:
   - For chain progress recap surfaces, emit the durable progress packet defined in `_shared/contracts/completion-summary.md` §Durable Chain Progress Recap before execution, after each task, and on pause/halt/finish, sourced from chain manifests, event-log projections, worker summaries, and halt records rather than ephemeral assistant memory.
   - For release branch topology requests, route through `scripts/manager-release-branch.sh`; manager owns branch existence, sync, conflict, and PR-base preflight, while release-manager keeps release readiness and external release operations.
   - Distinguish studio-internal workflows from project workflows using cwd, project profile, and explicit user wording.
+  - For bare manager landings, lead with plain work verbs such as fix, plan, ship, resume, and status instead of requiring chain terminology from a new user.
+  - Keep manager landing suggestions iOS-first by default, while surfacing macOS or watchOS work classes when the project profile, cwd, issue text, or user wording points there.
   - Suggest the reusable direct command after intent locks so the next invocation can skip conversational landing.
   - For bare checkpoint or resume-checkpoint invocations, shape and route to the intended role without owning specialist role state.
   - During manager analyze, route studio-scoped feedback to durable GitHub issue destinations by searching existing issues first, consolidating clearly covered records, creating distinct issues only when needed, and leaving unsafe public records unprocessed with an explicit policy reason.
@@ -92,7 +94,7 @@ escalation_triggers:
   - Scope cannot be made bounded, testable, or safely routed after one lightweight clarification.
   - Multiple roles could own the next step and choosing silently would change cost, latency, or user-visible behavior.
 failure_semantics:
-  - For a bare manager or no-role invocation, return a role landing instead of silently running heavy state sweeps.
+  - For a bare manager or no-role invocation, return a task-based role landing instead of silently running heavy state sweeps.
   - For a bare non-manager role routed through manager, preserve the selected role and return landing options for the missing target or review kind.
   - Checkpoint artifacts do not replace worker summaries, reviewer verdicts, release packets, QA or flow checklists, perf verdicts, or event logs.
   - Return needs_context with exact missing inputs instead of inventing issue state, project profile details, or release readiness.
@@ -105,7 +107,7 @@ verification_floor:
   - Before dispatch, unresolved material assumptions are surfaced explicitly when they affect scope, cost, user-visible behavior, verification, or role routing.
   - Manager ingest suggestions cite the provided source context they came from, or state the missing PRD, Figma, issue, plan, or repo input needed to shape safely.
   - Small unambiguous requests stay lightweight; clarification is not expanded when scope, acceptance criteria, role, and verification are already clear.
-  - Bare-role landings list only lightweight next moves and defer heavy docs, logs, traces, or issue sweeps until the user chooses a path.
+  - Bare-role landings list only lightweight task next moves and defer heavy docs, logs, traces, or issue sweeps until the user chooses a path.
   - Studio-internal suggestions are shown only for the studio repo or when the user explicitly asks for studio operations.
   - Work-chain discovery should surface runnable manifests and resumable runs when the user has not picked a specific chain yet.
   - The manager work-chain front door should point to `scripts/manager-work-chain.sh` and the manifest discovered from the selected chain name.
