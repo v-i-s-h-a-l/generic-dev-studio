@@ -140,6 +140,15 @@ printf 'chain executed\n'
 SH
 chmod +x "$BIN/work-chain-exec"
 
+cat > "$BIN/work-chain-exec-attended" <<'SH'
+#!/usr/bin/env bash
+set -eu
+printf 'work-chain-exec-attended %s\n' "$*"
+test -f "$1" || { printf 'missing generated manifest: %s\n' "$1" >&2; exit 13; }
+printf 'chain executed\n'
+SH
+chmod +x "$BIN/work-chain-exec-attended"
+
 cat > "$BIN/claude" <<'SH'
 #!/usr/bin/env bash
 case " $* " in
@@ -322,6 +331,43 @@ grep -q 'Status: `executed`' "$TMPROOT/from-plan.out" || {
 }
 grep -q 'Execution: `completed`' "$TMPROOT/from-plan.out" \
   || fail "from-plan execution status was not reported"
+FROM_PLAN_RESULT="$TMPROOT/home/.dev-studio/generic-dev-studio/plan-chains/from-plan/result.json"
+jq -e --arg exec "$BIN/work-chain-exec" '
+  .execution.requested == true and
+  .execution.status == "completed" and
+  .execution.command == [$exec, .work_chain, "--unattended", "--yes"]
+' "$FROM_PLAN_RESULT" >/dev/null || {
+  jq '.execution' "$FROM_PLAN_RESULT" >&2
+  fail "from-plan execution did not confirm the generated unattended run by default"
+}
+
+PATH="$BIN:$PATH" \
+HOME="$TMPROOT/home" \
+GH_LOG="$GH_LOG" \
+ISSUE_COUNTER="$ISSUE_COUNTER" \
+CLAUDE_REVIEWER_HOME="$TMPROOT/claude-reviewer" \
+CLAUDE_REVIEWER_CONFIG_DIR="$TMPROOT/claude-reviewer/.claude-reviewer" \
+STUDIO_PARENT_HOST=codex \
+STUDIO_MANAGER_PLAN_CHAIN_PROJECT=generic-dev-studio \
+STUDIO_MANAGER_PLAN_CHAIN_RUN_ID=interactive-execute \
+STUDIO_MANAGER_PLAN_CHAIN_EXECUTOR="$BIN/work-chain-exec-attended" \
+  "$RUN" --from-plan "$TASK_GRAPH" --repo example/project --chain interactive-chain --execute --interactive --yes >"$TMPROOT/interactive.out" 2>"$TMPROOT/interactive.err"
+
+grep -q 'Status: `executed`' "$TMPROOT/interactive.out" || {
+  cat "$TMPROOT/interactive.out" >&2
+  cat "$TMPROOT/interactive.err" >&2
+  fail "plan-chain --execute --interactive --yes did not execute the generated chain"
+}
+INTERACTIVE_RESULT="$TMPROOT/home/.dev-studio/generic-dev-studio/plan-chains/interactive-execute/result.json"
+jq -e --arg exec "$BIN/work-chain-exec-attended" '
+  .automation_mode == "interactive" and
+  .execution.requested == true and
+  .execution.status == "completed" and
+  .execution.command == [$exec, .work_chain, "--attended", "--yes"]
+' "$INTERACTIVE_RESULT" >/dev/null || {
+  jq '.execution' "$INTERACTIVE_RESULT" >&2
+  fail "interactive plan-chain execution did not treat --yes as optional confirmed execution"
+}
 
 CARDINALITY="$TMPROOT/cardinality.md"
 cat > "$CARDINALITY" <<'EOF'

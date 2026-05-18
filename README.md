@@ -399,7 +399,8 @@ cleanup, Project-field, and telemetry artifacts under
 verdict, links worker issues under a native parent issue when available,
 populates configured Projects v2 fields, then writes a runnable manifest and
 prints the next `/dev-studio manager work-chain <manifest>` command. Add
-`--execute` for one-command unattended PRD-to-chain execution; add
+`--execute` for one-command unattended PRD-to-chain execution; `--yes` is
+accepted but optional because the generated chain starts by default. Add
 `--interactive` when the generated chain should run attended. If the source is
 too rough, it returns `needs_context` before issue or manifest creation.
 For issue briefs that have important discussion in comments, add
