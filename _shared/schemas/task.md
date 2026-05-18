@@ -4,18 +4,18 @@ description: YAML shape for per-task artifacts under plans/tasks/<task-id>.yaml.
 type: reference
 ---
 
-# Task Schema (`task@1.2.0`)
+# Task Schema (`task@1.3.0`)
 
 Per-task artifact written to `~/.dev-studio/<project>/plans/tasks/<task-id>.yaml`. Replaces the inline per-task markdown block in the legacy master plan. One file per task — the master plan becomes a rendered view, no longer a source of truth (Phase 2.6).
 
-Versions 1.1.0 and 1.2.0 are both non-breaking — every new field is optional with a documented default (per `contracts/EVOLUTION.md` rule 1). Readers on earlier versions transparently ignore the new fields; writers may emit them when value is known. `min_reader: 1.0.0` keeps the entire active fleet compatible.
+Versions 1.1.0, 1.2.0, and 1.3.0 are non-breaking — every new field is optional with a documented default (per `contracts/EVOLUTION.md` rule 1). Readers on earlier versions transparently ignore the new fields; writers may emit them when value is known. `min_reader: 1.0.0` keeps the entire active fleet compatible.
 
 ## Shape
 
 ```yaml
 schema_version:
   name: task
-  version: 1.2.0
+  version: 1.3.0
   min_reader: 1.0.0
   deprecated_at: null
 id: 0190f52a-6e0c-7b3c-9a1d-0d4e9b7f6a11       # UUIDv7
@@ -54,6 +54,7 @@ links:
   reviews: []                                    # list of review-ids
   release: null                                  # release-id | null
   feedback: []                                   # list of feedback-ids
+  crashes: []                                    # 1.3.0; list of crash-ids addressed by this task
 history:
   - from: null
     to: proposed
@@ -80,6 +81,7 @@ history:
 | `links.reviews` | array of UUIDv7 | yes | All Argus reviews issued against the task's worktree. Append-only by Argus per `primitives/agent-comms-boundary.md`. |
 | `links.release` | UUIDv7 \| null | yes | Release artifact the task shipped in. Null until release-flow mode links it. |
 | `links.feedback` | array of UUIDv7 | yes | Feedback records that reference this task. |
+| `links.crashes` | array of UUIDv7 | no | Crash records addressed by this task. Default `[]`. Bidirectional with `crash.linked_tasks`; public surfaces must use the crash record's public-safe projection, not private crash fields. (1.3.0) |
 | `history` | array of transition records | yes | Append-only. See §History below. |
 
 ### Lean fields (1.1.0)
@@ -124,6 +126,7 @@ The schema carries several relation edges, all forward-only on the storing task.
 | confirmed duplicate | `duplicate_of` | one | `duplicates` |
 | suspected similar | `similar_to` | many | `similar_to` (symmetric hint; not strictly inverse) |
 | caused-by | `caused_by` | many | `causes` |
+| crash-fixed-by | `links.crashes` | many | `fixed-by-task` |
 | reopen lineage | `reopen_chain` | many (chronological) | (no inverse — chain is per-task history) |
 
 Reverse-index helper: `scripts/query-relations.sh --task <id>` joins these into a `forward:` / `inverse:` block. `/chanakya status --task <id>` renders that block; `/chanakya brief` and `/chanakya intake` consult `similar_to` / `duplicate_of` at author time to surface possible duplicates.
@@ -162,6 +165,7 @@ Back-reference invariants enforced by `contracts/plans-index-validator.md`:
 
 - `task.links.brief = X` ⇔ `brief.task_id = task.id` and `brief.id = X`.
 - Every `review-id` in `links.reviews` resolves to a `review.yaml` whose `subject.kind = task` and `subject.id = task.id`.
+- Every crash ID in `links.crashes` resolves to a `crash.yaml` whose `linked_tasks` contains this task ID. Chain state, worker prompts, commit bodies, build summaries, release notes, and post-release annotations derived from this edge must project only `crash.public_label`, `crash.public_crash_url`, `crash.fix_confidence`, and build/version context.
 - Orphans (no inbound references) produce validator warnings; dangling (reference without artifact) produces validator blocks.
 
 The `plans/index.yaml` relational index is authoritative for joins; `links:` blocks let a single file stand alone without loading the index.
@@ -198,6 +202,8 @@ links:
     - 0190f52a-7a11-7e03-8c99-44df6fd77a77
   release: null
   feedback: []
+  crashes:
+    - 0190f52b-0000-7100-8ccc-99ff00aa11bb
 history:
   - {from: null,            to: proposed,       actor: chanakya, at: 2026-04-22T10:15:00Z, event_id: 0190f52a-6e0c-7c11-80aa-22bb33cc44dd}
   - {from: proposed,        to: briefed,        actor: chanakya, at: 2026-04-22T10:18:02Z, event_id: 0190f52a-6f20-7c12-80aa-22bb33cc44de}
@@ -264,6 +270,7 @@ history:
 
 | Version | Landed | Changes |
 |---|---|---|
+| 1.3.0 | 2026-05-18 | Added optional `links.crashes` for crash-fix task traceability. Public propagation through worker prompts, commits, build summaries, release notes, and post-release annotations must use the crash schema's public-safe projection. Non-breaking; `min_reader: 1.0.0`. |
 | 1.2.0 | 2026-04-27 | Added `caused_by` (regression / fallout provenance — UUIDv7 array; default `[]`). Forward-only; inverse `causes` is computed at read time by `scripts/query-relations.sh`. Non-breaking; `min_reader: 1.0.0`. New "Relation edges" section enumerates the forward/inverse model across all existing edges. (#282) |
 | 1.1.0 | 2026-04-27 | Lean fields landed (#247 Stage C deliverable 2): `type`, `priority`, `labels`, `parent`, `train`, `release_target`, `released_in`, `predecessors`, `similar_to`, `affinity`, `origin`, `effort_minutes`, `recommended_model`, `reopen_reason`, `reopen_chain`, `duplicate_of`, `verification`. All optional with documented defaults — non-breaking; `min_reader: 1.0.0`. `reopened` reserved in state enum for #252. |
 | 1.0.0 | 2026-04-22 | Initial Phase 2.6 landing — per-task YAML replaces master-plan inline blocks. |
