@@ -82,6 +82,7 @@ read_field() {
       slack_channel) yq -r '.slack.posted_to // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       slack_parent_ts) yq -r '.slack.message_ts // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       github_release_url) yq -r '.github_release_url // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
+      crash_fixes) yq -o=json '.crash_fixes // .asc_metadata.crash_fixes // []' "$ACTIVE_RELEASE_FILE" 2>/dev/null ;;
       asc_key_path) printf '%s\n' "${STUDIO_TF_ASC_KEY_PATH:-}" ;;
       asc_issuer_id) printf '%s\n' "${STUDIO_TF_ASC_ISSUER_ID:-}" ;;
       asc_key_id) printf '%s\n' "${STUDIO_TF_ASC_KEY_ID:-}" ;;
@@ -99,6 +100,20 @@ except Exception:
     v = ""
 print(v if v is not None else "")
 PY
+}
+
+read_json_field() {
+  local field="$1" value
+  if [ "$MARKER_SOURCE" = "json" ]; then
+    jq -c --arg field "$field" '.[$field] // []' "$MARKER" 2>/dev/null || printf '[]\n'
+    return 0
+  fi
+  value=$(read_field "$field")
+  if printf '%s\n' "$value" | jq -e . >/dev/null 2>&1; then
+    printf '%s\n' "$value" | jq -c .
+  else
+    printf '[]\n'
+  fi
 }
 
 MARKER_PROJECT=$(read_field project)
@@ -143,6 +158,8 @@ if [ ! -f "$KEY_PATH" ]; then
   echo "[appstore-watch] ASC key not found at $KEY_PATH — skipping" >&2
   exit 0
 fi
+
+CRASH_FIXES_JSON=$(read_json_field crash_fixes)
 
 # Bump failure counter, update cadence, optionally mark stuck. Reused across
 # all error paths. Args: <reason> [<partial-state>]
@@ -319,7 +336,7 @@ PY
     fi
     [ -n "$release_uuid" ] && set_release_asc_poll "$release_uuid" "$STATE" "$NOW_ISO" "$NOW_ISO" 0 false || true
     append_event chanakya appstore_released "$TAG" \
-      "{\"final_state\":\"$STATE\",\"tag\":\"$TAG\"}" 2>/dev/null || true
+      "$(jq -cn --arg state "$STATE" --arg tag "$TAG" --arg version "$VERSION" --argjson crashes "$CRASH_FIXES_JSON" '{final_state:$state,tag:$tag,version:$version,crash_fixes:($crashes | map(. + {crashlytics_closeout:(.crashlytics_closeout // .closeout // "queued")}))}')" 2>/dev/null || true
     echo "[appstore-watch] finalized $TAG — marker reconciled"
     ;;
   *)

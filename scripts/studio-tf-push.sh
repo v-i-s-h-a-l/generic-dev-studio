@@ -23,6 +23,8 @@
 #              `release_failed`) with the same release-tag the wrapper
 #              captured from `push`. Lets the wrapper participate in the
 #              event taxonomy without exposing `lib-ledger.sh` directly.
+#   compose-message — Convert git-log-style commit blocks into public-safe
+#              TestFlight / App Store bullets.
 #
 # Usage:
 #   scripts/studio-tf-push.sh [push] [--scheme <name>] [--dry-run]
@@ -30,6 +32,7 @@
 #                              --release-notes-file <path> --whatsnew-file <path> \
 #                              [--dry-run]
 #   scripts/studio-tf-push.sh emit <event> --release-tag <tag> --data <json>
+#   scripts/studio-tf-push.sh compose-message --channel testflight|appstore [--input <path>] [--json]
 #
 # Env:
 #   STUDIO_TF_PUSH_LIVE=1         required for non-dry-run external effects.
@@ -50,6 +53,10 @@ set -u
 umask 022
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
+if [ "${1:-}" = "compose-message" ]; then
+  shift
+  exec "$SCRIPT_DIR/compose-build-release-message.sh" "$@"
+fi
 # shellcheck source=lib-paths.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/lib-paths.sh"
@@ -83,6 +90,31 @@ XCPRETTY="${STUDIO_TF_XCPRETTY:-/Users/vishalsingh/.gem/ruby/2.6.0/bin/xcpretty}
 ASC_TIMEOUT="${STUDIO_TF_ASC_TIMEOUT:-20}"
 SLACK_TOKEN_FILE=$(release_slack_token_file)
 ASC_AUTH_HINT="studio-tf-push uses App Store Connect API key auth only; fastlane discovery/session auth is not an automatic fallback"
+
+release_crash_fixes_json() {
+  local value="${STUDIO_RELEASE_CRASH_FIXES_JSON:-}"
+  if [ -z "$value" ] && [ -n "${STUDIO_RELEASE_CRASH_FIXES_FILE:-}" ] && [ -r "$STUDIO_RELEASE_CRASH_FIXES_FILE" ]; then
+    value=$(cat "$STUDIO_RELEASE_CRASH_FIXES_FILE")
+  fi
+  if [ -z "$value" ]; then
+    printf '[]\n'
+    return 0
+  fi
+  if ! printf '%s\n' "$value" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    halt_failed prereq "STUDIO_RELEASE_CRASH_FIXES_JSON must be a JSON array of public-safe crash projections"
+  fi
+  printf '%s\n' "$value" | jq -c '
+    map({
+      id: (.id // null),
+      public_label: (.public_label // null),
+      public_crash_url: (.public_crash_url // .crash_url // .url // null),
+      fix_confidence: (.fix_confidence // .confidence // null),
+      build: (.build // null),
+      version: (.version // null),
+      closeout: (.closeout // .crashlytics_closeout // null)
+    } | select(.public_crash_url != null))
+  '
+}
 
 _json_obj() {
   local out='{}'
@@ -315,6 +347,8 @@ cmd_push() {
   fi
 
   RELEASE_TAG="${STUDIO_RELEASE_TAG:-release-$((LATEST_BUILD_NUMBER + 1))-$(date -u +%Y%m%d-%H%M%S)}"
+  local CRASH_FIXES_JSON
+  CRASH_FIXES_JSON=$(release_crash_fixes_json)
 
   emit_release release_started "$(_json_obj \
     "build_from=$LATEST_BUILD_NUMBER" \
@@ -537,7 +571,8 @@ PLIST
     --arg branch "$BRANCH" \
     --arg archive_path "$ARCHIVE_PATH" \
     --argjson prev_build "$LATEST_BUILD_NUMBER" \
-    '{release_tag:$release_tag, build:$build, version:$version, scheme:$scheme, branch:$branch, archive_path:$archive_path, prev_build:$prev_build}'
+    --argjson crash_fixes "$CRASH_FIXES_JSON" \
+    '{release_tag:$release_tag, build:$build, version:$version, scheme:$scheme, branch:$branch, archive_path:$archive_path, prev_build:$prev_build, crash_fixes:($crash_fixes | map(. + {build:$build, version:$version, closeout:(.closeout // "queued")}))}'
 }
 
 cmd_appstore() {
@@ -567,6 +602,8 @@ cmd_appstore() {
     require_appstore_asc_auth
   fi
   route_to_release_node
+  local CRASH_FIXES_JSON
+  CRASH_FIXES_JSON=$(release_crash_fixes_json)
 
   local TAG="${BUILD}-zaps"
   if [ "$DRY_RUN_FLAG" = "1" ]; then
@@ -652,10 +689,12 @@ cmd_appstore() {
     --arg version_id "$version_id" \
     --arg build_id "$build_id" \
     --argjson loc_count "$loc_count" \
-    '{release_tag:$release_tag, tag:$tag, version_id:$version_id, build_id:$build_id, localizations:$loc_count}'
+    --argjson crash_fixes "$CRASH_FIXES_JSON" \
+    '{release_tag:$release_tag, tag:$tag, version_id:$version_id, build_id:$build_id, localizations:$loc_count, crash_fixes:($crash_fixes | map(. + {closeout:(.closeout // "queued")}))}'
 }
 
 case "${1:-}" in
+  compose-message) shift; exec "$SCRIPT_DIR/compose-build-release-message.sh" "$@" ;;
   push|""|--dry-run|--scheme)
     [ "${1:-}" = "push" ] && shift
     cmd_push "$@" ;;
