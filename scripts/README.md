@@ -67,6 +67,9 @@ scripts/forge-latency-report.sh --project turnip-ios --days 14   # stage-level t
 scripts/field-workflow-report.sh --project turnip-ios --days 14   # Field loop timing, tokens, gates, review coverage, improvement candidates
 scripts/bug-reopen-iteration-report.sh --repo owner/repo --cohort-size 20 # #549 bug-fix closure iteration reopen metric; emits markdown or --json
 scripts/studio-weekly.sh --post                                  # weekly GitHub PM digest comment on the pinned summary issue
+/dev-studio manager                                              # plain landing for fix/plan/ship/resume/status; prints the direct command after routing
+/dev-studio help                                                 # router role index, or active-role help after a role is selected
+/dev-studio <role> help                                          # role commands, examples, aliases, and lifecycle actions
 scripts/studio-chain-runner.sh workflow-measurement-improvements            # default plan/explain + private resumable state
 scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # same resolved graph, then non-mutating command trace
 scripts/studio-chain-runner.sh workflow-measurement-improvements --host codex --yes # execute after plan with node/RAM-sized session pool + private report
@@ -75,6 +78,8 @@ STUDIO_CHAIN_TARGET_REPO_ROOT=/repo scripts/studio-chain-runner.sh /tmp/chain.ya
 scripts/studio-chain-runner.sh workflow-measurement-improvements --checkpoint auto --dry-run # preview role/branch-scoped checkpoint hooks
 scripts/studio-chain-runner.sh --discover                                  # bare invocation lists runnable chains, resumable runs, and next actions
 scripts/studio-chain-runner.sh --discover ios-v2-execution                 # filtered discovery for one chain, chain id, or manifest
+/dev-studio manager work-chain                                             # discover runnable chains and resumable runs before choosing automation
+/dev-studio manager work-chain ios-v2-execution                            # auto-run the iOS-first execution chain; macOS/watchOS surface when context points there
 /dev-studio manager work-chain ios-v2-execution --dry-run                  # preferred user-facing preview path
 /dev-studio manager work-chain --resume <run_id> --yes                     # preferred user-facing resume path from summaries/halt records
 /dev-studio manager work-chain --resume <run_id> --verified --yes          # attended verification resume with closeout inventory
