@@ -41,14 +41,14 @@ Post Phase 2.5 Commit C, layout is frozen: later phases land new files in existi
 
 | File | Purpose |
 |---|---|
-| `task.md` | Per-task YAML artifact (`task@1.1.0`). Phase 2.6 + #247 lean fields. |
+| `task.md` | Per-task YAML artifact (`task@1.3.0`). Phase 2.6 + #247 lean fields; crash-link traceability via `links.crashes`. |
 | `brief.md` | Chanakya → Achilles brief contract instance (`brief@3.1.0`). Phase 2.6. |
 | `debrief.md` | Achilles → Chanakya debrief artifact (`debrief@2.1.0`). Phase 2.6 + #247 `executed_with`. |
 | `review.md` | Argus / user verdict artifact (`review@1.0.0`). Phase 2.6. |
 | `round.md` | User-testing round aggregate (`round@1.0.0`). Phase 2.6. |
 | `release.md` | TestFlight / App Store release artifact (`release@1.1.0`). Phase 2.6 + #247 cancel→replace. |
 | `feedback.md` | Ingested feedback record (`feedback@1.0.0`). Phase 2.6. |
-| `crash.md` | Crashlytics-derived crash record (`crash@1.0.0`, writer lands in Phase 5). |
+| `crash.md` | Crashlytics-derived crash record (`crash@1.1.0`, writer lands in Phase 5) with a public-safe projection boundary for chain prompts, commits, build summaries, release notes, and post-release annotations. |
 | `build-debt.md` | Build-debt counter + threshold schema. |
 | `master-plan.md` | Master plan YAML shape (legacy; 2.6 supersedes with per-task files). |
 | `test-flow.md` | Test-flow round document shape (legacy; superseded by `round.md` in 2.6). |

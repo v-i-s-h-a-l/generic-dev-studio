@@ -48,6 +48,19 @@ Bare Crashlytics link per bullet — no behavioral description. Crashes are ofte
 
 Always at the bottom of the body (after *New* and *Fixed*). Detect crash-fix commits from commit-body keywords (`crash`, `Crashlytics`, `EXC_`, `fatal`) or an explicit Crashlytics URL in the commit body. If in doubt, drop into *Fixed*.
 
+Crash-fix commits may carry multiple crash entries. Keep one bullet per crash so per-crash traceability survives from chain state to build/release summary. Producers must read only the public-safe projection from `_shared/schemas/crash.md`: `public_crash_url`, optional `public_label`, `fix_confidence`, and build/version context. Do not include stack traces, user/session/device identifiers, raw Crashlytics payloads, private field dumps, `fingerprint_sha256`, or per-device/per-OS breakdown rows in Slack parents, release notes, GitHub commits, or PR descriptions.
+
+Confidence wording:
+
+| `fix_confidence` | TF parent | Release parent |
+|---|---|---|
+| `fixed` | `• <Crashlytics URL>` | `• Fixed crash <Crashlytics URL>` |
+| `possibly_fixed` | `• <Crashlytics URL>` | `• Possible fix for crash <Crashlytics URL>` |
+| `mitigated` | `• <Crashlytics URL>` | `• Mitigated crash <Crashlytics URL>` |
+| `duplicate` | omit unless this build also carries the canonical fix | omit unless this release also carries the canonical fix |
+| `cannot_reproduce` | omit unless a human explicitly marks it release-worthy | omit unless a human explicitly marks it release-worthy |
+| `null` / unknown | `• <Crashlytics URL>` | `• Possible fix for crash <Crashlytics URL>` |
+
 ## cc-mentions (TF only)
 
 Inline, end of line, parenthesized: `... (cc: <@USER_ID>)`. Scoped per-bullet to the specific person who reported or cares about that item. Do not roll up at top; do not credit for cookie points — the purpose is to let the reporter notice the fix, not signal attribution.

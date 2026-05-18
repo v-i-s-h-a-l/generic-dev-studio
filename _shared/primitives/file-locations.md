@@ -63,7 +63,7 @@ Phase 2.6 introduced a uniform per-artifact YAML layout under `plans/` + a singl
 | Round artifacts | `~/.dev-studio/<project>/plans/rounds/<round-id>.yaml` | `_shared/schemas/round.md` |
 | Release artifacts | `~/.dev-studio/<project>/plans/releases/<release-id>.yaml` | `_shared/schemas/release.md` |
 | Feedback artifacts | `~/.dev-studio/<project>/plans/feedback/<feedback-id>.yaml` | `_shared/schemas/feedback.md` |
-| Crash artifacts | `~/.dev-studio/<project>/plans/crashes/<crash-id>.yaml` | `_shared/schemas/crash.md` |
+| Crash artifacts | `~/.dev-studio/<project>/plans/crashes/<crash-id>.yaml` | `_shared/schemas/crash.md`; private by default. Public surfaces may project only `public_label`, `public_crash_url`, `fix_confidence`, build/version context, and public issue/commit/release references. |
 | Event log | `~/.dev-studio/<project>/events/<YYYY-MM-DD>.jsonl` | `_shared/contracts/events.md` |
 | Events index | `~/.dev-studio/<project>/events/index.yaml` | — |
 | Pre-migration archive | `~/.dev-studio/<project>/archive/2026-pre-2.6/` | frozen |
