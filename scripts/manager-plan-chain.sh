@@ -73,7 +73,7 @@ Usage:
   scripts/manager-plan-chain.sh --issue-set N,N [--body-only] [--repo owner/repo] [--chain name]
   scripts/manager-plan-chain.sh --source-file source.md [--chain name]
   scripts/manager-plan-chain.sh --from-plan task-graph.json [--chain name]
-  scripts/manager-plan-chain.sh --source-file prd.md --execute [--interactive]
+  scripts/manager-plan-chain.sh --source-file prd.md --execute [--interactive] [--yes]
 
 Normalizes a shaped goal or issue brief, synthesizes a planner task graph,
 runs same-host self-review plus scripts/phase-review.sh, creates durable
@@ -87,9 +87,10 @@ comments inform planning. --include-comments is accepted as a compatibility
 alias; --body-only is the explicit escape hatch.
 
 Default automation mode is unattended. Use --execute to launch the generated
-work-chain after a clean plan review. Use --interactive/--attended when the
-runner should pause only for material design, permission, implementation, or
-test blockers.
+work-chain after a clean plan review; --yes/--no-confirm is accepted but not
+required because plan-chain execution confirms the generated run by default.
+Use --interactive/--attended when the runner should pause only for material
+design, permission, implementation, or test blockers.
 
 If the source is too rough, the command returns status needs_context and stops
 before review, issue creation, or manifest creation.
@@ -137,7 +138,7 @@ duration_since_epoch() {
 }
 
 json_string_array_from_argv() {
-  jq -cn '$ARGS.positional' --args "$@"
+  jq -cn '$ARGS.positional' --args -- "$@"
 }
 
 github_repo_slug_from_hint() {
@@ -567,7 +568,7 @@ execute_work_chain() {
   if [ "$AUTOMATION_MODE" = "interactive" ]; then
     cmd=("$WORK_CHAIN_EXECUTOR" "$WORK_CHAIN" "--attended" "--yes")
   else
-    cmd=("$WORK_CHAIN_EXECUTOR" "$WORK_CHAIN")
+    cmd=("$WORK_CHAIN_EXECUTOR" "$WORK_CHAIN" "--unattended" "--yes")
   fi
   EXECUTION_COMMAND_JSON=$(json_string_array_from_argv "${cmd[@]}")
   EXECUTION_STARTED_AT=$(now_utc)
@@ -1538,6 +1539,7 @@ while [ "$#" -gt 0 ]; do
     --review-host=*) REVIEW_HOST="${1#--review-host=}"; shift ;;
     --execute|--run) EXECUTE_AFTER_PLAN=1; shift ;;
     --no-execute|--plan-only) EXECUTE_AFTER_PLAN=0; shift ;;
+    --yes|--no-confirm) shift ;;
     --interactive|--attended) AUTOMATION_MODE="interactive"; shift ;;
     --unattended) AUTOMATION_MODE="unattended"; shift ;;
     --project-owner) PROJECT_OWNER="${2:?--project-owner requires owner}"; shift 2 ;;
