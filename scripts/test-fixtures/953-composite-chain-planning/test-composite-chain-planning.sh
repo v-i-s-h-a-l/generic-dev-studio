@@ -10,6 +10,7 @@ STUB="$FIXTURE_DIR/stub-manager-plan-chain.sh"
 RUN_ID="019e2c8a-9560-7000-8000-000000000001"
 HALT_RUN_ID="019e2c8a-9560-7000-8000-000000000002"
 MANIFEST_CHILD_RUN_ID="019e2c8a-9560-7000-8000-000000000003"
+CROSS_PROJECT_RUN_ID="019e2c8a-9560-7000-8000-000000000004"
 TMPROOT="${TMPDIR:-/tmp}/composite-chain-planning.$$"
 
 trap 'rm -rf "$TMPROOT"' EXIT
@@ -46,6 +47,8 @@ fi
 HOME="$TMPROOT/home" ACHILLES_PROJECT=generic-dev-studio "$MANAGER" validate-state --state "$state_path" >/dev/null
 jq -e '
   .state == "child_planned"
+  and .manifest.repo == "v-i-s-h-a-l/generic-dev-studio"
+  and .manifest.project == "generic-dev-studio"
   and .current_child_id == "first-child"
   and .children[0].status == "planned"
   and (.children[0].refs.planner_artifact | type == "string")
@@ -137,5 +140,53 @@ jq -e '
   .children[0].refs.comment_context.comments_included == false
   and .children[0].refs.comment_context.mode == "body-only"
 ' "$manifest_state_path" >/dev/null || fail "manifest child planning did not preserve body-only context"
+
+cross_project_root="$TMPROOT/turnip-repo"
+cross_project_manifest="$TMPROOT/cross-project-composite.yaml"
+mkdir -p "$cross_project_root"
+cross_project_root=$(cd "$cross_project_root" && pwd -P)
+cat > "$cross_project_manifest" <<YAML
+kind: composite-chain
+schema_version: 1
+name: cross-project-planning-fixture
+mode: sequential
+repo: example-org/sample-app
+project: sample-app
+target_repo_root: $cross_project_root
+children:
+  - id: turnip-child
+    source_type: issue
+    issue: 311
+YAML
+
+cross_log="$TMPROOT/cross-project-plan-calls.log"
+cross_init_json=$(HOME="$TMPROOT/home-cross" ACHILLES_PROJECT=generic-dev-studio \
+  "$MANAGER" init --manifest "$cross_project_manifest" --run-id "$CROSS_PROJECT_RUN_ID" --json)
+cross_state_path=$(printf '%s\n' "$cross_init_json" | jq -r '.state_path')
+
+jq -e \
+  --arg root "$cross_project_root" '
+  .manifest.repo == "example-org/sample-app"
+  and .manifest.project == "sample-app"
+  and .manifest.target_repo_root == $root
+  and .children[0].source.issue_url == "https://github.com/example-org/sample-app/issues/311"
+  and .children[0].refs.issue_url == "https://github.com/example-org/sample-app/issues/311"
+' "$cross_state_path" >/dev/null || fail "cross-project manifest metadata was not normalized into state"
+
+HOME="$TMPROOT/home-cross" ACHILLES_PROJECT=generic-dev-studio \
+  STUDIO_COMPOSITE_PLAN_CHAIN_SCRIPT="$STUB" STUB_PLAN_LOG="$cross_log" \
+  "$MANAGER" plan-active-child --run-id "$CROSS_PROJECT_RUN_ID" --json > "$TMPROOT/cross-plan.json"
+
+grep -Fq -- "--issue 311" "$cross_log" || fail "cross-project child issue was not planned"
+grep -Fq -- "--repo example-org/sample-app" "$cross_log" || fail "cross-project child did not pass manifest repo"
+grep -Fq -- "--project sample-app" "$cross_log" || fail "cross-project child did not pass manifest project"
+grep -Fq -- "--target-repo-root $cross_project_root" "$cross_log" || fail "cross-project child did not pass manifest target repo root"
+HOME="$TMPROOT/home-cross" ACHILLES_PROJECT=generic-dev-studio "$MANAGER" validate-state --state "$cross_state_path" >/dev/null
+jq -e '
+  .state == "child_planned"
+  and (.children[0].refs.plan_result | contains("/.dev-studio/sample-app/plan-chains/"))
+  and .children[0].refs.child_issues[0].url == "https://github.com/example-org/sample-app/issues/9001"
+  and .children[0].refs.parent_issue.url == "https://github.com/example-org/sample-app/issues/123"
+' "$cross_state_path" >/dev/null || fail "cross-project child planning results did not use target project runtime state"
 
 printf 'PASS: composite chain planning\n'

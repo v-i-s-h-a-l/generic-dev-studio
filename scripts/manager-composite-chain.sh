@@ -91,6 +91,53 @@ resolve_issue_repo_slug() {
   printf 'v-i-s-h-a-l/generic-dev-studio\n'
 }
 
+canonicalize_target_repo_root() {
+  local manifest="$1" target="${2:-}" base resolved
+  if [ -z "$target" ] || [ "$target" = "null" ]; then
+    printf '%s\n' "$REPO_ROOT"
+    return 0
+  fi
+  case "$target" in
+    /*) resolved="$target" ;;
+    *)
+      base=$(cd "$(dirname "$manifest")" && pwd -P)
+      resolved="$base/$target"
+      ;;
+  esac
+  [ -d "$resolved" ] || fail "manifest target_repo_root does not exist: $target" 2
+  cd "$resolved" && pwd -P
+}
+
+state_project() {
+  local state_file="$1" project
+  project=$(jq -r '.manifest.project // empty' "$state_file")
+  if [ -n "$project" ]; then
+    printf '%s\n' "$project"
+    return 0
+  fi
+  printf '%s\n' "${STUDIO_COMPOSITE_PLAN_CHAIN_PROJECT:-generic-dev-studio}"
+}
+
+state_issue_repo() {
+  local state_file="$1" repo
+  repo=$(jq -r '.manifest.repo // .manifest.issue_repo // empty' "$state_file")
+  if [ -n "$repo" ]; then
+    github_repo_slug_from_hint "$repo" || fail "state manifest repo is not a GitHub owner/repo slug: $repo" 2
+    return 0
+  fi
+  resolve_issue_repo_slug
+}
+
+state_target_repo_root() {
+  local state_file="$1" root
+  root=$(jq -r '.manifest.target_repo_root // empty' "$state_file")
+  if [ -n "$root" ]; then
+    printf '%s\n' "$root"
+    return 0
+  fi
+  printf '%s\n' "$REPO_ROOT"
+}
+
 validate_run_id() {
   local run_id="${1:?usage: validate_run_id <run-id>}"
   if [[ ! "$run_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]; then
@@ -190,16 +237,16 @@ eligible_pending_child_tsv() {
 }
 
 plan_result_path_for() {
-  local plan_run_id="${1:?usage: plan_result_path_for <plan-run-id>}" project_root artifact_home project
-  project="${STUDIO_COMPOSITE_PLAN_CHAIN_PROJECT:-generic-dev-studio}"
+  local state_file="${1:?usage: plan_result_path_for <state> <plan-run-id>}" plan_run_id="${2:?usage: plan_result_path_for <state> <plan-run-id>}" project_root artifact_home project
+  project=$(state_project "$state_file")
   artifact_home=$(resolve_parent_home_for_github)
   project_root=$(HOME="$artifact_home" resolve_project_root_for "$project")
   printf '%s/plan-chains/%s/result.json\n' "$project_root" "$plan_run_id"
 }
 
 child_chain_runs_root() {
-  local artifact_home project_root project
-  project="${STUDIO_COMPOSITE_PLAN_CHAIN_PROJECT:-generic-dev-studio}"
+  local state_file="${1:?usage: child_chain_runs_root <state>}" artifact_home project_root project
+  project=$(state_project "$state_file")
   artifact_home=$(resolve_parent_home_for_github)
   project_root=$(HOME="$artifact_home" resolve_project_root_for "$project")
   printf '%s/chain-runs\n' "$project_root"
@@ -229,8 +276,10 @@ write_halt_record() {
 }
 
 child_plan_command_json() {
-  local state_file="$1" child_index="$2" child_id="$3" issue_repo="$4" source_type issue manifest_path project
-  project="${STUDIO_COMPOSITE_PLAN_CHAIN_PROJECT:-generic-dev-studio}"
+  local state_file="$1" child_index="$2" child_id="$3" source_type issue manifest_path project target_repo_root issue_repo
+  project=$(state_project "$state_file")
+  target_repo_root=$(state_target_repo_root "$state_file")
+  issue_repo=$(state_issue_repo "$state_file")
   source_type=$(jq -r --argjson idx "$child_index" '.children[$idx].source.source_type' "$state_file")
   case "$source_type" in
     issue)
@@ -240,7 +289,7 @@ child_plan_command_json() {
         --arg issue "$issue" \
         --arg issue_repo "$issue_repo" \
         --arg child_id "$child_id" \
-        --arg repo_root "$REPO_ROOT" \
+        --arg repo_root "$target_repo_root" \
         --arg project "$project" \
         '[$script, "--issue", $issue, "--repo", $issue_repo, "--chain", $child_id, "--project", $project, "--target-repo-root", $repo_root, "--no-execute"]'
       ;;
@@ -250,7 +299,7 @@ child_plan_command_json() {
         --arg script "${STUDIO_COMPOSITE_PLAN_CHAIN_SCRIPT:-$SCRIPT_DIR/manager-plan-chain.sh}" \
         --arg manifest_path "$manifest_path" \
         --arg child_id "$child_id" \
-        --arg repo_root "$REPO_ROOT" \
+        --arg repo_root "$target_repo_root" \
         --arg project "$project" \
         '[$script, "--source-file", $manifest_path, "--chain", $child_id, "--project", $project, "--target-repo-root", $repo_root, "--no-execute"]'
       ;;
@@ -329,17 +378,17 @@ child_run_id_from_output() {
 }
 
 child_run_state_for_id() {
-  local child_run_id="$1" root
+  local state_file="$1" child_run_id="$2" root
   [ -n "$child_run_id" ] || return 1
   validate_run_id "$child_run_id"
-  root=$(child_chain_runs_root) || return 1
+  root=$(child_chain_runs_root "$state_file") || return 1
   [ -f "$root/$child_run_id/state.json" ] || return 1
   printf '%s/%s/state.json\n' "$root" "$child_run_id"
 }
 
 latest_child_run_state_for_manifest() {
-  local work_chain_manifest="$1" root row
-  root=$(child_chain_runs_root) || return 1
+  local state_file="$1" work_chain_manifest="$2" root row
+  root=$(child_chain_runs_root "$state_file") || return 1
   [ -d "$root" ] || return 1
   row=$(
     find "$root" -mindepth 2 -maxdepth 2 -name state.json -type f 2>/dev/null | sort | while IFS= read -r candidate; do
@@ -355,13 +404,13 @@ latest_child_run_state_for_manifest() {
 }
 
 resolve_child_run_state() {
-  local work_chain_manifest="$1" stdout_path="$2" stderr_path="$3" child_run_id child_state
+  local state_file="$1" work_chain_manifest="$2" stdout_path="$3" stderr_path="$4" child_run_id child_state
   child_run_id=$(child_run_id_from_output "$stdout_path" "$stderr_path" || true)
-  if [ -n "$child_run_id" ] && child_state=$(child_run_state_for_id "$child_run_id" 2>/dev/null); then
+  if [ -n "$child_run_id" ] && child_state=$(child_run_state_for_id "$state_file" "$child_run_id" 2>/dev/null); then
     printf '%s\n' "$child_state"
     return 0
   fi
-  latest_child_run_state_for_manifest "$work_chain_manifest"
+  latest_child_run_state_for_manifest "$state_file" "$work_chain_manifest"
 }
 
 active_child_halt_json() {
@@ -538,9 +587,19 @@ persist_child_execution_halt_state() {
 
 write_initial_state() {
   local manifest="$1" run_id="$2" state_file="$3" now manifest_abs manifest_data next_command tmp
+  local manifest_repo manifest_project manifest_target_repo_root
   manifest_abs=$(cd "$(dirname "$manifest")" && pwd -P)/$(basename "$manifest")
   now=$(iso_ts_now)
   manifest_data=$(manifest_json "$manifest")
+  manifest_repo=$(printf '%s\n' "$manifest_data" | jq -r '.repo // .issue_repo // empty')
+  if [ -n "$manifest_repo" ]; then
+    manifest_repo=$(github_repo_slug_from_hint "$manifest_repo") || fail "manifest repo must be a GitHub owner/repo slug: $manifest_repo" 2
+  else
+    manifest_repo=$(resolve_issue_repo_slug)
+  fi
+  manifest_target_repo_root=$(canonicalize_target_repo_root "$manifest" "$(printf '%s\n' "$manifest_data" | jq -r '.target_repo_root // .repo_root // empty')")
+  manifest_project=$(printf '%s\n' "$manifest_data" | jq -r '.project // empty')
+  [ -n "$manifest_project" ] || manifest_project="${STUDIO_COMPOSITE_PLAN_CHAIN_PROJECT:-generic-dev-studio}"
   next_command="/dev-studio manager composite-chain status --run-id $run_id"
   tmp="$state_file.tmp.$$"
   mkdir -p "$(dirname "$state_file")"
@@ -548,8 +607,17 @@ write_initial_state() {
   printf '%s\n' "$manifest_data" | jq \
     --arg run_id "$run_id" \
     --arg manifest_path "$manifest_abs" \
+    --arg manifest_repo "$manifest_repo" \
+    --arg manifest_project "$manifest_project" \
+    --arg target_repo_root "$manifest_target_repo_root" \
     --arg now "$now" \
     --arg next_command "$next_command" '
+    (. + {
+      repo: $manifest_repo,
+      project: $manifest_project,
+      target_repo_root: $target_repo_root
+    }) as $manifest
+    |
     {
       schema_version: 1,
       kind: "composite-chain-state",
@@ -558,19 +626,19 @@ write_initial_state() {
         source_type: "manifest",
         parent_issue_url: null,
         manifest_path: $manifest_path,
-        manifest_ref: .name
+        manifest_ref: $manifest.name
       },
-      manifest: .,
+      manifest: $manifest,
       state: "child_ready",
       children: [
-        .children
+        $manifest.children
         | to_entries[]
         | {
             id: .value.id,
             ordinal: .key,
             source: (
               if .value.source_type == "issue" then
-                {source_type:"issue", issue:.value.issue, issue_url:("https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/" + (.value.issue | tostring)), manifest_path:null}
+                {source_type:"issue", issue:.value.issue, issue_url:("https://github.com/" + $manifest_repo + "/issues/" + (.value.issue | tostring)), manifest_path:null}
               else
                 {source_type:"manifest", issue:null, issue_url:null, manifest_path:.value.manifest_path}
               end
@@ -583,7 +651,7 @@ write_initial_state() {
               child_run_id: null,
               issue_url: (
                 if .value.source_type == "issue" then
-                  "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/" + (.value.issue | tostring)
+                  "https://github.com/" + $manifest_repo + "/issues/" + (.value.issue | tostring)
                 else
                   null
                 end
@@ -742,7 +810,7 @@ cmd_status() {
 }
 
 cmd_plan_active_child() {
-  local run_id="" state_file="" output_json=0 eligible child_index child_id now issue_repo command_json plan_run_id
+  local run_id="" state_file="" output_json=0 eligible child_index child_id now command_json plan_run_id
   local attempt_dir stdout_path stderr_path result_json rc result_status reason_id summary details_ref final_rc=0 comment_context_json
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -781,9 +849,8 @@ cmd_plan_active_child() {
   mkdir -p "$attempt_dir"
   stdout_path="$attempt_dir/manager-plan-chain.out"
   stderr_path="$attempt_dir/manager-plan-chain.err"
-  result_json=$(plan_result_path_for "$plan_run_id")
-  issue_repo=$(resolve_issue_repo_slug)
-  command_json=$(child_plan_command_json "$state_file" "$child_index" "$child_id" "$issue_repo")
+  result_json=$(plan_result_path_for "$state_file" "$plan_run_id")
+  command_json=$(child_plan_command_json "$state_file" "$child_index" "$child_id")
   comment_context_json=$(child_comment_context_json "$state_file" "$child_index")
 
   # shellcheck disable=SC2016
@@ -885,7 +952,7 @@ cmd_execute_active_child() {
   rc=$?
   set -e
 
-  child_state=$(resolve_child_run_state "$work_chain_manifest" "$stdout_path" "$stderr_path" 2>/dev/null || true)
+  child_state=$(resolve_child_run_state "$state_file" "$work_chain_manifest" "$stdout_path" "$stderr_path" 2>/dev/null || true)
   if [ -z "$child_state" ] || [ ! -f "$child_state" ]; then
     reason_id="child_run_state_missing"
     summary="Child work-chain command did not leave a durable chain run state."
@@ -951,7 +1018,7 @@ cmd_resume() {
       child_id=$(jq -r --argjson idx "$child_index" '.children[$idx].id' "$state_file")
       plan_run_id=$(jq -r --argjson idx "$child_index" '.children[$idx].refs.plan_run_id // empty' "$state_file")
       [ -n "$plan_run_id" ] || fail "resume cannot reconcile planning child without refs.plan_run_id" 1
-      result_json=$(plan_result_path_for "$plan_run_id")
+      result_json=$(plan_result_path_for "$state_file" "$plan_run_id")
       if [ ! -f "$result_json" ]; then
         persist_planning_halt_state "$state_file" "$child_index" "$child_id" "child_plan_state_missing" "Child planning was in progress but no durable manager-plan-chain result exists." ""
         final_rc=1
@@ -985,10 +1052,10 @@ cmd_resume() {
       child_state=$(jq -r --argjson idx "$child_index" '.children[$idx].refs.child_run_state // empty' "$state_file")
 
       if { [ -z "$child_state" ] || [ ! -f "$child_state" ]; } && [ -n "$child_run_id" ]; then
-        child_state=$(child_run_state_for_id "$child_run_id" 2>/dev/null || true)
+        child_state=$(child_run_state_for_id "$state_file" "$child_run_id" 2>/dev/null || true)
       fi
       if { [ -z "$child_state" ] || [ ! -f "$child_state" ]; } && [ -n "$work_chain_manifest" ] && [ "$work_chain_manifest" != "null" ]; then
-        child_state=$(latest_child_run_state_for_manifest "$work_chain_manifest" 2>/dev/null || true)
+        child_state=$(latest_child_run_state_for_manifest "$state_file" "$work_chain_manifest" 2>/dev/null || true)
       fi
       if [ -n "$child_state" ] && [ -f "$child_state" ]; then
         child_run_id=$(jq -r '.run_id // empty' "$child_state")
@@ -1008,7 +1075,7 @@ cmd_resume() {
           rc=$?
           set -e
 
-          child_state=$(child_run_state_for_id "$child_run_id" 2>/dev/null || printf '%s\n' "$child_state")
+          child_state=$(child_run_state_for_id "$state_file" "$child_run_id" 2>/dev/null || printf '%s\n' "$child_state")
           run_status=$(jq -r '.status // "unknown"' "$child_state")
           if [ "$rc" -eq 0 ] && [ "$run_status" = "completed" ]; then
             persist_child_completion_state "$state_file" "$child_index" "$child_state"

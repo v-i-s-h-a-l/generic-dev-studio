@@ -56,6 +56,21 @@ children:
     issue: 124
 ```
 
+Cross-project manifests may also declare:
+
+```yaml
+repo: example-org/sample-app
+project: sample-app
+target_repo_root: /Users/example/src/sample-app
+```
+
+When present, these values are normalized into the state snapshot during
+`init`. Issue child URLs, `manager plan-chain --repo`, runtime artifact lookup,
+and child run lookup use the state snapshot on later `plan`, `status`, and
+`resume` calls, so operators do not need to preserve environment variables
+between sessions. When omitted, the supervisor falls back to the current studio
+checkout behavior.
+
 `children[].id` is the stable child identity. It is reused in state,
 idempotency keys, status output, event payloads, and resume commands. IDs are
 slugs, not issue titles, so they stay stable when issue titles change.

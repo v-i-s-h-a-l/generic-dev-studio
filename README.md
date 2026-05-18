@@ -99,6 +99,7 @@ scripts/manager-composite-chain.sh init --manifest composite.yaml --json # scrip
 scripts/manager-work-chain.sh ios-v2-execution # repo-side wrapper for the manager work-chain front door
 scripts/prd-intake-normalize.sh prd.md # normalize a PRD/transcript/issue brief into a planner-ready requirement packet
 scripts/prd-task-graph-synthesize.sh packet.md # turn a requirement packet or headed source into a validated scheduler graph
+scripts/bug-reopen-iteration-report.sh --repo owner/repo --cohort-size 20 # #549 bug-fix closure iteration reopen metric
 /dev-studio checkpoint           # manager-shaped checkpoint routing; stdout is the checkpoint id for resume
 /dev-studio worker checkpoint    # worker-owned compact checkpoint; does not replace worker summary
 /dev-studio worker resume-checkpoint # resume worker checkpoint via manifest.json + context.md first
@@ -239,6 +240,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-tf-slack.sh # script-backed TF Slack draft/send bridge with lint + approval gate
   forge-latency-report.sh  # stage-level task latency + review-gate comparison from event logs
   field-workflow-report.sh # Field loop report: timing, token, gate, review, and improvement mining
+  bug-reopen-iteration-report.sh # #549 iteration-based bug reopen metric from issue events
   studio-pr-baseline-report.sh # PR-level timing, churn, gate, and generated-file baselines
   studio-dependency-export.sh # Mermaid graph from native GitHub blocked_by issue dependencies
   studio-weekly.sh     # weekly GitHub issue digest; scheduled workflow posts to the pinned summary issue
@@ -415,7 +417,9 @@ is `/dev-studio manager composite-chain init --manifest <file>` or
 `scripts/manager-composite-chain.sh init --manifest <file>`. Inputs must be an
 explicit `kind: composite-chain` manifest; `/dev-studio manager work-chain
 --composite-parent <issue>` and parent-issue natural-language extraction are
-future/non-MVP. Use `/dev-studio manager composite-chain status --run-id
+future/non-MVP. Cross-project manifests can declare `repo`, `project`, and
+`target_repo_root`; the normalized state then carries those values through
+child planning and resume. Use `/dev-studio manager composite-chain status --run-id
 <run_id>` for non-mutating progress inspection, then continue from a clean
 session with `/dev-studio manager composite-chain plan-active-child --run-id
 <run_id>`, `execute-active-child --run-id <run_id>`, or `resume --run-id
