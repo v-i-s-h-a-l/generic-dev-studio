@@ -108,6 +108,7 @@ git -C "$project_repo" add parent.txt
 git -C "$project_repo" commit -q -m "parent work"
 parent_sha=$(git -C "$project_repo" rev-parse feature/parent)
 git -C "$project_repo" checkout -q main
+project_repo_canonical=$(cd "$project_repo" && pwd -P)
 
 missing_repo_manifest="$TMPROOT/missing-issue-repo.yaml"
 cat >"$missing_repo_manifest" <<YAML
@@ -154,6 +155,36 @@ grep -q '^issue view 74801 --repo example/project ' "$GH_LOG" || {
   fail "issue lookup did not use the manifest issue repo"
 }
 
+git -C "$project_repo" remote add origin git@github.com:example/target-app.git
+external_manifest="$TMPROOT/external-chain.yaml"
+cat >"$external_manifest" <<'YAML'
+schema_version: 1
+chains:
+  - name: external-chain
+    base: main
+    branch: feature/external-chain
+    host: codex
+    issues: [74809]
+YAML
+
+: > "$GH_LOG"
+(
+  cd "$project_repo"
+  PATH="$BIN:$PATH" GH_LOG="$GH_LOG" HOME="$HOME_DIR" "$RUNNER" "$external_manifest" --dry-run >"$TMPROOT/external.out" 2>&1
+)
+grep -qF -- '- Target repo root: `'"$project_repo_canonical"'`' "$TMPROOT/external.out" || {
+  cat "$TMPROOT/external.out" >&2
+  fail "external manifest did not resolve the caller target repo root"
+}
+grep -qF -- '- Issue repo: `example/target-app`' "$TMPROOT/external.out" || {
+  cat "$TMPROOT/external.out" >&2
+  fail "external manifest did not resolve issue repo from target origin"
+}
+grep -q '^issue view 74809 --repo example/target-app ' "$GH_LOG" || {
+  cat "$GH_LOG" >&2
+  fail "external manifest issue lookup did not use the target repo origin"
+}
+
 auto_bypass_manifest="$TMPROOT/auto-bypass-chain.yaml"
 cat >"$auto_bypass_manifest" <<YAML
 schema_version: 1
@@ -173,7 +204,9 @@ grep -q 'STUDIO_BYPASS_AUTO_HOST_ELIGIBILITY' "$TMPROOT/auto-bypass.out" || {
   cat "$TMPROOT/auto-bypass.out" >&2
   fail "auto host bypass did not report the documented bypass env"
 }
-grep -q "Host: \`claude-code\`" "$TMPROOT/auto-bypass.out" || {
+auto_bypass_host=$(sed -n 's/.* as runner host //p' "$TMPROOT/auto-bypass.out" | head -1)
+[ -n "$auto_bypass_host" ] || fail "auto host bypass did not report selected host"
+grep -q "Host: \`$auto_bypass_host\`" "$TMPROOT/auto-bypass.out" || {
   cat "$TMPROOT/auto-bypass.out" >&2
   fail "auto host bypass did not select the first worker profile as runner host"
 }

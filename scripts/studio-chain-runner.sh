@@ -4882,8 +4882,17 @@ same_git_root() {
   [ -n "$a_root" ] && [ -n "$b_root" ] && [ "$a_root" = "$b_root" ]
 }
 
+path_is_under() {
+  local child="$1" parent="$2"
+  [ -n "$child" ] && [ -n "$parent" ] || return 1
+  case "$child" in
+    "$parent"|"$parent"/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 resolve_target_repo_root() {
-  local manifest="${1:?usage: resolve_target_repo_root <manifest>}" manifest_dir hint env_hint root
+  local manifest="${1:?usage: resolve_target_repo_root <manifest>}" manifest_dir hint env_hint root caller_root
   manifest_dir=$(cd "$(dirname "$manifest")" && pwd -P) || return 1
 
   hint=$(yq -r '.target_repo_root // .repo_root // .repo.root // ""' "$manifest" 2>/dev/null || true)
@@ -4898,6 +4907,12 @@ resolve_target_repo_root() {
     if [ -n "$env_hint" ] && [ -z "$root" ]; then
       printf 'studio-chain-runner: target repo root does not exist: %s\n' "$env_hint" >&2
       exit 2
+    fi
+  fi
+  if [ -z "$root" ]; then
+    caller_root=$(git -C "${PWD:-$REPO_ROOT}" rev-parse --show-toplevel 2>/dev/null || true)
+    if [ -n "$caller_root" ] && ! path_is_under "$manifest_dir" "$REPO_ROOT"; then
+      root="$caller_root"
     fi
   fi
   if [ -z "$root" ]; then
@@ -4940,6 +4955,18 @@ resolve_issue_repo_slug() {
   printf 'studio-chain-runner: issue repository is not explicit and could not be resolved for target repo root: %s\n' "$target_root" >&2
   printf 'studio-chain-runner: add issue_repo: owner/repo to the manifest, set repo.issue_repo, or configure origin to a GitHub repository before execution.\n' >&2
   exit 2
+}
+
+issue_view_json_or_fail() {
+  local issue="${1:?usage: issue_view_json_or_fail <issue> <json-fields> <context>}" fields="${2:?usage: issue_view_json_or_fail <issue> <json-fields> <context>}" context="${3:-preflight}"
+  local out
+  if ! out=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json "$fields" 2>&1); then
+    printf 'studio-chain-runner: GitHub issue lookup failed for repo %s (target repo root: %s) while resolving issue #%s during %s\n' \
+      "$REPO_SLUG" "$TARGET_REPO_ROOT" "$issue" "$context" >&2
+    printf 'studio-chain-runner: issue lookup output: %s\n' "$out" >&2
+    return 1
+  fi
+  printf '%s\n' "$out"
 }
 
 resolve_new_run_manifest_context() {
@@ -6480,7 +6507,7 @@ build_plan_json() {
         printf 'studio-chain-runner: invalid dependencies for issue #%s in chain %s\n' "$issue" "$name" >&2
         exit 2
       fi
-      issue_json=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,state,url)
+      issue_json=$(issue_view_json_or_fail "$issue" number,title,state,url "plan preflight") || exit 2
       issue_title=$(printf '%s' "$issue_json" | jq -r '.title')
       issue_state=$(printf '%s' "$issue_json" | jq -r '.state')
       issue_url=$(printf '%s' "$issue_json" | jq -r '.url // ""')
@@ -7305,7 +7332,7 @@ execute_issue_session() {
   local -a spawn_argv
   local launch_home="" codex_auth_home=""
 
-  issue_json=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,body,url,state)
+  issue_json=$(issue_view_json_or_fail "$issue" number,title,body,url,state "worker launch") || return 1
   issue_title=$(printf '%s' "$issue_json" | jq -r '.title')
   issue_body=$(printf '%s' "$issue_json" | jq -r '.body // ""')
   source_branch=$(jq -r --arg id "$chain_run_id" '.chains[] | select(.chain_run_id == $id) | .base_ref // .source_branch // .base // "main"' "$PLAN_JSON")
@@ -7993,7 +8020,7 @@ run_issue_job() {
   if [ "$DRY_RUN" -eq 0 ] && phase_review_required_for_issue "$phase_review_mode" "$issue_count_for_review"; then
     boundary_id="$chain_run_id-$issue_run_id"
     phase_plan_artifact="$PHASE_REVIEW_ROOT/$boundary_id-plan.md"
-    phase_issue_json=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json number,title,body,url,state)
+    phase_issue_json=$(issue_view_json_or_fail "$issue" number,title,body,url,state "phase review") || return 1
     write_issue_phase_plan_artifact "$phase_plan_artifact" "$name" "$branch" "$issue_branch" "$issue_worktree" "$issue" "$issue_run_id" "$host" "$before" "$phase_context" "$phase_issue_json"
     set +e
     run_phase_review_gate plan "$boundary_id" "$phase_plan_artifact" "$chain_run_id" "$issue_run_id" "$name" "$issue"

@@ -389,7 +389,10 @@ Before a chain run starts, `manager work-chain` rejects planning artifacts and
 schema-mismatched YAML with a manifest/schema mismatch explanation. Runnable
 project-scoped manifests must map tasks to GitHub issue numbers in
 `chains[].issues[]` and either declare `issue_repo: owner/repo` or let the
-target repo remote resolve to GitHub.
+target repo remote resolve to GitHub. For external manifests outside this repo,
+the runner resolves that target from `target_repo_root`, then
+`STUDIO_CHAIN_TARGET_REPO_ROOT` / `STUDIO_CONTEXT_REPO_ROOT`, then the caller's
+current git checkout before falling back to the manifest directory.
 
 For fresh goals or planner outputs, `manager plan-chain` is the orchestration
 front door. It writes source, requirement, task-graph, planner, review,
