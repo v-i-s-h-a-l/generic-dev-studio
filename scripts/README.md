@@ -65,6 +65,7 @@ scripts/analyze-collect.sh --project turnip-ios         # stats dump for a usage
 scripts/analyze-collect.sh --project turnip-ios --since 2026-04-01
 scripts/forge-latency-report.sh --project turnip-ios --days 14   # stage-level task latency + review-gate comparison
 scripts/field-workflow-report.sh --project turnip-ios --days 14   # Field loop timing, tokens, gates, review coverage, improvement candidates
+scripts/bug-reopen-iteration-report.sh --repo owner/repo --cohort-size 20 # #549 bug-fix closure iteration reopen metric; emits markdown or --json
 scripts/studio-weekly.sh --post                                  # weekly GitHub PM digest comment on the pinned summary issue
 scripts/studio-chain-runner.sh workflow-measurement-improvements            # default plan/explain + private resumable state
 scripts/studio-chain-runner.sh workflow-measurement-improvements --dry-run  # same resolved graph, then non-mutating command trace

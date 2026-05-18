@@ -228,13 +228,15 @@ function resources_anywhere(text,    rest, value, out) {
   return out
 }
 
-function resources_in_component_body(body,    rest, line, in_reference_section, paragraph, out, found_resources, fr, found_arr, ended) {
+function resources_in_component_body(body,    rest, line, line_l, in_reference_section, in_allowed_paths_section, paragraph, out, found_resources, fr, found_arr, ended) {
   rest = body
   out = ""
   in_reference_section = 0
+  in_allowed_paths_section = 0
   paragraph = ""
   while (match(rest, /\n[^\n]*/)) {
     line = substr(rest, RSTART + 1, RLENGTH - 1)
+    line_l = lower(line)
     rest = substr(rest, RSTART + RLENGTH)
     if (line ~ /^####?[[:space:]]/) {
       if (paragraph != "") {
@@ -250,6 +252,20 @@ function resources_in_component_body(body,    rest, line, in_reference_section, 
       } else {
         in_reference_section = 0
       }
+      in_allowed_paths_section = (line_l ~ /(allowed paths|allowed paths or resources|write resources)/)
+      continue
+    }
+    if (line_l ~ /^[[:space:]]*(allowed paths|allowed paths or resources|write resources):[[:space:]]*$/) {
+      if (paragraph != "") {
+        found_resources = resources_from(paragraph, "write")
+        if (found_resources != "") {
+          split(found_resources, found_arr, ",")
+          for (fr in found_arr) out = add_resource(out, found_arr[fr])
+        }
+        paragraph = ""
+      }
+      in_reference_section = 0
+      in_allowed_paths_section = 1
       continue
     }
     if (in_reference_section) continue
@@ -262,6 +278,7 @@ function resources_in_component_body(body,    rest, line, in_reference_section, 
         }
         paragraph = ""
       }
+      in_allowed_paths_section = 0
       continue
     }
     if (line ~ /^[[:space:]]*[-*][[:space:]]/) {
@@ -272,7 +289,24 @@ function resources_in_component_body(body,    rest, line, in_reference_section, 
           for (fr in found_arr) out = add_resource(out, found_arr[fr])
         }
       }
+      if (in_allowed_paths_section) {
+        found_resources = resources_anywhere(line)
+        if (found_resources != "") {
+          split(found_resources, found_arr, ",")
+          for (fr in found_arr) out = add_resource(out, found_arr[fr])
+        }
+        paragraph = ""
+        continue
+      }
       paragraph = line
+      continue
+    }
+    if (in_allowed_paths_section) {
+      found_resources = resources_anywhere(line)
+      if (found_resources != "") {
+        split(found_resources, found_arr, ",")
+        for (fr in found_arr) out = add_resource(out, found_arr[fr])
+      }
       continue
     }
     paragraph = paragraph " " line

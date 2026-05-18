@@ -205,4 +205,54 @@ esac
 empty_count=$(jq '[.validation.empty_allowed_paths[]?] | length' "$GRAPH")
 [ "$empty_count" = "0" ] || fail "validation reported $empty_count empty allowed_paths nodes"
 
+CONSTRAINT_SOURCE="$TMPROOT/explicit-allowed-paths.md"
+CONSTRAINT_GRAPH="$TMPROOT/explicit-allowed-paths.json"
+cat >"$CONSTRAINT_SOURCE" <<'EOF'
+# Explicit issue-body constraints
+
+Input source: issue brief.
+Output artifact format: JSON worker summaries.
+Verification evidence: focused fixture test.
+
+## Scope
+
+### 1. Navigation shell
+
+Allowed paths:
+- `SampleApp/Sources/Navigation/AppRouter.swift`
+- `SampleApp/Tests/NavigationTests/AppRouterTests.swift`
+
+Required output artifacts:
+- `.studio/chain-worker-summary.json`
+
+Non-goals:
+- Do not edit release scripts.
+
+Verification expectations:
+- `swift test --filter NavigationTests`
+
+### 2. Feature tabs
+
+Allowed Paths Or Resources:
+- `SampleApp/Sources/Navigation/FeatureTabs.swift`
+
+Output format:
+- `.studio/chain-worker-summary.json`
+
+Verification expectations:
+- `swift test --filter FeatureTabsTests`
+EOF
+
+"$RUN" "$CONSTRAINT_SOURCE" >"$CONSTRAINT_GRAPH" 2>"$TMPROOT/explicit-allowed-paths.err" \
+  || { cat "$TMPROOT/explicit-allowed-paths.err" >&2; fail "explicit allowed paths source failed synthesis"; }
+
+jq -e '
+  (.nodes[] | select(.id == "T-R001") | .write_resources | sort)
+    == ["SampleApp/Sources/Navigation/AppRouter.swift", "SampleApp/Tests/NavigationTests/AppRouterTests.swift"]
+  and
+  (.nodes[] | select(.id == "T-R002") | .write_resources | sort)
+    == ["SampleApp/Sources/Navigation/FeatureTabs.swift"]
+  and ([.validation.empty_allowed_paths[]?] | length) == 0
+' "$CONSTRAINT_GRAPH" >/dev/null || fail "explicit Allowed Paths sections were not preserved as write_resources"
+
 printf 'PASS: planner allowed_paths hygiene rejects shell syntax, bare extensions, references, and negation phrasing\n'

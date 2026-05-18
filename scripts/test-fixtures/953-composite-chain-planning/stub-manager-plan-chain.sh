@@ -7,9 +7,6 @@ set -euo pipefail
   exit 2
 }
 
-artifact_root="$HOME/.dev-studio/generic-dev-studio/plan-chains/$STUDIO_MANAGER_PLAN_CHAIN_RUN_ID"
-mkdir -p "$artifact_root"
-
 if [ -n "${STUB_PLAN_LOG:-}" ]; then
   printf '%s\n' "$*" >> "$STUB_PLAN_LOG"
 fi
@@ -17,6 +14,9 @@ fi
 include_comments=0
 issue_source=0
 body_only=0
+project="generic-dev-studio"
+repo="v-i-s-h-a-l/generic-dev-studio"
+prev=""
 for arg in "$@"; do
   case "$arg" in
     --issue)
@@ -28,8 +28,18 @@ for arg in "$@"; do
     --body-only)
       body_only=1
       ;;
+    *)
+      case "$prev" in
+        --project) project="$arg" ;;
+        --repo) repo="$arg" ;;
+      esac
+      ;;
   esac
+  prev="$arg"
 done
+
+artifact_root="$HOME/.dev-studio/$project/plan-chains/$STUDIO_MANAGER_PLAN_CHAIN_RUN_ID"
+mkdir -p "$artifact_root"
 
 if [ "$issue_source" -eq 1 ] && [ "$body_only" -eq 0 ]; then
   include_comments=1
@@ -49,6 +59,7 @@ jq -n \
   --arg status "$status" \
   --arg artifact_root "$artifact_root" \
   --arg planner "$planner" \
+  --arg repo "$repo" \
   --argjson include_comments "$include_comments" \
   --arg review "$review" \
   --arg work_chain "$work_chain" \
@@ -71,12 +82,12 @@ jq -n \
       {
         node_id: "T001",
         number: 9001,
-        url: "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/9001"
+        url: ("https://github.com/" + $repo + "/issues/9001")
       }
     ],
     parent_issue: {
       number: 123,
-      url: "https://github.com/v-i-s-h-a-l/generic-dev-studio/issues/123"
+      url: ("https://github.com/" + $repo + "/issues/123")
     },
     blocked_decisions: (if $status == "ready" then [] else ["stubbed planner block"] end)
   }' > "$artifact_root/result.json"
