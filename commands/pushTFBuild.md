@@ -9,6 +9,8 @@ Hybrid wrapper around `scripts/studio-tf-push.sh` (studio repo at `~/Documents/v
 
 Authoritative procedure: `_shared/contracts/release-tf-push.md`. Project knobs (paths, scheme, ASC ids, Crashlytics plist): `_shared/primitives/turnip-project-config.md`. Slack body rules: `_shared/contracts/build-message-format.md`.
 
+Authentication is App Store Connect API key based. The push driver uses `STUDIO_TF_ASC_KEY_PATH` when configured, otherwise derives `~/.dev-studio/<project>/secrets/appstoreconnect/AuthKey_<key-id>.p8` from `STUDIO_TF_ASC_KEY_ID`; `STUDIO_TF_ASC_ISSUER_ID` is required in both cases. Session auth, fastlane discovery, and third-party credential schemes are not automatic fallbacks for upload.
+
 ## Arguments
 
 - `--scheme <name>` *(optional, default `Zaps`)* — pass-through to `studio-tf-push.sh push --scheme`. Use `Zaps-Internal` for the HUD-enabled internal-tester build.
@@ -36,7 +38,7 @@ PREV_BUILD=$(echo "$CTX" | jq -r .prev_build)
 
 The script emits `release_started`, `archive_completed`, `upload_completed`, `dsym_uploaded` along the way. If it exits non-zero it has already emitted `release_failed` with the stage that broke — surface stderr to the user and stop. Do NOT continue to Slack steps.
 
-The script reads release config from `~/.dev-studio/${STUDIO_RELEASE_PROJECT}/config/release.env` and secrets from `~/.dev-studio/${STUDIO_RELEASE_PROJECT}/secrets/`. It preflights non-interactive GitHub push auth, ASC key/JWT prerequisites, Slack token readability, and the app-scoped live-version lookup before it mutates the pbxproj. If it prints `WARNING: Could not determine live App Store version`, stop and resolve ASC/API access first; do not infer that there is no version conflict. For an intentionally upload-only run with Slack deferred, set `STUDIO_TF_SLACK_DEFERRED=1`.
+The script reads release config from `~/.dev-studio/${STUDIO_RELEASE_PROJECT}/config/release.env` and secrets from `~/.dev-studio/${STUDIO_RELEASE_PROJECT}/secrets/`. It preflights non-interactive GitHub push auth, ASC key/JWT prerequisites, Slack token readability, and the app-scoped live-version lookup before it mutates the pbxproj. If it reports a missing `STUDIO_TF_ASC_*` value or unreadable `.p8` key, fix the ASC API-key configuration and rerun; do not switch to session-based upload credentials. If it prints `WARNING: Could not determine live App Store version`, stop and resolve ASC/API access first; do not infer that there is no version conflict. For an intentionally upload-only run with Slack deferred, set `STUDIO_TF_SLACK_DEFERRED=1`.
 
 ## Step 3: Compose the Slack message
 

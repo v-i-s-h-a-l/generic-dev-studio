@@ -9,6 +9,8 @@ Tag the current commit, create a GitHub draft release, and submit the build to A
 
 Authoritative knobs: `_shared/primitives/turnip-project-config.md` (App ID, ASC ids), `_shared/contracts/build-message-format.md` (release-notes shape).
 
+Authentication is App Store Connect API key based. The appstore driver uses `STUDIO_TF_ASC_KEY_PATH` when configured, otherwise derives `~/.dev-studio/<project>/secrets/appstoreconnect/AuthKey_<key-id>.p8` from `STUDIO_TF_ASC_KEY_ID`; `STUDIO_TF_ASC_ISSUER_ID` is required in both cases. Session auth, fastlane discovery, and third-party credential schemes are not automatic fallbacks for submission.
+
 ## Step 1: Resolve build + previous tag + commits
 
 ```bash
@@ -69,6 +71,8 @@ STUDIO_TF_PUSH_LIVE=1 ./scripts/studio-tf-push.sh appstore \
 ```
 
 The script tags `${BUILD}-zaps`, pushes the tag, creates a GH draft release (account-switched to `vishal-zaps`), finds the build on ASC, creates or updates the App Store version, sets MANUAL release type with the build attached, and updates `whatsNew` for every localization.
+
+If the script reports a missing `STUDIO_TF_ASC_*` value or unreadable `.p8` key, fix the ASC API-key configuration in `~/.dev-studio/${STUDIO_RELEASE_PROJECT}/config/release.env` or the project secret root and rerun. Do not switch to session-based upload credentials.
 
 The stable GH release URL — same for draft and published — is:
 
