@@ -13,8 +13,9 @@
 # On terminal state (PENDING_DEVELOPER_RELEASE / READY_FOR_SALE):
 #   1. gh release edit <tag> --draft=false
 #   2. Slack closeout on the original #releases message
-#   3. Delete marker
-#   4. Emit appstore_released
+#   3. Queue Crashlytics closeout items once the app is live
+#   4. Delete marker
+#   5. Emit appstore_released
 # Steps 1 and 2 are tracked in marker.finalize_progress for idempotency —
 # a partial failure re-attempts only the unfinished step on the next sweep.
 #
@@ -160,6 +161,82 @@ if [ ! -f "$KEY_PATH" ]; then
 fi
 
 CRASH_FIXES_JSON=$(read_json_field crash_fixes)
+
+queue_crashlytics_closeouts() {
+  [ "${STATE:-}" = "READY_FOR_SALE" ] || return 0
+  [ -n "$CRASH_FIXES_JSON" ] || return 0
+
+  local queue
+  queue=$(resolve_push_queue) || return 1
+  python3 - "$queue" "$TAG" "$VERSION" "$CRASH_FIXES_JSON" <<'PY'
+import datetime
+import hashlib
+import json
+import os
+import sys
+
+queue, tag, version, raw = sys.argv[1:5]
+try:
+    crashes = json.loads(raw)
+except json.JSONDecodeError:
+    crashes = []
+if not isinstance(crashes, list):
+    crashes = []
+
+existing = set()
+try:
+    with open(queue, encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            entry_id = entry.get("id")
+            if entry_id:
+                existing.add(str(entry_id))
+except FileNotFoundError:
+    pass
+
+rows = []
+for crash in crashes:
+    if not isinstance(crash, dict):
+        continue
+    status = str(crash.get("crashlytics_closeout") or crash.get("closeout") or "queued")
+    if status in {"annotated", "skipped"}:
+        continue
+    url = str(crash.get("public_crash_url") or crash.get("crash_url") or crash.get("url") or "")
+    if not url:
+        continue
+    label = str(crash.get("public_label") or crash.get("label") or "")
+    digest = hashlib.sha1(f"{tag}\0{url}".encode("utf-8")).hexdigest()[:16]
+    entry_id = f"crashlytics-closeout-{digest}"
+    if entry_id in existing:
+        continue
+    prefix = f"Close Crashlytics for {tag} ({version}): "
+    detail = f"{label}: {url}" if label else url
+    text = prefix + detail
+    if len(text) > 200:
+        text = f"Close Crashlytics for {tag}: {url}"
+    if len(text) > 200:
+        text = text[:197].rstrip() + "..."
+    rows.append({
+        "id": entry_id,
+        "ts": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "source": "chanakya",
+        "kind": "crashlytics_closeout",
+        "task": tag,
+        "text": text,
+        "displayed": False,
+    })
+    existing.add(entry_id)
+
+if rows:
+    os.makedirs(os.path.dirname(queue), exist_ok=True)
+    with open(queue, "a", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+}
 
 # Bump failure counter, update cadence, optionally mark stuck. Reused across
 # all error paths. Args: <reason> [<partial-state>]
@@ -339,6 +416,12 @@ PY
       fi
     fi
 
+    if ! queue_crashlytics_closeouts; then
+      fails=$(mark_failure crashlytics_closeout_queue_failed "$STATE")
+      [ "$fails" -ge 3 ] && append_event chanakya appstore_watch_stuck "$TAG" \
+        "{\"reason\":\"crashlytics_closeout_queue_failed\",\"failures\":$fails,\"state\":\"$STATE\"}" 2>/dev/null || true
+      exit 1
+    fi
     [ "$MARKER_SOURCE" = "json" ] && rm -f "$MARKER"
     if [ -n "$release_uuid" ]; then
       release_state=$(yq -r '.state // ""' "$ACTIVE_RELEASE_FILE" 2>/dev/null)

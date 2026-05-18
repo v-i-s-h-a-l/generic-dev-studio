@@ -52,6 +52,7 @@ Agents append to the push queue for these events. The user reads the queue via `
 | `watch_queue_drained` | Chanakya | `--watch` queue empties (all dispatched tasks done) |
 | `build_debt_blocked` | Achilles / Chanakya | Build debt counter crosses 12 |
 | `error` | Any | ERROR-level failure in any agent |
+| `crashlytics_closeout` | Chanakya | App Store watcher observes `READY_FOR_SALE` for a release carrying public-safe crash-fix entries; each entry queues follow-up closeout work. |
 
 Events NOT in the trigger list are written to the event log only (not the push queue).
 
