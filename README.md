@@ -73,9 +73,9 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 
 ```
 # Studio v2 router — canonical role dispatch
-/dev-studio manager              # bare role landing — suggests next moves, then reports the direct command
+/dev-studio manager              # plain landing for fix/plan/ship/resume/status; reports the direct command after routing
 /dev-studio help                 # router-level role index; active-role help after a role is selected
-/dev-studio <role> help          # available commands and examples for one role
+/dev-studio <role> help          # role commands, examples, aliases, and lifecycle actions
 /dev-studio manager resume-plan  # "where were we" — load ROADMAP + ARCHITECTURE + pending memory
 /dev-studio reviewer review      # walk REVIEW.md against the pending diff
 /dev-studio release-manager      # draft release notes per RELEASES.md (never auto-tags)
@@ -89,7 +89,8 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio manager composite-chain init --manifest composite.yaml # selected MVP equivalent to --composite-manifest; initializes explicit sequential state without starting children
 /dev-studio manager composite-chain status --run-id <run_id> # non-mutating composite-chain progress recap and next resume command
 /dev-studio manager composite-chain resume --run-id <run_id> # clean-session continuation for the active planned/running child
-/dev-studio manager work-chain ios-v2-execution # auto-run the iOS v2 execution chain; bare call discovers available chains
+/dev-studio manager work-chain   # discover runnable chains and resumable runs before choosing automation
+/dev-studio manager work-chain ios-v2-execution # auto-run the iOS-first execution chain; macOS/watchOS surface when context points there
 /dev-studio manager work-chain ios-v2-execution --dry-run # preferred preview path for attended planning
 /dev-studio manager work-chain --from-plan task-graph.json --chain my-chain # create/link issues, populate Project fields, then auto-run
 /dev-studio manager work-chain --resume <run_id> --yes # preferred resume path from chain summaries/halt records
