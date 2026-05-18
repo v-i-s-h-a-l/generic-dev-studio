@@ -215,4 +215,26 @@ EXPECTED_PATH="$TMPHOME/.dev-studio/fixture-ios/secrets/appstoreconnect/AuthKey_
 echo "PASS: release config and default ASC key path are project-scoped"
 
 echo
+echo "=== Test 10: Fastlane env is not a TF push auth fallback ==="
+set +e
+OUT=$(PATH="$TMPHOME/bin:$PATH" \
+    STUDIO_TF_PUSH_LIVE=1 \
+    STUDIO_TF_PUSH_SKIP_NODE_PICK=1 \
+    STUDIO_TF_SLACK_DEFERRED=1 \
+    FASTLANE_SESSION="fixture-fastlane-session" \
+    FASTLANE_USER="fixture@example.com" \
+    STUDIO_RELEASE_TAG="release-fixture-no-fastlane" \
+    STUDIO_TF_PROJECT_ROOT="$PROJECT" \
+    STUDIO_TF_PBXPROJ="$PBX" \
+    "$REPO/scripts/studio-tf-push.sh" push 2>&1)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] || { echo "FAIL: missing ASC API credentials should halt"; exit 1; }
+echo "$OUT" | grep -q "STUDIO_TF_APP_ID missing" \
+  || { echo "FAIL: missing ASC app-id prerequisite message"; echo "$OUT"; exit 1; }
+echo "$OUT" | grep -q "fastlane discovery/session auth is not an automatic fallback" \
+  || { echo "FAIL: missing explicit no-Fastlane-fallback message"; echo "$OUT"; exit 1; }
+echo "PASS: Fastlane env does not bypass ASC API credential prerequisites"
+
+echo
 echo "All checks passed."

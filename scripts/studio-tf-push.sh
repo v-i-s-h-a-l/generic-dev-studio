@@ -51,12 +51,16 @@ umask 022
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 # shellcheck source=lib-paths.sh
+# shellcheck disable=SC1091
 . "$SCRIPT_DIR/lib-paths.sh"
 # shellcheck source=lib-ledger.sh
+# shellcheck disable=SC1091
 . "$SCRIPT_DIR/lib-ledger.sh"
 # shellcheck source=lib-build-queue.sh
+# shellcheck disable=SC1091
 . "$SCRIPT_DIR/lib-build-queue.sh"
 # shellcheck source=lib-release-config.sh
+# shellcheck disable=SC1091
 . "$SCRIPT_DIR/lib-release-config.sh"
 
 STUDIO_RELEASE_PROJECT="${STUDIO_RELEASE_PROJECT:-${STUDIO_TF_PROJECT_SLUG:-}}"
@@ -78,6 +82,7 @@ GSIP_PATH="${STUDIO_TF_GSIP_PATH:-$PROJECT_ROOT/zaps-app/Zaps/Firebase/Prod/Goog
 XCPRETTY="${STUDIO_TF_XCPRETTY:-/Users/vishalsingh/.gem/ruby/2.6.0/bin/xcpretty}"
 ASC_TIMEOUT="${STUDIO_TF_ASC_TIMEOUT:-20}"
 SLACK_TOKEN_FILE=$(release_slack_token_file)
+ASC_AUTH_HINT="studio-tf-push uses App Store Connect API key auth only; fastlane discovery/session auth is not an automatic fallback"
 
 _json_obj() {
   local out='{}'
@@ -137,10 +142,10 @@ preflight_push_release() {
 
   [ -d "$PROJECT_ROOT/.git" ] || halt_failed prereq "project git checkout missing at $PROJECT_ROOT; no mutation occurred"
   [ -r "$PBXPROJ" ] || halt_failed prereq "pbxproj unreadable at $PBXPROJ; no mutation occurred"
-  [ -n "$APP_ID" ] || halt_failed prereq "STUDIO_TF_APP_ID missing in $RELEASE_CONFIG_FILE; no mutation occurred"
-  [ -n "$ASC_KEY_ID" ] || halt_failed prereq "STUDIO_TF_ASC_KEY_ID missing in $RELEASE_CONFIG_FILE; no mutation occurred"
-  [ -n "$ASC_ISSUER_ID" ] || halt_failed prereq "STUDIO_TF_ASC_ISSUER_ID missing in $RELEASE_CONFIG_FILE; no mutation occurred"
-  [ -n "$ASC_KEY_PATH" ] || halt_failed prereq "STUDIO_TF_ASC_KEY_PATH missing and no key-id default could be derived; no mutation occurred"
+  [ -n "$APP_ID" ] || halt_failed prereq "STUDIO_TF_APP_ID missing in $RELEASE_CONFIG_FILE; no mutation occurred. $ASC_AUTH_HINT"
+  [ -n "$ASC_KEY_ID" ] || halt_failed prereq "STUDIO_TF_ASC_KEY_ID missing in $RELEASE_CONFIG_FILE; no mutation occurred. $ASC_AUTH_HINT"
+  [ -n "$ASC_ISSUER_ID" ] || halt_failed prereq "STUDIO_TF_ASC_ISSUER_ID missing in $RELEASE_CONFIG_FILE; no mutation occurred. $ASC_AUTH_HINT"
+  [ -n "$ASC_KEY_PATH" ] || halt_failed prereq "STUDIO_TF_ASC_KEY_PATH missing and no key-id default could be derived; no mutation occurred. $ASC_AUTH_HINT"
   case "$branch" in
     main|master|trunk|develop|release/*)
       halt_failed prereq "active branch '$branch' is a base branch — no mutation occurred; switch to a feature branch"
@@ -156,7 +161,7 @@ preflight_push_release() {
     halt_failed prereq "GitHub push auth/preflight failed before mutation; no build-number commit created. Run: gh auth status && git -C '$PROJECT_ROOT' push --dry-run -u origin HEAD. Details: $push_probe"
   fi
 
-  [ -r "$ASC_KEY_PATH" ] || halt_failed prereq "ASC key unreadable at $ASC_KEY_PATH; no mutation occurred"
+  [ -r "$ASC_KEY_PATH" ] || halt_failed prereq "ASC key unreadable at $ASC_KEY_PATH; no mutation occurred. $ASC_AUTH_HINT"
   if ! python3 - <<'PY' >/dev/null 2>&1
 import jwt
 PY
@@ -211,6 +216,14 @@ key = open('$ASC_KEY_PATH').read()
 payload = {'iss': '$ASC_ISSUER_ID', 'iat': int(time.time()), 'exp': int(time.time()) + 1200, 'aud': 'appstoreconnect-v1'}
 print(jwt.encode(payload, key, algorithm='ES256', headers={'kid': '$ASC_KEY_ID'}))
 PY
+}
+
+require_appstore_asc_auth() {
+  [ -n "$APP_ID" ] || halt_failed prereq "STUDIO_TF_APP_ID missing in $RELEASE_CONFIG_FILE. $ASC_AUTH_HINT"
+  [ -n "$ASC_KEY_ID" ] || halt_failed prereq "STUDIO_TF_ASC_KEY_ID missing in $RELEASE_CONFIG_FILE. $ASC_AUTH_HINT"
+  [ -n "$ASC_ISSUER_ID" ] || halt_failed prereq "STUDIO_TF_ASC_ISSUER_ID missing in $RELEASE_CONFIG_FILE. $ASC_AUTH_HINT"
+  [ -n "$ASC_KEY_PATH" ] || halt_failed prereq "STUDIO_TF_ASC_KEY_PATH missing and no key-id default could be derived. $ASC_AUTH_HINT"
+  [ -r "$ASC_KEY_PATH" ] || halt_failed prereq "ASC key unreadable at $ASC_KEY_PATH. $ASC_AUTH_HINT"
 }
 
 route_to_release_node() {
@@ -320,7 +333,7 @@ cmd_push() {
     YY=$(date -u +%y)
     MM=$(date -u +%-m)
     if [[ "$LIVE_VERSION" =~ ^${YY}\.${MM}\.([0-9]+)$ ]]; then
-      N=$(( ${BASH_REMATCH[1]} + 1 ))
+      N=$(( BASH_REMATCH[1] + 1 ))
     else
       N=0
     fi
@@ -402,7 +415,13 @@ EOF
         -authenticationKeyID "$ASC_KEY_ID" \
         -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
         CODE_SIGN_STYLE=Automatic \
-        2>&1 | tee "$archive_log" | { [ -x "$XCPRETTY" ] && "$XCPRETTY" || cat; }
+        2>&1 | tee "$archive_log" | {
+          if [ -x "$XCPRETTY" ]; then
+            "$XCPRETTY"
+          else
+            cat
+          fi
+        }
       exit "${PIPESTATUS[0]}"
     )
     archive_rc=$?
@@ -545,11 +564,7 @@ cmd_appstore() {
     halt_failed prereq "STUDIO_TF_PUSH_LIVE=1 required for non-dry-run appstore submission"
   fi
   if [ "$DRY_RUN_FLAG" != "1" ]; then
-    [ -n "$APP_ID" ] || halt_failed prereq "STUDIO_TF_APP_ID missing in $RELEASE_CONFIG_FILE"
-    [ -n "$ASC_KEY_ID" ] || halt_failed prereq "STUDIO_TF_ASC_KEY_ID missing in $RELEASE_CONFIG_FILE"
-    [ -n "$ASC_ISSUER_ID" ] || halt_failed prereq "STUDIO_TF_ASC_ISSUER_ID missing in $RELEASE_CONFIG_FILE"
-    [ -n "$ASC_KEY_PATH" ] || halt_failed prereq "STUDIO_TF_ASC_KEY_PATH missing and no key-id default could be derived"
-    [ -r "$ASC_KEY_PATH" ] || halt_failed prereq "ASC key unreadable at $ASC_KEY_PATH"
+    require_appstore_asc_auth
   fi
   route_to_release_node
 

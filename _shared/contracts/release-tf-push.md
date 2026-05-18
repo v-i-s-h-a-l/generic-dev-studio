@@ -32,6 +32,7 @@ Before Step 1:
 - The active branch is the branch the user wants on TestFlight. The driver does not switch branches.
 - Project release config is readable at `~/.dev-studio/<project>/config/release.env`.
 - ASC private key is readable at `~/.dev-studio/<project>/secrets/appstoreconnect/AuthKey_<key-id>.p8` or the `STUDIO_TF_ASC_KEY_PATH` configured in `release.env`.
+- ASC authentication is App Store Connect API key based. `STUDIO_TF_ASC_KEY_PATH` has precedence when configured; otherwise the driver derives `AuthKey_<key-id>.p8` under the project secret root. fastlane discovery or session auth is not a prerequisite, is not probed by default, and must not be silently selected as a fallback.
 - Slack bot token is readable per `_shared/primitives/slack-post.md` (`~/.dev-studio/<project>/secrets/slack-bot-token`, chmod 600).
 - `python3` resolves and the `pyjwt` package is importable (used to mint the ASC JWT — see `_shared/primitives/appstore-connect-jwt.md`).
 - Non-interactive GitHub push works for the active branch: `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never git push --dry-run --porcelain -u origin HEAD` succeeds. This preflight runs before any build-number or version mutation; auth failures must not open a credential prompt or create a stranded release commit.
