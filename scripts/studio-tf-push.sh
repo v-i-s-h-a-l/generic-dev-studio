@@ -694,7 +694,6 @@ cmd_appstore() {
 }
 
 case "${1:-}" in
-  compose-message) shift; exec "$SCRIPT_DIR/compose-build-release-message.sh" "$@" ;;
   push|""|--dry-run|--scheme)
     [ "${1:-}" = "push" ] && shift
     cmd_push "$@" ;;
