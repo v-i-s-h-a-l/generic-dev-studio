@@ -127,6 +127,20 @@ crash:
   versions_affected: ["1.11.0", "1.12.0"]
 ```
 
+### Repository access boundary
+
+Crash-fix issues, PRs, and release artifacts may live in the target repository
+when that repository's access boundary is appropriate for the crash context. A
+private target repo may carry private crash-fix issue/PR discussion visible to
+that repo's members. A public target repo, public release note, or public Slack
+surface must use only the public-safe projection below.
+
+Crashlytics issue links are allowed when the destination repo or channel is
+inside the intended access boundary. The Firebase project still controls who can
+open the link; the link by itself does not authorize access. Do not paste raw
+stack traces, user/session/device details, or private Crashlytics dumps into a
+public repo just because the Crashlytics URL is access-controlled.
+
 Allowed in public GitHub commits, PR descriptions, chain worker prompts, build summaries, release notes, and post-release annotations:
 
 - Crashlytics issue URLs.
