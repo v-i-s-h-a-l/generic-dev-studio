@@ -25,9 +25,11 @@ require_absent() {
 }
 
 for file in README.md scripts/README.md core/v2/skills/dev-studio/SKILL.md; do
+  require_contains "$file" 'manager composite-chain run --manifest' "default composite manifest runner"
   require_contains "$file" 'manager composite-chain init --manifest' "explicit composite manifest init"
   require_contains "$file" 'status --run-id' "non-mutating composite status"
   require_contains "$file" 'resume --run-id' "composite resume command shape"
+  require_contains "$file" '--continue' "composite continuation loop"
   require_contains "$file" 'natural-language extraction' "non-MVP parent text extraction warning"
   require_contains "$file" 'future/non-MVP' "future composite-parent warning"
   require_contains "$file" 'plan review' "existing gate preservation"
@@ -37,8 +39,10 @@ done
 require_contains README.md "work-chain --composite-manifest <file>" "selected composite-manifest equivalent"
 require_contains scripts/README.md "work-chain --composite-manifest <file>" "selected composite-manifest equivalent"
 require_contains core/v2/skills/dev-studio/SKILL.md "work-chain --composite-manifest <file>" "router selected composite-manifest equivalent"
+require_contains core/v2/skills/dev-studio/routing.yaml '/dev-studio manager composite-chain run --manifest' "routing trigger for composite run"
 require_contains core/v2/skills/dev-studio/routing.yaml '/dev-studio manager composite-chain init --manifest' "routing trigger for composite init"
 require_contains core/v2/skills/dev-studio/routing.yaml '/dev-studio manager composite-chain resume' "routing trigger for composite resume"
+require_contains core/v2/skills/dev-studio/routing.yaml '/dev-studio manager composite-chain resume --continue' "routing trigger for composite continuation"
 
 for file in README.md scripts/README.md core/v2/skills/dev-studio/SKILL.md; do
   require_absent "$file" 'children can run in parallel' "parallel composite execution"

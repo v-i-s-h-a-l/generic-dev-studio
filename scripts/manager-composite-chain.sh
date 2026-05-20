@@ -17,10 +17,11 @@ VALIDATE_CONTRACT="$SCRIPT_DIR/validate-contract.sh"
 usage() {
   cat <<'EOF' >&2
 Usage:
+  scripts/manager-composite-chain.sh run --manifest <composite.yaml> [--run-id <uuidv7>] [--json]
   scripts/manager-composite-chain.sh init --manifest <composite.yaml> [--run-id <uuidv7>] [--json]
   scripts/manager-composite-chain.sh plan-active-child (--state <path>|--run-id <uuidv7>) [--json]
   scripts/manager-composite-chain.sh execute-active-child (--state <path>|--run-id <uuidv7>) [--json]
-  scripts/manager-composite-chain.sh resume (--state <path>|--run-id <uuidv7>) [--json]
+  scripts/manager-composite-chain.sh resume (--state <path>|--run-id <uuidv7>) [--continue] [--json]
   scripts/manager-composite-chain.sh status (--state <path>|--run-id <uuidv7>) [--json]
   scripts/manager-composite-chain.sh validate-state --state <path>
   scripts/manager-composite-chain.sh validate-manifest --manifest <composite.yaml>
@@ -29,7 +30,7 @@ MVP input is an explicit `kind: composite-chain` manifest. Parent issue text
 parsing is unsupported; pass a manifest instead.
 
 Preferred user-facing entrypoint:
-  /dev-studio manager composite-chain ...
+  /dev-studio manager composite-chain run --manifest <composite.yaml>
 EOF
   exit 2
 }
@@ -782,6 +783,100 @@ cmd_init() {
   fi
 }
 
+run_manager_composite_subcommand() {
+  local output_json="$1" state_file="$2" subcommand="$3"
+  if [ "$output_json" -eq 1 ]; then
+    "$0" "$subcommand" --state "$state_file" --json >/dev/null
+  else
+    "$0" "$subcommand" --state "$state_file"
+  fi
+}
+
+composite_continue_loop() {
+  local state_file="$1" output_json="$2" state rc final_rc=0 child_count max_steps steps=0
+  child_count=$(jq '.children | length' "$state_file")
+  max_steps=$((child_count * 4 + 8))
+  while :; do
+    if [ "$steps" -ge "$max_steps" ]; then
+      fail "continue loop exceeded $max_steps state transitions; inspect composite state before retrying" 1
+    fi
+    steps=$((steps + 1))
+    validate_state "$state_file"
+    state=$(jq -r '.state' "$state_file")
+    case "$state" in
+      completed)
+        final_rc=0
+        break
+        ;;
+      child_ready|initialized|child_completed)
+        set +e
+        run_manager_composite_subcommand "$output_json" "$state_file" plan-active-child
+        rc=$?
+        set -e
+        if [ "$rc" -ne 0 ]; then
+          final_rc="$rc"
+          break
+        fi
+        ;;
+      child_planned)
+        set +e
+        run_manager_composite_subcommand "$output_json" "$state_file" execute-active-child
+        rc=$?
+        set -e
+        if [ "$rc" -ne 0 ]; then
+          final_rc="$rc"
+          break
+        fi
+        ;;
+      planning_child|running_child|halted)
+        set +e
+        run_manager_composite_subcommand "$output_json" "$state_file" resume
+        rc=$?
+        set -e
+        if [ "$rc" -ne 0 ]; then
+          final_rc="$rc"
+          break
+        fi
+        ;;
+      *)
+        fail "continue loop does not understand composite state: $state" 1
+        ;;
+    esac
+  done
+
+  if [ "$output_json" -eq 1 ]; then
+    print_status_json "$state_file"
+  else
+    print_status_text "$state_file"
+  fi
+  return "$final_rc"
+}
+
+cmd_run() {
+  local manifest="" run_id="" state_file="" output_json=0 init_json
+  local -a init_args
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --manifest) manifest="${2:?--manifest requires a path}"; shift 2 ;;
+      --manifest=*) manifest="${1#--manifest=}"; shift ;;
+      --run-id) run_id="${2:?--run-id requires a uuidv7}"; shift 2 ;;
+      --run-id=*) run_id="${1#--run-id=}"; shift ;;
+      --json) output_json=1; shift ;;
+      --parent-issue|--parent-issue=*|--issue|--issue=*) reject_parent_issue_parsing ;;
+      -h|--help) usage ;;
+      *) fail "unknown run argument: $1" 2 ;;
+    esac
+  done
+  [ -n "$manifest" ] || fail "run requires --manifest <path>" 2
+  init_args=(init --manifest "$manifest" --json)
+  if [ -n "$run_id" ]; then
+    init_args+=(--run-id "$run_id")
+  fi
+  init_json=$("$0" "${init_args[@]}")
+  state_file=$(printf '%s\n' "$init_json" | jq -r '.state_path')
+  composite_continue_loop "$state_file" "$output_json"
+}
+
 cmd_status() {
   local run_id="" state_file="" output_json=0
   while [ "$#" -gt 0 ]; do
@@ -984,13 +1079,14 @@ cmd_execute_active_child() {
 cmd_resume() {
   local run_id="" state_file="" output_json=0 state child_index child_id work_chain_manifest
   local child_state="" child_run_id="" command_json attempt_dir stdout_path stderr_path rc run_status reason_id summary details_ref
-  local plan_run_id="" result_json="" result_status="" final_rc=0
+  local plan_run_id="" result_json="" result_status="" final_rc=0 continue_loop=0
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --run-id) run_id="${2:?--run-id requires a uuidv7}"; shift 2 ;;
       --run-id=*) run_id="${1#--run-id=}"; shift ;;
       --state) state_file="${2:?--state requires a path}"; shift 2 ;;
       --state=*) state_file="${1#--state=}"; shift ;;
+      --continue) continue_loop=1; shift ;;
       --json) output_json=1; shift ;;
       --parent-issue|--parent-issue=*|--issue|--issue=*) reject_parent_issue_parsing ;;
       -h|--help) usage ;;
@@ -1003,6 +1099,11 @@ cmd_resume() {
   fi
   [ -n "$state_file" ] || fail "resume requires --state <path> or --run-id <uuidv7>" 2
   validate_state "$state_file"
+
+  if [ "$continue_loop" -eq 1 ]; then
+    composite_continue_loop "$state_file" "$output_json"
+    exit $?
+  fi
 
   state=$(jq -r '.state' "$state_file")
   case "$state" in
@@ -1148,6 +1249,7 @@ if [ "$#" -eq 0 ]; then
 fi
 
 case "$1" in
+  run) shift; cmd_run "$@" ;;
   init) shift; cmd_init "$@" ;;
   plan-active-child) shift; cmd_plan_active_child "$@" ;;
   execute-active-child) shift; cmd_execute_active_child "$@" ;;

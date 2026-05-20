@@ -12,6 +12,9 @@ WORK_STUB="$FIXTURE_DIR/stub-manager-work-chain.sh"
 RUN_ID="019e2c8a-9570-7000-8000-000000000001"
 PENDING_RUN_ID="019e2c8a-9570-7000-8000-000000000002"
 HALT_RUN_ID="019e2c8a-9570-7000-8000-000000000003"
+RUN_LOOP_ID="019e2c8a-9570-7000-8000-000000000004"
+RUN_LOOP_BLOCKED_ID="019e2c8a-9570-7000-8000-000000000005"
+RESUME_CONTINUE_ID="019e2c8a-9570-7000-8000-000000000006"
 TMPROOT="${TMPDIR:-/tmp}/composite-chain-execution.$$"
 
 trap 'rm -rf "$TMPROOT"' EXIT
@@ -112,5 +115,78 @@ jq -e '
 
 halt_record=$(jq -r '.active_halt_ref.halt_record' "$halt_state_path")
 [ -f "$halt_record" ] || fail "execution halt record was not written"
+
+run_loop_plan_log="$TMPROOT/run-loop-plan-calls.log"
+run_loop_work_log="$TMPROOT/run-loop-work-calls.log"
+HOME="$TMPROOT/home-run-loop" ACHILLES_PROJECT=generic-dev-studio \
+  STUDIO_COMPOSITE_PLAN_CHAIN_SCRIPT="$PLAN_STUB" STUB_PLAN_LOG="$run_loop_plan_log" \
+  STUDIO_COMPOSITE_WORK_CHAIN_SCRIPT="$WORK_STUB" STUB_WORK_LOG="$run_loop_work_log" \
+  STUB_WORK_RUN_ID_PREFIX="019e2c8a-9570-7000-8000-00000000010" \
+  "$MANAGER" run --manifest "$MANIFEST" --run-id "$RUN_LOOP_ID" --json > "$TMPROOT/run-loop.json"
+
+[ "$(wc -l < "$run_loop_plan_log" | tr -d ' ')" = "3" ] || fail "run loop should plan each child once"
+[ "$(wc -l < "$run_loop_work_log" | tr -d ' ')" = "3" ] || fail "run loop should execute each child once"
+run_loop_state_path=$(jq -r '.state_path' "$TMPROOT/run-loop.json")
+HOME="$TMPROOT/home-run-loop" ACHILLES_PROJECT=generic-dev-studio "$MANAGER" validate-state --state "$run_loop_state_path" >/dev/null
+jq -e '
+  .state == "completed"
+  and (.children | length) == 3
+  and ([.children[].status] | all(. == "completed"))
+  and .children[0].refs.child_run_id == "019e2c8a-9570-7000-8000-000000000101"
+  and .children[1].refs.child_run_id == "019e2c8a-9570-7000-8000-000000000102"
+  and .children[2].refs.child_run_id == "019e2c8a-9570-7000-8000-000000000103"
+  and .next_command == null
+' "$run_loop_state_path" >/dev/null || fail "run loop did not complete all children"
+jq -e '
+  .state == "completed"
+  and (.remaining_children | length) == 0
+  and .next_resume_command == null
+' "$TMPROOT/run-loop.json" >/dev/null || fail "run loop did not print final completed status"
+
+blocked_plan_log="$TMPROOT/run-loop-blocked-plan-calls.log"
+blocked_work_log="$TMPROOT/run-loop-blocked-work-calls.log"
+blocked_rc=0
+if HOME="$TMPROOT/home-run-loop-blocked" ACHILLES_PROJECT=generic-dev-studio \
+    STUDIO_COMPOSITE_PLAN_CHAIN_SCRIPT="$PLAN_STUB" STUB_PLAN_LOG="$blocked_plan_log" \
+    STUDIO_COMPOSITE_WORK_CHAIN_SCRIPT="$WORK_STUB" STUB_WORK_LOG="$blocked_work_log" \
+    STUB_PLAN_STATUS=blocked STUB_PLAN_EXIT_CODE=1 \
+    "$MANAGER" run --manifest "$MANIFEST" --run-id "$RUN_LOOP_BLOCKED_ID" --json > "$TMPROOT/run-loop-blocked.json" 2>"$TMPROOT/run-loop-blocked.err"; then
+  :
+else
+  blocked_rc=$?
+fi
+[ "$blocked_rc" -ne 0 ] || fail "blocked run loop unexpectedly exited zero"
+[ "$(wc -l < "$blocked_plan_log" | tr -d ' ')" = "1" ] || fail "blocked run loop should stop after one plan attempt"
+if [ -e "$blocked_work_log" ]; then
+  [ "$(wc -l < "$blocked_work_log" | tr -d ' ')" = "0" ] || fail "blocked run loop should not execute children"
+fi
+blocked_state_path=$(jq -r '.state_path' "$TMPROOT/run-loop-blocked.json")
+jq -e '
+  .state == "halted"
+  and .children[0].status == "halted"
+  and .children[1].status == "pending"
+  and .blocked_reason.reason_id == "child_plan_blocked"
+  and (.next_command | contains("composite-chain status --run-id"))
+' "$blocked_state_path" >/dev/null || fail "blocked run loop did not halt after planning blocker"
+
+resume_continue_plan_log="$TMPROOT/resume-continue-plan-calls.log"
+resume_continue_work_log="$TMPROOT/resume-continue-work-calls.log"
+resume_continue_state_path=$(plan_first_child "$TMPROOT/home-resume-continue" "$RESUME_CONTINUE_ID" "$resume_continue_plan_log")
+HOME="$TMPROOT/home-resume-continue" ACHILLES_PROJECT=generic-dev-studio \
+  STUDIO_COMPOSITE_PLAN_CHAIN_SCRIPT="$PLAN_STUB" STUB_PLAN_LOG="$resume_continue_plan_log" \
+  STUDIO_COMPOSITE_WORK_CHAIN_SCRIPT="$WORK_STUB" STUB_WORK_LOG="$resume_continue_work_log" \
+  STUB_WORK_RUN_ID_PREFIX="019e2c8a-9570-7000-8000-00000000020" \
+  "$MANAGER" resume --run-id "$RESUME_CONTINUE_ID" --continue --json > "$TMPROOT/resume-continue.json"
+
+[ "$(wc -l < "$resume_continue_plan_log" | tr -d ' ')" = "3" ] || fail "resume --continue should finish planning remaining children"
+[ "$(wc -l < "$resume_continue_work_log" | tr -d ' ')" = "3" ] || fail "resume --continue should execute planned and remaining children"
+HOME="$TMPROOT/home-resume-continue" ACHILLES_PROJECT=generic-dev-studio "$MANAGER" validate-state --state "$resume_continue_state_path" >/dev/null
+jq -e '
+  .state == "completed"
+  and ([.children[].status] | all(. == "completed"))
+  and .children[0].refs.child_run_id == "019e2c8a-9570-7000-8000-000000000201"
+  and .children[1].refs.child_run_id == "019e2c8a-9570-7000-8000-000000000202"
+  and .children[2].refs.child_run_id == "019e2c8a-9570-7000-8000-000000000203"
+' "$resume_continue_state_path" >/dev/null || fail "resume --continue did not complete the composite chain"
 
 printf 'PASS: composite chain execution\n'

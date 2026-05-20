@@ -86,9 +86,9 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio manager config list  # project-scoped opt-in feature settings and doctor checks
 /dev-studio manager branch status --source feature/foo --target release/26.5.0 # release branch preflight
 /dev-studio manager plan-chain <goal-or-issue> --execute # reviewed PRD-to-chain automation; default unattended, --interactive for attended
-/dev-studio manager composite-chain init --manifest composite.yaml # selected MVP equivalent to --composite-manifest; initializes explicit sequential state without starting children
+/dev-studio manager composite-chain run --manifest composite.yaml # selected MVP equivalent to --composite-manifest; plans/runs sequential children until complete or blocked
 /dev-studio manager composite-chain status --run-id <run_id> # non-mutating composite-chain progress recap and next resume command
-/dev-studio manager composite-chain resume --run-id <run_id> # clean-session continuation for the active planned/running child
+/dev-studio manager composite-chain resume --run-id <run_id> --continue # clean-session continuation until the chain completes or needs confirmation
 /dev-studio manager work-chain   # discover runnable chains and resumable runs before choosing automation
 /dev-studio manager work-chain ios-v2-execution # auto-run the iOS-first execution chain; macOS/watchOS surface when context points there
 /dev-studio manager work-chain ios-v2-execution --dry-run # preferred preview path for attended planning
@@ -96,7 +96,7 @@ For the long-running tracks, see [`THEMES.md`](THEMES.md). For longer-term visio
 /dev-studio manager work-chain --resume <run_id> --yes # preferred resume path from chain summaries/halt records
 scripts/manager-plan-chain.sh --issue 758 --repo v-i-s-h-a-l/generic-dev-studio --execute # repo-side PRD-to-chain orchestration
 /dev-studio manager work-chain --doctor <run_id> # read-only recovery recommendation for stale reports, halts, drift, and review blocks
-scripts/manager-composite-chain.sh init --manifest composite.yaml --json # script equivalent for explicit composite-chain initialization
+scripts/manager-composite-chain.sh run --manifest composite.yaml --json # script equivalent for explicit composite-chain execution
 scripts/manager-work-chain.sh ios-v2-execution # repo-side wrapper for the manager work-chain front door
 scripts/prd-intake-normalize.sh prd.md # normalize a PRD/transcript/issue brief into a planner-ready requirement packet
 scripts/prd-task-graph-synthesize.sh packet.md # turn a requirement packet or headed source into a validated scheduler graph
@@ -249,7 +249,7 @@ scripts/                # multi-worker fleet (BETA)
   studio-chain-doctor.sh   # read-only chain-run recovery recommendation from state, events, reports, halts, checkpoints, retries, and phase reviews
   studio-chain-rule-gates.sh # deterministic chain workflow gates for git hygiene, artifact roots, cache keys, cleanup TTLs, and telemetry redaction
   manager-plan-chain.sh # manager-owned source/issue/plan to reviewed issue-backed work-chain orchestration with native issue links, Project fields, telemetry, and optional execution
-  manager-composite-chain.sh # explicit sequential composite-chain manifest init/status/plan-active-child/execute-active-child/resume front door; status is non-mutating
+  manager-composite-chain.sh # explicit sequential composite-chain manifest run/status/resume front door; step commands remain available for recovery and status is non-mutating
   manager-work-chain.sh # manager front door for work-chain discovery/start/resume plus --from-plan unattended execution routing
   chain-monitor-sync.sh # locked/idempotent chain monitor active/archived Slack List row sync from manifests, runtime manifests, and event-derived persisted chain-run state
   manager-chain-monitor.sh # manager front door for monitor configure/sync/status/recovery while preserving login-home ownership
@@ -417,18 +417,22 @@ the source of truth.
 
 Composite parent-chain mode is a manager/router addition beside
 `manager plan-chain` and `manager work-chain`, not a replacement for either.
-The MVP selected equivalent to a `work-chain --composite-manifest <file>` flag
-is `/dev-studio manager composite-chain init --manifest <file>` or
-`scripts/manager-composite-chain.sh init --manifest <file>`. Inputs must be an
+The selected MVP equivalent to a `work-chain --composite-manifest <file>` flag
+is `/dev-studio manager composite-chain run --manifest <file>` or
+`scripts/manager-composite-chain.sh run --manifest <file>`. Inputs must be an
 explicit `kind: composite-chain` manifest; `/dev-studio manager work-chain
 --composite-parent <issue>` and parent-issue natural-language extraction are
 future/non-MVP. Cross-project manifests can declare `repo`, `project`, and
 `target_repo_root`; the normalized state then carries those values through
-child planning and resume. Use `/dev-studio manager composite-chain status --run-id
-<run_id>` for non-mutating progress inspection, then continue from a clean
-session with `/dev-studio manager composite-chain plan-active-child --run-id
-<run_id>`, `execute-active-child --run-id <run_id>`, or `resume --run-id
-<run_id>` as the status output directs. Sequential mode plans only the next
+child planning and resume. `run --manifest` initializes state, plans the active
+child, executes it, and continues through later children until the composite
+chain completes or a child needs confirmation/recovery. Use `/dev-studio
+manager composite-chain status --run-id <run_id>` for non-mutating progress
+inspection, then continue from a clean session with `/dev-studio manager
+composite-chain resume --run-id <run_id> --continue`. For focused recovery, use
+`manager composite-chain init --manifest <file>`, `plan-active-child`,
+`execute-active-child`, or plain `resume` as the status output directs.
+Sequential mode plans only the next
 eligible child after every earlier child is completed or skipped; dependent
 children are not planned or run in parallel. Existing gates stay in force for
 each child: plan review, durable issue creation when needed, worker execution,
