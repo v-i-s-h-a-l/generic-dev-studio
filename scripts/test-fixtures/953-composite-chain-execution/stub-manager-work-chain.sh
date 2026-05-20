@@ -9,7 +9,14 @@ if [ -n "${STUB_WORK_LOG:-}" ]; then
   printf '%s %s\n' "$manifest" "$*" >> "$STUB_WORK_LOG"
 fi
 
-run_id="${STUB_WORK_RUN_ID:-019e2c8a-9570-7000-8000-000000000101}"
+if [ -n "${STUB_WORK_RUN_ID:-}" ]; then
+  run_id="$STUB_WORK_RUN_ID"
+elif [ -n "${STUB_WORK_RUN_ID_PREFIX:-}" ] && [ -n "${STUB_WORK_LOG:-}" ]; then
+  call_count=$(wc -l < "$STUB_WORK_LOG" | tr -d ' ')
+  run_id="${STUB_WORK_RUN_ID_PREFIX}${call_count}"
+else
+  run_id="019e2c8a-9570-7000-8000-000000000101"
+fi
 status="${STUB_WORK_STATUS:-completed}"
 exit_code="${STUB_WORK_EXIT_CODE:-0}"
 project="${STUDIO_COMPOSITE_PLAN_CHAIN_PROJECT:-generic-dev-studio}"
