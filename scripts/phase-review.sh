@@ -285,6 +285,23 @@ case "$review_host" in
 esac
 
 input_content=$(cat "$input")
+extra_add_dirs=""
+while IFS= read -r candidate; do
+  [ -n "$candidate" ] || continue
+  [ -d "$candidate" ] || continue
+  case "$extra_add_dirs" in
+    *"$candidate"$'\n'*|*"$candidate") ;;
+    *) extra_add_dirs="${extra_add_dirs}${candidate}"$'\n' ;;
+  esac
+done < <(awk '
+  {
+    while (match($0, /`\/[^`]+`/)) {
+      value = substr($0, RSTART + 1, RLENGTH - 2)
+      print value
+      $0 = substr($0, RSTART + RLENGTH)
+    }
+  }
+' "$input")
 input_bytes=$(wc -c < "$input" 2>/dev/null | tr -d ' ' || printf '0')
 input_lines=$(wc -l < "$input" 2>/dev/null | tr -d ' ' || printf '0')
 case "$input_bytes" in ""|*[!0-9]*) input_bytes=0 ;; esac
@@ -317,6 +334,10 @@ $input_content
 Assess whether the execution may proceed. Be direct: list fatal blockers first,
 then warnings, then recommendations or plan adjustments.
 
+If the artifact names an issue worktree or commit-after hash, validate changed
+artifacts against that worktree/commit. Do not validate against the reviewer
+process current directory or an unrelated checkout.
+
 End with exactly one stable verdict line:
 
 PHASE_REVIEW_VERDICT=clean
@@ -331,7 +352,13 @@ EOF
 
 review_argv=("${spawn_argv[@]}")
 case "$review_host" in
-  claude*|*claude*) review_argv+=("--add-dir=$input_dir") ;;
+  claude*|*claude*)
+    review_argv+=("--add-dir=$input_dir")
+    while IFS= read -r add_dir; do
+      [ -n "$add_dir" ] || continue
+      review_argv+=("--add-dir=$add_dir")
+    done <<< "$extra_add_dirs"
+    ;;
 esac
 review_cmd=(review_host_run_command "$review_host" "$reviewer_home" \
   --env REVIEW_PAYLOAD "$input" \

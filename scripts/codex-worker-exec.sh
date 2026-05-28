@@ -32,10 +32,11 @@ codex_home=$(resolve_codex_worker_home)
 }
 
 dev_studio_root="${STUDIO_CODEX_WRITABLE_ROOT:-${HOME:?HOME required}/.dev-studio}"
+worker_sandbox="${STUDIO_CODEX_WORKER_SANDBOX:-workspace-write}"
 
 exec env CODEX_HOME="$codex_home" codex exec \
   --ephemeral \
-  --sandbox workspace-write \
+  --sandbox "$worker_sandbox" \
   --add-dir "$dev_studio_root" \
   -c approval_policy=never \
   "$@"
