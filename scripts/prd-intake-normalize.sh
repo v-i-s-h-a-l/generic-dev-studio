@@ -136,6 +136,13 @@ function print_bucket(prefix, count, line_arr, section_arr, text_arr, reason_arr
   }
 }
 
+function add_component_line(text) {
+  if (component_count == 0) {
+    return
+  }
+  component_body[component_count] = component_body[component_count] "\n" text
+}
+
 BEGIN {
   section = ""
   explicit_count = 0
@@ -148,6 +155,7 @@ BEGIN {
   saw_acceptance = 0
   saw_non_goal = 0
   saw_verification = 0
+  component_count = 0
 }
 
 {
@@ -176,6 +184,17 @@ BEGIN {
   key = slug(visible)
   polarity = (lower ~ /(^|[^[:alnum:]_])(must not|should not|will not|do not|does not|out of scope|non-goals?|non goals?)([^[:alnum:]_]|$)/) ? "negative" : "positive"
 
+  if (section_l ~ /(worker decomposition|component decomposition|task decomposition)/) {
+    component_line = line
+    if (component_line ~ /^[0-9]+[.)][[:space:]]+/) {
+      component_count++
+      component_title[component_count] = strip_marker(component_line)
+      component_body[component_count] = ""
+    } else if (component_count > 0) {
+      add_component_line(original)
+    }
+  }
+
   if (lower ~ /(^|[^[:alnum:]_])(prd|transcript|issue brief|input|source)([^[:alnum:]_]|$)/) saw_input = 1
   if (lower ~ /(^|[^[:alnum:]_])(output|artifact|packet|brief)([^[:alnum:]_]|$)/) saw_output = 1
   if (lower ~ /(^|[^[:alnum:]_])(markdown|yaml|json|schema|format|template)([^[:alnum:]_]|$)/) saw_format = 1
@@ -203,6 +222,17 @@ END {
   printf "## Intake Metadata\n\n"
   printf "- Source: `%s`\n", source
   printf "- Method: deterministic lexical normalization; exact source language is quoted below.\n\n"
+
+  if (component_count >= 2) {
+    printf "## Worker Decomposition Components\n\n"
+    for (i = 1; i <= component_count; i++) {
+      printf "### %d. %s\n", i, escape_md(component_title[i])
+      if (component_body[i] != "") {
+        printf "%s\n", component_body[i]
+      }
+      printf "\n"
+    }
+  }
 
   printf "## Explicit Requirements\n\n"
   print_bucket("R", explicit_count, explicit_line, explicit_section, explicit_text, explicit_reason)

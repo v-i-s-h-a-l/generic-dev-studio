@@ -277,10 +277,11 @@ write_halt_record() {
 }
 
 child_plan_command_json() {
-  local state_file="$1" child_index="$2" child_id="$3" source_type issue manifest_path project target_repo_root issue_repo
+  local state_file="$1" child_index="$2" child_id="$3" source_type issue manifest_path project target_repo_root issue_repo source_branch
   project=$(state_project "$state_file")
   target_repo_root=$(state_target_repo_root "$state_file")
   issue_repo=$(state_issue_repo "$state_file")
+  source_branch=$(jq -r '.manifest.source.base_branch // .manifest.base_branch // empty' "$state_file")
   source_type=$(jq -r --argjson idx "$child_index" '.children[$idx].source.source_type' "$state_file")
   case "$source_type" in
     issue)
@@ -292,7 +293,10 @@ child_plan_command_json() {
         --arg child_id "$child_id" \
         --arg repo_root "$target_repo_root" \
         --arg project "$project" \
-        '[$script, "--issue", $issue, "--repo", $issue_repo, "--chain", $child_id, "--project", $project, "--target-repo-root", $repo_root, "--no-execute"]'
+        --arg source_branch "$source_branch" \
+        '[$script, "--issue", $issue, "--repo", $issue_repo, "--chain", $child_id, "--project", $project, "--target-repo-root", $repo_root]
+          + (if $source_branch == "" then [] else ["--source-branch", $source_branch] end)
+          + ["--no-execute"]'
       ;;
     manifest)
       manifest_path=$(jq -r --argjson idx "$child_index" '.children[$idx].source.manifest_path' "$state_file")
@@ -302,7 +306,10 @@ child_plan_command_json() {
         --arg child_id "$child_id" \
         --arg repo_root "$target_repo_root" \
         --arg project "$project" \
-        '[$script, "--source-file", $manifest_path, "--chain", $child_id, "--project", $project, "--target-repo-root", $repo_root, "--no-execute"]'
+        --arg source_branch "$source_branch" \
+        '[$script, "--source-file", $manifest_path, "--chain", $child_id, "--project", $project, "--target-repo-root", $repo_root]
+          + (if $source_branch == "" then [] else ["--source-branch", $source_branch] end)
+          + ["--no-execute"]'
       ;;
     *)
       fail "unsupported child source_type for planning: $source_type" 1

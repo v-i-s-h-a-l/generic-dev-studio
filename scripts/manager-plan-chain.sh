@@ -740,6 +740,7 @@ write_generated_planner_artifact() {
     --arg requirement_packet "$REQUIREMENT_PACKET" \
     --arg task_graph "$TASK_GRAPH" \
     --arg review_input "$REVIEW_INPUT" \
+    --arg source_branch "$SOURCE_BRANCH" \
     --argjson include_comments "$INCLUDE_COMMENTS" \
     --argjson body_only_explicit "$BODY_ONLY_EXPLICIT" \
     --arg comment_packet "$COMMENT_PACKET_MD" \
@@ -765,7 +766,9 @@ write_generated_planner_artifact() {
             mode: (if $include_comments == 1 then "issue-context-packet" else "body-only" end),
             packet_path: (if $comment_packet == "" then null else $comment_packet end),
             comment_sidecar_path: (if $comment_sidecar == "" then null else $comment_sidecar end),
-            body_only_explicit: ($body_only_explicit == 1)
+            body_only_explicit: ($body_only_explicit == 1),
+            base_branch: $source_branch,
+            forbidden_base_branches: []
           },
           scope: ($tasks | map(.label)),
           non_goals: ["Do not execute implementation work inside the planning session."],
@@ -793,14 +796,15 @@ write_generated_planner_artifact() {
                 summary: .label,
                 owner_role: "worker",
                 allowed_paths: (.write_resources // []),
-                required_checks: [
+                required_checks: (.required_checks // [
+                  "Run `git diff --check`.",
                   "Run the narrowest relevant test/lint/build checks for the files changed by this worker contract."
-                ],
-                stop_conditions: [
+                ]),
+                stop_conditions: (.stop_conditions // [
                   "The contract requires files or behavior outside the reviewed issue body.",
                   "Required checks cannot be run or interpreted.",
                   "Implementation would need a different role owner."
-                ],
+                ]),
                 summary_artifact: ".studio/chain-worker-summary.json"
               })
           ),
