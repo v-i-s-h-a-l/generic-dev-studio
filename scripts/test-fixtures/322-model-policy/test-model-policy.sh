@@ -40,7 +40,7 @@ bash "$ROOT/scripts/resolve-reviewer-model.sh" \
 claude_rc=$?
 assert "claude reviewer resolves for openai implementation" "[ '$claude_rc' -eq 0 ]"
 assert "claude reviewer uses anthropic family" "grep -q '^REVIEWER_MODEL_PROVIDER_FAMILY=anthropic$' '$claude_out'"
-assert "claude reviewer uses sonnet 4.6" "grep -q '^REVIEWER_MODEL_ID=claude-sonnet-4-6$' '$claude_out'"
+assert "claude reviewer uses opus 4.6" "grep -q '^REVIEWER_MODEL_ID=claude-opus-4-6$' '$claude_out'"
 assert "claude reviewer uses high reasoning" "grep -q '^REVIEWER_MODEL_REASONING_EFFORT=high$' '$claude_out'"
 
 planner_out="$TMPROOT/planner.out"
