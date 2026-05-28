@@ -14,7 +14,7 @@ Usage:
 Supported kinds:
   chain-progress, chain-issue-started, chain-issue-completed,
   chain-issue-blocked, chain-review, chain-final-summary,
-  feedback-ingest, staleness-triage
+  chain-parent-closeout, feedback-ingest, staleness-triage
 
 The first body line is the studio-comment:v1 marker. Dry-run prints the
 structured JSON payload and never calls GitHub. Posting routes through
@@ -114,7 +114,7 @@ done
 [ -n "$summary" ] || { printf 'studio-comment: --summary is required\n' >&2; exit 2; }
 
 case "$kind" in
-  chain-progress|chain-issue-started|chain-issue-completed|chain-issue-blocked|chain-review|chain-final-summary|feedback-ingest|staleness-triage) ;;
+  chain-progress|chain-issue-started|chain-issue-completed|chain-issue-blocked|chain-review|chain-final-summary|chain-parent-closeout|feedback-ingest|staleness-triage) ;;
   *)
     printf 'studio-comment: unsupported kind: %s\n' "$kind" >&2
     exit 2

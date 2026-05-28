@@ -353,9 +353,22 @@ chain_status_hidden_from_default_discovery() {
   esac
 }
 
+iter_chain_selector_manifest_files() {
+  local parent_home studio_home
+  if [ -d "$REPO_ROOT/chains" ]; then
+    find "$REPO_ROOT/chains" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null
+  fi
+
+  parent_home=$(resolve_parent_home_for_github 2>/dev/null || true)
+  [ -n "$parent_home" ] || return 0
+  studio_home="$parent_home/.dev-studio"
+  [ -d "$studio_home" ] || return 0
+  find "$studio_home" -path "$studio_home/*/plan-chains/*/work-chain.yaml" -type f 2>/dev/null
+  find "$studio_home" -path "$studio_home/*/plan-chains/*/work-chain.yml" -type f 2>/dev/null
+}
+
 resolve_manifest_by_chain_selector() {
   local input="$1" matches_tmp manifest chain_count idx name chain_id count row
-  [ -d "$REPO_ROOT/chains" ] || return 1
   matches_tmp=$(mktemp -t studio-chain-selector.XXXXXX) || return 1
   while IFS= read -r manifest; do
     [ -n "$manifest" ] || continue
@@ -370,7 +383,7 @@ resolve_manifest_by_chain_selector() {
       fi
     done
   done <<EOF
-$(find "$REPO_ROOT/chains" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null | sort)
+$(iter_chain_selector_manifest_files | sort -u)
 EOF
   count=$(wc -l < "$matches_tmp" | tr -d ' ')
   case "$count" in
@@ -440,7 +453,7 @@ resolve_manifest() {
 
   printf 'studio-chain-runner: manifest not found: %s\n' "$input" >&2
   printf 'studio-chain-runner: tried %s and %s\n' "$REPO_ROOT/chains/$input.yaml" "$REPO_ROOT/chains/$input.yml" >&2
-  printf 'studio-chain-runner: also searched chain names and chain ids under %s\n' "$REPO_ROOT/chains" >&2
+  printf 'studio-chain-runner: also searched chain names and chain ids under %s and generated project plan-chains\n' "$REPO_ROOT/chains" >&2
   exit 2
 }
 
@@ -4959,13 +4972,17 @@ resolve_issue_repo_slug() {
 
 issue_view_json_or_fail() {
   local issue="${1:?usage: issue_view_json_or_fail <issue> <json-fields> <context>}" fields="${2:?usage: issue_view_json_or_fail <issue> <json-fields> <context>}" context="${3:-preflight}"
-  local out
-  if ! out=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json "$fields" 2>&1); then
+  local out err_file err
+  err_file=$(mktemp -t studio-chain-issue-view.XXXXXX)
+  if ! out=$(with_login_home_for_github gh issue view "$issue" --repo "$REPO_SLUG" --json "$fields" 2>"$err_file"); then
+    err=$(cat "$err_file" 2>/dev/null || true)
+    rm -f "$err_file"
     printf 'studio-chain-runner: GitHub issue lookup failed for repo %s (target repo root: %s) while resolving issue #%s during %s\n' \
       "$REPO_SLUG" "$TARGET_REPO_ROOT" "$issue" "$context" >&2
-    printf 'studio-chain-runner: issue lookup output: %s\n' "$out" >&2
+    printf 'studio-chain-runner: issue lookup output: %s%s%s\n' "$out" "${err:+ }" "$err" >&2
     return 1
   fi
+  rm -f "$err_file"
   printf '%s\n' "$out"
 }
 
@@ -6916,7 +6933,11 @@ verify_expected_source_sha_or_abort() {
     SOURCE_SHA_ACTUAL="$expected_sha"
     return 0
   fi
-  actual_sha=$(studio_git_transport_ls_remote --heads origin "$source_branch" 2>/dev/null | awk 'NR == 1 { print $1 }') || actual_sha=""
+  actual_sha=$(
+    cd "$TARGET_REPO_ROOT" &&
+      studio_git_transport_ls_remote --heads origin "$source_branch" 2>/dev/null |
+      awk 'NR == 1 { print $1 }'
+  ) || actual_sha=""
   SOURCE_SHA_ACTUAL="$actual_sha"
   if [ -z "$actual_sha" ]; then
     summary="cannot verify origin/$source_branch before $phase for chain $chain_name"
@@ -6941,6 +6962,10 @@ verify_expected_source_sha_or_abort() {
   fi
 }
 
+target_repo_git_transport_ls_remote() {
+  ( cd "$TARGET_REPO_ROOT" && studio_git_transport_ls_remote "$@" )
+}
+
 live_preflight() {
   local plan="$1" reviewer_host chain_name branch issue_branch base expected_source_sha approved_release_id strict_source_sha
   run_retryable_or_abort github_auth_unavailable "GitHub auth is not available" \
@@ -6956,7 +6981,7 @@ live_preflight() {
     [ "$expected_source_sha" = "__none__" ] && expected_source_sha=""
     [ "$approved_release_id" = "__none__" ] && approved_release_id=""
     run_retryable_or_abort network_partition "cannot verify origin/$base" \
-      studio_git_transport_ls_remote --exit-code --heads origin "$base"
+      target_repo_git_transport_ls_remote --exit-code --heads origin "$base"
     strict_source_sha="allow-drift"
     if [ -n "$approved_release_id" ] && [ "$approved_release_id" != "null" ]; then
       strict_source_sha="strict"
@@ -6966,7 +6991,7 @@ live_preflight() {
       printf 'studio-chain-runner: local chain branch already exists: %s\n' "$branch" >&2
       exit 2
     fi
-    if [ -z "$RESUME_ID" ] && studio_git_transport_ls_remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+    if [ -z "$RESUME_ID" ] && ( cd "$TARGET_REPO_ROOT" && studio_git_transport_ls_remote --exit-code --heads origin "$branch" >/dev/null 2>&1 ); then
       printf 'studio-chain-runner: remote chain branch already exists: %s\n' "$branch" >&2
       exit 2
     fi
@@ -6979,7 +7004,7 @@ EOF
       printf 'studio-chain-runner: local issue branch already exists: %s\n' "$issue_branch" >&2
       exit 2
     fi
-    if [ -z "$RESUME_ID" ] && studio_git_transport_ls_remote --exit-code --heads origin "$issue_branch" >/dev/null 2>&1; then
+    if [ -z "$RESUME_ID" ] && ( cd "$TARGET_REPO_ROOT" && studio_git_transport_ls_remote --exit-code --heads origin "$issue_branch" >/dev/null 2>&1 ); then
       printf 'studio-chain-runner: remote issue branch already exists: %s\n' "$issue_branch" >&2
       exit 2
     fi
@@ -7631,6 +7656,9 @@ finalize_chain_pr() {
     return 0
   fi
 
+  local pr_create_err
+  pr_create_err=$(mktemp "${TMPDIR:-/tmp}/studio-pr-create.XXXXXX")
+  set +e
   pr_url=$(with_login_home_for_github gh pr create \
     --repo "$REPO_SLUG" \
     --base "$base" \
@@ -7644,7 +7672,19 @@ Chain run: \`$RUN_ID\`
 Chain-run UUID: \`$chain_run_id\`
 Private report: local only; resolve by run ID on the machine that ran the chain.
 
-Review gate: \`scripts/pr-headless-review.sh <pr> --method auto\`.")
+Review gate: \`scripts/pr-headless-review.sh <pr> --method auto\`." 2>"$pr_create_err")
+  pr_create_rc=$?
+  set -e
+  if [ "$pr_create_rc" -ne 0 ]; then
+    pr_url=$(with_login_home_for_github gh pr view "$chain_branch" --repo "$REPO_SLUG" --json url --jq '.url' 2>/dev/null || true)
+    if [ -n "$pr_url" ]; then
+      log "reusing existing PR $pr_url"
+    else
+      cat "$pr_create_err" >&2
+      abort_run "PR create failed for $chain_branch"
+    fi
+  fi
+  rm -f "$pr_create_err"
   pr_number=$(printf '%s' "$pr_url" | sed -E 's#.*/pull/([0-9]+).*#\1#')
   FINAL_PR_URL="$pr_url"
   log "opened PR $pr_url"
@@ -7662,7 +7702,7 @@ Public-safe telemetry: run/chain UUIDs and abstract gap names only."; then
   review_started_at=$(now_epoch)
   review_out="$CHAIN_RUN_ROOT/review-$pr_number.out"
   set +e
-  STUDIO_PARENT_HOST="${STUDIO_PARENT_HOST:-$implementation_host}" "$SCRIPT_DIR/pr-headless-review.sh" "$pr_number" --method auto >"$review_out" 2>&1
+  GH_REPO="$REPO_SLUG" STUDIO_PARENT_HOST="${STUDIO_PARENT_HOST:-$implementation_host}" "$SCRIPT_DIR/pr-headless-review.sh" "$pr_number" --method auto >"$review_out" 2>&1
   review_rc=$?
   set -e
   cat "$review_out"
@@ -7908,7 +7948,7 @@ write_issue_phase_plan_artifact() {
 }
 
 write_issue_phase_outcome_artifact() {
-  local artifact="$1" chain_name="$2" issue="$3" issue_run_id="$4" before="$5" after="$6" summary_file="$7"
+  local artifact="$1" chain_name="$2" issue="$3" issue_run_id="$4" before="$5" after="$6" summary_file="$7" issue_worktree="${8:-}"
   mkdir -p "$(dirname "$artifact")"
   {
     printf '# Chain Issue Phase Outcome\n\n'
@@ -7916,9 +7956,14 @@ write_issue_phase_outcome_artifact() {
     printf -- '- Chain: `%s`\n' "$chain_name"
     printf -- '- Issue: `#%s`\n' "$issue"
     printf -- '- Issue-run UUID: `%s`\n' "$issue_run_id"
+    [ -z "$issue_worktree" ] || printf -- '- Issue worktree: `%s`\n' "$issue_worktree"
     printf -- '- Commit before: `%s`\n' "$before"
     printf -- '- Commit after: `%s`\n' "$after"
     printf -- '- Worker summary: `%s`\n\n' "$summary_file"
+    if [ -n "$issue_worktree" ]; then
+      printf '## Review Filesystem Context\n\n'
+      printf 'Validate changed artifacts against the issue worktree above and commit-after above. Do not validate against the reviewer process current directory or any unrelated checkout.\n\n'
+    fi
     printf '## What Changed\n\n'
     jq -r '
       def lines($v):
@@ -8207,7 +8252,7 @@ run_issue_job() {
   if phase_review_required_for_issue "$phase_review_mode" "$issue_count_for_review"; then
     boundary_id="$chain_run_id-$issue_run_id"
     phase_outcome_artifact="$PHASE_REVIEW_ROOT/$boundary_id-outcome.md"
-    write_issue_phase_outcome_artifact "$phase_outcome_artifact" "$name" "$issue" "$issue_run_id" "$before" "$after" "$summary_file"
+    write_issue_phase_outcome_artifact "$phase_outcome_artifact" "$name" "$issue" "$issue_run_id" "$before" "$after" "$summary_file" "$issue_worktree"
     set +e
     run_phase_review_gate outcome "$boundary_id" "$phase_outcome_artifact" "$chain_run_id" "$issue_run_id" "$name" "$issue"
     phase_review_rc=$?
@@ -8508,7 +8553,7 @@ reconcile_resume_issue_summary() {
   if phase_review_required_for_issue "$phase_review_mode" "$issue_count_for_review"; then
     boundary_id="$chain_run_id-$issue_run_id"
     phase_outcome_artifact="$PHASE_REVIEW_ROOT/$boundary_id-outcome.md"
-    write_issue_phase_outcome_artifact "$phase_outcome_artifact" "$chain_name" "$issue" "$issue_run_id" "$before" "$after" "$summary_file"
+    write_issue_phase_outcome_artifact "$phase_outcome_artifact" "$chain_name" "$issue" "$issue_run_id" "$before" "$after" "$summary_file" "$issue_worktree"
     set +e
     run_phase_review_gate outcome "$boundary_id" "$phase_outcome_artifact" "$chain_run_id" "$issue_run_id" "$chain_name" "$issue"
     phase_review_rc=$?

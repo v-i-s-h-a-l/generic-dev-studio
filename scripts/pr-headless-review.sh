@@ -466,8 +466,8 @@ run_review_candidate() {
     return 1
   fi
 
-  verdict_count=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$summary" | wc -l | tr -d ' ')
-  verdict=$(sed -n 's/^STUDIO_REVIEW_VERDICT=//p' "$summary")
+  verdict=$(sed -n -E 's/^[[:space:]]*`?STUDIO_REVIEW_VERDICT=(approved|approved_with_fixes|blocked)`?[[:space:]]*$/\1/p' "$summary")
+  verdict_count=$(printf '%s\n' "$verdict" | sed '/^$/d' | wc -l | tr -d ' ')
   if [ "$verdict_count" = "0" ] \
       && grep -Eq '^REVIEW_CONTEXT_FALLBACK=expanded|INSUFFICIENT_CONTEXT' "$summary" \
       && [ "$(printf '%s\n' "$PR_REVIEW_CONTEXT_JSON" | jq -r '.mode')" != "expanded" ]; then
