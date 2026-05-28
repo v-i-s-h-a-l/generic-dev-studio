@@ -3,7 +3,7 @@ schema_version:
   version: 1.1.0
   min_reader: 1.0.0
   deprecated_at: null
-updated_at: 2026-05-03T00:00:00Z
+updated_at: 2026-05-28T00:00:00Z
 refresh_policy:
   cadence: before-changing-defaults
   command: scripts/check-model-catalog.sh --print-refresh-checklist
@@ -24,6 +24,9 @@ official_sources:
   anthropic_models:
     url: https://docs.anthropic.com/en/docs/about-claude/models/all-models
     last_verified_at: 2026-05-02T00:00:00Z
+  anthropic_opus_4_6_release:
+    url: https://www.anthropic.com/news/claude-opus-4-6
+    last_verified_at: 2026-05-28T00:00:00Z
   aws_bedrock_claude_sonnet_4_6:
     url: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html
     last_verified_at: 2026-05-17T00:00:00Z
@@ -64,8 +67,8 @@ adapter_profiles:
     profile: reviewer
 models:
   opus:
-    id: claude-opus-4-1-20250805
-    display_name: Claude Opus 4.1
+    id: claude-opus-4-6
+    display_name: Claude Opus 4.6
     provider_family: anthropic
     adapter_profiles:
       - claude-code
@@ -75,24 +78,29 @@ models:
     capability_tier: heavyweight
     role_suitability:
       - implementer
+      - reviewer
+      - planner
       - architect
-    stable_aliases: []
+    stable_aliases:
+      - claude-opus-4-6
     snapshot_ids:
-      - claude-opus-4-1-20250805
+      - claude-opus-4-6
     reasoning_effort:
       supported: true
       levels:
+        - low
         - medium
         - high
+        - max
       default: high
-      provider_name: extended_thinking
-    released_at: 2025-08-05
-    variant_1m: false
+      provider_name: effort
+    released_at: 2026-02-05
+    variant_1m: true
     supports_fast: false
     knowledge_cutoff: null
     source:
-      url: https://docs.anthropic.com/en/docs/about-claude/models/all-models
-      last_verified_at: 2026-05-02T00:00:00Z
+      url: https://www.anthropic.com/news/claude-opus-4-6
+      last_verified_at: 2026-05-28T00:00:00Z
   sonnet:
     id: claude-sonnet-4-6
     display_name: Claude Sonnet 4.6

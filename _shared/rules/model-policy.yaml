@@ -38,12 +38,12 @@ roles:
     reasoning_effort: medium
     independent_provider_family_required: true
     model_preferences:
-      - sonnet
+      - opus
       - openai_gpt_5_5
       - openai_gpt_5_3_codex
       - openai_gpt_5_2
       - openai_gpt_5
-      - opus
+      - sonnet
     downgrade_requires_telemetry: true
   reviewer.fallback:
     purpose: user-approved same-family fallback when no independent eligible reviewer can run
@@ -51,12 +51,12 @@ roles:
     reasoning_effort: medium
     user_approved_bypass_required: true
     model_preferences:
-      - sonnet
+      - opus
       - openai_gpt_5_5
       - openai_gpt_5_3_codex
       - openai_gpt_5_2
       - openai_gpt_5
-      - opus
+      - sonnet
   planner.heavyweight:
     purpose: Claude planner/architect planning, decomposition, and plan review preparation
     role_suitability: planner
@@ -70,9 +70,9 @@ roles:
       - opus
     opus_requires_explicit_extreme_need: true
   reviewer.reasoning_effort:
-    default: medium
+    default: high
     routine_after_telemetry: medium
-    rule: "Use Sonnet 4.6 with high effort for Claude review/planner defaults. Opus is a last-resort tier only when explicitly justified as extreme need; do not use unverified Opus snapshots such as Opus 4.7 by default."
+    rule: "Use Opus 4.6 with high effort for Claude review defaults. Keep planner defaults on Sonnet unless planning policy changes separately; do not use unverified Opus snapshots such as Opus 4.7 by default."
 reviewer_selection:
   default_role: reviewer.heavyweight
   fallback_role: reviewer.fallback
