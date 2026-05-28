@@ -289,7 +289,7 @@ function resources_in_component_body(body,    rest, line, line_l, in_reference_s
           for (fr in found_arr) out = add_resource(out, found_arr[fr])
         }
       }
-      if (in_allowed_paths_section) {
+      if (in_allowed_paths_section || line_l ~ /allowed paths/) {
         found_resources = resources_anywhere(line)
         if (found_resources != "") {
           split(found_resources, found_arr, ",")
@@ -357,6 +357,20 @@ function fallback_component_resources(title,    l, out) {
     out = add_resource(out, "scripts/studio-chain-runner.sh")
   }
   return out
+}
+
+function ownership_line(body,    rest, line) {
+  rest = body
+  while (match(rest, /\n[^\n]*/)) {
+    line = substr(rest, RSTART + 1, RLENGTH - 1)
+    rest = substr(rest, RSTART + RLENGTH)
+    sub(/^[[:space:]]*[-*][[:space:]]+/, "", line)
+    line = trim(line)
+    if (lower(line) ~ /^owns /) {
+      return line
+    }
+  }
+  return ""
 }
 
 function add_packet_conflict(source_id, text) {
@@ -572,6 +586,12 @@ END {
     if (node_kind[source_id] != "task") {
       continue
     }
+    if (component_mode == 1 && node_kind[source_id] == "task") {
+      owner_text = ownership_line(component_body[source_id])
+      if (owner_text != "") {
+        node_label[source_id] = component_title[source_id] " " owner_text
+      }
+    }
     for (j = 1; j <= node_count; j++) {
       dep_source_id = node_order[j]
       if (node_kind[dep_source_id] == "shared_prerequisite") {
@@ -595,6 +615,19 @@ END {
         match(candidate, /R[0-9][0-9][0-9]/)
         dep_source_id = substr(candidate, RSTART, RLENGTH)
         add_dependency(source_id, dep_source_id, "explicit source reference")
+        rest = substr(rest, outer_end)
+      }
+      rest = lower(component_body[source_id])
+      while (match(rest, /[^\n]*(depends on|after|requires?|follows)[^\n]*/)) {
+        outer_end = RSTART + RLENGTH
+        candidate = substr(rest, RSTART, RLENGTH)
+        if (candidate ~ /(worker|workers)/) {
+          while (match(candidate, /[0-9]+/)) {
+            dep_source_id = sprintf("R%03d", substr(candidate, RSTART, RLENGTH) + 0)
+            add_dependency(source_id, dep_source_id, "explicit worker reference")
+            candidate = substr(candidate, RSTART + RLENGTH)
+          }
+        }
         rest = substr(rest, outer_end)
       }
       if (source_id != "R001" && lower(component_title["R001"]) ~ /(policy|config|foundation|schema|setup)/) {
