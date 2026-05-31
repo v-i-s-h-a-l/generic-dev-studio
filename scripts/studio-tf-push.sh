@@ -1368,33 +1368,56 @@ cmd_appstore() {
   build_id=$(asc_body "$build_resp" | jq -r '.data[0].id // empty')
   [ -n "$build_id" ] || halt_failed prereq "ASC: build $BUILD not found"
 
-  local versions_resp version_id
+  # Find the appStoreVersion by versionString across *any* state. The version
+  # may already exist in a post-PREPARE state if a prior partial run mutated
+  # it, or if the operator submitted via the App Store Connect web UI before
+  # the script could finalize. Filtering only on PREPARE_FOR_SUBMISSION here
+  # would miss those cases and the create POST below would 409 with
+  # ENTITY_ERROR.RELATIONSHIP.INVALID — "You cannot create a new version of
+  # the App in the current state."
+  local versions_resp version_id version_state
   versions_resp=$(asc_api GET "/v1/apps/${APP_ID}/appStoreVersions?fields[appStoreVersions]=versionString,appStoreState,releaseType")
   version_id=$(asc_body "$versions_resp" \
-    | jq -r --arg v "$VERSION" '.data[] | select(.attributes.appStoreState=="PREPARE_FOR_SUBMISSION" and .attributes.versionString==$v) | .id' \
+    | jq -r --arg v "$VERSION" '.data[] | select(.attributes.versionString==$v) | .id' \
     | head -1)
-  if [ -z "$version_id" ]; then
+  if [ -n "$version_id" ]; then
+    version_state=$(asc_body "$versions_resp" \
+      | jq -r --arg v "$VERSION" '.data[] | select(.attributes.versionString==$v) | .attributes.appStoreState' \
+      | head -1)
+  else
     local create_resp
     create_resp=$(asc_api POST "/v1/appStoreVersions" \
       "$(jq -nc --arg v "$VERSION" --arg app "$APP_ID" '{data:{type:"appStoreVersions",attributes:{platform:"IOS",versionString:$v,releaseType:"MANUAL"},relationships:{app:{data:{type:"apps",id:$app}}}}}')")
     version_id=$(asc_body "$create_resp" | jq -r '.data.id // empty')
     [ -n "$version_id" ] || halt_failed prereq "ASC: appStoreVersion create failed: $(asc_body "$create_resp")"
+    version_state="PREPARE_FOR_SUBMISSION"
   fi
 
-  asc_api PATCH "/v1/appStoreVersions/${version_id}" \
-    "$(jq -nc --arg id "$version_id" --arg bid "$build_id" '{data:{type:"appStoreVersions",id:$id,attributes:{releaseType:"MANUAL"},relationships:{build:{data:{type:"builds",id:$bid}}}}}')" \
-    >/dev/null
-
-  local locs_resp whatsnew_text
-  whatsnew_text=$(cat "$WHATSNEW_FILE")
-  locs_resp=$(asc_api GET "/v1/appStoreVersions/${version_id}/appStoreVersionLocalizations")
+  # Only mutate the version's build relationship + localization whatsNew when
+  # it's still in the mutable PREPARE_FOR_SUBMISSION state. Once it moves on
+  # (WAITING_FOR_REVIEW, IN_REVIEW, etc.) Apple locks those attributes and a
+  # PATCH would fail; the build-mismatch guard below still verifies the
+  # already-bound build matches what we expected to submit. READY_FOR_SALE
+  # means the version is live — the build-mismatch guard handles the refusal.
   local loc_count=0
-  for loc_id in $(asc_body "$locs_resp" | jq -r '.data[].id'); do
-    asc_api PATCH "/v1/appStoreVersionLocalizations/${loc_id}" \
-      "$(jq -nc --arg id "$loc_id" --arg w "$whatsnew_text" '{data:{type:"appStoreVersionLocalizations",id:$id,attributes:{whatsNew:$w}}}')" \
+  if [ "$version_state" = "PREPARE_FOR_SUBMISSION" ]; then
+    asc_api PATCH "/v1/appStoreVersions/${version_id}" \
+      "$(jq -nc --arg id "$version_id" --arg bid "$build_id" '{data:{type:"appStoreVersions",id:$id,attributes:{releaseType:"MANUAL"},relationships:{build:{data:{type:"builds",id:$bid}}}}}')" \
       >/dev/null
-    loc_count=$((loc_count + 1))
-  done
+
+    local locs_resp whatsnew_text
+    whatsnew_text=$(cat "$WHATSNEW_FILE")
+    locs_resp=$(asc_api GET "/v1/appStoreVersions/${version_id}/appStoreVersionLocalizations")
+    for loc_id in $(asc_body "$locs_resp" | jq -r '.data[].id'); do
+      asc_api PATCH "/v1/appStoreVersionLocalizations/${loc_id}" \
+        "$(jq -nc --arg id "$loc_id" --arg w "$whatsnew_text" '{data:{type:"appStoreVersionLocalizations",id:$id,attributes:{whatsNew:$w}}}')" \
+        >/dev/null
+      loc_count=$((loc_count + 1))
+    done
+  else
+    printf 'studio-tf-push: appStoreVersion %s is in state %s (past PREPARE_FOR_SUBMISSION) — skipping build/whatsNew PATCH; will defer to reviewSubmission idempotency below\n' \
+      "$version_id" "$version_state" >&2
+  fi
 
   # ─── real App Store submission ──────────────────────────────────────────
   # Without this block, the flow would stop after PATCHing the version and
