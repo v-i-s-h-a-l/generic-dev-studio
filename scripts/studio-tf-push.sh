@@ -309,8 +309,13 @@ extract_latest_build_number() {
   if printf '%s' "$resp" | jq -e '.errors? | length > 0' >/dev/null 2>&1; then
     halt_failed prereq "could not determine latest TF build from ASC response: $(printf '%s' "$resp" | jq -c '.errors')"
   fi
-  build=$(printf '%s' "$resp" | jq -r '.data[0].attributes.version // empty')
-  [ -n "$build" ] || halt_failed prereq "could not parse latest TF build from ASC response"
+  # Take the numeric max across all returned builds rather than trusting sort
+  # order. ASC's sort=-uploadedDate returns the most-recently-uploaded build,
+  # which can be lower than the highest build number when builds are uploaded
+  # out of chronological order (e.g. hotfix branches uploaded after a later
+  # release branch build). jq picks the max by parsing version as a number.
+  build=$(printf '%s' "$resp" | jq -r '[.data[].attributes.version | select(. != null) | tonumber] | max | tostring' 2>/dev/null)
+  [ -n "$build" ] && [ "$build" != "null" ] || halt_failed prereq "could not parse latest TF build from ASC response"
   printf '%s\n' "$build"
 }
 
@@ -868,7 +873,7 @@ cmd_push() {
 
     local builds_resp versions_resp
     builds_resp=$(asc_get \
-      "https://api.appstoreconnect.apple.com/v1/builds?sort=-uploadedDate&limit=1&fields[builds]=version" \
+      "https://api.appstoreconnect.apple.com/v1/builds?sort=-uploadedDate&limit=200&fields[builds]=version" \
       "${STUDIO_TF_BUILDS_RESPONSE_FILE:-}") \
       || halt_failed prereq "could not reach ASC builds endpoint before mutation"
     versions_resp=$(asc_get \
