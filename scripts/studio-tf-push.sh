@@ -342,8 +342,8 @@ PY
 #
 # Single-source-of-truth helper for App Store Connect REST calls. Preserves
 # HTTP status separately from the response body so callers can branch on
-# status (in particular: 409 from POST /appStoreVersionSubmissions when a
-# submission already exists must be treated as success after a re-GET).
+# status (in particular: the reviewSubmissions flow lists existing submissions
+# first to detect already-in-progress submissions before POSTing).
 #
 # - PATH is appended to https://api.appstoreconnect.apple.com (leading slash).
 # - BODY_JSON is optional; PATCH/POST without a body works too.
@@ -1351,7 +1351,7 @@ cmd_appstore() {
   ) || halt_failed prereq "git push HEAD failed"
 
   # NOTE: git tag, tag push, and `gh release create --draft` are deferred
-  # until AFTER the appStoreVersionSubmissions POST succeeds (#824 follow-up).
+  # until AFTER the reviewSubmissions PATCH submitted=true succeeds.
   # The mitigation in #824 (rename draft to [SUBMISSION-FAILED] on failure)
   # left a published tag behind on every failed submission. Deferring the
   # tag eliminates that residue entirely: on submission failure, nothing
@@ -1396,15 +1396,15 @@ cmd_appstore() {
     loc_count=$((loc_count + 1))
   done
 
-  # ─── #824: real App Store submission ────────────────────────────────────
-  # Until this fix landed, the flow stopped here and printed "submission
-  # ready" without ever calling POST /v1/appStoreVersionSubmissions. ASC
-  # remained in PREPARE_FOR_SUBMISSION while GitHub tags + Slack implied
-  # success. The block below issues the actual submission, with build-mismatch
-  # guards on both branches (existing-submission reuse AND fresh POST), an
-  # idempotent pre-check, defensive 409 fallback, and structured failure
-  # halt + GH draft rename so a failed submission cannot leave the artifact
-  # marked submitted.
+  # ─── real App Store submission ──────────────────────────────────────────
+  # Without this block, the flow would stop after PATCHing the version and
+  # print "submission ready" without ever finalizing the review submission —
+  # ASC stays in PREPARE_FOR_SUBMISSION while GitHub tags + Slack imply
+  # success. The block below drives Apple's V2 reviewSubmissions flow (see
+  # the detailed comment near the call site) with build-mismatch guards on
+  # both branches (existing-submission reuse AND fresh create), idempotent
+  # pre-list, and a structured failure halt that runs *before* tag/draft
+  # creation so a failed submission cannot leave durable residue behind.
 
   # Build-mismatch guard: confirm the version's *current* build relationship
   # still points at the build we intend to submit. Catches resume-from-partial
@@ -1426,57 +1426,126 @@ cmd_appstore() {
     halt_failed prereq "ASC: appStoreVersion ${version_id} is bound to build ${cur_build_id}, not ${build_id} (build $BUILD); refusing to submit a mismatched build"
   fi
 
-  # Idempotent pre-check: does an appStoreVersionSubmission already exist?
-  # Non-2xx on this GET is informative but not fatal — Apple sometimes
-  # returns 4xx for "no submission relationship" (a legitimate "not found")
-  # and the POST below treats absence-or-error symmetrically by attempting
-  # to create. Just log unexpected statuses for postmortem.
-  local sub_pre_resp sub_pre_status sub_id=""
-  sub_pre_resp=$(asc_api GET "/v1/appStoreVersions/${version_id}/relationships/appStoreVersionSubmission")
-  sub_pre_status=$(asc_status "$sub_pre_resp")
-  case "$sub_pre_status" in
+  # ASC review submission (V2 flow).
+  #
+  # The legacy `appStoreVersionSubmissions` POST endpoint was retired by Apple
+  # and now returns:
+  #   HTTP 403: "The resource 'appStoreVersionSubmissions' does not allow
+  #             'CREATE'. Allowed operation is: DELETE"
+  # The replacement is a 3-step choreography:
+  #   1. POST /v1/reviewSubmissions          — create a per-platform container
+  #   2. POST /v1/reviewSubmissionItems      — attach the appStoreVersion
+  #   3. PATCH /v1/reviewSubmissions/{id}    — attributes.submitted=true
+  #
+  # Idempotency: list non-terminal submissions for the app+platform, include
+  # items, and find the one (if any) whose item already references our
+  # appStoreVersion. Reuse if already submitted; PATCH submitted=true if it
+  # exists in READY_FOR_REVIEW (created but never finalized — e.g. an earlier
+  # partial run or a manual web-UI in-progress submission).
+  local sub_id="" sub_state=""
+  local sub_listing_resp sub_listing_status
+  sub_listing_resp=$(asc_api GET "/v1/apps/${APP_ID}/reviewSubmissions?filter%5Bplatform%5D=IOS&filter%5Bstate%5D=READY_FOR_REVIEW,WAITING_FOR_REVIEW,IN_REVIEW,UNRESOLVED_ISSUES&include=items&limit=50")
+  sub_listing_status=$(asc_status "$sub_listing_resp")
+  case "$sub_listing_status" in
     200)
-      sub_id=$(asc_body "$sub_pre_resp" | jq -r '.data.id // empty')
+      local sub_listing_body
+      sub_listing_body=$(asc_body "$sub_listing_resp")
+      sub_id=$(printf '%s' "$sub_listing_body" | jq -r --arg vid "$version_id" '
+        (.included // [])
+        | map(select(.type == "reviewSubmissionItems"
+            and (.relationships.appStoreVersion.data.id // "") == $vid))
+        | .[0].relationships.reviewSubmission.data.id // empty
+      ')
+      if [ -n "$sub_id" ]; then
+        sub_state=$(printf '%s' "$sub_listing_body" | jq -r --arg sid "$sub_id" '
+          .data[] | select(.id == $sid) | .attributes.state // empty')
+      fi
       ;;
     404)
-      : # No submission yet — expected state for a fresh version.
+      : # No submissions for app — fresh state.
       ;;
     *)
-      printf 'studio-tf-push: warning: GET /relationships/appStoreVersionSubmission returned HTTP %s (continuing — POST will create)\n' "$sub_pre_status" >&2
+      printf 'studio-tf-push: warning: GET /v1/apps/%s/reviewSubmissions returned HTTP %s (continuing — will attempt to create)\n' "$APP_ID" "$sub_listing_status" >&2
       ;;
   esac
 
   if [ -n "$sub_id" ]; then
-    printf 'studio-tf-push: ASC submission already exists for version %s: %s — reusing\n' "$VERSION" "$sub_id" >&2
-  else
-    # POST the submission. On 409 (Apple sometimes surfaces an existing
-    # reviewSubmission at the app level), re-GET and treat existing as success.
-    local sub_resp sub_status
-    sub_resp=$(asc_api POST "/v1/appStoreVersionSubmissions" \
-      "$(jq -nc --arg vid "$version_id" '{data:{type:"appStoreVersionSubmissions",relationships:{appStoreVersion:{data:{type:"appStoreVersions",id:$vid}}}}}')")
-    sub_status=$(asc_status "$sub_resp")
-    case "$sub_status" in
-      2??)
-        sub_id=$(asc_body "$sub_resp" | jq -r '.data.id // empty')
+    case "$sub_state" in
+      WAITING_FOR_REVIEW|IN_REVIEW|UNRESOLVED_ISSUES)
+        printf 'studio-tf-push: ASC reviewSubmission already submitted for version %s: %s (state=%s) — reusing\n' "$VERSION" "$sub_id" "$sub_state" >&2
         ;;
-      409)
-        printf 'studio-tf-push: ASC submission POST returned 409; re-GETing existing submission\n' >&2
-        sub_pre_resp=$(asc_api GET "/v1/appStoreVersions/${version_id}/relationships/appStoreVersionSubmission")
-        sub_id=$(asc_body "$sub_pre_resp" | jq -r '.data.id // empty')
+      READY_FOR_REVIEW)
+        printf 'studio-tf-push: ASC reviewSubmission %s exists in READY_FOR_REVIEW — PATCHing submitted=true\n' "$sub_id" >&2
+        local rsub_patch_resp rsub_patch_status
+        rsub_patch_resp=$(asc_api PATCH "/v1/reviewSubmissions/${sub_id}" \
+          "$(jq -nc --arg id "$sub_id" '{data:{type:"reviewSubmissions",id:$id,attributes:{submitted:true}}}')")
+        rsub_patch_status=$(asc_status "$rsub_patch_resp")
+        case "$rsub_patch_status" in
+          2??) : ;;
+          *)
+            local rsub_fbody rsub_fr
+            rsub_fbody=$(asc_body "$rsub_patch_resp" 2>/dev/null || true)
+            rsub_fr=$(printf '%s' "$rsub_fbody" | jq -r '.errors[0].detail // .errors[0].title // "ASC reviewSubmission PATCH rejected"' 2>/dev/null || printf 'ASC reviewSubmission PATCH rejected')
+            emit_event_keyed achilles release appstore_submission_failed "" \
+              "{\"version_id\":\"$version_id\",\"build_id\":\"$build_id\",\"http_status\":\"$rsub_patch_status\",\"reason\":$(printf '%s' "$rsub_fr" | jq -Rs .),\"tag\":\"$TAG\",\"sub_id\":\"$sub_id\",\"stage\":\"patch_submitted\"}" \
+              >/dev/null 2>&1 || true
+            halt_failed prereq "ASC reviewSubmission PATCH submitted=true failed (HTTP $rsub_patch_status) on submission ${sub_id}: $rsub_fr"
+            ;;
+        esac
+        ;;
+      *)
+        halt_failed prereq "ASC reviewSubmission ${sub_id} exists with unexpected state ${sub_state:-<empty>}; refusing to mutate"
         ;;
     esac
+  else
+    # No submission contains our appStoreVersion. Create container, attach
+    # item, finalize.
+    local rsub_create_resp rsub_create_status
+    rsub_create_resp=$(asc_api POST "/v1/reviewSubmissions" \
+      "$(jq -nc --arg app "$APP_ID" '{data:{type:"reviewSubmissions",attributes:{platform:"IOS"},relationships:{app:{data:{type:"apps",id:$app}}}}}')")
+    rsub_create_status=$(asc_status "$rsub_create_resp")
+    if [[ "$rsub_create_status" =~ ^2 ]]; then
+      sub_id=$(asc_body "$rsub_create_resp" | jq -r '.data.id // empty')
+    fi
     if [ -z "$sub_id" ]; then
-      # Submission failed. Emit the structured failure event and halt before
-      # any user-visible "ready" output, Slack, PR creation, or artifact
-      # write. NB: with tag/draft creation deferred (this PR), there is
-      # nothing tag-shaped to rename on failure — no residue is left behind.
-      local failure_body fail_reason
-      failure_body=$(asc_body "$sub_resp" 2>/dev/null || true)
-      fail_reason=$(printf '%s' "$failure_body" | jq -r '.errors[0].detail // .errors[0].title // "ASC submission rejected"' 2>/dev/null || printf 'ASC submission rejected')
+      # Common cause: a non-terminal reviewSubmission for the app already
+      # exists (different version, or different items). Apple returns 409
+      # in that case with a structured error.
+      local rsub_fbody rsub_fr
+      rsub_fbody=$(asc_body "$rsub_create_resp" 2>/dev/null || true)
+      rsub_fr=$(printf '%s' "$rsub_fbody" | jq -r '.errors[0].detail // .errors[0].title // "ASC reviewSubmission create rejected"' 2>/dev/null || printf 'ASC reviewSubmission create rejected')
       emit_event_keyed achilles release appstore_submission_failed "" \
-        "{\"version_id\":\"$version_id\",\"build_id\":\"$build_id\",\"http_status\":\"$sub_status\",\"reason\":$(printf '%s' "$fail_reason" | jq -Rs .),\"tag\":\"$TAG\"}" \
+        "{\"version_id\":\"$version_id\",\"build_id\":\"$build_id\",\"http_status\":\"$rsub_create_status\",\"reason\":$(printf '%s' "$rsub_fr" | jq -Rs .),\"tag\":\"$TAG\",\"stage\":\"create_review_submission\"}" \
         >/dev/null 2>&1 || true
-      halt_failed prereq "ASC submission failed (HTTP $sub_status): $fail_reason"
+      halt_failed prereq "ASC reviewSubmission create failed (HTTP $rsub_create_status): $rsub_fr"
+    fi
+
+    local rsub_item_resp rsub_item_status
+    rsub_item_resp=$(asc_api POST "/v1/reviewSubmissionItems" \
+      "$(jq -nc --arg sid "$sub_id" --arg vid "$version_id" '{data:{type:"reviewSubmissionItems",relationships:{reviewSubmission:{data:{type:"reviewSubmissions",id:$sid}},appStoreVersion:{data:{type:"appStoreVersions",id:$vid}}}}}')")
+    rsub_item_status=$(asc_status "$rsub_item_resp")
+    if [[ ! "$rsub_item_status" =~ ^2 ]]; then
+      local rsub_fbody rsub_fr
+      rsub_fbody=$(asc_body "$rsub_item_resp" 2>/dev/null || true)
+      rsub_fr=$(printf '%s' "$rsub_fbody" | jq -r '.errors[0].detail // .errors[0].title // "ASC reviewSubmissionItem create rejected"' 2>/dev/null || printf 'ASC reviewSubmissionItem create rejected')
+      emit_event_keyed achilles release appstore_submission_failed "" \
+        "{\"version_id\":\"$version_id\",\"build_id\":\"$build_id\",\"http_status\":\"$rsub_item_status\",\"reason\":$(printf '%s' "$rsub_fr" | jq -Rs .),\"tag\":\"$TAG\",\"sub_id\":\"$sub_id\",\"stage\":\"create_review_submission_item\"}" \
+        >/dev/null 2>&1 || true
+      halt_failed prereq "ASC reviewSubmissionItem create failed (HTTP $rsub_item_status) on submission ${sub_id}: $rsub_fr"
+    fi
+
+    local rsub_submit_resp rsub_submit_status
+    rsub_submit_resp=$(asc_api PATCH "/v1/reviewSubmissions/${sub_id}" \
+      "$(jq -nc --arg id "$sub_id" '{data:{type:"reviewSubmissions",id:$id,attributes:{submitted:true}}}')")
+    rsub_submit_status=$(asc_status "$rsub_submit_resp")
+    if [[ ! "$rsub_submit_status" =~ ^2 ]]; then
+      local rsub_fbody rsub_fr
+      rsub_fbody=$(asc_body "$rsub_submit_resp" 2>/dev/null || true)
+      rsub_fr=$(printf '%s' "$rsub_fbody" | jq -r '.errors[0].detail // .errors[0].title // "ASC reviewSubmission PATCH rejected"' 2>/dev/null || printf 'ASC reviewSubmission PATCH rejected')
+      emit_event_keyed achilles release appstore_submission_failed "" \
+        "{\"version_id\":\"$version_id\",\"build_id\":\"$build_id\",\"http_status\":\"$rsub_submit_status\",\"reason\":$(printf '%s' "$rsub_fr" | jq -Rs .),\"tag\":\"$TAG\",\"sub_id\":\"$sub_id\",\"stage\":\"patch_submitted\"}" \
+        >/dev/null 2>&1 || true
+      halt_failed prereq "ASC reviewSubmission PATCH submitted=true failed (HTTP $rsub_submit_status) on submission ${sub_id}: $rsub_fr"
     fi
   fi
 
