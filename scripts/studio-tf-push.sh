@@ -1460,29 +1460,36 @@ cmd_appstore() {
   #   2. POST /v1/reviewSubmissionItems      — attach the appStoreVersion
   #   3. PATCH /v1/reviewSubmissions/{id}    — attributes.submitted=true
   #
-  # Idempotency: list non-terminal submissions for the app+platform, include
-  # items, and find the one (if any) whose item already references our
-  # appStoreVersion. Reuse if already submitted; PATCH submitted=true if it
-  # exists in READY_FOR_REVIEW (created but never finalized — e.g. an earlier
-  # partial run or a manual web-UI in-progress submission).
+  # Idempotency: list non-terminal submissions for the app+platform, then per
+  # candidate GET its items with include=appStoreVersion and check if our
+  # appStoreVersion is among them. The list endpoint's include=items returns
+  # reviewSubmissionItems in `included[]` without their `relationships`
+  # populated (only `attributes.state`), and nested includes like
+  # `items.appStoreVersion` are rejected as HTTP 400 — so a second hop per
+  # candidate submission is required to resolve the item→version link.
+  # Reuse if already submitted; PATCH submitted=true if it exists in
+  # READY_FOR_REVIEW (created but never finalized — e.g. an earlier partial
+  # run or a manual web-UI in-progress submission).
   local sub_id="" sub_state=""
   local sub_listing_resp sub_listing_status
-  sub_listing_resp=$(asc_api GET "/v1/apps/${APP_ID}/reviewSubmissions?filter%5Bplatform%5D=IOS&filter%5Bstate%5D=READY_FOR_REVIEW,WAITING_FOR_REVIEW,IN_REVIEW,UNRESOLVED_ISSUES&include=items&limit=50")
+  sub_listing_resp=$(asc_api GET "/v1/apps/${APP_ID}/reviewSubmissions?filter%5Bplatform%5D=IOS&filter%5Bstate%5D=READY_FOR_REVIEW,WAITING_FOR_REVIEW,IN_REVIEW,UNRESOLVED_ISSUES&limit=50")
   sub_listing_status=$(asc_status "$sub_listing_resp")
   case "$sub_listing_status" in
     200)
-      local sub_listing_body
+      local sub_listing_body candidate_id items_resp items_status
       sub_listing_body=$(asc_body "$sub_listing_resp")
-      sub_id=$(printf '%s' "$sub_listing_body" | jq -r --arg vid "$version_id" '
-        (.included // [])
-        | map(select(.type == "reviewSubmissionItems"
-            and (.relationships.appStoreVersion.data.id // "") == $vid))
-        | .[0].relationships.reviewSubmission.data.id // empty
-      ')
-      if [ -n "$sub_id" ]; then
-        sub_state=$(printf '%s' "$sub_listing_body" | jq -r --arg sid "$sub_id" '
-          .data[] | select(.id == $sid) | .attributes.state // empty')
-      fi
+      for candidate_id in $(printf '%s' "$sub_listing_body" | jq -r '.data[].id'); do
+        items_resp=$(asc_api GET "/v1/reviewSubmissions/${candidate_id}/items?include=appStoreVersion&limit=200")
+        items_status=$(asc_status "$items_resp")
+        [ "$items_status" = "200" ] || continue
+        if asc_body "$items_resp" | jq -e --arg vid "$version_id" \
+          '.data[] | select((.relationships.appStoreVersion.data.id // "") == $vid)' >/dev/null 2>&1; then
+          sub_id="$candidate_id"
+          sub_state=$(printf '%s' "$sub_listing_body" | jq -r --arg sid "$sub_id" \
+            '.data[] | select(.id == $sid) | .attributes.state // empty')
+          break
+        fi
+      done
       ;;
     404)
       : # No submissions for app — fresh state.
