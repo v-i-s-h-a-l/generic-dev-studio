@@ -1,0 +1,24 @@
+name: Mac mini CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  mac-mini-build:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Runner info
+        run: |
+          echo "Running on Mac mini"
+          uname -a
+          sw_vers || true
+
+      - name: List repository
+        run: ls -la
