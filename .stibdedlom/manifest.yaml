@@ -1,0 +1,41 @@
+schema_version: "stibdedlom-client-manifest@2"
+project_ref: "project://v-i-s-h-a-l/generic-dev-studio"
+client_org: "v-i-s-h-a-l"
+repo: "generic-dev-studio"
+github_app_install_id: "00000000"
+memory_root: "/Users/vishalsingh/.stibdedlom/project-memory/v-i-s-h-a-l/generic-dev-studio"
+issue_chain_root: ".stibdedlom/issue-chains"
+invocation_policy_ref: ".stibdedlom/invocation-policy.yaml"
+strategy_posture: "conservative"
+autonomy_default: "approval-required"
+lifecycle_retention:
+  completed_chain_records_days: 90
+  max_records_per_chain: 50
+  compaction_enabled: true
+infra_commit_ref: "fb831c04ffbbb7dba8f1f499d840f634a775a560"
+onboarded_template_version: "1"
+onboarded_at: "2026-07-11T05:48:10.682333+00:00"
+registered_at: "2026-07-11T05:48:10.682333+00:00"
+schema_versions:
+  client_project_manifest: "stibdedlom-client-manifest@2"
+  invocation_policy: "0.1.0"
+  sdl_classification_block: "sdl-classification@1"
+  sdl_issue_chain: "sdl-issue-chain@1"
+  sdl_routing_attestation: "sdl-routing-attestation@2"
+  sdl_lifecycle_record: "sdl-lifecycle-record@1"
+agent_integration:
+  schema_version: "sdl-agent-manifest@1"
+  check_command:
+    - "sdl-orchestrator"
+    - "check"
+    - "--repo-root"
+    - "{repo_root}"
+    - "--memory-root"
+    - "{memory_root}"
+  memory_root: "{memory_root}"
+  attested: true
+  supported_adapters:
+    - generic-cli
+  default_adapter: generic-cli
+  contact:
+    docs_url: "https://github.com/stibdedlom/infra/blob/main/docs/setup/agent-integration.md"
