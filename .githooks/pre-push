@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#
+# Client pre-push hook for SDL governance.
+# Verifies routing attestations and lifecycle records for pushed commits.
+
+set -euo pipefail
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    python3 "$REPO_ROOT/.stibdedlom/bin/validate-push.py" \
+        --repo-root "$REPO_ROOT" \
+        --base "$remote_sha" \
+        --head "$local_sha" \
+        --remote-ref "$remote_ref" \
+        --require-lifecycle-records
+done

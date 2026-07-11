@@ -1,0 +1,172 @@
+schema_version: "0.1.0"
+description: "Conservative SDL invocation policy for v-i-s-h-a-l/generic-dev-studio"
+precedence: repo
+defaults:
+  autonomy: approval-required
+  token_budget: 4000
+  hydration_budget: 1000
+  budget_strategy: estimate-only
+  budget_source: repo-default
+  on_budget_exceeded: stop
+  compaction_provenance_required: true
+  gates:
+    - ask
+profiles:
+  conservative:
+    description: "High human oversight; no autonomous mutation"
+    defaults:
+      autonomy: approval-required
+      token_budget: 2000
+      hydration_budget: 500
+      budget_strategy: estimate-only
+      on_budget_exceeded: stop
+      gates:
+        - ask
+    triggers:
+      - name: conservative_user_prompt
+        matchers:
+          host_event: user_prompt
+        autonomy: approval-required
+        token_budget: 4000
+        hydration_budget: 1000
+        gates:
+          - ask
+      - name: conservative_pre_commit
+        matchers:
+          repo_event: pre_commit
+        autonomy: approval-required
+        gates:
+          - ask
+      - name: conservative_pre_push
+        matchers:
+          repo_event: pre_push
+        autonomy: approval-required
+        gates:
+          - ask
+  balanced:
+    description: "Notify for routine events, ask before mutation"
+    defaults:
+      autonomy: autonomous-until-gate
+      token_budget: 8000
+      hydration_budget: 2000
+      budget_strategy: compact
+      on_budget_exceeded: ask
+      gates:
+        - ask
+    triggers:
+      - name: balanced_user_prompt
+        matchers:
+          host_event: user_prompt
+        autonomy: autonomous-until-gate
+        token_budget: 6000
+        hydration_budget: 1500
+        gates:
+          - notify
+      - name: balanced_pre_commit
+        matchers:
+          repo_event: pre_commit
+        autonomy: approval-required
+        gates:
+          - ask
+      - name: balanced_pre_push
+        matchers:
+          repo_event: pre_push
+        autonomy: approval-required
+        gates:
+          - ask
+  autonomous:
+    description: "Autonomous routine work; human gates for mutation"
+    defaults:
+      autonomy: autonomous-until-gate
+      token_budget: 8000
+      hydration_budget: 2000
+      budget_strategy: compact
+      on_budget_exceeded: ask
+      gates:
+        - ask
+    triggers:
+      - name: autonomous_inquiry
+        matchers:
+          host_event: user_prompt
+          intent_class: inquiry
+        autonomy: notify
+        token_budget: 4000
+        hydration_budget: 1000
+        gates:
+          - notify
+      - name: autonomous_planning
+        matchers:
+          host_event: user_prompt
+          intent_class: planning
+        autonomy: autonomous-until-gate
+        token_budget: 6000
+        hydration_budget: 1500
+        gates:
+          - notify
+      - name: autonomous_review
+        matchers:
+          host_event: user_prompt
+          intent_class: review
+        autonomy: autonomous-until-gate
+        token_budget: 6000
+        hydration_budget: 1500
+        gates:
+          - ask
+      - name: autonomous_debugging
+        matchers:
+          host_event: user_prompt
+          intent_class: debugging
+        autonomy: autonomous-until-gate
+        token_budget: 6000
+        hydration_budget: 1500
+        gates:
+          - ask
+      - name: autonomous_pre_commit
+        matchers:
+          repo_event: pre_commit
+        autonomy: approval-required
+        gates:
+          - ask
+      - name: autonomous_pre_push
+        matchers:
+          repo_event: pre_push
+        autonomy: approval-required
+        gates:
+          - ask
+triggers:
+  - name: default_user_prompt
+    matchers:
+      host_event: user_prompt
+    autonomy: approval-required
+    token_budget: 6000
+    hydration_budget: 1500
+    gates:
+      - ask
+  - name: default_pre_commit
+    matchers:
+      repo_event: pre_commit
+    autonomy: approval-required
+    gates:
+      - ask
+  - name: default_pre_push
+    matchers:
+      repo_event: pre_push
+    autonomy: approval-required
+    gates:
+      - ask
+  - name: default_inquiry
+    matchers:
+      host_event: user_prompt
+      intent_class: inquiry
+    autonomy: advisory
+    token_budget: 4000
+    gates:
+      - ask
+  - name: default_planning
+    matchers:
+      host_event: user_prompt
+      intent_class: planning
+    autonomy: advisory
+    token_budget: 6000
+    gates:
+      - ask

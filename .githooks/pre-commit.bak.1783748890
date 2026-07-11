@@ -1,0 +1,405 @@
+#!/usr/bin/env bash
+# Pre-commit hook for generic-dev-studio. Deterministic gates in order:
+#   1.  update-surface-manifest.sh — regenerate + auto-stage docs-surface.json.
+#   1b. capability-manifest.sh --regen — regenerate + auto-stage the manifest.
+#   2.  lint-architecture.sh --staged — router/frontmatter/dup/surface checks.
+#   2b. lint-skill-prose.sh --staged — Authoring Standard gate (REVIEW.md R18).
+#   2c. lint-build-invocations.sh --staged — block raw xcodebuild / swift
+#       calls outside the gate scripts (#216).
+#   2d. lint-comms-boundary.sh --staged — agent-comms-boundary contract gate
+#       (#247): writer ownership + lifecycle co-writer enumeration.
+#   2e. lint-mode-pack.sh --staged — mode-pack discipline (MP1–MP4, #227):
+#       budget_tokens enforcement, _shared/* dup detection, router cap.
+#   2f. lint-debrief-writers.sh --staged — block legacy markdown/misrouted
+#       active debrief write paths (#311).
+#   2g. lint-field-review-surfaces.sh --staged — block raw cross-host
+#       review-host commands outside the reviewer wrapper (#458).
+#   2h. lint-v2-bootstrap.sh --staged — keep v2 substrate pre-SPEC changes
+#       inside the A0.4 bootstrap/meta boundary.
+#   2i. lint-v2-enforcement.sh --staged — A0.6 Studio v2 SPEC-derived gates.
+#   2j. lint-chain-workflow-docs.sh --staged — keep chain launcher docs,
+#       usage text, and regression fixtures aligned.
+#   2k. lint-html-theme.sh --staged — generated HTML must support light/dark
+#       mode and adapt to the OS setting by default.
+#   2m. lint-gh-wrapper.sh --staged — block raw `gh` invocations outside
+#       scripts/studio-gh.sh / with_login_home_for_github (#710 Phase C2,
+#       #815).
+#   2m2. lint-studio-comments.sh --staged — block unstructured GitHub
+#       issue/PR comment writers outside scripts/studio-comment.sh (#981).
+#   2l. lint-runtime-paths.sh --staged — block raw `$HOME/.dev-studio` /
+#       `~/.dev-studio` / `${HOME}/.dev-studio` formulas in newly-added
+#       lines outside the resolver layer (#710 Phase C1, #814).
+#   2n. lint-synthetic-home.sh --staged — block ad-hoc synthetic-home
+#       special casing (`case "$HOME"`, `[ "$HOME" = ... ]`, raw
+#       `.codex-homes` references) outside scripts/lib-studio-context.sh /
+#       scripts/lib-paths.sh (#710 Phase C3, #816).
+#   2o. lint-artifact-cleanup.sh --staged — block new artifact-producing
+#       call sites (xcodebuild, -derivedDataPath, git worktree add,
+#       mktemp -d) that don't route through scripts/lib-artifact-cleanup.sh
+#       `register_artifact` or an approved janitor (#710 / T-R004, #849).
+#   3.  privacy gate — reject if staged diff leaks another project's runtime.
+#
+# Base-branch commit guard (extended): refuses commits on main/master/trunk/
+# develop and on the per-project release base resolved from the canonical
+# branch_policy.default_base feature-config value. Bypass:
+# `STUDIO_BYPASS_BRANCH_POLICY=1 git commit ...` (unified) or the legacy
+# `STUDIO_BYPASS_MAIN_COMMIT_GUARD=1`. See _shared/standards/branch-discipline.md.
+# Chain workflow docs guard bypass: `STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1 git commit ...`.
+# HTML theme guard bypass: `STUDIO_BYPASS_HTML_THEME_GUARD=1 git commit ...`.
+# Runtime path lint bypass: `STUDIO_BYPASS_RUNTIME_PATH_LINT=1 git commit ...`.
+# GH wrapper lint bypass: `STUDIO_BYPASS_GH_WRAPPER_LINT=1 git commit ...`.
+# Comment structure lint bypass: `STUDIO_BYPASS_COMMENT_STRUCTURE_LINT=1 git commit ...`.
+# Synthetic-home lint bypass: `STUDIO_BYPASS_SYNTHETIC_HOME_LINT=1 git commit ...`.
+# Artifact-cleanup lint bypass: `STUDIO_BYPASS_ARTIFACT_CLEANUP_LINT=1 git commit ...`.
+# Emergency bypass: `ARCH_LINT=0 git commit ...` skips gates 2/2b/2c/2d/2e/2f/2g/2h/2i/2j/2k/2l/2m/2n/2o/3.
+# Gates 1+1b (manifest regens) always run because stale manifests leak
+# downstream.
+# LLM review is not part of the default hook path. Run
+# `scripts/pre-commit-review.sh` explicitly for risky local diffs.
+
+set -u
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+SCRIPTS="$REPO_ROOT/scripts"
+PRECOMMIT_STARTED_AT=$(date +%s)
+
+# shellcheck source=lib-ledger.sh
+. "$SCRIPTS/lib-ledger.sh" 2>/dev/null || true
+# shellcheck source=lib-feature-branch-policy.sh
+. "$SCRIPTS/lib-feature-branch-policy.sh" 2>/dev/null || true
+
+emit_precommit_duration() {
+  set +e
+  command -v emit_event_keyed >/dev/null 2>&1 || return 0
+  local rc="${1:-0}" ended_at duration branch head status data
+  ended_at=$(date +%s)
+  duration=$(( ended_at - PRECOMMIT_STARTED_AT ))
+  [ "$duration" -ge 0 ] && [ "$duration" -le 86400 ] || return 0
+  branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  head=$(git rev-parse --short HEAD 2>/dev/null || true)
+  status="passed"
+  [ "$rc" -ne 0 ] && status="failed"
+  data=$(printf '{"duration_s":%s,"exit_code":%s,"status":"%s","branch":"%s","head":"%s","llm_review":"manual_only"}' \
+    "$duration" "$rc" "$status" "$(_json_escape "$branch")" "$(_json_escape "$head")")
+  emit_event_keyed studio pre-commit precommit_hook_completed "" "$data" >/dev/null 2>&1 || true
+  return 0
+}
+
+trap 'rc=$?; emit_precommit_duration "$rc"' EXIT
+
+# Extended base-branch guard. The canonical list (main/master/trunk/develop)
+# is augmented with the per-project release base read from the feature-config
+# file owned by manager-feature-config (T-R001). The unified
+# STUDIO_BYPASS_BRANCH_POLICY override is documented in
+# _shared/standards/branch-discipline.md and subsumes the legacy
+# STUDIO_BYPASS_MAIN_COMMIT_GUARD bypass; both are honored for compatibility.
+branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+configured_base=""
+# shellcheck source=../scripts/lib-paths.sh
+. "$SCRIPTS/lib-paths.sh" 2>/dev/null || true
+if command -v resolve_studio_home_for_login_home >/dev/null 2>&1 \
+   && command -v resolve_project >/dev/null 2>&1; then
+  _bd_home=$(resolve_studio_home_for_login_home "${HOME:-}" 2>/dev/null || true)
+  _bd_project=$(resolve_project 2>/dev/null || true)
+  if [ -n "$_bd_home" ] && [ -n "$_bd_project" ]; then
+    _bd_cfg="${STUDIO_FEATURE_CONFIG_FILE:-$_bd_home/$_bd_project/config/features.env}"
+    if [ -f "$_bd_cfg" ]; then
+      # shellcheck disable=SC1090
+      . "$_bd_cfg" 2>/dev/null || true
+      if command -v feature_branch_policy_default_base >/dev/null 2>&1; then
+        configured_base=$(feature_branch_policy_default_base)
+      else
+        configured_base="${STUDIO_BRANCH_POLICY_DEFAULT_BASE:-${STUDIO_RELEASE_BRANCH_DEFAULT_BASE:-}}"
+      fi
+    fi
+  fi
+fi
+
+base_match=0
+case "$branch" in
+  main|master|trunk|develop) base_match=1 ;;
+esac
+if [ "$base_match" -eq 0 ] && [ -n "$configured_base" ] && [ "$branch" = "$configured_base" ]; then
+  base_match=1
+fi
+
+if [ "$base_match" -eq 1 ]; then
+  if [ "${STUDIO_BYPASS_BRANCH_POLICY:-0}" = "1" ] || [ "${STUDIO_BYPASS_MAIN_COMMIT_GUARD:-0}" = "1" ]; then
+    printf 'pre-commit: STUDIO_BYPASS_BRANCH_POLICY=1 (or STUDIO_BYPASS_MAIN_COMMIT_GUARD=1) — allowing commit on local %s\n' "$branch" >&2
+  else
+    printf 'pre-commit: refusing to commit on local %s; create a feature worktree from origin/%s instead (see _shared/standards/branch-discipline.md)\n' "$branch" "$branch" >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_BRANCH_POLICY=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 1 — regenerate manifest + restage if it changed.
+if [ -x "$SCRIPTS/update-surface-manifest.sh" ]; then
+  "$SCRIPTS/update-surface-manifest.sh" >/dev/null || {
+    printf 'pre-commit: update-surface-manifest.sh failed\n' >&2
+    exit 1
+  }
+  if ! git diff --quiet -- "$REPO_ROOT/docs-surface.json" 2>/dev/null; then
+    git add "$REPO_ROOT/docs-surface.json" 2>/dev/null || true
+  fi
+fi
+
+# Gate 1b — regenerate capability manifest + restage on drift. Mirrors 1.
+if [ -x "$SCRIPTS/capability-manifest.sh" ]; then
+  "$SCRIPTS/capability-manifest.sh" --regen >/dev/null || {
+    printf 'pre-commit: capability-manifest.sh --regen failed\n' >&2
+    exit 1
+  }
+  if ! git diff --quiet -- "$REPO_ROOT/_shared/schemas/capability-manifest.json" 2>/dev/null; then
+    git add "$REPO_ROOT/_shared/schemas/capability-manifest.json" 2>/dev/null || true
+  fi
+fi
+
+ARCH_GATES_ENABLED=1
+if [ "${ARCH_LINT:-1}" = "0" ]; then
+  printf 'pre-commit: ARCH_LINT=0 — skipping architecture + privacy gates (emergency bypass)\n' >&2
+  ARCH_GATES_ENABLED=0
+fi
+
+if [ "$ARCH_GATES_ENABLED" = "1" ]; then
+# Gate 2 — architecture linter.
+if [ -x "$SCRIPTS/lint-architecture.sh" ]; then
+  "$SCRIPTS/lint-architecture.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: architecture violations above — see _shared/rules/enforcement-contract.md\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2b — Skill Authoring Standard linter (REVIEW.md R18).
+if [ -x "$SCRIPTS/lint-skill-prose.sh" ]; then
+  "$SCRIPTS/lint-skill-prose.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: skill-prose violations above — see _shared/standards/skill-authoring.md\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2c — raw build-toolchain invocation linter (#216).
+if [ -x "$SCRIPTS/lint-build-invocations.sh" ]; then
+  "$SCRIPTS/lint-build-invocations.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: raw xcodebuild / swift invocation found outside the gate scripts — see _shared/primitives/build-gate.md\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2d — comms-boundary linter (#247).
+if [ -x "$SCRIPTS/lint-comms-boundary.sh" ]; then
+  "$SCRIPTS/lint-comms-boundary.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: comms-boundary violations above — see _shared/primitives/agent-comms-boundary.md\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2e — mode-pack discipline linter (#227).
+if [ -x "$SCRIPTS/lint-mode-pack.sh" ]; then
+  "$SCRIPTS/lint-mode-pack.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: mode-pack violations above — see _shared/rules/mode-pack-discipline.md\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2f — debrief writer target linter (#311).
+if [ -x "$SCRIPTS/lint-debrief-writers.sh" ]; then
+  "$SCRIPTS/lint-debrief-writers.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: legacy/misrouted debrief writer found — use plans/debriefs/<id>.yaml via lib-ledger\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2g — field-agent review wrapper linter (#458).
+if [ -x "$SCRIPTS/lint-field-review-surfaces.sh" ]; then
+  "$SCRIPTS/lint-field-review-surfaces.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: raw cross-host review command found — use scripts/phase-review.sh or a wrapper successor\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2h — v2 bootstrap/meta boundary (#512 A0.4).
+if [ -x "$SCRIPTS/lint-v2-bootstrap.sh" ]; then
+  "$SCRIPTS/lint-v2-bootstrap.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: v2 bootstrap boundary violations above — see core/v2/BOOTSTRAP.md\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2i — Studio v2 SPEC-derived enforcement (#514).
+if [ -x "$SCRIPTS/lint-v2-enforcement.sh" ]; then
+  "$SCRIPTS/lint-v2-enforcement.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: Studio v2 enforcement violations above — see core/v2/SPEC.md and _shared/rules/enforcement-contract.md\n' >&2
+    printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2j — chain workflow docs and fixture contract (#654).
+if [ -x "$SCRIPTS/lint-chain-workflow-docs.sh" ]; then
+  "$SCRIPTS/lint-chain-workflow-docs.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: chain workflow docs drift found — update README/scripts docs, runner usage text, or fixtures together\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_CHAIN_WORKFLOW_DOCS=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2k — generated HTML theme parity.
+if [ -x "$SCRIPTS/lint-html-theme.sh" ]; then
+  "$SCRIPTS/lint-html-theme.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: generated HTML theme violations above — support light/dark mode and system defaults in the HTML itself\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_HTML_THEME_GUARD=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2l — raw runtime-path formula linter (#710 Phase C1, #814).
+if [ -x "$SCRIPTS/lint-runtime-paths.sh" ]; then
+  "$SCRIPTS/lint-runtime-paths.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: raw $HOME/.dev-studio path formula found outside the resolver layer — call scripts/lib-paths.sh helpers (project_runtime_dir, project_state_dir, runtime_global_dir) or scripts/lib-studio-context.sh (STUDIO_CONTEXT_STUDIO_HOME) instead\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_RUNTIME_PATH_LINT=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2m — raw `gh` invocation linter (#710 Phase C2, #815).
+if [ -x "$SCRIPTS/lint-gh-wrapper.sh" ]; then
+  "$SCRIPTS/lint-gh-wrapper.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: raw `gh` invocation found outside the wrapper layer — call scripts/studio-gh.sh (assistant-initiated) or with_login_home_for_github (in-script) per CLAUDE.md §GitHub CLI home normalization\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_GH_WRAPPER_LINT=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2m2 — structured public issue/PR comment linter (#981).
+if [ -x "$SCRIPTS/lint-studio-comments.sh" ]; then
+  "$SCRIPTS/lint-studio-comments.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: unstructured GitHub issue/PR comment writer found — route public comments through scripts/studio-comment.sh and the studio-comment:v1 contract\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_COMMENT_STRUCTURE_LINT=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2n — synthetic-home special-casing linter (#710 Phase C3, #816).
+if [ -x "$SCRIPTS/lint-synthetic-home.sh" ]; then
+  "$SCRIPTS/lint-synthetic-home.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: ad-hoc synthetic-home special casing found outside the resolver layer — call scripts/lib-paths.sh `studio_home_is_synthetic` or scripts/lib-studio-context.sh `_studio_context_login_home` instead of inline `case "$HOME"` / `[ "$HOME" = ... ]` / `.codex-homes` checks per CLAUDE.md §Where workflow rules live\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_SYNTHETIC_HOME_LINT=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2o — jsonl-merge linter (#820 item 7.2). Block the dangerous
+# `cat ... | jq -s 'sort_by ...'` shape that silently destroys ndjson on
+# control-char input. Use scripts/jsonl-merge.sh instead.
+if [ -x "$SCRIPTS/lint-jsonl-merge.sh" ]; then
+  "$SCRIPTS/lint-jsonl-merge.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: dangerous `jq -s sort_by|unique|group_by|add` over ndjson found — use scripts/jsonl-merge.sh (control-char safe, refuses to lose records) per #820\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_JSONL_MERGE_LINT=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 2p — artifact-cleanup linter (#710 / T-R004, #849).
+if [ -x "$SCRIPTS/lint-artifact-cleanup.sh" ]; then
+  "$SCRIPTS/lint-artifact-cleanup.sh" --staged
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\npre-commit: new artifact-producing call site found without cleanup wiring — route through scripts/lib-artifact-cleanup.sh `register_artifact` or an approved janitor (studio-ios-artifact-janitor / node-janitor / fleet-cleanup / sweep-janitor) per CLAUDE.md §Where workflow rules live\n' >&2
+    printf 'bypass (emergencies only): STUDIO_BYPASS_ARTIFACT_CLEANUP_LINT=1 git commit ...\n' >&2
+    exit 1
+  fi
+fi
+
+# Gate 3 — privacy.
+#
+# Reject commits whose staged diff references another project's runtime path.
+# `~/.dev-studio/<other-project>/` leakage into a public repo is a CLAUDE.md
+# privacy violation. Current project (resolved from origin so worktree basenames
+# do not become false project slugs) is exempt; so is `.runtime/`.
+. "$SCRIPTS/lib-paths.sh" 2>/dev/null || true
+origin_url=$(git remote get-url origin 2>/dev/null || true)
+CURRENT=$(basename "$origin_url" .git 2>/dev/null || true)
+[ -z "$CURRENT" ] && CURRENT=$(basename "$REPO_ROOT")
+HOME_DS="$HOME/.dev-studio"
+
+# The set of known project slugs under ~/.dev-studio that aren't the current
+# one. If the dir doesn't exist, nothing to compare against.
+leaks=""
+if [ -d "$HOME_DS" ]; then
+  # Build a list of other-project slugs. `.runtime` is machine-global, not a
+  # project, and is permitted.
+  # Use an if-chain instead of a case arm: bash 3.2 (macOS default) has a
+  # parser bug where `case` inside `while read` inside a pipe inside `$(...)`
+  # rejects empty arms. if-chain sidesteps it.
+  others=$(find "$HOME_DS" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
+    | while IFS= read -r d; do
+        slug=$(basename "$d")
+        if [ "$slug" != ".runtime" ] && [ "$slug" != "$CURRENT" ]; then
+          printf '%s\n' "$slug"
+        fi
+      done)
+  if [ -n "$others" ]; then
+    # Inspect only added lines. Removals that clean up a pre-existing leak are
+    # a good thing; treating them as violations blocks legitimate cleanup.
+    # `^+` matches added content; `^+++` matches the file-path header and is
+    # excluded via the second grep.
+    added_blob=$(git diff --cached --unified=0 2>/dev/null | grep '^+' | grep -v '^+++')
+    while IFS= read -r slug; do
+      [ -z "$slug" ] && continue
+      # Match paths like `.dev-studio/<slug>/` or `~/.dev-studio/<slug>/`.
+      if printf '%s' "$added_blob" | grep -qE "\\.dev-studio/${slug}(/|\$|[\"' ])"; then
+        leaks="${leaks:+$leaks }${slug}"
+      fi
+    done <<< "$others"
+  fi
+fi
+
+if [ -n "$leaks" ]; then
+  printf 'E_PRIVACY_LEAK:staged diff references other-project runtime: %s | strip other-project paths or abstract to <project> placeholder\n' "$leaks" >&2
+  printf 'bypass (emergencies only): ARCH_LINT=0 git commit ...\n' >&2
+  exit 1
+fi
+fi
+
+exit 0

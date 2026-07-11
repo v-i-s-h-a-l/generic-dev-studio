@@ -1,0 +1,60 @@
+name: SDL Governance
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+permissions:
+  contents: read
+
+jobs:
+  sdl-governance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: python3 -m pip install --user "pyyaml>=6.0"
+
+      - name: Validate SDL manifest and policy schemas
+        run: |
+          python3 .stibdedlom/bin/validate-schemas.py --repo-root "$PWD"
+
+      - name: Validate routing attestations
+        env:
+          SDL_ROUTING_ATTESTATION_KEY: ${{ secrets.SDL_ROUTING_ATTESTATION_KEY }}
+        run: |
+          python3 .stibdedlom/bin/validate-attestations.py \
+            --repo-root "$PWD" \
+            --trust-anchor "${SDL_ROUTING_ATTESTATION_KEY:-}"
+
+      - name: Validate trust anchor
+        run: |
+          python3 .stibdedlom/bin/validate-trust-anchor.py \
+            --repo-root "$PWD"
+
+      - name: Re-run pre-commit checks on HEAD
+        run: |
+          COMMIT_MSG=$(git log -1 --format=%B)
+          python3 .stibdedlom/bin/validate-commit.py \
+            --repo-root "$PWD" \
+            --commit-msg-text "$COMMIT_MSG"
+
+      - name: Re-run pre-push checks
+        run: |
+          python3 .stibdedlom/bin/validate-push.py \
+            --repo-root "$PWD" \
+            --base "origin/main" \
+            --head "HEAD" \
+            --remote-ref "refs/heads/${{ github.ref_name }}"

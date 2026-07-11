@@ -1,0 +1,6 @@
+{
+  "algorithm": "ed25519",
+  "key_usage": "attestation",
+  "created_at": "2026-07-11T05:48:10.786504+00:00",
+  "source": "onboarding"
+}
